@@ -196,21 +196,75 @@ impl Iterator for RangeKeyValIter {
 
                     Ok(item) => match &self.start {
                         std::ops::Bound::Included(start) => match &self.end {
-                            std::ops::Bound::Included(end) => todo!(),
-                            std::ops::Bound::Excluded(end) => todo!(),
-                            std::ops::Bound::Unbounded => todo!(),
+                            std::ops::Bound::Included(end) => {
+                                if item.0.as_ref() >= start.as_slice()
+                                    && item.0.as_ref() <= end.as_slice()
+                                {
+                                    return Some(Ok(item));
+                                } else if item.0.as_ref() > end.as_slice() {
+                                    return None;
+                                }
+                            }
+                            std::ops::Bound::Excluded(end) => {
+                                if item.0.as_ref() >= start.as_slice()
+                                    && item.0.as_ref() < end.as_slice()
+                                {
+                                    return Some(Ok(item));
+                                } else if item.0.as_ref() >= end.as_slice() {
+                                    return None;
+                                }
+                            }
+                            std::ops::Bound::Unbounded => {
+                                if item.0.as_ref() >= start.as_slice() {
+                                    return Some(Ok(item));
+                                }
+                            }
                         },
 
                         std::ops::Bound::Excluded(start) => match &self.end {
-                            std::ops::Bound::Included(end) => todo!(),
-                            std::ops::Bound::Excluded(end) => todo!(),
-                            std::ops::Bound::Unbounded => todo!(),
+                            std::ops::Bound::Included(end) => {
+                                if item.0.as_ref() > start.as_slice()
+                                    && item.0.as_ref() <= end.as_slice()
+                                {
+                                    return Some(Ok(item));
+                                } else if item.0.as_ref() > end.as_slice() {
+                                    return None;
+                                }
+                            }
+                            std::ops::Bound::Excluded(end) => {
+                                if item.0.as_ref() > start.as_slice()
+                                    && item.0.as_ref() < end.as_slice()
+                                {
+                                    return Some(Ok(item));
+                                } else if item.0.as_ref() >= end.as_slice() {
+                                    return None;
+                                }
+                            }
+                            std::ops::Bound::Unbounded => {
+                                if item.0.as_ref() > start.as_slice() {
+                                    return Some(Ok(item));
+                                }
+                            }
                         },
 
                         std::ops::Bound::Unbounded => match &self.end {
-                            std::ops::Bound::Included(end) => todo!(),
-                            std::ops::Bound::Excluded(end) => todo!(),
-                            std::ops::Bound::Unbounded => todo!(),
+                            std::ops::Bound::Included(end) => {
+                                if item.0.as_ref() <= end.as_slice() {
+                                    return Some(Ok(item));
+                                } else if item.0.as_ref() > end.as_slice() {
+                                    return None;
+                                }
+                            }
+                            std::ops::Bound::Excluded(end) => {
+                                if item.0.as_ref() < end.as_slice() {
+                                    return Some(Ok(item));
+                                } else if item.0.as_ref() >= end.as_slice() {
+                                    return None;
+                                }
+                            }
+                            std::ops::Bound::Unbounded => {
+                                return Some(Ok(item));
+                            }
                         },
                     },
                 },
