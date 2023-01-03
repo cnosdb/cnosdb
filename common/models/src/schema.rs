@@ -734,7 +734,7 @@ impl Duration {
         }
     }
 
-    pub fn time_stamp(&self) -> i64 {
+    pub fn to_nanoseconds(&self) -> i64 {
         match self.unit {
             DurationUnit::Minutes => self.time_num as i64 * 60 * 1000000000,
             DurationUnit::Hour => self.time_num as i64 * 3600 * 1000000000,
