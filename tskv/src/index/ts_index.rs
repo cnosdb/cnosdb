@@ -258,7 +258,7 @@ impl TSIndex {
 
         let mut series_ids = Vec::with_capacity(tag_domains.len());
         for (idx, (tag_key, v)) in tag_domains.iter().enumerate() {
-            series_ids[idx] = self.get_series_ids_by_domain(tab, tag_key, v)?;
+            series_ids.push(self.get_series_ids_by_domain(tab, tag_key, v)?);
         }
 
         debug!("filter scan all series_ids: {:?}", series_ids);
@@ -339,18 +339,27 @@ impl TSIndex {
             Domain::Range(range_set) => {
                 for (_, range) in range_set.low_indexed_ranges().into_iter() {
                     let key_range = filter_range_to_index_key_range(tab, tag_key, range);
+                    let (is_equal, equal_key) = is_equal_value(&key_range);
+                    if is_equal {
+                        if let Some(data) = self.storage.get(&equal_key)? {
+                            let rb = roaring::RoaringBitmap::deserialize_from(&*data)
+                                .map_err(|e| IndexError::RoaringBitmap { msg: e.to_string() })?;
+                            bitmap = bitmap.bitor(rb);
+                        };
 
-                    todo!()
-                    // // Search the sid list corresponding to qualified tags in the range
-                    // let iter = self.storage.range(key_range).collect::<Vec<_>>();
+                        continue;
+                    }
 
-                    // // Save all sids
-                    // for (_, data) in iter {
-                    //     let rb = roaring::RoaringBitmap::deserialize_from(data.as_ref())
-                    //         .map_err(|e| IndexError::RoaringBitmap { msg: e.to_string() })?;
+                    // Search the sid list corresponding to qualified tags in the range
+                    let iter = self.storage.range(key_range);
+                    for item in iter {
+                        let item = item?;
+                        let data = self.storage.load(&item.1)?;
+                        let rb = roaring::RoaringBitmap::deserialize_from(&*data)
+                            .map_err(|e| IndexError::RoaringBitmap { msg: e.to_string() })?;
 
-                    //     bitmap = bitmap.bitor(rb);
-                    // }
+                        bitmap = bitmap.bitor(rb);
+                    }
                 }
             }
             Domain::Equtable(val) => {
@@ -407,6 +416,18 @@ impl Debug for TSIndex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Ok(())
     }
+}
+
+pub fn is_equal_value(range: &impl RangeBounds<Vec<u8>>) -> (bool, Vec<u8>) {
+    if let std::ops::Bound::Included(start) = range.start_bound() {
+        if let std::ops::Bound::Included(end) = range.end_bound() {
+            if start == end {
+                return (true, start.clone());
+            }
+        }
+    }
+
+    (false, vec![])
 }
 
 pub fn filter_range_to_index_key_range(

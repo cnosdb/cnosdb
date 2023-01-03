@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+use std::default;
 use std::fs;
 use std::io;
 use std::ops::Range;
@@ -55,23 +57,6 @@ impl IndexEngine {
         Ok(())
     }
 
-    // /// Create a double-ended iterator over tuples of keys and values,
-    // /// where the keys fall within the specified range.
-    // ///
-    // /// by range syntax like `..`, `a..`, `..b`, `..=c`, `d..e`, or `f..=g`.
-    // pub fn range<K, R>(
-    //     &self,
-    //     range: R,
-    // ) -> impl Iterator<Item = Result<(Vec<u8>, Vec<u8>), sled::Error>>
-    // where
-    //     K: AsRef<[u8]>,
-    //     R: RangeBounds<K>,
-    // {
-    //     self.db
-    //         .range(range)
-    //         .map(|e| e.map(|(k, v)| (k.to_vec(), v.to_vec())))
-    // }
-
     pub fn get(&self, key: &[u8]) -> IndexResult<Option<Vec<u8>>> {
         let val = self
             .db
@@ -127,15 +112,6 @@ impl IndexEngine {
         Ok(())
     }
 
-    pub fn prefix<'a>(
-        &'a self,
-        key: &'a [u8],
-    ) -> IndexResult<radixdb::node::KeyValueIter<store::PagedFileStore>> {
-        self.db
-            .try_scan_prefix(key)
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })
-    }
-
     pub fn exist(&self, key: &[u8]) -> IndexResult<bool> {
         let result = self
             .db
@@ -143,6 +119,23 @@ impl IndexEngine {
             .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
 
         Ok(result)
+    }
+
+    pub fn range(&self, range: impl RangeBounds<Vec<u8>>) -> RangeKeyValIter {
+        RangeKeyValIter::new_iterator(
+            copy_bound(range.start_bound()),
+            copy_bound(range.end_bound()),
+            self.db.try_iter(),
+        )
+    }
+
+    pub fn prefix<'a>(
+        &'a self,
+        key: &'a [u8],
+    ) -> IndexResult<radixdb::node::KeyValueIter<store::PagedFileStore>> {
+        self.db
+            .try_scan_prefix(key)
+            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })
     }
 
     pub fn flush(&mut self) -> IndexResult<()> {
@@ -156,6 +149,73 @@ impl IndexEngine {
             .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
 
         Ok(())
+    }
+}
+
+fn copy_bound(bound: std::ops::Bound<&Vec<u8>>) -> std::ops::Bound<Vec<u8>> {
+    match bound {
+        std::ops::Bound::Included(val) => std::ops::Bound::Included(val.to_vec()),
+        std::ops::Bound::Excluded(val) => std::ops::Bound::Excluded(val.to_vec()),
+        std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
+    }
+}
+pub struct RangeKeyValIter {
+    start: std::ops::Bound<Vec<u8>>,
+    end: std::ops::Bound<Vec<u8>>,
+
+    iter: radixdb::node::KeyValueIter<store::PagedFileStore>,
+}
+
+impl RangeKeyValIter {
+    pub fn new_iterator(
+        start: std::ops::Bound<Vec<u8>>,
+        end: std::ops::Bound<Vec<u8>>,
+        iter: radixdb::node::KeyValueIter<store::PagedFileStore>,
+    ) -> Self {
+        Self { iter, start, end }
+    }
+}
+
+impl Iterator for RangeKeyValIter {
+    type Item = IndexResult<(
+        radixdb::node::IterKey,
+        radixdb::node::Value<store::PagedFileStore>,
+    )>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.iter.next() {
+                None => {
+                    return None;
+                }
+
+                Some(item) => match item {
+                    Err(e) => {
+                        return Some(Err(IndexError::IndexStroage { msg: e.to_string() }));
+                    }
+
+                    Ok(item) => match &self.start {
+                        std::ops::Bound::Included(start) => match &self.end {
+                            std::ops::Bound::Included(end) => todo!(),
+                            std::ops::Bound::Excluded(end) => todo!(),
+                            std::ops::Bound::Unbounded => todo!(),
+                        },
+
+                        std::ops::Bound::Excluded(start) => match &self.end {
+                            std::ops::Bound::Included(end) => todo!(),
+                            std::ops::Bound::Excluded(end) => todo!(),
+                            std::ops::Bound::Unbounded => todo!(),
+                        },
+
+                        std::ops::Bound::Unbounded => match &self.end {
+                            std::ops::Bound::Included(end) => todo!(),
+                            std::ops::Bound::Excluded(end) => todo!(),
+                            std::ops::Bound::Unbounded => todo!(),
+                        },
+                    },
+                },
+            }
+        }
     }
 }
 

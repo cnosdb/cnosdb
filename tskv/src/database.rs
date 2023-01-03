@@ -251,6 +251,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(clippy::await_holding_lock)]
     async fn build_index(
         &self,
         info: &Point<'_>,

@@ -39,6 +39,7 @@ impl VersionSet {
         }
     }
 
+    #[allow(clippy::await_holding_lock)]
     pub async fn new(
         meta: MetaRef,
         opt: Arc<Options>,

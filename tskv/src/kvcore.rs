@@ -391,6 +391,7 @@ impl TsKv {
 
 #[async_trait::async_trait]
 impl Engine for TsKv {
+    #[allow(clippy::await_holding_lock)]
     async fn write(
         &self,
         id: TseriesFamilyId,
@@ -458,6 +459,7 @@ impl Engine for TsKv {
         })
     }
 
+    #[allow(clippy::await_holding_lock)]
     async fn write_from_wal(
         &self,
         id: TseriesFamilyId,
