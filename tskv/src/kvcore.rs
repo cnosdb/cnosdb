@@ -660,7 +660,7 @@ impl Engine for TsKv {
             }
         }
 
-        return Ok(vec![]);
+        Ok(vec![])
     }
 
     fn get_series_key(

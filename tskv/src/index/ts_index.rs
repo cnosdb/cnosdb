@@ -296,7 +296,7 @@ impl TSIndex {
         if tags.is_empty() {
             let prefix = format!("{}.", tab);
             let it = self.storage.prefix(prefix.as_bytes())?;
-            for val in it.into_iter() {
+            for val in it {
                 let val = val.map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
                 let data = self.storage.load(&val.1)?;
 
@@ -584,16 +584,13 @@ mod test {
         println!("get series_key1 id: {:?}", id);
 
         let list = ts_index
-            .get_series_id_list(
-                "table_test",
-                &vec![Tag::new(b"host".to_vec(), b"h2".to_vec())],
-            )
+            .get_series_id_list("table_test", &[Tag::new(b"host".to_vec(), b"h2".to_vec())])
             .unwrap();
         println!("get series id list h2: {:?}", list);
 
         ts_index.del_series_info(1).await.unwrap();
 
-        let list = ts_index.get_series_id_list("table_test", &vec![]).unwrap();
+        let list = ts_index.get_series_id_list("table_test", &[]).unwrap();
         println!("get series id list all table: {:?}", list);
     }
 

@@ -1,4 +1,5 @@
 --#SORT=true
+--#SLEEP=100
 --#DATABASE=createtable
 DROP DATABASE IF EXISTS createtable;
 

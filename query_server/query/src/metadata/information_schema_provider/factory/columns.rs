@@ -34,9 +34,11 @@ impl InformationSchemaTableFactory for ColumnsFactory {
     ) -> std::result::Result<Arc<MemTable>, MetaError> {
         let mut builder = InformationSchemaColumnsBuilder::default();
 
+        let tenant = metadata.tenant();
+
         let dbs = metadata.list_databases()?;
-        let tenant_id = metadata.tenant().id();
-        let tenant_name = metadata.tenant().name();
+        let tenant_id = tenant.id();
+        let tenant_name = tenant.name();
 
         for db in dbs {
             // Check if the current user has at least read permission on this db, skip if not

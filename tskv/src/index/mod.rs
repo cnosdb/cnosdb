@@ -1,7 +1,7 @@
 mod binlog;
 mod engine;
 mod errors;
-pub mod index;
 
+pub mod ts_index;
 pub use engine::*;
 pub use errors::*;

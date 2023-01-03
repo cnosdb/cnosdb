@@ -110,6 +110,7 @@ impl HintedOffManager {
         manager
     }
 
+    #[allow(clippy::await_holding_lock)]
     pub async fn write_handoff_job(
         manager: Arc<HintedOffManager>,
         mut hh_receiver: Receiver<HintedOffWriteReq>,
@@ -124,6 +125,7 @@ impl HintedOffManager {
         }
     }
 
+    #[allow(clippy::await_holding_lock)]
     async fn get_or_create_queue(&self, id: u64) -> CoordinatorResult<Arc<RwLock<HintedOffQueue>>> {
         let mut nodes = self.nodes.write();
         if let Some(val) = nodes.get(&id) {
@@ -143,6 +145,7 @@ impl HintedOffManager {
         Ok(queue)
     }
 
+    #[allow(clippy::await_holding_lock)]
     async fn hinted_off_service(
         node_id: u64,
         writer: Arc<PointWriter>,
@@ -475,6 +478,7 @@ mod test {
     use parking_lot::RwLock;
     use trace::init_default_global_tracing;
 
+    #[allow(clippy::await_holding_lock)]
     #[tokio::test]
     async fn test_hinted_off_file() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
@@ -505,6 +509,7 @@ mod test {
         time::sleep(Duration::from_secs(3)).await;
     }
 
+    #[allow(clippy::await_holding_lock)]
     async fn read_hinted_off_file(queue: Arc<RwLock<HintedOffQueue>>) {
         debug!("read file started.");
         time::sleep(Duration::from_secs(1)).await;

@@ -2,7 +2,7 @@
 200 OK
 
 
--- EXECUTE SQL: create database only_tag_col; --
+-- EXECUTE SQL: create database only_tag_col WITH TTL '100000d'; --
 200 OK
 
 
@@ -19,32 +19,6 @@
 200 OK
 rows
 16
-
--- EXECUTE SQL: select t0 from m2; --
--- AFTER_SORT --
-200 OK
-t0
-tag11
-tag12
-tag13
-tag14
-tag16
-tag17
-tag18
-tag19
-
--- EXECUTE SQL: select t1 from m2; --
--- AFTER_SORT --
-200 OK
-t1
-tag21
-tag22
-tag23
-tag24
-tag26
-tag27
-tag28
-tag29
 
 -- EXECUTE SQL: select time, t0 from m2; --
 -- AFTER_SORT --

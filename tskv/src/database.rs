@@ -47,7 +47,7 @@ pub struct Database {
     opt: Arc<Options>,
 
     schemas: Arc<DBschemas>,
-    ts_indexes: HashMap<TseriesFamilyId, Arc<RwLock<index::index::TSIndex>>>,
+    ts_indexes: HashMap<TseriesFamilyId, Arc<RwLock<index::ts_index::TSIndex>>>,
     ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
 }
 
@@ -166,7 +166,7 @@ impl Database {
     pub async fn build_write_group(
         &self,
         points: FlatBufferPoint<'_>,
-        ts_index: Arc<RwLock<index::index::TSIndex>>,
+        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         if self.opt.storage.strict_write {
             self.build_write_group_strict_mode(points, ts_index).await
@@ -178,7 +178,7 @@ impl Database {
     pub async fn build_write_group_strict_mode(
         &self,
         points: FlatBufferPoint<'_>,
-        ts_index: Arc<RwLock<index::index::TSIndex>>,
+        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
@@ -192,7 +192,7 @@ impl Database {
     pub async fn build_write_group_loose_mode(
         &self,
         points: FlatBufferPoint<'_>,
-        ts_index: Arc<RwLock<index::index::TSIndex>>,
+        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         let mut map = HashMap::new();
         for point in points {
@@ -254,7 +254,7 @@ impl Database {
     async fn build_index(
         &self,
         info: &Point<'_>,
-        ts_index: Arc<RwLock<index::index::TSIndex>>,
+        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<u32> {
         if info.tags().ok_or(InvalidPoint)?.is_empty()
             || info.fields().ok_or(InvalidPoint)?.is_empty()
@@ -373,7 +373,7 @@ impl Database {
         self.ts_indexes.remove(&id);
     }
 
-    pub fn get_ts_index(&self, id: u32) -> Option<Arc<RwLock<index::index::TSIndex>>> {
+    pub fn get_ts_index(&self, id: u32) -> Option<Arc<RwLock<index::ts_index::TSIndex>>> {
         if let Some(v) = self.ts_indexes.get(&id) {
             return Some(v.clone());
         }
@@ -381,14 +381,14 @@ impl Database {
         None
     }
 
-    pub fn ts_indexes(&self) -> &HashMap<TseriesFamilyId, Arc<RwLock<index::index::TSIndex>>> {
+    pub fn ts_indexes(&self) -> &HashMap<TseriesFamilyId, Arc<RwLock<index::ts_index::TSIndex>>> {
         &self.ts_indexes
     }
 
     pub async fn get_ts_index_or_add(
         &mut self,
         id: u32,
-    ) -> Result<Arc<RwLock<index::index::TSIndex>>> {
+    ) -> Result<Arc<RwLock<index::ts_index::TSIndex>>> {
         if let Some(v) = self.ts_indexes.get(&id) {
             return Ok(v.clone());
         }
@@ -398,7 +398,7 @@ impl Database {
             .storage
             .index_dir(&self.schemas.database_name(), id);
 
-        let idx = index::index::TSIndex::new(path).await?;
+        let idx = index::ts_index::TSIndex::new(path).await?;
         let idx = Arc::new(RwLock::new(idx));
 
         self.ts_indexes.insert(id, idx.clone());

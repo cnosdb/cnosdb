@@ -3,6 +3,7 @@ use snafu::Snafu;
 
 pub type Result<T> = std::result::Result<T, SchemaError>;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Snafu, Debug)]
 #[snafu(visibility(pub))]
 pub enum SchemaError {

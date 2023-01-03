@@ -585,7 +585,7 @@ mod test {
 
     use config::{get_config, ClusterConfig, Config};
     use meta::meta_client::{MetaRef, RemoteMetaManager};
-    use models::schema::{make_owner, DatabaseSchema};
+    use models::schema::{make_owner, DatabaseSchema, TenantOptions};
 
     use crate::file_system::file_manager;
     use crate::tseries_family::LevelInfo;
@@ -672,6 +672,9 @@ mod test {
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
@@ -693,6 +696,9 @@ mod test {
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
@@ -744,6 +750,9 @@ mod test {
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -795,6 +804,9 @@ mod test {
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {

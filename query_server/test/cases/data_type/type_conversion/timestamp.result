@@ -1,6 +1,13 @@
 -- WRITE LINE PROTOCOL --
 test_timestamp_conv,ta=a1,tb=b1 fa=1,fb=2 3
 -- LINE PROTOCOL END --
+422 Unprocessable Entity
+{"error_code":"0300000","error_message":"Error from coordinator: error msg: write expired time data not permit"}
+-- ERROR:  --
+
+-- WRITE LINE PROTOCOL --
+test_timestamp_conv,ta=a1,tb=b1 fa=1,fb=2 1667456411000000000
+-- LINE PROTOCOL END --
 200 OK
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time = 12345678865; --

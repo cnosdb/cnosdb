@@ -40,8 +40,9 @@ impl InformationSchemaTableFactory for DatabasePrivilegesFactory {
 
         let user_id = user.desc().id();
         let user_name = user.desc().name();
-        let tenant_id = metadata.tenant().id();
-        let tenant_name = metadata.tenant().name();
+        let tenant = metadata.tenant();
+        let tenant_id = tenant.id();
+        let tenant_name = tenant.name();
 
         if user.can_access_role(*tenant_id) {
             // All records of this view are visible to the Owner of the current tenant.

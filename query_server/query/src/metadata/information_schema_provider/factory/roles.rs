@@ -34,9 +34,9 @@ impl InformationSchemaTableFactory for RolesFactory {
     ) -> std::result::Result<Arc<MemTable>, MetaError> {
         let mut builder = InformationSchemaRolesBuilder::default();
 
-        let tenant_id = metadata.tenant().id();
+        let tenant_id = *metadata.tenant().id();
 
-        if user.can_access_role(*tenant_id) {
+        if user.can_access_role(tenant_id) {
             // All records of this view are visible to the Owner of the current tenant.
             let sys_roles = &[SystemTenantRole::Owner, SystemTenantRole::Member];
             for role in sys_roles {

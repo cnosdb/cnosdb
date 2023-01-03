@@ -226,7 +226,7 @@ impl HttpService {
 
     fn print_meta(
         &self,
-    ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "meta")
             .and(self.handle_header())
             .and(self.with_coord())
@@ -246,7 +246,9 @@ impl HttpService {
             })
     }
 
-    fn metrics(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    fn metrics(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("metrics").map(|| {
             debug!("prometheus access");
             warp::reply::Response::new(Body::from(gather_metrics()))

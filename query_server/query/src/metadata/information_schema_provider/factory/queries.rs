@@ -34,14 +34,14 @@ impl InformationSchemaTableFactory for QueriesFactory {
         let mut builder = InformationSchemaQueriesBuilder::default();
 
         let user_id = user.desc().id();
-        let tenant_id = metadata.tenant().id();
+        let tenant_id = *metadata.tenant().id();
 
         let queries_of_tenant = query_tracker
             .running_queries()
             .into_iter()
-            .filter(|e| e.info().tenant_id() == *tenant_id);
+            .filter(|e| e.info().tenant_id() == tenant_id);
 
-        let running_queries = if !user.can_access_system(*tenant_id) {
+        let running_queries = if !user.can_access_system(tenant_id) {
             queries_of_tenant
                 .filter(|e| e.info().user_id() == *user_id)
                 .collect::<Vec<_>>()

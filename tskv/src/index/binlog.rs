@@ -62,21 +62,18 @@ impl IndexBinlog {
     pub async fn new(path: impl AsRef<Path>) -> IndexResult<Self> {
         let data_dir = path.as_ref();
         let (last, seq) = match file_utils::get_max_sequence_file_name(
-            data_dir.clone(),
+            data_dir,
             file_utils::get_index_binlog_file_id,
         ) {
             Some((file, seq)) => (data_dir.join(file), seq),
             None => {
                 let seq = 1;
-                (
-                    file_utils::make_index_binlog_file(data_dir.clone(), seq),
-                    seq,
-                )
+                (file_utils::make_index_binlog_file(data_dir, seq), seq)
             }
         };
 
-        if !file_manager::try_exists(&data_dir) {
-            std::fs::create_dir_all(&data_dir)?;
+        if !file_manager::try_exists(data_dir) {
+            std::fs::create_dir_all(data_dir)?;
         }
 
         let writer_file = BinlogWriter::open(seq, last).await?;

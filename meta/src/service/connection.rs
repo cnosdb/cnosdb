@@ -128,10 +128,8 @@ impl RaftNetwork<TypeConfig> for ConnManager {
         VoteResponse<ClusterNodeId>,
         RPCError<ClusterNodeId, ClusterNode, VoteError<ClusterNodeId>>,
     > {
-        let res = self
-            .owner
+        self.owner
             .send_req(self.target, self.target_node.clone(), "raft-vote", req)
-            .await;
-        res
+            .await
     }
 }

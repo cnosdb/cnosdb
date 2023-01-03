@@ -193,8 +193,8 @@ mod test {
 
         let mut begin = now_timestamp() / 1000000;
         for i in 1..10001 {
-            let key = format!("key012345678901234567890123456789_{}", i.to_string());
-            let val = format!("val012345678901234567890123456789_{}", i.to_string());
+            let key = format!("key012345678901234567890123456789_{}", i);
+            let val = format!("val012345678901234567890123456789_{}", i);
             engine.set(key.as_bytes(), val.as_bytes()).unwrap();
             if i % 100000 == 0 {
                 engine.flush().unwrap();
@@ -237,7 +237,7 @@ mod test {
         for i in 1..10000000 {
             let random: i32 = rand::Rng::gen_range(&mut rand::thread_rng(), 1..=10000000);
 
-            let key = format!("key012345678901234567890123456789_{}", random.to_string());
+            let key = format!("key012345678901234567890123456789_{}", random);
 
             engine.get(key.as_bytes()).unwrap();
 

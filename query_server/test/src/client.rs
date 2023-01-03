@@ -35,6 +35,11 @@ impl Client {
     /// execute one sql at http://domain/query
     pub async fn execute_query(&self, query: &Query, buffer: &mut String) {
         buffer.push_str(format!("-- EXECUTE SQL: {} --\n", query.as_str()).as_str());
+        if let Some(sleep) = query.instruction().sleep() {
+            if sleep != 0 {
+                tokio::time::sleep(Duration::from_millis(sleep)).await;
+            }
+        }
         if query.instruction().sort() && query.is_return_result_set() {
             buffer.push_str("-- AFTER_SORT --\n")
         }
@@ -74,6 +79,11 @@ impl Client {
             )
             .as_str(),
         );
+        if let Some(sleep) = line_protocol.instruction().sleep() {
+            if sleep != 0 {
+                tokio::time::sleep(Duration::from_millis(sleep)).await;
+            }
+        }
         let request_build = self.build_write_request(line_protocol);
         if request_build.is_err() {
             push_error(buffer, "request build fail");

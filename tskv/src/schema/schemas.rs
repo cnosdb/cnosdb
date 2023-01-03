@@ -35,7 +35,7 @@ impl DBschemas {
             .context(MetaSnafu)?
             .is_none()
         {
-            client.create_db(&db_schema).context(MetaSnafu)?;
+            client.create_db(db_schema.clone()).context(MetaSnafu)?;
         }
         Ok(Self {
             tenant_name: db_schema.tenant_name().to_string(),

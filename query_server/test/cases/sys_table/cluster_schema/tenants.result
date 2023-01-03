@@ -42,7 +42,7 @@
 -- AFTER_SORT --
 200 OK
 tenant_name,tenant_options
-test_ts_tenant1,"{""comment"":null}"
+test_ts_tenant1,"{""comment"":null,""limiter_config"":null}"
 
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 -- AFTER_SORT --
