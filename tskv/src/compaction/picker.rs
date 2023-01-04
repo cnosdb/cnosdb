@@ -435,9 +435,10 @@ mod test {
         opt: Arc<Options>,
         levels_sketch: LevelsSketch,
     ) -> TseriesFamily {
-        let mut level_infos = LevelInfo::init_levels(database.clone(), opt.storage.clone());
-        let mut max_level_ts = 0_i64;
         let ts_family_id = 0;
+        let mut level_infos =
+            LevelInfo::init_levels(database.clone(), ts_family_id, opt.storage.clone());
+        let mut max_level_ts = 0_i64;
         let tsm_dir = &opt.storage.tsm_dir(&database, ts_family_id);
         for lvl_desc in levels_sketch.iter() {
             max_level_ts = max_level_ts.max(lvl_desc.2);

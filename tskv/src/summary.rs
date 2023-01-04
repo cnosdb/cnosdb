@@ -321,7 +321,7 @@ impl Summary {
                     files.insert(m.file_id, m);
                 }
             }
-            let mut levels = LevelInfo::init_levels(database.clone(), opt.storage.clone());
+            let mut levels = LevelInfo::init_levels(database.clone(), id, opt.storage.clone());
             // according files map to recover levels_info;
             for (fd, meta) in files {
                 levels[meta.level as usize].push_compact_meta(&meta);

@@ -294,12 +294,17 @@ pub struct LevelInfo {
 }
 
 impl LevelInfo {
-    pub fn init(database: String, level: u32, storage_opt: Arc<StorageOptions>) -> Self {
+    pub fn init(
+        database: String,
+        level: u32,
+        tsf_id: u32,
+        storage_opt: Arc<StorageOptions>,
+    ) -> Self {
         let max_size = storage_opt.level_file_size(level);
         Self {
             files: Vec::new(),
             database,
-            tsf_id: 0,
+            tsf_id,
             storage_opt,
             level,
             cur_size: 0,
@@ -311,13 +316,17 @@ impl LevelInfo {
         }
     }
 
-    pub fn init_levels(database: String, storage_opt: Arc<StorageOptions>) -> [LevelInfo; 5] {
+    pub fn init_levels(
+        database: String,
+        tsf_id: u32,
+        storage_opt: Arc<StorageOptions>,
+    ) -> [LevelInfo; 5] {
         [
-            Self::init(database.clone(), 0, storage_opt.clone()),
-            Self::init(database.clone(), 1, storage_opt.clone()),
-            Self::init(database.clone(), 2, storage_opt.clone()),
-            Self::init(database.clone(), 3, storage_opt.clone()),
-            Self::init(database, 4, storage_opt),
+            Self::init(database.clone(), 0, tsf_id, storage_opt.clone()),
+            Self::init(database.clone(), 1, tsf_id, storage_opt.clone()),
+            Self::init(database.clone(), 2, tsf_id, storage_opt.clone()),
+            Self::init(database.clone(), 3, tsf_id, storage_opt.clone()),
+            Self::init(database, 4, tsf_id, storage_opt),
         ]
     }
 
@@ -457,8 +466,11 @@ impl Version {
             }
         }
 
-        let mut new_levels =
-            LevelInfo::init_levels(self.database.clone(), self.storage_opt.clone());
+        let mut new_levels = LevelInfo::init_levels(
+            self.database.clone(),
+            self.ts_family_id,
+            self.storage_opt.clone(),
+        );
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
                 if let Some(true) = deleted_files
@@ -859,7 +871,7 @@ mod test {
             last_seq: 1,
             max_level_ts: 3100,
             levels_info: [
-                LevelInfo::init(database.clone(), 0, opt.storage.clone()),
+                LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
                 LevelInfo {
                     files: vec![
                         Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
@@ -885,8 +897,8 @@ mod test {
                     max_size: 10000,
                     time_range: TimeRange::new(1, 2000),
                 },
-                LevelInfo::init(database.clone(), 3, opt.storage.clone()),
-                LevelInfo::init(database, 4, opt.storage.clone()),
+                LevelInfo::init(database.clone(), 3, 0, opt.storage.clone()),
+                LevelInfo::init(database, 4, 0,opt.storage.clone()),
             ],
         };
         let mut version_edits = Vec::new();
@@ -958,7 +970,7 @@ mod test {
             last_seq: 1,
             max_level_ts: 3150,
             levels_info: [
-                LevelInfo::init(database.clone(), 0, opt.storage.clone()),
+                LevelInfo::init(database.clone(), 0, 0,opt.storage.clone()),
                 LevelInfo {
                     files: vec![
                         Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
@@ -985,8 +997,8 @@ mod test {
                     max_size: 10000,
                     time_range: TimeRange::new(1, 2000),
                 },
-                LevelInfo::init(database.clone(), 3, opt.storage.clone()),
-                LevelInfo::init(database, 4, opt.storage.clone()),
+                LevelInfo::init(database.clone(), 3, 0,opt.storage.clone()),
+                LevelInfo::init(database, 4, 0, opt.storage.clone()),
             ],
         };
         let mut version_edits = Vec::new();
@@ -1072,7 +1084,7 @@ mod test {
                 database.clone(),
                 opt.storage.clone(),
                 0,
-                LevelInfo::init_levels(database, opt.storage.clone()),
+                LevelInfo::init_levels(database, 0, opt.storage.clone()),
                 0,
             )),
             opt.cache.clone(),
