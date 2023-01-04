@@ -8,10 +8,10 @@ write_sql_limit = 167772160   # 160 * 1024 * 1024
 auth_enabled = false
 
 [storage]
-# Directory for summary: $path/summary/
-# Directory for index: $path/index/$database/
-# Directory for tsm: $path/data/$database/tsm/
-# Directory for delta: $path/data/$database/delta/
+# Directory for summary:    $path/summary
+# Directory for index:      $path/$database/data/id/index
+# Directory for tsm:        $path/$database/data/id/tsm
+# Directory for delta:      $path/$database/data/id/delta
 path = 'data/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024
 max_level = 4

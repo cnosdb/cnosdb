@@ -314,7 +314,7 @@ pub struct MemCache {
 
     part_count: usize,
     // This u64 comes from split_id(SeriesId) % part_count
-    partions: Vec<RwLock<HashMap<u64, RwLockRef<SeriesData>>>>,
+    partions: Vec<RwLock<HashMap<u32, RwLockRef<SeriesData>>>>,
 }
 
 impl MemCache {
@@ -342,7 +342,6 @@ impl MemCache {
     }
 
     pub fn write_group(&self, sid: SeriesId, seq: u64, group: RowGroup) {
-        let (_, sid) = split_id(sid);
         self.seq_no.store(seq, Ordering::Relaxed);
         self.cache_size
             .fetch_add(group.size as u64, Ordering::Relaxed);

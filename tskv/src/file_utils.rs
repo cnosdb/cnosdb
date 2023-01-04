@@ -13,6 +13,7 @@ lazy_static! {
     static ref TSM_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.tsm").unwrap();
     static ref SCHEMA_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.schema").unwrap();
     static ref HINTEDOFF_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.hh").unwrap();
+    static ref INDEX_BINLOG_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.binlog").unwrap();
 }
 
 // Summary file.
@@ -71,6 +72,33 @@ pub fn get_hinted_off_file_id(file_name: &str) -> Result<u64> {
         .map_err(|_| Error::InvalidFileName {
             file_name: file_name.to_string(),
             message: "hh file name contains an invalid id".to_string(),
+        })
+}
+
+// index binlog files.
+
+pub fn make_index_binlog_file(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
+    let p = format!("_{:06}.binlog", sequence);
+    path.as_ref().join(p)
+}
+
+pub fn check_index_binlog_file_name(file_name: &str) -> bool {
+    INDEX_BINLOG_FILE_NAME_PATTERN.is_match(file_name)
+}
+
+pub fn get_index_binlog_file_id(file_name: &str) -> Result<u64> {
+    if !check_index_binlog_file_name(file_name) {
+        return Err(Error::InvalidFileName {
+            file_name: file_name.to_string(),
+            message: "index binlog file name does not contain an id".to_string(),
+        });
+    }
+    let file_number = &file_name[1..7];
+    file_number
+        .parse::<u64>()
+        .map_err(|_| Error::InvalidFileName {
+            file_name: file_name.to_string(),
+            message: "index binlog file name contains an invalid id".to_string(),
         })
 }
 
@@ -186,11 +214,14 @@ where
     if segments.is_empty() {
         return None;
     }
-    let mut max_id = 1;
+
+    let mut max_id = 0;
     let mut max_index = 0;
+    let mut is_found = false;
     for (i, file_name) in segments.iter().enumerate() {
         match get_sequence(file_name) {
             Ok(id) => {
+                is_found = true;
                 if max_id < id {
                     max_id = id;
                     max_index = i;
@@ -199,6 +230,11 @@ where
             Err(_) => continue,
         }
     }
+
+    if !is_found {
+        return None;
+    }
+
     let max_file_name = segments.get(max_index).unwrap();
     Some((PathBuf::from(max_file_name), max_id))
 }

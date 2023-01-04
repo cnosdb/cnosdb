@@ -344,7 +344,7 @@ impl Summary {
             ctx.set_file_id(file_id + 1);
         }
 
-        let vs = VersionSet::new(meta, opt.clone(), versions, flush_task_sender)?;
+        let vs = VersionSet::new(meta, opt.clone(), versions, flush_task_sender).await?;
         Ok(vs)
     }
 

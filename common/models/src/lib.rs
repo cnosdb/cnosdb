@@ -30,7 +30,7 @@ pub use tag::Tag;
 pub type ShardId = u64;
 pub type CatalogId = u64;
 pub type SchemaId = u64;
-pub type SeriesId = u64;
+pub type SeriesId = u32;
 pub type TableId = u64;
 pub type ColumnId = u32;
 

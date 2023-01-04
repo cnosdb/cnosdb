@@ -580,7 +580,7 @@ pub fn filter_to_time_ranges(time_domain: &ColumnDomains<String>) -> Vec<TimeRan
 
 pub struct RowIterator {
     series_index: usize,
-    series: Vec<u64>,
+    series: Vec<u32>,
     engine: EngineRef,
     option: QueryOption,
     columns: Vec<CursorPtr>,
@@ -589,6 +589,7 @@ pub struct RowIterator {
     open_files: HashMap<ColumnFileId, TsmReader>,
 
     batch_size: usize,
+    vnode_id: u32,
     metrics: TskvSourceMetrics,
 }
 
@@ -598,6 +599,7 @@ impl RowIterator {
 
         let series = engine
             .get_series_id_by_filter(
+                vnode_id,
                 &option.tenant,
                 &option.table_schema.db,
                 &option.table_schema.name,
@@ -614,6 +616,7 @@ impl RowIterator {
             engine,
             option,
             version,
+            vnode_id,
 
             columns: vec![],
             series_index: usize::MAX,
@@ -640,7 +643,12 @@ impl RowIterator {
 
         if let Some(key) = self
             .engine
-            .get_series_key(&self.option.tenant, &self.option.table_schema.db, id)
+            .get_series_key(
+                &self.option.tenant,
+                &self.option.table_schema.db,
+                self.vnode_id,
+                id,
+            )
             .context(IndexErrSnafu)?
         {
             self.columns.clear();
@@ -665,13 +673,9 @@ impl RowIterator {
                     ColumnType::Field(vtype) => match vtype {
                         ValueType::Unknown => todo!(),
                         _ => {
-                            let cursor = FieldCursor::new(
-                                unite_id(item.id as u64, id),
-                                field_name,
-                                vtype,
-                                self,
-                            )
-                            .await?;
+                            let cursor =
+                                FieldCursor::new(unite_id(item.id, id), field_name, vtype, self)
+                                    .await?;
                             Box::new(cursor)
                         }
                     },

@@ -21,7 +21,7 @@ use trace::{debug, error, info};
 
 use crate::compaction::FlushReq;
 use crate::error::SchemaSnafu;
-use crate::index::{index_manger, IndexError, IndexResult};
+use crate::index::{self, IndexError, IndexResult};
 use crate::schema::schemas::DBschemas;
 use crate::tseries_family::LevelInfo;
 use crate::Error::{IndexErr, InvalidPoint};
@@ -32,7 +32,6 @@ use crate::{
     Error, TimeRange, TseriesFamilyId,
 };
 use crate::{
-    index::db_index,
     kv_option::Options,
     memcache::MemCache,
     summary::{CompactMeta, SummaryTask, VersionEdit},
@@ -45,23 +44,23 @@ pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOff
 pub struct Database {
     //tenant_name.database_name => owner
     owner: String,
-    index: Arc<db_index::DBIndex>,
-    schemas: Arc<DBschemas>,
-    ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
     opt: Arc<Options>,
+
+    schemas: Arc<DBschemas>,
+    ts_indexes: HashMap<TseriesFamilyId, Arc<RwLock<index::ts_index::TSIndex>>>,
+    ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
 }
 
 impl Database {
     pub fn new(schema: DatabaseSchema, opt: Arc<Options>, meta: MetaRef) -> Result<Self> {
         let db = Self {
-            index: index_manger(opt.storage.index_base_dir())
-                .write()
-                .get_db_index(&schema.owner()),
+            opt,
             owner: schema.owner(),
             schemas: Arc::new(DBschemas::new(schema, meta).context(SchemaSnafu)?),
+            ts_indexes: HashMap::new(),
             ts_families: HashMap::new(),
-            opt,
         };
+
         Ok(db)
     }
 
@@ -164,42 +163,45 @@ impl Database {
         }
     }
 
-    pub fn build_write_group(
+    pub async fn build_write_group(
         &self,
-        points: FlatBufferPoint,
+        points: FlatBufferPoint<'_>,
+        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         if self.opt.storage.strict_write {
-            self.build_write_group_strict_mode(points)
+            self.build_write_group_strict_mode(points, ts_index).await
         } else {
-            self.build_write_group_loose_mode(points)
+            self.build_write_group_loose_mode(points, ts_index).await
         }
     }
 
-    pub fn build_write_group_strict_mode(
+    pub async fn build_write_group_strict_mode(
         &self,
-        points: FlatBufferPoint,
+        points: FlatBufferPoint<'_>,
+        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
         for point in points {
-            let sid = self.build_index(&point)?;
+            let sid = self.build_index(&point, ts_index.clone()).await?;
             self.build_row_data(&mut map, point, sid)?
         }
         Ok(map)
     }
 
-    pub fn build_write_group_loose_mode(
+    pub async fn build_write_group_loose_mode(
         &self,
-        points: FlatBufferPoint,
+        points: FlatBufferPoint<'_>,
+        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         let mut map = HashMap::new();
         for point in points {
-            let sid = self.build_index(&point)?;
-            match self.schemas.check_field_type_from_cache(sid, &point) {
+            let sid = self.build_index(&point, ts_index.clone()).await?;
+            match self.schemas.check_field_type_from_cache(&point) {
                 Ok(_) => {}
                 Err(_) => {
                     self.schemas
-                        .check_field_type_or_else_add(sid, &point)
+                        .check_field_type_or_else_add(&point)
                         .context(error::SchemaSnafu)?;
                 }
             }
@@ -213,7 +215,7 @@ impl Database {
         &self,
         map: &mut HashMap<(SeriesId, SchemaId), RowGroup>,
         point: Point,
-        sid: u64,
+        sid: u32,
     ) -> Result<()> {
         let table_name = String::from_utf8(point.tab().unwrap().bytes().to_vec()).unwrap();
         let table_schema = self
@@ -249,24 +251,30 @@ impl Database {
         Ok(())
     }
 
-    fn build_index(&self, info: &Point) -> Result<u64> {
+    #[allow(clippy::await_holding_lock)]
+    async fn build_index(
+        &self,
+        info: &Point<'_>,
+        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
+    ) -> Result<u32> {
         if info.tags().ok_or(InvalidPoint)?.is_empty()
             || info.fields().ok_or(InvalidPoint)?.is_empty()
         {
             return Err(InvalidPoint);
         }
-        if let Some(id) = self
-            .index
-            .get_sid_from_cache(info)
-            .context(error::IndexErrSnafu)?
-        {
+
+        let mut series_key = SeriesKey::from_flatbuffer(info).map_err(|e| Error::CommonError {
+            reason: e.to_string(),
+        })?;
+
+        if let Some(id) = ts_index.read().get_series_id(&series_key)? {
             return Ok(id);
         }
 
-        let id = self
-            .index
-            .add_series_if_not_exists(info)
-            .context(error::IndexErrSnafu)?;
+        let id = ts_index
+            .write()
+            .add_series_if_not_exists(&mut series_key)
+            .await?;
 
         Ok(id)
     }
@@ -325,25 +333,18 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
-        self.index.get_series_key(sid)
+    pub fn get_series_key(&self, vnode_id: u32, sid: u32) -> IndexResult<Option<SeriesKey>> {
+        if let Some(idx) = self.get_ts_index(vnode_id) {
+            return idx.read().get_series_key(sid);
+        }
+
+        Ok(None)
     }
 
     pub fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchema>> {
         self.schemas
             .get_table_schema(table_name)
             .context(SchemaSnafu)
-    }
-
-    pub fn get_table_schema_by_series_id(&self, sid: u64) -> Result<Option<TskvTableSchema>> {
-        let key = self.index.get_series_key(sid).context(IndexErrSnafu)?;
-        match key {
-            None => Ok(None),
-            Some(series_key) => self
-                .schemas
-                .get_table_schema(&series_key.table)
-                .context(SchemaSnafu),
-        }
     }
 
     pub fn get_tsfamily(&self, id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
@@ -369,8 +370,41 @@ impl Database {
         self.ts_families.iter().for_each(func);
     }
 
-    pub fn get_index(&self) -> Arc<db_index::DBIndex> {
-        self.index.clone()
+    pub fn del_ts_index(&mut self, id: u32) {
+        self.ts_indexes.remove(&id);
+    }
+
+    pub fn get_ts_index(&self, id: u32) -> Option<Arc<RwLock<index::ts_index::TSIndex>>> {
+        if let Some(v) = self.ts_indexes.get(&id) {
+            return Some(v.clone());
+        }
+
+        None
+    }
+
+    pub fn ts_indexes(&self) -> &HashMap<TseriesFamilyId, Arc<RwLock<index::ts_index::TSIndex>>> {
+        &self.ts_indexes
+    }
+
+    pub async fn get_ts_index_or_add(
+        &mut self,
+        id: u32,
+    ) -> Result<Arc<RwLock<index::ts_index::TSIndex>>> {
+        if let Some(v) = self.ts_indexes.get(&id) {
+            return Ok(v.clone());
+        }
+
+        let path = self
+            .opt
+            .storage
+            .index_dir(&self.schemas.database_name(), id);
+
+        let idx = index::ts_index::TSIndex::new(path).await?;
+        let idx = Arc::new(RwLock::new(idx));
+
+        self.ts_indexes.insert(id, idx.clone());
+
+        Ok(idx)
     }
 
     pub fn get_schemas(&self) -> Arc<DBschemas> {
@@ -405,15 +439,7 @@ pub(crate) async fn delete_table_async(
     drop(version_set_rlock);
 
     if let Some(db) = db_instance {
-        let index = db.read().get_index();
         let schemas = db.read().get_schemas();
-        let sids = index
-            .get_series_id_list(&table, &[])
-            .context(error::IndexErrSnafu)?;
-        debug!(
-            "Drop table: deleting index in table: {}.{}",
-            &database, &table
-        );
         let field_infos = schemas
             .get_table_schema(&table)
             .context(error::SchemaSnafu)?;
@@ -421,10 +447,24 @@ pub(crate) async fn delete_table_async(
             .del_table_schema(&table)
             .context(error::SchemaSnafu)?;
 
-        for sid in sids.iter() {
-            index.del_series_info(*sid).context(error::IndexErrSnafu)?;
+        let mut sids = vec![];
+        for (id, index) in db.read().ts_indexes().iter() {
+            let mut index = index.write();
+
+            let mut ids = index
+                .get_series_id_list(&table, &[])
+                .context(error::IndexErrSnafu)?;
+
+            for sid in ids.iter() {
+                index
+                    .del_series_info(*sid)
+                    .await
+                    .context(error::IndexErrSnafu)?;
+            }
+            index.flush().await.context(error::IndexErrSnafu)?;
+
+            sids.append(&mut ids);
         }
-        index.flush().context(error::IndexErrSnafu)?;
 
         if let Some(fields) = field_infos {
             debug!(
@@ -434,7 +474,7 @@ pub(crate) async fn delete_table_async(
             let fids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
             let storage_fids: Vec<u64> = sids
                 .iter()
-                .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid as u64, *sid)))
+                .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid, *sid)))
                 .collect();
             let time_range = &TimeRange {
                 min_ts: Timestamp::MIN,
