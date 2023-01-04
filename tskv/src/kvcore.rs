@@ -42,7 +42,6 @@ use trace::{debug, error, info, trace, warn};
 use crate::database::Database;
 use crate::error::SchemaSnafu;
 use crate::file_system::file_manager::{self, FileManager};
-
 use crate::tseries_family::TseriesFamily;
 use crate::Error::{DatabaseNotFound, IndexErr};
 use crate::{

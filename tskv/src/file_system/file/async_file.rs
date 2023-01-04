@@ -91,7 +91,7 @@ impl RawFile {
 
     async fn truncate(&self, size: u64) -> Result<()> {
         #[cfg(feature = "io_uring")]
-        unsafe {
+        {
             let file = self.0.clone();
             asyncify(move || file.set_len(size)).await
         }

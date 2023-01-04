@@ -442,13 +442,23 @@ pub fn filter_range_to_index_key_range(
     let generate_index_key = |v: &ScalarValue| tag_value_to_index_key(tab, tag_key, v);
 
     // Convert the tag value in Bound to the inverted index key
-    let translate_bound = |bound: Bound<&ScalarValue>| match bound {
-        Bound::Unbounded => Bound::Unbounded,
+    let translate_bound = |bound: Bound<&ScalarValue>, is_lower: bool| match bound {
+        Bound::Unbounded => {
+            let buf = if is_lower {
+                encode_inverted_min_index_key(tab, tag_key.as_bytes())
+            } else {
+                encode_inverted_max_index_key(tab, tag_key.as_bytes())
+            };
+            Bound::Included(buf)
+        }
         Bound::Included(v) => Bound::Included(generate_index_key(v)),
         Bound::Excluded(v) => Bound::Excluded(generate_index_key(v)),
     };
 
-    (translate_bound(start_bound), translate_bound(end_bound))
+    (
+        translate_bound(start_bound, true),
+        translate_bound(end_bound, false),
+    )
 }
 
 pub fn tag_value_to_index_key(tab: &str, tag_key: &str, v: &ScalarValue) -> Vec<u8> {
@@ -473,17 +483,36 @@ pub fn encode_series_id_key(id: u32) -> Vec<u8> {
     buf
 }
 
+pub fn encode_inverted_max_index_key(tab: &str, tag_key: &[u8]) -> Vec<u8> {
+    tab.as_bytes()
+        .iter()
+        .chain(".".as_bytes())
+        .chain(tag_key)
+        .chain(">".as_bytes())
+        .cloned()
+        .collect()
+}
+
+pub fn encode_inverted_min_index_key(tab: &str, tag_key: &[u8]) -> Vec<u8> {
+    tab.as_bytes()
+        .iter()
+        .chain(".".as_bytes())
+        .chain(tag_key)
+        .chain("<".as_bytes())
+        .cloned()
+        .collect()
+}
+
+// tab.tag=val
 pub fn encode_inverted_index_key(tab: &str, tag_key: &[u8], tag_val: &[u8]) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(tab.len() + 1 + tag_key.len() + 1 + tag_val.len());
-
-    // tab.tag_key=tag_val
-    buf.extend_from_slice(tab.as_bytes());
-    buf.extend_from_slice(b".");
-    buf.extend_from_slice(tag_key);
-    buf.extend_from_slice(b"=");
-    buf.extend_from_slice(tag_val);
-
-    buf
+    tab.as_bytes()
+        .iter()
+        .chain(".".as_bytes())
+        .chain(tag_key)
+        .chain("=".as_bytes())
+        .chain(tag_val)
+        .cloned()
+        .collect()
 }
 
 pub fn encode_series_key(tab: &str, tags: &[Tag]) -> Vec<u8> {

@@ -178,6 +178,7 @@ impl FromStr for Command {
             ("pset", Some(subcommand)) => Self::OutputFormat(Some(subcommand.to_string())),
             ("pset", None) => Self::OutputFormat(None),
             ("w", Some(path)) => Self::Write(path.into()),
+            ("db", Some(db)) => Self::DescribeDatabase(db.to_string()),
             _ => return Err(()),
         })
     }
