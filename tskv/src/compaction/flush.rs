@@ -583,7 +583,7 @@ pub mod flush_tests {
         let version = Arc::new(Version {
             ts_family_id, database: database.clone(), storage_opt: options.storage.clone(),
             last_seq: 1, max_level_ts,
-            levels_info: LevelInfo::init_levels(database, options.storage),
+            levels_info: LevelInfo::init_levels(database, 0, options.storage),
         });
         let flush_task = FlushTask::new(caches, 1, global_context, &tsm_dir, &delta_dir);
         let mut version_edits = vec![];

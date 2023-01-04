@@ -716,7 +716,7 @@ mod test {
             "version_1".to_string(),
             opt.storage.clone(),
             1,
-            LevelInfo::init_levels(database.clone(), opt.storage.clone()),
+            LevelInfo::init_levels(database.clone(), 0, opt.storage.clone()),
             1000,
         ));
         let compact_req = CompactReq {
