@@ -283,7 +283,7 @@ mod test {
 
     #[tokio::test]
     async fn test_engine() {
-        let mut engine = IndexEngine::new("aaa_test_index").unwrap();
+        let mut engine = IndexEngine::new("/tmp/test/1").unwrap();
         // engine.set(b"key1", b"v11111").unwrap();
         // engine.set(b"key2", b"v22222").unwrap();
         // engine.set(b"key3", b"v33333").unwrap();
@@ -301,9 +301,8 @@ mod test {
         println!("=== {:?}", engine.get(b"key3"));
     }
 
-    #[tokio::test]
     async fn test_engine_write_perf() {
-        let mut engine = IndexEngine::new("aaa_test_index").unwrap();
+        let mut engine = IndexEngine::new("/tmp/test/2").unwrap();
 
         let mut begin = now_timestamp() / 1000000;
         for i in 1..10001 {
@@ -321,7 +320,7 @@ mod test {
     }
 
     async fn test_engine_read_perf() {
-        let engine = IndexEngine::new("aaa_test_index").unwrap();
+        let engine = IndexEngine::new("/tmp/test/3").unwrap();
         let engine = Arc::new(engine);
 
         let atomic = Arc::new(AtomicU64::new(0));

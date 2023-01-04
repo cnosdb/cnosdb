@@ -572,8 +572,6 @@ mod test {
 
     #[tokio::test]
     async fn test_index() {
-        trace::init_global_tracing("aaa_test_index", "test_logs.log", "info");
-
         let mut series_key1 = SeriesKey {
             id: 0,
             db: "db_test".to_string(),
@@ -607,7 +605,7 @@ mod test {
             ],
         };
 
-        let mut ts_index = TSIndex::new(PathBuf::from("aaa_test_index".to_string()))
+        let mut ts_index = TSIndex::new(PathBuf::from("/tmp/test".to_string()))
             .await
             .unwrap();
 

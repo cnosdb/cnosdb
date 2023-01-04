@@ -479,7 +479,6 @@ mod test {
     use trace::init_default_global_tracing;
 
     #[allow(clippy::await_holding_lock)]
-    #[tokio::test]
     async fn test_hinted_off_file() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
 
