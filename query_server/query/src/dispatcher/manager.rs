@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
-use datafusion::scheduler::Scheduler;
 use models::oid::Oid;
 
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::Output;
+use spi::query::scheduler::SchedulerRef;
 use spi::{
     query::{
         ast::ExtStatement,
@@ -164,8 +164,7 @@ pub struct SimpleQueryDispatcherBuilder {
     parser: Option<Arc<dyn Parser + Send + Sync>>,
     // cnosdb optimizer
     optimizer: Option<Arc<dyn Optimizer + Send + Sync>>,
-    // TODO 需要封装 scheduler
-    scheduler: Option<Arc<Scheduler>>,
+    scheduler: Option<SchedulerRef>,
 
     queries_limit: usize,
 }
@@ -191,7 +190,7 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
-    pub fn with_scheduler(mut self, scheduler: Arc<Scheduler>) -> Self {
+    pub fn with_scheduler(mut self, scheduler: SchedulerRef) -> Self {
         self.scheduler = Some(scheduler);
         self
     }

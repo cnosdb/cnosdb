@@ -10,6 +10,7 @@ pub mod logical_planner;
 pub mod optimizer;
 pub mod parser;
 pub mod physical_planner;
+pub mod scheduler;
 pub mod session;
 
 #[allow(dead_code)]
