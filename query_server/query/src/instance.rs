@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
-use datafusion::scheduler::Scheduler;
 use derive_builder::Builder;
 use models::{
     auth::{
@@ -25,10 +24,13 @@ use spi::{
 use trace::{debug, info};
 use tskv::kv_option::Options;
 
-use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
+use crate::{
+    auth::auth_control::{AccessControlImpl, AccessControlNoCheck},
+    execution::scheduler::LocalScheduler,
+};
 use meta::error::MetaError;
 use models::schema::DatabaseSchema;
 use snafu::ResultExt;
@@ -105,7 +107,7 @@ pub fn make_cnosdbms(
     let parser = Arc::new(DefaultParser::default());
     let optimizer = Arc::new(CascadeOptimizerBuilder::default().build());
     // TODO wrap, and num_threads configurable
-    let scheduler = Arc::new(Scheduler::new(num_cpus::get() * 2));
+    let scheduler = Arc::new(LocalScheduler {});
 
     let queries_limit = options.query.max_server_connections;
 
