@@ -685,9 +685,9 @@ mod test {
         check_wal_files(dir, data_vec, true).await.unwrap();
     }
 
-    #[tokio::test]
+    #[test]
     #[serial]
-    async fn test_recover_from_wal() {
+    fn test_recover_from_wal() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let dir = "/tmp/test/wal/4/wal";
@@ -729,9 +729,8 @@ mod test {
         let tskv = rt
             .block_on(TsKv::open(global_config.cluster, opt, rt.clone()))
             .unwrap();
-        let ver = tskv
-            .get_db_version("cnosdb", "db0", 10)
-            .await
+        let ver = rt
+            .block_on(tskv.get_db_version("cnosdb", "db0", 10))
             .unwrap()
             .unwrap();
         assert_eq!(ver.ts_family_id, 10);
