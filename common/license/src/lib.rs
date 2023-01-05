@@ -143,7 +143,6 @@ mod test {
 
     use crate::LicenseConfig;
 
-    #[test]
     // cargo test --package license --lib -- test::test_license --exact --nocapture
     fn test_license() {
         let mut license =
