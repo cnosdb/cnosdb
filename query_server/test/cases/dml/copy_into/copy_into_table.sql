@@ -1,5 +1,6 @@
 -- csv start
 --#DATABASE=ci_table_db
+DROP DATABASE IF EXISTS ci_table_db;
 CREATE DATABASE ci_table_db with TTL '3650d';
 
 DROP TABLE IF EXISTS inner_csv;

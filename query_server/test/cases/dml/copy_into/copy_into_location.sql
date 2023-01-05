@@ -1,6 +1,7 @@
 DROP TABLE IF EXISTS ci_location_tbl;
 DROP TABLE IF EXISTS ci_location_tbl_ext;
 DROP TABLE IF EXISTS ci_location_tbl2_ext;
+DROP TABLE IF EXISTS ci_location_tbl_ext_csv;
 
 CREATE EXTERNAL TABLE ci_location_tbl
 STORED AS PARQUET
@@ -31,3 +32,17 @@ STORED AS PARQUET
 LOCATION 'file:///tmp/data/parquet_out2/';
 
 select * from ci_location_tbl2_ext order by time,name limit 10;
+
+
+---- csv start
+copy into 'file:///tmp/data/csv_out/' 
+FROM (select time, name from ci_location_tbl)
+file_format = (type = 'csv');
+
+-- Create external table validation data
+CREATE EXTERNAL TABLE ci_location_tbl_ext_csv
+STORED AS CSV
+WITH HEADER ROW
+LOCATION 'file:///tmp/data/csv_out/';
+
+select * from ci_location_tbl_ext_csv order by time,name limit 10;

@@ -1,3 +1,7 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS ci_table_db; --
+200 OK
+
+
 -- EXECUTE SQL: CREATE DATABASE ci_table_db with TTL '3650d'; --
 200 OK
 
