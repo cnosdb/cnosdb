@@ -6,9 +6,9 @@ use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
 use futures::TryFutureExt;
 use libc::write;
-use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch::Receiver;
+use tokio::sync::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
 
 use config::get_config;
@@ -378,15 +378,16 @@ impl Summary {
                 tsf_min_seq.insert(edit.tsf_id, edit.seq_no);
             }
         }
-        let version_set = self.version_set.write();
+        let version_set = self.version_set.write().await;
         for (tsf_id, version_edits) in tsf_version_edits {
             let min_seq = tsf_min_seq.get(&tsf_id);
-            if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id) {
+            if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
                 let new_version = tsf
                     .read()
+                    .await
                     .version()
                     .copy_apply_version_edits(version_edits, min_seq.copied());
-                tsf.write().new_version(new_version);
+                tsf.write().await.new_version(new_version);
             }
         }
 
@@ -398,10 +399,11 @@ impl Summary {
             let mut edits = vec![];
             let mut files = vec![];
             {
-                let vs = self.version_set.read();
+                let vs = self.version_set.read().await;
                 let dbs = vs.get_all_db();
                 for (name, db) in dbs {
-                    let (mut tsf, mut tmp_files) = db.read().version_edit(self.ctx.last_seq());
+                    let (mut tsf, mut tmp_files) =
+                        db.read().await.version_edit(self.ctx.last_seq()).await;
                     edits.append(&mut tsf);
                     files.append(&mut tmp_files);
                 }
@@ -714,7 +716,7 @@ mod test {
             Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
                 .await
                 .unwrap();
-        assert_eq!(summary.version_set.read().tsf_num(), 1);
+        assert_eq!(summary.version_set.read().await.tsf_num().await, 1);
         assert_eq!(summary.ctx.tsfamily_id(), 100);
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
@@ -722,7 +724,7 @@ mod test {
         let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender.clone())
             .await
             .unwrap();
-        assert_eq!(summary.version_set.read().tsf_num(), 0);
+        assert_eq!(summary.version_set.read().await.tsf_num().await, 0);
     }
 
     fn test_version_edit() {
@@ -766,14 +768,19 @@ mod test {
         let db = summary
             .version_set
             .write()
+            .await
             .create_db(
                 DatabaseSchema::new("cnosdb", &database),
                 meta_manager.clone(),
             )
             .unwrap();
         for i in 0..40 {
-            db.write()
-                .add_tsfamily(i, 0, summary_task_sender.clone(), flush_task_sender.clone());
+            db.write().await.add_tsfamily(
+                i,
+                0,
+                summary_task_sender.clone(),
+                flush_task_sender.clone(),
+            );
             let mut edit = VersionEdit::new();
             edit.add_tsfamily(i, make_owner("cnosdb", &database));
             edits.push(edit.clone());
@@ -781,7 +788,9 @@ mod test {
 
         for _ in 0..100 {
             for i in 0..20 {
-                db.write().del_tsfamily(i, summary_task_sender.clone());
+                db.write()
+                    .await
+                    .del_tsfamily(i, summary_task_sender.clone());
                 let mut edit = VersionEdit::new();
                 edit.del_tsfamily(i);
                 edits.push(edit.clone());
@@ -794,7 +803,7 @@ mod test {
                 .await
                 .unwrap();
 
-        assert_eq!(summary.version_set.read().tsf_num(), 20);
+        assert_eq!(summary.version_set.read().await.tsf_num().await, 20);
     }
 
     async fn test_recover_summary_with_roll_1(
@@ -819,12 +828,13 @@ mod test {
         let db = summary
             .version_set
             .write()
+            .await
             .create_db(
                 DatabaseSchema::new("cnosdb", &database),
                 meta_manager.clone(),
             )
             .unwrap();
-        db.write().add_tsfamily(
+        db.write().await.add_tsfamily(
             10,
             0,
             summary_task_sender.clone(),
@@ -837,17 +847,20 @@ mod test {
         edits.push(edit);
 
         for _ in 0..100 {
-            db.write().del_tsfamily(0, summary_task_sender.clone());
+            db.write()
+                .await
+                .del_tsfamily(0, summary_task_sender.clone());
             let mut edit = VersionEdit::new();
             edit.del_tsfamily(0);
             edits.push(edit);
         }
 
         {
-            let vs = summary.version_set.write();
-            let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
+            let vs = summary.version_set.write().await;
+            let tsf = vs.get_tsfamily_by_tf_id(10).await.unwrap();
             let mut version = tsf
                 .read()
+                .await
                 .version()
                 .copy_apply_version_edits(edits.clone(), None);
 
@@ -865,7 +878,7 @@ mod test {
                 ..Default::default()
             };
             version.levels_info[1].push_compact_meta(&meta);
-            tsf.write().new_version(version);
+            tsf.write().await.new_version(version);
             edit.add_file(meta, 1);
             edits.push(edit);
         }
@@ -877,13 +890,19 @@ mod test {
                 .await
                 .unwrap();
 
-        let vs = summary.version_set.read();
-        let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
-        assert_eq!(tsf.read().version().last_seq, 1);
-        assert_eq!(tsf.read().version().levels_info[1].tsf_id, 10);
-        assert!(!tsf.read().version().levels_info[1].files[0].is_delta());
-        assert_eq!(tsf.read().version().levels_info[1].files[0].file_id(), 15);
-        assert_eq!(tsf.read().version().levels_info[1].files[0].size(), 100);
+        let vs = summary.version_set.read().await;
+        let tsf = vs.get_tsfamily_by_tf_id(10).await.unwrap();
+        assert_eq!(tsf.read().await.version().last_seq, 1);
+        assert_eq!(tsf.read().await.version().levels_info[1].tsf_id, 10);
+        assert!(!tsf.read().await.version().levels_info[1].files[0].is_delta());
+        assert_eq!(
+            tsf.read().await.version().levels_info[1].files[0].file_id(),
+            15
+        );
+        assert_eq!(
+            tsf.read().await.version().levels_info[1].files[0].size(),
+            100
+        );
         assert_eq!(summary.ctx.file_id(), 16);
     }
 }

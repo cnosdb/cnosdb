@@ -17,6 +17,8 @@ use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
 use std::{fmt::Debug, io};
 use store::command;
 use tokio::net::TcpStream;
@@ -474,7 +476,7 @@ impl RemoteMetaClient {
                 }
 
                 Err(err) => {
-                    info!("watch data result: {:?} {}", &cmd, err)
+                    info!("watch data result: {:?} {}", &cmd, err);
                 }
             }
         }

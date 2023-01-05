@@ -358,11 +358,10 @@ impl FlushTask {
     }
 }
 
-#[allow(clippy::await_holding_lock)]
 pub async fn run_flush_memtable_job(
     req: FlushReq,
     global_context: Arc<GlobalContext>,
-    version_set: Arc<RwLock<VersionSet>>,
+    version_set: Arc<tokio::sync::RwLock<VersionSet>>,
     summary_task_sender: UnboundedSender<SummaryTask>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
 ) -> Result<()> {
@@ -382,10 +381,10 @@ pub async fn run_flush_memtable_job(
         if caches.is_empty() {
             continue;
         }
-        let tsf_warp = version_set.read().get_tsfamily_by_tf_id(tsf_id);
+        let tsf_warp = version_set.read().await.get_tsfamily_by_tf_id(tsf_id).await;
         if let Some(tsf) = tsf_warp {
             // todo: build path by vnode data
-            let tsf_rlock = tsf.read();
+            let tsf_rlock = tsf.read().await;
             let storage_opt = tsf_rlock.storage_opt();
             let version = tsf_rlock.version();
             let database = tsf_rlock.database();

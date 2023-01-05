@@ -11,10 +11,10 @@ use futures::FutureExt;
 use libc::printf;
 use meta::meta_client::{MetaRef, RemoteMetaManager};
 use models::predicate::domain::{ColumnDomains, PredicateRef};
-use parking_lot::{Mutex, RwLock};
 use snafu::{OptionExt, ResultExt};
 use tokio::sync::watch;
 use tokio::sync::watch::{Receiver, Sender};
+use tokio::sync::RwLock;
 use tokio::{
     runtime::Runtime,
     sync::{
@@ -127,7 +127,8 @@ impl TsKv {
             summary.global_context(),
             summary.version_set(),
             summary_task_sender.clone(),
-        );
+        )
+        .await;
         core.run_summary_job(summary, summary_task_receiver);
         Ok(core)
     }
@@ -247,7 +248,7 @@ impl TsKv {
         info!("Flush task handler started");
     }
 
-    fn run_compact_job(
+    async fn run_compact_job(
         &self,
         mut receiver: UnboundedReceiver<TseriesFamilyId>,
         ctx: Arc<GlobalContext>,
@@ -256,11 +257,15 @@ impl TsKv {
     ) {
         self.runtime.spawn(async move {
             while let Some(ts_family_id) = receiver.recv().await {
-                let ts_family = version_set.read().get_tsfamily_by_tf_id(ts_family_id);
+                let ts_family = version_set
+                    .read()
+                    .await
+                    .get_tsfamily_by_tf_id(ts_family_id)
+                    .await;
                 if let Some(tsf) = ts_family {
                     info!("Starting compaction on ts_family {}", ts_family_id);
                     let start = Instant::now();
-                    let compact_req = tsf.read().pick_compaction();
+                    let compact_req = tsf.read().await.pick_compaction();
                     if let Some(req) = compact_req {
                         let database = req.database.clone();
                         let compact_ts_family = req.ts_family_id;
@@ -329,13 +334,13 @@ impl TsKv {
     // }
 
     // Compact TSM files in database into bigger TSM files.
-    #[allow(clippy::await_holding_lock)]
+
     pub async fn compact(&self, tenant: &str, database: &str) {
-        let database = self.version_set.read().get_db(tenant, database);
+        let database = self.version_set.read().await.get_db(tenant, database);
         if let Some(db) = database {
             // TODO: stop current and prevent next flush and compaction.
-            for (ts_family_id, ts_family) in db.read().ts_families() {
-                let compact_req = ts_family.read().pick_compaction();
+            for (ts_family_id, ts_family) in db.read().await.ts_families() {
+                let compact_req = ts_family.read().await.pick_compaction();
                 if let Some(req) = compact_req {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some(version_edit)) => {
@@ -359,10 +364,11 @@ impl TsKv {
         }
     }
 
-    pub fn get_db(&self, tenant: &str, database: &str) -> Result<Arc<RwLock<Database>>> {
+    pub async fn get_db(&self, tenant: &str, database: &str) -> Result<Arc<RwLock<Database>>> {
         let db = self
             .version_set
             .read()
+            .await
             .get_db(tenant, database)
             .ok_or(DatabaseNotFound {
                 database: database.to_string(),
@@ -370,10 +376,11 @@ impl TsKv {
         Ok(db)
     }
 
-    fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+    async fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
         if self
             .version_set
             .read()
+            .await
             .db_exists(schema.tenant_name(), schema.database_name())
         {
             return Err(Error::DatabaseAlreadyExists {
@@ -383,6 +390,7 @@ impl TsKv {
         let db = self
             .version_set
             .write()
+            .await
             .create_db(schema.clone(), self.meta_manager.clone())?;
         Ok(db)
     }
@@ -390,7 +398,6 @@ impl TsKv {
 
 #[async_trait::async_trait]
 impl Engine for TsKv {
-    #[allow(clippy::await_holding_lock)]
     async fn write(
         &self,
         id: TseriesFamilyId,
@@ -404,20 +411,24 @@ impl Engine for TsKv {
         let db_name = String::from_utf8(fb_points.db().unwrap().bytes().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
-        let db_warp = self.version_set.read().get_db(tenant_name, &db_name);
+        let db_warp = self.version_set.read().await.get_db(tenant_name, &db_name);
         let db = match db_warp {
             Some(database) => database,
-            None => self.create_database(&DatabaseSchema::new(tenant_name, &db_name))?,
+            None => {
+                self.create_database(&DatabaseSchema::new(tenant_name, &db_name))
+                    .await?
+            }
         };
 
-        let opt_index = db.read().get_ts_index(id);
+        let opt_index = db.read().await.get_ts_index(id);
         let ts_index = match opt_index {
             Some(v) => v,
-            None => db.write().get_ts_index_or_add(id).await?,
+            None => db.write().await.get_ts_index_or_add(id).await?,
         };
 
         let write_group = db
             .read()
+            .await
             .build_write_group(fb_points.points().unwrap(), ts_index)
             .await?;
 
@@ -439,10 +450,10 @@ impl Engine for TsKv {
             seq = rx.await.context(error::ReceiveSnafu)??.0;
         }
 
-        let opt_tsf = db.read().get_tsfamily(id);
+        let opt_tsf = db.read().await.get_tsfamily(id);
         let tsf = match opt_tsf {
             Some(v) => v,
-            None => db.write().add_tsfamily(
+            None => db.write().await.add_tsfamily(
                 id,
                 seq,
                 self.summary_task_sender.clone(),
@@ -450,15 +461,14 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().put_points(seq, write_group);
-        tsf.write().check_to_flush();
+        tsf.read().await.put_points(seq, write_group);
+        tsf.write().await.check_to_flush();
         Ok(WritePointsRpcResponse {
             version: 1,
             points: vec![],
         })
     }
 
-    #[allow(clippy::await_holding_lock)]
     async fn write_from_wal(
         &self,
         id: TseriesFamilyId,
@@ -473,26 +483,27 @@ impl Engine for TsKv {
         let db_name = String::from_utf8(fb_points.db().unwrap().bytes().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
-        let db = self.version_set.write().create_db(
+        let db = self.version_set.write().await.create_db(
             DatabaseSchema::new(tenant_name, &db_name),
             self.meta_manager.clone(),
         )?;
 
-        let opt_index = db.read().get_ts_index(id);
+        let opt_index = db.read().await.get_ts_index(id);
         let ts_index = match opt_index {
             Some(v) => v,
-            None => db.write().get_ts_index_or_add(id).await?,
+            None => db.write().await.get_ts_index_or_add(id).await?,
         };
 
         let write_group = db
             .read()
+            .await
             .build_write_group(fb_points.points().unwrap(), ts_index)
             .await?;
 
-        let opt_tsf = db.read().get_tsfamily(id);
+        let opt_tsf = db.read().await.get_tsfamily(id);
         let tsf = match opt_tsf {
             Some(v) => v,
-            None => db.write().add_tsfamily(
+            None => db.write().await.add_tsfamily(
                 id,
                 seq,
                 self.summary_task_sender.clone(),
@@ -500,7 +511,7 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().put_points(seq, write_group);
+        tsf.read().await.put_points(seq, write_group);
 
         return Ok(WritePointsRpcResponse {
             version: 1,
@@ -508,9 +519,9 @@ impl Engine for TsKv {
         });
     }
 
-    fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
-        if let Some(db) = self.version_set.read().get_db(tenant, database) {
-            let mut db_wlock = db.write();
+    async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            let mut db_wlock = db.write().await;
 
             db_wlock.del_tsfamily(id, self.summary_task_sender.clone());
         }
@@ -518,9 +529,9 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
-        if let Some(db) = self.version_set.write().delete_db(tenant, database) {
-            let mut db_wlock = db.write();
+    async fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
+        if let Some(db) = self.version_set.write().await.delete_db(tenant, database) {
+            let mut db_wlock = db.write().await;
             let ts_family_ids: Vec<TseriesFamilyId> = db_wlock
                 .ts_families()
                 .iter()
@@ -543,21 +554,17 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
+    async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
         let version_set = self.version_set.clone();
         let database = database.to_string();
         let table = table.to_string();
         let tenant = tenant.to_string();
-        futures::executor::block_on(database::delete_table_async(
-            tenant,
-            database,
-            table,
-            version_set,
-        ))
+
+        database::delete_table_async(tenant, database, table, version_set).await
     }
 
-    fn delete_columns(
+    async fn delete_columns(
         &self,
         tenant: &str,
         database: &str,
@@ -569,11 +576,11 @@ impl Engine for TsKv {
             .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid, *sid)))
             .collect();
 
-        if let Some(db) = self.version_set.read().get_db(tenant, database) {
-            for (ts_family_id, ts_family) in db.read().ts_families().iter() {
-                ts_family.write().delete_columns(&storage_field_ids);
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            for (ts_family_id, ts_family) in db.read().await.ts_families().iter() {
+                ts_family.write().await.delete_columns(&storage_field_ids);
 
-                let version = ts_family.read().super_version();
+                let version = ts_family.read().await.super_version();
                 for column_file in version
                     .version
                     .column_files(&storage_field_ids, &TimeRange::all())
@@ -588,7 +595,7 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn delete_series(
+    async fn delete_series(
         &self,
         tenant: &str,
         database: &str,
@@ -620,20 +627,20 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn get_table_schema(
+    async fn get_table_schema(
         &self,
         tenant: &str,
         database: &str,
         tab: &str,
     ) -> Result<Option<TskvTableSchema>> {
-        if let Some(db) = self.version_set.read().get_db(tenant, database) {
-            let val = db.read().get_table_schema(tab)?;
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            let val = db.read().await.get_table_schema(tab)?;
             return Ok(val);
         }
         Ok(None)
     }
 
-    fn get_series_id_by_filter(
+    async fn get_series_id_by_filter(
         &self,
         id: u32,
         tenant: &str,
@@ -641,13 +648,13 @@ impl Engine for TsKv {
         tab: &str,
         filter: &ColumnDomains<String>,
     ) -> IndexResult<Vec<u32>> {
-        if let Some(db) = self.version_set.read().get_db(tenant, database) {
-            let opt_index = db.read().get_ts_index(id);
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            let opt_index = db.read().await.get_ts_index(id);
             if let Some(ts_index) = opt_index {
                 if filter.is_all() {
                     // Match all records
                     debug!("pushed tags filter is All.");
-                    return ts_index.read().get_series_id_list(tab, &[]);
+                    return ts_index.read().await.get_series_id_list(tab, &[]);
                 } else if filter.is_none() {
                     // Does not match any record, return null
                     debug!("pushed tags filter is None.");
@@ -656,7 +663,10 @@ impl Engine for TsKv {
                     // No error will be reported here
                     debug!("pushed tags filter is {:?}.", filter);
                     let domains = unsafe { filter.domains_unsafe() };
-                    return ts_index.read().get_series_ids_by_domains(tab, domains);
+                    return ts_index
+                        .read()
+                        .await
+                        .get_series_ids_by_domains(tab, domains);
                 }
             }
         }
@@ -664,62 +674,66 @@ impl Engine for TsKv {
         Ok(vec![])
     }
 
-    fn get_series_key(
+    async fn get_series_key(
         &self,
         tenant: &str,
         database: &str,
         vnode_id: u32,
         sid: u32,
     ) -> IndexResult<Option<SeriesKey>> {
-        if let Some(db) = self.version_set.read().get_db(tenant, database) {
-            return db.read().get_series_key(vnode_id, sid);
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            return db.read().await.get_series_key(vnode_id, sid).await;
         }
 
         Ok(None)
     }
 
-    fn get_db_version(
+    async fn get_db_version(
         &self,
         tenant: &str,
         database: &str,
         vnode_id: u32,
     ) -> Result<Option<Arc<SuperVersion>>> {
-        let version_set = self.version_set.read();
+        let version_set = self.version_set.read().await;
         if !version_set.db_exists(tenant, database) {
             return Err(Error::DatabaseNotFound {
                 database: database.to_string(),
             });
         }
-        if let Some(tsf) = version_set.get_tsfamily_by_name_id(tenant, database, vnode_id) {
-            Ok(Some(tsf.read().super_version()))
+        if let Some(tsf) = version_set
+            .get_tsfamily_by_name_id(tenant, database, vnode_id)
+            .await
+        {
+            Ok(Some(tsf.read().await.super_version()))
         } else {
             warn!("ts_family with db name '{}' not found.", database);
             Ok(None)
         }
     }
 
-    fn add_table_column(
+    async fn add_table_column(
         &self,
         tenant: &str,
         database: &str,
         table: &str,
         column: TableColumn,
     ) -> Result<()> {
-        let db = self.get_db(tenant, database)?;
-        db.read().add_table_column(table, column)?;
+        let db = self.get_db(tenant, database).await?;
+        db.read().await.add_table_column(table, column)?;
         Ok(())
     }
 
-    fn drop_table_column(
+    async fn drop_table_column(
         &self,
         tenant: &str,
         database: &str,
         table: &str,
         column_name: &str,
     ) -> Result<()> {
-        let db = self.get_db(tenant, database)?;
+        let db = self.get_db(tenant, database).await?;
         let schema = db
             .read()
+            .await
             .get_table_schema(table)?
             .ok_or(Error::NotFoundTable {
                 table_name: table.to_string(),
@@ -730,19 +744,20 @@ impl Engine for TsKv {
                 reason: column_name.to_string(),
             })?
             .id;
-        db.read().drop_table_column(table, column_name)?;
+        db.read().await.drop_table_column(table, column_name)?;
 
         let mut sid = vec![];
-        for (_, ts_index) in db.read().ts_indexes().iter() {
-            let mut list = ts_index.read().get_series_id_list(table, &[])?;
+        for (_, ts_index) in db.read().await.ts_indexes().iter() {
+            let mut list = ts_index.read().await.get_series_id_list(table, &[])?;
             sid.append(&mut list);
         }
 
-        self.delete_columns(tenant, database, &sid, &[column_id])?;
+        self.delete_columns(tenant, database, &sid, &[column_id])
+            .await?;
         Ok(())
     }
 
-    fn change_table_column(
+    async fn change_table_column(
         &self,
         tenant: &str,
         database: &str,
@@ -750,8 +765,9 @@ impl Engine for TsKv {
         column_name: &str,
         new_column: TableColumn,
     ) -> Result<()> {
-        let db = self.get_db(tenant, database)?;
+        let db = self.get_db(tenant, database).await?;
         db.read()
+            .await
             .change_table_column(table, column_name, new_column)?;
         Ok(())
     }
