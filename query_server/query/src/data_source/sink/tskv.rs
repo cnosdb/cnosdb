@@ -14,7 +14,7 @@ use spi::query::DEFAULT_CATALOG;
 
 use crate::utils::point_util::record_batch_to_points_flat_buffer;
 
-use super::sink::{RecordBatchSink, RecordBatchSinkProvider};
+use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata};
 
 pub struct TskvRecordBatchSink {
     coord: CoordinatorRef,
@@ -26,7 +26,7 @@ pub struct TskvRecordBatchSink {
 
 #[async_trait]
 impl RecordBatchSink for TskvRecordBatchSink {
-    async fn append(&self, record_batch: RecordBatch) -> Result<()> {
+    async fn append(&self, record_batch: RecordBatch) -> Result<SinkMetadata> {
         trace::trace!(
             "Partition: {}, \nTskvTableSchema: {:?}, \nTskvRecordBatchSink::append: {:?}",
             self.partition,
@@ -34,11 +34,14 @@ impl RecordBatchSink for TskvRecordBatchSink {
             record_batch,
         );
 
+        let rows_writed = record_batch.num_rows();
+
         // record batchs to points
         let timer = self.metrics.elapsed_record_batch_to_point().timer();
         let points = record_batch_to_points_flat_buffer(&record_batch, self.schema.clone())?;
         // .context(PointUtilSnafu)?;
         timer.done();
+        let bytes_writed = points.len();
 
         // points write request
         let timer = self.metrics.elapsed_point_write().timer();
@@ -52,7 +55,7 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         timer.done();
 
-        Ok(())
+        Ok(SinkMetadata::new(rows_writed, bytes_writed))
     }
 }
 

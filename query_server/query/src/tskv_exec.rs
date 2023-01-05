@@ -17,6 +17,7 @@ use datafusion::{
 };
 use models::predicate::domain::PredicateRef;
 use models::schema::TskvTableSchemaRef;
+use trace::debug;
 
 use crate::stream::TableScanStream;
 use tskv::iterator::TableScanMetrics;
@@ -95,6 +96,13 @@ impl ExecutionPlan for TskvExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
+        debug!(
+            "Start TskvExec::execute for partition {} of context session_id {} and task_id {:?}",
+            partition,
+            context.session_id(),
+            context.task_id()
+        );
+
         let batch_size = context.session_config().batch_size();
 
         let metrics = TableScanMetrics::new(&self.metrics, partition);

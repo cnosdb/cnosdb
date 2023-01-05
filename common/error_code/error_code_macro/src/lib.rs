@@ -77,7 +77,7 @@ impl ToTokens for ErrorCodeMatchArm<'_> {
         let code = match field_container.code.as_ref() {
             Some(c) => {
                 let code: u64 = c.code_num.base10_parse().unwrap();
-                assert!(code > 0 && code < 1000);
+                assert!(code > 0 && code < 10_000);
 
                 mod_code.push_str(&format!("{:04}", code));
                 let code = LitStr::new(&mod_code, Span::call_site());

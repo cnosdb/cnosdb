@@ -1,4 +1,7 @@
 -- csv start
+--#DATABASE=ci_table_db
+CREATE DATABASE ci_table_db with TTL '3650d';
+
 DROP TABLE IF EXISTS inner_csv;
 
 CREATE TABLE inner_csv(
@@ -55,7 +58,7 @@ create table inner_parquet(
 );
 
 COPY INTO inner_parquet
-FROM '/Users/yukkit/VCWorkspace/cnosdb/query_server/test/resource/parquet/part-0.parquet'
+FROM 'query_server/test/resource/parquet/part-0.parquet'
 file_format = (type = 'parquet');
 
 select count(time) from inner_parquet;
