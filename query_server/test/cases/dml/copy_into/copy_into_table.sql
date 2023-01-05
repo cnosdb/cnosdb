@@ -64,3 +64,33 @@ file_format = (type = 'parquet');
 
 select count(time) from inner_parquet;
 -- parquet end
+
+copy into inner_parquet
+from 'query_server/test/resource/csv/part-0.csv' 
+file_format = (type = 'csv');
+
+copy into inner_parquet
+from 'query_server/test/resource/json/part-0.json' 
+file_format = (type = 'json');
+
+copy into inner_parquet
+from 'query_server/test/resource/parquet/part-0.parquet' 
+file_format = (type = 'parquet');
+
+-- error: Insert columns and Source columns not match
+copy into inner_parquet
+from 'query_server/test/resource/json/part-0.json' 
+file_format = (type = 'json')
+copy_options = (auto_infer_schema = true);
+
+-- error: Insert columns and Source columns not match
+copy into inner_parquet
+from 'query_server/test/resource/json/part-0.json' 
+file_format = (type = 'json')
+copy_options = (auto_infer_schema = true);
+
+-- ok, parquet has metadata
+copy into inner_parquet
+from 'query_server/test/resource/parquet/part-0.parquet' 
+file_format = (type = 'parquet')
+copy_options = (auto_infer_schema = true);

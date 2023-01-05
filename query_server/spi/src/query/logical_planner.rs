@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use crate::service::protocol::QueryId;
 use crate::ParserSnafu;
 use crate::QueryError;
@@ -461,34 +459,12 @@ pub fn normalize_ident(id: &Ident) -> String {
 }
 
 pub struct CopyOptions {
-    #[allow(dead_code)]
-    on_error: OnError,
-}
-
-pub enum OnError {
-    Continue,
-    Abort,
-}
-
-impl FromStr for OnError {
-    type Err = QueryError;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        let s = s.to_uppercase();
-        match s.as_str() {
-            "CONTINUE" => Ok(OnError::Continue),
-            "ABORT" => Ok(OnError::Abort),
-            "" => Ok(OnError::Abort),
-            _ => Err(QueryError::Semantic {
-                err: format!("Unknown OnError: {}", s),
-            }),
-        }
-    }
+    pub auto_infer_schema: bool,
 }
 
 #[derive(Default)]
 pub struct CopyOptionsBuilder {
-    on_error: Option<OnError>,
+    auto_infer_schema: Option<bool>,
 }
 
 impl CopyOptionsBuilder {
@@ -500,9 +476,8 @@ impl CopyOptionsBuilder {
     ) -> std::result::Result<Self, QueryError> {
         for SqlOption { ref name, value } in options {
             match normalize_ident(name).as_str() {
-                "on_error" => {
-                    let on_error = OnError::from_str(&parse_string_value(value)?)?;
-                    self.on_error = Some(on_error);
+                "auto_infer_schema" => {
+                    self.auto_infer_schema = Some(parse_bool_value(value)?);
                 }
                 option => {
                     return Err(QueryError::Semantic {
@@ -518,35 +493,16 @@ impl CopyOptionsBuilder {
     /// Construct CopyOptions and assign default value
     pub fn build(self) -> CopyOptions {
         CopyOptions {
-            on_error: self.on_error.unwrap_or(OnError::Abort),
+            auto_infer_schema: self.auto_infer_schema.unwrap_or_default(),
         }
     }
 }
 
 pub struct FileFormatOptions {
-    // TODO If None, then auto infer file type
     pub file_type: FileType,
     pub delimiter: char,
     pub with_header: bool,
     pub file_compression_type: FileCompressionType,
-}
-
-impl FileFormatOptions {
-    pub fn file_type(&self) -> &FileType {
-        &self.file_type
-    }
-
-    pub fn delimiter(&self) -> char {
-        self.delimiter
-    }
-
-    pub fn with_header(&self) -> bool {
-        self.with_header
-    }
-
-    pub fn file_compression_type(&self) -> &FileCompressionType {
-        &self.file_compression_type
-    }
 }
 
 #[derive(Debug, Default)]

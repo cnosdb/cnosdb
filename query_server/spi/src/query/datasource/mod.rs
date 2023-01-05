@@ -1,9 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use datafusion::{
-    error::DataFusionError, execution::context::SessionState, physical_plan::ExecutionPlan,
-};
 use object_store::{
     aws::AmazonS3Builder, azure::MicrosoftAzureBuilder, gcp::GoogleCloudStorageBuilder, path::Path,
     ObjectStore,
@@ -14,15 +10,6 @@ use super::logical_planner::ConnectionOptions;
 pub mod azure;
 pub mod gcs;
 pub mod s3;
-
-#[async_trait]
-pub trait WriteExecExt {
-    async fn write(
-        &self,
-        state: &SessionState,
-        input: Arc<dyn ExecutionPlan>,
-    ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError>;
-}
 
 pub struct WriteContext {
     location: Path,

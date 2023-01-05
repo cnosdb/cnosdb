@@ -38,7 +38,7 @@ rows
 
 -- EXECUTE SQL: COPY INTO inner_csv_v2 FROM 'query_server/query/tests/data/csv/full_data_type.csv' file_format = (type = 'csv'); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Failed to fetch record batch, error: Cast error: Cannot cast string 'hello word' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Failed to fetch record batch, error: External error: Execution error: Arrow error: Parser error: Error while parsing value hello word for column 4 at line 1"}
 -- ERROR:  --
 
 -- EXECUTE SQL: drop table if EXISTS inner_parquet; --
@@ -58,6 +58,40 @@ rows
 -- EXECUTE SQL: select count(time) from inner_parquet; --
 200 OK
 COUNT(inner_parquet.time)
+8192
+
+
+-- EXECUTE SQL: copy into inner_parquet from 'query_server/test/resource/csv/part-0.csv' file_format = (type = 'csv'); --
+200 OK
+rows
+10
+
+
+-- EXECUTE SQL: copy into inner_parquet from 'query_server/test/resource/json/part-0.json' file_format = (type = 'json'); --
+200 OK
+rows
+10
+
+
+-- EXECUTE SQL: copy into inner_parquet from 'query_server/test/resource/parquet/part-0.parquet' file_format = (type = 'parquet'); --
+200 OK
+rows
+8192
+
+
+-- EXECUTE SQL: copy into inner_parquet from 'query_server/test/resource/json/part-0.json' file_format = (type = 'json') copy_options = (auto_infer_schema = true); --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Insert columns and Source columns not match"}
+-- ERROR:  --
+
+-- EXECUTE SQL: copy into inner_parquet from 'query_server/test/resource/json/part-0.json' file_format = (type = 'json') copy_options = (auto_infer_schema = true); --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Insert columns and Source columns not match"}
+-- ERROR:  --
+
+-- EXECUTE SQL: copy into inner_parquet from 'query_server/test/resource/parquet/part-0.parquet' file_format = (type = 'parquet') copy_options = (auto_infer_schema = true); --
+200 OK
+rows
 8192
 
 
