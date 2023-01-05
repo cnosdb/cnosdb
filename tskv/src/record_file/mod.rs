@@ -82,4 +82,5 @@ pub enum RecordDataType {
     Summary = 1,
     Tombstone = 4,
     Wal = 8,
+    IndexLog = 16,
 }

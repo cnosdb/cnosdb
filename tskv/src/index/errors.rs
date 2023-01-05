@@ -1,4 +1,5 @@
 use snafu::Snafu;
+use std::{fmt::Debug, io};
 
 use crate::record_file;
 use sled;
@@ -26,8 +27,20 @@ pub enum IndexError {
     #[snafu(display("Decode TableSchema failed for '{}'", table))]
     DecodeTableSchema { table: String },
 
+    #[snafu(display("Decode Series Key failed for '{}'", msg))]
+    DecodeSeriesKey { msg: String },
+
     #[snafu(display("index storage error: {}", msg))]
     IndexStroage { msg: String },
+
+    #[snafu(display("roaring encode/decode error: {}", msg))]
+    RoaringBitmap { msg: String },
+
+    #[snafu(display("binlog storage error: {}", msg))]
+    IOErrors { msg: String },
+
+    #[snafu(display("file error: {}", msg))]
+    FileErrors { msg: String },
 
     #[snafu(display("column '{}' already exists", column))]
     ColumnAlreadyExists { column: String },
@@ -36,6 +49,14 @@ pub enum IndexError {
 impl From<sled::Error> for IndexError {
     fn from(err: sled::Error) -> Self {
         IndexError::IndexStroage {
+            msg: err.to_string(),
+        }
+    }
+}
+
+impl From<io::Error> for IndexError {
+    fn from(err: io::Error) -> Self {
+        IndexError::IOErrors {
             msg: err.to_string(),
         }
     }

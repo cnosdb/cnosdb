@@ -322,10 +322,11 @@ impl HintedOffWriter {
             file_manager::get_file_manager().create_file(path).await?
         };
 
+        let mut size = file.len();
         if new_file {
+            size = 8;
             HintedOffWriter::write_header(&file, SEGMENT_FILE_HEADER_SIZE as u32).await?;
         }
-        let size = file.len();
 
         Ok(Self { id, file, size })
     }
@@ -478,7 +479,6 @@ mod test {
     use trace::init_default_global_tracing;
 
     #[allow(clippy::await_holding_lock)]
-    #[tokio::test]
     async fn test_hinted_off_file() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
 

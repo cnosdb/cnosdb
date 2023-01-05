@@ -1,2 +1,0 @@
-1. wal 记录vnodeid，不然恢复不方便。
-2. limit/batch_size/tenant 跨节点传输

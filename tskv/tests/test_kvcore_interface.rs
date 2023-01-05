@@ -96,7 +96,7 @@ mod tests {
         });
 
         assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush/data/cnosdb.db/tsm/0"
+            "/tmp/test/kvcore/kvcore_flush/data/cnosdb.db/0/tsm"
         ))
     }
 
@@ -149,10 +149,10 @@ mod tests {
         });
 
         assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.db/tsm/0"
+            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.db/0/tsm"
         ));
         assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.db/delta/0"
+            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.db/0/delta"
         ));
     }
 

@@ -17,7 +17,6 @@ use crate::{
     database::Database,
     error::MetaSnafu,
     error::Result,
-    index::db_index,
     kv_option::StorageOptions,
     memcache::MemCache,
     summary::{SummaryTask, VersionEdit},
@@ -40,7 +39,8 @@ impl VersionSet {
         }
     }
 
-    pub fn new(
+    #[allow(clippy::await_holding_lock)]
+    pub async fn new(
         meta: MetaRef,
         opt: Arc<Options>,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
@@ -68,7 +68,9 @@ impl VersionSet {
                         meta.clone(),
                     )?)));
 
+            let tf_id = ver.tf_id();
             db.write().open_tsfamily(ver, flush_task_sender.clone());
+            db.write().get_ts_index_or_add(tf_id).await?;
         }
 
         Ok(Self { dbs, opt })

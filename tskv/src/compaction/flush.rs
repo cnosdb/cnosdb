@@ -258,7 +258,7 @@ impl FlushTask {
                 values.sort_by_key(|a| a.0);
                 utils::dedup_front_by_key(&mut values, |a| a.0);
 
-                let field_id = model_utils::unite_id(col as u64, series_id);
+                let field_id = model_utils::unite_id(col, series_id);
                 let mut delta_blocks = Vec::new();
                 let mut tsm_blocks = Vec::new();
                 let mut tsm_blk = DataBlock::new(data_block_size, *typ);

@@ -141,3 +141,9 @@ pub enum Error {
     #[snafu(display("file has no footer"))]
     NoFooter,
 }
+
+impl From<crate::index::IndexError> for Error {
+    fn from(err: crate::index::IndexError) -> Self {
+        Error::IndexErr { source: err }
+    }
+}
