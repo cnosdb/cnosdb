@@ -2,6 +2,7 @@ use crate::service::protocol::QueryId;
 use coordinator::errors::CoordinatorError;
 use datafusion::arrow::error::ArrowError;
 use datafusion::common::DataFusionError;
+use datafusion::parquet::errors::ParquetError;
 use datafusion::sql::sqlparser::parser::ParserError;
 use error_code::ErrorCoder;
 use meta::error::MetaError;
@@ -32,6 +33,11 @@ pub enum QueryError {
 
     Coordinator {
         source: CoordinatorError,
+    },
+
+    #[error_code(code = 9999)]
+    Unimplement {
+        msg: String,
     },
 
     #[error_code(code = 1)]
@@ -307,6 +313,24 @@ pub enum QueryError {
     #[error_code(code = 47)]
     ObjectStore {
         source: object_store::Error,
+    },
+
+    #[error_code(code = 48)]
+    #[snafu(display("Failed to close parquet writer, error: {}", source))]
+    CloseParquetWriter {
+        source: ParquetError,
+    },
+
+    #[error_code(code = 49)]
+    #[snafu(display("Failed to serialize data to parquet bytes, error: {}", source))]
+    SerializeParquet {
+        source: ParquetError,
+    },
+
+    #[error_code(code = 50)]
+    #[snafu(display("Failed to build parquet writer, error: {}", source))]
+    BuildParquetArrowWriter {
+        source: ParquetError,
     },
 }
 

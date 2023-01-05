@@ -1,3 +1,7 @@
+-- EXECUTE SQL: CREATE DATABASE ci_table_db with TTL '3650d'; --
+200 OK
+
+
 -- EXECUTE SQL: DROP TABLE IF EXISTS inner_csv; --
 200 OK
 
@@ -30,7 +34,7 @@ rows
 
 -- EXECUTE SQL: COPY INTO inner_csv_v2 FROM 'query_server/query/tests/data/csv/full_data_type.csv' file_format = (type = 'csv'); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'hello word' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Failed to fetch record batch, error: Cast error: Cannot cast string 'hello word' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: drop table if EXISTS inner_parquet; --
@@ -41,7 +45,7 @@ rows
 200 OK
 
 
--- EXECUTE SQL: COPY INTO inner_parquet FROM '/Users/yukkit/VCWorkspace/cnosdb/query_server/test/resource/parquet/part-0.parquet' file_format = (type = 'parquet'); --
+-- EXECUTE SQL: COPY INTO inner_parquet FROM 'query_server/test/resource/parquet/part-0.parquet' file_format = (type = 'parquet'); --
 200 OK
 rows
 8192

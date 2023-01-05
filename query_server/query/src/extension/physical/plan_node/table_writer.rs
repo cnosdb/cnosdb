@@ -9,7 +9,7 @@ use datafusion::{
     execution::context::TaskContext,
     physical_expr::PhysicalSortExpr,
     physical_plan::{
-        common::{batch_byte_size, SizedRecordBatchStream},
+        common::SizedRecordBatchStream,
         metrics::{self, ExecutionPlanMetricsSet, MemTrackingMetrics, MetricBuilder, MetricsSet},
         stream::RecordBatchStreamAdapter,
         DisplayFormatType, Distribution, ExecutionPlan, Partitioning, SendableRecordBatchStream,
@@ -21,15 +21,13 @@ use spi::query::AFFECTED_ROWS;
 use std::{any::Any, fmt::Debug, sync::Arc};
 
 use datafusion::error::Result;
-use futures::StreamExt;
-use models::schema::TskvTableSchemaRef;
 use trace::debug;
 
-use crate::data_source::sink::{RecordBatchSink, RecordBatchSinkProvider};
+use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata};
 
 pub struct TableWriterExec {
     input: Arc<dyn ExecutionPlan>,
-    table: TskvTableSchemaRef,
+    table: String,
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
 
@@ -41,7 +39,7 @@ pub struct TableWriterExec {
 impl TableWriterExec {
     pub fn new(
         input: Arc<dyn ExecutionPlan>,
-        table: TskvTableSchemaRef,
+        table: String,
         record_batch_sink_provider: Arc<dyn RecordBatchSinkProvider>,
     ) -> Self {
         let schema = Arc::new(Schema::new(vec![Field::new(
@@ -148,28 +146,7 @@ impl ExecutionPlan for TableWriterExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default => {
-                let schemas: Vec<String> = self
-                    .table
-                    .columns()
-                    .iter()
-                    .map(|v| format!("{} := {}", v.name, v.column_type))
-                    .collect();
-
-                let outputs = self
-                    .schema
-                    .fields
-                    .iter()
-                    .map(|v| v.name().to_string())
-                    .collect::<Vec<_>>();
-
-                write!(
-                    f,
-                    "TableWriterExec: schema=[{}], output=[{}]",
-                    schemas.join(", "),
-                    outputs.join(", ")
-                )?;
-
-                Ok(())
+                write!(f, "TableWriterExec: [{}]", self.table,)
             }
         }
     }
@@ -185,36 +162,29 @@ impl ExecutionPlan for TableWriterExec {
 
 async fn do_write(
     schema: SchemaRef,
-    mut input: SendableRecordBatchStream,
+    input: SendableRecordBatchStream,
     record_batch_sink: Box<dyn RecordBatchSink>,
     metrics: TableWriterMetrics,
 ) -> Result<SendableRecordBatchStream> {
-    while let Some(batch) = input.next().await {
-        let batch: RecordBatch = batch?;
-        let num_rows = batch.num_rows();
-        let size = batch_byte_size(&batch);
+    let timer = metrics.elapsed_compute().timer();
+    let sink_metadata = record_batch_sink
+        .stream_write(input)
+        .await
+        .map_err(|e| DataFusionError::External(Box::new(e)))?;
+    timer.done();
 
-        let timer = metrics.elapsed_compute().timer();
-        record_batch_sink
-            .append(batch)
-            .await
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        timer.done();
-
-        metrics.record_rows_writed(num_rows);
-        metrics.record_bytes_writed(size);
-    }
-
+    metrics.record_rows_writed(sink_metadata.rows_writed());
+    metrics.record_bytes_writed(sink_metadata.bytes_writed());
     metrics.done();
 
-    aggregate_statistiction(schema, metrics)
+    aggregate_statistiction(schema, sink_metadata)
 }
 
 fn aggregate_statistiction(
     schema: SchemaRef,
-    metrics: TableWriterMetrics,
+    metrics: SinkMetadata,
 ) -> Result<SendableRecordBatchStream> {
-    let rows_writed = metrics.rows_writed().value();
+    let rows_writed = metrics.rows_writed();
 
     let output_rows_col = Arc::new(UInt64Array::from(vec![rows_writed as u64]));
 

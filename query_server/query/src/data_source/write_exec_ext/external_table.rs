@@ -1,3 +1,102 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use datafusion::{
+    datasource::{
+        file_format::{
+            avro::AvroFormat, csv::CsvFormat, json::JsonFormat, parquet::ParquetFormat, FileFormat,
+        },
+        listing::ListingTable,
+    },
+    error::DataFusionError,
+    execution::context::SessionState,
+    physical_plan::ExecutionPlan,
+};
+use object_store::path::Path;
+use trace::debug;
+use url::Url;
+
+use crate::{
+    data_source::{
+        sink::{
+            obj_store::{
+                serializer::parquet::ParquetRecordBatchSerializer, ObjectStoreSinkProvider,
+            },
+            DynRecordBatchSerializer,
+        },
+        WriteExecExt,
+    },
+    extension::physical::plan_node::table_writer::TableWriterExec,
+};
+
+#[async_trait]
+impl WriteExecExt for ListingTable {
+    async fn write(
+        &self,
+        state: &SessionState,
+        input: Arc<dyn ExecutionPlan>,
+    ) -> Result<Arc<TableWriterExec>, DataFusionError> {
+        let table_paths = self.table_paths();
+        debug!("Try get ListingTable's ExecutionPlan: {:?}", table_paths);
+
+        let listing_table_url = unsafe {
+            debug_assert_eq!(
+                1,
+                table_paths.len(),
+                "ListingTable has multiple ListingTableUrl"
+            );
+            table_paths.get_unchecked(0)
+        };
+
+        let object_store_url = listing_table_url.object_store();
+        let url_str = listing_table_url.to_string();
+        let url: &Url = listing_table_url.as_ref();
+
+        debug!("Parse external location: {:?}", url.path());
+        let location = Path::parse(url.path())?;
+
+        debug!("Get object_store by url: {:?}", object_store_url);
+        let object_store = state.runtime_env.object_store(&object_store_url)?;
+        let serializer = get_record_batch_serializer(self.options().format.clone())?;
+        let file_extension = self.options().file_extension.clone();
+
+        let record_batch_sink_provider = Arc::new(ObjectStoreSinkProvider::new(
+            location,
+            object_store,
+            serializer,
+            file_extension,
+        ));
+
+        Ok(Arc::new(TableWriterExec::new(
+            input,
+            url_str,
+            record_batch_sink_provider,
+        )))
+    }
+}
+
+fn get_record_batch_serializer(
+    format: Arc<dyn FileFormat>,
+) -> Result<Arc<DynRecordBatchSerializer>, DataFusionError> {
+    let any = format.as_any();
+    let result = if any.is::<ParquetFormat>() {
+        Arc::new(ParquetRecordBatchSerializer {}) as _
+    } else if any.is::<CsvFormat>() {
+        unimplemented!()
+    } else if any.is::<AvroFormat>() {
+        unimplemented!()
+    } else if any.is::<JsonFormat>() {
+        unimplemented!()
+    } else {
+        return Err(DataFusionError::NotImplemented(
+            "Only support ParquetFormat | CsvFormat | AvroFormat | JsonFormat, this maybe a bug."
+                .to_string(),
+        ));
+    };
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;

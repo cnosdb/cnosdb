@@ -18,14 +18,14 @@ use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
 
-pub type DefaultLogicalPlanner<S> = SqlPlaner<S>;
+pub type DefaultLogicalPlanner<'a, S> = SqlPlaner<'a, S>;
 
 pub trait TableWriteExt {
     fn write(
         self,
         target_table: Arc<dyn TableSource>,
         table_name: &str,
-        insert_columns: Vec<String>,
+        insert_columns: &[String],
     ) -> DFResult<Self>
     where
         Self: Sized;
@@ -36,9 +36,23 @@ impl TableWriteExt for LogicalPlanBuilder {
         self,
         target_table: Arc<dyn TableSource>,
         table_name: &str,
-        insert_columns: Vec<String>,
+        insert_columns: &[String],
     ) -> DFResult<Self> {
+        let insert_columns = extract_column_names(insert_columns, target_table.clone());
+
         let source_plan = self.build()?;
+
+        debug!("Build writer plan: target table schema: {:?}, insert_columns: {:?}, source schema: {:?}",
+            target_table.schema(),
+            insert_columns,
+            source_plan.schema(),
+        );
+
+        debug!(
+            "Build writer plan: source plan:\n{}",
+            source_plan.display_indent_schema(),
+        );
+
         // Check if the plan is legal
         semantic_check(insert_columns.as_ref(), &source_plan, target_table.clone())
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
@@ -46,12 +60,28 @@ impl TableWriteExt for LogicalPlanBuilder {
         let final_source_logical_plan = add_projection_between_source_and_insert_node_if_necessary(
             target_table.clone(),
             source_plan,
-            insert_columns,
+            insert_columns.as_ref(),
         )?;
 
         let plan = table_write_plan_node(table_name, target_table, final_source_logical_plan)?;
 
         Ok(Self::from(plan))
+    }
+}
+
+fn extract_column_names(
+    columns: &[String],
+    target_table_source_ref: Arc<dyn TableSource>,
+) -> Vec<String> {
+    if columns.is_empty() {
+        target_table_source_ref
+            .schema()
+            .fields()
+            .iter()
+            .map(|e| e.name().clone())
+            .collect()
+    } else {
+        columns.to_vec()
     }
 }
 
@@ -101,7 +131,7 @@ fn semantic_check(
 fn add_projection_between_source_and_insert_node_if_necessary(
     target_table: Arc<dyn TableSource>,
     source_plan: LogicalPlan,
-    insert_columns: Vec<String>,
+    insert_columns: &[String],
 ) -> DFResult<LogicalPlan> {
     let insert_col_name_with_source_field_tuples: Vec<(&String, &DFField)> = insert_columns
         .iter()

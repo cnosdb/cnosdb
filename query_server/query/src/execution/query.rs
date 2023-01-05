@@ -61,6 +61,7 @@ impl SqlQueryExecution {
                 self.query_state_machine.session.inner().task_ctx(),
             )?
             .stream();
+        debug!("Success build result stream.");
         let schema_ref = stream.schema();
         let execution_result = stream.try_collect::<Vec<_>>().await?;
         self.query_state_machine.end_schedule();

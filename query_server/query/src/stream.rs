@@ -6,7 +6,7 @@ use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
     physical_plan::RecordBatchStream,
 };
-use futures::{executor::block_on, Stream};
+use futures::{executor::block_on, FutureExt, Stream};
 use models::codec::Encoding;
 use models::schema::TskvTableSchemaRef;
 use models::{
@@ -100,21 +100,22 @@ impl Stream for TableScanStream {
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
         let timer = this.metrics.elapsed_compute().timer();
-        let res = block_on(this.iterator.next());
-        let result = match res {
-            Some(data) => match data {
-                Ok(batch) => Poll::Ready(Some(Ok(batch))),
-                Err(err) => Poll::Ready(Some(Err(ArrowError::CastError(err.to_string())))),
-            },
-            None => {
+
+        let result = match Box::pin(this.iterator.next()).poll_unpin(cx) {
+            Poll::Ready(Some(Ok(record_batch))) => Poll::Ready(Some(Ok(record_batch))),
+            Poll::Ready(Some(Err(e))) => {
+                Poll::Ready(Some(Err(ArrowError::ExternalError(Box::new(e)))))
+            }
+            Poll::Ready(None) => {
                 this.metrics.done();
                 Poll::Ready(None)
             }
+            Poll::Pending => Poll::Pending,
         };
 
         timer.done();

@@ -1,0 +1,81 @@
+-- EXECUTE SQL: DROP TABLE IF EXISTS ci_location_tbl; --
+200 OK
+
+
+-- EXECUTE SQL: DROP TABLE IF EXISTS ci_location_tbl_ext; --
+200 OK
+
+
+-- EXECUTE SQL: DROP TABLE IF EXISTS ci_location_tbl2_ext; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE EXTERNAL TABLE ci_location_tbl STORED AS PARQUET LOCATION 'query_server/test/resource/parquet/part-0.parquet'; --
+200 OK
+
+
+-- EXECUTE SQL: select * from ci_location_tbl order by time,name limit 10; --
+200 OK
+time,name,fleet,driver,model,device_version,latitude,longitude,elevation,velocity,heading,grade,fuel_consumption,load_capacity,fuel_capacity,nominal_fuel_consumption
+2022-01-01T00:00:00.000000000,truck_0,South,Trish,H_2,v2_3,25.0,0.0,0.0,0.0,,,,,,
+2022-01-01T00:00:00.000000000,truck_3127,South,Rodney,F_150,v1_0,25.0,0.0,0.0,0.0,,,,,,
+2022-01-01T00:00:00.000000000,truck_3136,South,Rodney,G_2000,v2_3,25.0,0.0,0.0,0.0,,,,,,
+2022-01-01T00:00:00.000000000,truck_3152,North,Albert,F_150,v1_0,25.0,0.0,0.0,0.0,,,,,,
+2022-01-01T00:00:00.000000000,truck_3153,South,Andy,H_2,v1_5,25.0,0.0,0.0,0.0,,,,,,
+2022-01-01T00:00:10.000000000,truck_0,South,Trish,H_2,v2_3,26.7,1500.0,150.0,12.0,,,,,,
+2022-01-01T00:00:10.000000000,truck_1377,South,Rodney,F_150,v1_5,23.6,1500.0,150.0,12.0,,,,,,
+2022-01-01T00:00:10.000000000,truck_3127,South,Rodney,F_150,v1_0,22.6,1500.0,150.0,12.0,,,,,,
+2022-01-01T00:00:10.000000000,truck_3136,South,Rodney,G_2000,v2_3,20.2,1500.0,150.0,12.0,,,,,,
+2022-01-01T00:00:10.000000000,truck_3152,North,Albert,F_150,v1_0,24.5,1500.0,150.0,12.0,,,,,,
+
+
+-- EXECUTE SQL: COPY INTO 'file:///tmp/data/parquet_out1/' FROM (select time, name from ci_location_tbl) file_format = (type = 'parquet'); --
+200 OK
+rows
+8192
+
+
+-- EXECUTE SQL: CREATE EXTERNAL TABLE ci_location_tbl_ext STORED AS PARQUET LOCATION 'file:///tmp/data/parquet_out1/'; --
+200 OK
+
+
+-- EXECUTE SQL: select * from ci_location_tbl_ext order by time,name limit 10; --
+200 OK
+time,name
+2022-01-01T00:00:00.000000000,truck_0
+2022-01-01T00:00:00.000000000,truck_3127
+2022-01-01T00:00:00.000000000,truck_3136
+2022-01-01T00:00:00.000000000,truck_3152
+2022-01-01T00:00:00.000000000,truck_3153
+2022-01-01T00:00:10.000000000,truck_0
+2022-01-01T00:00:10.000000000,truck_1377
+2022-01-01T00:00:10.000000000,truck_3127
+2022-01-01T00:00:10.000000000,truck_3136
+2022-01-01T00:00:10.000000000,truck_3152
+
+
+-- EXECUTE SQL: COPY INTO 'file:///tmp/data/parquet_out2/' FROM ci_location_tbl file_format = (type = 'parquet'); --
+200 OK
+rows
+8192
+
+
+-- EXECUTE SQL: CREATE EXTERNAL TABLE ci_location_tbl2_ext STORED AS PARQUET LOCATION 'file:///tmp/data/parquet_out2/'; --
+200 OK
+
+
+-- EXECUTE SQL: select * from ci_location_tbl2_ext order by time,name limit 10; --
+200 OK
+time,name,fleet,driver,model,device_version,latitude,longitude,elevation,velocity,heading,grade,fuel_consumption,load_capacity,fuel_capacity,nominal_fuel_consumption
+2022-01-01T00:00:00.000000000,truck_0,South,Trish,H_2,v2_3,25.0,0.0,0.0,0.0,,,,,,
+2022-01-01T00:00:00.000000000,truck_3127,South,Rodney,F_150,v1_0,25.0,0.0,0.0,0.0,,,,,,
+2022-01-01T00:00:00.000000000,truck_3136,South,Rodney,G_2000,v2_3,25.0,0.0,0.0,0.0,,,,,,
+2022-01-01T00:00:00.000000000,truck_3152,North,Albert,F_150,v1_0,25.0,0.0,0.0,0.0,,,,,,
+2022-01-01T00:00:00.000000000,truck_3153,South,Andy,H_2,v1_5,25.0,0.0,0.0,0.0,,,,,,
+2022-01-01T00:00:10.000000000,truck_0,South,Trish,H_2,v2_3,26.7,1500.0,150.0,12.0,,,,,,
+2022-01-01T00:00:10.000000000,truck_1377,South,Rodney,F_150,v1_5,23.6,1500.0,150.0,12.0,,,,,,
+2022-01-01T00:00:10.000000000,truck_3127,South,Rodney,F_150,v1_0,22.6,1500.0,150.0,12.0,,,,,,
+2022-01-01T00:00:10.000000000,truck_3136,South,Rodney,G_2000,v2_3,20.2,1500.0,150.0,12.0,,,,,,
+2022-01-01T00:00:10.000000000,truck_3152,North,Albert,F_150,v1_0,24.5,1500.0,150.0,12.0,,,,,,
+
+

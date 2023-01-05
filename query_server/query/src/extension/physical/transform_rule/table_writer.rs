@@ -3,7 +3,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::{
     datasource::source_as_provider,
-    error::DataFusionError,
     execution::context::SessionState,
     logical_expr::{LogicalPlan, UserDefinedLogicalNode},
     physical_plan::{displayable, planner::ExtensionPlanner, ExecutionPlan, PhysicalPlanner},
@@ -12,8 +11,8 @@ use trace::debug;
 use trace::trace;
 
 use crate::{
+    data_source::WriteExecExt,
     extension::logical::plan_node::table_writer::{as_table_writer_plan_node, TableWriterPlanNode},
-    table::ClusterTable,
 };
 
 use datafusion::error::Result;
@@ -34,7 +33,7 @@ impl ExtensionPlanner for TableWriterPlanner {
     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
         Ok(
             if let Some(TableWriterPlanNode {
-                target_table_name,
+                target_table_name: _,
                 target_table,
                 ..
             }) = as_table_writer_plan_node(node)
@@ -42,25 +41,16 @@ impl ExtensionPlanner for TableWriterPlanner {
                 debug!("Input user defined logical node: TableWriterPlanNode");
                 trace!("Full input user defined logical plan:\n{:?}", node);
 
+                debug_assert_eq!(
+                    1,
+                    physical_inputs.len(),
+                    "TableWriterPlanNode has multiple inputs."
+                );
                 let physical_input = physical_inputs[0].clone();
 
                 let table_provider = source_as_provider(target_table)?;
 
-                let table_writer = table_provider
-                    .as_any()
-                    .downcast_ref::<ClusterTable>()
-                    .ok_or_else(|| {
-                        debug!("Table {} not support write.", target_table_name);
-
-                        DataFusionError::Plan(format!(
-                            "Table {} not support write.",
-                            target_table_name
-                        ))
-                    })?;
-
-                debug!("Success to resolve table_writer.");
-
-                let result = table_writer.write(session_state, physical_input).await?;
+                let result = table_provider.write(session_state, physical_input).await?;
 
                 debug!(
                     "After Apply TableWriterPlanner. Transformed physical plan: {}",
