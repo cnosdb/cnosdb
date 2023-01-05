@@ -16,9 +16,14 @@ use self::drop_tenant_object::DropTenantObjectTask;
 use self::grant_revoke::GrantRevokeTask;
 use crate::execution::ddl::alter_database::AlterDatabaseTask;
 use crate::execution::ddl::alter_table::AlterTableTask;
+use crate::execution::ddl::checksum_group::ChecksumGroupTask;
+use crate::execution::ddl::compact_vnode::CompactVnodeTask;
+use crate::execution::ddl::copy_vnode::CopyVnodeTask;
 use crate::execution::ddl::create_database::CreateDatabaseTask;
 use crate::execution::ddl::describe_database::DescribeDatabaseTask;
 use crate::execution::ddl::describe_table::DescribeTableTask;
+use crate::execution::ddl::drop_vnode::DropVnodeTask;
+use crate::execution::ddl::move_node::MoveVnodeTask;
 use crate::execution::ddl::show_database::ShowDatabasesTask;
 use crate::execution::ddl::show_table::ShowTablesTask;
 
@@ -29,6 +34,9 @@ mod alter_database;
 mod alter_table;
 mod alter_tenant;
 mod alter_user;
+mod checksum_group;
+mod compact_vnode;
+mod copy_vnode;
 mod create_database;
 mod create_external_table;
 mod create_role;
@@ -40,7 +48,9 @@ mod describe_table;
 mod drop_database_object;
 mod drop_global_object;
 mod drop_tenant_object;
+mod drop_vnode;
 mod grant_revoke;
+mod move_node;
 mod show_database;
 mod show_table;
 
@@ -147,6 +157,11 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::AlterTenant(sub_plan) => Box::new(AlterTenantTask::new(sub_plan.clone())),
             DDLPlan::AlterUser(sub_plan) => Box::new(AlterUserTask::new(sub_plan.clone())),
             DDLPlan::GrantRevoke(sub_plan) => Box::new(GrantRevokeTask::new(sub_plan.clone())),
+            DDLPlan::DropVnode(sub_plan) => Box::new(DropVnodeTask::new(sub_plan.clone())),
+            DDLPlan::CopyVnode(sub_plan) => Box::new(CopyVnodeTask::new(sub_plan.clone())),
+            DDLPlan::MoveVnode(sub_plan) => Box::new(MoveVnodeTask::new(sub_plan.clone())),
+            DDLPlan::CompactVnode(sub_plan) => Box::new(CompactVnodeTask::new(sub_plan.clone())),
+            DDLPlan::ChecksumGroup(sub_plan) => Box::new(ChecksumGroupTask::new(sub_plan.clone())),
         }
     }
 }

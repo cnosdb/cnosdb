@@ -5,7 +5,7 @@ use std::{path::PathBuf, sync::Arc};
 use config::Config;
 use serde::{Deserialize, Serialize};
 
-use crate::{file_system, summary};
+use crate::{file_system, summary, TseriesFamilyId};
 
 const SUMMARY_PATH: &str = "summary";
 const INDEX_PATH: &str = "index";
@@ -59,22 +59,26 @@ impl StorageOptions {
         self.path.join(DATA_PATH).join(database)
     }
 
-    pub fn index_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {
+    pub fn index_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
         self.database_dir(database)
             .join(ts_family_id.to_string())
             .join(INDEX_PATH)
     }
 
-    pub fn tsm_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {
+    pub fn tsm_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
         self.database_dir(database)
             .join(ts_family_id.to_string())
             .join(TSM_PATH)
     }
 
-    pub fn delta_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {
+    pub fn delta_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
         self.database_dir(database)
             .join(ts_family_id.to_string())
             .join(DELTA_PATH)
+    }
+
+    pub fn tsfamily_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.database_dir(database).join(ts_family_id.to_string())
     }
 }
 

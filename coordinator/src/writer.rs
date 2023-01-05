@@ -34,11 +34,11 @@ pub struct VnodePoints<'a> {
     offset: Vec<flatbuffers::WIPOffset<fb_models::Point<'a>>>,
 
     pub data: Vec<u8>,
-    pub repl_set: ReplcationSet,
+    pub repl_set: ReplicationSet,
 }
 
 impl VnodePoints<'_> {
-    pub fn new(db: String, repl_set: ReplcationSet) -> Self {
+    pub fn new(db: String, repl_set: ReplicationSet) -> Self {
         Self {
             db,
             repl_set,
@@ -104,7 +104,7 @@ impl VnodePoints<'_> {
 
 pub struct VnodeMapping<'a> {
     pub points: HashMap<u32, VnodePoints<'a>>,
-    pub sets: HashMap<u32, ReplcationSet>,
+    pub sets: HashMap<u32, ReplicationSet>,
 }
 
 impl<'a> VnodeMapping<'a> {

@@ -1,4 +1,6 @@
 use std::collections::VecDeque;
+use std::ops::Not;
+
 use std::str::FromStr;
 
 use datafusion::sql::parser::CreateExternalTable;
@@ -12,13 +14,15 @@ use datafusion::sql::sqlparser::{
     tokenizer::{Token, Tokenizer},
 };
 use models::codec::Encoding;
+use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use snafu::ResultExt;
 use spi::query::ast::{
     parse_string_value, Action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
-    AlterTenantOperation, AlterUser, AlterUserOperation, ColumnOption, CreateDatabase, CreateRole,
-    CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase, DescribeTable,
-    DropDatabaseObject, DropGlobalObject, DropTenantObject, Explain, ExtStatement, GrantRevoke,
-    Privilege, ShowSeries, ShowTagBody, ShowTagValues, With,
+    AlterTenantOperation, AlterUser, AlterUserOperation, ChecksumGroup, ColumnOption, CompactVnode,
+    CopyVnode, CreateDatabase, CreateRole, CreateTable, CreateTenant, CreateUser, DatabaseOptions,
+    DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject,
+    DropVnode, Explain, ExtStatement, GrantRevoke, MoveVnode, Privilege, ShowSeries, ShowTagBody,
+    ShowTagValues, With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -69,6 +73,19 @@ enum CnosKeyWord {
     REMOVE,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     SERIES,
+
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    VNODE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    NODE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    MOVE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    COMPACT,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    CHECKSUM,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    GROUP,
 }
 
 impl FromStr for CnosKeyWord {
@@ -93,6 +110,12 @@ impl FromStr for CnosKeyWord {
             "ALL" => Ok(CnosKeyWord::ALL),
             "REMOVE" => Ok(CnosKeyWord::REMOVE),
             "SERIES" => Ok(CnosKeyWord::SERIES),
+            "VNODE" => Ok(CnosKeyWord::VNODE),
+            "NODE" => Ok(CnosKeyWord::NODE),
+            "MOVE" => Ok(CnosKeyWord::MOVE),
+            "COMPACT" => Ok(CnosKeyWord::COMPACT),
+            "CHECKSUM" => Ok(CnosKeyWord::CHECKSUM),
+            "GROUP" => Ok(CnosKeyWord::GROUP),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
                 s
@@ -213,9 +236,34 @@ impl<'a> ExtParser<'a> {
                     self.parser.next_token();
                     self.parse_explain()
                 }
-                _ => Ok(ExtStatement::SqlStatement(Box::new(
-                    self.parser.parse_statement()?,
-                ))),
+                Keyword::COPY => {
+                    self.parser.next_token();
+                    self.parse_copy()
+                }
+                _ => {
+                    if let Ok(word) = CnosKeyWord::from_str(&w.to_string()) {
+                        return match word {
+                            CnosKeyWord::MOVE => {
+                                self.parser.next_token();
+                                self.parse_move()
+                            }
+                            CnosKeyWord::COMPACT => {
+                                self.parser.next_token();
+                                self.parse_compact()
+                            }
+                            CnosKeyWord::CHECKSUM => {
+                                self.parser.next_token();
+                                self.parse_checksum()
+                            }
+                            _ => Ok(ExtStatement::SqlStatement(Box::new(
+                                self.parser.parse_statement()?,
+                            ))),
+                        };
+                    }
+                    Ok(ExtStatement::SqlStatement(Box::new(
+                        self.parser.parse_statement()?,
+                    )))
+                }
             },
             _ => Ok(ExtStatement::SqlStatement(Box::new(
                 self.parser.parse_statement()?,
@@ -745,11 +793,11 @@ impl<'a> ExtParser<'a> {
         if self.parse_cnos_keyword(CnosKeyWord::TTL) {
             options.ttl = Some(self.parse_string_value()?);
         } else if self.parse_cnos_keyword(CnosKeyWord::SHARD) {
-            options.shard_num = Some(self.parse_u64()?);
+            options.shard_num = Some(self.parse_number::<u64>()?);
         } else if self.parse_cnos_keyword(CnosKeyWord::VNODE_DURATION) {
             options.vnode_duration = Some(self.parse_string_value()?);
         } else if self.parse_cnos_keyword(CnosKeyWord::REPLICA) {
-            options.replica = Some(self.parse_u64()?);
+            options.replica = Some(self.parse_number::<u64>()?);
         } else if self.parse_cnos_keyword(CnosKeyWord::PRECISION) {
             options.precision = Some(self.parse_string_value()?);
         } else {
@@ -758,9 +806,9 @@ impl<'a> ExtParser<'a> {
         Ok(true)
     }
 
-    fn parse_u64(&mut self) -> Result<u64> {
+    fn parse_number<T: FromStr>(&mut self) -> Result<T> {
         let num = self.parser.parse_number_value()?.to_string();
-        match num.parse::<u64>() {
+        match num.parse::<T>() {
             Ok(v) => Ok(v),
             Err(_) => {
                 parser_err!(format!(
@@ -972,14 +1020,71 @@ impl<'a> ExtParser<'a> {
                 if_exist,
                 obj_type: TenantObjectType::Role,
             })
+        } else if self.parse_cnos_keyword(CnosKeyWord::VNODE) {
+            let vnode_id = self.parse_number::<VnodeId>()?;
+            ExtStatement::DropVnode(DropVnode { vnode_id })
         } else {
             return self.expected(
-                "TABLE,DATABASE,TENANT,USER,ROLE after DROP",
+                "TABLE,DATABASE,TENANT,USER,ROLE,VNODE after DROP",
                 self.parser.peek_token(),
             );
         };
 
         Ok(ast)
+    }
+
+    fn parse_copy(&mut self) -> Result<ExtStatement> {
+        if self.parse_cnos_keyword(CnosKeyWord::VNODE) {
+            let vnode_id = self.parse_number::<VnodeId>()?;
+            self.parser.expect_keyword(Keyword::TO)?;
+            if self.parse_cnos_keyword(CnosKeyWord::NODE).not() {
+                return parser_err!("expected NODE, after TO");
+            }
+            let node_id = self.parse_number::<NodeId>()?;
+            Ok(ExtStatement::CopyVnode(CopyVnode { vnode_id, node_id }))
+        } else {
+            parser_err!("expected VNODE, after COPY")
+        }
+    }
+
+    fn parse_move(&mut self) -> Result<ExtStatement> {
+        if self.parse_cnos_keyword(CnosKeyWord::VNODE) {
+            let vnode_id = self.parse_number::<VnodeId>()?;
+            self.parser.expect_keyword(Keyword::TO)?;
+            if self.parse_cnos_keyword(CnosKeyWord::NODE).not() {
+                return parser_err!("expected NODE, after TO");
+            }
+            let node_id = self.parse_number::<NodeId>()?;
+            Ok(ExtStatement::MoveVnode(MoveVnode { vnode_id, node_id }))
+        } else {
+            parser_err!("expected VNODE, after MOVE")
+        }
+    }
+
+    fn parse_compact(&mut self) -> Result<ExtStatement> {
+        if self.parse_cnos_keyword(CnosKeyWord::VNODE) {
+            let mut vnode_ids = Vec::new();
+            loop {
+                vnode_ids.push(self.parse_number::<VnodeId>()?);
+                if self.parser.expect_token(&Token::SemiColon).is_ok() {
+                    break;
+                }
+            }
+            Ok(ExtStatement::CompactVnode(CompactVnode { vnode_ids }))
+        } else {
+            parser_err!("Expected VNODE, after COMPACT")
+        }
+    }
+
+    fn parse_checksum(&mut self) -> Result<ExtStatement> {
+        if self.parse_cnos_keyword(CnosKeyWord::GROUP) {
+            let replication_set_id = self.parse_number::<ReplicationSetId>()?;
+            Ok(ExtStatement::ChecksumGroup(ChecksumGroup {
+                replication_set_id,
+            }))
+        } else {
+            parser_err!("Expected GROUP. after CHECKSUM")
+        }
     }
 
     fn consume_token(&mut self, expected: &Token) -> bool {
@@ -1570,6 +1675,50 @@ mod tests {
                     }
                 }
             ]
+        );
+    }
+
+    #[test]
+    fn test_vnode_sql() {
+        let sql1 = "move vnode 1 to node 2;";
+        let statement = ExtParser::parse_sql(sql1).unwrap();
+        assert_eq!(
+            statement[0],
+            ExtStatement::MoveVnode(MoveVnode {
+                vnode_id: 1,
+                node_id: 2,
+            })
+        );
+        let sql2 = "copy vnode 3 to node 4;";
+        let statement = ExtParser::parse_sql(sql2).unwrap();
+        assert_eq!(
+            statement[0],
+            ExtStatement::CopyVnode(CopyVnode {
+                vnode_id: 3,
+                node_id: 4
+            })
+        );
+        let sql3 = "drop vnode 5;";
+        let statement = ExtParser::parse_sql(sql3).unwrap();
+        assert_eq!(
+            statement[0],
+            ExtStatement::DropVnode(DropVnode { vnode_id: 5 })
+        );
+        let sql4 = "compact vnode 6 7 8 9;";
+        let statement = ExtParser::parse_sql(sql4).unwrap();
+        assert_eq!(
+            statement[0],
+            ExtStatement::CompactVnode(CompactVnode {
+                vnode_ids: vec![6, 7, 8, 9]
+            })
+        );
+        let sql5 = "checksum group 10";
+        let statement = ExtParser::parse_sql(sql5).unwrap();
+        assert_eq!(
+            statement[0],
+            ExtStatement::ChecksumGroup(ChecksumGroup {
+                replication_set_id: 10
+            })
         );
     }
 }

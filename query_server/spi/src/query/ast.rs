@@ -7,6 +7,7 @@ use datafusion::sql::sqlparser::ast::{
 use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
+use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 
 use super::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 
@@ -36,7 +37,6 @@ pub enum ExtStatement {
     ShowSeries(Box<ShowSeries>),
     ShowTagValues(Box<ShowTagValues>),
     Explain(Explain),
-    //todo:  insert/update/alter
 
     // system cmd
     ShowQueries,
@@ -44,6 +44,40 @@ pub enum ExtStatement {
     AlterTable(AlterTable),
     AlterTenant(AlterTenant),
     AlterUser(AlterUser),
+
+    // vnode cmd
+    DropVnode(DropVnode),
+    CopyVnode(CopyVnode),
+    MoveVnode(MoveVnode),
+    CompactVnode(CompactVnode),
+    ChecksumGroup(ChecksumGroup),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChecksumGroup {
+    pub replication_set_id: ReplicationSetId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactVnode {
+    pub vnode_ids: Vec<VnodeId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MoveVnode {
+    pub vnode_id: VnodeId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CopyVnode {
+    pub vnode_id: VnodeId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DropVnode {
+    pub vnode_id: VnodeId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

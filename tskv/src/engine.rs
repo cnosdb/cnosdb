@@ -122,12 +122,15 @@ pub trait Engine: Send + Sync + Debug {
         vnode_id: u32,
         sid: SeriesId,
     ) -> IndexResult<Option<SeriesKey>>;
+
     async fn get_db_version(
         &self,
         tenant: &str,
         db: &str,
         vnode_id: u32,
     ) -> Result<Option<Arc<SuperVersion>>>;
+
+    async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
 }
 
 #[derive(Debug, Default)]
@@ -299,6 +302,10 @@ impl Engine for MockEngine {
         column_name: &str,
         new_column: TableColumn,
     ) -> Result<()> {
+        todo!()
+    }
+
+    async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
         todo!()
     }
 }
