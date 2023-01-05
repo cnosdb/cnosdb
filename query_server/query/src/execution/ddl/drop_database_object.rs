@@ -7,7 +7,7 @@ use spi::query::{
 };
 
 use spi::query::execution::ExecutionError;
-use trace::debug;
+use trace::info;
 
 use super::DDLDefinitionTask;
 use meta::error::MetaError;
@@ -39,7 +39,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
         let res = match obj_type {
             DatabaseObjectType::Table => {
                 // TODO 删除指定租户下的表
-                debug!("Drop table {}", object_name);
+                info!("Drop table {}", object_name);
                 let tenant = query_state_machine.session.tenant();
                 let client = query_state_machine
                     .meta

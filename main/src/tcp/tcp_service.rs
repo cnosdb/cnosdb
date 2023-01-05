@@ -173,15 +173,15 @@ async fn process_admin_statement_command(
 ) -> CoordinatorResult<()> {
     match cmd.stmt {
         AdminStatementType::DropDB(db) => {
-            let _ = engine.drop_database(&cmd.tenant, &db);
+            let _ = engine.drop_database(&cmd.tenant, &db).await;
         }
 
         AdminStatementType::DropTable(db, table) => {
-            let _ = engine.drop_table(&cmd.tenant, &db, &table);
+            let _ = engine.drop_table(&cmd.tenant, &db, &table).await;
         }
 
         AdminStatementType::DeleteVnode(db, id) => {
-            let _ = engine.remove_tsfamily(&cmd.tenant, &db, id);
+            let _ = engine.remove_tsfamily(&cmd.tenant, &db, id).await;
         }
     }
 
