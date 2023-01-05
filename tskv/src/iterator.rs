@@ -594,8 +594,10 @@ pub struct RowIterator {
 }
 
 impl RowIterator {
-    pub fn new(engine: EngineRef, option: QueryOption, vnode_id: u32) -> Result<Self, Error> {
-        let version = engine.get_db_version(&option.tenant, &option.table_schema.db, vnode_id)?;
+    pub async fn new(engine: EngineRef, option: QueryOption, vnode_id: u32) -> Result<Self, Error> {
+        let version = engine
+            .get_db_version(&option.tenant, &option.table_schema.db, vnode_id)
+            .await?;
 
         let series = engine
             .get_series_id_by_filter(
@@ -605,6 +607,7 @@ impl RowIterator {
                 &option.table_schema.name,
                 &option.tags_filter,
             )
+            .await
             .context(error::IndexErrSnafu)?;
 
         debug!("series number: {}", series.len());
@@ -649,6 +652,7 @@ impl RowIterator {
                 self.vnode_id,
                 id,
             )
+            .await
             .context(IndexErrSnafu)?
         {
             self.columns.clear();

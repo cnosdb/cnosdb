@@ -1132,7 +1132,7 @@ mod test {
 
     // Util function for testing with summary modification.
     async fn update_ts_family_version(
-        version_set: Arc<RwLock<VersionSet>>,
+        version_set: Arc<tokio::sync::RwLock<VersionSet>>,
         ts_family_id: TseriesFamilyId,
         mut summary_task_receiver: UnboundedReceiver<SummaryTask>,
     ) {
@@ -1148,9 +1148,9 @@ mod test {
                 }
             }
         }
-        let version_set = version_set.write();
-        if let Some(ts_family) = version_set.get_tsfamily_by_tf_id(ts_family_id) {
-            let mut ts_family = ts_family.write();
+        let version_set = version_set.write().await;
+        if let Some(ts_family) = version_set.get_tsfamily_by_tf_id(ts_family_id).await {
+            let mut ts_family = ts_family.write().await;
             let new_version = ts_family
                 .version()
                 .copy_apply_version_edits(version_edits, Some(min_seq));
@@ -1159,7 +1159,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     pub async fn test_read_with_tomb() {
         let config = get_config("../config/config_31001.toml");
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(config.cluster));
@@ -1211,7 +1210,7 @@ mod test {
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(
+        let version_set: Arc<tokio::sync::RwLock<VersionSet>> = Arc::new(tokio::sync::RwLock::new(
             VersionSet::new(
                 meta_manager.clone(),
                 opt.clone(),
@@ -1223,17 +1222,24 @@ mod test {
         ));
         version_set
             .write()
+            .await
             .create_db(
                 DatabaseSchema::new("cnosdb", &database),
                 meta_manager.clone(),
             )
             .unwrap();
-        let db = version_set.write().get_db("cnosdb", &database).unwrap();
+        let db = version_set
+            .write()
+            .await
+            .get_db("cnosdb", &database)
+            .unwrap();
 
         let ts_family_id = db
             .write()
+            .await
             .add_tsfamily(0, 0, summary_task_sender.clone(), flush_task_sender.clone())
             .read()
+            .await
             .tf_id();
 
         run_flush_memtable_job(
@@ -1248,11 +1254,12 @@ mod test {
 
         update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver).await;
 
-        let version_set = version_set.write();
+        let version_set = version_set.write().await;
         let tsf = version_set
             .get_tsfamily_by_name("cnosdb", &database)
+            .await
             .unwrap();
-        let version = tsf.write().version();
+        let version = tsf.write().await.version();
         version.levels_info[1]
             .read_column_file(
                 ts_family_id,
