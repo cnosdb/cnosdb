@@ -162,7 +162,10 @@ mod test {
     use crate::{client::MetaHttpClient, store::command};
     use std::{thread, time};
 
-    use models::{meta_data::NodeInfo, schema::DatabaseSchema};
+    use models::{
+        meta_data::{NodeInfo, VnodeInfo},
+        schema::DatabaseSchema,
+    };
 
     pub async fn watch_tenant(cluster: &str, tenant: &str) {
         println!("=== begin ================...");
@@ -248,5 +251,35 @@ mod test {
         thread::sleep(time::Duration::from_secs(3));
 
         // thread::sleep(time::Duration::from_secs(300));
+    }
+
+    #[tokio::test]
+    async fn test_update_replication_set() {
+        let cluster = "cluster_xxx".to_string();
+        let tenant = "cnosdb".to_string();
+        let db_name = "my_db".to_string();
+
+        let req = command::WriteCommand::UpdateVnodeReplSet(
+            cluster.clone(),
+            tenant.clone(),
+            db_name.clone(),
+            8,
+            9,
+            vec![VnodeInfo { id: 11, node_id: 0 }],
+            vec![
+                VnodeInfo {
+                    id: 333,
+                    node_id: 1333,
+                },
+                VnodeInfo {
+                    id: 444,
+                    node_id: 1444,
+                },
+            ],
+        );
+
+        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+        let rsp = client.write::<command::StatusResponse>(&req);
+        println!("=========: {:?}", rsp);
     }
 }

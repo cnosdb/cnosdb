@@ -5,8 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use models::limiter::LimiterConfig;
-use models::oid::Identifier;
 use models::{
     auth::{
         privilege::DatabasePrivilege,
@@ -19,6 +17,8 @@ use models::{
         DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
     },
 };
+use models::{limiter::LimiterConfig, meta_data::VnodeInfo};
+use models::{meta_data::VnodeAllInfo, oid::Identifier};
 use tokio::net::TcpStream;
 
 use crate::error::{MetaError, MetaResult};
@@ -56,6 +56,10 @@ impl AdminMeta for MockAdminMeta {
     fn put_node_conn(&self, node_id: u64, conn: TcpStream) {}
 
     fn heartbeat(&self) {}
+
+    fn retain_id(&self, count: u32) -> MetaResult<u32> {
+        Ok(0)
+    }
 }
 
 #[derive(Debug)]
@@ -214,6 +218,21 @@ impl MetaClient for MockMetaClient {
 
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         vec![]
+    }
+
+    fn update_replication_set(
+        &self,
+        db: &str,
+        bucket_id: u32,
+        repl_id: u32,
+        del_info: &Vec<VnodeInfo>,
+        add_info: &Vec<VnodeInfo>,
+    ) -> MetaResult<()> {
+        Ok(())
+    }
+
+    fn get_vnode_all_info(&self, id: u32) -> Option<VnodeAllInfo> {
+        None
     }
 
     fn limiter(&self) -> Arc<dyn Limiter> {

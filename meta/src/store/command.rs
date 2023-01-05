@@ -18,6 +18,20 @@ use serde::Serialize;
 /******************* write command *************************/
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WriteCommand {
+    // retain increment id  cluster, count
+    RetainID(String, u32),
+
+    // cluster, tenant, db, bucket_id, repl_id, add vnode, delete vnode
+    UpdateVnodeReplSet(
+        String,
+        String,
+        String,
+        u32,
+        u32,
+        Vec<VnodeInfo>,
+        Vec<VnodeInfo>,
+    ),
+
     // cluster, node info
     AddDataNode(String, NodeInfo),
 

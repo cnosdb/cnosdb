@@ -572,7 +572,7 @@ mod test {
 
     #[tokio::test]
     async fn test_index() {
-        trace::init_global_tracing("aaa_test_index", "test_logs.log", "info");
+        //trace::init_global_tracing("aaa_test_index", "test_logs.log", "info");
 
         let mut series_key1 = SeriesKey {
             id: 0,

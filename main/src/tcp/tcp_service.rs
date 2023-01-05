@@ -1,3 +1,4 @@
+use coordinator::file_info::get_files_meta;
 use coordinator::reader::{QueryExecutor, ReaderIterator};
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::record_batch::RecordBatch;
@@ -9,8 +10,10 @@ use models::predicate::domain::Predicate;
 use snafu::ResultExt;
 use spi::query::DEFAULT_CATALOG;
 use spi::server::dbms::DBMSRef;
+use std::fmt::format;
 use std::net::{self, SocketAddr};
-use tokio::io::BufReader;
+use tokio::fs::File;
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::sync::mpsc::Sender;
 use tskv::iterator::{QueryOption, TableScanMetrics};
 
@@ -34,6 +37,8 @@ use crate::server;
 use crate::server::{Service, ServiceHandle};
 
 use trace::{debug, error, info};
+
+use super::vnode_manager::VnodeManager;
 
 pub struct TcpService {
     addr: SocketAddr,
@@ -120,7 +125,7 @@ async fn process_client(
             }
 
             CoordinatorTcpCmd::AdminStatementCmd(cmd) => {
-                process_admin_statement_command(&mut client, cmd, coord.store_engine()).await?;
+                process_admin_statement_command(&mut client, cmd, coord.clone()).await?;
             }
 
             CoordinatorTcpCmd::QueryRecordBatchCmd(cmd) => {
@@ -169,8 +174,13 @@ async fn process_vnode_write_command(
 async fn process_admin_statement_command(
     client: &mut TcpStream,
     cmd: AdminStatementRequest,
-    engine: EngineRef,
+    coord: CoordinatorRef,
 ) -> CoordinatorResult<()> {
+    let mut rsp_data = "".to_string();
+    let mut rsp_code = SUCCESS_RESPONSE_CODE;
+
+    let meta = coord.meta_manager();
+    let engine = coord.store_engine();
     match cmd.stmt {
         AdminStatementType::DropDB(db) => {
             let _ = engine.drop_database(&cmd.tenant, &db);
@@ -183,11 +193,50 @@ async fn process_admin_statement_command(
         AdminStatementType::DeleteVnode(db, id) => {
             let _ = engine.remove_tsfamily(&cmd.tenant, &db, id);
         }
+
+        AdminStatementType::CopyVnode(vnode_id) => {
+            let manager = VnodeManager::new(meta, engine);
+        }
+
+        AdminStatementType::MoveVnode(vnode_id) => {
+            let manager = VnodeManager::new(meta, engine);
+            if let Err(err) = manager.move_vnode(&cmd.tenant, vnode_id).await {
+                rsp_code = FAILED_RESPONSE_CODE;
+                rsp_data = err.to_string();
+            }
+        }
+
+        AdminStatementType::GetVnodeFilesMeta(db, id) => {
+            let owner = models::schema::make_owner(&cmd.tenant, &db);
+            let storage_opt = engine.get_storage_options();
+            let path = storage_opt.ts_family_dir(&owner, id);
+            info!("get files meta: {:?}", path);
+            let meta = get_files_meta(&path.as_path().to_string_lossy().to_string()).await?;
+            rsp_data = serde_json::to_string(&meta)
+                .map_err(|e| CoordinatorError::CommonError { msg: e.to_string() })?;
+
+            info!("files meta: {:?}", meta);
+        }
+
+        AdminStatementType::DownloadFile(db, id, filename) => {
+            let owner = models::schema::make_owner(&cmd.tenant, &db);
+            let storage_opt = engine.get_storage_options();
+            let path1 = storage_opt.ts_family_dir(&owner, id);
+            let path = path1.join(filename);
+            info!("download file: {}", path.display());
+
+            let mut file = File::open(path).await?;
+            let size = file.metadata().await?.len();
+
+            client.write_u64(size).await?;
+            tokio::io::copy(&mut file, client).await?;
+            return Ok(());
+        }
     }
 
     let resp = StatusResponse {
-        code: SUCCESS_RESPONSE_CODE,
-        data: "".to_string(),
+        code: rsp_code,
+        data: rsp_data,
     };
     send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;
 

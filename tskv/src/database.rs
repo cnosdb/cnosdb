@@ -394,10 +394,7 @@ impl Database {
             return Ok(v.clone());
         }
 
-        let path = self
-            .opt
-            .storage
-            .index_dir(&self.schemas.database_name(), id);
+        let path = self.opt.storage.index_dir(&self.owner, id);
 
         let idx = index::ts_index::TSIndex::new(path).await?;
         let idx = Arc::new(RwLock::new(idx));

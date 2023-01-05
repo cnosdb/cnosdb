@@ -61,6 +61,19 @@ pub struct VnodeInfo {
     pub node_id: u64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct VnodeAllInfo {
+    pub vnode_id: u32,
+    pub node_id: u64,
+    pub repl_set_id: u32,
+    pub bucket_id: u32,
+    pub db_name: String,
+    pub tenant: String,
+
+    pub start_time: i64,
+    pub end_time: i64,
+}
+
 // CREATE DATABASE <database_name>
 // [WITH [TTL <duration>]
 // [SHARD <n>]

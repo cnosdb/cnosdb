@@ -176,7 +176,13 @@ impl WriteVnodeRequest {
 pub enum AdminStatementType {
     DropDB(String),            // db name
     DropTable(String, String), // db name, tablename
-    DeleteVnode(String, u32),  // db name, vnode id
+
+    CopyVnode(u32),           // vnode id
+    MoveVnode(u32),           // vnode id
+    DeleteVnode(String, u32), // db name, vnode id
+
+    GetVnodeFilesMeta(String, u32),    // db name, vnode id
+    DownloadFile(String, u32, String), // db name, vnode id,filename
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -268,11 +274,13 @@ impl RecordBatchResponse {
 /* ********************************************************************************************** */
 /* ************************** internal service command ****************************************** */
 /* ********************************************************************************************** */
+
 #[derive(Debug)]
 pub enum CoordinatorIntCmd {
     WritePointsCmd(WritePointsRequest),
     SelectStatementCmd(SelectStatementRequest),
-    AdminStatementCmd(AdminStatementRequest, OneShotSender<CoordinatorResult<()>>),
+    VnodeManagerCmd(VnodeManagerRequest, OneShotSender<CoordinatorResult<()>>),
+    AdminBroadcastCmd(AdminStatementRequest, OneShotSender<CoordinatorResult<()>>),
 }
 
 #[derive(Debug)]
@@ -288,4 +296,27 @@ pub struct WritePointsRequest {
 pub struct SelectStatementRequest {
     pub option: QueryOption,
     pub sender: MpscSender<CoordinatorResult<RecordBatch>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum VnodeManagerCmdType {
+    Copy(u64), // dst node id
+    Move(u64), // dst node id
+    Drop,      //
+}
+
+#[derive(Debug)]
+pub struct VnodeManagerRequest {
+    pub tenant: String,
+    pub vnode_id: u32,
+    pub cmd_type: VnodeManagerCmdType,
+}
+
+#[derive(Debug)]
+pub struct VnodeMigrateRequest {
+    pub node_id: u64,
+    pub vnode_id: u32,
+    pub tenant: String,
+    pub db_name: String,
+    pub cmd_type: VnodeManagerCmdType,
 }

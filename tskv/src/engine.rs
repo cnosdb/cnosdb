@@ -1,6 +1,7 @@
 use crate::database::Database;
 use crate::error::Result;
 use crate::index::IndexResult;
+use crate::kv_option::StorageOptions;
 use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
@@ -128,6 +129,8 @@ pub trait Engine: Send + Sync + Debug {
         db: &str,
         vnode_id: u32,
     ) -> Result<Option<Arc<SuperVersion>>>;
+
+    fn get_storage_options(&self) -> Arc<StorageOptions>;
 }
 
 #[derive(Debug, Default)]
@@ -300,5 +303,9 @@ impl Engine for MockEngine {
         new_column: TableColumn,
     ) -> Result<()> {
         todo!()
+    }
+
+    fn get_storage_options(&self) -> Arc<StorageOptions> {
+        Arc::new(StorageOptions::default())
     }
 }

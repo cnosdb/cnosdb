@@ -34,6 +34,7 @@ use crate::store::key_path::KeyPath;
 use models::{meta_data::*, utils};
 
 use super::command::*;
+use super::key_path;
 
 pub type CommandResp = String;
 
@@ -566,7 +567,79 @@ impl StateMachine {
             WriteCommand::RevokePrivileges(cluster, privileges, role_name, tenant_name) => {
                 self.process_revoke_privileges(cluster, privileges, role_name, tenant_name)
             }
+            WriteCommand::RetainID(cluster, count) => self.process_retain_id(cluster, *count),
+            WriteCommand::UpdateVnodeReplSet(
+                cluster,
+                tenant,
+                db_name,
+                bucket_id,
+                repl_id,
+                del_info,
+                add_info,
+            ) => self.process_update_vnode_repl_set(
+                cluster, tenant, db_name, *bucket_id, *repl_id, del_info, add_info, watch,
+            ),
         }
+    }
+
+    fn process_update_vnode_repl_set(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        db: &str,
+        bucket_id: u32,
+        repl_id: u32,
+        del_info: &Vec<VnodeInfo>,
+        add_info: &Vec<VnodeInfo>,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
+    ) -> CommandResp {
+        let mut status = StatusResponse::new(META_REQUEST_FAILED, "".to_string());
+
+        let key = key_path::KeyPath::tenant_bucket_id(cluster, tenant, db, bucket_id);
+        let mut bucket = match get_struct::<BucketInfo>(&key, self.db.clone()) {
+            Some(b) => b,
+            None => {
+                status.msg = format!("not found buckt: {}", bucket_id);
+                return serde_json::to_string(&status).unwrap();
+            }
+        };
+
+        for set in bucket.shard_group.iter_mut() {
+            if set.id != repl_id {
+                continue;
+            }
+
+            for info in del_info.iter() {
+                set.vnodes.retain(|item| item.id != info.id);
+            }
+
+            for info in add_info.iter() {
+                set.vnodes.push(info.clone());
+            }
+        }
+
+        let val = serde_json::to_string(&bucket).unwrap();
+        let _ = self.db.insert(key.as_bytes(), val.as_bytes()).unwrap();
+        info!("WRITE: {} :{}", key, val);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta
+                    .create_or_update_bucket(self.version(), db, &bucket);
+                let _ = item.sender.try_send(true);
+            }
+        }
+
+        status.code = META_REQUEST_SUCCESS;
+        serde_json::to_string(&status).unwrap()
+    }
+
+    fn process_retain_id(&self, cluster: &str, count: u32) -> CommandResp {
+        let id = fetch_and_add_incr_id(cluster, self.db.clone(), count);
+
+        let status = StatusResponse::new(META_REQUEST_SUCCESS, id.to_string());
+
+        serde_json::to_string(&status).unwrap()
     }
 
     fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> CommandResp {

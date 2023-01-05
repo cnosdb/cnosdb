@@ -49,6 +49,9 @@ pub enum CoordinatorError {
     #[snafu(display("not found tenant: {}", name))]
     TenantNotFound { name: String },
 
+    #[snafu(display("not found vnode: {}", id))]
+    VnodeNotFound { id: u32 },
+
     #[snafu(display("invalid flatbuffers: {}", source))]
     InvalidFlatbuffer {
         source: flatbuffers::InvalidFlatbuffer,

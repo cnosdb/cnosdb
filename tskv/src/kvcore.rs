@@ -2,6 +2,7 @@ use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
 use crate::error::MetaSnafu;
+use crate::kv_option::StorageOptions;
 use crate::tsm::codec::get_str_codec;
 use config::ClusterConfig;
 use datafusion::prelude::Column;
@@ -754,6 +755,10 @@ impl Engine for TsKv {
         db.read()
             .change_table_column(table, column_name, new_column)?;
         Ok(())
+    }
+
+    fn get_storage_options(&self) -> Arc<StorageOptions> {
+        self.options.storage.clone()
     }
 }
 
