@@ -3,9 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::{
     datasource::{
-        file_format::{
-            avro::AvroFormat, csv::CsvFormat, json::JsonFormat, parquet::ParquetFormat, FileFormat,
-        },
+        file_format::{csv::CsvFormat, json::JsonFormat, parquet::ParquetFormat, FileFormat},
         listing::ListingTable,
     },
     error::DataFusionError,
@@ -21,7 +19,8 @@ use crate::{
         sink::{
             obj_store::{
                 serializer::{
-                    csv::CsvRecordBatchSerializer, parquet::ParquetRecordBatchSerializer,
+                    csv::CsvRecordBatchSerializer, json::NdJsonRecordBatchSerializer,
+                    parquet::ParquetRecordBatchSerializer,
                 },
                 ObjectStoreSinkProvider,
             },
@@ -89,14 +88,11 @@ fn get_record_batch_serializer(
             format.has_header(),
             format.delimiter(),
         )) as _
-    } else if any.is::<AvroFormat>() {
-        unimplemented!()
     } else if any.is::<JsonFormat>() {
-        unimplemented!()
+        Arc::new(NdJsonRecordBatchSerializer {}) as _
     } else {
         return Err(DataFusionError::NotImplemented(
-            "Only support ParquetFormat | CsvFormat | AvroFormat | JsonFormat, this maybe a bug."
-                .to_string(),
+            "Only support ParquetFormat | CsvFormat | JsonFormat.".to_string(),
         ));
     };
 

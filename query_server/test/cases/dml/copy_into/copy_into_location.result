@@ -14,6 +14,10 @@
 200 OK
 
 
+-- EXECUTE SQL: DROP TABLE IF EXISTS ci_location_tbl_ext_json; --
+200 OK
+
+
 -- EXECUTE SQL: CREATE EXTERNAL TABLE ci_location_tbl STORED AS PARQUET LOCATION 'query_server/test/resource/parquet/part-0.parquet'; --
 200 OK
 
@@ -106,5 +110,30 @@ time,name
 2022-01-01T00:00:10.000000000,truck_3127
 2022-01-01T00:00:10.000000000,truck_3136
 2022-01-01T00:00:10.000000000,truck_3152
+
+
+-- EXECUTE SQL: copy into 'file:///tmp/data/json_out/' FROM (select time, name from ci_location_tbl) file_format = (type = 'json'); --
+200 OK
+rows
+8192
+
+
+-- EXECUTE SQL: CREATE EXTERNAL TABLE ci_location_tbl_ext_json STORED AS JSON LOCATION 'file:///tmp/data/json_out/'; --
+200 OK
+
+
+-- EXECUTE SQL: select * from ci_location_tbl_ext_json order by time,name limit 10; --
+200 OK
+name,time
+truck_0,2022-01-01 00:00:00
+truck_3127,2022-01-01 00:00:00
+truck_3136,2022-01-01 00:00:00
+truck_3152,2022-01-01 00:00:00
+truck_3153,2022-01-01 00:00:00
+truck_0,2022-01-01 00:00:10
+truck_1377,2022-01-01 00:00:10
+truck_3127,2022-01-01 00:00:10
+truck_3136,2022-01-01 00:00:10
+truck_3152,2022-01-01 00:00:10
 
 
