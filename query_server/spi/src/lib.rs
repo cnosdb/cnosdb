@@ -338,6 +338,12 @@ pub enum QueryError {
     SerializeCsv {
         source: ArrowError,
     },
+
+    #[error_code(code = 52)]
+    #[snafu(display("Failed to serialize data to json bytes, error: {}", source))]
+    SerializeJson {
+        source: ArrowError,
+    },
 }
 
 impl From<ParserError> for QueryError {

@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS ci_location_tbl;
 DROP TABLE IF EXISTS ci_location_tbl_ext;
 DROP TABLE IF EXISTS ci_location_tbl2_ext;
 DROP TABLE IF EXISTS ci_location_tbl_ext_csv;
+DROP TABLE IF EXISTS ci_location_tbl_ext_json;
 
 CREATE EXTERNAL TABLE ci_location_tbl
 STORED AS PARQUET
@@ -46,3 +47,16 @@ WITH HEADER ROW
 LOCATION 'file:///tmp/data/csv_out/';
 
 select * from ci_location_tbl_ext_csv order by time,name limit 10;
+
+
+---- json start
+copy into 'file:///tmp/data/json_out/' 
+FROM (select time, name from ci_location_tbl)
+file_format = (type = 'json');
+
+-- Create external table validation data
+CREATE EXTERNAL TABLE ci_location_tbl_ext_json
+STORED AS JSON
+LOCATION 'file:///tmp/data/json_out/';
+
+select * from ci_location_tbl_ext_json order by time,name limit 10;
