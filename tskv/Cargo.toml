@@ -15,6 +15,7 @@ utils = { path = "../common/utils" }
 async-recursion = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
+blake3 = { workspace = true }
 bytes = { workspace = true }
 bzip2 = { workspace = true }
 chrono = { workspace = true }

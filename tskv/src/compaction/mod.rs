@@ -1,12 +1,15 @@
+pub mod check;
 mod compact;
 mod flush;
 mod picker;
 
 pub use compact::*;
 pub use flush::*;
-use parking_lot::RwLock;
 pub use picker::*;
+
 use std::sync::Arc;
+
+use parking_lot::RwLock;
 
 use crate::{
     kv_option::StorageOptions,

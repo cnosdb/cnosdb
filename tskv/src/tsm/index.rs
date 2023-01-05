@@ -2,15 +2,15 @@ use std::{cmp, fmt::Display, io::SeekFrom, sync::Arc};
 
 use models::{FieldId, Timestamp, ValueType};
 
-use super::{BlockMetaIterator, BLOCK_META_SIZE, FOOTER_SIZE, INDEX_META_SIZE};
 use crate::{
     byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
     error::{Error, Result},
     tseries_family::TimeRange,
-    tsm::{WriteTsmError, WriteTsmResult},
+    tsm::{
+        BlockMetaIterator, WriteTsmError, WriteTsmResult, BLOCK_META_SIZE, FOOTER_SIZE,
+        INDEX_META_SIZE,
+    },
 };
-
-pub trait IndexT {}
 
 #[derive(Debug, Clone)]
 pub struct Index {
@@ -280,7 +280,7 @@ pub(crate) struct IndexEntry {
 
 impl IndexEntry {
     pub(crate) fn encode(&self, buf: &mut [u8]) -> WriteTsmResult<()> {
-        debug_assert!(buf.len() >= INDEX_META_SIZE);
+        assert!(buf.len() >= INDEX_META_SIZE);
         if buf.len() < INDEX_META_SIZE {
             return Err(WriteTsmError::Encode {
                 source: "buffer too short".into(),
@@ -291,6 +291,18 @@ impl IndexEntry {
         buf[8] = self.field_type.into();
         buf[9..11].copy_from_slice(&(self.blocks.len() as u16).to_be_bytes()[..]);
         Ok(())
+    }
+
+    pub(crate) fn decode(data: &[u8]) -> (Self, u16) {
+        assert!(data.len() >= INDEX_META_SIZE);
+        (
+            Self {
+                field_id: decode_be_u64(&data[0..8]),
+                field_type: data[8].into(),
+                blocks: Vec::new(),
+            },
+            decode_be_u16(&data[9..11]),
+        )
     }
 }
 
@@ -313,5 +325,17 @@ impl BlockEntry {
         buf[20..28].copy_from_slice(&self.offset.to_be_bytes()[..]);
         buf[28..36].copy_from_slice(&self.size.to_be_bytes()[..]);
         buf[36..44].copy_from_slice(&self.val_offset.to_be_bytes()[..]);
+    }
+
+    pub(crate) fn decode(data: &[u8]) -> Self {
+        assert!(data.len() >= BLOCK_META_SIZE);
+        Self {
+            min_ts: decode_be_i64(&data[0..8]),
+            max_ts: decode_be_i64(&data[8..16]),
+            count: decode_be_u32(&data[16..20]),
+            offset: decode_be_u64(&data[20..28]),
+            size: decode_be_u64(&data[28..36]),
+            val_offset: decode_be_u64(&data[36..44]),
+        }
     }
 }

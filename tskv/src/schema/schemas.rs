@@ -190,13 +190,13 @@ impl DBschemas {
         Ok(schema)
     }
 
-    // pub fn list_tables(&self) -> Result<Vec<String>> {
-    //     let tables = self
-    //         .client
-    //         .list_tables(&self.database_name)
-    //         .context(MetaSnafu)?;
-    //     Ok(tables)
-    // }
+    pub fn list_tables(&self) -> Result<Vec<String>> {
+        let tables = self
+            .client
+            .list_tables(&self.database_name)
+            .context(MetaSnafu)?;
+        Ok(tables)
+    }
 
     pub fn del_table_schema(&self, tab: &str) -> Result<()> {
         self.client
