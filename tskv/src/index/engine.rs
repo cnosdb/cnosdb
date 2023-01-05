@@ -34,7 +34,7 @@ impl IndexEngine {
             .create(true)
             .read(true)
             .write(true)
-            .open(&db_path)
+            .open(db_path)
             .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
 
         let store = store::PagedFileStore::new(file, 1024 * 1024)

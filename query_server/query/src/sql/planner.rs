@@ -37,46 +37,21 @@ use snafu::ResultExt;
 use spi::query::ast::{
     AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
     AlterTableAction as ASTAlterTableAction, AlterTenantOperation, AlterUserOperation,
-    ColumnOption, CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
+    ChecksumGroup as ASTChecksumGroup, ColumnOption, CompactVnode as ASTCompactVnode,
+    CopyVnode as ASTCopyVnode, CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
     DatabaseOptions as ASTDatabaseOptions, DescribeDatabase as DescribeDatabaseOptions,
-    DescribeTable as DescribeTableOptions, ExtStatement, ShowSeries as ASTShowSeries, ShowTagBody,
+    DescribeTable as DescribeTableOptions, DropVnode as ASTDropVnode, ExtStatement,
+    MoveVnode as ASTMoveVnode, ShowSeries as ASTShowSeries, ShowTagBody,
     ShowTagValues as ASTShowTagValues, With,
 };
 use spi::query::logical_planner::{
-    affected_row_expr,
-    merge_affected_row_expr,
-    sql_options_to_tenant_options,
-    sql_options_to_user_options,
-    AlterDatabase,
-    AlterTable,
-    AlterTableAction,
-    AlterTenant,
-    AlterTenantAction,
-    AlterTenantAddUser,
-    AlterTenantSetUser,
-    AlterUser,
-    AlterUserAction,
-    CreateDatabase,
-    CreateRole,
-    CreateTable,
-    CreateTenant,
-    CreateUser,
-    DDLPlan,
-    DatabaseObjectType,
-    DescribeDatabase,
-    DescribeTable,
-    DropDatabaseObject,
-    DropGlobalObject,
-    DropTenantObject,
-    GlobalObjectType,
-    GrantRevoke,
-    LogicalPlanner,
-    // LogicalPlannerError,
-    Plan,
-    PlanWithPrivileges,
-    QueryPlan,
-    SYSPlan,
-    TenantObjectType,
+    affected_row_expr, merge_affected_row_expr, sql_options_to_tenant_options,
+    sql_options_to_user_options, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
+    AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction,
+    ChecksumGroup, CompactVnode, CopyVnode, CreateDatabase, CreateRole, CreateTable, CreateTenant,
+    CreateUser, DDLPlan, DatabaseObjectType, DescribeDatabase, DescribeTable, DropDatabaseObject,
+    DropGlobalObject, DropTenantObject, DropVnode, GlobalObjectType, GrantRevoke, LogicalPlanner,
+    MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan, TenantObjectType,
 };
 use spi::query::session::IsiphoSessionCtx;
 use spi::DatafusionSnafu;
@@ -147,6 +122,12 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                     privileges: vec![],
                 })
             }
+            // vnode statement
+            ExtStatement::DropVnode(stmt) => self.drop_vnode_to_plan(stmt),
+            ExtStatement::CopyVnode(stmt) => self.copy_vnode_to_plan(stmt),
+            ExtStatement::MoveVnode(stmt) => self.move_vnode_to_plan(stmt),
+            ExtStatement::CompactVnode(stmt) => self.compact_vnode_to_plan(stmt),
+            ExtStatement::ChecksumGroup(stmt) => self.checksum_group_to_plan(stmt),
         }
     }
 
@@ -1335,6 +1316,56 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         }));
 
         Ok(PlanWithPrivileges { plan, privileges })
+    }
+
+    fn drop_vnode_to_plan(&self, stmt: ASTDropVnode) -> Result<PlanWithPrivileges> {
+        let ASTDropVnode { vnode_id } = stmt;
+
+        let plan = Plan::DDL(DDLPlan::DropVnode(DropVnode { vnode_id }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
+    fn copy_vnode_to_plan(&self, stmt: ASTCopyVnode) -> Result<PlanWithPrivileges> {
+        let ASTCopyVnode { vnode_id, node_id } = stmt;
+
+        let plan = Plan::DDL(DDLPlan::CopyVnode(CopyVnode { vnode_id, node_id }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
+    fn move_vnode_to_plan(&self, stmt: ASTMoveVnode) -> Result<PlanWithPrivileges> {
+        let ASTMoveVnode { vnode_id, node_id } = stmt;
+
+        let plan = Plan::DDL(DDLPlan::MoveVnode(MoveVnode { vnode_id, node_id }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
+    fn compact_vnode_to_plan(&self, stmt: ASTCompactVnode) -> Result<PlanWithPrivileges> {
+        let ASTCompactVnode { vnode_ids } = stmt;
+
+        let plan = Plan::DDL(DDLPlan::CompactVnode(CompactVnode { vnode_ids }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
+    fn checksum_group_to_plan(&self, stmt: ASTChecksumGroup) -> Result<PlanWithPrivileges> {
+        let ASTChecksumGroup { replication_set_id } = stmt;
+
+        let plan = Plan::DDL(DDLPlan::ChecksumGroup(ChecksumGroup { replication_set_id }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
     }
 
     fn get_tskv_schema(&self, table_name: &str) -> Result<TskvTableSchemaRef> {

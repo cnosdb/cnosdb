@@ -15,6 +15,8 @@ use datafusion::{
     prelude::{col, Expr},
     sql::sqlparser::ast::{Ident, ObjectName, SqlOption},
 };
+
+use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use models::schema::TableColumn;
 use models::{
     auth::{
@@ -87,6 +89,43 @@ pub enum DDLPlan {
     AlterUser(AlterUser),
 
     GrantRevoke(GrantRevoke),
+
+    DropVnode(DropVnode),
+
+    CopyVnode(CopyVnode),
+
+    MoveVnode(MoveVnode),
+
+    CompactVnode(CompactVnode),
+
+    ChecksumGroup(ChecksumGroup),
+}
+
+#[derive(Debug, Clone)]
+pub struct ChecksumGroup {
+    pub replication_set_id: ReplicationSetId,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompactVnode {
+    pub vnode_ids: Vec<VnodeId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MoveVnode {
+    pub vnode_id: VnodeId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct CopyVnode {
+    pub vnode_id: VnodeId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct DropVnode {
+    pub vnode_id: VnodeId,
 }
 
 #[derive(Debug, Clone)]

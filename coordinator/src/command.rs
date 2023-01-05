@@ -12,6 +12,7 @@ use tokio::sync::oneshot::Sender as OneShotSender;
 use datafusion::arrow::record_batch::RecordBatch;
 
 // use std::net::{TcpListener, TcpStream};
+use models::meta_data::VnodeId;
 use tokio::net::{TcpListener, TcpStream};
 use trace::info;
 use tskv::iterator::QueryOption;

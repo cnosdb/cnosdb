@@ -133,6 +133,7 @@ pub trait MetaClient: Send + Sync + Debug {
     fn create_db(&self, info: DatabaseSchema) -> MetaResult<()>;
     fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()>;
     fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>>;
+    fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>>;
     fn list_databases(&self) -> MetaResult<Vec<String>>;
     fn drop_db(&self, name: &str) -> MetaResult<bool>;
 
@@ -161,7 +162,7 @@ pub trait MetaClient: Send + Sync + Debug {
         db: &str,
         hash_id: u64,
         ts: i64,
-    ) -> MetaResult<ReplcationSet>;
+    ) -> MetaResult<ReplicationSet>;
 
     fn print_data(&self) -> String;
 
@@ -806,6 +807,10 @@ impl MetaClient for RemoteMetaClient {
         Ok(None)
     }
 
+    fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
+        Ok(self.data.read().dbs.get(name).cloned())
+    }
+
     fn list_databases(&self) -> MetaResult<Vec<String>> {
         let mut list = vec![];
         for (k, _) in self.data.read().dbs.iter() {
@@ -1004,7 +1009,7 @@ impl MetaClient for RemoteMetaClient {
         db: &str,
         hash_id: u64,
         ts: i64,
-    ) -> MetaResult<ReplcationSet> {
+    ) -> MetaResult<ReplicationSet> {
         if let Some(bucket) = self.data.read().bucket_by_timestamp(db, ts) {
             return Ok(bucket.vnode_for(hash_id));
         }

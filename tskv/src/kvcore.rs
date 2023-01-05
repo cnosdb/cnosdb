@@ -776,6 +776,31 @@ impl Engine for TsKv {
             .change_table_column(table, column_name, new_column)?;
         Ok(())
     }
+
+    async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
+        let r_version_set = self.version_set.read().await;
+        let all_db = r_version_set.get_all_db();
+        for (db_name, db) in all_db {
+            if db.read().await.get_tsfamily(id).is_none() {
+                continue;
+            }
+            {
+                let mut db_wlock = db.write().await;
+                db_wlock.del_ts_index(id);
+                db_wlock.del_tsfamily(id, self.summary_task_sender.clone());
+            }
+            let tsf_dir = self.options.storage.tsfamily_dir(db_name, id);
+            if let Err(e) = std::fs::remove_dir_all(&tsf_dir) {
+                error!("Failed to remove dir '{}', e: {}", tsf_dir.display(), e);
+            }
+            let index_dir = self.options.storage.index_dir(db_name, id);
+            if let Err(e) = std::fs::remove_dir_all(&index_dir) {
+                error!("Failed to remove dir '{}', e: {}", index_dir.display(), e);
+            }
+            break;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
