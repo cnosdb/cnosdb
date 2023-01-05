@@ -332,6 +332,12 @@ pub enum QueryError {
     BuildParquetArrowWriter {
         source: ParquetError,
     },
+
+    #[error_code(code = 51)]
+    #[snafu(display("Failed to serialize data to csv bytes, error: {}", source))]
+    SerializeCsv {
+        source: ArrowError,
+    },
 }
 
 impl From<ParserError> for QueryError {

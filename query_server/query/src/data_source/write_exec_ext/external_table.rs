@@ -20,7 +20,10 @@ use crate::{
     data_source::{
         sink::{
             obj_store::{
-                serializer::parquet::ParquetRecordBatchSerializer, ObjectStoreSinkProvider,
+                serializer::{
+                    csv::CsvRecordBatchSerializer, parquet::ParquetRecordBatchSerializer,
+                },
+                ObjectStoreSinkProvider,
             },
             DynRecordBatchSerializer,
         },
@@ -81,8 +84,11 @@ fn get_record_batch_serializer(
     let any = format.as_any();
     let result = if any.is::<ParquetFormat>() {
         Arc::new(ParquetRecordBatchSerializer {}) as _
-    } else if any.is::<CsvFormat>() {
-        unimplemented!()
+    } else if let Some(format) = any.downcast_ref::<CsvFormat>() {
+        Arc::new(CsvRecordBatchSerializer::new(
+            format.has_header(),
+            format.delimiter(),
+        )) as _
     } else if any.is::<AvroFormat>() {
         unimplemented!()
     } else if any.is::<JsonFormat>() {
