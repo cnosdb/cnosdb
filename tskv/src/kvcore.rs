@@ -376,7 +376,10 @@ impl TsKv {
         Ok(db)
     }
 
-    async fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+    pub(crate) async fn create_database(
+        &self,
+        schema: &DatabaseSchema,
+    ) -> Result<Arc<RwLock<Database>>> {
         if self
             .version_set
             .read()
@@ -772,6 +775,17 @@ impl Engine for TsKv {
             .await
             .change_table_column(table, column_name, new_column)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl TsKv {
+    pub(crate) fn summary_task_sender(&self) -> UnboundedSender<SummaryTask> {
+        self.summary_task_sender.clone()
+    }
+
+    pub(crate) fn flush_task_sender(&self) -> UnboundedSender<FlushReq> {
+        self.flush_task_sender.clone()
     }
 }
 

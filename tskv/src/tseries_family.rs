@@ -2,7 +2,7 @@ use std::ops::Bound;
 use std::time::Duration;
 use std::{
     borrow::{Borrow, BorrowMut},
-    cmp::{max, min},
+    cmp::{self, max, min},
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
@@ -40,7 +40,7 @@ lazy_static! {
     pub static ref FLUSH_REQ: Arc<Mutex<Vec<FlushReq>>> = Arc::new(Mutex::new(vec![]));
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TimeRange {
     pub min_ts: i64,
     pub max_ts: i64,
@@ -113,6 +113,21 @@ impl From<(Timestamp, Timestamp)> for TimeRange {
 impl From<TimeRange> for (Timestamp, Timestamp) {
     fn from(t: TimeRange) -> Self {
         (t.min_ts, t.max_ts)
+    }
+}
+
+impl PartialOrd for TimeRange {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TimeRange {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        match self.min_ts.cmp(&other.min_ts) {
+            cmp::Ordering::Equal => self.max_ts.cmp(&other.max_ts),
+            other => other,
+        }
     }
 }
 
@@ -691,7 +706,13 @@ impl TseriesFamily {
         self.new_super_version(self.version.clone());
     }
 
-    fn wrap_flush_req(&mut self) {
+    /// Check if there is immutable caches to flush.
+    ///
+    /// If argument `force` is false, immutable caches number should be greater than
+    /// configuration `max_immutable_number`.
+    ///
+    /// If argument force is set to true, then do not check immutable caches number.
+    pub(crate) fn wrap_flush_req(&mut self, force: bool) {
         let len = self.immut_cache.len();
         let mut imut = vec![];
         for mem in self.immut_cache.iter() {
@@ -715,7 +736,7 @@ impl TseriesFamily {
             req_mems.push((self.tf_id, mem.clone()));
         }
 
-        if req_mems.len() < self.cache_opt.max_immutable_number as usize {
+        if !force && req_mems.len() < self.cache_opt.max_immutable_number as usize {
             return;
         }
 
@@ -750,7 +771,7 @@ impl TseriesFamily {
             info!("mut_cache full,switch to immutable");
             self.switch_to_immutable();
             if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
-                self.wrap_flush_req();
+                self.wrap_flush_req(false);
             }
         }
     }
@@ -970,7 +991,7 @@ mod test {
             last_seq: 1,
             max_level_ts: 3150,
             levels_info: [
-                LevelInfo::init(database.clone(), 0, 0,opt.storage.clone()),
+                LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
                 LevelInfo {
                     files: vec![
                         Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
@@ -997,8 +1018,8 @@ mod test {
                     max_size: 10000,
                     time_range: TimeRange::new(1, 2000),
                 },
-                LevelInfo::init(database.clone(), 3, 0,opt.storage.clone()),
-                LevelInfo::init(database, 4, 0, opt.storage.clone()),
+                LevelInfo::init(database.clone(), 3, 1,opt.storage.clone()),
+                LevelInfo::init(database, 4, 1, opt.storage.clone()),
             ],
         };
         let mut version_edits = Vec::new();

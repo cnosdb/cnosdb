@@ -1,6 +1,97 @@
 #[cfg(feature = "test")]
 pub use test::*;
 
+use crate::models::{FieldType, Points};
+
+pub fn print_points(points: Points) {
+    if let Some(db) = points.db() {
+        println!(
+            "Database: {}",
+            String::from_utf8(db.bytes().to_vec()).unwrap()
+        );
+    }
+    if let Some(points) = points.points() {
+        for point in points.iter() {
+            print!("\nTimestamp: {}", point.timestamp());
+            if let Some(tags) = point.tags() {
+                print!("\nTags[{}]: ", tags.len());
+                for (tag_idx, tag) in tags.iter().enumerate() {
+                    if let Some(key) = tag.key() {
+                        print!("{{ {}: ", String::from_utf8(key.bytes().to_vec()).unwrap())
+                    } else {
+                        print!("{{ EMPTY_TAG_KEY: ")
+                    }
+                    if let Some(val) = tag.value() {
+                        print!("{} }}", String::from_utf8(val.bytes().to_vec()).unwrap())
+                    } else {
+                        print!("EMPTY_TAG_VAL }}")
+                    }
+                    if tag_idx < tags.len() - 1 {
+                        print!(", ")
+                    }
+                }
+            } else {
+                println!("Tags[0]")
+            }
+            if let Some(fields) = point.fields() {
+                print!("\nFields[{}]: ", fields.len());
+                for (field_idx, field) in fields.iter().enumerate() {
+                    if let Some(name) = field.name() {
+                        print!("{{ {}: ", String::from_utf8(name.bytes().to_vec()).unwrap())
+                    } else {
+                        print!("{{ EMPTY_FIELD_NAME: ");
+                    }
+                    if let Some(val) = field.value() {
+                        let val_bytes = val.bytes();
+                        match field.type_() {
+                            FieldType::Integer => {
+                                let val = unsafe {
+                                    i64::from_be_bytes(*(val_bytes as *const _ as *const [u8; 8]))
+                                };
+                                print!("{}, ", val);
+                            }
+                            FieldType::Unsigned => {
+                                let val = unsafe {
+                                    u64::from_be_bytes(*(val_bytes as *const _ as *const [u8; 8]))
+                                };
+                                print!("{}, ", val);
+                            }
+                            FieldType::Float => {
+                                let val = unsafe {
+                                    f64::from_be_bytes(*(val_bytes as *const _ as *const [u8; 8]))
+                                };
+                                print!("{}, ", val);
+                            }
+                            FieldType::Boolean => {
+                                if val_bytes[0] == 1 {
+                                    print!("true, ");
+                                } else {
+                                    print!("false, ");
+                                }
+                            }
+                            FieldType::String => {
+                                print!("{}, ", String::from_utf8(val_bytes.to_vec()).unwrap())
+                            }
+                            _ => {
+                                print!("UNKNOWN_FIELD_VAL, ");
+                            }
+                        }
+                        print!("{} }}", field.type_().0)
+                    } else {
+                        print!("EMPTY_FIELD_VAL, {} }}", field.type_().0);
+                    }
+                    if field_idx < fields.len() - 1 {
+                        print!(", ")
+                    }
+                }
+            } else {
+                println!("Fields[0]");
+            }
+            println!();
+        }
+    }
+}
+
 #[cfg(feature = "test")]
 mod test {
     use chrono::prelude::*;

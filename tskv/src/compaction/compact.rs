@@ -69,7 +69,7 @@ impl CompactingBlockMeta {
 /// - priority: When merging two (timestamp, value) pair with the same
 /// timestamp from two data blocks, pair from data block with lower
 /// priority will be discarded.
-enum CompactingBlock {
+pub(crate) enum CompactingBlock {
     DataBlock {
         priority: usize,
         field_id: FieldId,
@@ -113,8 +113,13 @@ impl CompactingBlock {
     }
 }
 
-struct CompactIterator {
+pub(crate) struct CompactIterator {
     tsm_readers: Vec<TsmReader>,
+    /// Maximum values in generated CompactingBlock
+    max_datablock_values: u32,
+    /// Decode a data block even though it doesn't need to merge with others,
+    /// return CompactingBlock::DataBlock rather than CompactingBlock::Raw
+    decode_non_overlap_blocks: bool,
 
     tsm_index_iters: Vec<Peekable<IndexIterator>>,
     tmp_tsm_blks: Vec<BlockMetaIterator>,
@@ -129,8 +134,6 @@ struct CompactIterator {
     last_fid: Option<FieldId>,
 
     merged_blocks: VecDeque<CompactingBlock>,
-
-    max_datablock_values: u32,
 }
 
 /// To reduce construction code
@@ -138,6 +141,8 @@ impl Default for CompactIterator {
     fn default() -> Self {
         Self {
             tsm_readers: Default::default(),
+            max_datablock_values: 0,
+            decode_non_overlap_blocks: false,
             tsm_index_iters: Default::default(),
             tmp_tsm_blks: Default::default(),
             tmp_tsm_blk_tsm_reader_idx: Default::default(),
@@ -146,12 +151,31 @@ impl Default for CompactIterator {
             curr_fid: Default::default(),
             last_fid: Default::default(),
             merged_blocks: Default::default(),
-            max_datablock_values: Default::default(),
         }
     }
 }
 
 impl CompactIterator {
+    pub(crate) fn new(
+        tsm_readers: Vec<TsmReader>,
+        max_data_block_size: u32,
+        decode_non_overlap_blocks: bool,
+    ) -> Self {
+        let tsm_readers_cnt = tsm_readers.len();
+        let tsm_index_iters: Vec<Peekable<IndexIterator>> = tsm_readers
+            .iter()
+            .map(|r| r.index_iterator().peekable())
+            .collect();
+        Self {
+            tsm_readers,
+            max_datablock_values: max_data_block_size,
+            decode_non_overlap_blocks,
+            tsm_index_iters,
+            finished_readers: vec![false; tsm_readers_cnt],
+            ..Default::default()
+        }
+    }
+
     /// Update tmp_tsm_blks and tmp_tsm_blk_tsm_reader_idx for field id in next iteration.
     fn next_field_id(&mut self) {
         self.tmp_tsm_blks = Vec::with_capacity(self.tsm_index_iters.len());
@@ -249,7 +273,7 @@ impl CompactIterator {
                 if cbm.block_meta.size() as usize > buf.len() {
                     buf.resize(cbm.block_meta.size() as usize, 0);
                 }
-                if cbm.has_tombstone {
+                if cbm.has_tombstone || self.decode_non_overlap_blocks {
                     let data_block = self.tsm_readers[cbm.readers_idx]
                         .get_data_block(&cbm.block_meta)
                         .await
@@ -331,7 +355,7 @@ impl CompactIterator {
                             merged_blk_time_range.0.min(cbm.block_meta.min_ts());
                         merged_blk_time_range.1 =
                             merged_blk_time_range.0.max(cbm.block_meta.max_ts());
-                        if cbm.has_tombstone {
+                        if cbm.has_tombstone || self.decode_non_overlap_blocks {
                             let data_block = self.tsm_readers[cbm.readers_idx]
                                 .get_data_block(&cbm.block_meta)
                                 .await
@@ -387,7 +411,7 @@ impl CompactIterator {
 }
 
 impl CompactIterator {
-    pub async fn next(&mut self) -> Option<Result<CompactingBlock>> {
+    pub(crate) async fn next(&mut self) -> Option<Result<CompactingBlock>> {
         if let Some(blk) = self.merged_blocks.pop_front() {
             return Some(Ok(blk));
         }
@@ -425,7 +449,7 @@ impl CompactIterator {
 }
 
 /// Returns if r1 (min_ts, max_ts) overlaps r2 (min_ts, max_ts)
-pub fn overlaps_tuples(r1: (i64, i64), r2: (i64, i64)) -> bool {
+fn overlaps_tuples(r1: (i64, i64), r2: (i64, i64)) -> bool {
     r1.0 <= r2.1 && r1.1 >= r2.0
 }
 
@@ -452,37 +476,25 @@ pub async fn run_compaction_job(
             .join(", ")
     );
 
+    if request.files.is_empty() {
+        // Nothing to compact
+        return Ok(None);
+    }
+
     let version = request.version;
 
     // Buffers all tsm-files and it's indexes for this compaction
     let max_data_block_size = 1000; // TODO this const value is in module tsm
     let tsf_id = request.ts_family_id;
     let storage_opt = request.storage_opt;
-    let mut tsm_files: Vec<PathBuf> = Vec::new();
     let mut tsm_readers = Vec::new();
-    let mut tsm_index_iters = Vec::new();
     for col_file in request.files.iter() {
         let tsm_file = col_file.file_path();
         let tsm_reader = TsmReader::open(&tsm_file).await?;
-        tsm_files.push(tsm_file);
-        let idx_iter = tsm_reader.index_iterator().peekable();
         tsm_readers.push(tsm_reader);
-        tsm_index_iters.push(idx_iter);
     }
 
-    if tsm_index_iters.is_empty() {
-        // Nothing to compact
-        return Ok(None);
-    }
-
-    let tsm_readers_cnt = tsm_readers.len();
-    let mut iter = CompactIterator {
-        tsm_readers,
-        tsm_index_iters,
-        finished_readers: vec![false; tsm_readers_cnt],
-        max_datablock_values: max_data_block_size,
-        ..Default::default()
-    };
+    let mut iter = CompactIterator::new(tsm_readers, max_data_block_size, false);
     let tsm_dir = storage_opt.tsm_dir(&request.database, tsf_id);
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
     info!("Compaction: File {} been created.", tsm_writer.sequence());
@@ -587,7 +599,7 @@ fn new_compact_meta(tsm_writer: &TsmWriter, level: LevelId) -> CompactMeta {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use core::panic;
     use minivec::MiniVec;
     use std::{
@@ -603,10 +615,10 @@ mod test {
     use models::{FieldId, Timestamp, ValueType};
     use utils::BloomFilter;
 
-    use crate::file_system::file_manager;
     use crate::{
         compaction::{run_compaction_job, CompactReq},
         context::GlobalContext,
+        file_system::file_manager,
         file_utils,
         kv_option::Options,
         summary::VersionEdit,

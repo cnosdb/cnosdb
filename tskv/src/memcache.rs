@@ -480,6 +480,16 @@ impl DataType {
             FieldVal::Bytes(val) => Self::Str(ts, val),
         }
     }
+
+    pub fn to_bytes(&self) -> MiniVec<u8> {
+        match self {
+            DataType::U64(_, val) => MiniVec::from_iter(val.to_be_bytes()),
+            DataType::I64(_, val) => MiniVec::from_iter(val.to_be_bytes()),
+            DataType::F64(_, val) => MiniVec::from_iter(val.to_be_bytes()),
+            DataType::Str(_, val) => val.clone(),
+            DataType::Bool(_, val) => MiniVec::from_iter(if *val { [1_u8] } else { [0_u8] }),
+        }
+    }
 }
 
 impl Display for DataType {

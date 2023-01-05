@@ -430,7 +430,6 @@ pub mod flush_tests {
     use utils::dedup_front_by_key;
 
     use crate::file_system::file_manager;
-    use crate::file_utils;
     use crate::memcache::test::put_rows_to_cache;
     use crate::summary::{CompactMeta, VersionEdit};
     use crate::tseries_family::{LevelInfo, Version};
@@ -439,8 +438,10 @@ pub mod flush_tests {
     use crate::{
         compaction::FlushReq,
         context::GlobalContext,
+        file_utils,
         kv_option::Options,
         memcache::{DataType, FieldVal, MemCache},
+        tseries_family,
         tseries_family::FLUSH_REQ,
         version_set::VersionSet,
     };

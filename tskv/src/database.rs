@@ -26,16 +26,15 @@ use crate::schema::schemas::DBschemas;
 use crate::tseries_family::LevelInfo;
 use crate::Error::{IndexErr, InvalidPoint};
 use crate::{
+    compaction::check,
     error::{self, IndexErrSnafu, Result},
-    memcache::{RowData, RowGroup},
-    version_set::VersionSet,
-    Error, TimeRange, TseriesFamilyId,
-};
-use crate::{
     kv_option::Options,
     memcache::MemCache,
+    memcache::{RowData, RowGroup},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{TseriesFamily, Version},
+    version_set::VersionSet,
+    Error, TimeRange, TseriesFamilyId,
 };
 
 pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>;
@@ -402,6 +401,13 @@ impl Database {
 
     pub fn get_schema(&self) -> Result<DatabaseSchema> {
         Ok(self.schemas.db_schema()?)
+    }
+
+    pub async fn get_ts_family_hash_tree(
+        &self,
+        ts_family_id: TseriesFamilyId,
+    ) -> Result<Vec<check::TableHashTreeNode>> {
+        check::get_ts_family_hash_tree(self, ts_family_id).await
     }
 }
 
