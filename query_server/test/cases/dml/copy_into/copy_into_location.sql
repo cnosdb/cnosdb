@@ -1,3 +1,4 @@
+--#SLEEP=100
 DROP TABLE IF EXISTS ci_location_tbl;
 DROP TABLE IF EXISTS ci_location_tbl_ext;
 DROP TABLE IF EXISTS ci_location_tbl2_ext;
