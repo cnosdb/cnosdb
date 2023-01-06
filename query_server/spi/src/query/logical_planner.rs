@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use crate::service::protocol::QueryId;
 use crate::ParserSnafu;
 use crate::QueryError;
@@ -7,7 +9,7 @@ use super::{
     ast::{parse_bool_value, parse_char_value, parse_string_value, ExtStatement},
     datasource::{
         azure::{AzblobStorageConfig, AzblobStorageConfigBuilder},
-        gcs::{GcsStorageConfig, GcsStorageConfigBuilder},
+        gcs::{GcsStorageConfig, ServiceAccountCredentials, ServiceAccountCredentialsBuilder},
         s3::{S3StorageConfig, S3StorageConfigBuilder},
         UriSchema,
     },
@@ -36,6 +38,7 @@ use models::{
     schema::{DatabaseOptions, TenantOptions, TenantOptionsBuilder},
 };
 use snafu::ResultExt;
+use tempfile::NamedTempFile;
 
 #[derive(Clone)]
 pub struct PlanWithPrivileges {
@@ -669,32 +672,21 @@ fn parse_s3_options(bucket: &str, options: Vec<SqlOption>) -> Result<S3StorageCo
 
 /// gcs://<bucket>/<path>
 fn parse_gcs_options(bucket: &str, options: Vec<SqlOption>) -> Result<GcsStorageConfig> {
-    let mut builder = GcsStorageConfigBuilder::default();
-    builder.bucket(bucket);
+    let mut sac_builder = ServiceAccountCredentialsBuilder::default();
 
-    // ```json
-    // {
-    //    "gcs_base_url": "https://localhost:4443",
-    //    "disable_oauth": true,
-    //    "client_email": "",
-    //    "private_key": ""
-    // }
-    // ```
-    for SqlOption { ref name, value: _ } in options {
+    for SqlOption { ref name, value } in options {
         match normalize_ident(name).as_str() {
             "gcs_base_url" => {
-                // let tmp_service_account_path = NamedTempFile::new().map_err(|e| e.to_string())?;
-                // writeln!(tmp_service_account_path, "c1,c2,c3").map_err(|e| e.to_string())?;
-                todo!()
+                sac_builder.gcs_base_url(parse_string_value(value)?);
             }
             "disable_oauth" => {
-                todo!()
+                sac_builder.disable_oauth(parse_bool_value(value)?);
             }
             "client_email" => {
-                todo!()
+                sac_builder.client_email(parse_string_value(value)?);
             }
             "private_key" => {
-                todo!()
+                sac_builder.private_key(parse_string_value(value)?);
             }
             _ => {
                 return Err(QueryError::Semantic {
@@ -704,8 +696,15 @@ fn parse_gcs_options(bucket: &str, options: Vec<SqlOption>) -> Result<GcsStorage
         }
     }
 
-    builder.build().map_err(|err| QueryError::Semantic {
+    let sac = sac_builder.build().map_err(|err| QueryError::Semantic {
         err: err.to_string(),
+    })?;
+    let mut temp = NamedTempFile::new()?;
+    write_tmp_service_account_file(sac, &mut temp)?;
+
+    Ok(GcsStorageConfig {
+        bucket: bucket.to_string(),
+        service_account_path: temp.into_temp_path(),
     })
 }
 
@@ -740,4 +739,15 @@ fn parse_azure_options(bucket: &str, options: Vec<SqlOption>) -> Result<AzblobSt
     builder.build().map_err(|err| QueryError::Semantic {
         err: err.to_string(),
     })
+}
+
+fn write_tmp_service_account_file(
+    sac: ServiceAccountCredentials,
+    tmp: &mut NamedTempFile,
+) -> Result<()> {
+    let body = serde_json::to_vec(&sac)?;
+    let _ = tmp.write(&body)?;
+    tmp.flush()?;
+
+    Ok(())
 }

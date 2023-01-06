@@ -344,6 +344,18 @@ pub enum QueryError {
     SerializeJson {
         source: ArrowError,
     },
+
+    #[error_code(code = 53)]
+    #[snafu(display("{}", source))]
+    StdIoError {
+        source: std::io::Error,
+    },
+
+    #[error_code(code = 54)]
+    #[snafu(display("{}", source))]
+    SerdeJsonError {
+        source: serde_json::Error,
+    },
 }
 
 impl From<ParserError> for QueryError {
@@ -437,6 +449,18 @@ impl From<ArrowError> for QueryError {
 impl From<object_store::Error> for QueryError {
     fn from(source: object_store::Error) -> Self {
         QueryError::ObjectStore { source }
+    }
+}
+
+impl From<std::io::Error> for QueryError {
+    fn from(source: std::io::Error) -> Self {
+        QueryError::StdIoError { source }
+    }
+}
+
+impl From<serde_json::Error> for QueryError {
+    fn from(source: serde_json::Error) -> Self {
+        QueryError::SerdeJsonError { source }
     }
 }
 

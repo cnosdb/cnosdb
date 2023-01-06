@@ -109,9 +109,10 @@ mod tests {
         path::Path, ObjectStore,
     };
 
-    use serde::Serialize;
     use spi::query::datasource::{
-        azure::AzblobStorageConfig, gcs::GcsStorageConfig, s3::S3StorageConfig,
+        azure::AzblobStorageConfig,
+        gcs::{GcsStorageConfig, ServiceAccountCredentialsBuilder},
+        s3::S3StorageConfig,
     };
 
     #[tokio::test]
@@ -160,22 +161,6 @@ mod tests {
         let _ = azblob.head(&path).await.unwrap();
     }
 
-    /// A deserialized `service-account-********.json`-file.
-    #[derive(Serialize, Debug)]
-    struct ServiceAccountCredentials {
-        /// The private key in RSA format.
-        pub private_key: String,
-
-        /// The email address associated with the service account.
-        pub client_email: String,
-
-        /// Base URL for GCS
-        pub gcs_base_url: String,
-
-        /// Disable oauth and use empty tokens.
-        pub disable_oauth: bool,
-    }
-
     #[tokio::test]
     #[ignore = "no environment"]
     async fn test_gcs_connection() {
@@ -183,30 +168,29 @@ mod tests {
         // disable_oauth: bool,
         // client_email: String,
         // private_key: String,
-        let path = ServiceAccountCredentials {
-            gcs_base_url: "http://0.0.0.0:4443".into(),
-            disable_oauth: true,
-            client_email: "".into(),
-            private_key: "".into(),
-        };
+        let sac = ServiceAccountCredentialsBuilder::default()
+            .gcs_base_url("http://0.0.0.0:4443".to_string())
+            .disable_oauth(true)
+            .build()
+            .unwrap();
 
-        let body = serde_json::to_vec(&path).unwrap();
+        let body = serde_json::to_vec(&sac).unwrap();
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
 
         let _ = tmp.write(&body).unwrap();
 
         tmp.flush().unwrap();
 
-        let path = tmp.path().to_str().unwrap().to_string();
+        let path = tmp.into_temp_path();
 
-        println!("path: {}", path);
+        println!("path: {:?}", path.to_str());
 
         let config = GcsStorageConfig {
             bucket: "csv".into(),
             service_account_path: path,
         };
 
-        let gcs = GoogleCloudStorageBuilder::from(config).build().unwrap();
+        let gcs = GoogleCloudStorageBuilder::from(&config).build().unwrap();
 
         let path = Path::from("/data/csv/test.csv");
         let body = Bytes::from_static(b"bytes");

@@ -65,7 +65,7 @@ pub fn build_object_store(
 ) -> Result<Option<Arc<dyn ObjectStore>>, object_store::Error> {
     let object_store: Option<Arc<dyn ObjectStore>> = match options {
         ConnectionOptions::S3(config) => Some(Arc::new(AmazonS3Builder::from(config).build()?)),
-        ConnectionOptions::Gcs(config) => {
+        ConnectionOptions::Gcs(ref config) => {
             Some(Arc::new(GoogleCloudStorageBuilder::from(config).build()?))
         }
         ConnectionOptions::Azblob(config) => {
