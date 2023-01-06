@@ -16,7 +16,7 @@ CREATE TABLE inner_csv(
     );
 
 COPY INTO inner_csv
-FROM 'query_server/query/tests/data/csv/full_data_type.csv'
+FROM 'query_server/test/resource/data_type/csv/full_data_type.csv'
 file_format = (type = 'csv');
 
 select * from inner_csv order by time;
@@ -30,15 +30,17 @@ CREATE TABLE inner_csv_v2(
     TAGS(tag1, tag2)
 );
 
+select * from inner_csv_v2 limit 1;
+
 -- time,tag1,tag2,bigint_c,string_c,ubigint_c,boolean_c,double_c
 -- 2022-12-22 09:26:56,tt1,tt2,-512512,hello word,512,true,1.11
 COPY INTO inner_csv_v2(time, tag1, tag2, bigint_c, string_c, ubigint_c, boolean_c, double_c)
-FROM 'query_server/query/tests/data/csv/full_data_type.csv'
+FROM 'query_server/test/resource/data_type/csv/full_data_type.csv'
 file_format = (type = 'csv');
 
 -- error
 COPY INTO inner_csv_v2
-FROM 'query_server/query/tests/data/csv/full_data_type.csv'
+FROM 'query_server/test/resource/data_type/csv/full_data_type.csv'
 file_format = (type = 'csv');
 -- csv end
 

@@ -14,7 +14,7 @@
 200 OK
 
 
--- EXECUTE SQL: COPY INTO inner_csv FROM 'query_server/query/tests/data/csv/full_data_type.csv' file_format = (type = 'csv'); --
+-- EXECUTE SQL: COPY INTO inner_csv FROM 'query_server/test/resource/data_type/csv/full_data_type.csv' file_format = (type = 'csv'); --
 200 OK
 rows
 1
@@ -30,15 +30,20 @@ time,tag1,tag2,bigint_c,string_c,ubigint_c,boolean_c,double_c
 200 OK
 
 
--- EXECUTE SQL: COPY INTO inner_csv_v2(time, tag1, tag2, bigint_c, string_c, ubigint_c, boolean_c, double_c) FROM 'query_server/query/tests/data/csv/full_data_type.csv' file_format = (type = 'csv'); --
+-- EXECUTE SQL: select * from inner_csv_v2 limit 1; --
+200 OK
+time,tag1,tag2,string_c,bigint_c,boolean_c,ubigint_c,double_c
+
+
+-- EXECUTE SQL: COPY INTO inner_csv_v2(time, tag1, tag2, bigint_c, string_c, ubigint_c, boolean_c, double_c) FROM 'query_server/test/resource/data_type/csv/full_data_type.csv' file_format = (type = 'csv'); --
 200 OK
 rows
 1
 
 
--- EXECUTE SQL: COPY INTO inner_csv_v2 FROM 'query_server/query/tests/data/csv/full_data_type.csv' file_format = (type = 'csv'); --
+-- EXECUTE SQL: COPY INTO inner_csv_v2 FROM 'query_server/test/resource/data_type/csv/full_data_type.csv' file_format = (type = 'csv'); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Failed to fetch record batch, error: External error: Execution error: Arrow error: Parser error: Error while parsing value hello word for column 4 at line 1"}
+{"error_code":"010001","error_message":"Datafusion: Execution error: Arrow error: Parser error: Error while parsing value hello word for column 4 at line 1"}
 -- ERROR:  --
 
 -- EXECUTE SQL: drop table if EXISTS inner_parquet; --
@@ -81,12 +86,12 @@ rows
 
 -- EXECUTE SQL: copy into inner_parquet from 'query_server/test/resource/json/part-0.json' file_format = (type = 'json') copy_options = (auto_infer_schema = true); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Insert columns and Source columns not match"}
+{"error_code":"010045","error_message":"Semantic error: Insert columns and Source columns not match"}
 -- ERROR:  --
 
 -- EXECUTE SQL: copy into inner_parquet from 'query_server/test/resource/json/part-0.json' file_format = (type = 'json') copy_options = (auto_infer_schema = true); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Insert columns and Source columns not match"}
+{"error_code":"010045","error_message":"Semantic error: Insert columns and Source columns not match"}
 -- ERROR:  --
 
 -- EXECUTE SQL: copy into inner_parquet from 'query_server/test/resource/parquet/part-0.parquet' file_format = (type = 'parquet') copy_options = (auto_infer_schema = true); --
