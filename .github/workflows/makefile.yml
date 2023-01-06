@@ -47,10 +47,7 @@ jobs:
     - name: start meta
       shell: bash
       run: |
-        cargo build
-        mkdir -p /tmp/cnosdb/logs
-        cd meta
-        bash ./cluster.sh
+        bash ./meta/singleton.sh
 
     - name: test
       run: make test
@@ -80,10 +77,7 @@ jobs:
       - name: start meta
         shell: bash
         run: |
-          cargo build
-          mkdir -p /tmp/cnosdb/logs
-          cd meta
-          bash ./cluster.sh
+          bash ./meta/singleton.sh
       - name: Test
         shell: bash
         run: |
