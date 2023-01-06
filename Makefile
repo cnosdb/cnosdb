@@ -17,7 +17,9 @@ clippy:
 	cargo clippy --workspace  --all-targets --fix
 
 build:
-	cargo build --all-features --all-targets
+	cargo build --all-features --all-targets --package main
+	cargo build --all-features --all-targets --package meta
+	cargo build --all-features --all-targets --package client
 
 test:
 	cargo test --workspace --exclude e2e_test

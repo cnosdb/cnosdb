@@ -2,25 +2,21 @@
 
 kill() {
     if [ "$(uname)" = "Darwin" ]; then
-        SERVICE='main'
+        SERVICE='cnosdb'
         if pgrep -xq -- "${SERVICE}"; then
             pkill -f "${SERVICE}"
         fi
     else
         set +e # killall will error if finds no process to kill
-        killall main
+        killall cnosdb
         set -e
     fi
 }
 
 mkdir -p /tmp/cnosdb/logs
 
-cd ./meta
 echo "*** run meta cluster ......"
-./cluster.sh
-
-
-cd ..
+./meta/cluster.sh
 
 kill
 sleep 1
@@ -28,19 +24,19 @@ rm -rf /tmp/cnosdb/1001
 rm -rf /tmp/cnosdb/2001
 rm -rf /tmp/cnosdb/meta/
 
-echo "*** build main ......"
-cargo build
+echo "*** build cnosdb ......"
+cargo build --package main --bin cnosdb
 
-echo "*** build client ......"
-cargo build --package client --bin client
+echo "*** build cnosdb-cli ......"
+cargo build --package client --bin cnosdb-cli
 
 echo "*** start CnosDB server 31001......"
-nohup ./target/debug/main run  --config ./config/config_31001.toml > /tmp/cnosdb/logs/data_node.1001.log &
+nohup ./target/debug/cnosdb run --config ./config/config_31001.toml > /tmp/cnosdb/logs/data_node.1001.log &
 
 sleep 1
 
 echo "*** start CnosDB server 32001......"
-nohup ./target/debug/main run  --config ./config/config_32001.toml > /tmp/cnosdb/logs/data_node.2001.log &
+nohup ./target/debug/cnosdb run --config ./config/config_32001.toml > /tmp/cnosdb/logs/data_node.2001.log &
 
 echo "\n*** CnosDB Data Server Cluster is running ......"
 
