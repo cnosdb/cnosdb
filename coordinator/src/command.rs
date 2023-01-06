@@ -2,7 +2,7 @@
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::ipc::{reader::StreamReader, writer::StreamWriter};
 use models::predicate::domain::{PredicateRef, QueryArgs, QueryExpr};
-use models::schema::TskvTableSchema;
+use models::schema::{TableColumn, TskvTableSchema};
 use protos::kv_service::WritePointsRpcRequest;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -175,9 +175,34 @@ impl WriteVnodeRequest {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum AdminStatementType {
-    DropDB(String),            // db name
-    DropTable(String, String), // db name, tablename
-    DeleteVnode(String, u32),  // db name, vnode id
+    DropDB {
+        db: String,
+    },
+    DropTable {
+        db: String,
+        table: String,
+    },
+    DeleteVnode {
+        db: String,
+        vnode_id: u32,
+    },
+    DropColumn {
+        db: String,
+        table: String,
+        column: String,
+    },
+
+    AddColumn {
+        db: String,
+        table: String,
+        column: TableColumn,
+    },
+    AlterColumn {
+        db: String,
+        table: String,
+        column_name: String,
+        new_column: TableColumn,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

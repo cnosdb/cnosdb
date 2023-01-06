@@ -143,8 +143,8 @@ pub(crate) async fn get_ts_family_hash_tree(
     let schemas = database.get_schemas();
     let mut cid_table_name_map: HashMap<ColumnId, Rc<String>> = HashMap::new();
     let mut cid_col_name_map: HashMap<ColumnId, String> = HashMap::new();
-    for tab in schemas.list_tables().context(error::SchemaSnafu)? {
-        match schemas.get_table_schema(&tab).context(error::SchemaSnafu)? {
+    for tab in schemas.list_tables()? {
+        match schemas.get_table_schema(&tab)? {
             Some(sch) => {
                 let shared_tab = Rc::new(tab);
                 for col in sch.columns() {

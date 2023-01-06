@@ -179,7 +179,10 @@ impl CoordService {
             for vnode in repl_set.vnodes.iter() {
                 let req = AdminStatementRequest {
                     tenant: info.tenant.clone(),
-                    stmt: AdminStatementType::DeleteVnode(info.database.clone(), vnode.id),
+                    stmt: AdminStatementType::DeleteVnode {
+                        db: info.database.clone(),
+                        vnode_id: vnode.id,
+                    },
                 };
 
                 let cmd = CoordinatorTcpCmd::AdminStatementCmd(req);

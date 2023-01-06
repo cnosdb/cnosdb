@@ -277,10 +277,8 @@ impl TskvTableSchema {
         map
     }
 
-    pub fn next_column_id(&mut self) -> ColumnId {
-        let ans = self.next_column_id;
-        self.next_column_id += 1;
-        ans
+    pub fn next_column_id(&self) -> ColumnId {
+        self.next_column_id
     }
 
     pub fn size(&self) -> usize {

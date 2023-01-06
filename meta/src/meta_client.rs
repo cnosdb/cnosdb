@@ -27,8 +27,8 @@ use trace::{debug, info, warn};
 
 use crate::error::{MetaError, MetaResult};
 use models::schema::{
-    DatabaseSchema, ExternalTableSchema, LimiterConfig, TableSchema, Tenant, TenantOptions,
-    TskvTableSchema,
+    DatabaseSchema, ExternalTableSchema, LimiterConfig, TableColumn, TableSchema, Tenant,
+    TenantOptions, TskvTableSchema,
 };
 
 use crate::limiter::{Limiter, LimiterImpl, NoneLimiter};

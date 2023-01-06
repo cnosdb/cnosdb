@@ -1,3 +1,4 @@
+use datafusion::sql::sqlparser::test_utils::table;
 use std::mem::size_of;
 use std::mem::size_of_val;
 use std::{
@@ -61,10 +62,6 @@ impl Database {
         };
 
         Ok(db)
-    }
-
-    pub fn alter_db_schema(&self, schema: DatabaseSchema) -> Result<()> {
-        Ok(self.schemas.alter_db_schema(schema)?)
     }
 
     pub fn open_tsfamily(
@@ -298,25 +295,6 @@ impl Database {
         (edits, files)
     }
 
-    pub fn add_table_column(&self, table: &str, column: TableColumn) -> Result<()> {
-        Ok(self.schemas.add_table_column(table, column)?)
-    }
-
-    pub fn drop_table_column(&self, table: &str, column_name: &str) -> Result<()> {
-        Ok(self.schemas.drop_table_column(table, column_name)?)
-    }
-
-    pub fn change_table_column(
-        &self,
-        table: &str,
-        column_name: &str,
-        new_column: TableColumn,
-    ) -> Result<()> {
-        Ok(self
-            .schemas
-            .change_table_column(table, column_name, new_column)?)
-    }
-
     pub async fn get_series_key(&self, vnode_id: u32, sid: u32) -> IndexResult<Option<SeriesKey>> {
         if let Some(idx) = self.get_ts_index(vnode_id) {
             return idx.read().await.get_series_key(sid);
@@ -366,6 +344,15 @@ impl Database {
 
     pub fn ts_indexes(&self) -> &HashMap<TseriesFamilyId, Arc<RwLock<index::ts_index::TSIndex>>> {
         &self.ts_indexes
+    }
+
+    pub async fn get_table_sids(&self, table: &str) -> IndexResult<Vec<SeriesId>> {
+        let mut res = vec![];
+        for (_, ts_index) in self.ts_indexes.iter() {
+            let mut list = ts_index.read().await.get_series_id_list(table, &[])?;
+            res.append(&mut list);
+        }
+        Ok(res)
     }
 
     pub async fn get_ts_index_or_add(

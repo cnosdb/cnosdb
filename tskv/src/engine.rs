@@ -82,14 +82,6 @@ pub trait Engine: Send + Sync + Debug {
         new_column: TableColumn,
     ) -> Result<()>;
 
-    async fn delete_columns(
-        &self,
-        tenant: &str,
-        database: &str,
-        series_ids: &[SeriesId],
-        field_ids: &[ColumnId],
-    ) -> Result<()>;
-
     async fn delete_series(
         &self,
         tenant: &str,
@@ -202,16 +194,6 @@ impl Engine for MockEngine {
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         println!("drop_table db:{:?}, table:{:?}", database, table);
         Ok(())
-    }
-
-    async fn delete_columns(
-        &self,
-        tenant: &str,
-        database: &str,
-        series_ids: &[SeriesId],
-        field_ids: &[ColumnId],
-    ) -> Result<()> {
-        todo!()
     }
 
     async fn delete_series(
