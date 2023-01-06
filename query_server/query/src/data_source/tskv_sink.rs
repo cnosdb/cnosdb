@@ -6,20 +6,16 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use models::consistency_level::ConsistencyLevel;
 
+use spi::Result;
+
 use models::schema::TskvTableSchemaRef;
 use protos::kv_service::WritePointsRpcRequest;
-use snafu::ResultExt;
 use spi::query::DEFAULT_CATALOG;
 use trace::debug;
 
 use crate::utils::point_util::record_batch_to_points_flat_buffer;
 
 use super::sink::{RecordBatchSink, RecordBatchSinkProvider};
-
-use super::CoordinatorSnafu;
-use super::Result;
-
-use super::PointUtilSnafu;
 
 pub struct TskvRecordBatchSink {
     coord: CoordinatorRef,
@@ -39,8 +35,8 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         // record batchs to points
         let timer = self.metrics.elapsed_record_batch_to_point().timer();
-        let points = record_batch_to_points_flat_buffer(&record_batch, self.schema.clone())
-            .context(PointUtilSnafu)?;
+        let points = record_batch_to_points_flat_buffer(&record_batch, self.schema.clone())?;
+        // .context(PointUtilSnafu)?;
         timer.done();
 
         // points write request
@@ -50,8 +46,8 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         self.coord
             .write_points(DEFAULT_CATALOG.to_string(), ConsistencyLevel::Any, req)
-            .await
-            .context(CoordinatorSnafu)?;
+            .await?;
+        // .context(CoordinatorSnafu)?;
 
         timer.done();
 

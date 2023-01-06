@@ -1,4 +1,7 @@
 use crate::service::protocol::QueryId;
+use crate::ParserSnafu;
+use crate::QueryError;
+use crate::Result;
 
 use super::{
     ast::{parse_bool_value, parse_string_value, ExtStatement},
@@ -6,13 +9,13 @@ use super::{
     AFFECTED_ROWS,
 };
 
+use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::{
-    error::DataFusionError,
     logical_expr::{AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan},
     prelude::{col, Expr},
     sql::sqlparser::ast::{Ident, ObjectName, SqlOption},
 };
-use meta::error::MetaError;
+use models::schema::TableColumn;
 use models::{
     auth::{
         privilege::{DatabasePrivilege, Privilege},
@@ -22,33 +25,7 @@ use models::{
     oid::Oid,
     schema::{DatabaseOptions, TenantOptions, TenantOptionsBuilder},
 };
-use models::{define_result, schema::TableColumn};
-use snafu::Snafu;
-
-define_result!(LogicalPlannerError);
-
-pub const MISSING_COLUMN: &str = "Insert column name does not exist in target table: ";
-pub const DUPLICATE_COLUMN_NAME: &str = "Insert column name is specified more than once: ";
-pub const MISMATCHED_COLUMNS: &str = "Insert columns and Source columns not match";
-
-#[derive(Debug, Snafu)]
-#[snafu(visibility(pub))]
-pub enum LogicalPlannerError {
-    #[snafu(display("External err: {}", source))]
-    External { source: DataFusionError },
-
-    #[snafu(display("Semantic err: {}", err))]
-    Semantic { err: String },
-
-    #[snafu(display("Insufficient privileges, expected [{}]", privilege))]
-    InsufficientPrivileges { privilege: String },
-
-    #[snafu(display("Metadata err: {}", source))]
-    Metadata { source: MetaError },
-
-    #[snafu(display("This feature is not implemented: {}", err))]
-    NotImplemented { err: String },
-}
+use snafu::ResultExt;
 
 #[derive(Clone)]
 pub struct PlanWithPrivileges {
@@ -223,21 +200,29 @@ pub struct CreateTenant {
     pub options: TenantOptions,
 }
 
-pub fn sql_options_to_tenant_options(
-    options: Vec<SqlOption>,
-) -> std::result::Result<TenantOptions, String> {
+pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> Result<TenantOptions> {
     let mut builder = TenantOptionsBuilder::default();
 
     for SqlOption { ref name, value } in options {
         match normalize_ident(name).as_str() {
             "comment" => {
-                builder.comment(parse_string_value(value)?);
+                builder.comment(parse_string_value(value).context(ParserSnafu)?);
             }
-            _ => return Err(format!("Expected option [comment], found [{}]", name)),
+            _ => {
+                return Err(QueryError::Semantic {
+                    err: ParserError::ParserError(format!(
+                        "Expected option [comment], found [{}]",
+                        name
+                    ))
+                    .to_string(),
+                })
+            }
         }
     }
 
-    builder.build().map_err(|e| e.to_string())
+    builder.build().map_err(|e| QueryError::Parser {
+        source: ParserError::ParserError(e.to_string()),
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -249,7 +234,7 @@ pub struct CreateUser {
 
 pub fn sql_options_to_user_options(
     with_options: Vec<SqlOption>,
-) -> std::result::Result<UserOptions, String> {
+) -> std::result::Result<UserOptions, ParserError> {
     let mut builder = UserOptionsBuilder::default();
 
     for SqlOption { ref name, value } in with_options {
@@ -266,11 +251,18 @@ pub fn sql_options_to_user_options(
             "comment" => {
                 builder.comment(parse_string_value(value)?);
             }
-            _ => return Err(format!("Expected option [comment], found [{}]", name)),
+            _ => {
+                return Err(ParserError::ParserError(format!(
+                    "Expected option [comment], found [{}]",
+                    name
+                )))
+            }
         }
     }
 
-    builder.build().map_err(|e| e.to_string())
+    builder
+        .build()
+        .map_err(|e| ParserError::ParserError(e.to_string()))
 }
 
 #[derive(Debug, Clone)]

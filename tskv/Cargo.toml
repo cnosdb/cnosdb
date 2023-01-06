@@ -11,6 +11,7 @@ metrics = { path = "../common/metrics" }
 protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
+error_code = {path = "../common/error_code" }
 
 async-recursion = { workspace = true }
 async-trait = { workspace = true }

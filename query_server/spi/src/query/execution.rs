@@ -5,39 +5,15 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
-use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::error::DataFusionError;
-use meta::error::MetaError;
-use snafu::Snafu;
 
 use crate::service::protocol::Query;
 use crate::service::protocol::QueryId;
 use meta::meta_client::MetaRef;
 
 use super::dispatcher::{QueryInfo, QueryStatus};
-use super::{logical_planner::Plan, session::IsiphoSessionCtx, Result};
-
-#[derive(Debug, Snafu)]
-#[snafu(visibility(pub))]
-pub enum ExecutionError {
-    #[snafu(display("External err: {}", source))]
-    External { source: DataFusionError },
-
-    #[snafu(display("Arrow err: {}", source))]
-    Arrow { source: ArrowError },
-
-    #[snafu(display("Metadata operator err: {}", source))]
-    Metadata { source: MetaError },
-
-    #[snafu(display("Query not found: {:?}", query_id))]
-    QueryNotFound { query_id: QueryId },
-
-    #[snafu(display("Coordinator operator err: {}", source))]
-    CoordinatorErr {
-        source: coordinator::errors::CoordinatorError,
-    },
-}
+use super::{logical_planner::Plan, session::IsiphoSessionCtx};
+use crate::Result;
 
 #[async_trait]
 pub trait QueryExecution: Send + Sync {

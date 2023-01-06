@@ -2,9 +2,10 @@ use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::error::MetaError;
 use snafu::ResultExt;
+use spi::MetaSnafu;
+use spi::Result;
 
-use spi::query::execution::{self, MetadataSnafu};
-use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
+use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateUser;
 use trace::debug;
 
@@ -20,10 +21,7 @@ impl CreateUserTask {
 
 #[async_trait]
 impl DDLDefinitionTask for CreateUserTask {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let CreateUser {
             ref name,
             ref if_not_exists,
@@ -36,14 +34,15 @@ impl DDLDefinitionTask for CreateUserTask {
         //     name: &str
         // ) -> Result<Option<UserDesc>>;
         let meta = query_state_machine.meta.user_manager();
-        let user = meta.user(name).context(MetadataSnafu)?;
+        let user = meta.user(name)?;
 
         match (if_not_exists, user) {
             // do not create if exists
             (true, Some(_)) => Ok(Output::Nil(())),
             // Report an error if it exists
-            (false, Some(_)) => Err(MetaError::UserAlreadyExists { user: name.clone() })
-                .context(execution::MetadataSnafu),
+            (false, Some(_)) => {
+                Err(MetaError::UserAlreadyExists { user: name.clone() }).context(MetaSnafu)
+            }
             // does not exist, create
             (_, None) => {
                 // 创建用户
@@ -56,8 +55,7 @@ impl DDLDefinitionTask for CreateUserTask {
                 // ) -> Result<&UserDesc>;
 
                 debug!("Create user {} with options [{}]", name, options);
-                meta.create_user(name.clone(), options.clone(), false)
-                    .context(MetadataSnafu)?;
+                meta.create_user(name.clone(), options.clone(), false)?;
 
                 Ok(Output::Nil(()))
             }

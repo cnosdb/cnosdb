@@ -6,7 +6,8 @@ use datafusion::{
     physical_plan::{planner::ExtensionPlanner, ExecutionPlan},
 };
 
-use super::{session::IsiphoSessionCtx, Result};
+use super::session::IsiphoSessionCtx;
+use crate::Result;
 
 #[async_trait]
 pub trait PhysicalPlanner {

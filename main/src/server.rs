@@ -14,8 +14,7 @@ pub enum Error {
     IdentityFormatError,
 
     #[snafu(display("Ensure the TLS configuration is correct"))]
-    TLSConfigError, // #[snafu(display("Failed to start service. err: {}", source))]
-                    // StartService { source: query::spi::server::ServerError },
+    TLSConfigError,
 }
 
 impl From<tonic::transport::Error> for Error {

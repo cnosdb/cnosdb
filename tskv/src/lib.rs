@@ -15,13 +15,13 @@ pub mod index;
 pub mod iterator;
 pub mod kv_option;
 mod kvcore;
-pub mod memcache;
+mod memcache;
 mod reader;
 mod record_file;
-pub mod schema;
+mod schema;
 mod summary;
-pub mod tseries_family;
-pub mod tsm;
+mod tseries_family;
+mod tsm;
 mod version_set;
 mod wal;
 

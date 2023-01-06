@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use datafusion::{physical_optimizer::PhysicalOptimizerRule, physical_plan::ExecutionPlan};
-use spi::query::{session::IsiphoSessionCtx, Result};
+use spi::query::session::IsiphoSessionCtx;
+use spi::Result;
 
 pub trait PhysicalOptimizer {
     fn optimize(

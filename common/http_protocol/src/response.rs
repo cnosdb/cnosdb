@@ -1,6 +1,6 @@
-use models::error_code::ErrorCode;
 use serde::{Deserialize, Serialize};
 
+use models::error_code::ErrorCode;
 pub use reqwest::Response;
 
 #[derive(Debug, Serialize)]
@@ -14,10 +14,10 @@ pub struct ErrorResponse {
 }
 
 impl ErrorResponse {
-    pub fn new(error_code: ErrorCode, error_message: String) -> ErrorResponse {
+    pub fn new(error_code: &dyn ErrorCode) -> ErrorResponse {
         Self {
-            error_code: error_code.as_str().to_string(),
-            error_message,
+            error_code: error_code.code().to_string(),
+            error_message: error_code.message(),
         }
     }
 }

@@ -9,6 +9,7 @@ edition = "2021"
 protos = { path = "../protos" }
 utils = { path = "../utils" }
 trace = { path = "../trace" }
+error_code = {path = "../error_code"}
 
 arrow-schema = { workspace = true,  features = ["serde"] }
 async-trait = { workspace = true }

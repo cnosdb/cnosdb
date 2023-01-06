@@ -856,6 +856,10 @@ impl MetaClient for RemoteMetaClient {
 
         if rsp.status.code == command::META_REQUEST_SUCCESS {
             Ok(())
+        } else if rsp.status.code == command::META_REQUEST_DB_NOT_FOUND {
+            Err(MetaError::DatabaseNotFound {
+                database: schema.db(),
+            })
         } else if rsp.status.code == command::META_REQUEST_TABLE_EXIST {
             Err(MetaError::TableAlreadyExists {
                 table_name: schema.name(),

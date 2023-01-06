@@ -3,9 +3,7 @@ use async_trait::async_trait;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::DDLPlan;
-use spi::query::{self, QueryError};
-
-use spi::query::execution::ExecutionError;
+use spi::Result;
 
 use self::alter_tenant::AlterTenantTask;
 use self::alter_user::AlterUserTask;
@@ -23,7 +21,6 @@ use crate::execution::ddl::describe_database::DescribeDatabaseTask;
 use crate::execution::ddl::describe_table::DescribeTableTask;
 use crate::execution::ddl::show_database::ShowDatabasesTask;
 use crate::execution::ddl::show_table::ShowTablesTask;
-use snafu::ResultExt;
 
 use self::create_external_table::CreateExternalTableTask;
 use self::drop_database_object::DropDatabaseObjectTask;
@@ -50,10 +47,7 @@ mod show_table;
 /// Traits that DDL tasks should implement
 #[async_trait]
 trait DDLDefinitionTask: Send + Sync {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError>;
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output>;
 }
 
 pub struct DDLExecution {
@@ -74,7 +68,7 @@ impl DDLExecution {
 impl QueryExecution for DDLExecution {
     // execute ddl task
     // This logic usually does not change
-    async fn start(&self) -> Result<Output, QueryError> {
+    async fn start(&self) -> Result<Output> {
         let query_state_machine = self.query_state_machine.clone();
 
         query_state_machine.begin_schedule();
@@ -83,15 +77,14 @@ impl QueryExecution for DDLExecution {
             .task_factory
             .create_task()
             .execute(query_state_machine.clone())
-            .await
-            .context(query::ExecutionSnafu);
+            .await;
 
         query_state_machine.end_schedule();
 
         result
     }
 
-    fn cancel(&self) -> query::Result<()> {
+    fn cancel(&self) -> Result<()> {
         // ddl ignore
         Ok(())
     }

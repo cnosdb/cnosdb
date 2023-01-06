@@ -7,8 +7,11 @@ edition = "2021"
 
 [dependencies]
 models = { path = "../../common/models" }
+error_code = {path = "../../common/error_code" }
 meta = { path = "../../meta" }
 coordinator = { path = "../../coordinator" }
+tskv = {path = "../../tskv"}
+flatbuffers = {workspace = true }
 async-trait = { workspace = true }
 datafusion = { workspace = true }
 snafu = { workspace = true, features = ["backtraces"] }

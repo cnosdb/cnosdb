@@ -10,7 +10,7 @@
 test_insert_subquery,ta=a1,tb=b1 fa=1,fb=2 3
 -- LINE PROTOCOL END --
 422 Unprocessable Entity
-{"error_code":"0300000","error_message":"Error from coordinator: error msg: write expired time data not permit"}
+{"error_code":"050014","error_message":"write expired time data not permit"}
 -- ERROR:  --
 
 -- WRITE LINE PROTOCOL --
@@ -78,7 +78,7 @@ time,ta,tb,fa,fb
 -- EXECUTE SQL: insert public.test_insert_subquery select TIME, ta from (values (1667456411000000010, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: Insert columns and Source columns not match"}
+{"error_code":"010045","error_message":"Semantic error: Insert columns and Source columns not match"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
@@ -93,7 +93,7 @@ time,ta,tb,fa,fb
 -- EXECUTE SQL: insert public.test_insert_subquery(TIME, fa) select TIME, ta from (values (1667456411000000010, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '10a' to value of Float64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string '10a' to value of Float64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --

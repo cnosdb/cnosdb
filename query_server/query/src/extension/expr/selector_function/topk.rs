@@ -10,7 +10,8 @@ use datafusion::{
     physical_expr::functions::make_scalar_function,
 };
 
-use spi::query::function::{FunctionMetadataManager, Result};
+use spi::query::function::FunctionMetadataManager;
+use spi::Result;
 
 use super::TOPK;
 
