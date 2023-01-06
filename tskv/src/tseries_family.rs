@@ -19,7 +19,8 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch::Receiver;
 
 use config::get_config;
-use models::{FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
+use models::schema::TableColumn;
+use models::{ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
@@ -779,6 +780,22 @@ impl TseriesFamily {
         self.mut_cache.read().delete_columns(field_ids);
         for memcache in self.immut_cache.iter() {
             memcache.read().delete_columns(field_ids);
+        }
+    }
+
+    pub fn change_column(&self, sids: &[SeriesId], column_name: &str, new_column: &TableColumn) {
+        self.mut_cache
+            .read()
+            .change_column(sids, column_name, new_column);
+        for memcache in self.immut_cache.iter() {
+            memcache.read().change_column(sids, column_name, new_column);
+        }
+    }
+
+    pub fn add_column(&self, sids: &[SeriesId], new_column: &TableColumn) {
+        self.mut_cache.read().add_column(sids, new_column);
+        for memcache in self.immut_cache.iter() {
+            memcache.read().add_column(sids, new_column);
         }
     }
 

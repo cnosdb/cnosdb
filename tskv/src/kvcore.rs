@@ -398,6 +398,41 @@ impl TsKv {
             .create_db(schema.clone(), self.meta_manager.clone())?;
         Ok(db)
     }
+
+    async fn delete_columns(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        column_ids: &[ColumnId],
+    ) -> Result<()> {
+        let db = self.get_db(tenant, database).await?;
+
+        let series_ids = db.read().await.get_table_sids(table).await?;
+
+        let storage_field_ids: Vec<u64> = series_ids
+            .iter()
+            .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
+            .collect();
+
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            for (ts_family_id, ts_family) in db.read().await.ts_families().iter() {
+                ts_family.read().await.delete_columns(&storage_field_ids);
+
+                let version = ts_family.read().await.super_version();
+                for column_file in version
+                    .version
+                    .column_files(&storage_field_ids, &TimeRange::all())
+                {
+                    self.runtime.block_on(
+                        column_file.add_tombstone(&storage_field_ids, &TimeRange::all()),
+                    )?;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -568,37 +603,6 @@ impl Engine for TsKv {
         database::delete_table_async(tenant, database, table, version_set).await
     }
 
-    async fn delete_columns(
-        &self,
-        tenant: &str,
-        database: &str,
-        series_ids: &[SeriesId],
-        field_ids: &[ColumnId],
-    ) -> Result<()> {
-        let storage_field_ids: Vec<u64> = series_ids
-            .iter()
-            .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid, *sid)))
-            .collect();
-
-        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            for (ts_family_id, ts_family) in db.read().await.ts_families().iter() {
-                ts_family.write().await.delete_columns(&storage_field_ids);
-
-                let version = ts_family.read().await.super_version();
-                for column_file in version
-                    .version
-                    .column_files(&storage_field_ids, &TimeRange::all())
-                {
-                    self.runtime.block_on(
-                        column_file.add_tombstone(&storage_field_ids, &TimeRange::all()),
-                    )?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     async fn delete_series(
         &self,
         tenant: &str,
@@ -721,10 +725,14 @@ impl Engine for TsKv {
         tenant: &str,
         database: &str,
         table: &str,
-        column: TableColumn,
+        new_column: TableColumn,
     ) -> Result<()> {
         let db = self.get_db(tenant, database).await?;
-        db.read().await.add_table_column(table, column)?;
+        let db = db.read().await;
+        let sids = db.get_table_sids(table).await?;
+        for (ts_family_id, ts_family) in db.ts_families().iter() {
+            ts_family.read().await.add_column(&sids, &new_column);
+        }
         Ok(())
     }
 
@@ -749,15 +757,7 @@ impl Engine for TsKv {
                 field: column_name.to_string(),
             })?
             .id;
-        db.read().await.drop_table_column(table, column_name)?;
-
-        let mut sid = vec![];
-        for (_, ts_index) in db.read().await.ts_indexes().iter() {
-            let mut list = ts_index.read().await.get_series_id_list(table, &[])?;
-            sid.append(&mut list);
-        }
-
-        self.delete_columns(tenant, database, &sid, &[column_id])
+        self.delete_columns(tenant, database, table, &[column_id])
             .await?;
         Ok(())
     }
@@ -771,9 +771,15 @@ impl Engine for TsKv {
         new_column: TableColumn,
     ) -> Result<()> {
         let db = self.get_db(tenant, database).await?;
-        db.read()
-            .await
-            .change_table_column(table, column_name, new_column)?;
+        let db = db.read().await;
+        let sids = db.get_table_sids(table).await?;
+
+        for (ts_family_id, ts_family) in db.ts_families().iter() {
+            ts_family
+                .read()
+                .await
+                .change_column(&sids, column_name, &new_column);
+        }
         Ok(())
     }
 

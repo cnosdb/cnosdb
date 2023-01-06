@@ -581,13 +581,15 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
 
         let alter_action = match statement.alter_action {
             ASTAlterTableAction::AddColumn { column } => {
-                let table_column = Self::column_opt_to_table_column(column, ColumnId::default())?;
+                let mut table_column =
+                    Self::column_opt_to_table_column(column, ColumnId::default())?;
                 if table_schema.contains_column(&table_column.name) {
                     return Err(QueryError::ColumnAlreadyExists {
                         table: table_schema.name.to_string(),
                         column: table_column.name,
                     });
                 }
+                table_column.id = table_schema.next_column_id();
                 AlterTableAction::AddColumn { table_column }
             }
             ASTAlterTableAction::DropColumn { ref column_name } => {

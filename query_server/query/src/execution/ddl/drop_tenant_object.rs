@@ -74,7 +74,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
 
                 let req = command::AdminStatementRequest {
                     tenant: tenant_name.to_string(),
-                    stmt: command::AdminStatementType::DropDB(name.clone()),
+                    stmt: command::AdminStatementType::DropDB { db: name.clone() },
                 };
 
                 query_state_machine

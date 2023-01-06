@@ -172,16 +172,36 @@ async fn process_admin_statement_command(
     engine: EngineRef,
 ) -> CoordinatorResult<()> {
     match cmd.stmt {
-        AdminStatementType::DropDB(db) => {
+        AdminStatementType::DropDB { db } => {
             let _ = engine.drop_database(&cmd.tenant, &db).await;
         }
 
-        AdminStatementType::DropTable(db, table) => {
+        AdminStatementType::DropTable { db, table } => {
             let _ = engine.drop_table(&cmd.tenant, &db, &table).await;
         }
 
-        AdminStatementType::DeleteVnode(db, id) => {
-            let _ = engine.remove_tsfamily(&cmd.tenant, &db, id).await;
+        AdminStatementType::DeleteVnode { db, vnode_id } => {
+            let _ = engine.remove_tsfamily(&cmd.tenant, &db, vnode_id).await;
+        }
+        AdminStatementType::DropColumn { db, table, column } => {
+            let _ = engine
+                .drop_table_column(&cmd.tenant, &db, &table, &column)
+                .await;
+        }
+        AdminStatementType::AddColumn { db, table, column } => {
+            let _ = engine
+                .add_table_column(&cmd.tenant, &db, &table, column)
+                .await;
+        }
+        AdminStatementType::AlterColumn {
+            db,
+            table,
+            column_name,
+            new_column,
+        } => {
+            let _ = engine
+                .change_table_column(&cmd.tenant, &db, &table, &column_name, new_column)
+                .await;
         }
     }
 

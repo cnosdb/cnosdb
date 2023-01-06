@@ -5,6 +5,7 @@ use models::SeriesId;
 use snafu::Snafu;
 use std::path::{Path, PathBuf};
 
+use crate::index::IndexError;
 use crate::schema::error::SchemaError;
 use crate::{
     tsm::{ReadTsmError, WriteTsmError},
@@ -148,18 +149,18 @@ pub enum Error {
     },
 }
 
-impl From<crate::index::IndexError> for Error {
-    fn from(err: crate::index::IndexError) -> Self {
-        Error::IndexErr { source: err }
-    }
-}
-
 impl From<SchemaError> for Error {
     fn from(value: SchemaError) -> Self {
         match value {
             SchemaError::Meta { source } => Self::Meta { source },
             other => Error::Schema { source: other },
         }
+    }
+}
+
+impl From<IndexError> for Error {
+    fn from(value: IndexError) -> Self {
+        Error::IndexErr { source: value }
     }
 }
 

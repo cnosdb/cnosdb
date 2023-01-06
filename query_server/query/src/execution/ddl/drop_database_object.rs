@@ -53,10 +53,10 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
 
                 let req = command::AdminStatementRequest {
                     tenant: tenant.to_string(),
-                    stmt: command::AdminStatementType::DropTable(
-                        table.schema.to_string(),
-                        table.table.to_string(),
-                    ),
+                    stmt: command::AdminStatementType::DropTable {
+                        db: table.schema.to_string(),
+                        table: table.table.to_string(),
+                    },
                 };
 
                 query_state_machine
