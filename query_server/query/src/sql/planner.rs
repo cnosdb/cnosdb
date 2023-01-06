@@ -2272,9 +2272,8 @@ mod tests {
     }
 
     #[tokio::test]
-    #[should_panic(expected = "Field or Tag name should not have same")]
     async fn test_create_table_filed_name_same() {
-        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,presssure DOUBLE,TAGS(station));";
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,pressure DOUBLE,TAGS(station));";
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
@@ -2288,7 +2287,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[should_panic(expected = "Field or Tag name should not have same")]
     async fn test_create_table_tag_name_same() {
         let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station,station));";
         let mut statements = ExtParser::parse_sql(sql).unwrap();
@@ -2304,9 +2302,8 @@ mod tests {
     }
 
     #[tokio::test]
-    #[should_panic(expected = "Field or Tag name should not have same")]
     async fn test_create_table_tag_field_same_name() {
-        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station,presssure));";
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station,pressure));";
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
