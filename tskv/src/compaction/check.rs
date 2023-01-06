@@ -134,8 +134,8 @@ pub(crate) async fn get_ts_family_hash_tree(
     let ts_family = match database.get_tsfamily(ts_family_id) {
         Some(t) => t,
         None => {
-            return Err(Error::Compact {
-                reason: format!("Repair: Can not find ts_family '{}'", ts_family_id),
+            return Err(Error::InvalidParam {
+                reason: format!("can not find ts_family '{}'", ts_family_id),
             })
         }
     };
@@ -252,22 +252,25 @@ fn calc_block_partial_time_range(
     timestamp: Timestamp,
     time_range: Duration,
     time_range_nanosecs: i64,
-) -> std::result::Result<(Timestamp, Timestamp), String> {
+) -> Result<(Timestamp, Timestamp)> {
     let secs: i64 = timestamp / 1_000_000_000;
     let nsecs: u32 = (timestamp % 1_000_000_000) as u32;
     match NaiveDateTime::from_timestamp_opt(secs, nsecs) {
         Some(datetime) => {
             let min_ts = match datetime.duration_trunc(time_range) {
                 Ok(date_time) => date_time.timestamp_nanos(),
-                Err(e) => return Err(format!("error truncing timestamp {}: {:?}", datetime, e)),
+                Err(e) => {
+                    return Err(Error::Transform {
+                        reason: format!("error truncing timestamp {}: {:?}", datetime, e),
+                    })
+                }
             };
             let max_ts = min_ts + time_range_nanosecs;
             Ok((min_ts, max_ts))
         }
-        None => Err(format!(
-            "error parsing timestamp to NaiveDateTime: {}",
-            timestamp
-        )),
+        None => Err(Error::Transform {
+            reason: format!("error parsing timestamp to NaiveDateTime: {}", timestamp),
+        }),
     }
 }
 
@@ -376,14 +379,7 @@ async fn read_from_compact_iterator(
                             time_range_nanosec,
                         ) {
                             Ok(tr) => tr,
-                            Err(msg) => {
-                                return Err(Error::Compact {
-                                    reason: format!(
-                                        "error repairing ts_family {} in CompactIterator: {}",
-                                        ts_family_id, msg
-                                    ),
-                                })
-                            }
+                            Err(e) => return Err(e),
                         };
 
                         // Calculate and store the hash value of data in time range
@@ -414,9 +410,9 @@ async fn read_from_compact_iterator(
                 };
             }
             Some(Err(e)) => {
-                return Err(Error::Compact {
+                return Err(Error::CommonError {
                     reason: format!(
-                        "error repairing ts_family {} in CompactIterator: {:?}",
+                        "error getting hashes for ts_family {} when compacting: {:?}",
                         ts_family_id, e
                     ),
                 });
@@ -498,20 +494,20 @@ mod test {
 
         let (a, b, c) = get_args("2023-01-01 00:29:01");
         assert_eq!(
-            Ok((
+            (
                 parse_nanos("2023-01-01 00:00:00"),
                 parse_nanos("2023-01-01 00:30:00")
-            )),
-            calc_block_partial_time_range(a, b, c),
+            ),
+            calc_block_partial_time_range(a, b, c).unwrap(),
         );
 
         let (a, b, c) = get_args("2023-01-01 00:30:01");
         assert_eq!(
-            Ok((
+            (
                 parse_nanos("2023-01-01 00:30:00"),
                 parse_nanos("2023-01-01 01:00:00")
-            )),
-            calc_block_partial_time_range(a, b, c),
+            ),
+            calc_block_partial_time_range(a, b, c).unwrap(),
         );
     }
 

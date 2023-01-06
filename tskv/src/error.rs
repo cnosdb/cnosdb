@@ -141,6 +141,11 @@ pub enum Error {
 
     #[snafu(display("file has no footer"))]
     NoFooter,
+
+    #[snafu(display("unable to transform: {}", reason))]
+    Transform {
+        reason: String,
+    },
 }
 
 impl From<crate::index::IndexError> for Error {
