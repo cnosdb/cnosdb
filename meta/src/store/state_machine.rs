@@ -702,7 +702,7 @@ impl StateMachine {
         let key = KeyPath::tenant_db_name(cluster, tenant, &schema.db());
         if !self.db.contains_key(key).unwrap() {
             return TenaneMetaDataResp::new_from_data(
-                META_REQUEST_DB_EXIST,
+                META_REQUEST_DB_NOT_FOUND,
                 "database not found".to_string(),
                 self.to_tenant_meta_data(cluster, tenant).unwrap(),
             )

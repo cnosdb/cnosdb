@@ -18,11 +18,11 @@ Float64(3) / Int64(5)
 
 -- EXECUTE SQL: SELECT 3 + TRUE; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: 'Int64 + Boolean' can't be evaluated because there isn't a common type to coerce the types to"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: 'Int64 + Boolean' can't be evaluated because there isn't a common type to coerce the types to"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT *; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: SELECT * with no tables specified is not valid"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: SELECT * with no tables specified is not valid"}
 -- ERROR:  --
 

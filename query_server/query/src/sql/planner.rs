@@ -21,6 +21,7 @@ use datafusion::sql::sqlparser::ast::{
     DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, OrderByExpr, Query,
     Statement,
 };
+use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::sql::TableReference;
 use meta::error::MetaError;
 use models::auth::privilege::{
@@ -29,9 +30,7 @@ use models::auth::privilege::{
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::object_reference::ObjectReference;
 use models::oid::{Identifier, Oid};
-use models::schema::{
-    ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD_NAME,
-};
+use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use snafu::ResultExt;
@@ -44,26 +43,54 @@ use spi::query::ast::{
     ShowTagValues as ASTShowTagValues, With,
 };
 use spi::query::logical_planner::{
-    self, affected_row_expr, merge_affected_row_expr, sql_options_to_tenant_options,
-    sql_options_to_user_options, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
-    AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction,
-    CreateDatabase, CreateRole, CreateTable, CreateTenant, CreateUser, DDLPlan, DatabaseObjectType,
-    DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject,
-    ExternalSnafu, GlobalObjectType, GrantRevoke, LogicalPlanner, LogicalPlannerError, Plan,
-    PlanWithPrivileges, QueryPlan, SYSPlan, TenantObjectType, MISMATCHED_COLUMNS, MISSING_COLUMN,
+    affected_row_expr,
+    merge_affected_row_expr,
+    sql_options_to_tenant_options,
+    sql_options_to_user_options,
+    AlterDatabase,
+    AlterTable,
+    AlterTableAction,
+    AlterTenant,
+    AlterTenantAction,
+    AlterTenantAddUser,
+    AlterTenantSetUser,
+    AlterUser,
+    AlterUserAction,
+    CreateDatabase,
+    CreateRole,
+    CreateTable,
+    CreateTenant,
+    CreateUser,
+    DDLPlan,
+    DatabaseObjectType,
+    DescribeDatabase,
+    DescribeTable,
+    DropDatabaseObject,
+    DropGlobalObject,
+    DropTenantObject,
+    GlobalObjectType,
+    GrantRevoke,
+    LogicalPlanner,
+    // LogicalPlannerError,
+    Plan,
+    PlanWithPrivileges,
+    QueryPlan,
+    SYSPlan,
+    TenantObjectType,
 };
 use spi::query::session::IsiphoSessionCtx;
+use spi::DatafusionSnafu;
+use spi::QueryError;
 
 use models::schema::{DatabaseOptions, Duration, Precision};
-use spi::query::logical_planner::Result;
 use spi::query::{ast, UNEXPECTED_EXTERNAL_PLAN};
+use spi::Result;
 use trace::{debug, warn};
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
 use crate::metadata::{ContextProviderExtension, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
 use crate::sql::parser::{merge_object_name, normalize_ident, normalize_sql_object_name};
 use crate::table::ClusterTable;
-use spi::query::logical_planner::MetadataSnafu;
 
 /// CnosDB SQL query planner
 #[derive(Debug)]
@@ -127,9 +154,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         match stmt {
             Statement::Query(_) => {
                 let df_planner = SqlToRel::new(&self.schema_provider);
-                let df_plan = df_planner
-                    .sql_statement_to_plan(stmt)
-                    .context(ExternalSnafu)?;
+                let df_plan = df_planner.sql_statement_to_plan(stmt)?;
                 let plan = Plan::Query(QueryPlan { df_plan });
                 // TODO privileges
                 Ok(PlanWithPrivileges {
@@ -151,7 +176,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                     privileges: vec![],
                 })
             }
-            _ => Err(LogicalPlannerError::NotImplemented {
+            _ => Err(QueryError::NotImplemented {
                 err: stmt.to_string(),
             }),
         }
@@ -170,15 +195,13 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         let input_df_plan = match plan.plan {
             Plan::Query(query) => Arc::new(query.df_plan),
             _ => {
-                return Err(LogicalPlannerError::NotImplemented {
+                return Err(QueryError::NotImplemented {
                     err: "explain non-query statement.".to_string(),
                 })
             }
         };
 
-        let schema = LogicalPlan::explain_schema()
-            .to_dfschema_ref()
-            .context(ExternalSnafu)?;
+        let schema = LogicalPlan::explain_schema().to_dfschema_ref()?;
 
         let df_plan = if analyze {
             LogicalPlan::Analyze(Analyze {
@@ -264,8 +287,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         debug!("assignments: {:?}", &assignments);
 
         Ok(LogicalPlan::Projection(
-            Projection::try_new(assignments, Arc::new(source_plan), None)
-                .context(logical_planner::ExternalSnafu)?,
+            Projection::try_new(assignments, Arc::new(source_plan), None)?, // .context(spi::DatafusionSnafu)?,
         ))
     }
 
@@ -276,9 +298,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         source: Box<Query>,
     ) -> Result<PlanWithPrivileges> {
         // Transform subqueries
-        let source_plan = SqlToRel::new(&self.schema_provider)
-            .query_to_plan(*source, &mut HashMap::new())
-            .context(logical_planner::ExternalSnafu)?;
+        let source_plan =
+            SqlToRel::new(&self.schema_provider).query_to_plan(*source, &mut HashMap::new())?;
 
         let table_name = normalize_sql_object_name(sql_object_name);
         let columns = sql_column_names
@@ -300,8 +321,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                 insert_columns,
             )?;
 
-        let df_plan = table_write_plan_node(table_name, target_table, final_source_logical_plan)
-            .context(logical_planner::ExternalSnafu)?;
+        let df_plan = table_write_plan_node(table_name, target_table, final_source_logical_plan)?;
 
         debug!("Insert plan:\n{}", df_plan.display_indent_schema());
 
@@ -457,9 +477,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
     ) -> Result<PlanWithPrivileges> {
         let df_planner = SqlToRel::new(&self.schema_provider);
 
-        let logical_plan = df_planner
-            .external_table_to_plan(statement)
-            .context(ExternalSnafu)?;
+        let logical_plan = df_planner.external_table_to_plan(statement)?;
+        // .context(spi::DatafusionSnafu)?;
 
         if let LogicalPlan::CreateExternalTable(plan) = logical_plan {
             let plan = Plan::DDL(DDLPlan::CreateExternalTable(plan));
@@ -473,7 +492,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         Err(DataFusionError::Internal(
             UNEXPECTED_EXTERNAL_PLAN.to_string(),
         ))
-        .context(ExternalSnafu)
+        .context(DatafusionSnafu)
     }
 
     pub fn create_table_to_plan(&self, statement: ASTCreateTable) -> Result<PlanWithPrivileges> {
@@ -500,8 +519,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         let mut column_name = HashSet::new();
         for col in schema.iter() {
             if !column_name.insert(col.name.as_str()) {
-                return Err(LogicalPlannerError::Semantic {
-                    err: "Field or Tag name should not have same".to_string(),
+                return Err(QueryError::SameColumnName {
+                    column: col.name.to_string(),
                 });
             }
         }
@@ -524,10 +543,12 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         let col = if column_opt.is_tag {
             TableColumn::new_tag_column(id, normalize_ident(&column_opt.name))
         } else {
+            let name = normalize_ident(&column_opt.name);
+            let column_type = Self::make_data_type(&name, &column_opt.data_type)?;
             TableColumn::new(
                 id,
-                normalize_ident(&column_opt.name),
-                Self::make_data_type(&column_opt.data_type)?,
+                name,
+                column_type,
                 column_opt.encoding.unwrap_or_default(),
             )
         };
@@ -576,11 +597,9 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             ASTAlterTableAction::AddColumn { column } => {
                 let table_column = Self::column_opt_to_table_column(column, ColumnId::default())?;
                 if table_schema.contains_column(&table_column.name) {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: format!(
-                            "column {} already exists in table {}",
-                            &table_column.name, table_schema.name
-                        ),
+                    return Err(QueryError::ColumnAlreadyExists {
+                        table: table_schema.name.to_string(),
+                        column: table_column.name,
                     });
                 }
                 AlterTableAction::AddColumn { table_column }
@@ -588,30 +607,24 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             ASTAlterTableAction::DropColumn { ref column_name } => {
                 let column_name = normalize_ident(column_name);
                 let table_column = table_schema.column(&column_name).ok_or_else(|| {
-                    LogicalPlannerError::Semantic {
-                        err: format!(
-                            "column {} not exists in table {}",
-                            &table_schema.name, column_name
-                        ),
+                    QueryError::ColumnNotExists {
+                        column: column_name.to_string(),
+                        table: table_schema.name.to_string(),
                     }
                 })?;
 
                 if table_column.column_type.is_tag() {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: "can't drop tag".to_string(),
+                    return Err(QueryError::DropTag {
+                        column: table_column.name.to_string(),
                     });
                 }
 
                 if table_column.column_type.is_field() && table_schema.field_num() == 1 {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: "table must hava a field".to_string(),
-                    });
+                    return Err(QueryError::AtLeastOneField);
                 }
 
                 if table_column.column_type.is_time() {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: format!("can't drop {} column", TIME_FIELD_NAME),
-                    });
+                    return Err(QueryError::AtLeastOneTag);
                 }
 
                 AlterTableAction::DropColumn { column_name }
@@ -623,24 +636,19 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             } => {
                 let column_name = normalize_ident(column_name);
                 let column = table_schema.column(&column_name).ok_or_else(|| {
-                    LogicalPlannerError::Semantic {
-                        err: format!(
-                            "column {} not exists in table {}",
-                            column_name, &table_schema.name
-                        ),
+                    QueryError::ColumnNotExists {
+                        column: column_name.to_string(),
+                        table: table_schema.name.to_string(),
                     }
                 })?;
                 if column.column_type.is_tag() {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: "tag does not support compression".to_string(),
-                    });
+                    return Err(QueryError::TagNotSupportCompression);
                 }
 
                 if column.column_type.is_time() {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: format!("can't modify codec type of {} column", TIME_FIELD_NAME),
-                    });
+                    return Err(QueryError::TimeColumnAlter);
                 }
+
                 let mut new_column = column.clone();
                 new_column.encoding = encoding;
 
@@ -696,11 +704,12 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         ) -> Result<LogicalPlan>,
     ) -> Result<LogicalPlan> {
         // merge db a.b table b.c to a.b.c
-        let table = match merge_object_name(body.database_name, Some(body.table)) {
+        let table = match merge_object_name(body.database_name.clone(), Some(body.table.clone())) {
             Some(table) => table,
             None => {
-                return Err(LogicalPlannerError::Semantic {
-                    err: "db conflict with table".to_string(),
+                return Err(QueryError::DBTableConflict {
+                    db: body.database_name.unwrap_or(ObjectName(vec![])).to_string(),
+                    table: body.table.to_string(),
                 })
             }
         };
@@ -708,23 +717,17 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         let table_name = normalize_sql_object_name(&table);
         let table_source = self.get_table_source(&table_name)?;
         let table_schema = self.get_tskv_schema(&table_name)?;
-        let table_df_schema = table_source
-            .schema()
-            .to_dfschema_ref()
-            .context(logical_planner::ExternalSnafu)?;
+        let table_df_schema = table_source.schema().to_dfschema_ref()?;
         let sql_to_rel = SqlToRel::new(&self.schema_provider);
 
         // build from
         let mut plan_builder =
-            LogicalPlanBuilder::scan(&table_schema.name, table_source.clone(), None)
-                .context(ExternalSnafu)?;
+            LogicalPlanBuilder::scan(&table_schema.name, table_source.clone(), None)?;
 
         // build where
         let selection = match body.selection {
             Some(expr) => Some(
-                sql_to_rel
-                    .sql_to_rex(expr, &table_df_schema, &mut HashMap::new())
-                    .context(logical_planner::ExternalSnafu)?,
+                sql_to_rel.sql_to_rex(expr, &table_df_schema, &mut HashMap::new())?, // .context(spi::DatafusionSnafu)?,
             ),
             None => None,
         };
@@ -732,16 +735,14 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         // get all columns in expr
         let mut columns = HashSet::new();
         if let Some(selection) = &selection {
-            expr_to_columns(selection, &mut columns).context(ExternalSnafu)?;
+            expr_to_columns(selection, &mut columns).context(spi::DatafusionSnafu)?;
         }
 
         // check column
         check_show_series_expr(&columns, &table_schema)?;
 
         if let Some(selection) = selection {
-            plan_builder = plan_builder
-                .filter(selection)
-                .context(logical_planner::ExternalSnafu)?;
+            plan_builder = plan_builder.filter(selection)?;
         }
 
         // get where has time column
@@ -762,7 +763,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                 self.limit_offset_to_plan(body.limit, body.offset, plan_builder, &table_df_schema)?;
         }
 
-        plan_builder.build().context(logical_planner::ExternalSnafu)
+        plan_builder.build().context(DatafusionSnafu)
     }
 
     fn show_series_to_plan(&self, stmt: ASTShowSeries) -> Result<PlanWithPrivileges> {
@@ -808,7 +809,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         if name.eq_ignore_ascii_case(CLUSTER_SCHEMA)
             || name.eq_ignore_ascii_case(INFORMATION_SCHEMA)
         {
-            return Err(LogicalPlannerError::Metadata {
+            return Err(QueryError::Meta {
                 source: MetaError::DatabaseAlreadyExists { database: name },
             });
         }
@@ -845,9 +846,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             nulls_first,
         } in exprs
         {
-            let expr = sql_to_rel
-                .sql_to_rex(expr, schema, &mut HashMap::new())
-                .context(logical_planner::ExternalSnafu)?;
+            let expr = sql_to_rel.sql_to_rex(expr, schema, &mut HashMap::new())?;
+            // .context(spi::DatafusionSnafu)?;
             let asc = asc.unwrap_or(true);
             let sort_expr = Expr::Sort {
                 expr: Box::new(expr),
@@ -861,7 +861,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
 
         LogicalPlanBuilder::from(plan)
             .sort(sort_exprs)
-            .context(logical_planner::ExternalSnafu)
+            .context(spi::DatafusionSnafu)
     }
 
     fn limit_offset_to_plan(
@@ -875,22 +875,16 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         let skip = match offset {
             Some(offset) => match sql_to_rel
                 .sql_to_rex(offset.value, schema, &mut HashMap::new())
-                .context(logical_planner::ExternalSnafu)?
+                .context(spi::DatafusionSnafu)?
             {
                 Expr::Literal(ScalarValue::Int64(Some(m))) => {
                     if m < 0 {
-                        return Err(LogicalPlannerError::Semantic {
-                            err: format!("OFFSET must be >= 0, '{}' was provided.", m),
-                        });
+                        return Err(QueryError::OffsetBtZero { provide: m });
                     } else {
                         m as usize
                     }
                 }
-                _ => {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: "The OFFSET clause must be a constant of BIGINT type".to_string(),
-                    })
-                }
+                _ => return Err(QueryError::OffsetConstant),
             },
             None => 0,
         };
@@ -898,29 +892,21 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         let fetch = match limit {
             Some(exp) => match sql_to_rel
                 .sql_to_rex(exp, schema, &mut HashMap::new())
-                .context(logical_planner::ExternalSnafu)?
+                .context(spi::DatafusionSnafu)?
             {
                 Expr::Literal(ScalarValue::Int64(Some(n))) => {
                     if n < 0 {
-                        return Err(LogicalPlannerError::Semantic {
-                            err: format!("LIMIT must be >= 0, '{}' was provided.", n),
-                        });
+                        return Err(QueryError::LimitBtZero { provide: n });
                     } else {
                         Some(n as usize)
                     }
                 }
-                _ => {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: "The LIMIT clause must be a constant of BIGINT type".to_string(),
-                    })
-                }
+                _ => return Err(QueryError::LimitConstant),
             },
             None => None,
         };
 
-        let plan_builder = plan_builder
-            .limit(skip, fetch)
-            .context(logical_planner::ExternalSnafu)?;
+        let plan_builder = plan_builder.limit(skip, fetch)?;
         Ok(plan_builder)
     }
 
@@ -963,34 +949,26 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             plan_options.with_vnode_duration(self.str_to_duration(&vnode_duration)?);
         }
         if let Some(precision) = options.precision {
-            plan_options.with_precision(Precision::new(&precision).ok_or(
-                LogicalPlannerError::Semantic {
-                    err: format!(
-                        "{} is not a valid precision, use like 'ms', 'us', 'ns'",
-                        precision
-                    ),
-                },
-            )?);
+            plan_options.with_precision(Precision::new(&precision).ok_or(QueryError::Parser {
+                source: ParserError::ParserError(format!(
+                    "{} is not a valid precision, use like 'ms', 'us', 'ns'",
+                    precision
+                )),
+            })?);
         }
         Ok(plan_options)
     }
 
     fn str_to_duration(&self, text: &str) -> Result<Duration> {
-        let duration = match Duration::new(text) {
-            None => {
-                return Err(LogicalPlannerError::Semantic {
-                    err: format!(
-                        "{} is not a valid precision, use like 'ms', 'us', 'ns'",
-                        text
-                    ),
-                })
-            }
-            Some(v) => v,
-        };
-        Ok(duration)
+        Duration::new(text).ok_or_else(|| QueryError::Parser {
+            source: ParserError::ParserError(format!(
+                "{} is not a valid precision, use like 'ms', 'us', 'ns'",
+                text
+            )),
+        })
     }
 
-    fn make_data_type(data_type: &SQLDataType) -> Result<ColumnType> {
+    fn make_data_type(column_name: &str, data_type: &SQLDataType) -> Result<ColumnType> {
         match data_type {
             // todo : should support get time unit for database
             SQLDataType::Timestamp(_) => Ok(ColumnType::Time),
@@ -999,8 +977,9 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             SQLDataType::Double => Ok(ColumnType::Field(ValueType::Float)),
             SQLDataType::String => Ok(ColumnType::Field(ValueType::String)),
             SQLDataType::Boolean => Ok(ColumnType::Field(ValueType::Boolean)),
-            _ => Err(LogicalPlannerError::Semantic {
-                err: format!("Unexpected data type {}", data_type),
+            _ => Err(QueryError::DataType {
+                column: column_name.to_string(),
+                data_type: data_type.to_string(),
             }),
         }
     }
@@ -1022,11 +1001,9 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             _ => false,
         };
         if !is_ok {
-            return Err(LogicalPlannerError::Semantic {
-                err: format!(
-                    "Unsupported encoding type {:?} for {}",
-                    column.encoding, column.data_type
-                ),
+            return Err(QueryError::EncodingType {
+                encoding_type: column.encoding.unwrap_or_default(),
+                data_type: column.data_type.to_string(),
             });
         }
         Ok(())
@@ -1053,7 +1030,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         let table_ref = TableReference::from(table_name);
         self.schema_provider
             .get_table_provider(table_ref)
-            .context(logical_planner::ExternalSnafu)
+            .context(spi::DatafusionSnafu)
     }
 
     fn get_table_provider(&self, table_name: &str) -> Result<Arc<dyn TableProvider>> {
@@ -1065,7 +1042,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                     table_name
                 ),
             })
-            .context(MetadataSnafu)
+            .map_err(|e| QueryError::Meta { source: e })
+        // .context(MetaSnafu)
     }
 
     fn create_tenant_to_plan(&self, stmt: ast::CreateTenant) -> Result<PlanWithPrivileges> {
@@ -1076,8 +1054,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         } = stmt;
 
         let name = normalize_ident(&name);
-        let options = sql_options_to_tenant_options(with_options)
-            .map_err(|err| LogicalPlannerError::Semantic { err })?;
+        let options = sql_options_to_tenant_options(with_options)?;
 
         let privileges = vec![Privilege::Global(GlobalPrivilege::Tenant(None))];
 
@@ -1098,8 +1075,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         } = stmt;
 
         let name = normalize_ident(&name);
-        let options = sql_options_to_user_options(with_options)
-            .map_err(|err| LogicalPlannerError::Semantic { err })?;
+        let options = sql_options_to_user_options(with_options)?;
 
         let privileges = vec![Privilege::Global(GlobalPrivilege::User(None))];
 
@@ -1130,7 +1106,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         let inherit_tenant_role = inherit
             .map(|ref e| {
                 SystemTenantRole::try_from(normalize_ident(e).as_str())
-                    .map_err(|err| LogicalPlannerError::Semantic { err })
+                    .map_err(|err| QueryError::Semantic { err })
             })
             .unwrap_or(Ok(SystemTenantRole::Member))?;
 
@@ -1168,10 +1144,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                 //     &self,
                 //     name: &str
                 // ) -> Result<Option<UserDesc>>;
-                let user_desc = self
-                    .schema_provider
-                    .get_user(&user_name)
-                    .context(MetadataSnafu)?;
+                let user_desc = self.schema_provider.get_user(&user_name)?;
+                // .context(MetaSnafu)?;
                 let user_id = *user_desc.id();
 
                 let role_name = normalize_ident(role);
@@ -1198,10 +1172,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                 //     &self,
                 //     name: &str
                 // ) -> Result<Option<UserDesc>>;
-                let user_desc = self
-                    .schema_provider
-                    .get_user(&user_name)
-                    .context(MetadataSnafu)?;
+                let user_desc = self.schema_provider.get_user(&user_name)?;
+                // .context(MetaSnafu)?;
                 let user_id = *user_desc.id();
 
                 let role_name = normalize_ident(role);
@@ -1227,10 +1199,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                 //     &self,
                 //     name: &str
                 // ) -> Result<Option<UserDesc>>;
-                let user_desc = self
-                    .schema_provider
-                    .get_user(&user_name)
-                    .context(MetadataSnafu)?;
+                let user_desc = self.schema_provider.get_user(&user_name)?;
+                // .context(MetaSnafu)?;
                 let user_id = *user_desc.id();
 
                 (AlterTenantAction::RemoveUser(user_id), privilege)
@@ -1239,8 +1209,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                 // tenant_id: Oid
                 let privilege = Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)));
 
-                let tenant_options = sql_options_to_tenant_options(vec![sql_option])
-                    .map_err(|err| LogicalPlannerError::Semantic { err })?;
+                let tenant_options = sql_options_to_tenant_options(vec![sql_option])?;
+                // .map_err(|err| QueryError::Semantic { err })?;
 
                 (AlterTenantAction::Set(Box::new(tenant_options)), privilege)
             }
@@ -1261,10 +1231,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         //     &self,
         //     name: &str
         // ) -> Result<Tenant>;
-        let tenant = self
-            .schema_provider
-            .get_tenant(&tenant_name)
-            .context(MetadataSnafu)?;
+        let tenant = self.schema_provider.get_tenant(&tenant_name)?;
+        // .context(MetaSnafu)?;
 
         let (alter_tenant_action, privilege) =
             self.construct_alter_tenant_action_with_privilege(operation, *tenant.id())?;
@@ -1289,10 +1257,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         //     &self,
         //     name: &str
         // ) -> Result<Option<UserDesc>>;
-        let user_desc = self
-            .schema_provider
-            .get_user(&user_name)
-            .context(MetadataSnafu)?;
+        let user_desc = self.schema_provider.get_user(&user_name)?;
+        // .context(MetaSnafu)?;
         let user_id = *user_desc.id();
 
         let alter_user_action = match operation {
@@ -1300,8 +1266,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                 AlterUserAction::RenameTo(normalize_ident(new_name))
             }
             AlterUserOperation::Set(sql_option) => {
-                let user_options = sql_options_to_user_options(vec![sql_option])
-                    .map_err(|err| LogicalPlannerError::Semantic { err })?;
+                let user_options = sql_options_to_user_options(vec![sql_option])?;
+                // .map_err(|err| QueryError::Semantic { err })?;
 
                 AlterUserAction::Set(user_options)
             }
@@ -1337,9 +1303,9 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         let tenant_id = *session.tenant_id();
 
         if SystemTenantRole::try_from(role_name.as_str()).is_ok() {
-            let err = "System roles are not allowed to be modified".to_string();
-            warn!(err);
-            return Err(LogicalPlannerError::Semantic { err });
+            let err = QueryError::SystemRoleModification;
+            warn!("{}", err.to_string());
+            return Err(err);
         }
 
         let database_privileges = privileges
@@ -1378,8 +1344,8 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             .downcast_ref::<ClusterTable>()
             .ok_or_else(|| MetaError::TableNotFound {
                 table: table_name.to_string(),
-            })
-            .context(MetadataSnafu)?
+            })?
+            // .context(MetaSnafu)?
             .table_schema())
     }
 }
@@ -1397,32 +1363,24 @@ fn semantic_check(
     let target_table_field_num = target_table_fields.len();
 
     if insert_field_num > source_field_num {
-        return Err(LogicalPlannerError::Semantic {
-            err: MISMATCHED_COLUMNS.to_string(),
-        });
+        return Err(QueryError::MismatchColumns);
     }
 
     if insert_field_num == 0 && source_field_num != target_table_field_num {
-        return Err(LogicalPlannerError::Semantic {
-            err: MISMATCHED_COLUMNS.to_string(),
-        });
+        return Err(QueryError::MismatchColumns);
     }
     // The target table must contain all insert fields
     for insert_col in insert_columns {
         target_table_fields
             .iter()
             .find(|e| e.name() == insert_col)
-            .ok_or_else(|| LogicalPlannerError::Semantic {
-                err: format!(
-                    "{} {}, expected: {}",
-                    MISSING_COLUMN,
-                    insert_col,
-                    target_table_fields
-                        .iter()
-                        .map(|e| e.name().as_str())
-                        .collect::<Vec<&str>>()
-                        .join(",")
-                ),
+            .ok_or_else(|| QueryError::MissingColumn {
+                insert_col: insert_col.to_string(),
+                fields: target_table_fields
+                    .iter()
+                    .map(|e| e.name().as_str())
+                    .collect::<Vec<&str>>()
+                    .join(","),
             })?;
     }
 
@@ -1436,18 +1394,16 @@ fn check_show_series_expr(columns: &HashSet<Column>, table_schema: &TskvTableSch
         match table_schema.column(&column.name) {
             Some(table_column) => {
                 if table_column.column_type.is_field() {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: format!(
-                            "SHOW SERIES does not support where clause contains field {}",
-                            column
-                        ),
+                    return Err(QueryError::ShowSeriesWhereContainsField {
+                        column: column.to_string(),
                     });
                 }
             }
 
             None => {
-                return Err(LogicalPlannerError::Semantic {
-                    err: format!("column {} does not exits", column),
+                return Err(QueryError::ColumnNotExists {
+                    column: column.to_string(),
+                    table: table_schema.name.to_string(),
                 })
             }
         }
@@ -1475,14 +1431,10 @@ fn show_series_projection(
             .iter()
             .map(|tag| table_column_to_expr(table_schema, tag))
             .collect::<Vec<Expr>>();
-        plan_builder = plan_builder
-            .project(exp)
-            .context(logical_planner::ExternalSnafu)?;
+        plan_builder = plan_builder.project(exp).context(spi::DatafusionSnafu)?;
     };
 
-    plan_builder = plan_builder
-        .distinct()
-        .context(logical_planner::ExternalSnafu)?;
+    plan_builder = plan_builder.distinct().context(spi::DatafusionSnafu)?;
 
     // concat tag_key=tag_value projection
     let tag_concat_expr_iter = tags.iter().map(|tag| {
@@ -1510,10 +1462,9 @@ fn show_series_projection(
     }
     .alias("key");
     plan_builder
-        .project(iter::once(concat_ws))
-        .context(logical_planner::ExternalSnafu)?
+        .project(iter::once(concat_ws))?
         .build()
-        .context(logical_planner::ExternalSnafu)
+        .context(spi::DatafusionSnafu)
 }
 
 fn show_tag_value_projections(
@@ -1538,7 +1489,7 @@ fn show_tag_value_projections(
                 .all(|name| column.name.ne(&name))
         }),
         _ => {
-            return Err(LogicalPlannerError::NotImplemented {
+            return Err(QueryError::NotImplemented {
                 err: "Not implemented Match, UnMatch".to_string(),
             })
         }
@@ -1562,7 +1513,7 @@ fn show_tag_value_projections(
                     ],
                     HashMap::new(),
                 )
-                .context(logical_planner::ExternalSnafu)?,
+                .context(spi::DatafusionSnafu)?,
             ),
         }));
     }
@@ -1576,28 +1527,18 @@ fn show_tag_value_projections(
             .map(|tag| table_column_to_expr(table_schema, tag))
             .collect::<Vec<Expr>>();
 
-        plan_builder = plan_builder
-            .project(exprs)
-            .context(logical_planner::ExternalSnafu)?;
+        plan_builder = plan_builder.project(exprs).context(spi::DatafusionSnafu)?;
     };
 
-    plan_builder = plan_builder
-        .distinct()
-        .context(logical_planner::ExternalSnafu)?;
+    plan_builder = plan_builder.distinct().context(spi::DatafusionSnafu)?;
 
     let mut projections = Vec::new();
     for tag in tags {
         let key_column = lit(&tag.name).alias("key");
         let value_column = table_column_to_expr(table_schema, tag).alias("value");
-        let projection = plan_builder
-            .project(vec![key_column, value_column.clone()])
-            .context(logical_planner::ExternalSnafu)?;
+        let projection = plan_builder.project(vec![key_column, value_column.clone()])?;
         let filter_expr = value_column.is_not_null();
-        let projection = projection
-            .filter(filter_expr)
-            .context(logical_planner::ExternalSnafu)?
-            .build()
-            .context(logical_planner::ExternalSnafu)?;
+        let projection = projection.filter(filter_expr)?.build()?;
         projections.push(Arc::new(projection));
     }
     let df_schema = projections[0].schema().clone();
@@ -1675,7 +1616,7 @@ impl<S: ContextProviderExtension> LogicalPlanner for SqlPlaner<S> {
         // check privilege
         for p in privileges.iter() {
             if !session.user().check_privilege(p) {
-                return Err(LogicalPlannerError::InsufficientPrivileges {
+                return Err(QueryError::InsufficientPrivileges {
                     privilege: format!("{}", p),
                 });
             }
@@ -1896,42 +1837,45 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Field or Tag name should not have same")]
     fn test_create_table_filed_name_same() {
-        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,presssure DOUBLE,TAGS(station));";
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,pressure DOUBLE,TAGS(station));";
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
         let planner = SqlPlaner::new(test);
-        planner
+        let error = planner
             .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .err()
             .unwrap();
+        assert!(matches!(error, QueryError::SameColumnName {column} if column.eq("pressure")));
     }
 
     #[test]
-    #[should_panic(expected = "Field or Tag name should not have same")]
     fn test_create_table_tag_name_same() {
         let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station,station));";
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
         let planner = SqlPlaner::new(test);
-        planner
+        let error = planner
             .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .err()
             .unwrap();
+        assert!(matches!(error, QueryError::SameColumnName {column} if column.eq("station")));
     }
 
     #[test]
-    #[should_panic(expected = "Field or Tag name should not have same")]
     fn test_create_table_tag_field_same_name() {
-        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station,presssure));";
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station,pressure));";
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
         let planner = SqlPlaner::new(test);
-        planner
+        let error = planner
             .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .err()
             .unwrap();
+        assert!(matches!(error, QueryError::SameColumnName {column} if column.eq("pressure")));
     }
 
     #[test]

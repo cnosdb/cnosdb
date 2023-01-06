@@ -8,6 +8,8 @@ members = [
     "common/utils",
     "common/mem_allocator",
     "common/http_protocol",
+    "common/error_code",
+    "common/error_code/error_code_macro",
     "query_server/spi",
     "query_server/query",
     "query_server/test",
@@ -102,6 +104,7 @@ derive_builder = "0.11"
 openssl = "0.10.28"
 moka = "0.9.6"
 prost-types = { version = "0.11.2" }
+
 
 [profile.dev]
 lto = false

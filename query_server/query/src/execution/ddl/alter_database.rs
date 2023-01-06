@@ -2,11 +2,9 @@ use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::error::MetaError;
 use models::schema::DatabaseOptions;
-use snafu::ResultExt;
-use spi::query::execution;
-use spi::query::execution::MetadataSnafu;
-use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
+use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::AlterDatabase;
+use spi::Result;
 
 pub struct AlterDatabaseTask {
     stmt: AlterDatabase,
@@ -20,10 +18,7 @@ impl AlterDatabaseTask {
 
 #[async_trait]
 impl DDLDefinitionTask for AlterDatabaseTask {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let tenant = query_state_machine.session.tenant();
         let client = query_state_machine
             .meta
@@ -31,21 +26,22 @@ impl DDLDefinitionTask for AlterDatabaseTask {
             .tenant_meta(tenant)
             .ok_or(MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            })
-            .context(MetadataSnafu)?;
+            })?;
+        // .context(MetaSnafu)?;
         let mut schema = client
-            .get_db_schema(&self.stmt.database_name)
-            .context(execution::MetadataSnafu)?
+            .get_db_schema(&self.stmt.database_name)?
+            // .context(spi::MetaSnafu)?
             .ok_or(MetaError::DatabaseNotFound {
                 database: self.stmt.database_name.clone(),
-            })
-            .context(MetadataSnafu)?;
+            })?;
+        // .context(spi::MetaSnafu)?;
         build_database_schema(&self.stmt.database_options, &mut schema.config);
         // client
         //     .alter_database(schema)
-        //     .context(execution::MetadataSnafu)?;
+        //     .context(spi::MetaSnafu)?;
 
-        client.alter_db_schema(&schema).context(MetadataSnafu)?;
+        client.alter_db_schema(&schema)?;
+        // .context(spi::MetaSnafu)?;
         return Ok(Output::Nil(()));
     }
 }

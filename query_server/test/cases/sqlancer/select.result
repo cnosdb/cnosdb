@@ -18,49 +18,49 @@ m4,t0=t0,t1=t1,t2=t2 f0=0I 0
 -- EXECUTE SQL: INSERT m0(TIME, f0, f1) VALUES(366012624080382889, FALSE, 0.6326195071473769), (5635692422062413216, (((CAST(0.7382978061623816 AS STRING))||(CAST(FALSE AS STRING)))) NOT IN ('9sP䋛zqeoM', 'k*G'), 0.5469987105166848), (7533102572643168002, TRUE, 0.9622249970170084); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported value InList { expr: Nested(Nested(BinaryOp { left: Nested(Cast { expr: Value(Number(\"0.7382978061623816\", false)), data_type: String }), op: StringConcat, right: Nested(Cast { expr: Value(Boolean(false)), data_type: String }) })), list: [Value(SingleQuotedString(\"9sP䋛zqeoM\")), Value(SingleQuotedString(\"k*G\"))], negated: true } in a values list expression"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: Unsupported value InList { expr: Nested(Nested(BinaryOp { left: Nested(Cast { expr: Value(Number(\"0.7382978061623816\", false)), data_type: String }), op: StringConcat, right: Nested(Cast { expr: Value(Boolean(false)), data_type: String }) })), list: [Value(SingleQuotedString(\"9sP䋛zqeoM\")), Value(SingleQuotedString(\"k*G\"))], negated: true } in a values list expression"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0, f1) VALUES(4283635885038645395, TRUE, 0.4131558313302025), (6292339431914973050, TRUE, 0.5540439337463335); -- 1ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Coordinator operator, err: Error from tskv: tags or fields can't be empty"}
+{"error_code":"020002","error_message":"Tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f1, t0) VALUES(1041670293467254361, 0.507623643211476, '916053861'), (3174128646074400477, 0.47166914414715877, NULL); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Coordinator operator, err: Error from tskv: tags or fields can't be empty"}
+{"error_code":"020002","error_message":"Tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(2079939785551584142, NULL), (1243152233754651379, FALSE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Coordinator operator, err: Error from tskv: tags or fields can't be empty"}
+{"error_code":"020002","error_message":"Tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(631407052613557553, TRUE), (7486831592909450783, TRUE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Coordinator operator, err: Error from tskv: tags or fields can't be empty"}
+{"error_code":"020002","error_message":"Tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(5867172425191822176, TRUE), (3986678807649375642, TRUE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Coordinator operator, err: Error from tskv: tags or fields can't be empty"}
+{"error_code":"020002","error_message":"Tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m1(TIME, f1) VALUES(7488251815539246350, FALSE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Coordinator operator, err: Error from tskv: tags or fields can't be empty"}
+{"error_code":"020002","error_message":"Tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m3(TIME, t0) VALUES(5414775681413349294, ''); -- 1ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Coordinator operator, err: Error from tskv: tags or fields can't be empty"}
+{"error_code":"020002","error_message":"Tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m1 ORDER BY m1.t0 ASC; --
@@ -72,7 +72,7 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT * FROM m1 WHERE ((NOT (((m1.f1)>=(m1.f1)))) BETWEEN SYMMETRIC (((m1.f1) BETWEEN SYMMETRIC (m1.f1) AND (m1.f1)) IS UNKNOWN) AND ((CAST(-1148203774 AS BOOLEAN)) IS TRUE)) IS TRUE UNION ALL SELECT ALL * FROM m1 WHERE NOT (((NOT (((m1.f1)>=(m1.f1)))) BETWEEN SYMMETRIC (((m1.f1) BETWEEN SYMMETRIC (m1.f1) AND (m1.f1)) IS UNKNOWN) AND ((CAST(-1148203774 AS BOOLEAN)) IS TRUE)) IS TRUE) UNION ALL SELECT * FROM m1 WHERE (((NOT (((m1.f1)>=(m1.f1)))) BETWEEN SYMMETRIC (((m1.f1) BETWEEN SYMMETRIC (m1.f1) AND (m1.f1)) IS UNKNOWN) AND ((CAST(-1148203774 AS BOOLEAN)) IS TRUE)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1; --
@@ -96,7 +96,7 @@ f0,t0,t1
 -- EXECUTE SQL: SELECT m3.f0, m3.t0, m3.t1 FROM m3 WHERE CAST(CAST(CAST(CAST(m3.t0 AS BIGINT) AS STRING) AS BIGINT) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT SUM(- (CAST(((((m1.t0)||(1765622571)))>=(((m1.f0)||(-1441159514)))) AS BIGINT))) FROM m1; --
@@ -124,13 +124,13 @@ MAX(m4.f0)
 -- EXECUTE SQL: SELECT m0.t0 FROM m0 WHERE NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN))) UNION ALL SELECT m0.t0 FROM m0 WHERE NOT (NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN)))) UNION ALL SELECT m0.t0 FROM m0 WHERE (NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_AND(- (+ (CAST(m3.t0 AS BIGINT)))) FROM m3 ORDER BY m3.f0 DESC, m3.t0 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.f0, m4.t1, m4.t2 FROM m4; --
@@ -164,13 +164,13 @@ false,t0,0.0
 -- EXECUTE SQL: SELECT m0.f0, m0.t0, m0.f1 FROM m0 WHERE CAST(CAST(- (CAST(m0.t0 AS BIGINT)) AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BOOL_OR((((((((m3.t1)||(m3.f0)))||(CAST(0.033755319906666026 AS BOOLEAN))))LIKE(CAST(CAST(m3.f1 AS BIGINT) AS STRING)))) IS FALSE) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.f1 FROM m3; --
@@ -182,19 +182,19 @@ false
 -- EXECUTE SQL: SELECT m3.f1 FROM m3 WHERE (-2.83773192E8) NOT IN (0.020683454803656076, 0.11688246493551957) UNION ALL SELECT m3.f1 FROM m3 WHERE NOT ((-2.83773192E8) NOT IN (0.020683454803656076, 0.11688246493551957)) UNION ALL SELECT ALL m3.f1 FROM m3 WHERE ((-2.83773192E8) NOT IN (0.020683454803656076, 0.11688246493551957)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: E8"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_AND(-1155506580) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_AND(agg0) FROM (SELECT BIT_AND(-1155506580)  as agg0 FROM m2 WHERE ((((CAST(((m2.f1)LIKE(m2.f1)) AS STRING))LIKE(m2.t0)))<(CAST(CAST(((1367699265)+(-217143237)) AS BIGINT) AS BOOLEAN))) UNION ALL SELECT ALL BIT_AND(-1155506580)  as agg0 FROM m2 WHERE NOT (((((CAST(((m2.f1)LIKE(m2.f1)) AS STRING))LIKE(m2.t0)))<(CAST(CAST(((1367699265)+(-217143237)) AS BIGINT) AS BOOLEAN)))) UNION ALL SELECT BIT_AND(-1155506580)  as agg0 FROM m2 WHERE (((((CAST(((m2.f1)LIKE(m2.f1)) AS STRING))LIKE(m2.t0)))<(CAST(CAST(((1367699265)+(-217143237)) AS BIGINT) AS BOOLEAN)))) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m4 ORDER BY m4.t0 DESC; --
@@ -206,7 +206,7 @@ time,t0,t1,t2,f0
 -- EXECUTE SQL: SELECT * FROM m4 WHERE (CAST(CAST(CAST(m4.f0 AS BOOLEAN) AS BOOLEAN) AS STRING)) NOTNULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected end of statement, found: NOTNULL"}
+{"error_code":"010009","error_message":"sql parser error: Expected end of statement, found: NOTNULL"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f1, m0.f0, m0.t0 FROM m0; --
@@ -236,7 +236,7 @@ t2,0,t1
 -- EXECUTE SQL: SELECT ALL BIT_AND(CAST(NOT (CAST(CAST(-436419271 AS BIGINT) AS BOOLEAN)) AS BIGINT)) FROM m1; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m0; --
@@ -310,7 +310,7 @@ t0,f0
 -- EXECUTE SQL: SELECT m1.t0, m1.f0 FROM m1 WHERE ((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691))))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE NOT (((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691)))))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE (((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691)))))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '-1326988525' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '-1326988525' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
@@ -322,13 +322,13 @@ f1
 -- EXECUTE SQL: SELECT m0.f1 FROM m0 WHERE CAST(CAST(0.8194569637054474 AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.8194569637054474' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.8194569637054474' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(- (-1205285987)) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m4.f0 FROM m4; --
@@ -448,7 +448,7 @@ f0
 -- EXECUTE SQL: SELECT ALL m4.f0 FROM m4 WHERE (- (CAST(m4.t1 AS BIGINT))) NOT IN (779308539, -1573694652) UNION ALL SELECT m4.f0 FROM m4 WHERE NOT ((- (CAST(m4.t1 AS BIGINT))) NOT IN (779308539, -1573694652)) UNION ALL SELECT ALL m4.f0 FROM m4 WHERE ((- (CAST(m4.t1 AS BIGINT))) NOT IN (779308539, -1573694652)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't1' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't1' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0; --
@@ -506,7 +506,7 @@ t0,0.0,false
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f1, m0.f0 FROM m0 WHERE (((((CAST(m0.f0 AS STRING))LIKE(CAST(m0.f0 AS STRING)))) NOTNULL)AND(m0.f0)) UNION ALL SELECT m0.t0, m0.f1, m0.f0 FROM m0 WHERE NOT ((((((CAST(m0.f0 AS STRING))LIKE(CAST(m0.f0 AS STRING)))) NOTNULL)AND(m0.f0))) UNION ALL SELECT ALL m0.t0, m0.f1, m0.f0 FROM m0 WHERE ((((((CAST(m0.f0 AS STRING))LIKE(CAST(m0.f0 AS STRING)))) NOTNULL)AND(m0.f0))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: NOTNULL"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: NOTNULL"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.f1, m3.t0 FROM m3; --
@@ -518,7 +518,7 @@ false,t0
 -- EXECUTE SQL: SELECT ALL m3.f1, m3.t0 FROM m3 WHERE (m3.t0) BETWEEN SYMMETRIC (((((CAST(m3.t0 AS STRING))||(CAST(m3.f0 AS STRING))))||(((m3.f0)^(((-1761997143)^(m3.f0))))))) AND (m3.t1); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MAX(0.6592404280882139) FROM m3; --
@@ -570,7 +570,7 @@ t0,t1,false,0
 -- EXECUTE SQL: SELECT m3.t0, m3.t1, m3.f1, m3.f0 FROM m3 WHERE ((((((((m3.t0)||(m3.f1)))||(NOT (FALSE))))||(NOT (CAST(m3.t0 AS BOOLEAN)))))>(CAST(CAST(- (m3.f0) AS BOOLEAN) AS STRING))) UNION ALL SELECT m3.t0, m3.t1, m3.f1, m3.f0 FROM m3 WHERE NOT (((((((((m3.t0)||(m3.f1)))||(NOT (FALSE))))||(NOT (CAST(m3.t0 AS BOOLEAN)))))>(CAST(CAST(- (m3.f0) AS BOOLEAN) AS STRING)))) UNION ALL SELECT m3.t0, m3.t1, m3.f1, m3.f0 FROM m3 WHERE (((((((((m3.t0)||(m3.f1)))||(NOT (FALSE))))||(NOT (CAST(m3.t0 AS BOOLEAN)))))>(CAST(CAST(- (m3.f0) AS BOOLEAN) AS STRING)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1 FROM m4; --
@@ -582,19 +582,19 @@ t0,0,t1
 -- EXECUTE SQL: SELECT m4.t0, m4.f0, m4.t1 FROM m4 WHERE CAST((((((((((0.9584559080711685) NOT IN (0.733569031597476, 0.7960654456099594))AND((m4.t0) BETWEEN SYMMETRIC (m4.t1) AND (m4.t1))))AND(CAST(962753936 AS BOOLEAN))))AND(NOT ((m4.t2) BETWEEN (m4.t2) AND (m4.t0)))))AND((CAST(FALSE AS BOOLEAN)) IS NOT UNKNOWN)) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1 FROM m4 WHERE NOT (CAST((((((((((0.9584559080711685) NOT IN (0.733569031597476, 0.7960654456099594))AND((m4.t0) BETWEEN SYMMETRIC (m4.t1) AND (m4.t1))))AND(CAST(962753936 AS BOOLEAN))))AND(NOT ((m4.t2) BETWEEN (m4.t2) AND (m4.t0)))))AND((CAST(FALSE AS BOOLEAN)) IS NOT UNKNOWN)) AS BOOLEAN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m4.t0, m4.f0, m4.t1 FROM m4 WHERE (CAST((((((((((0.9584559080711685) NOT IN (0.733569031597476, 0.7960654456099594))AND((m4.t0) BETWEEN SYMMETRIC (m4.t1) AND (m4.t1))))AND(CAST(962753936 AS BOOLEAN))))AND(NOT ((m4.t2) BETWEEN (m4.t2) AND (m4.t0)))))AND((CAST(FALSE AS BOOLEAN)) IS NOT UNKNOWN)) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1, m4.t2 FROM m4; --
@@ -612,7 +612,7 @@ t0,0,t1,t2
 -- EXECUTE SQL: SELECT SUM(- (((+ (CAST(m1.f0 AS BIGINT)))/(CAST(((m1.t0)>(m1.f0)) AS BIGINT))))) FROM m1; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 'f0' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.t0, m2.f1 FROM m2; --
@@ -664,7 +664,7 @@ f0,false
 -- EXECUTE SQL: SELECT COUNT(((m3.f0)*(- (CAST(CAST(m3.t1 AS STRING) AS BIGINT))))) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 't1' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't1' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3; --
@@ -700,13 +700,13 @@ t0,0,t1
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1 FROM m4 WHERE ((CAST(((CAST(m4.t1 AS BIGINT))IS NOT DISTINCT FROM(((m4.f0)-(m4.f0)))) AS STRING))LIKE(CAST(+ (- (m4.f0)) AS STRING))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't1' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't1' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(m3.f0) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t0, m3.f1, m3.t1 FROM m3; --
@@ -758,13 +758,13 @@ false,0,t0,t1
 -- EXECUTE SQL: SELECT SUM(- (CAST(CAST(((m0.t0)||(m0.f1)) AS BIGINT) AS BIGINT))) FROM m0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 't00.0' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't00.0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL SUM(- (CAST(CAST(((m0.t0)||(m0.f1)) AS BIGINT) AS BIGINT)))  as agg0 FROM m0 WHERE FALSE UNION ALL SELECT SUM(- (CAST(CAST(((m0.t0)||(m0.f1)) AS BIGINT) AS BIGINT)))  as agg0 FROM m0 WHERE NOT (FALSE) UNION ALL SELECT ALL SUM(- (CAST(CAST(((m0.t0)||(m0.f1)) AS BIGINT) AS BIGINT)))  as agg0 FROM m0 WHERE (FALSE) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 't00.0' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't00.0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m4; --
@@ -899,7 +899,7 @@ false
 -- EXECUTE SQL: SELECT ALL BOOL_AND((0.7125738444099359) NOT IN (0.17193890888962704, 0.5773990828254518)) FROM m1 GROUP BY ((- (CAST(((m1.t0)LIKE(m1.f0)) AS BIGINT)))*(CAST(-33990896 AS BIGINT))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.f0, m3.t0 FROM m3; --
@@ -911,7 +911,7 @@ f0,t0
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t0 FROM m3 WHERE NOT (CAST(((m3.f0) BETWEEN SYMMETRIC (m3.f0) AND (m3.f0)) IS FALSE AS BOOLEAN)) UNION ALL SELECT ALL m3.f0, m3.t0 FROM m3 WHERE NOT (NOT (CAST(((m3.f0) BETWEEN SYMMETRIC (m3.f0) AND (m3.f0)) IS FALSE AS BOOLEAN))) UNION ALL SELECT m3.f0, m3.t0 FROM m3 WHERE (NOT (CAST(((m3.f0) BETWEEN SYMMETRIC (m3.f0) AND (m3.f0)) IS FALSE AS BOOLEAN))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m2; --
@@ -939,7 +939,7 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL COUNT(+ (CAST(((m1.f0)||(((m1.f0)LIKE(m1.t0)))) AS BIGINT))) FROM m1; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 'f00' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f00' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.f0 FROM m3; --
@@ -985,7 +985,7 @@ f0
 -- EXECUTE SQL: SELECT ALL m3.f0 FROM m3 WHERE ((((((CAST(CAST(((m3.t0)||('-436419271')) AS BIGINT) AS BOOLEAN))OR(CAST(CAST(((m3.t0)||(m3.f0)) AS BIGINT) AS BOOLEAN))))OR((CAST(m3.f0 AS BIGINT)) NOT IN (-1775866416, -458215714, -1147259432))))AND(((((((((((m3.f1)OR(m3.f1)))OR(m3.f1)))AND(m3.f1)))OR(m3.f1))) IS NULL) IS FALSE)) UNION ALL SELECT m3.f0 FROM m3 WHERE NOT (((((((CAST(CAST(((m3.t0)||('-436419271')) AS BIGINT) AS BOOLEAN))OR(CAST(CAST(((m3.t0)||(m3.f0)) AS BIGINT) AS BOOLEAN))))OR((CAST(m3.f0 AS BIGINT)) NOT IN (-1775866416, -458215714, -1147259432))))AND(((((((((((m3.f1)OR(m3.f1)))OR(m3.f1)))AND(m3.f1)))OR(m3.f1))) IS NULL) IS FALSE))) UNION ALL SELECT ALL m3.f0 FROM m3 WHERE (((((((CAST(CAST(((m3.t0)||('-436419271')) AS BIGINT) AS BOOLEAN))OR(CAST(CAST(((m3.t0)||(m3.f0)) AS BIGINT) AS BOOLEAN))))OR((CAST(m3.f0 AS BIGINT)) NOT IN (-1775866416, -458215714, -1147259432))))AND(((((((((((m3.f1)OR(m3.f1)))OR(m3.f1)))AND(m3.f1)))OR(m3.f1))) IS NULL) IS FALSE))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0-436419271' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0-436419271' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(0.7069601217262456) FROM m0; --
@@ -997,7 +997,7 @@ SUM(Float64(0.7069601217262456))
 -- EXECUTE SQL: SELECT SUM(+ ('-991419863')) FROM m0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: The function Sum does not support inputs of type Utf8."}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: The function Sum does not support inputs of type Utf8."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1 WHERE NOT ((+ (1827659846)) NOT IN (-1398969998)); --
@@ -1054,13 +1054,13 @@ SUM(Int64(-996695851))
 -- EXECUTE SQL: SELECT MAX(m2.f1) FROM m2 ORDER BY m2.f1 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm2'.'f1'. Valid fields are 'MAX(m2.f1)'."}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named 'm2'.'f1'. Valid fields are 'MAX(m2.f1)'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0 FROM m3 WHERE (((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0') UNION ALL SELECT m3.t1, m3.t0 FROM m3 WHERE NOT ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) UNION ALL SELECT ALL m3.t1, m3.t0 FROM m3 WHERE ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Can not find compatible types to compare Boolean with [Boolean, Boolean, Utf8]. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Can not find compatible types to compare Boolean with [Boolean, Boolean, Utf8]. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0 FROM m2; --
@@ -1077,13 +1077,13 @@ f1,t0
 -- EXECUTE SQL: SELECT BIT_OR(574679056) FROM m0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(agg0) FROM (SELECT ALL BIT_OR(574679056)  as agg0 FROM m0 WHERE (0.8987548809734333) BETWEEN SYMMETRIC (0.9080665405886834) AND (1819388991) UNION ALL SELECT BIT_OR(574679056)  as agg0 FROM m0 WHERE NOT ((0.8987548809734333) BETWEEN SYMMETRIC (0.9080665405886834) AND (1819388991)) UNION ALL SELECT BIT_OR(574679056)  as agg0 FROM m0 WHERE ((0.8987548809734333) BETWEEN SYMMETRIC (0.9080665405886834) AND (1819388991)) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.f1 FROM m3; --
@@ -1095,7 +1095,7 @@ false
 -- EXECUTE SQL: SELECT ALL m3.f1 FROM m3 WHERE CAST(((CAST(CAST(FALSE AS BIGINT) AS STRING))||(CAST(((m3.t1)||(3.60976499E8)) AS BIGINT))) AS BOOLEAN) UNION ALL SELECT m3.f1 FROM m3 WHERE NOT (CAST(((CAST(CAST(FALSE AS BIGINT) AS STRING))||(CAST(((m3.t1)||(3.60976499E8)) AS BIGINT))) AS BOOLEAN)) UNION ALL SELECT m3.f1 FROM m3 WHERE (CAST(((CAST(CAST(FALSE AS BIGINT) AS STRING))||(CAST(((m3.t1)||(3.60976499E8)) AS BIGINT))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: E8"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.f1 FROM m3; --
@@ -1211,7 +1211,7 @@ t1,0,t0,t2
 -- EXECUTE SQL: SELECT m4.t1, m4.f0, m4.t0, m4.t2 FROM m4 WHERE CAST(m4.t2 AS BOOLEAN) UNION ALL SELECT m4.t1, m4.f0, m4.t0, m4.t2 FROM m4 WHERE NOT (CAST(m4.t2 AS BOOLEAN)) UNION ALL SELECT ALL m4.t1, m4.f0, m4.t0, m4.t2 FROM m4 WHERE (CAST(m4.t2 AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't2' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't2' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2; --
@@ -1223,7 +1223,7 @@ false,f1,t0
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2 WHERE ((((((((m2.f1)||(1052801116)))||(((m2.f1)||(m2.f0)))))||(CAST(CAST(m2.f1 AS STRING) AS BIGINT))))LIKE(CAST((CAST(FALSE AS BOOLEAN)) IS UNKNOWN AS STRING))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f1' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f1' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t0, m3.f0, m3.t1, m3.f1 FROM m3; --
@@ -1235,7 +1235,7 @@ t0,0,t1,false
 -- EXECUTE SQL: SELECT ALL m3.t0, m3.f0, m3.t1, m3.f1 FROM m3 WHERE ((CAST(((CAST(0.3790453382388461 AS STRING))||(((m3.f0)%(m3.f0)))) AS BOOLEAN))OR(NOT ((CAST(m3.f1 AS BOOLEAN)) NOTNULL))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: NOTNULL"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: NOTNULL"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT MIN(((CAST(0.5545125075521484 AS STRING))||((((m2.f0)<(m2.f0))) IN (TRUE)))) FROM m2; --
@@ -1247,7 +1247,7 @@ MIN(Float64(0.5545125075521484) || m2.f0 < m2.f0 IN (Map { iter: Iter([Boolean(t
 -- EXECUTE SQL: SELECT ALL BIT_AND(+ (CAST(CAST(+ (m3.f0) AS STRING) AS BIGINT))), CAST(0.13969056553337023 AS BIGINT) FROM m3 GROUP BY 0.2133494693314646; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f1 FROM m0; --
@@ -1259,7 +1259,7 @@ f1
 -- EXECUTE SQL: SELECT m0.f1 FROM m0 WHERE (-9.92966372E8) BETWEEN (0.13685450858041304) AND (1.624016699E9) UNION ALL SELECT m0.f1 FROM m0 WHERE NOT ((-9.92966372E8) BETWEEN (0.13685450858041304) AND (1.624016699E9)) UNION ALL SELECT ALL m0.f1 FROM m0 WHERE ((-9.92966372E8) BETWEEN (0.13685450858041304) AND (1.624016699E9)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: E8"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 ORDER BY m2.t0 ASC; --
@@ -1271,13 +1271,13 @@ false
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 WHERE (((CAST(CAST(m2.f1 AS STRING) AS BOOLEAN)) IS FALSE)AND((CAST(m2.f0 AS BOOLEAN)) IS UNKNOWN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f1' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f1' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR(TRUE) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.t0 FROM m1; --
@@ -1311,7 +1311,7 @@ f0,t2,t0
 -- EXECUTE SQL: SELECT ALL m4.f0, m4.t2, m4.t0 FROM m4 WHERE ((((((CAST(((+ (m4.f0))*(+ (-436419271))) AS BOOLEAN))AND((((m4.t0)||(m4.t2))) NOT IN ('IEv', 'iKLོ<'))))AND((CAST(NOT (TRUE) AS BIGINT)) BETWEEN SYMMETRIC (CAST(m4.t0 AS BIGINT)) AND (- (CAST(m4.t0 AS BIGINT))))))OR(((((- (m4.f0))^(CAST(0.4641589299925929 AS BIGINT))))<=(+ (- (m4.f0)))))) UNION ALL SELECT m4.f0, m4.t2, m4.t0 FROM m4 WHERE NOT (((((((CAST(((+ (m4.f0))*(+ (-436419271))) AS BOOLEAN))AND((((m4.t0)||(m4.t2))) NOT IN ('IEv', 'iKLོ<'))))AND((CAST(NOT (TRUE) AS BIGINT)) BETWEEN SYMMETRIC (CAST(m4.t0 AS BIGINT)) AND (- (CAST(m4.t0 AS BIGINT))))))OR(((((- (m4.f0))^(CAST(0.4641589299925929 AS BIGINT))))<=(+ (- (m4.f0))))))) UNION ALL SELECT m4.f0, m4.t2, m4.t0 FROM m4 WHERE (((((((CAST(((+ (m4.f0))*(+ (-436419271))) AS BOOLEAN))AND((((m4.t0)||(m4.t2))) NOT IN ('IEv', 'iKLོ<'))))AND((CAST(NOT (TRUE) AS BIGINT)) BETWEEN SYMMETRIC (CAST(m4.t0 AS BIGINT)) AND (- (CAST(m4.t0 AS BIGINT))))))OR(((((- (m4.f0))^(CAST(0.4641589299925929 AS BIGINT))))<=(+ (- (m4.f0))))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
@@ -1329,13 +1329,13 @@ f1
 -- EXECUTE SQL: SELECT MAX(-4.88758559E8) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: E8"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT MAX(agg0) FROM (SELECT ALL MAX(-4.88758559E8)  as agg0 FROM m3 WHERE (2.054705454E9) NOT IN (0.21952361206409599, 0.8148727002039817) UNION ALL SELECT MAX(-4.88758559E8)  as agg0 FROM m3 WHERE NOT ((2.054705454E9) NOT IN (0.21952361206409599, 0.8148727002039817)) UNION ALL SELECT MAX(-4.88758559E8)  as agg0 FROM m3 WHERE ((2.054705454E9) NOT IN (0.21952361206409599, 0.8148727002039817)) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: MAX"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: MAX"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
@@ -1382,7 +1382,7 @@ f0
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE (((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN UNION ALL SELECT m1.f0 FROM m1 WHERE NOT ((((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN) UNION ALL SELECT ALL m1.f0 FROM m1 WHERE ((((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected AS, found: E7"}
+{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E7"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f0 FROM m2; --
@@ -1400,7 +1400,7 @@ false
 -- EXECUTE SQL: SELECT ALL BOOL_OR((((((m4.t0) IN ('M SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1 ORDER BY m1.t0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Unterminated string literal at Line: 1, Column 36"}
+{"error_code":"010009","error_message":"sql parser error: Unterminated string literal at Line: 1, Column 36"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.f1, m1.f0, m1.t0 FROM m1 WHERE ((NOT (((((m1.t0)||(48911391)))IS DISTINCT FROM(CAST(1059668417 AS STRING)))))AND(m1.f1)); --
@@ -1417,7 +1417,7 @@ t0,0,t1
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1 FROM m4 WHERE (((((((CAST(TRUE AS BOOLEAN)) IN (TRUE))OR(TRUE)))AND((CAST(((m4.f0)-(m4.f0)) AS STRING)) BETWEEN SYMMETRIC (CAST(CAST(m4.f0 AS BIGINT) AS STRING)) AND (CAST(CAST(NULL AS BIGINT) AS STRING)))))AND((((m4.t0)>(m4.t1))) NOT IN (FALSE, FALSE))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.f1, m3.f0 FROM m3; --
@@ -1429,13 +1429,13 @@ false,0
 -- EXECUTE SQL: SELECT ALL m3.f1, m3.f0 FROM m3 WHERE ((((CAST(CAST(m3.f0 AS STRING) AS STRING))||(FALSE)))LIKE(CAST(((CAST(6.94936525E8 AS BIGINT))^(+ (m3.f0))) AS STRING))) UNION ALL SELECT m3.f1, m3.f0 FROM m3 WHERE NOT (((((CAST(CAST(m3.f0 AS STRING) AS STRING))||(FALSE)))LIKE(CAST(((CAST(6.94936525E8 AS BIGINT))^(+ (m3.f0))) AS STRING)))) UNION ALL SELECT ALL m3.f1, m3.f0 FROM m3 WHERE (((((CAST(CAST(m3.f0 AS STRING) AS STRING))||(FALSE)))LIKE(CAST(((CAST(6.94936525E8 AS BIGINT))^(+ (m3.f0))) AS STRING)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected AS, found: E8"}
+{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E8"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MAX(((((CAST(CAST(FALSE AS STRING) AS STRING))||(CAST(((m4.t0)<=(m4.t2)) AS STRING))))IS DISTINCT FROM(((((CAST(TRUE AS STRING))||((('?X')||(m4.t1)))))||(m4.f0))))) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.t0 FROM m0; --
@@ -1477,19 +1477,19 @@ SUM(Float64(0.9609833329171376))
 -- EXECUTE SQL: SELECT ALL MIN(((((CAST(- (+ (m4.f0)) AS BOOLEAN))OR(CAST(0.18361102209351832 AS BOOLEAN))))OR(CAST(0.14149015016136468 AS BOOLEAN)))) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_AND(CAST(CAST(((((m4.t0)||(m4.f0)))||(CAST(m4.f0 AS BIGINT))) AS BIGINT) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(CAST(+ (CAST(((m3.f0)+(m3.f0)) AS BIGINT)) AS BIGINT)) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0; --
@@ -1501,31 +1501,31 @@ false,0.0,t0
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1, m0.t0 FROM m0 WHERE (0.5980307755514246) BETWEEN (0.06659352029120968) AND (+ (((+ (2073602548))+(CAST(m0.t0 AS BIGINT))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0 WHERE NOT ((0.5980307755514246) BETWEEN (0.06659352029120968) AND (+ (((+ (2073602548))+(CAST(m0.t0 AS BIGINT)))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0 WHERE ((0.5980307755514246) BETWEEN (0.06659352029120968) AND (+ (((+ (2073602548))+(CAST(m0.t0 AS BIGINT)))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT SUM(0.6096484376459871) FROM m1 ORDER BY m1.t0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm1'.'t0'. Valid fields are 'SUM(Float64(0.6096484376459871))'."}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named 'm1'.'t0'. Valid fields are 'SUM(Float64(0.6096484376459871))'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR((((((((((((m2.f1)LIKE(m2.f1)))OR(((m2.f0)AND(m2.f0)))))OR((0.5546139751565915) IN (0.3276204101429546))))AND((m2.t0) BETWEEN ('0.6468887984268011') AND (m2.f1)))) BETWEEN SYMMETRIC ((((m2.f0) BETWEEN SYMMETRIC (m2.f0) AND (m2.f0))AND(m2.f0))) AND (((CAST(m2.f0 AS STRING))LIKE(CAST(m2.f0 AS STRING)))))<=((+ (- (1120541685))) IS NOT NULL))) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f1, m1.f0 FROM m1; --
@@ -1575,7 +1575,7 @@ false,t0,f0
 -- EXECUTE SQL: SELECT ALL BIT_OR(CAST((CAST(FALSE AS BIGINT)) NOT IN (0.5844695362547421, 0.7511352762098632, 0.02431858285836208) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m3; --
@@ -1654,7 +1654,7 @@ SUM(asdf.agg0)
 -- EXECUTE SQL: SELECT COUNT(CAST(CAST(0.5224095978421741 AS STRING) AS BIGINT)) FROM m1 WHERE (NOT (((m1.t0)LIKE(m1.t0)))) IN (TRUE) GROUP BY CAST(- (CAST(CAST(m1.t0 AS STRING) AS BIGINT)) AS BIGINT); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.5224095978421741' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.5224095978421741' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1; --
@@ -1666,13 +1666,13 @@ false,f0,t0
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1 WHERE ((((CAST(- (416542755) AS STRING))||(((CAST(m1.f1 AS STRING))>=(CAST(m1.t0 AS STRING))))))LIKE(CAST(((CAST(-7.83616155E8 AS STRING))||(((m1.t0)=(m1.t0)))) AS STRING))) UNION ALL SELECT m1.f1, m1.f0, m1.t0 FROM m1 WHERE NOT (((((CAST(- (416542755) AS STRING))||(((CAST(m1.f1 AS STRING))>=(CAST(m1.t0 AS STRING))))))LIKE(CAST(((CAST(-7.83616155E8 AS STRING))||(((m1.t0)=(m1.t0)))) AS STRING)))) UNION ALL SELECT m1.f1, m1.f0, m1.t0 FROM m1 WHERE (((((CAST(- (416542755) AS STRING))||(((CAST(m1.f1 AS STRING))>=(CAST(m1.t0 AS STRING))))))LIKE(CAST(((CAST(-7.83616155E8 AS STRING))||(((m1.t0)=(m1.t0)))) AS STRING)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected AS, found: E8"}
+{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E8"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(- (CAST(CAST(0.10877241438849494 AS DOUBLE) AS BIGINT))) FROM m1; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.t0, m0.f1, m0.f0 FROM m0; --
@@ -1732,19 +1732,19 @@ false,0.0
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1 FROM m0 WHERE (CAST(m0.t0 AS BOOLEAN)) IS UNKNOWN; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1 FROM m0 WHERE NOT ((CAST(m0.t0 AS BOOLEAN)) IS UNKNOWN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1 FROM m0 WHERE ((CAST(m0.t0 AS BOOLEAN)) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.t0, m3.f0 FROM m3; --
@@ -1778,7 +1778,7 @@ false,f1,t0
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2 WHERE NOT (CAST(1.765622571E9 AS BOOLEAN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected AS, found: E9"}
+{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E9"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.t0 FROM m0 WHERE NOT (NOT (((CAST(m0.f1 AS STRING))LIKE(CAST(-1694794127 AS STRING))))); --
@@ -1795,13 +1795,13 @@ MAX(Float64(0.11902110991187975))
 -- EXECUTE SQL: SELECT ALL BOOL_AND((0.6217647053258654) IN (0.30980467236273324)) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t2 FROM m4 WHERE CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN) UNION ALL SELECT m4.t0, m4.t2 FROM m4 WHERE NOT (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) UNION ALL SELECT ALL m4.t0, m4.t2 FROM m4 WHERE (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '11' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string '11' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m2; --
@@ -1881,7 +1881,7 @@ false,0.0,t0
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0 WHERE ((((CAST(299102740 AS BOOLEAN))OR(((CAST(CAST(-824534954 AS BIGINT) AS STRING))IS DISTINCT FROM(CAST(0.9496735118924012 AS STRING))))))AND((((((m0.f0) IS TRUE)OR((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0))))<(m0.f0)))) UNION ALL SELECT ALL m0.f0, m0.f1, m0.t0 FROM m0 WHERE NOT (((((CAST(299102740 AS BOOLEAN))OR(((CAST(CAST(-824534954 AS BIGINT) AS STRING))IS DISTINCT FROM(CAST(0.9496735118924012 AS STRING))))))AND((((((m0.f0) IS TRUE)OR((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0))))<(m0.f0))))) UNION ALL SELECT ALL m0.f0, m0.f1, m0.t0 FROM m0 WHERE (((((CAST(299102740 AS BOOLEAN))OR(((CAST(CAST(-824534954 AS BIGINT) AS STRING))IS DISTINCT FROM(CAST(0.9496735118924012 AS STRING))))))AND((((((m0.f0) IS TRUE)OR((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0))))<(m0.f0))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1, m0.f0, m0.t0 FROM m0; --
@@ -1905,19 +1905,19 @@ false
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE (m0.f0) IN (NULL, TRUE); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE NOT ((m0.f0) IN (NULL, TRUE)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 WHERE ((m0.f0) IN (NULL, TRUE)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT - (AVG(((((((CAST(-631199003 AS BIGINT))-(- (26056234))))^(CAST(((-1384117880)+(-1715477248)) AS BIGINT))))-(- (- (- (-1568581974))))))) FROM m2 GROUP BY (CAST(m2.f0 AS BIGINT)) IN (-703875107); --
@@ -1935,7 +1935,7 @@ false
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 WHERE NOT (CAST(CAST(CAST(m2.t0 AS STRING) AS STRING) AS BOOLEAN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0 FROM m2; --
@@ -1993,7 +1993,7 @@ false,t1
 -- EXECUTE SQL: SELECT BIT_OR(- (- (-1577037646))) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2 ORDER BY m2.t0 DESC; --
@@ -2029,7 +2029,7 @@ t0,0.0
 -- EXECUTE SQL: SELECT m0.t0, m0.f1 FROM m0 WHERE (- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280) UNION ALL SELECT ALL m0.t0, m0.f1 FROM m0 WHERE NOT ((- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280)) UNION ALL SELECT ALL m0.t0, m0.f1 FROM m0 WHERE ((- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '<{QdbO勌' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '<{QdbO勌' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1; --
@@ -2068,7 +2068,7 @@ f0,t2,t1
 -- EXECUTE SQL: SELECT ALL m4.t0 FROM m4 WHERE (3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604) UNION ALL SELECT ALL m4.t0 FROM m4 WHERE NOT ((3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604)) UNION ALL SELECT m4.t0 FROM m4 WHERE ((3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: E8"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0 FROM m0 WHERE (((((m0.t0)||(m0.f0)))||(CAST(m0.t0 AS STRING)))) NOT IN ('Hp', ''); --
@@ -2080,13 +2080,13 @@ t0
 -- EXECUTE SQL: SELECT BIT_AND(1546514567) FROM m1; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_AND(agg0) FROM (SELECT ALL BIT_AND(1546514567)  as agg0 FROM m1 WHERE CAST(0.6984529796083262 AS BOOLEAN) UNION ALL SELECT ALL BIT_AND(1546514567)  as agg0 FROM m1 WHERE NOT (CAST(0.6984529796083262 AS BOOLEAN)) UNION ALL SELECT BIT_AND(1546514567)  as agg0 FROM m1 WHERE (CAST(0.6984529796083262 AS BOOLEAN)) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT MAX(m4.f0) FROM m4; --
@@ -2116,7 +2116,7 @@ t2,0
 -- EXECUTE SQL: SELECT ALL m4.t2, m4.f0 FROM m4 WHERE ((CAST(CAST(((m4.t1)LIKE(m4.t1)) AS BOOLEAN) AS STRING))IS NOT DISTINCT FROM(CAST(-1.020629854E9 AS STRING))) UNION ALL SELECT ALL m4.t2, m4.f0 FROM m4 WHERE NOT (((CAST(CAST(((m4.t1)LIKE(m4.t1)) AS BOOLEAN) AS STRING))IS NOT DISTINCT FROM(CAST(-1.020629854E9 AS STRING)))) UNION ALL SELECT m4.t2, m4.f0 FROM m4 WHERE (((CAST(CAST(((m4.t1)LIKE(m4.t1)) AS BOOLEAN) AS STRING))IS NOT DISTINCT FROM(CAST(-1.020629854E9 AS STRING)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected AS, found: E9"}
+{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E9"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t1, m3.f1, m3.t0 FROM m3; --
@@ -2487,13 +2487,13 @@ f0
 -- EXECUTE SQL: SELECT BIT_OR(+ (- (CAST(CAST(m3.f0 AS BIGINT) AS BIGINT)))) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR((CAST(((m4.f0)*(360976499)) AS BIGINT)) NOT IN (0.2624596958986172, 0.685835611344487)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.f1, m1.t0, m1.f0 FROM m1; --
@@ -2505,19 +2505,19 @@ false,t0,f0
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.t0, m1.f0 FROM m1 WHERE NOT ((((-1775207148) IN (0.1688741619134384, 0.39268540295479615, 0.4546068705461972, -0.0, 0.5989936450918769)) BETWEEN SYMMETRIC (((m1.f0)IS NOT DISTINCT FROM(m1.f0))) AND ((('L')>=(m1.f0)))) IS NOT UNKNOWN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.t0, m1.f0 FROM m1 WHERE NOT (NOT ((((-1775207148) IN (0.1688741619134384, 0.39268540295479615, 0.4546068705461972, -0.0, 0.5989936450918769)) BETWEEN SYMMETRIC (((m1.f0)IS NOT DISTINCT FROM(m1.f0))) AND ((('L')>=(m1.f0)))) IS NOT UNKNOWN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.t0, m1.f0 FROM m1 WHERE (NOT ((((-1775207148) IN (0.1688741619134384, 0.39268540295479615, 0.4546068705461972, -0.0, 0.5989936450918769)) BETWEEN SYMMETRIC (((m1.f0)IS NOT DISTINCT FROM(m1.f0))) AND ((('L')>=(m1.f0)))) IS NOT UNKNOWN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.t0, m0.f1 FROM m0; --
@@ -2613,25 +2613,25 @@ f1,t0,false
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 ORDER BY m0.f1 ASC, m0.f1 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Projections require unique expression names but the expression \"m0.f1\" at position 1 and \"m0.f1\" at position 2 have the same name. Consider aliasing (\"AS\") one of them."}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Projections require unique expression names but the expression \"m0.f1\" at position 1 and \"m0.f1\" at position 2 have the same name. Consider aliasing (\"AS\") one of them."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 WHERE (CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE NOT ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0; --
@@ -2665,7 +2665,7 @@ f1
 -- EXECUTE SQL: SELECT ALL m2.f1 FROM m2 WHERE (((- (817932306))%(CAST(m2.f0 AS BIGINT)))) NOT IN (694810662, -319337649, -1259189301); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Divide by zero error"}
+{"error_code":"010002","error_message":"Arrow: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m1; --
@@ -2677,19 +2677,19 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE (((m1.f1) NOT IN (FALSE, TRUE, FALSE, TRUE)) IN (NULL, FALSE, TRUE)) BETWEEN SYMMETRIC (NOT (NOT (((m1.f0)LIKE(m1.f0))))) AND ((NOT (m1.f1)) NOT IN (TRUE, TRUE, FALSE)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE NOT ((((m1.f1) NOT IN (FALSE, TRUE, FALSE, TRUE)) IN (NULL, FALSE, TRUE)) BETWEEN SYMMETRIC (NOT (NOT (((m1.f0)LIKE(m1.f0))))) AND ((NOT (m1.f1)) NOT IN (TRUE, TRUE, FALSE))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE ((((m1.f1) NOT IN (FALSE, TRUE, FALSE, TRUE)) IN (NULL, FALSE, TRUE)) BETWEEN SYMMETRIC (NOT (NOT (((m1.f0)LIKE(m1.f0))))) AND ((NOT (m1.f1)) NOT IN (TRUE, TRUE, FALSE))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1 FROM m1; --
@@ -2717,7 +2717,7 @@ false
 -- EXECUTE SQL: SELECT COUNT(- (+ (((((m3.f0)%(m3.f0)))-(CAST(m3.f1 AS BIGINT)))))) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Divide by zero error"}
+{"error_code":"010002","error_message":"Arrow: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.f1 FROM m1; --
@@ -2729,7 +2729,7 @@ false
 -- EXECUTE SQL: SELECT ALL m1.f1 FROM m1 WHERE CAST((((((m1.f1)AND(m1.f1)))IS DISTINCT FROM((m1.f1) IS NULL))) NOTNULL AS BOOLEAN) UNION ALL SELECT m1.f1 FROM m1 WHERE NOT (CAST((((((m1.f1)AND(m1.f1)))IS DISTINCT FROM((m1.f1) IS NULL))) NOTNULL AS BOOLEAN)) UNION ALL SELECT ALL m1.f1 FROM m1 WHERE (CAST((((((m1.f1)AND(m1.f1)))IS DISTINCT FROM((m1.f1) IS NULL))) NOTNULL AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected AS, found: NOTNULL"}
+{"error_code":"010009","error_message":"sql parser error: Expected AS, found: NOTNULL"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT))) FROM m2; --
@@ -2741,7 +2741,7 @@ COUNT(Float64(0.5249418544831504))
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN) UNION ALL SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE NOT (CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN)) UNION ALL SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE (CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN)) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f10' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f10' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0; --
@@ -2799,19 +2799,19 @@ time,t0,t1,f0,f1
 -- EXECUTE SQL: SELECT * FROM m3 WHERE NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Divide by zero error"}
+{"error_code":"010002","error_message":"Arrow: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3 WHERE NOT (NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE)))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Divide by zero error"}
+{"error_code":"010002","error_message":"Arrow: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3 WHERE (NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE)))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Divide by zero error"}
+{"error_code":"010002","error_message":"Arrow: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0; --
@@ -2823,19 +2823,19 @@ t0,false,0.0
 -- EXECUTE SQL: SELECT m0.t0, m0.f0, m0.f1 FROM m0 WHERE NOT ((CAST((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0) AS BOOLEAN)) IS TRUE) UNION ALL SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0 WHERE NOT (NOT ((CAST((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0) AS BOOLEAN)) IS TRUE)) UNION ALL SELECT m0.t0, m0.f0, m0.f1 FROM m0 WHERE (NOT ((CAST((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0) AS BOOLEAN)) IS TRUE)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(m4.f0) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_AND(-483484156) FROM m1; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0 FROM m0 WHERE CAST((((CAST(m0.f1 AS BOOLEAN))=((m0.f0) BETWEEN (m0.f0) AND (m0.f0)))) BETWEEN (m0.f0) AND (((NOT (m0.f0))OR(CAST(m0.f0 AS BOOLEAN)))) AS BOOLEAN) UNION ALL SELECT m0.t0 FROM m0 WHERE NOT (CAST((((CAST(m0.f1 AS BOOLEAN))=((m0.f0) BETWEEN (m0.f0) AND (m0.f0)))) BETWEEN (m0.f0) AND (((NOT (m0.f0))OR(CAST(m0.f0 AS BOOLEAN)))) AS BOOLEAN)) UNION ALL SELECT ALL m0.t0 FROM m0 WHERE (CAST((((CAST(m0.f1 AS BOOLEAN))=((m0.f0) BETWEEN (m0.f0) AND (m0.f0)))) BETWEEN (m0.f0) AND (((NOT (m0.f0))OR(CAST(m0.f0 AS BOOLEAN)))) AS BOOLEAN)) IS NULL; --
@@ -2898,7 +2898,7 @@ t0,t1,0
 -- EXECUTE SQL: SELECT BIT_OR(m4.f0) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m0; --
@@ -2910,7 +2910,7 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL * FROM m0 WHERE NOT ((((((((CAST(m0.f1 AS BIGINT)) IS NULL)OR(((CAST(-1906695061 AS STRING))LIKE(((m0.t0)||(TRUE)))))))AND(CAST(CAST(m0.t0 AS STRING) AS BOOLEAN))))OR(((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))AND(m0.f0)))OR(((m0.t0)IS DISTINCT FROM(m0.t0))))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1; --
@@ -2952,7 +2952,7 @@ f1,false
 -- EXECUTE SQL: SELECT MIN(CAST(((CAST('Infinity' AS BIGINT))-(((((m4.f0)+(m4.f0)))%(CAST(m4.f0 AS BIGINT))))) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'Infinity' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'Infinity' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t1, m3.f0 FROM m3; --
@@ -2964,7 +2964,7 @@ t1,0
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.f0 FROM m3 WHERE CAST(((((((m3.t1)||(m3.t1)))||(CAST(m3.t0 AS STRING))))||(CAST(- (m3.f0) AS BIGINT))) AS BOOLEAN) UNION ALL SELECT ALL m3.t1, m3.f0 FROM m3 WHERE NOT (CAST(((((((m3.t1)||(m3.t1)))||(CAST(m3.t0 AS STRING))))||(CAST(- (m3.f0) AS BIGINT))) AS BOOLEAN)) UNION ALL SELECT ALL m3.t1, m3.f0 FROM m3 WHERE (CAST(((((((m3.t1)||(m3.t1)))||(CAST(m3.t0 AS STRING))))||(CAST(- (m3.f0) AS BIGINT))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't1t1t00' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't1t1t00' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.f0, m2.t0 FROM m2 ORDER BY m2.f0 DESC; --
@@ -2976,7 +2976,7 @@ f1,false,t0
 -- EXECUTE SQL: SELECT m2.f1, m2.f0, m2.t0 FROM m2 WHERE ((NOT (CAST(1826216466 AS BOOLEAN)))AND(CAST(CAST(0.9464404925619687 AS STRING) AS BOOLEAN))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.9464404925619687' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.9464404925619687' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.t0 FROM m1 WHERE NOT (NOT ((m1.f1) IN (TRUE, TRUE))); --
@@ -3038,7 +3038,7 @@ f0,t0
 -- EXECUTE SQL: SELECT m1.f0, m1.t0 FROM m1 WHERE (CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE NOT ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f0' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.f1 FROM m3; --
@@ -3100,7 +3100,7 @@ COUNT(Int64(26056234))
 -- EXECUTE SQL: SELECT BIT_OR(- (CAST(CAST(((712230685)-(NULL)) AS STRING) AS BIGINT))) FROM m0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f0, m2.f1 FROM m2; --
@@ -3124,7 +3124,7 @@ t0,false
 -- EXECUTE SQL: SELECT m1.t0, m1.f1 FROM m1 WHERE ((((m1.f1)OR(NOT (CAST(((m1.t0)||(2038183158)) AS BOOLEAN)))))AND((- (-721725046)) NOT IN (0.5544287962532598, 0.6049615636568972))) UNION ALL SELECT m1.t0, m1.f1 FROM m1 WHERE NOT (((((m1.f1)OR(NOT (CAST(((m1.t0)||(2038183158)) AS BOOLEAN)))))AND((- (-721725046)) NOT IN (0.5544287962532598, 0.6049615636568972)))) UNION ALL SELECT m1.t0, m1.f1 FROM m1 WHERE (((((m1.f1)OR(NOT (CAST(((m1.t0)||(2038183158)) AS BOOLEAN)))))AND((- (-721725046)) NOT IN (0.5544287962532598, 0.6049615636568972)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't02038183158' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't02038183158' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(0.5759978377746883 AS BIGINT)) FROM m0; --
@@ -3154,7 +3154,7 @@ t0,false
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f1 FROM m1 WHERE NOT (NOT ((((m1.t0)||(-255724532))) BETWEEN SYMMETRIC (CAST(-1326988525 AS STRING)) AND (CAST('*[' AS STRING)))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.f1, m3.f0, m3.t1, m3.t0 FROM m3; --
@@ -3177,7 +3177,7 @@ t0,f0,false
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE ((m1.f1)!=((((m1.f1) IN (TRUE, TRUE, FALSE))AND(NOT ((-1.364967176E9) IN (0.8836829452216858, 0.804891941659314, 0.057194778779184774)))))) UNION ALL SELECT m1.t0, m1.f0, m1.f1 FROM m1 WHERE NOT (((m1.f1)!=((((m1.f1) IN (TRUE, TRUE, FALSE))AND(NOT ((-1.364967176E9) IN (0.8836829452216858, 0.804891941659314, 0.057194778779184774))))))) UNION ALL SELECT m1.t0, m1.f0, m1.f1 FROM m1 WHERE (((m1.f1)!=((((m1.f1) IN (TRUE, TRUE, FALSE))AND(NOT ((-1.364967176E9) IN (0.8836829452216858, 0.804891941659314, 0.057194778779184774))))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: E9"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: E9"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.f0, m1.t0, m1.f1 FROM m1; --
@@ -3189,7 +3189,7 @@ f0,t0,false
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.t0, m1.f1 FROM m1 WHERE CAST(CAST(2.070740056E9 AS BIGINT) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected AS, found: E9"}
+{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E9"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3; --
@@ -3229,7 +3229,7 @@ f1,false
 -- EXECUTE SQL: SELECT m2.f1, m2.f0 FROM m2 WHERE (CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE UNION ALL SELECT ALL m2.f1, m2.f0 FROM m2 WHERE NOT ((CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE) UNION ALL SELECT m2.f1, m2.f0 FROM m2 WHERE ((CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE NOT (NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL)) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE (NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL)) IS NULL; --
@@ -3327,19 +3327,19 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL * FROM m2 WHERE (-1.497906008E9) IN (0.277040821627761); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: E9"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: E9"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m2 WHERE NOT ((-1.497906008E9) IN (0.277040821627761)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: E9"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: E9"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m2 WHERE ((-1.497906008E9) IN (0.277040821627761)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: E9"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: E9"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.f0 FROM m1; --
@@ -3368,19 +3368,19 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL m3.t1 FROM m3 WHERE NOT (CAST((351281739) BETWEEN SYMMETRIC (((m3.f0)/(m3.f0))) AND (+ (m3.f0)) AS BOOLEAN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t1 FROM m3 WHERE NOT (NOT (CAST((351281739) BETWEEN SYMMETRIC (((m3.f0)/(m3.f0))) AND (+ (m3.f0)) AS BOOLEAN))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1 FROM m3 WHERE (NOT (CAST((351281739) BETWEEN SYMMETRIC (((m3.f0)/(m3.f0))) AND (+ (m3.f0)) AS BOOLEAN))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t1 FROM m3; --
@@ -3397,7 +3397,7 @@ f0,t1
 -- EXECUTE SQL: SELECT MAX(+ (CAST(((((m2.f1)||(m2.f1)))LIKE((('C')||(m2.t0)))) AS BIGINT))) FROM m2 ORDER BY m2.f1 DESC, m2.f0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm2'.'f1'. Valid fields are 'MAX(m2.f1 || m2.f1 LIKE Utf8(\"C\") || m2.t0 )'."}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named 'm2'.'f1'. Valid fields are 'MAX(m2.f1 || m2.f1 LIKE Utf8(\"C\") || m2.t0 )'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0, m3.f1 FROM m3; --
@@ -3431,7 +3431,7 @@ t0,f0,false
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE (((-24313008) NOT IN (0.5789588919379464, 0.6440105044101978, 0.7972080808201099)) IS FALSE) BETWEEN ((((((((((m1.f0)LIKE(m1.f0))) IS TRUE)AND(CAST(- (-1020801281) AS BOOLEAN))))AND(((((m1.f0)||(-1729544348)))LIKE(((m1.f0)||(-720546436)))))))AND((CAST(m1.t0 AS BIGINT)) IS NULL))) AND ((0.22813901513261792) NOT IN (0.8213931760851978, 0.47525756645462913)) UNION ALL SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE NOT ((((-24313008) NOT IN (0.5789588919379464, 0.6440105044101978, 0.7972080808201099)) IS FALSE) BETWEEN ((((((((((m1.f0)LIKE(m1.f0))) IS TRUE)AND(CAST(- (-1020801281) AS BOOLEAN))))AND(((((m1.f0)||(-1729544348)))LIKE(((m1.f0)||(-720546436)))))))AND((CAST(m1.t0 AS BIGINT)) IS NULL))) AND ((0.22813901513261792) NOT IN (0.8213931760851978, 0.47525756645462913))) UNION ALL SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE ((((-24313008) NOT IN (0.5789588919379464, 0.6440105044101978, 0.7972080808201099)) IS FALSE) BETWEEN ((((((((((m1.f0)LIKE(m1.f0))) IS TRUE)AND(CAST(- (-1020801281) AS BOOLEAN))))AND(((((m1.f0)||(-1729544348)))LIKE(((m1.f0)||(-720546436)))))))AND((CAST(m1.t0 AS BIGINT)) IS NULL))) AND ((0.22813901513261792) NOT IN (0.8213931760851978, 0.47525756645462913))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f1, m2.t0 FROM m2; --
@@ -3495,13 +3495,13 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL m2.t0 FROM m2 WHERE NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN))) UNION ALL SELECT m2.t0 FROM m2 WHERE NOT (NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN)))) UNION ALL SELECT ALL m2.t0 FROM m2 WHERE (NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f10' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f10' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(- (CAST(+ (- (1007863218)) AS BIGINT))) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1 FROM m2; --
@@ -3519,19 +3519,19 @@ f1
 -- EXECUTE SQL: SELECT MAX(CAST(3.50532422E8 AS STRING)) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected AS, found: E8"}
+{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E8"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MIN((((((m4.f0)+(m4.f0)))*(- (m4.f0)))) IN (0.15344075890540054)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BOOL_OR((CAST(CAST(CAST(m4.f0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS UNKNOWN) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f0, m2.t0 FROM m2; --
@@ -3577,7 +3577,7 @@ t1
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE CAST(((CAST((m4.t1) BETWEEN SYMMETRIC (m4.t1) AND (m4.t2) AS STRING))||(CAST(CAST(1193577717 AS BIGINT) AS STRING))) AS BOOLEAN) UNION ALL SELECT ALL m4.t1 FROM m4 WHERE NOT (CAST(((CAST((m4.t1) BETWEEN SYMMETRIC (m4.t1) AND (m4.t2) AS STRING))||(CAST(CAST(1193577717 AS BIGINT) AS STRING))) AS BOOLEAN)) UNION ALL SELECT m4.t1 FROM m4 WHERE (CAST(((CAST((m4.t1) BETWEEN SYMMETRIC (m4.t1) AND (m4.t2) AS STRING))||(CAST(CAST(1193577717 AS BIGINT) AS STRING))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0 FROM m1; --
@@ -3669,7 +3669,7 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL * FROM m2 WHERE (CAST((CAST(m2.f0 AS STRING)) BETWEEN (CAST(m2.f1 AS STRING)) AND (((m2.f1)||(1825484883))) AS BIGINT)) NOTNULL UNION ALL SELECT ALL * FROM m2 WHERE NOT ((CAST((CAST(m2.f0 AS STRING)) BETWEEN (CAST(m2.f1 AS STRING)) AND (((m2.f1)||(1825484883))) AS BIGINT)) NOTNULL) UNION ALL SELECT * FROM m2 WHERE ((CAST((CAST(m2.f0 AS STRING)) BETWEEN (CAST(m2.f1 AS STRING)) AND (((m2.f1)||(1825484883))) AS BIGINT)) NOTNULL) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected end of statement, found: NOTNULL"}
+{"error_code":"010009","error_message":"sql parser error: Expected end of statement, found: NOTNULL"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT SUM(0.7059204780758392) FROM m0; --
@@ -3753,13 +3753,13 @@ t0,t2,0,t1
 -- EXECUTE SQL: SELECT BOOL_AND(((NOT (((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))AND(m0.f0)))AND(m0.f0)))) IS NOT UNKNOWN) IS NULL) FROM m0 ORDER BY m0.f0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(CAST(NOT (((m3.t0)IS DISTINCT FROM(m3.t1))) AS STRING) AS BIGINT)) FROM m3 ORDER BY m3.t0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm3'.'t0'. Valid fields are 'COUNT(NOT m3.t0 IS DISTINCT FROM m3.t1)'."}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named 'm3'.'t0'. Valid fields are 'COUNT(NOT m3.t0 IS DISTINCT FROM m3.t1)'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1 FROM m0; --
@@ -3795,7 +3795,7 @@ false
 -- EXECUTE SQL: SELECT ALL m2.f0 FROM m2 WHERE CAST(CAST(((((m2.f1)||(1876346506)))||(CAST(m2.f0 AS BIGINT))) AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f118763465060' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f118763465060' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f1 FROM m0; --
@@ -3807,25 +3807,25 @@ t0,0.0
 -- EXECUTE SQL: SELECT m0.t0, m0.f1 FROM m0 WHERE (0.0241197153905911) NOTNULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected end of statement, found: NOTNULL"}
+{"error_code":"010009","error_message":"sql parser error: Expected end of statement, found: NOTNULL"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f1 FROM m0 WHERE NOT ((0.0241197153905911) NOTNULL); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: NOTNULL"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: NOTNULL"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.t0, m0.f1 FROM m0 WHERE ((0.0241197153905911) NOTNULL) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: NOTNULL"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: NOTNULL"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_AND(- (((CAST(- (m4.f0) AS BIGINT))/(m4.f0)))) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f0 FROM m2; --
@@ -3873,7 +3873,7 @@ false
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE (0.9998372198711547) BETWEEN SYMMETRIC (0.2700300601709139) AND (- (((CAST(FALSE AS BIGINT))^(((533580250)^(2116911742)))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(m3.f0) FROM m3; --
@@ -3915,7 +3915,7 @@ f1
 -- EXECUTE SQL: SELECT m0.f1 FROM m0 WHERE (CAST(-4.36419271E8 AS BOOLEAN)) IS UNKNOWN UNION ALL SELECT m0.f1 FROM m0 WHERE NOT ((CAST(-4.36419271E8 AS BOOLEAN)) IS UNKNOWN) UNION ALL SELECT m0.f1 FROM m0 WHERE ((CAST(-4.36419271E8 AS BOOLEAN)) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected AS, found: E8"}
+{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E8"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3; --
@@ -3933,13 +3933,13 @@ time,t0,t1,f0,f1
 -- EXECUTE SQL: SELECT m4.t0 FROM m4 WHERE ((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING))) UNION ALL SELECT m4.t0 FROM m4 WHERE NOT (((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING)))) UNION ALL SELECT m4.t0 FROM m4 WHERE (((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected AS, found: E8"}
+{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E8"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(2.9910274E8) FROM m4 ORDER BY m4.f0 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: E8"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m1; --
@@ -4072,7 +4072,7 @@ t0,f0,false
 -- EXECUTE SQL: SELECT ALL BOOL_AND(CAST(CAST((((m4.t2)>=(m4.t1))) IS NOT UNKNOWN AS STRING) AS BOOLEAN)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.t0, m0.f0, m0.f1 FROM m0; --
@@ -4084,7 +4084,7 @@ t0,false,0.0
 -- EXECUTE SQL: SELECT m0.t0, m0.f0, m0.f1 FROM m0 WHERE (CAST(((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))AND(m0.f0)))=(CAST(m0.t0 AS BOOLEAN))) AS BIGINT)) NOTNULL UNION ALL SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0 WHERE NOT ((CAST(((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))AND(m0.f0)))=(CAST(m0.t0 AS BOOLEAN))) AS BIGINT)) NOTNULL) UNION ALL SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0 WHERE ((CAST(((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))AND(m0.f0)))=(CAST(m0.t0 AS BOOLEAN))) AS BIGINT)) NOTNULL) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected end of statement, found: NOTNULL"}
+{"error_code":"010009","error_message":"sql parser error: Expected end of statement, found: NOTNULL"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1; --
@@ -4102,7 +4102,7 @@ f0,false,t0
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1 WHERE CAST(m1.f0 AS BOOLEAN) UNION ALL SELECT m1.t0 FROM m1 WHERE NOT (CAST(m1.f0 AS BOOLEAN)) UNION ALL SELECT ALL m1.t0 FROM m1 WHERE (CAST(m1.f0 AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0; --
@@ -4142,7 +4142,7 @@ false,t0
 -- EXECUTE SQL: SELECT ALL SUM(CAST(TRUE AS BIGINT)) FROM m1 ORDER BY m1.f0 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm1'.'f0'. Valid fields are 'SUM(Boolean(true))'."}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named 'm1'.'f0'. Valid fields are 'SUM(Boolean(true))'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0; --
@@ -4160,7 +4160,7 @@ false,0.0,t0
 -- EXECUTE SQL: SELECT BIT_AND(- (- (CAST(CAST(m3.f1 AS STRING) AS BIGINT)))) FROM m3 GROUP BY CAST(0.13127864353966145 AS BIGINT), (CAST(((m3.f0)-(m3.f0)) AS BIGINT)) NOT IN (206859893, -714516645, 154574582, -189279528); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f0, m1.f1 FROM m1; --
@@ -4261,25 +4261,25 @@ MAX(Float64(0.8380110533784965))
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(((CAST(((m2.f0)<(m2.f0)) AS BIGINT))*(CAST((('0.40560185446598973')||('0.5010374883053191')) AS BIGINT))) AS BIGINT)) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.405601854465989730.5010374883053191' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.405601854465989730.5010374883053191' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MIN(-1.281952729E9) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: E9"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: E9"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT MIN(agg0) FROM (SELECT MIN(-1.281952729E9)  as agg0 FROM m4 WHERE TRUE UNION ALL SELECT ALL MIN(-1.281952729E9)  as agg0 FROM m4 WHERE NOT (TRUE) UNION ALL SELECT ALL MIN(-1.281952729E9)  as agg0 FROM m4 WHERE (TRUE) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected identifier, found: -"}
+{"error_code":"010009","error_message":"sql parser error: Expected identifier, found: -"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_AND(- (-898117395)) FROM m1; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.f0 FROM m2; --
@@ -4313,7 +4313,7 @@ f1,t0
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0 FROM m2 WHERE (((((((((((((((m2.f1) BETWEEN (m2.f1) AND (m2.f1))AND(((FALSE)OR(m2.f0)))))OR(NOT (m2.f0))))OR(((m2.f1)IS NOT DISTINCT FROM(m2.t0)))))OR(CAST(-2044174412 AS BOOLEAN))))OR(NOT (FALSE))))>(NOT (((((((m2.f0)AND(m2.f0)))OR(m2.f0)))AND(m2.f0))))))<=(CAST(CAST(- (64411633) AS STRING) AS BOOLEAN))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '-64411633' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '-64411633' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(CAST(0.871191940974261 AS BIGINT)) FROM m0; --
@@ -4325,25 +4325,25 @@ SUM(Float64(0.871191940974261))
 -- EXECUTE SQL: SELECT ALL BOOL_AND(NOT ((- (-217143237)) NOT IN (-65550593, 111116366))) FROM m0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(+ (CAST(0.49920816779304045 AS BIGINT))) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(agg0) FROM (SELECT BIT_OR(+ (CAST(0.49920816779304045 AS BIGINT)))  as agg0 FROM m4 WHERE TRUE UNION ALL SELECT BIT_OR(+ (CAST(0.49920816779304045 AS BIGINT)))  as agg0 FROM m4 WHERE NOT (TRUE) UNION ALL SELECT ALL BIT_OR(+ (CAST(0.49920816779304045 AS BIGINT)))  as agg0 FROM m4 WHERE (TRUE) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bit_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.t0 FROM m0 WHERE CAST(CAST(((CAST(m0.f0 AS STRING))||(0.9687889995913347)) AS BIGINT) AS BOOLEAN) UNION ALL SELECT m0.t0 FROM m0 WHERE NOT (CAST(CAST(((CAST(m0.f0 AS STRING))||(0.9687889995913347)) AS BIGINT) AS BOOLEAN)) UNION ALL SELECT m0.t0 FROM m0 WHERE (CAST(CAST(((CAST(m0.f0 AS STRING))||(0.9687889995913347)) AS BIGINT) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '00.9687889995913347' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string '00.9687889995913347' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m4; --
@@ -4395,7 +4395,7 @@ t1,t0,0,t2
 -- EXECUTE SQL: SELECT ALL m4.t1, m4.t0, m4.f0, m4.t2 FROM m4 WHERE NOT (NOT ((((((((m4.f0) NOTNULL)AND(CAST(TRUE AS BOOLEAN))))AND(NOT (FALSE))))OR(((TRUE)AND(TRUE)))))) UNION ALL SELECT ALL m4.t1, m4.t0, m4.f0, m4.t2 FROM m4 WHERE NOT (NOT (NOT ((((((((m4.f0) NOTNULL)AND(CAST(TRUE AS BOOLEAN))))AND(NOT (FALSE))))OR(((TRUE)AND(TRUE))))))) UNION ALL SELECT ALL m4.t1, m4.t0, m4.f0, m4.t2 FROM m4 WHERE (NOT (NOT ((((((((m4.f0) NOTNULL)AND(CAST(TRUE AS BOOLEAN))))AND(NOT (FALSE))))OR(((TRUE)AND(TRUE))))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected ), found: NOTNULL"}
+{"error_code":"010009","error_message":"sql parser error: Expected ), found: NOTNULL"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m4.f0, m4.t0, m4.t1 FROM m4; --
@@ -4419,7 +4419,7 @@ t1,false,0
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.f1, m3.f0 FROM m3 WHERE ((CAST(+ (((m3.f0)+(m3.f0))) AS STRING))>(CAST(CAST(m3.t0 AS BIGINT) AS STRING))) UNION ALL SELECT ALL m3.t1, m3.f1, m3.f0 FROM m3 WHERE NOT (((CAST(+ (((m3.f0)+(m3.f0))) AS STRING))>(CAST(CAST(m3.t0 AS BIGINT) AS STRING)))) UNION ALL SELECT m3.t1, m3.f1, m3.f0 FROM m3 WHERE (((CAST(+ (((m3.f0)+(m3.f0))) AS STRING))>(CAST(CAST(m3.t0 AS BIGINT) AS STRING)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.f0, m4.t0 FROM m4; --
@@ -4479,13 +4479,13 @@ false,t0
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.t0 FROM m0 WHERE (CAST(NOT (((m0.t0)LIKE(m0.t0))) AS BIGINT)) BETWEEN SYMMETRIC (0.6166842807970822) AND (- (CAST(CAST(m0.f1 AS BOOLEAN) AS BIGINT))) UNION ALL SELECT m0.f0, m0.t0 FROM m0 WHERE NOT ((CAST(NOT (((m0.t0)LIKE(m0.t0))) AS BIGINT)) BETWEEN SYMMETRIC (0.6166842807970822) AND (- (CAST(CAST(m0.f1 AS BOOLEAN) AS BIGINT)))) UNION ALL SELECT ALL m0.f0, m0.t0 FROM m0 WHERE ((CAST(NOT (((m0.t0)LIKE(m0.t0))) AS BIGINT)) BETWEEN SYMMETRIC (0.6166842807970822) AND (- (CAST(CAST(m0.f1 AS BOOLEAN) AS BIGINT)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BOOL_OR(CAST(((1498176990)/(CAST(0.013198073302153945 AS BIGINT))) AS BOOLEAN)) FROM m0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 ORDER BY m1.f0 DESC; --
@@ -4497,7 +4497,7 @@ f0
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE CAST(CAST(0.5590183968399077 AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.5590183968399077' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.5590183968399077' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t1, m4.f0, m4.t2 FROM m4; --
@@ -4515,7 +4515,7 @@ t0,t1,0,t2
 -- EXECUTE SQL: SELECT ALL BOOL_AND((- (+ (m3.f0))) IN (-2034004639, -1209273618)) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_and'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m4 ORDER BY m4.t2 DESC; --
@@ -4543,7 +4543,7 @@ time,t0,t1,t2,f0
 -- EXECUTE SQL: SELECT ALL MIN(CAST(+ (((((-1020629854)-(94972736)))/(CAST(616702680 AS BIGINT)))) AS BOOLEAN)) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1; --

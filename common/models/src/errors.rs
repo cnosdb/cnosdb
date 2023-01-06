@@ -40,6 +40,9 @@ pub enum Error {
 
     #[snafu(display("Invalid query expr message: {}", err))]
     IOErrors { err: String },
+
+    #[snafu(display("Failed to convert vec to string"))]
+    EncodingError,
 }
 
 impl From<io::Error> for Error {

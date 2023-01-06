@@ -5,17 +5,15 @@ use datafusion::scheduler::Scheduler;
 use futures::stream::AbortHandle;
 use futures::TryStreamExt;
 use parking_lot::Mutex;
-use snafu::ResultExt;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
-use spi::query::execution::{ExecutionError, Output};
+use spi::query::execution::Output;
 use spi::query::{
     execution::{QueryExecution, QueryStateMachineRef},
     logical_planner::QueryPlan,
     optimizer::Optimizer,
-    ScheduleSnafu,
 };
 
-use spi::query::{QueryError, Result};
+use spi::{QueryError, Result};
 use trace::debug;
 
 pub struct SqlQueryExecution {
@@ -61,17 +59,10 @@ impl SqlQueryExecution {
             .schedule(
                 optimized_physical_plan,
                 self.query_state_machine.session.inner().task_ctx(),
-            )
-            .context(ScheduleSnafu)?
+            )?
             .stream();
         let schema_ref = stream.schema();
-        let execution_result =
-            stream
-                .try_collect::<Vec<_>>()
-                .await
-                .map_err(|source| QueryError::Execution {
-                    source: ExecutionError::Arrow { source },
-                })?;
+        let execution_result = stream.try_collect::<Vec<_>>().await?;
         self.query_state_machine.end_schedule();
 
         Ok(Output::StreamData(schema_ref, execution_result))

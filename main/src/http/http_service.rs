@@ -10,13 +10,12 @@ use spi::query::DEFAULT_CATALOG;
 
 use super::header::Header;
 use super::Error as HttpError;
-use super::QuerySnafu;
 use crate::http::response::ResponseBuilder;
 use crate::http::result_format::fetch_record_batches;
 use crate::http::result_format::ResultFormat;
 use crate::http::Error;
 use crate::http::ParseLineProtocolSnafu;
-use crate::http::{CoordinatorSnafu, TskvSnafu};
+use crate::http::QuerySnafu;
 use crate::server;
 use crate::server::{Service, ServiceHandle};
 use chrono::Local;
@@ -30,7 +29,7 @@ use line_protocol::{line_protocol_to_lines, Line};
 use meta::meta_client::MetaClientRef;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
 use models::consistency_level::ConsistencyLevel;
-use models::error_code::ErrorCode;
+use models::error_code::{ErrorCode, UnknownCode, UnknownCodeWithMessage};
 use protos::kv_service::WritePointsRpcRequest;
 use protos::models as fb_models;
 use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
@@ -208,10 +207,10 @@ impl HttpService {
                     // we should get tenant from token
                     let tenant = param.tenant.as_deref().unwrap_or(DEFAULT_CATALOG);
 
-                    let resp = coord
+                    let resp: Result<(), HttpError> = coord
                         .write_points(DEFAULT_CATALOG.to_string(), ConsistencyLevel::Any, req)
                         .await
-                        .context(CoordinatorSnafu);
+                        .map_err(|e| e.into());
 
                     sample_point_write_duration(
                         tenant,
@@ -236,7 +235,9 @@ impl HttpService {
                 let meta_client = match coord.tenant_meta(&tenant) {
                     Some(client) => client,
                     None => {
-                        return Err(reject::custom(HttpError::NotFoundTenant { name: tenant }));
+                        return Err(reject::custom(HttpError::Meta {
+                            source: meta::error::MetaError::TenantNotFound { tenant },
+                        }));
                     }
                 };
                 let data = meta_client.print_data();
@@ -419,7 +420,7 @@ async fn handle_rejection(err: Rejection) -> Result<impl Reply, std::convert::In
     } else if err.find::<PayloadTooLarge>().is_some() {
         Ok(ResponseBuilder::payload_too_large())
     } else if let Some(e) = err.find::<MissingHeader>() {
-        let error_resp = ErrorResponse::new(ErrorCode::Unknown, e.to_string());
+        let error_resp = ErrorResponse::new(&UnknownCodeWithMessage(e.to_string()));
         Ok(ResponseBuilder::bad_request(&error_resp))
     } else if let Some(e) = err.find::<HttpError>() {
         let resp: Response = e.into();

@@ -20,11 +20,7 @@ fn print_timing_info(_row_count: usize, now: Instant) {
 
 impl PrintOptions {
     /// print the batches to stdout using the specified format
-    pub fn print_batches(
-        &self,
-        result_set: &ResultSet,
-        now: Instant,
-    ) -> std::result::Result<(), String> {
+    pub fn print_batches(&self, result_set: &ResultSet, now: Instant) -> Result<(), String> {
         result_set.print_fmt(&self.format)?;
 
         if !self.quiet {

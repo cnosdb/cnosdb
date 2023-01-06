@@ -2,7 +2,7 @@
 test_timestamp_conv,ta=a1,tb=b1 fa=1,fb=2 3
 -- LINE PROTOCOL END --
 422 Unprocessable Entity
-{"error_code":"0300000","error_message":"Error from coordinator: error msg: write expired time data not permit"}
+{"error_code":"050014","error_message":"write expired time data not permit"}
 -- ERROR:  --
 
 -- WRITE LINE PROTOCOL --
@@ -222,12 +222,12 @@ physical_plan,"ProjectionExec: expr=[fa@1 as fa]
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time >= '1997-01-31'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing '1997-01-31' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing '1997-01-31' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time >= 'xxx'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing 'xxx' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing 'xxx' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time between '1997-01-31 09:26:56' and '1997-03-31T09:26:56.123Z'; --
@@ -274,12 +274,12 @@ physical_plan,"ProjectionExec: expr=[fa@1 as fa]
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time between 12345678865 and '1997-03-31'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing '1997-03-31' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing '1997-03-31' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time between 12345678865 and 'xxxxx'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing 'xxxxx' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing 'xxxxx' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time in (12345678865, '1997-03-31T09:26:56.123Z'); --
@@ -298,6 +298,6 @@ physical_plan,"ProjectionExec: expr=[fa@1 as fa]
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time in (12345678865, 'xx'); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing 'xx' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing 'xx' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 

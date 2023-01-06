@@ -15,9 +15,8 @@ use models::{
 };
 
 use spi::query::DEFAULT_CATALOG;
+use spi::{QueryError, Result};
 use tskv::iterator::{QueryOption, TableScanMetrics};
-
-use tskv::Error;
 
 #[allow(dead_code)]
 pub struct TableScanStream {
@@ -38,7 +37,7 @@ impl TableScanStream {
         filter: PredicateRef,
         batch_size: usize,
         metrics: TableScanMetrics,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
@@ -59,8 +58,11 @@ impl TableScanStream {
             if let Some(v) = table_schema.column(field_name) {
                 proj_fileds.push(v.clone());
             } else {
-                return Err(Error::NotFoundField {
-                    reason: field_name.clone(),
+                return Err(QueryError::CommonError {
+                    msg: format!(
+                        "table stream build fail, because can't found field: {}",
+                        field_name
+                    ),
                 });
             }
         }
@@ -81,14 +83,7 @@ impl TableScanStream {
             metrics.tskv_metrics(),
         );
 
-        let iterator = match block_on(coord.read_record(option)) {
-            Ok(it) => it,
-            Err(err) => {
-                return Err(Error::CommonError {
-                    reason: err.to_string(),
-                })
-            }
-        };
+        let iterator = block_on(coord.read_record(option))?;
 
         Ok(Self {
             proj_schema,
@@ -101,7 +96,7 @@ impl TableScanStream {
 }
 
 impl Stream for TableScanStream {
-    type Item = Result<RecordBatch, ArrowError>;
+    type Item = std::result::Result<RecordBatch, ArrowError>;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,

@@ -56,7 +56,7 @@ impl Database {
         let db = Self {
             opt,
             owner: schema.owner(),
-            schemas: Arc::new(DBschemas::new(schema, meta).context(SchemaSnafu)?),
+            schemas: Arc::new(DBschemas::new(schema, meta)?),
             ts_indexes: HashMap::new(),
             ts_families: HashMap::new(),
         };
@@ -65,7 +65,7 @@ impl Database {
     }
 
     pub fn alter_db_schema(&self, schema: DatabaseSchema) -> Result<()> {
-        self.schemas.alter_db_schema(schema).context(SchemaSnafu)
+        Ok(self.schemas.alter_db_schema(schema)?)
     }
 
     pub fn open_tsfamily(
@@ -197,13 +197,8 @@ impl Database {
         let mut map = HashMap::new();
         for point in points {
             let sid = self.build_index(&point, ts_index.clone()).await?;
-            match self.schemas.check_field_type_from_cache(&point) {
-                Ok(_) => {}
-                Err(_) => {
-                    self.schemas
-                        .check_field_type_or_else_add(&point)
-                        .context(error::SchemaSnafu)?;
-                }
+            if self.schemas.check_field_type_from_cache(&point).is_err() {
+                self.schemas.check_field_type_or_else_add(&point)?;
             }
 
             self.build_row_data(&mut map, point, sid)?
@@ -218,10 +213,7 @@ impl Database {
         sid: u32,
     ) -> Result<()> {
         let table_name = String::from_utf8(point.tab().unwrap().bytes().to_vec()).unwrap();
-        let table_schema = self
-            .schemas
-            .get_table_schema(&table_name)
-            .context(SchemaSnafu)?;
+        let table_schema = self.schemas.get_table_schema(&table_name)?;
         let table_schema = match table_schema {
             Some(v) => v,
             None => return Ok(()),
@@ -308,17 +300,11 @@ impl Database {
     }
 
     pub fn add_table_column(&self, table: &str, column: TableColumn) -> Result<()> {
-        self.schemas
-            .add_table_column(table, column)
-            .context(SchemaSnafu)?;
-        Ok(())
+        Ok(self.schemas.add_table_column(table, column)?)
     }
 
     pub fn drop_table_column(&self, table: &str, column_name: &str) -> Result<()> {
-        self.schemas
-            .drop_table_column(table, column_name)
-            .context(SchemaSnafu)?;
-        Ok(())
+        Ok(self.schemas.drop_table_column(table, column_name)?)
     }
 
     pub fn change_table_column(
@@ -327,10 +313,9 @@ impl Database {
         column_name: &str,
         new_column: TableColumn,
     ) -> Result<()> {
-        self.schemas
-            .change_table_column(table, column_name, new_column)
-            .context(SchemaSnafu)?;
-        Ok(())
+        Ok(self
+            .schemas
+            .change_table_column(table, column_name, new_column)?)
     }
 
     pub async fn get_series_key(&self, vnode_id: u32, sid: u32) -> IndexResult<Option<SeriesKey>> {
@@ -342,9 +327,7 @@ impl Database {
     }
 
     pub fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchema>> {
-        self.schemas
-            .get_table_schema(table_name)
-            .context(SchemaSnafu)
+        Ok(self.schemas.get_table_schema(table_name)?)
     }
 
     pub fn get_tsfamily(&self, id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
@@ -418,7 +401,7 @@ impl Database {
     }
 
     pub fn get_schema(&self) -> Result<DatabaseSchema> {
-        self.schemas.db_schema().context(SchemaSnafu)
+        Ok(self.schemas.db_schema()?)
     }
 }
 
@@ -436,12 +419,8 @@ pub(crate) async fn delete_table_async(
 
     if let Some(db) = db_instance {
         let schemas = db.read().await.get_schemas();
-        let field_infos = schemas
-            .get_table_schema(&table)
-            .context(error::SchemaSnafu)?;
-        schemas
-            .del_table_schema(&table)
-            .context(error::SchemaSnafu)?;
+        let field_infos = schemas.get_table_schema(&table)?;
+        schemas.del_table_schema(&table)?;
 
         let mut sids = vec![];
         for (id, index) in db.read().await.ts_indexes().iter() {

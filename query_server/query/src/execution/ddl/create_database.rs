@@ -2,11 +2,9 @@ use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::error::MetaError;
 use models::schema::DatabaseSchema;
-use snafu::ResultExt;
+use spi::Result;
 
-use spi::query::execution;
-use spi::query::execution::MetadataSnafu;
-use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
+use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateDatabase;
 
 pub struct CreateDatabaseTask {
@@ -21,10 +19,7 @@ impl CreateDatabaseTask {
 
 #[async_trait]
 impl DDLDefinitionTask for CreateDatabaseTask {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let CreateDatabase {
             ref name,
             ref if_not_exists,
@@ -38,11 +33,11 @@ impl DDLDefinitionTask for CreateDatabaseTask {
             .tenant_meta(tenant)
             .ok_or(MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            })
-            .context(MetadataSnafu)?;
+            })?;
+        // .context(MetaSnafu)?;
         let db = client
-            .list_databases()
-            .context(execution::MetadataSnafu)?
+            .list_databases()?
+            // .context(spi::MetaSnafu)?
             .contains(name);
 
         match (if_not_exists, db) {
@@ -51,8 +46,8 @@ impl DDLDefinitionTask for CreateDatabaseTask {
             // Report an error if it exists
             (false, true) => Err(MetaError::DatabaseAlreadyExists {
                 database: name.clone(),
-            })
-            .context(execution::MetadataSnafu),
+            })?,
+            // .context(spi::MetaSnafu),
             // does not exist, create
             (_, false) => {
                 create_database(&self.stmt, query_state_machine)?;
@@ -62,19 +57,17 @@ impl DDLDefinitionTask for CreateDatabaseTask {
     }
 }
 
-fn create_database(
-    stmt: &CreateDatabase,
-    machine: QueryStateMachineRef,
-) -> Result<(), ExecutionError> {
+fn create_database(stmt: &CreateDatabase, machine: QueryStateMachineRef) -> Result<()> {
     let tenant = machine.session.tenant();
-    let client = machine
-        .meta
-        .tenant_manager()
-        .tenant_meta(tenant)
-        .ok_or(MetaError::TenantNotFound {
-            tenant: tenant.to_string(),
-        })
-        .context(MetadataSnafu)?;
+    let client =
+        machine
+            .meta
+            .tenant_manager()
+            .tenant_meta(tenant)
+            .ok_or(MetaError::TenantNotFound {
+                tenant: tenant.to_string(),
+            })?;
+    // .context(MetaSnafu)?;
     let CreateDatabase {
         ref name,
         ref options,
@@ -83,8 +76,7 @@ fn create_database(
 
     let mut database_schema = DatabaseSchema::new(machine.session.tenant(), name);
     database_schema.config = options.clone();
-    client
-        .create_db(database_schema)
-        .context(execution::MetadataSnafu)?;
+    client.create_db(database_schema)?;
+    // .context(spi::MetaSnafu)?;
     Ok(())
 }

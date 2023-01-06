@@ -11,33 +11,15 @@ use flatbuffers::{self, FlatBufferBuilder, Vector, WIPOffset};
 use models::schema::{
     is_time_column, ColumnType, TableColumn, TskvTableSchemaRef, TIME_FIELD_NAME,
 };
-use models::{define_result, ValueType};
+use models::ValueType;
 use paste::paste;
 use protos::models::Point;
 use protos::models::{FieldBuilder, FieldType, PointArgs, Points, PointsArgs, TagBuilder};
-use snafu::Snafu;
+use spi::QueryError;
+use spi::Result;
 
 use trace::debug;
-
-define_result!(PointUtilError);
-
-#[derive(Debug, Snafu)]
-pub enum PointUtilError {
-    #[snafu(display("Failed to write points flat buffer, err: {}", err))]
-    ToPointsFlatBuffer { err: String },
-
-    #[snafu(display("Invalid array type, expected: {}, found: {}", expected, found))]
-    InvalidArrayType { expected: String, found: String },
-
-    #[snafu(display("Column {} not found.", col))]
-    ColumnNotFound { col: String },
-
-    #[snafu(display("Data type {} not support.", type_))]
-    DataTypeNotSupport { type_: String },
-
-    #[snafu(display("Column {} cannot be null.", col))]
-    NotNullConstraint { col: String },
-}
+// define_result!(PointUtilError);
 
 type Datum<'fbb> = WIPOffset<Vector<'fbb, u8>>;
 
@@ -93,7 +75,7 @@ macro_rules! arrow_array_to_offset_array {
                 .iter()
                 .map(|e| e.map(|e| $fbb.create_vector(if e { &[1_u8][..] } else { &[0_u8][..] })))
                 .collect()),
-            other => Err(PointUtilError::DataTypeNotSupport {
+            other => Err(QueryError::PointErrorDataTypeNotSupport {
                 type_: other.to_string(),
             }),
         }
@@ -130,8 +112,8 @@ pub fn record_batch_to_points_flat_buffer(
         columns_wip_offset_without_time_col.push(wip_offset_array?)
     }
     // must contain the time column
-    let time_col_array = time_col_array.ok_or_else(|| PointUtilError::ColumnNotFound {
-        col: TIME_FIELD_NAME.to_string(),
+    let time_col_array = time_col_array.ok_or_else(|| QueryError::CommonError {
+        msg: "Column {} Not Found".to_string(),
     })?;
 
     debug!(
@@ -171,11 +153,9 @@ fn construct_row_based_points(
         for (col_idx, df_field) in column_schemas.iter().enumerate() {
             let name = df_field.name();
 
-            let field = schema
-                .column(name)
-                .ok_or_else(|| PointUtilError::ColumnNotFound {
-                    col: name.to_owned(),
-                })?;
+            let field = schema.column(name).ok_or_else(|| QueryError::CommonError {
+                msg: "Column {} not found.".to_string(),
+            })?;
 
             let value = unsafe { columns_datum.get_unchecked(col_idx).get_unchecked(row_idx) };
 
@@ -214,8 +194,8 @@ fn construct_row_based_points(
             }
         }
 
-        let time = time.ok_or_else(|| PointUtilError::ColumnNotFound {
-            col: TIME_FIELD_NAME.to_string(),
+        let time = time.ok_or_else(|| QueryError::CommonError {
+            msg: format!("Column {} Not Found", TIME_FIELD_NAME),
         })?;
 
         let point_args = PointArgs {
@@ -247,7 +227,7 @@ fn cast_arrow_array<T: 'static>(array: &ArrayRef) -> Result<&T> {
     array
         .as_any()
         .downcast_ref::<T>()
-        .ok_or_else(|| PointUtilError::InvalidArrayType {
+        .ok_or_else(|| QueryError::InvalidArrayType {
             expected: "UNKNOWN".to_string(),
             found: array.data_type().to_string(),
         })
@@ -264,7 +244,7 @@ macro_rules! define_extract_time_column_from_func {
             fn extract_time_column_from(col: &Field, array: &ArrayRef) -> Result<Vec<Option<i64>>> {
                 // time column cannot contain null values
                 if array.null_count() > 0 {
-                    return Err(PointUtilError::NotNullConstraint {
+                    return Err(QueryError::PointErrorNotNullConstraint {
                         col: col.name().clone(),
                     });
                 }
@@ -276,7 +256,7 @@ macro_rules! define_extract_time_column_from_func {
                         )*
                     },
                     ArrowDataType::Int64 => Ok(cast_arrow_array::<Int64Array>(array)?.iter().collect()),
-                    other => Err(PointUtilError::InvalidArrayType {
+                    other => Err(QueryError::InvalidArrayType {
                         expected: ArrowDataType::from(TableColumn::new_time_column(0).column_type).to_string(),
                         found: other.to_string(),
                     }),

@@ -1,12 +1,12 @@
-use crate::execution::ddl::query::execution::MetadataSnafu;
+// use crate::execution::ddl::query::spi::MetaSnafu;
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use datafusion::common::TableReference;
 use meta::error::MetaError;
 use models::schema::TableSchema;
-use snafu::ResultExt;
+use spi::Result;
 
-use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
+use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{AlterTable, AlterTableAction};
 
 pub struct AlterTableTask {
@@ -20,10 +20,7 @@ impl AlterTableTask {
 }
 #[async_trait]
 impl DDLDefinitionTask for AlterTableTask {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let tenant = query_state_machine.session.tenant();
         let table_name = TableReference::from(self.stmt.table_name.as_str())
             .resolve(tenant, query_state_machine.session.default_database());
@@ -33,16 +30,16 @@ impl DDLDefinitionTask for AlterTableTask {
             .tenant_meta(tenant)
             .ok_or(MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            })
-            .context(MetadataSnafu)?;
+            })?;
+        // .context(MetaSnafu)?;
 
         let mut schema = client
-            .get_tskv_table_schema(table_name.schema, table_name.table)
-            .context(MetadataSnafu)?
+            .get_tskv_table_schema(table_name.schema, table_name.table)?
+            // .context(MetaSnafu)?
             .ok_or(MetaError::TableNotFound {
                 table: table_name.table.to_string(),
-            })
-            .context(MetadataSnafu)?;
+            })?;
+        // .context(MetaSnafu)?;
 
         match &self.stmt.alter_action {
             AlterTableAction::AddColumn { table_column } => schema.add_column(table_column.clone()),
@@ -54,9 +51,8 @@ impl DDLDefinitionTask for AlterTableTask {
         }
         schema.schema_id += 1;
 
-        client
-            .update_table(&TableSchema::TsKvTableSchema(schema))
-            .context(MetadataSnafu)?;
+        client.update_table(&TableSchema::TsKvTableSchema(schema))?;
+        // .context(MetaSnafu)?;
 
         return Ok(Output::Nil(()));
     }
