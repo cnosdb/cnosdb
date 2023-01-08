@@ -265,7 +265,7 @@ impl TsKv {
                 if let Some(tsf) = ts_family {
                     info!("Starting compaction on ts_family {}", ts_family_id);
                     let start = Instant::now();
-                    let compact_req = tsf.read().await.pick_compaction();
+                    let compact_req = tsf.read().pick_compaction();
                     if let Some(req) = compact_req {
                         let database = req.database.clone();
                         let compact_ts_family = req.ts_family_id;
@@ -340,7 +340,7 @@ impl TsKv {
         if let Some(db) = database {
             // TODO: stop current and prevent next flush and compaction.
             for (ts_family_id, ts_family) in db.read().await.ts_families() {
-                let compact_req = ts_family.read().await.pick_compaction();
+                let compact_req = ts_family.read().pick_compaction();
                 if let Some(req) = compact_req {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some(version_edit)) => {
@@ -417,9 +417,9 @@ impl TsKv {
 
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             for (ts_family_id, ts_family) in db.read().await.ts_families().iter() {
-                ts_family.read().await.delete_columns(&storage_field_ids);
+                ts_family.read().delete_columns(&storage_field_ids);
 
-                let version = ts_family.read().await.super_version();
+                let version = ts_family.read().super_version();
                 for column_file in version
                     .version
                     .column_files(&storage_field_ids, &TimeRange::all())
@@ -500,8 +500,8 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().await.put_points(seq, write_group);
-        tsf.write().await.check_to_flush();
+        tsf.read().put_points(seq, write_group);
+        tsf.write().check_to_flush();
         Ok(WritePointsRpcResponse {
             version: 1,
             points: vec![],
@@ -550,7 +550,7 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().await.put_points(seq, write_group);
+        tsf.read().put_points(seq, write_group);
 
         return Ok(WritePointsRpcResponse {
             version: 1,
@@ -713,7 +713,7 @@ impl Engine for TsKv {
             .get_tsfamily_by_name_id(tenant, database, vnode_id)
             .await
         {
-            Ok(Some(tsf.read().await.super_version()))
+            Ok(Some(tsf.read().super_version()))
         } else {
             warn!("ts_family with db name '{}' not found.", database);
             Ok(None)
@@ -731,7 +731,7 @@ impl Engine for TsKv {
         let db = db.read().await;
         let sids = db.get_table_sids(table).await?;
         for (ts_family_id, ts_family) in db.ts_families().iter() {
-            ts_family.read().await.add_column(&sids, &new_column);
+            ts_family.read().add_column(&sids, &new_column);
         }
         Ok(())
     }
@@ -777,7 +777,6 @@ impl Engine for TsKv {
         for (ts_family_id, ts_family) in db.ts_families().iter() {
             ts_family
                 .read()
-                .await
                 .change_column(&sids, column_name, &new_column);
         }
         Ok(())

@@ -1,23 +1,23 @@
-use datafusion::sql::sqlparser::test_utils::table;
-use std::mem::size_of;
-use std::mem::size_of_val;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
+    mem::size_of,
     path::{self, Path},
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
 
+use datafusion::sql::sqlparser::test_utils::table;
+use meta::meta_client::MetaRef;
+use models::{
+    schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema},
+    utils::{split_id, unite_id},
+    ColumnId, FieldInfo, InMemPoint, SchemaId, SeriesId, SeriesKey, Tag, Timestamp, ValueType,
+};
+use parking_lot::RwLock as SyncRwLock;
+use protos::models::{Point, Points};
 use snafu::ResultExt;
 use tokio::sync::watch::Receiver;
 use tokio::sync::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-
-use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
-use meta::meta_client::MetaRef;
-use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
-use models::utils::{split_id, unite_id};
-use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
-use protos::models::{Point, Points};
 use trace::{debug, error, info};
 
 use crate::compaction::FlushReq;
@@ -48,7 +48,7 @@ pub struct Database {
 
     schemas: Arc<DBschemas>,
     ts_indexes: HashMap<TseriesFamilyId, Arc<RwLock<index::ts_index::TSIndex>>>,
-    ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
+    ts_families: HashMap<TseriesFamilyId, Arc<SyncRwLock<TseriesFamily>>>,
 }
 
 impl Database {
@@ -81,17 +81,17 @@ impl Database {
             flush_task_sender,
         );
         self.ts_families
-            .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
+            .insert(ver.tf_id(), Arc::new(SyncRwLock::new(tf)));
     }
 
-    pub async fn switch_memcache(&self, tf_id: u32, seq: u64) {
+    pub fn switch_memcache(&self, tf_id: u32, seq: u64) {
         if let Some(tf) = self.ts_families.get(&tf_id) {
             let mem = Arc::new(parking_lot::RwLock::new(MemCache::new(
                 tf_id,
                 self.opt.cache.max_buffer_size,
                 seq,
             )));
-            let mut tf = tf.write().await;
+            let mut tf = tf.write();
             tf.switch_memcache(mem);
         }
     }
@@ -104,7 +104,7 @@ impl Database {
         seq_no: u64,
         summary_task_sender: UnboundedSender<SummaryTask>,
         flush_task_sender: UnboundedSender<FlushReq>,
-    ) -> Arc<RwLock<TseriesFamily>> {
+    ) -> Arc<SyncRwLock<TseriesFamily>> {
         let ver = Arc::new(Version::new(
             tsf_id,
             self.owner.clone(),
@@ -123,7 +123,7 @@ impl Database {
             self.opt.storage.clone(),
             flush_task_sender,
         );
-        let tf = Arc::new(RwLock::new(tf));
+        let tf = Arc::new(SyncRwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
 
         let mut edit = VersionEdit::new();
@@ -267,7 +267,7 @@ impl Database {
         Ok(id)
     }
 
-    pub async fn version_edit(&self, last_seq: u64) -> (Vec<VersionEdit>, Vec<VersionEdit>) {
+    pub fn version_edit(&self, last_seq: u64) -> (Vec<VersionEdit>, Vec<VersionEdit>) {
         let mut edits = vec![];
         let mut files = vec![];
 
@@ -279,7 +279,7 @@ impl Database {
 
             // file edit
             let mut edit = VersionEdit::new();
-            let version = ts.read().await.version().clone();
+            let version = ts.read().version().clone();
             let max_level_ts = version.max_level_ts;
             for files in version.levels_info.iter() {
                 for file in files.files.iter() {
@@ -307,7 +307,7 @@ impl Database {
         Ok(self.schemas.get_table_schema(table_name)?)
     }
 
-    pub fn get_tsfamily(&self, id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
+    pub fn get_tsfamily(&self, id: u32) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
         if let Some(v) = self.ts_families.get(&id) {
             return Some(v.clone());
         }
@@ -319,13 +319,13 @@ impl Database {
         self.ts_families.len()
     }
 
-    pub fn ts_families(&self) -> &HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>> {
+    pub fn ts_families(&self) -> &HashMap<TseriesFamilyId, Arc<SyncRwLock<TseriesFamily>>> {
         &self.ts_families
     }
 
     pub fn for_each_ts_family<F>(&self, func: F)
     where
-        F: FnMut((&TseriesFamilyId, &Arc<RwLock<TseriesFamily>>)),
+        F: FnMut((&TseriesFamilyId, &Arc<SyncRwLock<TseriesFamily>>)),
     {
         self.ts_families.iter().for_each(func);
     }
@@ -378,7 +378,7 @@ impl Database {
     }
 
     // todo: will delete in cluster version
-    pub fn get_tsfamily_random(&self) -> Option<Arc<RwLock<TseriesFamily>>> {
+    pub fn get_tsfamily_random(&self) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
         if let Some((_, v)) = self.ts_families.iter().next() {
             return Some(v.clone());
         }
@@ -452,8 +452,8 @@ pub(crate) async fn delete_table_async(
             for (ts_family_id, ts_family) in db.read().await.ts_families().iter() {
                 // TODO: Concurrent delete on ts_family.
                 // TODO: Limit parallel delete to 1.
-                ts_family.write().await.delete_series(&sids, time_range);
-                let version = ts_family.read().await.super_version();
+                ts_family.write().delete_series(&sids, time_range);
+                let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_fids, time_range) {
                     column_file.add_tombstone(&storage_fids, time_range).await?;
                 }

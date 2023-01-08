@@ -384,10 +384,9 @@ impl Summary {
             if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
                 let new_version = tsf
                     .read()
-                    .await
                     .version()
                     .copy_apply_version_edits(version_edits, min_seq.copied());
-                tsf.write().await.new_version(new_version);
+                tsf.write().new_version(new_version);
             }
         }
 
@@ -403,7 +402,7 @@ impl Summary {
                 let dbs = vs.get_all_db();
                 for (name, db) in dbs {
                     let (mut tsf, mut tmp_files) =
-                        db.read().await.version_edit(self.ctx.last_seq()).await;
+                        db.read().await.version_edit(self.ctx.last_seq());
                     edits.append(&mut tsf);
                     files.append(&mut tmp_files);
                 }
@@ -860,7 +859,6 @@ mod test {
             let tsf = vs.get_tsfamily_by_tf_id(10).await.unwrap();
             let mut version = tsf
                 .read()
-                .await
                 .version()
                 .copy_apply_version_edits(edits.clone(), None);
 
@@ -878,7 +876,7 @@ mod test {
                 ..Default::default()
             };
             version.levels_info[1].push_compact_meta(&meta);
-            tsf.write().await.new_version(version);
+            tsf.write().new_version(version);
             edit.add_file(meta, 1);
             edits.push(edit);
         }
@@ -892,17 +890,11 @@ mod test {
 
         let vs = summary.version_set.read().await;
         let tsf = vs.get_tsfamily_by_tf_id(10).await.unwrap();
-        assert_eq!(tsf.read().await.version().last_seq, 1);
-        assert_eq!(tsf.read().await.version().levels_info[1].tsf_id, 10);
-        assert!(!tsf.read().await.version().levels_info[1].files[0].is_delta());
-        assert_eq!(
-            tsf.read().await.version().levels_info[1].files[0].file_id(),
-            15
-        );
-        assert_eq!(
-            tsf.read().await.version().levels_info[1].files[0].size(),
-            100
-        );
+        assert_eq!(tsf.read().version().last_seq, 1);
+        assert_eq!(tsf.read().version().levels_info[1].tsf_id, 10);
+        assert!(!tsf.read().version().levels_info[1].files[0].is_delta());
+        assert_eq!(tsf.read().version().levels_info[1].files[0].file_id(), 15);
+        assert_eq!(tsf.read().version().levels_info[1].files[0].size(), 100);
         assert_eq!(summary.ctx.file_id(), 16);
     }
 }

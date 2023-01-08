@@ -166,7 +166,7 @@ pub(crate) async fn get_ts_family_hash_tree(
     // let ts_family_id = ts_family_rlock.tf_id();
     // drop(ts_family_rlock);
     let (version, ts_family_id) = {
-        let ts_family_rlock = ts_family.read().await;
+        let ts_family_rlock = ts_family.read();
         (ts_family_rlock.version(), ts_family_rlock.tf_id())
     };
     let mut readers: Vec<TsmReader> = Vec::new();
@@ -875,7 +875,7 @@ mod test {
                 engine.summary_task_sender(),
                 engine.flush_task_sender(),
             );
-            assert_eq!(1, rt.block_on(ts_family.read()).tf_id());
+            assert_eq!(1, ts_family.read().tf_id());
         }
 
         // Get created database and ts_family
@@ -902,7 +902,7 @@ mod test {
             rt.block_on(engine.write(ts_family_id, &tenant_name, write_batch))
                 .unwrap();
 
-            let mut ts_family_wlock = rt.block_on(ts_family_ref.write());
+            let mut ts_family_wlock = ts_family_ref.write();
             ts_family_wlock.switch_to_immutable();
             let immut_cache_ref = ts_family_wlock
                 .super_version()

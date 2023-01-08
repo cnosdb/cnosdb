@@ -1188,7 +1188,7 @@ mod test {
         }
         let version_set = version_set.write().await;
         if let Some(ts_family) = version_set.get_tsfamily_by_tf_id(ts_family_id).await {
-            let mut ts_family = ts_family.write().await;
+            let mut ts_family = ts_family.write();
             let new_version = ts_family
                 .version()
                 .copy_apply_version_edits(version_edits, Some(min_seq));
@@ -1277,7 +1277,6 @@ mod test {
             .await
             .add_tsfamily(0, 0, summary_task_sender.clone(), flush_task_sender.clone())
             .read()
-            .await
             .tf_id();
 
         run_flush_memtable_job(
@@ -1297,7 +1296,7 @@ mod test {
             .get_tsfamily_by_name("cnosdb", &database)
             .await
             .unwrap();
-        let version = tsf.write().await.version();
+        let version = tsf.write().version();
         version.levels_info[1]
             .read_column_file(
                 ts_family_id,

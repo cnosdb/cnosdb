@@ -384,11 +384,15 @@ pub async fn run_flush_memtable_job(
         let tsf_warp = version_set.read().await.get_tsfamily_by_tf_id(tsf_id).await;
         if let Some(tsf) = tsf_warp {
             // todo: build path by vnode data
-            let tsf_rlock = tsf.read().await;
-            let storage_opt = tsf_rlock.storage_opt();
-            let version = tsf_rlock.version();
-            let database = tsf_rlock.database();
-            drop(tsf_rlock);
+            let (storage_opt, version, database) = {
+                let tsf_rlock = tsf.read();
+                (
+                    tsf_rlock.storage_opt(),
+                    tsf_rlock.version(),
+                    tsf_rlock.database(),
+                )
+            };
+
             let path_tsm = storage_opt.tsm_dir(&database, tsf_id);
             let path_delta = storage_opt.delta_dir(&database, tsf_id);
 
