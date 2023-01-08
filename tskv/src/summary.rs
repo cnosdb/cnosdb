@@ -19,6 +19,7 @@ use trace::{debug, error, info};
 use crate::compaction::FlushReq;
 use crate::file_system::file_manager::try_exists;
 use crate::{
+    byte_utils,
     context::GlobalContext,
     error::{Error, Result},
     file_utils,
@@ -144,8 +145,42 @@ impl VersionEdit {
     pub fn encode(&self) -> Result<Vec<u8>> {
         bincode::serialize(self).map_err(|e| Error::Encode { source: (e) })
     }
+
     pub fn decode(buf: &[u8]) -> Result<Self> {
         bincode::deserialize(buf).map_err(|e| Error::Decode { source: (e) })
+    }
+
+    pub fn encode_vec(data: &[Self]) -> Result<Vec<u8>> {
+        let mut buf: Vec<u8> = Vec::with_capacity(data.len() * 32);
+        for ve in data {
+            let ve_buf = bincode::serialize(ve).map_err(|e| Error::Encode { source: (e) })?;
+            let pos = buf.len();
+            buf.resize(pos + 4 + ve_buf.len(), 0_u8);
+            buf[pos..pos + 4].copy_from_slice((ve_buf.len() as u32).to_be_bytes().as_slice());
+            buf[pos + 4..].copy_from_slice(&ve_buf);
+        }
+
+        Ok(buf)
+    }
+
+    pub fn decode_vec(buf: &[u8]) -> Result<Vec<Self>> {
+        let mut list: Vec<Self> = Vec::with_capacity(buf.len() / 32 + 1);
+        let mut pos = 0_usize;
+        while pos < buf.len() {
+            if buf.len() - pos < 4 {
+                break;
+            }
+            let len = byte_utils::decode_be_u32(&buf[pos..pos + 4]);
+            pos += 4;
+            if buf.len() - pos < len as usize {
+                break;
+            }
+            let ve = Self::decode(&buf[pos..pos + len as usize])?;
+            pos += len as usize;
+            list.push(ve);
+        }
+
+        Ok(list)
     }
 
     pub fn add_file(&mut self, compact_meta: CompactMeta, max_level_ts: i64) {
@@ -395,20 +430,10 @@ impl Summary {
 
     async fn roll_summary_file(&mut self) -> Result<()> {
         if self.writer.file_size() >= self.opt.storage.max_summary_size {
-            let mut edits = vec![];
-            let mut files = vec![];
-            {
+            let edits = {
                 let vs = self.version_set.read().await;
-                let dbs = vs.get_all_db();
-                for (name, db) in dbs {
-                    let (mut tsf, mut tmp_files) =
-                        db.read().await.version_edit(self.ctx.last_seq());
-                    edits.append(&mut tsf);
-                    files.append(&mut tmp_files);
-                }
-
-                edits.append(&mut files);
-            }
+                vs.get_version_edits(self.ctx.last_seq()).await
+            };
 
             let new_path = &file_utils::make_summary_file_tmp(self.opt.storage.summary_dir());
             let old_path = &self.writer.path().clone();
@@ -597,6 +622,32 @@ mod test {
         summary::{CompactMeta, Summary, SummaryTask, VersionEdit},
     };
 
+    #[test]
+    fn test_version_edit() {
+        let mut ve = VersionEdit::new();
+
+        let add_file_100 = CompactMeta {
+            file_id: 100,
+            ..Default::default()
+        };
+        ve.add_file(add_file_100, 100_000_000);
+
+        let del_file_101 = CompactMeta {
+            file_id: 101,
+            ..Default::default()
+        };
+        ve.del_files.push(del_file_101);
+
+        let ve_buf = ve.encode().unwrap();
+        let ve2 = VersionEdit::decode(&ve_buf).unwrap();
+        assert_eq!(ve2, ve);
+
+        let ves = vec![ve, ve2];
+        let ves_buf = VersionEdit::encode_vec(&ves).unwrap();
+        let ves_2 = VersionEdit::decode_vec(&ves_buf).unwrap();
+        assert_eq!(ves, ves_2);
+    }
+
     #[tokio::test]
     async fn test_summary() {
         let base_dir = "/tmp/test/summary/1".to_string();
@@ -640,9 +691,6 @@ mod test {
             config.cluster.clone(),
         )
         .await;
-
-        println!("Running test: test_version_edit");
-        test_version_edit();
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_recover_summary_with_roll_0");
@@ -724,23 +772,6 @@ mod test {
             .await
             .unwrap();
         assert_eq!(summary.version_set.read().await.tsf_num().await, 0);
-    }
-
-    fn test_version_edit() {
-        let compact = CompactMeta {
-            file_id: 100,
-            ..Default::default()
-        };
-        let add_list = vec![compact];
-        let compact2 = CompactMeta {
-            file_id: 101,
-            ..Default::default()
-        };
-        let del_list = vec![compact2];
-        let ve = VersionEdit::new();
-        let buf = ve.encode().unwrap();
-        let ve2 = VersionEdit::decode(&buf).unwrap();
-        assert_eq!(ve2, ve);
     }
 
     // tips : we can use a small max_summary_size

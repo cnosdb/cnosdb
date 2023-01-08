@@ -1,6 +1,7 @@
 use crate::database::Database;
 use crate::error::Result;
 use crate::index::IndexResult;
+use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
@@ -121,6 +122,13 @@ pub trait Engine: Send + Sync + Debug {
         db: &str,
         vnode_id: u32,
     ) -> Result<Option<Arc<SuperVersion>>>;
+
+    async fn get_db_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+    ) -> Result<Vec<VersionEdit>>;
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
 }
@@ -249,6 +257,15 @@ impl Engine for MockEngine {
         db: &str,
         vnode_id: u32,
     ) -> Result<Option<Arc<SuperVersion>>> {
+        todo!()
+    }
+
+    async fn get_db_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+    ) -> Result<Vec<VersionEdit>> {
         todo!()
     }
 

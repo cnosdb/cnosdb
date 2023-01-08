@@ -183,4 +183,16 @@ impl VersionSet {
 
         None
     }
+
+    pub async fn get_version_edits(&self, last_seq: u64) -> Vec<VersionEdit> {
+        let mut edits_add_ts_family = vec![];
+        let mut edits_add_file = vec![];
+        for (name, db) in self.dbs.iter() {
+            let (mut add_tsf, mut add_files) = db.read().await.get_version_edits(last_seq, None);
+            edits_add_ts_family.append(&mut add_tsf);
+            edits_add_file.append(&mut add_files);
+        }
+        edits_add_ts_family.append(&mut edits_add_file);
+        edits_add_ts_family
+    }
 }

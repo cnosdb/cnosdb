@@ -810,6 +810,25 @@ impl TseriesFamily {
         self.compact_picker.pick_compaction(self.version.clone())
     }
 
+    pub fn get_version_edit(&self, last_seq: u64, tsf_name: String) -> (VersionEdit, VersionEdit) {
+        let mut ve_add_ts_family = VersionEdit::new();
+        ve_add_ts_family.add_tsfamily(self.tf_id, tsf_name);
+
+        let mut ve_add_files = VersionEdit::new();
+        let version = self.version();
+        let max_level_ts = version.max_level_ts;
+        for files in version.levels_info.iter() {
+            for file in files.files.iter() {
+                let mut meta = CompactMeta::from(file.as_ref());
+                meta.tsf_id = files.tsf_id;
+                meta.high_seq = last_seq;
+                ve_add_files.add_file(meta, max_level_ts);
+            }
+        }
+
+        (ve_add_ts_family, ve_add_files)
+    }
+
     pub fn tf_id(&self) -> TseriesFamilyId {
         self.tf_id
     }

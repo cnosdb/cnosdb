@@ -720,6 +720,32 @@ impl Engine for TsKv {
         }
     }
 
+    async fn get_db_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+    ) -> Result<Vec<VersionEdit>> {
+        let version_set = self.version_set.read().await;
+        if let Some(db) = version_set.get_db(tenant, database) {
+            let db = db.read().await;
+            if let Some(tsf) = db.get_tsfamily(vnode_id) {
+                let (add_tsf, add_file) = tsf
+                    .read()
+                    .get_version_edit(self.global_ctx.last_seq(), db.owner());
+                Ok(vec![add_tsf, add_file])
+            } else {
+                warn!("ts_family with db name '{}' not found.", database);
+                Ok(vec![])
+            }
+        } else {
+            return Err(SchemaError::DatabaseNotFound {
+                database: database.to_string(),
+            }
+            .into());
+        }
+    }
+
     async fn add_table_column(
         &self,
         tenant: &str,

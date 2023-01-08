@@ -97,7 +97,6 @@ impl Database {
     }
 
     // todo: Maybe TseriesFamily::new() should be refactored.
-    #[allow(clippy::too_many_arguments)]
     pub fn add_tsfamily(
         &mut self,
         tsf_id: u32,
@@ -179,7 +178,7 @@ impl Database {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
         for point in points {
-            let sid = self.build_index(&point, ts_index.clone()).await?;
+            let sid = Self::build_index(&point, ts_index.clone()).await?;
             self.build_row_data(&mut map, point, sid)?
         }
         Ok(map)
@@ -192,7 +191,7 @@ impl Database {
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         let mut map = HashMap::new();
         for point in points {
-            let sid = self.build_index(&point, ts_index.clone()).await?;
+            let sid = Self::build_index(&point, ts_index.clone()).await?;
             if self.schemas.check_field_type_from_cache(&point).is_err() {
                 self.schemas.check_field_type_or_else_add(&point)?;
             }
@@ -240,7 +239,6 @@ impl Database {
     }
 
     async fn build_index(
-        &self,
         info: &Point<'_>,
         ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<u32> {
@@ -267,32 +265,30 @@ impl Database {
         Ok(id)
     }
 
-    pub fn version_edit(&self, last_seq: u64) -> (Vec<VersionEdit>, Vec<VersionEdit>) {
-        let mut edits = vec![];
-        let mut files = vec![];
+    pub fn get_version_edits(
+        &self,
+        last_seq: u64,
+        ts_family_id: Option<TseriesFamilyId>,
+    ) -> (Vec<VersionEdit>, Vec<VersionEdit>) {
+        let mut edits_add_ts_family = vec![];
+        let mut edits_add_file = vec![];
 
-        for (id, ts) in &self.ts_families {
-            //tsfamily edit
-            let mut edit = VersionEdit::new();
-            edit.add_tsfamily(*id, self.owner.clone());
-            edits.push(edit);
-
-            // file edit
-            let mut edit = VersionEdit::new();
-            let version = ts.read().version().clone();
-            let max_level_ts = version.max_level_ts;
-            for files in version.levels_info.iter() {
-                for file in files.files.iter() {
-                    let mut meta = CompactMeta::from(file.as_ref());
-                    meta.tsf_id = files.tsf_id;
-                    meta.high_seq = last_seq;
-                    edit.add_file(meta, max_level_ts);
-                }
+        if let Some(tsf_id) = ts_family_id.as_ref() {
+            if let Some(tsf) = self.ts_families.get(tsf_id) {
+                let (add_tsf, add_file) = tsf.read().get_version_edit(last_seq, self.owner.clone());
+                edits_add_file.push(add_tsf);
+                edits_add_file.push(add_file);
             }
-            files.push(edit);
+        } else {
+            for (id, ts) in &self.ts_families {
+                let (add_ts_family, add_files) =
+                    ts.read().get_version_edit(last_seq, self.owner.clone());
+                edits_add_ts_family.push(add_ts_family);
+                edits_add_file.push(add_files);
+            }
         }
 
-        (edits, files)
+        (edits_add_ts_family, edits_add_file)
     }
 
     pub async fn get_series_key(&self, vnode_id: u32, sid: u32) -> IndexResult<Option<SeriesKey>> {
@@ -395,6 +391,10 @@ impl Database {
         ts_family_id: TseriesFamilyId,
     ) -> Result<Vec<check::TableHashTreeNode>> {
         check::get_ts_family_hash_tree(self, ts_family_id).await
+    }
+
+    pub fn owner(&self) -> String {
+        self.owner.clone()
     }
 }
 

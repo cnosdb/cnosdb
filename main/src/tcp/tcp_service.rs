@@ -21,7 +21,7 @@ use tokio::sync::oneshot::Receiver;
 
 use tokio::sync::oneshot;
 use tokio::time::{self, Duration};
-use tskv::engine::EngineRef;
+use tskv::{engine::EngineRef, VersionEdit};
 
 use coordinator::command::*;
 use coordinator::errors::*;
@@ -125,6 +125,16 @@ async fn process_client(
 
             CoordinatorTcpCmd::QueryRecordBatchCmd(cmd) => {
                 process_query_record_batch_command(
+                    &mut client,
+                    cmd,
+                    coord.store_engine(),
+                    coord.meta_manager(),
+                )
+                .await?;
+            }
+
+            CoordinatorTcpCmd::FetchVnodeSummaryMetaCmd(cmd) => {
+                process_fetch_vnode_summary_command(
                     &mut client,
                     cmd,
                     coord.store_engine(),
@@ -291,4 +301,27 @@ async fn query_record_batch(
     } else {
         info!("select statement execute success");
     }
+}
+
+async fn process_fetch_vnode_summary_command(
+    client: &mut TcpStream,
+    cmd: FetchVnodeSummaryRequest,
+    engine: EngineRef,
+    meta: MetaRef,
+) -> CoordinatorResult<()> {
+    let version_edits = engine
+        .get_db_summary(&cmd.tenant, &cmd.database, cmd.vnode_id)
+        .await
+        .context(TskvSnafu)?;
+
+    let resp = match VersionEdit::encode_vec(&version_edits) {
+        Ok(ve) => CoordinatorTcpCmd::FetchVnodeSummaryResponseCmd(FetchVnodeSummaryResponse {
+            version_edits: ve,
+        }),
+        Err(e) => CoordinatorTcpCmd::StatusResponseCmd(StatusResponse {
+            code: FAILED_RESPONSE_CODE,
+            data: "".to_string(),
+        }),
+    };
+    send_command(client, &resp).await
 }
