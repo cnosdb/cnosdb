@@ -7,13 +7,13 @@ use futures::{executor, Future};
 use meta::meta_client::MetaRef;
 use models::predicate::domain::Predicate;
 use snafu::ResultExt;
-use spi::query::DEFAULT_CATALOG;
 use spi::server::dbms::DBMSRef;
 use std::net::{self, SocketAddr};
 use tokio::io::BufReader;
 use tokio::sync::mpsc::Sender;
 use tskv::iterator::{QueryOption, TableScanMetrics};
 
+use clap::ErrorKind::NoEquals;
 use std::{collections::HashMap, sync::Arc};
 use tokio::net::{TcpListener, TcpStream};
 // use std::net::{TcpListener, TcpStream};
@@ -25,7 +25,8 @@ use tskv::engine::EngineRef;
 
 use coordinator::command::*;
 use coordinator::errors::*;
-use protos::kv_service::WritePointsRpcRequest;
+use models::auth::user::{ROOT, ROOT_PWD};
+use protos::kv_service::{Meta, WritePointsRpcRequest};
 
 use models::meta_data::{self, VnodeInfo};
 
@@ -145,6 +146,11 @@ async fn process_vnode_write_command(
 ) -> CoordinatorResult<()> {
     let req = WritePointsRpcRequest {
         version: 1,
+        meta: Some(Meta {
+            tenant: cmd.tenant.clone(),
+            user: None,
+            password: None,
+        }),
         points: cmd.data,
     };
 
@@ -152,9 +158,7 @@ async fn process_vnode_write_command(
         code: SUCCESS_RESPONSE_CODE,
         data: "".to_string(),
     };
-    // todo: we should get tenant from token
-    let mock_tenant = DEFAULT_CATALOG;
-    if let Err(err) = kv_inst.write(cmd.vnode_id, mock_tenant, req).await {
+    if let Err(err) = kv_inst.write(cmd.vnode_id, req).await {
         resp.code = -1;
         resp.data = err.to_string();
         send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;

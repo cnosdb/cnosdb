@@ -41,6 +41,7 @@ mod flatbuffers_generated;
         tonic_build::configure()
             .out_dir(&output_dir_final)
             .file_descriptor_set_path(descriptor_set_path)
+            .protoc_arg("--experimental_allow_proto3_optional")
             .compile_well_known_types(true)
             .compile_with_config(config, proto_file_paths, &[proto_files_dir.as_path()])
             .expect("Failed to generate protobuf file {}.");

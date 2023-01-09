@@ -5,13 +5,14 @@ use models::meta_data::*;
 use models::utils::now_timestamp;
 use models::RwLockRef;
 use parking_lot::{RwLock, RwLockReadGuard};
-use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse};
+use protos::kv_service::{Meta, WritePointsRpcRequest, WritePointsRpcResponse};
 use protos::models::{FieldBuilder, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::ResultExt;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 //use std::net::{TcpListener, TcpStream};
 use meta::meta_client::{MetaClientRef, MetaRef};
+use models::auth::user::{ROOT, ROOT_PWD};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::Sender;
@@ -222,14 +223,14 @@ impl PointWriter {
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
         if node_id == self.node_id {
-            let result = self.write_to_locat_node(vnode_id, tenant, data).await;
+            let result = self.write_to_local_node(vnode_id, tenant, data).await;
             debug!("write data to local {}({}) {:?}", node_id, vnode_id, result);
 
             return result;
         }
 
         if let Err(err) = self
-            .write_to_remote_node(vnode_id, node_id, data.clone())
+            .write_to_remote_node(vnode_id, node_id, tenant, data.clone())
             .await
         {
             info!(
@@ -239,7 +240,7 @@ impl PointWriter {
                 err.to_string()
             );
 
-            return self.write_to_handoff(vnode_id, node_id, data).await;
+            return self.write_to_handoff(vnode_id, node_id, tenant, data).await;
         }
 
         debug!("write data to remote {}({}) success!", node_id, vnode_id);
@@ -250,10 +251,11 @@ impl PointWriter {
         &self,
         vnode_id: u32,
         node_id: u64,
+        tenant: &str,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
         let (sender, receiver) = oneshot::channel();
-        let block = HintedOffBlock::new(now_timestamp(), vnode_id, data);
+        let block = HintedOffBlock::new(now_timestamp(), vnode_id, tenant.to_string(), data);
         let request = HintedOffWriteReq {
             node_id,
             sender,
@@ -269,6 +271,7 @@ impl PointWriter {
         &self,
         vnode_id: u32,
         node_id: u64,
+        tenant: &str,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
         let mut conn = self
@@ -277,7 +280,11 @@ impl PointWriter {
             .get_node_conn(node_id)
             .await?;
 
-        let req_cmd = WriteVnodeRequest { vnode_id, data };
+        let req_cmd = WriteVnodeRequest {
+            vnode_id,
+            tenant: tenant.to_string(),
+            data,
+        };
         send_command(&mut conn, &CoordinatorTcpCmd::WriteVnodePointCmd(req_cmd)).await?;
 
         let rsp_cmd = recv_command(&mut conn).await?;
@@ -295,7 +302,7 @@ impl PointWriter {
         }
     }
 
-    async fn write_to_locat_node(
+    async fn write_to_local_node(
         &self,
         vnode_id: u32,
         tenant: &str,
@@ -303,10 +310,15 @@ impl PointWriter {
     ) -> CoordinatorResult<()> {
         let req = WritePointsRpcRequest {
             version: 1,
+            meta: Some(Meta {
+                tenant: tenant.to_string(),
+                user: None,
+                password: None,
+            }),
             points: data.clone(),
         };
 
-        if let Err(err) = self.kv_inst.write(vnode_id, tenant, req).await {
+        if let Err(err) = self.kv_inst.write(vnode_id, req).await {
             Err(err.into())
         } else {
             Ok(())

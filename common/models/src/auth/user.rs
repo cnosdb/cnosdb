@@ -11,6 +11,7 @@ use super::{
 };
 
 pub const ROOT: &str = "root";
+pub const ROOT_PWD: &str = "";
 
 #[derive(Debug, Clone)]
 pub struct User {

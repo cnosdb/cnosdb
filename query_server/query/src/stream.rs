@@ -14,7 +14,6 @@ use models::{
     schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD},
 };
 
-use spi::query::DEFAULT_CATALOG;
 use spi::{QueryError, Result};
 use tskv::iterator::{QueryOption, TableScanMetrics};
 
@@ -76,7 +75,7 @@ impl TableScanStream {
 
         let option = QueryOption::new(
             batch_size,
-            DEFAULT_CATALOG.to_string(),
+            table_schema.tenant.clone(),
             filter,
             proj_schema.clone(),
             proj_table_schema,

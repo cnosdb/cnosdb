@@ -1,10 +1,10 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use models::auth::user::User;
+use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 
 use crate::query::execution::Output;
 use crate::query::session::IsiphoSessionConfig;
-use crate::query::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QueryId(u64);

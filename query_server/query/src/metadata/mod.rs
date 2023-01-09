@@ -11,11 +11,10 @@ use datafusion::{
 };
 use meta::meta_client::MetaClientRef;
 use models::auth::user::UserDesc;
-use models::schema::{TableSchema, TableSourceAdapter, Tenant};
+use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
 
 use parking_lot::RwLock;
 use spi::query::session::IsiphoSessionCtx;
-use spi::query::DEFAULT_CATALOG;
 
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::table::ClusterTable;
