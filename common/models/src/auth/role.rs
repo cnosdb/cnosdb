@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use crate::auth::AuthError;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +17,6 @@ use super::{
 
 pub enum UserRole<T> {
     // 拥有对整个数据库实例的最高级权限
-    // 支持用户管理和组织管理，但是不能管理组织中的内容
     Dba,
     // tenantId -> rogRole
     Public(HashMap<T, TenantRole<T>>),
@@ -155,7 +155,7 @@ pub struct CustomTenantRole<T> {
     system_role: SystemTenantRole,
     // database_name -> privileges
     // only add database privilege
-    additiona_privileges: HashMap<String, DatabasePrivilege>,
+    additional_privileges: HashMap<String, DatabasePrivilege>,
 }
 
 impl<T> CustomTenantRole<T> {
@@ -165,13 +165,13 @@ impl<T> CustomTenantRole<T> {
         system_role: SystemTenantRole,
         // database_name -> privileges
         // only add database privilege
-        additiona_privileges: HashMap<String, DatabasePrivilege>,
+        additional_privileges: HashMap<String, DatabasePrivilege>,
     ) -> Self {
         Self {
             id,
             name,
             system_role,
-            additiona_privileges,
+            additional_privileges,
         }
     }
 
@@ -180,7 +180,7 @@ impl<T> CustomTenantRole<T> {
     }
 
     pub fn additiona_privileges(&self) -> &HashMap<String, DatabasePrivilege> {
-        &self.additiona_privileges
+        &self.additional_privileges
     }
 }
 
@@ -189,7 +189,7 @@ impl<T: Id> CustomTenantRole<T> {
         let privileges = self.system_role.to_privileges(tenant_id);
 
         let additiona_privileges = self
-            .additiona_privileges
+            .additional_privileges
             .iter()
             .map(|(db_name, privilege)| {
                 Privilege::TenantObject(
@@ -207,7 +207,7 @@ impl<T: Id> CustomTenantRole<T> {
         database_name: String,
         privilege: DatabasePrivilege,
     ) -> Result<()> {
-        self.additiona_privileges.insert(database_name, privilege);
+        self.additional_privileges.insert(database_name, privilege);
 
         Ok(())
     }
@@ -217,14 +217,22 @@ impl<T: Id> CustomTenantRole<T> {
         database_name: &str,
         privilege: &DatabasePrivilege,
     ) -> Result<bool> {
-        if let Some(p) = self.additiona_privileges.get(database_name) {
+        if let Some(p) = self.additional_privileges.get(database_name) {
             if p == privilege {
-                Ok(self.additiona_privileges.remove(database_name).is_some())
+                Ok(self.additional_privileges.remove(database_name).is_some())
             } else {
-                Ok(false)
+                Err(AuthError::PrivilegeNotFound {
+                    db: database_name.to_string(),
+                    privilege: privilege.to_owned(),
+                    role: self.name.to_owned(),
+                })
             }
         } else {
-            Ok(false)
+            Err(AuthError::PrivilegeNotFound {
+                db: database_name.to_string(),
+                privilege: privilege.to_owned(),
+                role: self.name.to_owned(),
+            })
         }
     }
 }

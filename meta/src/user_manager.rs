@@ -121,8 +121,12 @@ impl UserManager for RemoteUserManager {
         match self.client.write::<command::CommonResp<bool>>(&req)? {
             command::CommonResp::Ok(e) => Ok(e),
             command::CommonResp::Err(status) => {
-                // TODO improve response
-                Err(MetaError::CommonError { msg: status.msg })
+                if status.code == META_REQUEST_USER_NOT_FOUND {
+                    Err(MetaError::UserNotFound { user: status.msg })
+                } else {
+                    // TODO improve response
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
             }
         }
     }

@@ -136,6 +136,9 @@ impl UserOptions {
             comment: self.comment.or(other.comment),
         }
     }
+    pub fn hidden_password(&mut self) {
+        self.password.replace("*****".to_string());
+    }
 }
 
 impl Display for UserOptions {

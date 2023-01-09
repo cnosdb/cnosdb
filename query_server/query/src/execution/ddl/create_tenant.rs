@@ -1,12 +1,10 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::error::MetaError;
-use snafu::ResultExt;
 use spi::Result;
 
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateTenant;
-use spi::MetaSnafu;
 use trace::debug;
 
 pub struct CreateTenantTask {
@@ -38,8 +36,7 @@ impl DDLDefinitionTask for CreateTenantTask {
             // Report an error if it exists
             (false, Some(_)) => Err(MetaError::TenantAlreadyExists {
                 tenant: name.clone(),
-            })
-            .context(MetaSnafu),
+            })?,
             // does not exist, create
             (_, None) => {
                 // 创建tenant

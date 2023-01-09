@@ -1249,7 +1249,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             }
             AlterUserOperation::Set(sql_option) => {
                 let user_options = sql_options_to_user_options(vec![sql_option])?;
-                // .map_err(|err| QueryError::Semantic { err })?;
 
                 AlterUserAction::Set(user_options)
             }
