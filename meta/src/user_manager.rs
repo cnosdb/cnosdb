@@ -102,8 +102,8 @@ impl UserManager for RemoteUserManager {
     fn alter_user(&self, name: &str, options: UserOptions) -> MetaResult<()> {
         let req = command::WriteCommand::AlterUser(self.cluster.clone(), name.to_string(), options);
 
-        match self.client.write::<command::CommonResp<UserDesc>>(&req)? {
-            command::CommonResp::Ok(data) => Ok(()),
+        match self.client.write::<command::CommonResp<()>>(&req)? {
+            command::CommonResp::Ok(_) => Ok(()),
             command::CommonResp::Err(status) => {
                 // TODO improve response
                 if status.code == META_REQUEST_USER_NOT_FOUND {
