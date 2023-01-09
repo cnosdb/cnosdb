@@ -27,7 +27,9 @@ impl ClusterSchemaTableFactory for ClusterSchemaUsersFactory {
         // Only visible to admin
         if user.desc().is_admin() {
             for user in metadata.user_manager().users()? {
-                let options_str = serde_json::to_string(user.options())
+                let mut options = user.options().clone();
+                options.hidden_password();
+                let options_str = serde_json::to_string(&options)
                     .map_err(|e| MetaError::CommonError { msg: e.to_string() })?;
 
                 builder.append_row(user.name(), user.is_admin(), options_str);

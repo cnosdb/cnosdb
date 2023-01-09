@@ -92,15 +92,11 @@ impl TenantManager for RemoteTenantManager {
     }
 
     fn tenants(&self) -> MetaResult<Vec<Tenant>> {
-        let tenants = self
-            .tenants
-            .read()
-            .values()
-            .map(|e| e.tenant())
-            .cloned()
-            .collect();
-
-        Ok(tenants)
+        let req = command::ReadCommand::Tenants(self.cluster_name.clone());
+        match self.client.read::<command::CommonResp<Vec<Tenant>>>(&req)? {
+            command::CommonResp::Ok(data) => Ok(data),
+            command::CommonResp::Err(status) => Err(MetaError::CommonError { msg: status.msg }),
+        }
     }
 
     fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
