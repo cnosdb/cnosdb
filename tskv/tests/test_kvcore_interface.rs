@@ -12,6 +12,7 @@ mod tests {
     use meta::meta_client::{MetaRef, RemoteMetaManager};
     use models::schema::TenantOptions;
 
+    use protos::kv_service::Meta;
     use protos::{kv_service, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::engine::Engine;
@@ -59,10 +60,18 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest { version: 1, points };
+        let request = kv_service::WritePointsRpcRequest {
+            version: 1,
+            meta: Some(Meta {
+                tenant: "cnosdb".to_string(),
+                user: None,
+                password: None,
+            }),
+            points,
+        };
 
         rt.spawn(async move {
-            tskv.write(0, "cnosdb", request).await.unwrap();
+            tskv.write(0, request).await.unwrap();
         });
     }
 
@@ -77,21 +86,29 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 2000);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest { version: 1, points };
+        let request = kv_service::WritePointsRpcRequest {
+            version: 1,
+            meta: Some(Meta {
+                tenant: "cnosdb".to_string(),
+                user: None,
+                password: None,
+            }),
+            points,
+        };
         rt.block_on(async {
-            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
@@ -112,10 +129,18 @@ mod tests {
             fbb.finish(points, None);
             let points = fbb.finished_data().to_vec();
 
-            let request = kv_service::WritePointsRpcRequest { version: 1, points };
+            let request = kv_service::WritePointsRpcRequest {
+                version: 1,
+                meta: Some(Meta {
+                    tenant: "cnosdb".to_string(),
+                    user: None,
+                    password: None,
+                }),
+                points,
+            };
 
             rt.block_on(async {
-                tskv.write(0, "cnosdb", request.clone()).await.unwrap();
+                tskv.write(0, request.clone()).await.unwrap();
             });
         }
     }
@@ -129,22 +154,30 @@ mod tests {
         let points = models_helper::create_random_points_include_delta(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest { version: 1, points };
+        let request = kv_service::WritePointsRpcRequest {
+            version: 1,
+            meta: Some(Meta {
+                tenant: "cnosdb".to_string(),
+                user: None,
+                password: None,
+            }),
+            points,
+        };
 
         rt.block_on(async {
-            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
@@ -175,10 +208,18 @@ mod tests {
         let points = models_helper::create_random_points_include_delta(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest { version: 1, points };
+        let request = kv_service::WritePointsRpcRequest {
+            version: 1,
+            meta: Some(Meta {
+                tenant: "cnosdb".to_string(),
+                user: None,
+                password: None,
+            }),
+            points,
+        };
 
         rt.block_on(async {
-            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
         });
         println!("{:?}", tskv)
     }

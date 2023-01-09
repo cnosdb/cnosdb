@@ -1465,12 +1465,6 @@ totimestamp(Int64(7372512014914329287)),totimestamp(Int64(2411196111338391027)),
 MIN(Int64(2514633243509548544))
 2514633243509548544
 
--- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT COUNT(+ (+ (((octet_length(m0.t0))*(ascii(m0.t0))))))  as agg0 FROM m0 WHERE NOT (CAST((CAST(-778818536 AS DOUBLE)) BETWEEN (sin(m0.f0)) AND (nullif(0.960536205831008516042857081629335880279541015625, m0.f0)) AS BOOLEAN)) UNION ALL SELECT COUNT(+ (+ (((octet_length(m0.t0))*(ascii(m0.t0))))))  as agg0 FROM m0 WHERE NOT (NOT (CAST((CAST(-778818536 AS DOUBLE)) BETWEEN (sin(m0.f0)) AND (nullif(0.960536205831008516042857081629335880279541015625, m0.f0)) AS BOOLEAN))) UNION ALL SELECT ALL COUNT(+ (+ (((octet_length(m0.t0))*(ascii(m0.t0))))))  as agg0 FROM m0 WHERE (NOT (CAST((CAST(-778818536 AS DOUBLE)) BETWEEN (sin(m0.f0)) AND (nullif(0.960536205831008516042857081629335880279541015625, m0.f0)) AS BOOLEAN))) IS NULL GROUP BY - (((length(m0.t0))+(m0.f0)))) as asdf; --
--- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Execution error: Arrow error: External error: This feature is not implemented: nullif does not support a literal as first argument"}
--- ERROR:  --
-
 -- EXECUTE SQL: SELECT MAX(ascii(m1.f0)) FROM m1; --
 -- AFTER_SORT --
 200 OK

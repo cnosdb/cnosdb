@@ -15,7 +15,6 @@ use spi::AuthSnafu;
 use spi::{
     query::{
         auth::AccessControlRef, dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory,
-        DEFAULT_CATALOG,
     },
     server::dbms::DatabaseManagerSystem,
     service::protocol::{Query, QueryHandle, QueryId},
@@ -32,9 +31,8 @@ use crate::{
     execution::scheduler::LocalScheduler,
 };
 use meta::error::MetaError;
-use models::schema::DatabaseSchema;
+use models::schema::{DatabaseSchema, DEFAULT_CATALOG, DEFAULT_DATABASE};
 use snafu::ResultExt;
-use spi::query::DEFAULT_DATABASE;
 use spi::Result;
 use tskv::engine::EngineRef;
 
@@ -227,7 +225,8 @@ mod tests {
 
     use super::*;
     use datafusion::arrow::{record_batch::RecordBatch, util::pretty::pretty_format_batches};
-    use spi::{query::DEFAULT_CATALOG, service::protocol::ContextBuilder};
+    use models::schema::DEFAULT_CATALOG;
+    use spi::service::protocol::ContextBuilder;
     use tskv::engine::MockEngine;
 
     #[macro_export]

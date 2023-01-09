@@ -1654,7 +1654,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                         .fields()
                         .iter()
                         .zip(columns_alias.iter())
-                        .map(|(field, ident)| col(field.name()).alias(&normalize_ident(ident))),
+                        .map(|(field, ident)| col(field.name()).alias(normalize_ident(ident))),
                     Some(normalize_ident(&alias.name)),
                 )?
                 .build()?)
