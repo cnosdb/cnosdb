@@ -8,7 +8,6 @@ use std::{
 use blake3::Hasher;
 use chrono::{Duration, DurationRound, NaiveDateTime};
 use models::{schema::ColumnType, utils, ColumnId, FieldId, Timestamp};
-use parking_lot::RwLock;
 use snafu::ResultExt;
 use trace::warn;
 
@@ -465,7 +464,6 @@ mod test {
             FlushReq,
         },
         engine::Engine,
-        summary::SummaryTask,
         tsm::{codec::DataBlockEncoding, DataBlock},
         version_set::VersionSet,
         Options, TimeRange, TsKv, TseriesFamilyId,
@@ -872,6 +870,7 @@ mod test {
             let ts_family = rt.block_on(database.write()).add_tsfamily(
                 ts_family_id,
                 1,
+                None,
                 engine.summary_task_sender(),
                 engine.flush_task_sender(),
             );

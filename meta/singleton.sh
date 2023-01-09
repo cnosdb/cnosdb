@@ -51,7 +51,7 @@ echo "Killing all running cnosdb-meta"
 kill
 sleep 1
 
-echo "Start 3 uninitialized cnosdb-meta servers..."
+echo "Start 1 uninitialized cnosdb-meta servers..."
 
 mkdir -p /tmp/cnosdb/logs
 

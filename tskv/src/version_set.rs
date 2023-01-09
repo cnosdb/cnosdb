@@ -19,7 +19,7 @@ use crate::{
     error::Result,
     kv_option::StorageOptions,
     memcache::MemCache,
-    summary::{SummaryTask, VersionEdit},
+    summary::{VersionEdit, WriteSummaryRequest},
     tseries_family::{LevelInfo, TseriesFamily, Version},
     Options, TseriesFamilyId,
 };
@@ -185,14 +185,11 @@ impl VersionSet {
     }
 
     pub async fn get_version_edits(&self, last_seq: u64) -> Vec<VersionEdit> {
-        let mut edits_add_ts_family = vec![];
-        let mut edits_add_file = vec![];
+        let mut version_edits = vec![];
         for (name, db) in self.dbs.iter() {
-            let (mut add_tsf, mut add_files) = db.read().await.get_version_edits(last_seq, None);
-            edits_add_ts_family.append(&mut add_tsf);
-            edits_add_file.append(&mut add_files);
+            let mut ves = db.read().await.get_version_edits(last_seq, None);
+            version_edits.append(&mut ves);
         }
-        edits_add_ts_family.append(&mut edits_add_file);
-        edits_add_ts_family
+        version_edits
     }
 }

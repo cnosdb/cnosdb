@@ -45,30 +45,6 @@ pub struct CompactMeta {
     pub is_delta: bool,
 }
 
-impl CompactMeta {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        file_id: u64,
-        file_size: u64,
-        tsf_id: TseriesFamilyId,
-        level: LevelId,
-        min_ts: Timestamp,
-        max_ts: Timestamp,
-        is_delta: bool,
-    ) -> Self {
-        Self {
-            file_id,
-            file_size,
-            tsf_id,
-            level,
-            min_ts,
-            max_ts,
-            is_delta,
-            ..Default::default()
-        }
-    }
-}
-
 impl Default for CompactMeta {
     fn default() -> Self {
         Self {
@@ -103,6 +79,56 @@ impl From<&ColumnFile> for CompactMeta {
     }
 }
 
+pub struct CompactMetaBuilder {
+    pub ts_family_id: TseriesFamilyId,
+}
+
+impl CompactMetaBuilder {
+    pub fn new(ts_family_id: TseriesFamilyId) -> Self {
+        Self { ts_family_id }
+    }
+
+    pub fn build_tsm(
+        &self,
+        file_id: u64,
+        file_size: u64,
+        level: LevelId,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
+    ) -> CompactMeta {
+        CompactMeta {
+            file_id,
+            file_size,
+            tsf_id: self.ts_family_id,
+            level,
+            min_ts,
+            max_ts,
+            is_delta: false,
+            ..Default::default()
+        }
+    }
+
+    pub fn build_delta(
+        &self,
+        file_id: u64,
+        file_size: u64,
+        level: LevelId,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
+    ) -> CompactMeta {
+        CompactMeta {
+            file_id,
+            file_size,
+            tsf_id: self.ts_family_id,
+            level,
+            min_ts,
+            max_ts,
+            is_delta: true,
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct VersionEdit {
     pub has_seq_no: bool,
@@ -121,24 +147,44 @@ pub struct VersionEdit {
 
 impl Default for VersionEdit {
     fn default() -> Self {
-        VersionEdit::new()
-    }
-}
-
-impl VersionEdit {
-    pub fn new() -> Self {
         Self {
+            has_seq_no: false,
             seq_no: 0,
+            has_file_id: false,
             file_id: 0,
+            max_level_ts: i64::MIN,
             add_files: vec![],
             del_files: vec![],
             del_tsf: false,
             add_tsf: false,
             tsf_id: 0,
             tsf_name: String::from(""),
-            has_seq_no: false,
-            has_file_id: false,
-            max_level_ts: i64::MIN,
+        }
+    }
+}
+
+impl VersionEdit {
+    pub fn new(vnode_id: TseriesFamilyId) -> Self {
+        Self {
+            tsf_id: vnode_id,
+            ..Default::default()
+        }
+    }
+
+    pub fn new_add_vnode(vnode_id: u32, owner: String) -> Self {
+        Self {
+            tsf_id: vnode_id,
+            tsf_name: owner,
+            add_tsf: true,
+            ..Default::default()
+        }
+    }
+
+    pub fn new_del_vnode(vnode_id: u32) -> Self {
+        Self {
+            tsf_id: vnode_id,
+            del_tsf: true,
+            ..Default::default()
         }
     }
 
@@ -187,7 +233,7 @@ impl VersionEdit {
         self.has_seq_no = true;
         self.seq_no = compact_meta.high_seq;
         self.has_file_id = true;
-        self.file_id = compact_meta.file_id;
+        self.file_id = self.file_id.max(compact_meta.file_id);
         self.max_level_ts = max_level_ts;
         self.tsf_id = compact_meta.tsf_id;
         self.add_files.push(compact_meta);
@@ -200,24 +246,6 @@ impl VersionEdit {
             is_delta,
             ..Default::default()
         });
-    }
-
-    pub fn add_tsfamily(&mut self, tsf_id: u32, tsf_name: String) {
-        self.add_tsf = true;
-        self.tsf_name = tsf_name;
-        self.tsf_id = tsf_id;
-    }
-
-    pub fn del_tsfamily(&mut self, tsf_id: u32) {
-        self.del_tsf = true;
-        self.tsf_id = tsf_id;
-    }
-
-    pub fn set_log_seq(&mut self, file_id: u64) {
-        self.file_id = file_id;
-    }
-    pub fn set_tsf_id(&mut self, tsf_id: u32) {
-        self.tsf_id = tsf_id;
     }
 }
 
@@ -242,7 +270,7 @@ impl Summary {
         opt: Arc<Options>,
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
-        let db = VersionEdit::new();
+        let db = VersionEdit::default();
         let path = file_utils::make_summary_file(opt.storage.summary_dir(), 0);
         let mut w = Writer::open(path, RecordDataType::Summary).await.unwrap();
         let buf = db.encode()?;
@@ -551,7 +579,8 @@ impl SummaryProcessor {
         }
     }
 
-    pub fn batch(&mut self, mut task: SummaryTask) -> bool {
+    pub fn batch(&mut self, task: SummaryTask) -> bool {
+        let mut task = task.write_summary_request();
         let mut need_apply = self.edits.len() > MAX_BATCH_SIZE;
         if task.edits.len() == 1 && (task.edits[0].del_tsf || task.edits[0].add_tsf) {
             need_apply = true;
@@ -583,7 +612,40 @@ impl SummaryProcessor {
 }
 
 #[derive(Debug)]
-pub struct SummaryTask {
+pub enum SummaryTask {
+    AppendSummary(WriteSummaryRequest),
+    ApplySummary {
+        ts_family_id: TseriesFamilyId,
+        request: WriteSummaryRequest,
+    },
+}
+
+impl SummaryTask {
+    pub fn new_append_task(edits: Vec<VersionEdit>, cb: Sender<Result<()>>) -> Self {
+        Self::AppendSummary(WriteSummaryRequest { edits, cb })
+    }
+
+    pub fn new_apply_task(
+        ts_family_id: TseriesFamilyId,
+        edits: Vec<VersionEdit>,
+        cb: Sender<Result<()>>,
+    ) -> Self {
+        Self::ApplySummary {
+            ts_family_id,
+            request: WriteSummaryRequest { edits, cb },
+        }
+    }
+
+    pub fn write_summary_request(self) -> WriteSummaryRequest {
+        match self {
+            SummaryTask::AppendSummary(req) => req,
+            SummaryTask::ApplySummary { request: req, .. } => req,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct WriteSummaryRequest {
     pub edits: Vec<VersionEdit>,
     pub cb: Sender<Result<()>>,
 }
@@ -614,17 +676,18 @@ mod test {
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
 
     use crate::file_system::file_manager;
+    use crate::summary::SummaryTask;
     use crate::tseries_family::LevelInfo;
     use crate::{
         compaction::FlushReq,
         error,
         kv_option::{Options, StorageOptions},
-        summary::{CompactMeta, Summary, SummaryTask, VersionEdit},
+        summary::{CompactMeta, Summary, VersionEdit, WriteSummaryRequest},
     };
 
     #[test]
     fn test_version_edit() {
-        let mut ve = VersionEdit::new();
+        let mut ve = VersionEdit::default();
 
         let add_file_100 = CompactMeta {
             file_id: 100,
@@ -661,7 +724,7 @@ mod test {
             println!("Mock summary job started (test_summary).");
             while let Some(t) = summary_task_receiver.recv().await {
                 // Do nothing
-                let _ = t.cb.send(Ok(()));
+                let _ = t.write_summary_request().cb.send(Ok(()));
             }
             println!("Mock summary job finished (test_summary).");
         });
@@ -731,8 +794,7 @@ mod test {
         let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
             .await
             .unwrap();
-        let mut edit = VersionEdit::new();
-        edit.add_tsfamily(100, "cnosdb.hello".to_string());
+        let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
         let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender)
             .await
@@ -756,8 +818,7 @@ mod test {
             .await
             .unwrap();
 
-        let mut edit = VersionEdit::new();
-        edit.add_tsfamily(100, "cnosdb.hello".to_string());
+        let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
         let mut summary =
             Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
@@ -765,8 +826,7 @@ mod test {
                 .unwrap();
         assert_eq!(summary.version_set.read().await.tsf_num().await, 1);
         assert_eq!(summary.ctx.tsfamily_id(), 100);
-        let mut edit = VersionEdit::new();
-        edit.del_tsfamily(100);
+        let edit = VersionEdit::new_del_vnode(100);
         summary.apply_version_edit(vec![edit]).await.unwrap();
         let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender.clone())
             .await
@@ -808,11 +868,11 @@ mod test {
             db.write().await.add_tsfamily(
                 i,
                 0,
+                None,
                 summary_task_sender.clone(),
                 flush_task_sender.clone(),
             );
-            let mut edit = VersionEdit::new();
-            edit.add_tsfamily(i, make_owner("cnosdb", &database));
+            let edit = VersionEdit::new_add_vnode(i, make_owner("cnosdb", &database));
             edits.push(edit.clone());
         }
 
@@ -821,9 +881,7 @@ mod test {
                 db.write()
                     .await
                     .del_tsfamily(i, summary_task_sender.clone());
-                let mut edit = VersionEdit::new();
-                edit.del_tsfamily(i);
-                edits.push(edit.clone());
+                edits.push(VersionEdit::new_del_vnode(i));
             }
         }
         summary.apply_version_edit(edits).await.unwrap();
@@ -867,21 +925,20 @@ mod test {
         db.write().await.add_tsfamily(
             10,
             0,
+            None,
             summary_task_sender.clone(),
             flush_task_sender.clone(),
         );
 
         let mut edits = vec![];
-        let mut edit = VersionEdit::new();
-        edit.add_tsfamily(10, "cnosdb.hello".to_string());
+        let edit = VersionEdit::new_add_vnode(10, "cnosdb.hello".to_string());
         edits.push(edit);
 
         for _ in 0..100 {
             db.write()
                 .await
                 .del_tsfamily(0, summary_task_sender.clone());
-            let mut edit = VersionEdit::new();
-            edit.del_tsfamily(0);
+            let edit = VersionEdit::new_del_vnode(0);
             edits.push(edit);
         }
 
@@ -894,7 +951,7 @@ mod test {
                 .copy_apply_version_edits(edits.clone(), None);
 
             summary.ctx.set_last_seq(1);
-            let mut edit = VersionEdit::new();
+            let mut edit = VersionEdit::new(10);
             let meta = CompactMeta {
                 file_id: 15,
                 is_delta: false,

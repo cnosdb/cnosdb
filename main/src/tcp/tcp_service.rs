@@ -133,7 +133,7 @@ async fn process_client(
                 .await?;
             }
 
-            CoordinatorTcpCmd::FetchVnodeSummaryMetaCmd(cmd) => {
+            CoordinatorTcpCmd::FetchVnodeSummaryCmd(cmd) => {
                 process_fetch_vnode_summary_command(
                     &mut client,
                     cmd,
@@ -141,6 +141,16 @@ async fn process_client(
                     coord.meta_manager(),
                 )
                 .await?;
+            }
+
+            CoordinatorTcpCmd::ApplyVnodeSummaryCmd(cmd) => {
+                process_apply_vnode_summary_command(
+                    &mut client,
+                    cmd,
+                    coord.store_engine(),
+                    coord.meta_manager(),
+                )
+                .await?
             }
 
             _ => {}
@@ -309,19 +319,75 @@ async fn process_fetch_vnode_summary_command(
     engine: EngineRef,
     meta: MetaRef,
 ) -> CoordinatorResult<()> {
-    let version_edits = engine
-        .get_db_summary(&cmd.tenant, &cmd.database, cmd.vnode_id)
+    let version_edit = match engine
+        .get_vnode_summary(&cmd.tenant, &cmd.database, cmd.vnode_id)
         .await
-        .context(TskvSnafu)?;
+    {
+        Ok(version_edit) => version_edit,
+        Err(e) => {
+            let resp = CoordinatorTcpCmd::StatusResponseCmd(StatusResponse {
+                code: FAILED_RESPONSE_CODE,
+                data: format!("failed to get vnode summary: {:?}", e),
+            });
+            return send_command(client, &resp).await;
+        }
+    };
 
-    let resp = match VersionEdit::encode_vec(&version_edits) {
-        Ok(ve) => CoordinatorTcpCmd::FetchVnodeSummaryResponseCmd(FetchVnodeSummaryResponse {
-            version_edits: ve,
+    let resp = if let Some(ve) = version_edit {
+        match ve.encode() {
+            Ok(ve_bytes) => {
+                CoordinatorTcpCmd::FetchVnodeSummaryResponseCmd(FetchVnodeSummaryResponse {
+                    version_edit: ve_bytes,
+                })
+            }
+            Err(e) => CoordinatorTcpCmd::StatusResponseCmd(StatusResponse {
+                code: FAILED_RESPONSE_CODE,
+                data: format!("failed to encode vnode summary: {:?}", e),
+            }),
+        }
+    } else {
+        CoordinatorTcpCmd::FetchVnodeSummaryResponseCmd(FetchVnodeSummaryResponse {
+            version_edit: vec![],
+        })
+    };
+
+    send_command(client, &resp).await?;
+
+    Ok(())
+}
+
+async fn process_apply_vnode_summary_command(
+    client: &mut TcpStream,
+    cmd: ApplyVnodeSummaryRequest,
+    engine: EngineRef,
+    meta: MetaRef,
+) -> CoordinatorResult<()> {
+    let version_edit = match VersionEdit::decode(&cmd.version_edit) {
+        Ok(ve) => ve,
+        Err(e) => {
+            let resp = CoordinatorTcpCmd::StatusResponseCmd(StatusResponse {
+                code: FAILED_RESPONSE_CODE,
+                data: format!("failed to decode vnode summary: {:?}", e),
+            });
+            return send_command(client, &resp).await;
+        }
+    };
+
+    let resp = match engine
+        .apply_vnode_summary(&cmd.tenant, &cmd.database, cmd.vnode_id, version_edit)
+        .await
+    {
+        Ok(_) => CoordinatorTcpCmd::StatusResponseCmd(StatusResponse {
+            code: SUCCESS_RESPONSE_CODE,
+            data: "".to_string(),
         }),
         Err(e) => CoordinatorTcpCmd::StatusResponseCmd(StatusResponse {
             code: FAILED_RESPONSE_CODE,
-            data: "".to_string(),
+            data: format!("failed to apply vnode summary: {:?}", e),
         }),
     };
-    send_command(client, &resp).await
+
+    send_command(client, &resp).await?;
+
+    Ok(())
 }

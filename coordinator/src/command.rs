@@ -29,6 +29,7 @@ pub const WRITE_VNODE_POINT_COMMAND: u32 = 1;
 pub const ADMIN_STATEMENT_COMMAND: u32 = 2;
 pub const QUERY_RECORD_BATCH_COMMAND: u32 = 3;
 pub const FETCH_VNODE_SUMMARY_COMMAND: u32 = 4;
+pub const APPLY_VNODE_SUMMARY_COMMAND: u32 = 5;
 
 pub const STATUS_RESPONSE_COMMAND: u32 = 100;
 pub const RECORD_BATCH_RESPONSE_COMMAND: u32 = 101;
@@ -43,56 +44,49 @@ pub enum CoordinatorTcpCmd {
     WriteVnodePointCmd(WriteVnodeRequest),
     AdminStatementCmd(AdminStatementRequest),
     QueryRecordBatchCmd(QueryRecordBatchRequest),
-    FetchVnodeSummaryMetaCmd(FetchVnodeSummaryRequest),
+    FetchVnodeSummaryCmd(FetchVnodeSummaryRequest),
+    ApplyVnodeSummaryCmd(ApplyVnodeSummaryRequest),
 
     StatusResponseCmd(StatusResponse),
     RecordBatchResponseCmd(RecordBatchResponse),
     FetchVnodeSummaryResponseCmd(FetchVnodeSummaryResponse),
 }
 
+impl CoordinatorTcpCmd {
+    pub fn command_type(&self) -> u32 {
+        match self {
+            CoordinatorTcpCmd::WriteVnodePointCmd(_) => WRITE_VNODE_POINT_COMMAND,
+            CoordinatorTcpCmd::AdminStatementCmd(_) => ADMIN_STATEMENT_COMMAND,
+            CoordinatorTcpCmd::QueryRecordBatchCmd(_) => QUERY_RECORD_BATCH_COMMAND,
+            CoordinatorTcpCmd::FetchVnodeSummaryCmd(_) => FETCH_VNODE_SUMMARY_COMMAND,
+            CoordinatorTcpCmd::ApplyVnodeSummaryCmd(_) => APPLY_VNODE_SUMMARY_COMMAND,
+            CoordinatorTcpCmd::StatusResponseCmd(_) => STATUS_RESPONSE_COMMAND,
+            CoordinatorTcpCmd::RecordBatchResponseCmd(_) => RECORD_BATCH_RESPONSE_COMMAND,
+            CoordinatorTcpCmd::FetchVnodeSummaryResponseCmd(_) => {
+                FETCH_VNODE_SUMMARY_RESPONSE_COMMAND
+            }
+        }
+    }
+}
+
 pub async fn send_command(conn: &mut TcpStream, cmd: &CoordinatorTcpCmd) -> CoordinatorResult<()> {
+    conn.write_all(&cmd.command_type().to_be_bytes()).await?;
     match cmd {
-        CoordinatorTcpCmd::StatusResponseCmd(val) => {
-            conn.write_all(&STATUS_RESPONSE_COMMAND.to_be_bytes())
-                .await?;
-            val.send_cmd(conn).await
-        }
+        CoordinatorTcpCmd::StatusResponseCmd(val) => val.send_cmd(conn).await,
 
-        CoordinatorTcpCmd::WriteVnodePointCmd(val) => {
-            conn.write_all(&WRITE_VNODE_POINT_COMMAND.to_be_bytes())
-                .await?;
-            val.send_cmd(conn).await
-        }
+        CoordinatorTcpCmd::WriteVnodePointCmd(val) => val.send_cmd(conn).await,
 
-        CoordinatorTcpCmd::QueryRecordBatchCmd(val) => {
-            conn.write_all(&QUERY_RECORD_BATCH_COMMAND.to_be_bytes())
-                .await?;
-            val.send_cmd(conn).await
-        }
+        CoordinatorTcpCmd::QueryRecordBatchCmd(val) => val.send_cmd(conn).await,
 
-        CoordinatorTcpCmd::FetchVnodeSummaryMetaCmd(val) => {
-            conn.write_all(&FETCH_VNODE_SUMMARY_COMMAND.to_be_bytes())
-                .await?;
-            val.send_cmd(conn).await
-        }
+        CoordinatorTcpCmd::FetchVnodeSummaryCmd(val) => val.send_cmd(conn).await,
 
-        CoordinatorTcpCmd::RecordBatchResponseCmd(val) => {
-            conn.write_all(&RECORD_BATCH_RESPONSE_COMMAND.to_be_bytes())
-                .await?;
-            val.send_cmd(conn).await
-        }
+        CoordinatorTcpCmd::ApplyVnodeSummaryCmd(val) => val.send_cmd(conn).await,
 
-        CoordinatorTcpCmd::FetchVnodeSummaryResponseCmd(val) => {
-            conn.write_all(&FETCH_VNODE_SUMMARY_RESPONSE_COMMAND.to_be_bytes())
-                .await?;
-            val.send_cmd(conn).await
-        }
+        CoordinatorTcpCmd::RecordBatchResponseCmd(val) => val.send_cmd(conn).await,
 
-        CoordinatorTcpCmd::AdminStatementCmd(val) => {
-            conn.write_all(&ADMIN_STATEMENT_COMMAND.to_be_bytes())
-                .await?;
-            val.send_cmd(conn).await
-        }
+        CoordinatorTcpCmd::FetchVnodeSummaryResponseCmd(val) => val.send_cmd(conn).await,
+
+        CoordinatorTcpCmd::AdminStatementCmd(val) => val.send_cmd(conn).await,
     }
 }
 
@@ -119,7 +113,7 @@ pub async fn recv_command(conn: &mut TcpStream) -> CoordinatorResult<Coordinator
 
         FETCH_VNODE_SUMMARY_COMMAND => {
             let cmd = FetchVnodeSummaryRequest::recv_data(conn).await?;
-            Ok(CoordinatorTcpCmd::FetchVnodeSummaryMetaCmd(cmd))
+            Ok(CoordinatorTcpCmd::FetchVnodeSummaryCmd(cmd))
         }
 
         RECORD_BATCH_RESPONSE_COMMAND => {
@@ -339,6 +333,60 @@ impl FetchVnodeSummaryRequest {
 }
 
 #[derive(Debug, Clone)]
+pub struct ApplyVnodeSummaryRequest {
+    pub tenant: String,
+    pub database: String,
+    pub vnode_id: u32,
+    pub version_edit: Vec<u8>,
+}
+
+impl ApplyVnodeSummaryRequest {
+    pub async fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
+        let tenant_buf = self.database.as_bytes();
+        conn.write_all(&(tenant_buf.len() as u32).to_be_bytes())
+            .await?;
+        conn.write_all(tenant_buf).await?;
+
+        let database_buf = self.database.as_bytes();
+        conn.write_all(&(database_buf.len() as u32).to_be_bytes())
+            .await?;
+        conn.write_all(database_buf).await?;
+
+        conn.write_all(&4_u32.to_be_bytes()).await?;
+        conn.write_all(&self.vnode_id.to_be_bytes()).await?;
+
+        conn.write_all(&(self.version_edit.len() as u32).to_be_bytes())
+            .await?;
+        conn.write_all(&self.version_edit).await?;
+
+        Ok(())
+    }
+
+    pub async fn recv_data(conn: &mut TcpStream) -> CoordinatorResult<ApplyVnodeSummaryRequest> {
+        let tenant_buf = read_data_len_val(conn).await?;
+        let tenant = String::from_utf8(tenant_buf).map_err(|_| CoordCommandParseErr)?;
+
+        let database_buf = read_data_len_val(conn).await?;
+        let database = String::from_utf8(database_buf).map_err(|_| CoordCommandParseErr)?;
+
+        let vnode_id_buf = read_data_len_val(conn).await?;
+        if vnode_id_buf.len() < 4 {
+            return Err(CoordCommandParseErr);
+        }
+        let vnode_id = byte_utils::decode_be_u32(&vnode_id_buf);
+
+        let version_edit = read_data_len_val(conn).await?;
+
+        Ok(ApplyVnodeSummaryRequest {
+            tenant,
+            database,
+            vnode_id,
+            version_edit,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct RecordBatchResponse {
     pub record: RecordBatch,
 }
@@ -371,22 +419,22 @@ impl RecordBatchResponse {
 
 #[derive(Debug, Clone)]
 pub struct FetchVnodeSummaryResponse {
-    pub version_edits: Vec<u8>,
+    pub version_edit: Vec<u8>,
 }
 
 impl FetchVnodeSummaryResponse {
     pub async fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
-        conn.write_all(&(self.version_edits.len() as u32).to_be_bytes())
+        conn.write_all(&(self.version_edit.len() as u32).to_be_bytes())
             .await?;
-        conn.write_all(&self.version_edits).await?;
+        conn.write_all(&self.version_edit).await?;
 
         Ok(())
     }
 
     pub async fn recv_data(conn: &mut TcpStream) -> CoordinatorResult<FetchVnodeSummaryResponse> {
-        let version_edits = read_data_len_val(conn).await?;
+        let version_edit = read_data_len_val(conn).await?;
 
-        Ok(FetchVnodeSummaryResponse { version_edits })
+        Ok(FetchVnodeSummaryResponse { version_edit })
     }
 }
 

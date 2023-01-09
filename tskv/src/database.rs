@@ -20,19 +20,18 @@ use tokio::sync::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use trace::{debug, error, info};
 
-use crate::compaction::FlushReq;
 use crate::error::SchemaSnafu;
 use crate::index::{self, IndexError, IndexResult};
 use crate::schema::schemas::DBschemas;
 use crate::tseries_family::LevelInfo;
 use crate::Error::{IndexErr, InvalidPoint};
 use crate::{
-    compaction::check,
+    compaction::{check, FlushReq},
     error::{self, IndexErrSnafu, Result},
     kv_option::Options,
     memcache::MemCache,
     memcache::{RowData, RowGroup},
-    summary::{CompactMeta, SummaryTask, VersionEdit},
+    summary::{CompactMeta, SummaryTask, VersionEdit, WriteSummaryRequest},
     tseries_family::{TseriesFamily, Version},
     version_set::VersionSet,
     Error, TimeRange, TseriesFamilyId,
@@ -101,9 +100,12 @@ impl Database {
         &mut self,
         tsf_id: u32,
         seq_no: u64,
+        version_edit: Option<VersionEdit>,
         summary_task_sender: UnboundedSender<SummaryTask>,
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Arc<SyncRwLock<TseriesFamily>> {
+        let seq_no = version_edit.as_ref().map(|v| v.seq_no).unwrap_or(seq_no);
+
         let ver = Arc::new(Version::new(
             tsf_id,
             self.owner.clone(),
@@ -125,15 +127,11 @@ impl Database {
         let tf = Arc::new(SyncRwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
 
-        let mut edit = VersionEdit::new();
-        edit.add_tsfamily(tsf_id, self.owner.clone());
-
-        let edits = vec![edit];
+        let edits = version_edit
+            .map(|v| vec![v])
+            .unwrap_or_else(|| vec![VersionEdit::new_add_vnode(tsf_id, self.owner.clone())]);
         let (task_state_sender, task_state_receiver) = oneshot::channel();
-        let task = SummaryTask {
-            edits,
-            cb: task_state_sender,
-        };
+        let task = SummaryTask::new_append_task(edits, task_state_sender);
         if let Err(e) = summary_task_sender.send(task) {
             error!("failed to send Summary task, {:?}", e);
         }
@@ -144,15 +142,9 @@ impl Database {
     pub fn del_tsfamily(&mut self, tf_id: u32, summary_task_sender: UnboundedSender<SummaryTask>) {
         self.ts_families.remove(&tf_id);
 
-        let mut edits = vec![];
-        let mut edit = VersionEdit::new();
-        edit.del_tsfamily(tf_id);
-        edits.push(edit);
+        let edits = vec![VersionEdit::new_del_vnode(tf_id)];
         let (task_state_sender, task_state_receiver) = oneshot::channel();
-        let task = SummaryTask {
-            edits,
-            cb: task_state_sender,
-        };
+        let task = SummaryTask::new_append_task(edits, task_state_sender);
         if let Err(e) = summary_task_sender.send(task) {
             error!("failed to send Summary task, {:?}", e);
         }
@@ -269,26 +261,22 @@ impl Database {
         &self,
         last_seq: u64,
         ts_family_id: Option<TseriesFamilyId>,
-    ) -> (Vec<VersionEdit>, Vec<VersionEdit>) {
-        let mut edits_add_ts_family = vec![];
-        let mut edits_add_file = vec![];
+    ) -> Vec<VersionEdit> {
+        let mut version_edits = vec![];
 
         if let Some(tsf_id) = ts_family_id.as_ref() {
             if let Some(tsf) = self.ts_families.get(tsf_id) {
-                let (add_tsf, add_file) = tsf.read().get_version_edit(last_seq, self.owner.clone());
-                edits_add_file.push(add_tsf);
-                edits_add_file.push(add_file);
+                let ve = tsf.read().get_version_edit(last_seq, self.owner.clone());
+                version_edits.push(ve);
             }
         } else {
             for (id, ts) in &self.ts_families {
-                let (add_ts_family, add_files) =
-                    ts.read().get_version_edit(last_seq, self.owner.clone());
-                edits_add_ts_family.push(add_ts_family);
-                edits_add_file.push(add_files);
+                let ve = ts.read().get_version_edit(last_seq, self.owner.clone());
+                version_edits.push(ve);
             }
         }
 
-        (edits_add_ts_family, edits_add_file)
+        version_edits
     }
 
     pub async fn get_series_key(&self, vnode_id: u32, sid: u32) -> IndexResult<Option<SeriesKey>> {

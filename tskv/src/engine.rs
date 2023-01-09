@@ -123,12 +123,20 @@ pub trait Engine: Send + Sync + Debug {
         vnode_id: u32,
     ) -> Result<Option<Arc<SuperVersion>>>;
 
-    async fn get_db_summary(
+    async fn get_vnode_summary(
         &self,
         tenant: &str,
         database: &str,
         vnode_id: u32,
-    ) -> Result<Vec<VersionEdit>>;
+    ) -> Result<Option<VersionEdit>>;
+
+    async fn apply_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+        summary: VersionEdit,
+    ) -> Result<()>;
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
 }
@@ -260,12 +268,22 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    async fn get_db_summary(
+    async fn get_vnode_summary(
         &self,
         tenant: &str,
         database: &str,
         vnode_id: u32,
-    ) -> Result<Vec<VersionEdit>> {
+    ) -> Result<Option<VersionEdit>> {
+        todo!()
+    }
+
+    async fn apply_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+        summary: VersionEdit,
+    ) -> Result<()> {
         todo!()
     }
 

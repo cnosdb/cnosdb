@@ -55,8 +55,7 @@ use crate::{
     kv_option::Options,
     memcache::{DataType, MemCache},
     record_file::Reader,
-    summary,
-    summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit},
+    summary::{self, Summary, SummaryProcessor, SummaryTask, VersionEdit, WriteSummaryRequest},
     tseries_family::{SuperVersion, TimeRange, Version},
     tsm::{DataBlock, TsmTombstone, MAX_BLOCK_VALUES},
     version_set,
@@ -274,10 +273,10 @@ impl TsKv {
                             Ok(Some(version_edit)) => {
                                 incr_compaction_success();
                                 let (summary_tx, summary_rx) = oneshot::channel();
-                                let ret = summary_task_sender.send(SummaryTask {
-                                    edits: vec![version_edit],
-                                    cb: summary_tx,
-                                });
+                                let ret = summary_task_sender.send(SummaryTask::new_append_task(
+                                    vec![version_edit],
+                                    summary_tx,
+                                ));
                                 sample_tskv_compaction_duration(
                                     database.as_str(),
                                     compact_ts_family.to_string().as_str(),
@@ -345,10 +344,9 @@ impl TsKv {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some(version_edit)) => {
                             let (summary_tx, summary_rx) = oneshot::channel();
-                            let ret = self.summary_task_sender.send(SummaryTask {
-                                edits: vec![version_edit],
-                                cb: summary_tx,
-                            });
+                            let ret = self
+                                .summary_task_sender
+                                .send(SummaryTask::new_append_task(vec![version_edit], summary_tx));
 
                             // let _ = summary_rx.await;
                         }
@@ -495,6 +493,7 @@ impl Engine for TsKv {
             None => db.write().await.add_tsfamily(
                 id,
                 seq,
+                None,
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
             ),
@@ -545,6 +544,7 @@ impl Engine for TsKv {
             None => db.write().await.add_tsfamily(
                 id,
                 seq,
+                None,
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
             ),
@@ -720,24 +720,58 @@ impl Engine for TsKv {
         }
     }
 
-    async fn get_db_summary(
+    async fn get_vnode_summary(
         &self,
         tenant: &str,
         database: &str,
         vnode_id: u32,
-    ) -> Result<Vec<VersionEdit>> {
+    ) -> Result<Option<VersionEdit>> {
         let version_set = self.version_set.read().await;
         if let Some(db) = version_set.get_db(tenant, database) {
             let db = db.read().await;
             if let Some(tsf) = db.get_tsfamily(vnode_id) {
-                let (add_tsf, add_file) = tsf
+                let ve = tsf
                     .read()
                     .get_version_edit(self.global_ctx.last_seq(), db.owner());
-                Ok(vec![add_tsf, add_file])
+                Ok(Some(ve))
             } else {
                 warn!("ts_family with db name '{}' not found.", database);
-                Ok(vec![])
+                Ok(None)
             }
+        } else {
+            return Err(SchemaError::DatabaseNotFound {
+                database: database.to_string(),
+            }
+            .into());
+        }
+    }
+
+    async fn apply_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+        summary: VersionEdit,
+    ) -> Result<()> {
+        // It should be a version edit that add a vnode.
+        if !summary.add_tsf {
+            return Ok(());
+        }
+        let version_set = self.version_set.read().await;
+        if let Some(db) = version_set.get_db(tenant, database) {
+            let mut db_wlock = db.write().await;
+            // If there is a ts_family here, delete and re-build it.
+            if let Some(tsf) = db_wlock.get_tsfamily(vnode_id) {
+                db_wlock.del_tsfamily(vnode_id, self.summary_task_sender.clone());
+            }
+            db_wlock.add_tsfamily(
+                vnode_id,
+                0,
+                Some(summary),
+                self.summary_task_sender.clone(),
+                self.flush_task_sender.clone(),
+            );
+            Ok(())
         } else {
             return Err(SchemaError::DatabaseNotFound {
                 database: database.to_string(),

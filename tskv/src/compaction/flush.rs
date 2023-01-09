@@ -36,7 +36,7 @@ use crate::{
     index::IndexResult,
     kv_option::Options,
     memcache::{DataType, FieldVal, MemCache, SeriesData},
-    summary::{CompactMeta, SummaryTask, VersionEdit},
+    summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit, WriteSummaryRequest},
     tseries_family::{LevelInfo, Version},
     tsm::{self, codec::DataBlockEncoding, DataBlock, TsmWriter},
     version_set::VersionSet,
@@ -120,7 +120,7 @@ impl FlushTask {
                 tsm::MAX_BLOCK_VALUES as usize,
             )
             .await?;
-        let mut edit = VersionEdit::new();
+        let mut edit = VersionEdit::new(self.ts_family_id);
         for cm in compact_metas.iter_mut() {
             cm.low_seq = low_seq;
             cm.high_seq = high_seq;
@@ -308,6 +308,7 @@ impl FlushTask {
         mut delta_writer: Option<TsmWriter>,
         mut tsm_writer: Option<TsmWriter>,
     ) -> Result<Vec<CompactMeta>> {
+        let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
         if let Some(writer) = tsm_writer.as_mut() {
             writer.write_index().await.context(error::WriteTsmSnafu)?;
             writer.finish().await.context(error::WriteTsmSnafu)?;
@@ -329,25 +330,21 @@ impl FlushTask {
 
         let mut compact_metas = vec![];
         if let Some(writer) = tsm_writer {
-            compact_metas.push(CompactMeta::new(
+            compact_metas.push(compact_meta_builder.build_tsm(
                 writer.sequence(),
                 writer.size(),
-                self.ts_family_id,
                 1,
                 writer.min_ts(),
                 writer.max_ts(),
-                false,
             ));
         }
         if let Some(writer) = delta_writer {
-            compact_metas.push(CompactMeta::new(
+            compact_metas.push(compact_meta_builder.build_delta(
                 writer.sequence(),
                 writer.size(),
-                self.ts_family_id,
-                0,
+                1,
                 writer.min_ts(),
                 writer.max_ts(),
-                true,
             ));
         }
 
@@ -409,10 +406,7 @@ pub async fn run_flush_memtable_job(
     info!("Flush: Flush finished, version edits: {:?}", edits);
 
     let (task_state_sender, task_state_receiver) = oneshot::channel();
-    let task = SummaryTask {
-        edits,
-        cb: task_state_sender,
-    };
+    let task = SummaryTask::new_append_task(edits, task_state_sender);
 
     if let Err(e) = summary_task_sender.send(task) {
         warn!("failed to send Summary task, {}", e);
