@@ -255,10 +255,14 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
     match cores {
         None => Runtime::new(),
         Some(cores) => match cores {
-            0 => Runtime::new(),
+            0 => Builder::new_multi_thread()
+                .enable_all()
+                .thread_stack_size(4 * 1024 * 1024)
+                .build(),
             _ => Builder::new_multi_thread()
                 .enable_all()
                 .worker_threads(cores)
+                .thread_stack_size(4 * 1024 * 1024)
                 .build(),
         },
     }
