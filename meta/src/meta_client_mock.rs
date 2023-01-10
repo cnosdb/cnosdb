@@ -225,8 +225,8 @@ impl MetaClient for MockMetaClient {
         db: &str,
         bucket_id: u32,
         repl_id: u32,
-        del_info: &Vec<VnodeInfo>,
-        add_info: &Vec<VnodeInfo>,
+        del_info: &[VnodeInfo],
+        add_info: &[VnodeInfo],
     ) -> MetaResult<()> {
         Ok(())
     }

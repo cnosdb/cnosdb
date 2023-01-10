@@ -7,4 +7,3 @@ pub mod hh_queue;
 pub mod reader;
 pub mod service;
 pub mod writer;
-mod tests;

@@ -316,7 +316,7 @@ pub struct FetchVnodeSummaryRequest {
 
 impl FetchVnodeSummaryRequest {
     pub async fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
-        let tenant_buf = self.database.as_bytes();
+        let tenant_buf = self.tenant.as_bytes();
         conn.write_all(&(tenant_buf.len() as u32).to_be_bytes())
             .await?;
         conn.write_all(tenant_buf).await?;

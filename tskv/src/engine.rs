@@ -59,6 +59,8 @@ pub trait Engine: Send + Sync + Debug {
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
 
+    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
+
     async fn add_table_column(
         &self,
         tenant: &str,
@@ -137,10 +139,12 @@ pub trait Engine: Send + Sync + Debug {
         tenant: &str,
         database: &str,
         vnode_id: u32,
-        summary: VersionEdit,
+        mut summary: VersionEdit,
     ) -> Result<()>;
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
+
+    async fn compact(&self, tenant: &str, database: &str);
 }
 
 #[derive(Debug, Default)]
@@ -181,6 +185,10 @@ impl Engine for MockEngine {
     }
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+        Ok(())
+    }
+
+    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
         Ok(())
     }
 
@@ -329,6 +337,10 @@ impl Engine for MockEngine {
     }
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
+        todo!()
+    }
+
+    async fn compact(&self, tenant: &str, database: &str) {
         todo!()
     }
 }

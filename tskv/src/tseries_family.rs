@@ -728,7 +728,7 @@ impl TseriesFamily {
     /// configuration `max_immutable_number`.
     ///
     /// If argument force is set to true, then do not check immutable caches number.
-    pub(crate) fn wrap_flush_req(&mut self, force: bool) {
+    pub(crate) fn flush_req(&mut self, force: bool) -> Option<FlushReq> {
         let len = self.immut_cache.len();
         let mut imut = vec![];
         for mem in self.immut_cache.iter() {
@@ -753,17 +753,23 @@ impl TseriesFamily {
         }
 
         if !force && req_mems.len() < self.cache_opt.max_immutable_number as usize {
-            return;
+            return None;
         }
 
         for mem in req_mems.iter() {
             mem.1.write().flushing = true;
         }
 
-        info!("flush_req send,now req queue len : {}", req_mems.len());
-        self.flush_task_sender
-            .send(FlushReq { mems: req_mems })
-            .expect("error send flush req to kvcore");
+        info!("flush req queue len : {}", req_mems.len());
+        Some(FlushReq { mems: req_mems })
+    }
+
+    pub(crate) fn wrap_flush_req(&mut self, force: bool) {
+        if let Some(req) = self.flush_req(force) {
+            self.flush_task_sender
+                .send(req)
+                .expect("error send flush req to kvcore");
+        }
     }
 
     pub fn put_points(&self, seq: u64, points: HashMap<(SeriesId, SchemaId), RowGroup>) {

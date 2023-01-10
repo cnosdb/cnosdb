@@ -210,9 +210,6 @@ async fn process_admin_statement_command(
             let _ = engine.drop_table(&cmd.tenant, &db, &table).await;
         }
 
-        AdminStatementType::DeleteVnode { db, vnode_id } => {
-            let _ = engine.remove_tsfamily(&cmd.tenant, &db, vnode_id).await;
-        }
         AdminStatementType::DropColumn { db, table, column } => {
             let _ = engine
                 .drop_table_column(&cmd.tenant, &db, &table, &column)
@@ -234,12 +231,24 @@ async fn process_admin_statement_command(
                 .await;
         }
 
+        AdminStatementType::DeleteVnode { db, vnode_id } => {
+            let manager = VnodeManager::new(meta, engine, coord.node_id());
+            if let Err(err) = manager.drop_vnode(&cmd.tenant, vnode_id).await {
+                rsp_code = FAILED_RESPONSE_CODE;
+                rsp_data = err.to_string();
+            }
+        }
+
         AdminStatementType::CopyVnode { vnode_id } => {
-            let manager = VnodeManager::new(meta, engine);
+            let manager = VnodeManager::new(meta, engine, coord.node_id());
+            if let Err(err) = manager.copy_vnode(&cmd.tenant, vnode_id).await {
+                rsp_code = FAILED_RESPONSE_CODE;
+                rsp_data = err.to_string();
+            }
         }
 
         AdminStatementType::MoveVnode { vnode_id } => {
-            let manager = VnodeManager::new(meta, engine);
+            let manager = VnodeManager::new(meta, engine, coord.node_id());
             if let Err(err) = manager.move_vnode(&cmd.tenant, vnode_id).await {
                 rsp_code = FAILED_RESPONSE_CODE;
                 rsp_data = err.to_string();
@@ -249,9 +258,12 @@ async fn process_admin_statement_command(
         AdminStatementType::GetVnodeFilesMeta { db, vnode_id } => {
             let owner = models::schema::make_owner(&cmd.tenant, &db);
             let storage_opt = engine.get_storage_options();
+
+            engine.flush_tsfamily(&cmd.tenant, &db, vnode_id).await?;
+
             let path = storage_opt.ts_family_dir(&owner, vnode_id);
             info!("get files meta: {:?}", path);
-            let meta = get_files_meta(&path.as_path().to_string_lossy().to_string()).await?;
+            let meta = get_files_meta(&path.as_path().to_string_lossy()).await?;
             rsp_data = serde_json::to_string(&meta)
                 .map_err(|e| CoordinatorError::CommonError { msg: e.to_string() })?;
 
@@ -265,8 +277,8 @@ async fn process_admin_statement_command(
         } => {
             let owner = models::schema::make_owner(&cmd.tenant, &db);
             let storage_opt = engine.get_storage_options();
-            let path1 = storage_opt.ts_family_dir(&owner, vnode_id);
-            let path = path1.join(filename);
+            let data_dir = storage_opt.ts_family_dir(&owner, vnode_id);
+            let path = data_dir.join(filename);
             info!("download file: {}", path.display());
 
             let mut file = File::open(path).await?;

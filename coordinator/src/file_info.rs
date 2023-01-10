@@ -22,7 +22,7 @@ pub struct PathFilesMeta {
 pub async fn get_files_meta(dir: &str) -> CoordinatorResult<PathFilesMeta> {
     let mut files_meta = vec![];
     for name in list_all_filenames(std::path::PathBuf::from(dir)).iter() {
-        let meta = get_file_info(&name).await?;
+        let meta = get_file_info(name).await?;
         files_meta.push(meta);
     }
 
@@ -94,7 +94,7 @@ mod test {
         let path = "/tmp/cnosdb/test/1/2/3.txt";
         let path = std::path::PathBuf::from(path);
 
-        let _ = tokio::fs::create_dir_all(path.parent().unwrap())
+        tokio::fs::create_dir_all(path.parent().unwrap())
             .await
             .unwrap();
 

@@ -568,52 +568,43 @@ impl StateMachine {
                 self.process_revoke_privileges(cluster, privileges, role_name, tenant_name)
             }
             WriteCommand::RetainID(cluster, count) => self.process_retain_id(cluster, *count),
-            WriteCommand::UpdateVnodeReplSet(
-                cluster,
-                tenant,
-                db_name,
-                bucket_id,
-                repl_id,
-                del_info,
-                add_info,
-            ) => self.process_update_vnode_repl_set(
-                cluster, tenant, db_name, *bucket_id, *repl_id, del_info, add_info, watch,
-            ),
+            WriteCommand::UpdateVnodeReplSet(args) => {
+                self.process_update_vnode_repl_set(args, watch)
+            }
         }
     }
 
     fn process_update_vnode_repl_set(
         &self,
-        cluster: &str,
-        tenant: &str,
-        db: &str,
-        bucket_id: u32,
-        repl_id: u32,
-        del_info: &Vec<VnodeInfo>,
-        add_info: &Vec<VnodeInfo>,
+        args: &UpdateVnodeReplSetArgs,
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let mut status = StatusResponse::new(META_REQUEST_FAILED, "".to_string());
 
-        let key = key_path::KeyPath::tenant_bucket_id(cluster, tenant, db, bucket_id);
+        let key = key_path::KeyPath::tenant_bucket_id(
+            &args.cluster,
+            &args.tenant,
+            &args.db_name,
+            args.bucket_id,
+        );
         let mut bucket = match get_struct::<BucketInfo>(&key, self.db.clone()) {
             Some(b) => b,
             None => {
-                status.msg = format!("not found buckt: {}", bucket_id);
+                status.msg = format!("not found buckt: {}", args.bucket_id);
                 return serde_json::to_string(&status).unwrap();
             }
         };
 
         for set in bucket.shard_group.iter_mut() {
-            if set.id != repl_id {
+            if set.id != args.repl_id {
                 continue;
             }
 
-            for info in del_info.iter() {
+            for info in args.del_info.iter() {
                 set.vnodes.retain(|item| item.id != info.id);
             }
 
-            for info in add_info.iter() {
+            for info in args.add_info.iter() {
                 set.vnodes.push(info.clone());
             }
         }
@@ -623,9 +614,9 @@ impl StateMachine {
         info!("WRITE: {} :{}", key, val);
 
         for (_, item) in watch.iter_mut() {
-            if item.interesting(cluster, tenant) {
+            if item.interesting(&args.cluster, &args.tenant) {
                 item.delta
-                    .create_or_update_bucket(self.version(), db, &bucket);
+                    .create_or_update_bucket(self.version(), &args.db_name, &bucket);
                 let _ = item.sender.try_send(true);
             }
         }

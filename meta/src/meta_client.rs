@@ -172,8 +172,8 @@ pub trait MetaClient: Send + Sync + Debug {
         db: &str,
         bucket_id: u32,
         repl_id: u32,
-        del_info: &Vec<VnodeInfo>,
-        add_info: &Vec<VnodeInfo>,
+        del_info: &[VnodeInfo],
+        add_info: &[VnodeInfo],
     ) -> MetaResult<()>;
 
     fn print_data(&self) -> String;
@@ -1036,18 +1036,19 @@ impl MetaClient for RemoteMetaClient {
         db: &str,
         bucket_id: u32,
         repl_id: u32,
-        del_info: &Vec<VnodeInfo>,
-        add_info: &Vec<VnodeInfo>,
+        del_info: &[VnodeInfo],
+        add_info: &[VnodeInfo],
     ) -> MetaResult<()> {
-        let req = command::WriteCommand::UpdateVnodeReplSet(
-            self.cluster.clone(),
-            self.tenant_name(),
-            db.to_string(),
+        let args = command::UpdateVnodeReplSetArgs {
+            cluster: self.cluster.clone(),
+            tenant: self.tenant_name(),
+            db_name: db.to_string(),
             bucket_id,
             repl_id,
-            del_info.to_vec(),
-            add_info.to_vec(),
-        );
+            del_info: del_info.to_vec(),
+            add_info: add_info.to_vec(),
+        };
+        let req = command::WriteCommand::UpdateVnodeReplSet(args);
 
         let rsp = self.client.write::<command::StatusResponse>(&req)?;
         info!("update replication set: {:?}; {:?}", req, rsp);

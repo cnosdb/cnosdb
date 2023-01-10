@@ -26,6 +26,7 @@ impl<T: Id> UserRole<T> {
     pub fn to_privileges(&self) -> HashSet<Privilege<T>> {
         match self {
             Self::Dba => vec![
+                Privilege::Global(GlobalPrivilege::System),
                 Privilege::Global(GlobalPrivilege::Tenant(None)),
                 Privilege::Global(GlobalPrivilege::User(None)),
                 Privilege::TenantObject(TenantObjectPrivilege::System, None),

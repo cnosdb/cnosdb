@@ -315,7 +315,7 @@ impl CoordService {
             VnodeManagerCmdType::Copy(node_id) => {
                 if all_info.node_id == node_id {
                     return Err(CoordinatorError::CommonError {
-                        msg: format!("copy vnode: {} already in {}", all_info.vnode_id, node_id),
+                        msg: format!("Vnode: {} Already in {}", all_info.vnode_id, node_id),
                     });
                 }
 

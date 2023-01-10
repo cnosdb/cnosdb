@@ -15,22 +15,24 @@ use models::schema::{DatabaseSchema, TableSchema};
 use serde::Deserialize;
 use serde::Serialize;
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UpdateVnodeReplSetArgs {
+    pub cluster: String,
+    pub tenant: String,
+    pub db_name: String,
+    pub bucket_id: u32,
+    pub repl_id: u32,
+    pub del_info: Vec<VnodeInfo>,
+    pub add_info: Vec<VnodeInfo>,
+}
+
 /******************* write command *************************/
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WriteCommand {
     // retain increment id  cluster, count
     RetainID(String, u32),
 
-    // cluster, tenant, db, bucket_id, repl_id, add vnode, delete vnode
-    UpdateVnodeReplSet(
-        String,
-        String,
-        String,
-        u32,
-        u32,
-        Vec<VnodeInfo>,
-        Vec<VnodeInfo>,
-    ),
+    UpdateVnodeReplSet(UpdateVnodeReplSetArgs),
 
     // cluster, node info
     AddDataNode(String, NodeInfo),
