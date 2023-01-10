@@ -174,12 +174,16 @@ impl StatusResponse {
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct WriteVnodeRequest {
     pub vnode_id: u32,
+    pub tenant: String,
     pub data: Vec<u8>,
 }
 
 impl WriteVnodeRequest {
     pub async fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
         conn.write_all(&self.vnode_id.to_be_bytes()).await?;
+        conn.write_all(&(self.tenant.len() as u32).to_be_bytes())
+            .await?;
+        conn.write_all(self.tenant.as_bytes()).await?;
         conn.write_all(&(self.data.len() as u32).to_be_bytes())
             .await?;
         conn.write_all(&self.data).await?;
@@ -189,9 +193,14 @@ impl WriteVnodeRequest {
 
     pub async fn recv_data(conn: &mut TcpStream) -> CoordinatorResult<WriteVnodeRequest> {
         let vnode_id = conn.read_u32().await?;
+        let tenant = unsafe { String::from_utf8_unchecked(read_data_len_val(conn).await?) };
         let data = read_data_len_val(conn).await?;
 
-        Ok(WriteVnodeRequest { vnode_id, data })
+        Ok(WriteVnodeRequest {
+            vnode_id,
+            tenant,
+            data,
+        })
     }
 }
 

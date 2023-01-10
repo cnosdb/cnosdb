@@ -26,7 +26,7 @@ use crate::writer::PointWriter;
 const SEGMENT_FILE_HEADER_SIZE: usize = 8;
 const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x54];
 const SEGMENT_FILE_MAX_SIZE: u64 = 1073741824; // 1 GiB
-const HINTEDOFF_BLOCK_HEADER_SIZE: usize = 16;
+const HINTEDOFF_BLOCK_HEADER_SIZE: usize = 20; // 8 + 4 + 4 + 4
 
 #[derive(Debug)]
 pub struct HintedOffOption {
@@ -56,15 +56,19 @@ pub struct HintedOffWriteReq {
 pub struct HintedOffBlock {
     pub ts: i64,
     pub vnode_id: u32,
+    pub tenant_len: u32,
+    pub tenant: String,
     pub data_len: u32,
     pub data: Vec<u8>,
 }
 
 impl HintedOffBlock {
-    pub fn new(ts: i64, vnode_id: u32, data: Vec<u8>) -> Self {
+    pub fn new(ts: i64, vnode_id: u32, tenant: String, data: Vec<u8>) -> Self {
         Self {
             ts,
             vnode_id,
+            tenant_len: tenant.len() as u32,
+            tenant,
             data_len: data.len() as u32,
             data,
         }
@@ -156,7 +160,12 @@ impl HintedOffManager {
                 Ok(block) => {
                     loop {
                         if writer
-                            .write_to_remote_node(block.vnode_id, node_id, block.data.clone())
+                            .write_to_remote_node(
+                                block.vnode_id,
+                                node_id,
+                                &block.tenant,
+                                block.data.clone(),
+                            )
                             .await
                             .is_ok()
                         {
@@ -360,8 +369,13 @@ impl HintedOffWriter {
             .await? as u64;
         pos += self
             .file
+            .write_at(pos, &block.tenant_len.to_be_bytes())
+            .await? as u64;
+        pos += self
+            .file
             .write_at(pos, &block.data_len.to_be_bytes())
             .await? as u64;
+        pos += self.file.write_at(pos, block.tenant.as_bytes()).await? as u64;
         pos += self.file.write_at(pos, &block.data).await? as u64;
 
         debug!(
@@ -437,17 +451,18 @@ impl HintedOffReader {
 
         let ts = byte_utils::decode_be_i64(self.header_buf[0..8].into());
         let id = byte_utils::decode_be_u32(self.header_buf[8..12].into());
-        let data_len = byte_utils::decode_be_u32(self.header_buf[12..16].into());
+        let tenant_len = byte_utils::decode_be_u32(self.header_buf[12..16].into());
+        let data_len = byte_utils::decode_be_u32(self.header_buf[16..20].into());
         if data_len == 0 {
             return None;
         }
         debug!("Read hinted off Reader: data_len={}", data_len);
 
-        if data_len as usize > self.body_buf.len() {
+        if (data_len + tenant_len) as usize > self.body_buf.len() {
             self.body_buf.resize(data_len as usize, 0);
         }
 
-        let buf = &mut self.body_buf.as_mut_slice()[0..data_len as usize];
+        let buf = &mut self.body_buf.as_mut_slice()[0..(data_len + tenant_len) as usize];
         let read_bytes = match self.cursor.read(buf).await {
             Ok(v) => v,
             Err(e) => {
@@ -459,8 +474,10 @@ impl HintedOffReader {
         Some(HintedOffBlock {
             ts,
             vnode_id: id,
+            tenant_len,
             data_len,
-            data: buf.to_vec(),
+            tenant: unsafe { String::from_utf8_unchecked(buf[0..tenant_len as usize].to_vec()) },
+            data: buf[tenant_len as usize..(tenant_len + data_len) as usize].to_vec(),
         })
     }
 }
@@ -495,7 +512,12 @@ mod test {
 
         for i in 1..100 {
             let data = format!("aaa-datadfdsag{}ffdffdfedata-aaa", i);
-            let block = HintedOffBlock::new(1000 + i, 123, data.as_bytes().to_vec());
+            let block = HintedOffBlock::new(
+                1000 + i,
+                123,
+                "cnosdb".to_string(),
+                data.as_bytes().to_vec(),
+            );
             queue.write().await.write(&block).await.unwrap();
 
             //time::sleep(Duration::from_secs(3)).await;

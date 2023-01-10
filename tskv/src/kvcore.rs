@@ -29,7 +29,9 @@ use tokio::{
 use crate::error::SendSnafu;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::codec::Encoding;
-use models::schema::{make_owner, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
+use models::schema::{
+    make_owner, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema, DEFAULT_CATALOG,
+};
 use models::{
     utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
     ValueType,
@@ -411,9 +413,14 @@ impl Engine for TsKv {
     async fn write(
         &self,
         id: TseriesFamilyId,
-        tenant_name: &str,
         write_batch: WritePointsRpcRequest,
     ) -> Result<WritePointsRpcResponse> {
+        let tenant_name = write_batch
+            .meta
+            .map(|meta| meta.tenant)
+            .ok_or(Error::CommonError {
+                reason: "Write data missing tenant".to_string(),
+            })?;
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
@@ -421,11 +428,11 @@ impl Engine for TsKv {
         let db_name = String::from_utf8(fb_points.db().unwrap().bytes().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
-        let db_warp = self.version_set.read().await.get_db(tenant_name, &db_name);
+        let db_warp = self.version_set.read().await.get_db(&tenant_name, &db_name);
         let db = match db_warp {
             Some(database) => database,
             None => {
-                self.create_database(&DatabaseSchema::new(tenant_name, &db_name))
+                self.create_database(&DatabaseSchema::new(&tenant_name, &db_name))
                     .await?
             }
         };
@@ -483,10 +490,13 @@ impl Engine for TsKv {
     async fn write_from_wal(
         &self,
         id: TseriesFamilyId,
-        tenant_name: &str,
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse> {
+        let tenant_name = write_batch
+            .meta
+            .map(|meta| meta.tenant)
+            .unwrap_or_else(|| DEFAULT_CATALOG.to_string());
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
@@ -495,7 +505,7 @@ impl Engine for TsKv {
             .map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self.version_set.write().await.create_db(
-            DatabaseSchema::new(tenant_name, &db_name),
+            DatabaseSchema::new(&tenant_name, &db_name),
             self.meta_manager.clone(),
         )?;
 

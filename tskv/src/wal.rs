@@ -27,8 +27,9 @@ use std::{
     sync::Arc,
 };
 
+use models::auth::user::{ROOT, ROOT_PWD};
 use models::codec::Encoding;
-use protos::kv_service::WritePointsRpcRequest;
+use protos::kv_service::{Meta, WritePointsRpcRequest};
 use snafu::ResultExt;
 use tokio::sync::oneshot;
 use trace::{debug, error, info, warn};
@@ -363,14 +364,19 @@ impl WalManager {
                             let mut dst = Vec::new();
                             decoder.decode(e.data(), &mut dst).context(DecodeSnafu)?;
                             debug_assert_eq!(dst.len(), 1);
-                            let req = WritePointsRpcRequest {
-                                version: 1,
-                                points: dst[0].to_vec(),
-                            };
                             let id = e.vnode_id();
                             let tenant =
                                 unsafe { String::from_utf8_unchecked(e.tenant().to_vec()) };
-                            engine.write_from_wal(id, &tenant, req, seq).await.unwrap();
+                            let req = WritePointsRpcRequest {
+                                version: 1,
+                                meta: Some(Meta {
+                                    tenant,
+                                    user: None,
+                                    password: None,
+                                }),
+                                points: dst[0].to_vec(),
+                            };
+                            engine.write_from_wal(id, req, seq).await.unwrap();
                         }
                         WalEntryType::Delete => {
                             // TODO delete a memcache entry

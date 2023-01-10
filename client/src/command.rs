@@ -33,6 +33,11 @@ pub enum OutputFormat {
     ChangeFormat(String),
 }
 
+fn is_system_table_db(db: &str) -> bool {
+    let db = db.to_ascii_lowercase();
+    db.eq("cluster_schema") || db.eq("information_schema")
+}
+
 impl Command {
     pub async fn execute(
         &self,
@@ -43,6 +48,10 @@ impl Command {
         match self {
             Self::Help => print_options.print_batches(&all_commands_info(), now),
             Self::ConnectDatabase(database) => {
+                if is_system_table_db(database) {
+                    ctx.set_database(database);
+                    return Ok(());
+                }
                 let old_database = ctx.get_database().to_string();
                 ctx.set_database(database);
                 match ctx.sql(format!("DESCRIBE DATABASE {}", database)).await {

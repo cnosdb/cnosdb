@@ -66,9 +66,16 @@ message WriteRowsRpcResponse {
   bytes rows = 2; // flatbuffers bytes ( models::Rows )
 }
 
+message Meta {
+  string tenant = 1;
+  optional string user = 2;
+  optional string password = 3;
+}
+
 message WritePointsRpcRequest {
   uint64 version = 1;
-  bytes points = 2; // flatbuffers bytes ( models::Points )
+  Meta meta = 2;
+  bytes points = 3; // flatbuffers bytes ( models::Points )
 }
 
 message WritePointsRpcResponse {

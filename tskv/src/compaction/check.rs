@@ -449,6 +449,7 @@ mod test {
         },
         Timestamp, ValueType,
     };
+    use protos::kv_service::Meta;
     use protos::{
         kv_service::WritePointsRpcRequest,
         models::{self as fb_models, FieldType},
@@ -684,6 +685,7 @@ mod test {
 
     fn create_write_batch(
         timestamps: Vec<i64>,
+        tenant: &str,
         database: &str,
         table: &str,
         rows: Vec<Vec<(&str, FieldType, Vec<u8>)>>,
@@ -718,7 +720,15 @@ mod test {
         );
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        WritePointsRpcRequest { version: 1, points }
+        WritePointsRpcRequest {
+            version: 1,
+            meta: Some(Meta {
+                tenant: tenant.to_string(),
+                user: None,
+                password: None,
+            }),
+            points,
+        }
     }
 
     fn data_block_to_hash_tree(
@@ -896,10 +906,16 @@ mod test {
             let mut timestamps: Vec<Timestamp> = Vec::new();
             let mut fields: Vec<Vec<(&str, FieldType, Vec<u8>)>> = Vec::new();
             create_write_batch_args(&data_blocks, &mut timestamps, &mut fields);
-            let write_batch = create_write_batch(timestamps, &database_name, &table_name, fields);
+            let write_batch = create_write_batch(
+                timestamps,
+                &tenant_name,
+                &database_name,
+                &table_name,
+                fields,
+            );
             let points = flatbuffers::root::<fb_models::Points>(&write_batch.points).unwrap();
             models_helper::print_points(points);
-            rt.block_on(engine.write(ts_family_id, &tenant_name, write_batch))
+            rt.block_on(engine.write(ts_family_id, write_batch))
                 .unwrap();
 
             let mut ts_family_wlock = ts_family_ref.write();

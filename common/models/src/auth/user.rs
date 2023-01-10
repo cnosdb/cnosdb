@@ -11,6 +11,7 @@ use super::{
 };
 
 pub const ROOT: &str = "root";
+pub const ROOT_PWD: &str = "";
 
 #[derive(Debug, Clone)]
 pub struct User {
@@ -134,6 +135,9 @@ impl UserOptions {
             rsa_public_key: self.rsa_public_key.or(other.rsa_public_key),
             comment: self.comment.or(other.comment),
         }
+    }
+    pub fn hidden_password(&mut self) {
+        self.password.replace("*****".to_string());
     }
 }
 

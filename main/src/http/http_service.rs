@@ -6,7 +6,6 @@ use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
-use spi::query::DEFAULT_CATALOG;
 
 use super::header::Header;
 use super::Error as HttpError;
@@ -30,7 +29,8 @@ use meta::meta_client::MetaClientRef;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
 use models::consistency_level::ConsistencyLevel;
 use models::error_code::{ErrorCode, UnknownCode, UnknownCodeWithMessage};
-use protos::kv_service::WritePointsRpcRequest;
+use models::schema::DEFAULT_CATALOG;
+use protos::kv_service::{Meta, WritePointsRpcRequest};
 use protos::models as fb_models;
 use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::ResultExt;
@@ -203,12 +203,20 @@ impl HttpService {
 
                     let points = parse_lines_to_points(&param.db, &mut line_protocol_lines)?;
 
-                    let req = WritePointsRpcRequest { version: 1, points };
-                    // we should get tenant from token
                     let tenant = param.tenant.as_deref().unwrap_or(DEFAULT_CATALOG);
 
+                    let req = WritePointsRpcRequest {
+                        version: 1,
+                        meta: Some(Meta {
+                            tenant: tenant.to_string(),
+                            user: Some(user_info.user.to_string()),
+                            password: Some(user_info.password.to_string()),
+                        }),
+                        points,
+                    };
+
                     let resp: Result<(), HttpError> = coord
-                        .write_points(DEFAULT_CATALOG.to_string(), ConsistencyLevel::Any, req)
+                        .write_points(tenant.to_string(), ConsistencyLevel::Any, req)
                         .await
                         .map_err(|e| e.into());
 

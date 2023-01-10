@@ -10,7 +10,6 @@ use spi::Result;
 
 use models::schema::TskvTableSchemaRef;
 use protos::kv_service::WritePointsRpcRequest;
-use spi::query::DEFAULT_CATALOG;
 
 use crate::utils::point_util::record_batch_to_points_flat_buffer;
 
@@ -45,13 +44,15 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         // points write request
         let timer = self.metrics.elapsed_point_write().timer();
-        let req = WritePointsRpcRequest { version: 0, points };
-        // let _ = self.engine.write(0, req).await.context(TskvSnafu)?;
+        let req = WritePointsRpcRequest {
+            version: 0,
+            meta: None,
+            points,
+        };
 
         self.coord
-            .write_points(DEFAULT_CATALOG.to_string(), ConsistencyLevel::Any, req)
+            .write_points(self.schema.tenant.clone(), ConsistencyLevel::Any, req)
             .await?;
-        // .context(CoordinatorSnafu)?;
 
         timer.done();
 

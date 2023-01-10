@@ -1055,9 +1055,7 @@ impl StateMachine {
 
     fn process_drop_user(&self, cluster: &str, user_name: &str) -> CommandResp {
         let key = KeyPath::user(cluster, user_name);
-
-        let success = self.db.remove(key).is_ok();
-
+        let success = matches!(self.db.remove(key), Ok(v) if v.is_some());
         CommonResp::Ok(success).to_string()
     }
 
@@ -1105,7 +1103,7 @@ impl StateMachine {
                     let value = serde_json::to_string(&new_tenant).unwrap();
                     let _ = self.db.insert(key.as_bytes(), value.as_bytes());
 
-                    CommonResp::Ok(())
+                    CommonResp::Ok(new_tenant)
                 }
                 Err(err) => {
                     CommonResp::Err(StatusResponse::new(META_REQUEST_FAILED, err.to_string()))

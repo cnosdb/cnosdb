@@ -1249,7 +1249,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             }
             AlterUserOperation::Set(sql_option) => {
                 let user_options = sql_options_to_user_options(vec![sql_option])?;
-                // .map_err(|err| QueryError::Semantic { err })?;
 
                 AlterUserAction::Set(user_options)
             }
@@ -1654,7 +1653,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                         .fields()
                         .iter()
                         .zip(columns_alias.iter())
-                        .map(|(field, ident)| col(field.name()).alias(&normalize_ident(ident))),
+                        .map(|(field, ident)| col(field.name()).alias(normalize_ident(ident))),
                     Some(normalize_ident(&alias.name)),
                 )?
                 .build()?)

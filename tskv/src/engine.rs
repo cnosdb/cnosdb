@@ -29,33 +29,19 @@ pub trait Engine: Send + Sync + Debug {
     async fn write(
         &self,
         id: u32,
-        tenant_name: &str,
         write_batch: WritePointsRpcRequest,
     ) -> Result<WritePointsRpcResponse>;
 
     async fn write_from_wal(
         &self,
         id: u32,
-        tenant_name: &str,
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse>;
 
-    // fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>>;
-
-    // fn alter_database(&self, schema: &DatabaseSchema) -> Result<()>;
-
-    // fn get_db_schema(&self, tenant: &str, database: &str) -> Result<Option<DatabaseSchema>>;
-
     async fn drop_database(&self, tenant: &str, database: &str) -> Result<()>;
 
-    // fn create_table(&self, schema: &TskvTableSchema) -> Result<()>;
-
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
-
-    // fn list_databases(&self) -> Result<Vec<String>>;
-
-    // fn list_tables(&self, tenant_name: &str, database: &str) -> Result<Vec<String>>;
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
 
@@ -155,7 +141,6 @@ impl Engine for MockEngine {
     async fn write(
         &self,
         id: u32,
-        tenant: &str,
         write_batch: WritePointsRpcRequest,
     ) -> Result<WritePointsRpcResponse> {
         debug!("writing point");
@@ -173,7 +158,6 @@ impl Engine for MockEngine {
     async fn write_from_wal(
         &self,
         id: u32,
-        tenant: &str,
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse> {
