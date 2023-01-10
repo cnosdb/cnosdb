@@ -1,17 +1,18 @@
 use async_trait::async_trait;
 use coordinator::command;
 use datafusion::sql::TableReference;
+use snafu::ResultExt;
 use spi::query::{
-    execution::{CoordinatorErrSnafu, MetadataSnafu, Output, QueryStateMachineRef},
+    execution::{Output, QueryStateMachineRef},
     logical_planner::{DatabaseObjectType, DropDatabaseObject},
 };
+use spi::MetaSnafu;
+use spi::Result;
 
-use spi::query::execution::ExecutionError;
-use trace::debug;
+use trace::info;
 
 use super::DDLDefinitionTask;
 use meta::error::MetaError;
-use snafu::ResultExt;
 
 pub struct DropDatabaseObjectTask {
     stmt: DropDatabaseObject,
@@ -26,10 +27,7 @@ impl DropDatabaseObjectTask {
 
 #[async_trait]
 impl DDLDefinitionTask for DropDatabaseObjectTask {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let DropDatabaseObject {
             ref object_name,
             ref if_exist,
@@ -39,7 +37,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
         let res = match obj_type {
             DatabaseObjectType::Table => {
                 // TODO 删除指定租户下的表
-                debug!("Drop table {}", object_name);
+                info!("Drop table {}", object_name);
                 let tenant = query_state_machine.session.tenant();
                 let client = query_state_machine
                     .meta
@@ -47,8 +45,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     .tenant_meta(tenant)
                     .ok_or(MetaError::TenantNotFound {
                         tenant: tenant.to_string(),
-                    })
-                    .context(MetadataSnafu)?;
+                    })?;
                 let table = TableReference::from(object_name.as_str()).resolve(
                     query_state_machine.session.tenant(),
                     query_state_machine.session.default_database(),
@@ -56,17 +53,16 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
 
                 let req = command::AdminStatementRequest {
                     tenant: tenant.to_string(),
-                    stmt: command::AdminStatementType::DropTable(
-                        table.schema.to_string(),
-                        table.table.to_string(),
-                    ),
+                    stmt: command::AdminStatementType::DropTable {
+                        db: table.schema.to_string(),
+                        table: table.table.to_string(),
+                    },
                 };
 
                 query_state_machine
                     .coord
                     .exec_admin_stat_on_all_node(req)
-                    .await
-                    .context(CoordinatorErrSnafu)?;
+                    .await?;
 
                 client.drop_table(table.schema, table.table)
             }
@@ -76,6 +72,6 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
             return Ok(Output::Nil(()));
         }
 
-        res.map(|_| Output::Nil(())).context(MetadataSnafu)
+        res.map(|_| Output::Nil(())).context(MetaSnafu)
     }
 }

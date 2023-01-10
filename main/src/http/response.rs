@@ -96,7 +96,7 @@ impl ResponseBuilder {
 mod tests {
     use super::*;
     use http_protocol::response::ErrorResponse;
-    use models::error_code::ErrorCode;
+    use models::error_code::{ErrorCode, UnknownCode};
 
     #[test]
     fn test_simple_response() {
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn test_bad_request() {
         let error_message = "error";
-        let error_resp = ErrorResponse::new(ErrorCode::Unknown, error_message.to_string());
+        let error_resp = ErrorResponse::new(&UnknownCode);
         let resp = ResponseBuilder::bad_request(&error_resp);
 
         assert_eq!(resp.status(), BAD_REQUEST);

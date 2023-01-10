@@ -17,6 +17,8 @@ use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
 use std::{fmt::Debug, io};
 use store::command;
 use tokio::net::TcpStream;
@@ -25,8 +27,8 @@ use trace::{debug, info, warn};
 
 use crate::error::{MetaError, MetaResult};
 use models::schema::{
-    DatabaseSchema, ExternalTableSchema, LimiterConfig, TableSchema, Tenant, TenantOptions,
-    TskvTableSchema,
+    DatabaseSchema, ExternalTableSchema, LimiterConfig, TableColumn, TableSchema, Tenant,
+    TenantOptions, TskvTableSchema,
 };
 
 use crate::limiter::{Limiter, LimiterImpl, NoneLimiter};
@@ -132,6 +134,7 @@ pub trait MetaClient: Send + Sync + Debug {
     fn create_db(&self, info: DatabaseSchema) -> MetaResult<()>;
     fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()>;
     fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>>;
+    fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>>;
     fn list_databases(&self) -> MetaResult<Vec<String>>;
     fn drop_db(&self, name: &str) -> MetaResult<bool>;
 
@@ -162,7 +165,7 @@ pub trait MetaClient: Send + Sync + Debug {
         db: &str,
         hash_id: u64,
         ts: i64,
-    ) -> MetaResult<ReplcationSet>;
+    ) -> MetaResult<ReplicationSet>;
 
     fn update_replication_set(
         &self,
@@ -505,7 +508,7 @@ impl RemoteMetaClient {
                 }
 
                 Err(err) => {
-                    info!("watch data result: {:?} {}", &cmd, err)
+                    info!("watch data result: {:?} {}", &cmd, err);
                 }
             }
         }
@@ -835,6 +838,10 @@ impl MetaClient for RemoteMetaClient {
         Ok(None)
     }
 
+    fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
+        Ok(self.data.read().dbs.get(name).cloned())
+    }
+
     fn list_databases(&self) -> MetaResult<Vec<String>> {
         let mut list = vec![];
         for (k, _) in self.data.read().dbs.iter() {
@@ -885,6 +892,10 @@ impl MetaClient for RemoteMetaClient {
 
         if rsp.status.code == command::META_REQUEST_SUCCESS {
             Ok(())
+        } else if rsp.status.code == command::META_REQUEST_DB_NOT_FOUND {
+            Err(MetaError::DatabaseNotFound {
+                database: schema.db(),
+            })
         } else if rsp.status.code == command::META_REQUEST_TABLE_EXIST {
             Err(MetaError::TableAlreadyExists {
                 table_name: schema.name(),
@@ -1086,7 +1097,7 @@ impl MetaClient for RemoteMetaClient {
         db: &str,
         hash_id: u64,
         ts: i64,
-    ) -> MetaResult<ReplcationSet> {
+    ) -> MetaResult<ReplicationSet> {
         if let Some(bucket) = self.data.read().bucket_by_timestamp(db, ts) {
             return Ok(bucket.vnode_for(hash_id));
         }
@@ -1105,7 +1116,7 @@ impl MetaClient for RemoteMetaClient {
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         let mut list = vec![];
         for (key, val) in self.data.read().dbs.iter() {
-            let ttl = val.schema.config.ttl_or_default().time_stamp();
+            let ttl = val.schema.config.ttl_or_default().to_nanoseconds();
             let now = models::utils::now_timestamp();
 
             for bucket in val.buckets.iter() {

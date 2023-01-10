@@ -22,3 +22,5 @@ test_*.log
 
 #generated files
 **/protos/src/generated/
+common/license/private.rsa
+common/license/public.rsa

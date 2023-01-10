@@ -1,8 +1,11 @@
+use error_code::ErrorCode;
+use error_code::ErrorCoder;
 use meta::error::MetaError;
 use models::SeriesId;
 use snafu::Snafu;
 use std::path::{Path, PathBuf};
 
+use crate::index::IndexError;
 use crate::schema::error::SchemaError;
 use crate::{
     tsm::{ReadTsmError, WriteTsmError},
@@ -11,11 +14,41 @@ use crate::{
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-#[derive(Snafu, Debug)]
+#[derive(Snafu, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]
+#[error_code(mod_code = "02")]
 pub enum Error {
+    Meta {
+        source: MetaError,
+    },
+
+    #[snafu(display("Invalid flatbuffers: {}", source))]
+    #[error_code(code = 1)]
+    InvalidFlatbuffer {
+        source: flatbuffers::InvalidFlatbuffer,
+    },
+
+    #[snafu(display("Tags or fields can't be empty"))]
+    #[error_code(code = 2)]
+    InvalidPoint,
+
+    #[snafu(display("{}", reason))]
+    #[error_code(code = 3)]
+    CommonError {
+        reason: String,
+    },
+
+    #[snafu(display("DataSchemaError: {}", source))]
+    #[error_code(code = 4)]
+    Schema {
+        source: SchemaError,
+    },
+
+    // Internal Error
     #[snafu(display("{}", source))]
-    IO { source: std::io::Error },
+    IO {
+        source: std::io::Error,
+    },
 
     #[snafu(display("Unable to open file '{}': {}", path.display(), source))]
     OpenFile {
@@ -36,19 +69,21 @@ pub enum Error {
     },
 
     #[snafu(display("Unable to sync file: {}", source))]
-    SyncFile { source: std::io::Error },
-
-    #[snafu(display("Error with apply to meta: {}", source))]
-    Meta { source: MetaError },
+    SyncFile {
+        source: std::io::Error,
+    },
 
     #[snafu(display("File {} has wrong name format: {}", file_name, message))]
-    InvalidFileName { file_name: String, message: String },
+    InvalidFileName {
+        file_name: String,
+        message: String,
+    },
 
     #[snafu(display("File '{}' has wrong format: {}", path.display(), message))]
-    InvalidFileFormat { path: PathBuf, message: String },
-
-    #[snafu(display("async file system stopped"))]
-    Cancel,
+    InvalidFileFormat {
+        path: PathBuf,
+        message: String,
+    },
 
     #[snafu(display("fails to send to channel"))]
     Send,
@@ -58,92 +93,92 @@ pub enum Error {
         source: tokio::sync::oneshot::error::RecvError,
     },
 
-    #[snafu(display("invalid flatbuffers: {}", source))]
-    InvalidFlatbuffer {
-        source: flatbuffers::InvalidFlatbuffer,
-    },
-
     #[snafu(display("wal truncated"))]
     WalTruncated,
 
     #[snafu(display("read/write record file block: {}", reason))]
-    RecordFileIo { reason: String },
+    RecordFileIo {
+        reason: String,
+    },
 
     #[snafu(display("Unexpected eof"))]
     Eof,
 
     #[snafu(display("read record file block: {}", source))]
-    Encode { source: bincode::Error },
+    Encode {
+        source: bincode::Error,
+    },
 
     #[snafu(display("read record file block: {}", source))]
-    Decode { source: bincode::Error },
+    Decode {
+        source: bincode::Error,
+    },
 
     #[snafu(display("Index: : {}", source))]
-    IndexErr { source: crate::index::IndexError },
+    IndexErr {
+        source: crate::index::IndexError,
+    },
 
     #[snafu(display("error apply edits to summary"))]
     ErrApplyEdit,
 
     #[snafu(display("read tsm block file error: {}", source))]
-    ReadTsm { source: ReadTsmError },
+    ReadTsm {
+        source: ReadTsmError,
+    },
 
     #[snafu(display("write tsm block file error: {}", source))]
-    WriteTsm { source: WriteTsmError },
-
-    #[snafu(display("compact tsm block file error: {}", reason))]
-    Compact { reason: String },
-
-    #[snafu(display("unable to walk dir: {}", source))]
-    UnableToWalkDir { source: walkdir::Error },
-
-    #[snafu(display("database not found: {}", database))]
-    DatabaseNotFound { database: String },
-
-    #[snafu(display("database '{}' already exists", database))]
-    DatabaseAlreadyExists { database: String },
-
-    #[snafu(display("invalid model: {}", source))]
-    InvalidModel { source: models::Error },
-
-    #[snafu(display("invalid tseries id : {}", tf_id))]
-    InvalidTsfid { tf_id: u32 },
+    WriteTsm {
+        source: WriteTsmError,
+    },
 
     #[snafu(display("character set error"))]
     ErrCharacterSet,
 
-    #[snafu(display("panics in thread: {}", reason))]
-    ThreadJoin { reason: String },
-
-    #[snafu(display("data fusion RecordBatch::try_new {}", reason))]
-    DataFusionNew { reason: String },
-
-    #[snafu(display("can't find field name: {}", reason))]
-    NotFoundField { reason: String },
-
-    #[snafu(display("unknown type"))]
-    UnKnowType,
-
-    #[snafu(display("tags or fields can't be empty"))]
-    InvalidPoint,
-
-    #[snafu(display("table not found for {}", table_name))]
-    NotFoundTable { table_name: String },
-
-    #[snafu(display("common error: {}", reason))]
-    CommonError { reason: String },
-
-    #[snafu(display("Error with schema action {}", source))]
-    Schema { source: SchemaError },
-
     #[snafu(display("Invalid parameter : {}", reason))]
-    InvalidParam { reason: String },
+    InvalidParam {
+        reason: String,
+    },
 
     #[snafu(display("file has no footer"))]
     NoFooter,
+
+    #[snafu(display("unable to transform: {}", reason))]
+    Transform {
+        reason: String,
+    },
 }
 
-impl From<crate::index::IndexError> for Error {
-    fn from(err: crate::index::IndexError) -> Self {
-        Error::IndexErr { source: err }
+impl From<SchemaError> for Error {
+    fn from(value: SchemaError) -> Self {
+        match value {
+            SchemaError::Meta { source } => Self::Meta { source },
+            other => Error::Schema { source: other },
+        }
     }
+}
+
+impl From<IndexError> for Error {
+    fn from(value: IndexError) -> Self {
+        Error::IndexErr { source: value }
+    }
+}
+
+impl Error {
+    pub fn error_code(&self) -> &dyn ErrorCode {
+        match self {
+            Error::Meta { source } => source.error_code(),
+            _ => self,
+        }
+    }
+}
+
+#[test]
+fn test_mod_code() {
+    let e = Error::Schema {
+        source: SchemaError::ColumnAlreadyExists {
+            name: "".to_string(),
+        },
+    };
+    assert!(e.code().starts_with("02"));
 }

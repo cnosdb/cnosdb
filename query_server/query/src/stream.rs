@@ -6,7 +6,7 @@ use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
     physical_plan::RecordBatchStream,
 };
-use futures::{executor::block_on, Stream};
+use futures::{executor::block_on, FutureExt, Stream};
 use models::codec::Encoding;
 use models::schema::TskvTableSchemaRef;
 use models::{
@@ -15,9 +15,8 @@ use models::{
 };
 
 use spi::query::DEFAULT_CATALOG;
+use spi::{QueryError, Result};
 use tskv::iterator::{QueryOption, TableScanMetrics};
-
-use tskv::Error;
 
 #[allow(dead_code)]
 pub struct TableScanStream {
@@ -38,7 +37,7 @@ impl TableScanStream {
         filter: PredicateRef,
         batch_size: usize,
         metrics: TableScanMetrics,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
@@ -59,8 +58,11 @@ impl TableScanStream {
             if let Some(v) = table_schema.column(field_name) {
                 proj_fileds.push(v.clone());
             } else {
-                return Err(Error::NotFoundField {
-                    reason: field_name.clone(),
+                return Err(QueryError::CommonError {
+                    msg: format!(
+                        "table stream build fail, because can't found field: {}",
+                        field_name
+                    ),
                 });
             }
         }
@@ -81,14 +83,7 @@ impl TableScanStream {
             metrics.tskv_metrics(),
         );
 
-        let iterator = match block_on(coord.read_record(option)) {
-            Ok(it) => it,
-            Err(err) => {
-                return Err(Error::CommonError {
-                    reason: err.to_string(),
-                })
-            }
-        };
+        let iterator = block_on(coord.read_record(option))?;
 
         Ok(Self {
             proj_schema,
@@ -101,25 +96,26 @@ impl TableScanStream {
 }
 
 impl Stream for TableScanStream {
-    type Item = Result<RecordBatch, ArrowError>;
+    type Item = std::result::Result<RecordBatch, ArrowError>;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
         let timer = this.metrics.elapsed_compute().timer();
-        let res = block_on(this.iterator.next());
-        let result = match res {
-            Some(data) => match data {
-                Ok(batch) => Poll::Ready(Some(Ok(batch))),
-                Err(err) => Poll::Ready(Some(Err(ArrowError::CastError(err.to_string())))),
-            },
-            None => {
+
+        let result = match Box::pin(this.iterator.next()).poll_unpin(cx) {
+            Poll::Ready(Some(Ok(record_batch))) => Poll::Ready(Some(Ok(record_batch))),
+            Poll::Ready(Some(Err(e))) => {
+                Poll::Ready(Some(Err(ArrowError::ExternalError(Box::new(e)))))
+            }
+            Poll::Ready(None) => {
                 this.metrics.done();
                 Poll::Ready(None)
             }
+            Poll::Pending => Poll::Pending,
         };
 
         timer.done();

@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::schema::{DatabaseSchema, TableSchema};
 
+pub type VnodeId = u32;
+pub type NodeId = u64;
+pub type ReplicationSetId = u32;
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SysInfo {
     pub cpu_load: f64,
@@ -27,7 +31,7 @@ pub struct UserInfo {
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct NodeInfo {
-    pub id: u64,
+    pub id: NodeId,
     pub tcp_addr: String,
     pub http_addr: String,
     pub status: u64,
@@ -38,11 +42,11 @@ pub struct BucketInfo {
     pub id: u32,
     pub start_time: i64,
     pub end_time: i64,
-    pub shard_group: Vec<ReplcationSet>,
+    pub shard_group: Vec<ReplicationSet>,
 }
 
 impl BucketInfo {
-    pub fn vnode_for(&self, id: u64) -> ReplcationSet {
+    pub fn vnode_for(&self, id: u64) -> ReplicationSet {
         let index = id as usize % self.shard_group.len();
 
         self.shard_group[index].clone()
@@ -50,14 +54,14 @@ impl BucketInfo {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct ReplcationSet {
-    pub id: u32,
+pub struct ReplicationSet {
+    pub id: ReplicationSetId,
     pub vnodes: Vec<VnodeInfo>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct VnodeInfo {
-    pub id: u32,
+    pub id: VnodeId,
     pub node_id: u64,
 }
 
@@ -170,7 +174,7 @@ impl TenantMetaData {
 
     pub fn database_min_ts(&self, name: &str) -> Option<i64> {
         if let Some(db) = self.dbs.get(name) {
-            let ttl = db.schema.config.ttl_or_default().time_stamp();
+            let ttl = db.schema.config.ttl_or_default().to_nanoseconds();
             let now = crate::utils::now_timestamp();
 
             return Some(now - ttl);
@@ -227,7 +231,7 @@ pub fn allocation_replication_set(
     shards: u32,
     replica: u32,
     begin_seq: u32,
-) -> (Vec<ReplcationSet>, u32) {
+) -> (Vec<ReplicationSet>, u32) {
     let node_count = nodes.len() as u32;
     let mut replica = replica;
     if replica == 0 {
@@ -241,7 +245,7 @@ pub fn allocation_replication_set(
     let mut index = begin_seq;
     let mut group = vec![];
     for _ in 0..shards {
-        let mut repl_set = ReplcationSet {
+        let mut repl_set = ReplicationSet {
             id: incr_id,
             vnodes: vec![],
         };

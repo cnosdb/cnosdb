@@ -13,9 +13,9 @@ use datafusion::{
         ExecutionPlan, PhysicalPlanner as DFPhysicalPlanner,
     },
 };
-use snafu::ResultExt;
-use spi::query::{physical_planner::PhysicalPlanner, Result};
-use spi::query::{session::IsiphoSessionCtx, PhysicalPlanerSnafu};
+use spi::query::physical_planner::PhysicalPlanner;
+use spi::query::session::IsiphoSessionCtx;
+use spi::Result;
 
 use crate::extension::physical::transform_rule::{
     table_writer::TableWriterPlanner, tag_scan::TagScanPlanner, topk::TopKPlanner,
@@ -93,7 +93,7 @@ impl PhysicalPlanner for DefaultPhysicalPlanner {
         planner
             .create_physical_plan(logical_plan, &new_state)
             .await
-            .context(PhysicalPlanerSnafu)
+            .map_err(|e| e.into())
     }
 
     fn inject_physical_transform_rule(&mut self, rule: Arc<dyn ExtensionPlanner + Send + Sync>) {

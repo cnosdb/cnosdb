@@ -3,8 +3,8 @@ use std::sync::Arc;
 use datafusion::execution::FunctionRegistry;
 use datafusion::logical_expr::AggregateUDF;
 use datafusion::{logical_expr::ScalarUDF, prelude::SessionContext};
-use snafu::ResultExt;
 use spi::query::function::*;
+use spi::{QueryError, Result};
 
 pub struct DFSessionContextFuncAdapter<'a> {
     ctx: &'a mut SessionContext,
@@ -19,7 +19,7 @@ impl<'a> DFSessionContextFuncAdapter<'a> {
 impl<'a> FunctionMetadataManager for DFSessionContextFuncAdapter<'a> {
     fn register_udf(&mut self, udf: ScalarUDF) -> Result<()> {
         if self.ctx.udf(udf.name.as_str()).is_err() {
-            return Err(Error::Exists { name: udf.name });
+            return Err(QueryError::FunctionExists { name: udf.name });
         }
 
         self.ctx.register_udf(udf);
@@ -28,7 +28,7 @@ impl<'a> FunctionMetadataManager for DFSessionContextFuncAdapter<'a> {
 
     fn register_udaf(&mut self, udaf: AggregateUDF) -> Result<()> {
         if self.ctx.udaf(udaf.name.as_str()).is_err() {
-            return Err(Error::Exists { name: udaf.name });
+            return Err(QueryError::FunctionExists { name: udaf.name });
         }
 
         self.ctx.register_udaf(udaf);
@@ -36,11 +36,15 @@ impl<'a> FunctionMetadataManager for DFSessionContextFuncAdapter<'a> {
     }
 
     fn udf(&self, name: &str) -> Result<Arc<ScalarUDF>> {
-        self.ctx.udf(name).context(CausedDataFusionSnafu)
+        self.ctx
+            .udf(name)
+            .map_err(|e| QueryError::Datafusion { source: e })
     }
 
     fn udaf(&self, name: &str) -> Result<Arc<AggregateUDF>> {
-        self.ctx.udaf(name).context(CausedDataFusionSnafu)
+        self.ctx
+            .udaf(name)
+            .map_err(|e| QueryError::Datafusion { source: e })
     }
 
     fn udfs(&self) -> Vec<Arc<ScalarUDF>> {

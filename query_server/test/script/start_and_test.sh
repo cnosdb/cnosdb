@@ -8,8 +8,8 @@ source "$HOME/.cargo/env"
 
 function start_cnosdb() {
     rm -rf ./data
-    if [ -e "./target/release/main" ];then
-      nohup ./target/release/main run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
+    if [ -e "./target/release/cnosdb" ];then
+      nohup ./target/release/cnosdb run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
     else
       nohup cargo run --release -- run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
     fi
@@ -18,7 +18,7 @@ function start_cnosdb() {
 
 function wait_start() {
     while [ "$(curl -s ${URL})" == "" ] && kill -0 ${PID}; do
-        sleep 2s;
+        sleep 2;
     done
 }
 

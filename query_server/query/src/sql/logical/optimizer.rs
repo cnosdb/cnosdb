@@ -17,10 +17,8 @@ use datafusion::{
     },
 };
 
-use spi::query::{session::IsiphoSessionCtx, Result};
-
-use snafu::ResultExt;
-use spi::query::LogicalOptimizeSnafu;
+use spi::query::session::IsiphoSessionCtx;
+use spi::Result;
 
 use crate::extension::logical::optimizer_rule::{
     implicit_type_conversion::ImplicitTypeConversion,
@@ -95,7 +93,7 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
             .state()
             .with_optimizer_rules(self.rules.clone())
             .optimize(plan)
-            .context(LogicalOptimizeSnafu)
+            .map_err(|e| e.into())
     }
 
     fn inject_optimizer_rule(&mut self, optimizer_rule: Arc<dyn OptimizerRule + Send + Sync>) {

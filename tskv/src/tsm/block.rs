@@ -7,7 +7,6 @@ use protos::models::FieldType;
 use trace::error;
 
 use crate::{
-    compaction::overlaps_tuples,
     memcache::DataType,
     tseries_family::TimeRange,
     tsm::codec::{

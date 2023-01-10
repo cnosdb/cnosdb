@@ -16,7 +16,7 @@ use models::predicate::domain::{Predicate, PredicateRef};
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 
 use crate::{
-    data_source::tskv_sink::TskvRecordBatchSinkProvider,
+    data_source::{sink::tskv::TskvRecordBatchSinkProvider, WriteExecExt},
     extension::physical::plan_node::{table_writer::TableWriterExec, tag_scan::TagScanExec},
     tskv_exec::TskvExec,
 };
@@ -48,23 +48,6 @@ impl ClusterTable {
             coord,
             schema: Arc::new(schema),
         }
-    }
-
-    pub async fn write(
-        &self,
-        _state: &SessionState,
-        input: Arc<dyn ExecutionPlan>,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
-        let record_batch_sink_privider = Arc::new(TskvRecordBatchSinkProvider::new(
-            self.coord.clone(),
-            self.schema.clone(),
-        ));
-
-        Ok(Arc::new(TableWriterExec::new(
-            input,
-            self.schema.clone(),
-            record_batch_sink_privider,
-        )))
     }
 
     pub async fn tag_scan(
@@ -131,6 +114,26 @@ impl TableProvider for ClusterTable {
     }
     fn supports_filter_pushdown(&self, _: &Expr) -> Result<TableProviderFilterPushDown> {
         Ok(TableProviderFilterPushDown::Inexact)
+    }
+}
+
+#[async_trait]
+impl WriteExecExt for ClusterTable {
+    async fn write(
+        &self,
+        _state: &SessionState,
+        input: Arc<dyn ExecutionPlan>,
+    ) -> Result<Arc<TableWriterExec>> {
+        let record_batch_sink_privider = Arc::new(TskvRecordBatchSinkProvider::new(
+            self.coord.clone(),
+            self.schema.clone(),
+        ));
+
+        Ok(Arc::new(TableWriterExec::new(
+            input,
+            self.schema.name.clone(),
+            record_batch_sink_privider,
+        )))
     }
 }
 

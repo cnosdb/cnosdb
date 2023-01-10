@@ -5,12 +5,10 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::catalog::TableReference;
 use models::schema::TableSchema;
-use snafu::ResultExt;
+use spi::Result;
 
 use meta::error::MetaError;
-use spi::query::execution::ExternalSnafu;
-use spi::query::execution::MetadataSnafu;
-use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
+use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeTable;
 use std::sync::Arc;
 
@@ -26,36 +24,28 @@ impl DescribeTableTask {
 
 #[async_trait]
 impl DDLDefinitionTask for DescribeTableTask {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         describe_table(self.stmt.table_name.as_str(), query_state_machine)
     }
 }
 
-fn describe_table(
-    table_name: &str,
-    machine: QueryStateMachineRef,
-) -> Result<Output, ExecutionError> {
+fn describe_table(table_name: &str, machine: QueryStateMachineRef) -> Result<Output> {
     let tenant = machine.session.tenant();
     let table_name =
         TableReference::from(table_name).resolve(tenant, machine.session.default_database());
-    let client = machine
-        .meta
-        .tenant_manager()
-        .tenant_meta(tenant)
-        .ok_or(MetaError::TenantNotFound {
-            tenant: tenant.to_string(),
-        })
-        .context(MetadataSnafu)?;
+    let client =
+        machine
+            .meta
+            .tenant_manager()
+            .tenant_meta(tenant)
+            .ok_or(MetaError::TenantNotFound {
+                tenant: tenant.to_string(),
+            })?;
     let table_schema = client
-        .get_table_schema(table_name.schema, table_name.table)
-        .context(MetadataSnafu)?
+        .get_table_schema(table_name.schema, table_name.table)?
         .ok_or(MetaError::TableNotFound {
             table: table_name.table.to_string(),
-        })
-        .context(MetadataSnafu)?;
+        })?;
 
     match table_schema {
         TableSchema::TsKvTableSchema(tskv_schema) => {
@@ -86,8 +76,7 @@ fn describe_table(
                     Arc::new(encoding.finish()),
                 ],
             )
-            .map_err(datafusion::error::DataFusionError::ArrowError)
-            .context(ExternalSnafu)?;
+            .map_err(datafusion::error::DataFusionError::ArrowError)?;
             let batches = vec![batch];
             Ok(Output::StreamData(schema, batches))
         }
@@ -106,8 +95,7 @@ fn describe_table(
                 schema.clone(),
                 vec![Arc::new(name.finish()), Arc::new(data_type.finish())],
             )
-            .map_err(datafusion::error::DataFusionError::ArrowError)
-            .context(ExternalSnafu)?;
+            .map_err(datafusion::error::DataFusionError::ArrowError)?;
             let batches = vec![batch];
             Ok(Output::StreamData(schema, batches))
         }

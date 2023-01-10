@@ -48,7 +48,8 @@ impl VnodeManager {
         let all_info = self.get_vnode_all_info(tenant, vnode_id)?;
 
         self.kv_inst
-            .remove_tsfamily(tenant, &all_info.db_name, vnode_id)?;
+            .remove_tsfamily(tenant, &all_info.db_name, vnode_id)
+            .await?;
 
         Ok(())
     }
@@ -90,10 +91,10 @@ impl VnodeManager {
     ) -> CoordinatorResult<PathFilesMeta> {
         let req = AdminStatementRequest {
             tenant: all_info.tenant.to_string(),
-            stmt: AdminStatementType::GetVnodeFilesMeta(
-                all_info.db_name.to_string(),
-                all_info.vnode_id,
-            ),
+            stmt: AdminStatementType::GetVnodeFilesMeta {
+                db: all_info.db_name.to_string(),
+                vnode_id: all_info.vnode_id,
+            },
         };
 
         let files_meta;
@@ -123,11 +124,11 @@ impl VnodeManager {
     ) -> CoordinatorResult<()> {
         let cmd = CoordinatorTcpCmd::AdminStatementCmd(AdminStatementRequest {
             tenant: req.tenant.clone(),
-            stmt: AdminStatementType::DownloadFile(
-                req.db_name.clone(),
-                req.vnode_id,
-                filename.to_string(),
-            ),
+            stmt: AdminStatementType::DownloadFile {
+                db: req.db_name.clone(),
+                vnode_id: req.vnode_id,
+                filename: filename.to_string(),
+            },
         });
 
         send_command(conn, &cmd).await?;

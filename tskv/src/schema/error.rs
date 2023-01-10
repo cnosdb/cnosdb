@@ -7,24 +7,48 @@ pub type Result<T> = std::result::Result<T, SchemaError>;
 #[derive(Snafu, Debug)]
 #[snafu(visibility(pub))]
 pub enum SchemaError {
-    #[snafu(display("Error with apply to meta: {}", source))]
-    Meta { source: MetaError },
+    Meta {
+        source: MetaError,
+    },
 
     #[snafu(display("table '{}' not found", table))]
-    TableNotFound { table: String },
+    TableNotFound {
+        table: String,
+    },
 
-    #[snafu(display("Unrecognized FieldType"))]
-    FieldType,
+    #[snafu(display("unrecognized field type {}", field))]
+    FieldType {
+        field: String,
+    },
 
-    #[snafu(display("Not Found Field"))]
-    NotFoundField,
+    #[snafu(display("field not found '{}'", field))]
+    NotFoundField {
+        field: String,
+    },
 
-    #[snafu(display("Column {} already exists", name))]
-    ColumnAlreadyExists { name: String },
+    #[snafu(display("column '{}' already exists", name))]
+    ColumnAlreadyExists {
+        name: String,
+    },
 
     #[snafu(display("database '{}' not found", database))]
-    DatabaseNotFound { database: String },
+    DatabaseNotFound {
+        database: String,
+    },
 
     #[snafu(display("tenant '{}' not found from meta", tenant))]
-    TenantNotFound { tenant: String },
+    TenantNotFound {
+        tenant: String,
+    },
+
+    #[snafu(display("database '{}' already exists", database))]
+    DatabaseAlreadyExists {
+        database: String,
+    },
+}
+
+impl From<MetaError> for SchemaError {
+    fn from(value: MetaError) -> Self {
+        SchemaError::Meta { source: value }
+    }
 }

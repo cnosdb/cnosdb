@@ -2,7 +2,7 @@ use std::ops::Bound;
 use std::time::Duration;
 use std::{
     borrow::{Borrow, BorrowMut},
-    cmp::{max, min},
+    cmp::{self, max, min},
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
@@ -19,7 +19,8 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch::Receiver;
 
 use config::get_config;
-use models::{FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
+use models::schema::TableColumn;
+use models::{ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
@@ -40,7 +41,7 @@ lazy_static! {
     pub static ref FLUSH_REQ: Arc<Mutex<Vec<FlushReq>>> = Arc::new(Mutex::new(vec![]));
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TimeRange {
     pub min_ts: i64,
     pub max_ts: i64,
@@ -113,6 +114,21 @@ impl From<(Timestamp, Timestamp)> for TimeRange {
 impl From<TimeRange> for (Timestamp, Timestamp) {
     fn from(t: TimeRange) -> Self {
         (t.min_ts, t.max_ts)
+    }
+}
+
+impl PartialOrd for TimeRange {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TimeRange {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        match self.min_ts.cmp(&other.min_ts) {
+            cmp::Ordering::Equal => self.max_ts.cmp(&other.max_ts),
+            other => other,
+        }
     }
 }
 
@@ -294,12 +310,17 @@ pub struct LevelInfo {
 }
 
 impl LevelInfo {
-    pub fn init(database: String, level: u32, storage_opt: Arc<StorageOptions>) -> Self {
+    pub fn init(
+        database: String,
+        level: u32,
+        tsf_id: u32,
+        storage_opt: Arc<StorageOptions>,
+    ) -> Self {
         let max_size = storage_opt.level_file_size(level);
         Self {
             files: Vec::new(),
             database,
-            tsf_id: 0,
+            tsf_id,
             storage_opt,
             level,
             cur_size: 0,
@@ -311,14 +332,33 @@ impl LevelInfo {
         }
     }
 
-    pub fn init_levels(database: String, storage_opt: Arc<StorageOptions>) -> [LevelInfo; 5] {
+    pub fn init_levels(
+        database: String,
+        tsf_id: u32,
+        storage_opt: Arc<StorageOptions>,
+    ) -> [LevelInfo; 5] {
         [
-            Self::init(database.clone(), 0, storage_opt.clone()),
-            Self::init(database.clone(), 1, storage_opt.clone()),
-            Self::init(database.clone(), 2, storage_opt.clone()),
-            Self::init(database.clone(), 3, storage_opt.clone()),
-            Self::init(database, 4, storage_opt),
+            Self::init(database.clone(), 0, tsf_id, storage_opt.clone()),
+            Self::init(database.clone(), 1, tsf_id, storage_opt.clone()),
+            Self::init(database.clone(), 2, tsf_id, storage_opt.clone()),
+            Self::init(database.clone(), 3, tsf_id, storage_opt.clone()),
+            Self::init(database, 4, tsf_id, storage_opt),
         ]
+    }
+
+    pub fn with_compact_metas(
+        database: String,
+        vnode_id: TseriesFamilyId,
+        storage_opt: Arc<StorageOptions>,
+        compact_metas: &[CompactMeta],
+    ) -> [LevelInfo; 5] {
+        let mut levels = Self::init_levels(database, vnode_id, storage_opt);
+        if !compact_metas.is_empty() {
+            for c in compact_metas {
+                levels[c.level as usize].push_compact_meta(c);
+            }
+        }
+        levels
     }
 
     pub fn push_compact_meta(&mut self, compact_meta: &CompactMeta) {
@@ -457,8 +497,11 @@ impl Version {
             }
         }
 
-        let mut new_levels =
-            LevelInfo::init_levels(self.database.clone(), self.storage_opt.clone());
+        let mut new_levels = LevelInfo::init_levels(
+            self.database.clone(),
+            self.ts_family_id,
+            self.storage_opt.clone(),
+        );
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
                 if let Some(true) = deleted_files
@@ -679,7 +722,13 @@ impl TseriesFamily {
         self.new_super_version(self.version.clone());
     }
 
-    fn wrap_flush_req(&mut self) {
+    /// Check if there are immutable caches to flush.
+    ///
+    /// If argument `force` is false, immutable caches number should be greater than
+    /// configuration `max_immutable_number`.
+    ///
+    /// If argument force is set to true, then do not check immutable caches number.
+    pub(crate) fn wrap_flush_req(&mut self, force: bool) {
         let len = self.immut_cache.len();
         let mut imut = vec![];
         for mem in self.immut_cache.iter() {
@@ -703,7 +752,7 @@ impl TseriesFamily {
             req_mems.push((self.tf_id, mem.clone()));
         }
 
-        if req_mems.len() < self.cache_opt.max_immutable_number as usize {
+        if !force && req_mems.len() < self.cache_opt.max_immutable_number as usize {
             return;
         }
 
@@ -738,7 +787,7 @@ impl TseriesFamily {
             info!("mut_cache full,switch to immutable");
             self.switch_to_immutable();
             if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
-                self.wrap_flush_req();
+                self.wrap_flush_req(false);
             }
         }
     }
@@ -746,6 +795,22 @@ impl TseriesFamily {
         self.mut_cache.read().delete_columns(field_ids);
         for memcache in self.immut_cache.iter() {
             memcache.read().delete_columns(field_ids);
+        }
+    }
+
+    pub fn change_column(&self, sids: &[SeriesId], column_name: &str, new_column: &TableColumn) {
+        self.mut_cache
+            .read()
+            .change_column(sids, column_name, new_column);
+        for memcache in self.immut_cache.iter() {
+            memcache.read().change_column(sids, column_name, new_column);
+        }
+    }
+
+    pub fn add_column(&self, sids: &[SeriesId], new_column: &TableColumn) {
+        self.mut_cache.read().add_column(sids, new_column);
+        for memcache in self.immut_cache.iter() {
+            memcache.read().add_column(sids, new_column);
         }
     }
 
@@ -758,6 +823,22 @@ impl TseriesFamily {
 
     pub fn pick_compaction(&self) -> Option<CompactReq> {
         self.compact_picker.pick_compaction(self.version.clone())
+    }
+
+    pub fn get_version_edit(&self, last_seq: u64, tsf_name: String) -> VersionEdit {
+        let mut version_edit = VersionEdit::new_add_vnode(self.tf_id, tsf_name);
+        let version = self.version();
+        let max_level_ts = version.max_level_ts;
+        for files in version.levels_info.iter() {
+            for file in files.files.iter() {
+                let mut meta = CompactMeta::from(file.as_ref());
+                meta.tsf_id = files.tsf_id;
+                meta.high_seq = last_seq;
+                version_edit.add_file(meta, max_level_ts);
+            }
+        }
+
+        version_edit
     }
 
     pub fn tf_id(&self) -> TseriesFamilyId {
@@ -803,17 +884,14 @@ mod test {
     use models::{Timestamp, ValueType};
     use trace::info;
 
-    use crate::compaction::flush_tests::default_with_field_id;
     use crate::file_system::file_manager;
     use crate::file_utils::{self, make_tsm_file_name};
-    use crate::memcache::{FieldVal, RowData, RowGroup};
-    use crate::summary::SummaryTask;
     use crate::{
-        compaction::{run_flush_memtable_job, FlushReq},
+        compaction::{flush_tests::default_with_field_id, run_flush_memtable_job, FlushReq},
         context::GlobalContext,
         kv_option::Options,
-        memcache::MemCache,
-        summary::{CompactMeta, VersionEdit},
+        memcache::{FieldVal, MemCache, RowData, RowGroup},
+        summary::{CompactMeta, SummaryTask, VersionEdit, WriteSummaryRequest},
         tseries_family::{TimeRange, TseriesFamily, Version},
         tsm::TsmTombstone,
         version_set::VersionSet,
@@ -859,7 +937,7 @@ mod test {
             last_seq: 1,
             max_level_ts: 3100,
             levels_info: [
-                LevelInfo::init(database.clone(), 0, opt.storage.clone()),
+                LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
                 LevelInfo {
                     files: vec![
                         Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
@@ -885,12 +963,12 @@ mod test {
                     max_size: 10000,
                     time_range: TimeRange::new(1, 2000),
                 },
-                LevelInfo::init(database.clone(), 3, opt.storage.clone()),
-                LevelInfo::init(database, 4, opt.storage.clone()),
+                LevelInfo::init(database.clone(), 3, 0, opt.storage.clone()),
+                LevelInfo::init(database, 4, 0,opt.storage.clone()),
             ],
         };
         let mut version_edits = Vec::new();
-        let mut ve = VersionEdit::new();
+        let mut ve = VersionEdit::new(1);
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
@@ -907,7 +985,7 @@ mod test {
             3100,
         );
         version_edits.push(ve);
-        let mut ve = VersionEdit::new();
+        let mut ve = VersionEdit::new(1);
         ve.del_file(1, 3, false);
         version_edits.push(ve);
         let new_version = version.copy_apply_version_edits(version_edits, Some(3));
@@ -958,7 +1036,7 @@ mod test {
             last_seq: 1,
             max_level_ts: 3150,
             levels_info: [
-                LevelInfo::init(database.clone(), 0, opt.storage.clone()),
+                LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
                 LevelInfo {
                     files: vec![
                         Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
@@ -985,12 +1063,12 @@ mod test {
                     max_size: 10000,
                     time_range: TimeRange::new(1, 2000),
                 },
-                LevelInfo::init(database.clone(), 3, opt.storage.clone()),
-                LevelInfo::init(database, 4, opt.storage.clone()),
+                LevelInfo::init(database.clone(), 3, 1,opt.storage.clone()),
+                LevelInfo::init(database, 4, 1, opt.storage.clone()),
             ],
         };
         let mut version_edits = Vec::new();
-        let mut ve = VersionEdit::new();
+        let mut ve = VersionEdit::new(1);
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
@@ -1022,7 +1100,7 @@ mod test {
             3150,
         );
         version_edits.push(ve);
-        let mut ve = VersionEdit::new();
+        let mut ve = VersionEdit::new(1);
         ve.del_file(1, 3, false);
         ve.del_file(1, 4, false);
         ve.del_file(2, 1, false);
@@ -1072,7 +1150,7 @@ mod test {
                 database.clone(),
                 opt.storage.clone(),
                 0,
-                LevelInfo::init_levels(database, opt.storage.clone()),
+                LevelInfo::init_levels(database, 0, opt.storage.clone()),
                 0,
             )),
             opt.cache.clone(),
@@ -1120,14 +1198,14 @@ mod test {
 
     // Util function for testing with summary modification.
     async fn update_ts_family_version(
-        version_set: Arc<RwLock<VersionSet>>,
+        version_set: Arc<tokio::sync::RwLock<VersionSet>>,
         ts_family_id: TseriesFamilyId,
         mut summary_task_receiver: UnboundedReceiver<SummaryTask>,
     ) {
         let mut version_edits: Vec<VersionEdit> = Vec::new();
         let mut min_seq: u64 = 0;
         while let Some(summary_task) = summary_task_receiver.recv().await {
-            for edit in summary_task.edits.into_iter() {
+            for edit in summary_task.write_summary_request().edits.into_iter() {
                 if edit.tsf_id == ts_family_id {
                     version_edits.push(edit.clone());
                     if edit.has_seq_no {
@@ -1136,8 +1214,8 @@ mod test {
                 }
             }
         }
-        let version_set = version_set.write();
-        if let Some(ts_family) = version_set.get_tsfamily_by_tf_id(ts_family_id) {
+        let version_set = version_set.write().await;
+        if let Some(ts_family) = version_set.get_tsfamily_by_tf_id(ts_family_id).await {
             let mut ts_family = ts_family.write();
             let new_version = ts_family
                 .version()
@@ -1147,7 +1225,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     pub async fn test_read_with_tomb() {
         let config = get_config("../config/config_31001.toml");
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(config.cluster));
@@ -1199,7 +1276,7 @@ mod test {
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(
+        let version_set: Arc<tokio::sync::RwLock<VersionSet>> = Arc::new(tokio::sync::RwLock::new(
             VersionSet::new(
                 meta_manager.clone(),
                 opt.clone(),
@@ -1211,16 +1288,28 @@ mod test {
         ));
         version_set
             .write()
+            .await
             .create_db(
                 DatabaseSchema::new("cnosdb", &database),
                 meta_manager.clone(),
             )
             .unwrap();
-        let db = version_set.write().get_db("cnosdb", &database).unwrap();
+        let db = version_set
+            .write()
+            .await
+            .get_db("cnosdb", &database)
+            .unwrap();
 
         let ts_family_id = db
             .write()
-            .add_tsfamily(0, 0, summary_task_sender.clone(), flush_task_sender.clone())
+            .await
+            .add_tsfamily(
+                0,
+                0,
+                None,
+                summary_task_sender.clone(),
+                flush_task_sender.clone(),
+            )
             .read()
             .tf_id();
 
@@ -1236,9 +1325,10 @@ mod test {
 
         update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver).await;
 
-        let version_set = version_set.write();
+        let version_set = version_set.write().await;
         let tsf = version_set
             .get_tsfamily_by_name("cnosdb", &database)
+            .await
             .unwrap();
         let version = tsf.write().version();
         version.levels_info[1]

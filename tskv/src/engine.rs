@@ -2,6 +2,7 @@ use crate::database::Database;
 use crate::error::Result;
 use crate::index::IndexResult;
 use crate::kv_option::StorageOptions;
+use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
@@ -46,19 +47,19 @@ pub trait Engine: Send + Sync + Debug {
 
     // fn get_db_schema(&self, tenant: &str, database: &str) -> Result<Option<DatabaseSchema>>;
 
-    fn drop_database(&self, tenant: &str, database: &str) -> Result<()>;
+    async fn drop_database(&self, tenant: &str, database: &str) -> Result<()>;
 
     // fn create_table(&self, schema: &TskvTableSchema) -> Result<()>;
 
-    fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
+    async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
 
     // fn list_databases(&self) -> Result<Vec<String>>;
 
     // fn list_tables(&self, tenant_name: &str, database: &str) -> Result<Vec<String>>;
 
-    fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
+    async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
 
-    fn add_table_column(
+    async fn add_table_column(
         &self,
         tenant: &str,
         database: &str,
@@ -66,7 +67,7 @@ pub trait Engine: Send + Sync + Debug {
         column: TableColumn,
     ) -> Result<()>;
 
-    fn drop_table_column(
+    async fn drop_table_column(
         &self,
         tenant: &str,
         database: &str,
@@ -74,7 +75,7 @@ pub trait Engine: Send + Sync + Debug {
         column: &str,
     ) -> Result<()>;
 
-    fn change_table_column(
+    async fn change_table_column(
         &self,
         tenant: &str,
         database: &str,
@@ -83,15 +84,7 @@ pub trait Engine: Send + Sync + Debug {
         new_column: TableColumn,
     ) -> Result<()>;
 
-    fn delete_columns(
-        &self,
-        tenant: &str,
-        database: &str,
-        series_ids: &[SeriesId],
-        field_ids: &[ColumnId],
-    ) -> Result<()>;
-
-    fn delete_series(
+    async fn delete_series(
         &self,
         tenant: &str,
         database: &str,
@@ -100,14 +93,14 @@ pub trait Engine: Send + Sync + Debug {
         time_range: &TimeRange,
     ) -> Result<()>;
 
-    fn get_table_schema(
+    async fn get_table_schema(
         &self,
         tenant: &str,
         db: &str,
         tab: &str,
     ) -> Result<Option<TskvTableSchema>>;
 
-    fn get_series_id_by_filter(
+    async fn get_series_id_by_filter(
         &self,
         id: u32,
         tenant: &str,
@@ -116,14 +109,15 @@ pub trait Engine: Send + Sync + Debug {
         filter: &ColumnDomains<String>,
     ) -> IndexResult<Vec<u32>>;
 
-    fn get_series_key(
+    async fn get_series_key(
         &self,
         tenant: &str,
         db: &str,
         vnode_id: u32,
         sid: SeriesId,
     ) -> IndexResult<Option<SeriesKey>>;
-    fn get_db_version(
+
+    async fn get_db_version(
         &self,
         tenant: &str,
         db: &str,
@@ -131,6 +125,22 @@ pub trait Engine: Send + Sync + Debug {
     ) -> Result<Option<Arc<SuperVersion>>>;
 
     fn get_storage_options(&self) -> Arc<StorageOptions>;
+    async fn get_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+    ) -> Result<Option<VersionEdit>>;
+
+    async fn apply_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+        summary: VersionEdit,
+    ) -> Result<()>;
+
+    async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
 }
 
 #[derive(Debug, Default)]
@@ -170,11 +180,11 @@ impl Engine for MockEngine {
         })
     }
 
-    fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+    async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
         Ok(())
     }
 
-    fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
+    async fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
         println!("drop_database.sql {:?}", database);
         Ok(())
     }
@@ -199,22 +209,12 @@ impl Engine for MockEngine {
     //     Ok(Some(DatabaseSchema::new(tenant, name)))
     // }
 
-    fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
+    async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         println!("drop_table db:{:?}, table:{:?}", database, table);
         Ok(())
     }
 
-    fn delete_columns(
-        &self,
-        tenant: &str,
-        database: &str,
-        series_ids: &[SeriesId],
-        field_ids: &[ColumnId],
-    ) -> Result<()> {
-        todo!()
-    }
-
-    fn delete_series(
+    async fn delete_series(
         &self,
         tenant: &str,
         database: &str,
@@ -225,7 +225,7 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    fn get_table_schema(
+    async fn get_table_schema(
         &self,
         tenant: &str,
         db: &str,
@@ -240,7 +240,7 @@ impl Engine for MockEngine {
         )))
     }
 
-    fn get_series_id_by_filter(
+    async fn get_series_id_by_filter(
         &self,
         id: u32,
         tenant: &str,
@@ -251,7 +251,7 @@ impl Engine for MockEngine {
         Ok(vec![])
     }
 
-    fn get_series_key(
+    async fn get_series_key(
         &self,
         tenant: &str,
         db: &str,
@@ -261,7 +261,7 @@ impl Engine for MockEngine {
         Ok(None)
     }
 
-    fn get_db_version(
+    async fn get_db_version(
         &self,
         tenant: &str,
         db: &str,
@@ -270,11 +270,30 @@ impl Engine for MockEngine {
         todo!()
     }
 
+    async fn get_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+    ) -> Result<Option<VersionEdit>> {
+        todo!()
+    }
+
+    async fn apply_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+        summary: VersionEdit,
+    ) -> Result<()> {
+        todo!()
+    }
+
     // fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
     //     todo!()
     // }
 
-    fn add_table_column(
+    async fn add_table_column(
         &self,
         tenant: &str,
         database: &str,
@@ -284,7 +303,7 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    fn drop_table_column(
+    async fn drop_table_column(
         &self,
         tenant: &str,
         database: &str,
@@ -294,7 +313,7 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    fn change_table_column(
+    async fn change_table_column(
         &self,
         tenant: &str,
         database: &str,
@@ -306,6 +325,10 @@ impl Engine for MockEngine {
     }
 
     fn get_storage_options(&self) -> Arc<StorageOptions> {
-        Arc::new(StorageOptions::default())
+        todo!()
+    }
+
+    async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
+        todo!()
     }
 }

@@ -775,7 +775,7 @@ impl StateMachine {
         let key = KeyPath::tenant_db_name(cluster, tenant, &schema.db());
         if !self.db.contains_key(key).unwrap() {
             return TenaneMetaDataResp::new_from_data(
-                META_REQUEST_DB_EXIST,
+                META_REQUEST_DB_NOT_FOUND,
                 "database not found".to_string(),
                 self.to_tenant_meta_data(cluster, tenant).unwrap(),
             )
@@ -916,7 +916,7 @@ impl StateMachine {
             .to_string();
         }
 
-        if *ts < now - db_schema.config.ttl_or_default().time_stamp() {
+        if *ts < now - db_schema.config.ttl_or_default().to_nanoseconds() {
             return TenaneMetaDataResp::new(
                 META_REQUEST_FAILED,
                 format!("database {} create expired bucket not permit!", db),
@@ -932,7 +932,10 @@ impl StateMachine {
         };
         (bucket.start_time, bucket.end_time) = get_time_range(
             *ts,
-            db_schema.config.vnode_duration_or_default().time_stamp(),
+            db_schema
+                .config
+                .vnode_duration_or_default()
+                .to_nanoseconds(),
         );
         let (group, used) = allocation_replication_set(
             node_list,

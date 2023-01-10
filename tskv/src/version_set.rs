@@ -5,11 +5,11 @@ use std::{
 
 use meta::meta_client::{MetaClientRef, MetaRef};
 use models::schema::{make_owner, split_owner, DatabaseSchema};
-use parking_lot::RwLock;
+use parking_lot::RwLock as SyncRwLock;
 use snafu::ResultExt;
 use tokio::sync::watch::Receiver;
+use tokio::sync::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-
 use trace::error;
 
 use crate::compaction::FlushReq;
@@ -19,7 +19,7 @@ use crate::{
     error::Result,
     kv_option::StorageOptions,
     memcache::MemCache,
-    summary::{SummaryTask, VersionEdit},
+    summary::{VersionEdit, WriteSummaryRequest},
     tseries_family::{LevelInfo, TseriesFamily, Version},
     Options, TseriesFamilyId,
 };
@@ -39,7 +39,6 @@ impl VersionSet {
         }
     }
 
-    #[allow(clippy::await_holding_lock)]
     pub async fn new(
         meta: MetaRef,
         opt: Arc<Options>,
@@ -69,8 +68,10 @@ impl VersionSet {
                     )?)));
 
             let tf_id = ver.tf_id();
-            db.write().open_tsfamily(ver, flush_task_sender.clone());
-            db.write().get_ts_index_or_add(tf_id).await?;
+            db.write()
+                .await
+                .open_tsfamily(ver, flush_task_sender.clone());
+            db.write().await.get_ts_index_or_add(tf_id).await?;
         }
 
         Ok(Self { dbs, opt })
@@ -107,12 +108,16 @@ impl VersionSet {
         self.dbs.get(&owner).is_some()
     }
 
-    pub fn get_db_schema(&self, tenant: &str, database: &str) -> Result<Option<DatabaseSchema>> {
+    pub async fn get_db_schema(
+        &self,
+        tenant: &str,
+        database: &str,
+    ) -> Result<Option<DatabaseSchema>> {
         let owner = make_owner(tenant, database);
         let db = self.dbs.get(&owner);
         match db {
             None => Ok(None),
-            Some(db) => Ok(Some(db.read().get_schema()?)),
+            Some(db) => Ok(Some(db.read().await.get_schema()?)),
         }
     }
 
@@ -129,18 +134,21 @@ impl VersionSet {
         None
     }
 
-    pub fn tsf_num(&self) -> usize {
+    pub async fn tsf_num(&self) -> usize {
         let mut size = 0;
         for db in self.dbs.values() {
-            size += db.read().tsf_num();
+            size += db.read().await.tsf_num();
         }
 
         size
     }
 
-    pub fn get_tsfamily_by_tf_id(&self, tf_id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
+    pub async fn get_tsfamily_by_tf_id(
+        &self,
+        tf_id: u32,
+    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
         for db in self.dbs.values() {
-            if let Some(v) = db.read().get_tsfamily(tf_id) {
+            if let Some(v) = db.read().await.get_tsfamily(tf_id) {
                 return Some(v);
             }
         }
@@ -148,31 +156,40 @@ impl VersionSet {
         None
     }
 
-    pub fn get_tsfamily_by_name_id(
+    pub async fn get_tsfamily_by_name_id(
         &self,
         tenant: &str,
         database: &str,
         tf_id: u32,
-    ) -> Option<Arc<RwLock<TseriesFamily>>> {
+    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
         let owner = make_owner(tenant, database);
         if let Some(db) = self.dbs.get(&owner) {
-            return db.read().get_tsfamily(tf_id);
+            return db.read().await.get_tsfamily(tf_id);
         }
 
         None
     }
 
     // will delete in cluster version
-    pub fn get_tsfamily_by_name(
+    pub async fn get_tsfamily_by_name(
         &self,
         tenant: &str,
         database: &str,
-    ) -> Option<Arc<RwLock<TseriesFamily>>> {
+    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
         let owner = make_owner(tenant, database);
         if let Some(db) = self.dbs.get(&owner) {
-            return db.read().get_tsfamily_random();
+            return db.read().await.get_tsfamily_random();
         }
 
         None
+    }
+
+    pub async fn get_version_edits(&self, last_seq: u64) -> Vec<VersionEdit> {
+        let mut version_edits = vec![];
+        for (name, db) in self.dbs.iter() {
+            let mut ves = db.read().await.get_version_edits(last_seq, None);
+            version_edits.append(&mut ves);
+        }
+        version_edits
     }
 }

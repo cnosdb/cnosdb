@@ -20,7 +20,10 @@ mod test {
         // get file meta
         let req = AdminStatementRequest {
             tenant: tenant.clone(),
-            stmt: AdminStatementType::GetVnodeFilesMeta(test_db.clone(), vnode_id),
+            stmt: AdminStatementType::GetVnodeFilesMeta {
+                db: test_db.clone(),
+                vnode_id,
+            },
         };
         let cmd = CoordinatorTcpCmd::AdminStatementCmd(req);
 
@@ -44,11 +47,11 @@ mod test {
                 .unwrap();
             let req = AdminStatementRequest {
                 tenant: tenant.clone(),
-                stmt: AdminStatementType::DownloadFile(
-                    test_db.clone(),
+                stmt: AdminStatementType::DownloadFile {
+                    db: test_db.clone(),
                     vnode_id,
-                    filename.to_string(),
-                ),
+                    filename: filename.to_string(),
+                },
             };
             let cmd = CoordinatorTcpCmd::AdminStatementCmd(req);
 

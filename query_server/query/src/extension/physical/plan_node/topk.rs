@@ -11,7 +11,6 @@ use datafusion::{
     arrow::{
         array::{build_compare, make_array, ArrayData, ArrayRef, MutableArrayData},
         datatypes::SchemaRef,
-        error::ArrowError,
         record_batch::RecordBatch,
     },
     error::DataFusionError,
@@ -30,7 +29,7 @@ use datafusion::{
 };
 
 use datafusion::error::Result;
-use futures::{StreamExt, TryFutureExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use trace::debug;
 
 use crate::extension::logical::plan_node::topk::{TopKOptions, TopKStep};
@@ -146,17 +145,14 @@ impl ExecutionPlan for TopKExec {
 
         Ok(Box::pin(RecordBatchStreamAdapter::new(
             self.schema(),
-            futures::stream::once(
-                do_top_k(
-                    input,
-                    partition,
-                    self.expr.clone(),
-                    self.metrics_set.clone(),
-                    context,
-                    self.options.clone(),
-                )
-                .map_err(|e| ArrowError::ExternalError(Box::new(e))),
-            )
+            futures::stream::once(do_top_k(
+                input,
+                partition,
+                self.expr.clone(),
+                self.metrics_set.clone(),
+                context,
+                self.options.clone(),
+            ))
             .try_flatten(),
         )))
     }

@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod example;
 
-use spi::query::function::{FunctionMetadataManager, Result};
+use spi::query::function::FunctionMetadataManager;
+use spi::Result;
 
 pub fn register_udfs(_func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...

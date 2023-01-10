@@ -36,7 +36,7 @@ use crate::{
     index::IndexResult,
     kv_option::Options,
     memcache::{DataType, FieldVal, MemCache, SeriesData},
-    summary::{CompactMeta, SummaryTask, VersionEdit},
+    summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit, WriteSummaryRequest},
     tseries_family::{LevelInfo, Version},
     tsm::{self, codec::DataBlockEncoding, DataBlock, TsmWriter},
     version_set::VersionSet,
@@ -120,7 +120,7 @@ impl FlushTask {
                 tsm::MAX_BLOCK_VALUES as usize,
             )
             .await?;
-        let mut edit = VersionEdit::new();
+        let mut edit = VersionEdit::new(self.ts_family_id);
         for cm in compact_metas.iter_mut() {
             cm.low_seq = low_seq;
             cm.high_seq = high_seq;
@@ -308,6 +308,7 @@ impl FlushTask {
         mut delta_writer: Option<TsmWriter>,
         mut tsm_writer: Option<TsmWriter>,
     ) -> Result<Vec<CompactMeta>> {
+        let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
         if let Some(writer) = tsm_writer.as_mut() {
             writer.write_index().await.context(error::WriteTsmSnafu)?;
             writer.finish().await.context(error::WriteTsmSnafu)?;
@@ -329,25 +330,21 @@ impl FlushTask {
 
         let mut compact_metas = vec![];
         if let Some(writer) = tsm_writer {
-            compact_metas.push(CompactMeta::new(
+            compact_metas.push(compact_meta_builder.build_tsm(
                 writer.sequence(),
                 writer.size(),
-                self.ts_family_id,
                 1,
                 writer.min_ts(),
                 writer.max_ts(),
-                false,
             ));
         }
         if let Some(writer) = delta_writer {
-            compact_metas.push(CompactMeta::new(
+            compact_metas.push(compact_meta_builder.build_delta(
                 writer.sequence(),
                 writer.size(),
-                self.ts_family_id,
-                0,
+                1,
                 writer.min_ts(),
                 writer.max_ts(),
-                true,
             ));
         }
 
@@ -358,11 +355,10 @@ impl FlushTask {
     }
 }
 
-#[allow(clippy::await_holding_lock)]
 pub async fn run_flush_memtable_job(
     req: FlushReq,
     global_context: Arc<GlobalContext>,
-    version_set: Arc<RwLock<VersionSet>>,
+    version_set: Arc<tokio::sync::RwLock<VersionSet>>,
     summary_task_sender: UnboundedSender<SummaryTask>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
 ) -> Result<()> {
@@ -382,14 +378,18 @@ pub async fn run_flush_memtable_job(
         if caches.is_empty() {
             continue;
         }
-        let tsf_warp = version_set.read().get_tsfamily_by_tf_id(tsf_id);
+        let tsf_warp = version_set.read().await.get_tsfamily_by_tf_id(tsf_id).await;
         if let Some(tsf) = tsf_warp {
             // todo: build path by vnode data
-            let tsf_rlock = tsf.read();
-            let storage_opt = tsf_rlock.storage_opt();
-            let version = tsf_rlock.version();
-            let database = tsf_rlock.database();
-            drop(tsf_rlock);
+            let (storage_opt, version, database) = {
+                let tsf_rlock = tsf.read();
+                (
+                    tsf_rlock.storage_opt(),
+                    tsf_rlock.version(),
+                    tsf_rlock.database(),
+                )
+            };
+
             let path_tsm = storage_opt.tsm_dir(&database, tsf_id);
             let path_delta = storage_opt.delta_dir(&database, tsf_id);
 
@@ -406,10 +406,7 @@ pub async fn run_flush_memtable_job(
     info!("Flush: Flush finished, version edits: {:?}", edits);
 
     let (task_state_sender, task_state_receiver) = oneshot::channel();
-    let task = SummaryTask {
-        edits,
-        cb: task_state_sender,
-    };
+    let task = SummaryTask::new_append_task(edits, task_state_sender);
 
     if let Err(e) = summary_task_sender.send(task) {
         warn!("failed to send Summary task, {}", e);
@@ -431,7 +428,6 @@ pub mod flush_tests {
     use utils::dedup_front_by_key;
 
     use crate::file_system::file_manager;
-    use crate::file_utils;
     use crate::memcache::test::put_rows_to_cache;
     use crate::summary::{CompactMeta, VersionEdit};
     use crate::tseries_family::{LevelInfo, Version};
@@ -440,8 +436,10 @@ pub mod flush_tests {
     use crate::{
         compaction::FlushReq,
         context::GlobalContext,
+        file_utils,
         kv_option::Options,
         memcache::{DataType, FieldVal, MemCache},
+        tseries_family,
         tseries_family::FLUSH_REQ,
         version_set::VersionSet,
     };
@@ -583,7 +581,7 @@ pub mod flush_tests {
         let version = Arc::new(Version {
             ts_family_id, database: database.clone(), storage_opt: options.storage.clone(),
             last_seq: 1, max_level_ts,
-            levels_info: LevelInfo::init_levels(database, options.storage),
+            levels_info: LevelInfo::init_levels(database, 0, options.storage),
         });
         let flush_task = FlushTask::new(caches, 1, global_context, &tsm_dir, &delta_dir);
         let mut version_edits = vec![];

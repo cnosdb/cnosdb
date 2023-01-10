@@ -7,7 +7,7 @@ use datafusion::{
     physical_plan::expressions::AvgAccumulator,
 };
 use spi::query::function::FunctionMetadataManager;
-use spi::query::function::Result;
+use spi::Result;
 
 pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<AggregateUDF> {
     let udf = new();

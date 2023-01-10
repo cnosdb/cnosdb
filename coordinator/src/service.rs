@@ -211,7 +211,10 @@ impl CoordService {
             for vnode in repl_set.vnodes.iter() {
                 let req = AdminStatementRequest {
                     tenant: info.tenant.clone(),
-                    stmt: AdminStatementType::DeleteVnode(info.database.clone(), vnode.id),
+                    stmt: AdminStatementType::DeleteVnode {
+                        db: info.database.clone(),
+                        vnode_id: vnode.id,
+                    },
                 };
 
                 let cmd = CoordinatorTcpCmd::AdminStatementCmd(req);
@@ -319,7 +322,9 @@ impl CoordService {
                 (
                     AdminStatementRequest {
                         tenant: req.tenant.clone(),
-                        stmt: AdminStatementType::CopyVnode(req.vnode_id),
+                        stmt: AdminStatementType::CopyVnode {
+                            vnode_id: req.vnode_id,
+                        },
                     },
                     node_id,
                 )
@@ -335,7 +340,9 @@ impl CoordService {
                 (
                     AdminStatementRequest {
                         tenant: req.tenant.clone(),
-                        stmt: AdminStatementType::MoveVnode(req.vnode_id),
+                        stmt: AdminStatementType::MoveVnode {
+                            vnode_id: req.vnode_id,
+                        },
                     },
                     node_id,
                 )
@@ -344,7 +351,10 @@ impl CoordService {
             VnodeManagerCmdType::Drop => (
                 AdminStatementRequest {
                     tenant: req.tenant.clone(),
-                    stmt: AdminStatementType::DeleteVnode(all_info.db_name.clone(), req.vnode_id),
+                    stmt: AdminStatementType::DeleteVnode {
+                        db: all_info.db_name.clone(),
+                        vnode_id: req.vnode_id,
+                    },
                 },
                 all_info.node_id,
             ),

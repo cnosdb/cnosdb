@@ -5,6 +5,10 @@ version = "2.0.0"
 edition = "2021"
 readme = "README.md"
 
+[[bin]]
+name = "cnosdb-cli"
+path = "src/main.rs"
+
 [dependencies]
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
 

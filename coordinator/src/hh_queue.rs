@@ -7,9 +7,9 @@ use std::{
 };
 
 use config::HintedOffConfig;
-use parking_lot::RwLock;
 use protos::models as fb_models;
 use snafu::prelude::*;
+use tokio::sync::RwLock;
 use tokio::{
     sync::mpsc::Receiver,
     sync::oneshot::{self, Sender},
@@ -110,14 +110,13 @@ impl HintedOffManager {
         manager
     }
 
-    #[allow(clippy::await_holding_lock)]
     pub async fn write_handoff_job(
         manager: Arc<HintedOffManager>,
         mut hh_receiver: Receiver<HintedOffWriteReq>,
     ) {
         while let Some(request) = hh_receiver.recv().await {
             let result = match manager.get_or_create_queue(request.node_id).await {
-                Ok(queue) => queue.write().write(&request.block).await,
+                Ok(queue) => queue.write().await.write(&request.block).await,
                 Err(err) => Err(err),
             };
 
@@ -125,9 +124,8 @@ impl HintedOffManager {
         }
     }
 
-    #[allow(clippy::await_holding_lock)]
     async fn get_or_create_queue(&self, id: u64) -> CoordinatorResult<Arc<RwLock<HintedOffQueue>>> {
-        let mut nodes = self.nodes.write();
+        let mut nodes = self.nodes.write().await;
         if let Some(val) = nodes.get(&id) {
             return Ok(val.clone());
         }
@@ -145,7 +143,6 @@ impl HintedOffManager {
         Ok(queue)
     }
 
-    #[allow(clippy::await_holding_lock)]
     async fn hinted_off_service(
         node_id: u64,
         writer: Arc<PointWriter>,
@@ -154,7 +151,7 @@ impl HintedOffManager {
         debug!("hinted_off_service started for node: {}", node_id);
 
         loop {
-            let block_data = queue.write().read().await;
+            let block_data = queue.write().await.read().await;
             match block_data {
                 Ok(block) => {
                     loop {
@@ -170,7 +167,7 @@ impl HintedOffManager {
                         }
                     }
 
-                    if let Err(err) = queue.write().advance_read_offset(0).await {
+                    if let Err(err) = queue.write().await.advance_read_offset(0).await {
                         info!("advance offset {}", err.to_string());
                     }
                 }
@@ -475,11 +472,9 @@ mod test {
     use super::*;
     use tokio::time::{self, Duration};
 
-    use parking_lot::RwLock;
+    use tokio::sync::RwLock;
     use trace::init_default_global_tracing;
 
-    #[allow(clippy::await_holding_lock)]
-    #[tokio::test]
     async fn test_hinted_off_file() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
 
@@ -501,7 +496,7 @@ mod test {
         for i in 1..100 {
             let data = format!("aaa-datadfdsag{}ffdffdfedata-aaa", i);
             let block = HintedOffBlock::new(1000 + i, 123, data.as_bytes().to_vec());
-            queue.write().write(&block).await.unwrap();
+            queue.write().await.write(&block).await.unwrap();
 
             //time::sleep(Duration::from_secs(3)).await;
         }
@@ -509,13 +504,12 @@ mod test {
         time::sleep(Duration::from_secs(3)).await;
     }
 
-    #[allow(clippy::await_holding_lock)]
     async fn read_hinted_off_file(queue: Arc<RwLock<HintedOffQueue>>) {
         debug!("read file started.");
         time::sleep(Duration::from_secs(1)).await;
         let mut count = 0;
         loop {
-            match queue.write().read().await {
+            match queue.write().await.read().await {
                 Ok(block) => {
                     count += 1;
                 }
@@ -524,7 +518,7 @@ mod test {
                     break;
                 }
             }
-            let _ = queue.write().advance_read_offset(0);
+            let _ = queue.write().await.advance_read_offset(0);
         }
 
         if count != 100 {

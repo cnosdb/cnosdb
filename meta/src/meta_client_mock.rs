@@ -11,7 +11,7 @@ use models::{
         role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier},
         user::UserDesc,
     },
-    meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplcationSet},
+    meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet},
     oid::Oid,
     schema::{
         DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
@@ -147,8 +147,8 @@ impl MetaClient for MockMetaClient {
         db: &str,
         hash_id: u64,
         ts: i64,
-    ) -> MetaResult<ReplcationSet> {
-        Ok(ReplcationSet::default())
+    ) -> MetaResult<ReplicationSet> {
+        Ok(ReplicationSet::default())
     }
 
     fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>> {
@@ -236,6 +236,10 @@ impl MetaClient for MockMetaClient {
     }
 
     fn limiter(&self) -> Arc<dyn Limiter> {
+        todo!()
+    }
+
+    fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
         todo!()
     }
 }

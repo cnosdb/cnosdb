@@ -3,9 +3,7 @@ use async_trait::async_trait;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::DDLPlan;
-use spi::query::{self, QueryError};
-
-use spi::query::execution::ExecutionError;
+use spi::Result;
 
 use self::alter_tenant::AlterTenantTask;
 use self::alter_user::AlterUserTask;
@@ -18,12 +16,16 @@ use self::drop_tenant_object::DropTenantObjectTask;
 use self::grant_revoke::GrantRevokeTask;
 use crate::execution::ddl::alter_database::AlterDatabaseTask;
 use crate::execution::ddl::alter_table::AlterTableTask;
+use crate::execution::ddl::checksum_group::ChecksumGroupTask;
+use crate::execution::ddl::compact_vnode::CompactVnodeTask;
+use crate::execution::ddl::copy_vnode::CopyVnodeTask;
 use crate::execution::ddl::create_database::CreateDatabaseTask;
 use crate::execution::ddl::describe_database::DescribeDatabaseTask;
 use crate::execution::ddl::describe_table::DescribeTableTask;
+use crate::execution::ddl::drop_vnode::DropVnodeTask;
+use crate::execution::ddl::move_node::MoveVnodeTask;
 use crate::execution::ddl::show_database::ShowDatabasesTask;
 use crate::execution::ddl::show_table::ShowTablesTask;
-use snafu::ResultExt;
 
 use self::create_external_table::CreateExternalTableTask;
 use self::drop_database_object::DropDatabaseObjectTask;
@@ -32,6 +34,9 @@ mod alter_database;
 mod alter_table;
 mod alter_tenant;
 mod alter_user;
+mod checksum_group;
+mod compact_vnode;
+mod copy_vnode;
 mod create_database;
 mod create_external_table;
 mod create_role;
@@ -43,17 +48,16 @@ mod describe_table;
 mod drop_database_object;
 mod drop_global_object;
 mod drop_tenant_object;
+mod drop_vnode;
 mod grant_revoke;
+mod move_node;
 mod show_database;
 mod show_table;
 
 /// Traits that DDL tasks should implement
 #[async_trait]
 trait DDLDefinitionTask: Send + Sync {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError>;
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output>;
 }
 
 pub struct DDLExecution {
@@ -74,7 +78,7 @@ impl DDLExecution {
 impl QueryExecution for DDLExecution {
     // execute ddl task
     // This logic usually does not change
-    async fn start(&self) -> Result<Output, QueryError> {
+    async fn start(&self) -> Result<Output> {
         let query_state_machine = self.query_state_machine.clone();
 
         query_state_machine.begin_schedule();
@@ -83,15 +87,14 @@ impl QueryExecution for DDLExecution {
             .task_factory
             .create_task()
             .execute(query_state_machine.clone())
-            .await
-            .context(query::ExecutionSnafu);
+            .await;
 
         query_state_machine.end_schedule();
 
         result
     }
 
-    fn cancel(&self) -> query::Result<()> {
+    fn cancel(&self) -> Result<()> {
         // ddl ignore
         Ok(())
     }
@@ -154,6 +157,11 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::AlterTenant(sub_plan) => Box::new(AlterTenantTask::new(sub_plan.clone())),
             DDLPlan::AlterUser(sub_plan) => Box::new(AlterUserTask::new(sub_plan.clone())),
             DDLPlan::GrantRevoke(sub_plan) => Box::new(GrantRevokeTask::new(sub_plan.clone())),
+            DDLPlan::DropVnode(sub_plan) => Box::new(DropVnodeTask::new(sub_plan.clone())),
+            DDLPlan::CopyVnode(sub_plan) => Box::new(CopyVnodeTask::new(sub_plan.clone())),
+            DDLPlan::MoveVnode(sub_plan) => Box::new(MoveVnodeTask::new(sub_plan.clone())),
+            DDLPlan::CompactVnode(sub_plan) => Box::new(CompactVnodeTask::new(sub_plan.clone())),
+            DDLPlan::ChecksumGroup(sub_plan) => Box::new(ChecksumGroupTask::new(sub_plan.clone())),
         }
     }
 }

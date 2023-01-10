@@ -1,18 +1,33 @@
+use std::io::Write;
+
 use crate::service::protocol::QueryId;
+use crate::ParserSnafu;
+use crate::QueryError;
+use crate::Result;
 
 use super::{
-    ast::{parse_bool_value, parse_string_value, ExtStatement},
+    ast::{parse_bool_value, parse_char_value, parse_string_value, ExtStatement},
+    datasource::{
+        azure::{AzblobStorageConfig, AzblobStorageConfigBuilder},
+        gcs::{GcsStorageConfig, ServiceAccountCredentials, ServiceAccountCredentialsBuilder},
+        s3::{S3StorageConfig, S3StorageConfigBuilder},
+        UriSchema,
+    },
     session::IsiphoSessionCtx,
     AFFECTED_ROWS,
 };
 
+use async_trait::async_trait;
+use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::{
-    error::DataFusionError,
+    datasource::file_format::file_type::{FileCompressionType, FileType},
     logical_expr::{AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan},
     prelude::{col, Expr},
     sql::sqlparser::ast::{Ident, ObjectName, SqlOption},
 };
-use meta::error::MetaError;
+
+use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
+use models::schema::TableColumn;
 use models::{
     auth::{
         privilege::{DatabasePrivilege, Privilege},
@@ -22,33 +37,8 @@ use models::{
     oid::Oid,
     schema::{DatabaseOptions, TenantOptions, TenantOptionsBuilder},
 };
-use models::{define_result, schema::TableColumn};
-use snafu::Snafu;
-
-define_result!(LogicalPlannerError);
-
-pub const MISSING_COLUMN: &str = "Insert column name does not exist in target table: ";
-pub const DUPLICATE_COLUMN_NAME: &str = "Insert column name is specified more than once: ";
-pub const MISMATCHED_COLUMNS: &str = "Insert columns and Source columns not match";
-
-#[derive(Debug, Snafu)]
-#[snafu(visibility(pub))]
-pub enum LogicalPlannerError {
-    #[snafu(display("External err: {}", source))]
-    External { source: DataFusionError },
-
-    #[snafu(display("Semantic err: {}", err))]
-    Semantic { err: String },
-
-    #[snafu(display("Insufficient privileges, expected [{}]", privilege))]
-    InsufficientPrivileges { privilege: String },
-
-    #[snafu(display("Metadata err: {}", source))]
-    Metadata { source: MetaError },
-
-    #[snafu(display("This feature is not implemented: {}", err))]
-    NotImplemented { err: String },
-}
+use snafu::ResultExt;
+use tempfile::NamedTempFile;
 
 #[derive(Clone)]
 pub struct PlanWithPrivileges {
@@ -110,6 +100,43 @@ pub enum DDLPlan {
     AlterUser(AlterUser),
 
     GrantRevoke(GrantRevoke),
+
+    DropVnode(DropVnode),
+
+    CopyVnode(CopyVnode),
+
+    MoveVnode(MoveVnode),
+
+    CompactVnode(CompactVnode),
+
+    ChecksumGroup(ChecksumGroup),
+}
+
+#[derive(Debug, Clone)]
+pub struct ChecksumGroup {
+    pub replication_set_id: ReplicationSetId,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompactVnode {
+    pub vnode_ids: Vec<VnodeId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MoveVnode {
+    pub vnode_id: VnodeId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct CopyVnode {
+    pub vnode_id: VnodeId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct DropVnode {
+    pub vnode_id: VnodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -223,21 +250,29 @@ pub struct CreateTenant {
     pub options: TenantOptions,
 }
 
-pub fn sql_options_to_tenant_options(
-    options: Vec<SqlOption>,
-) -> std::result::Result<TenantOptions, String> {
+pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> Result<TenantOptions> {
     let mut builder = TenantOptionsBuilder::default();
 
     for SqlOption { ref name, value } in options {
         match normalize_ident(name).as_str() {
             "comment" => {
-                builder.comment(parse_string_value(value)?);
+                builder.comment(parse_string_value(value).context(ParserSnafu)?);
             }
-            _ => return Err(format!("Expected option [comment], found [{}]", name)),
+            _ => {
+                return Err(QueryError::Semantic {
+                    err: ParserError::ParserError(format!(
+                        "Expected option [comment], found [{}]",
+                        name
+                    ))
+                    .to_string(),
+                })
+            }
         }
     }
 
-    builder.build().map_err(|e| e.to_string())
+    builder.build().map_err(|e| QueryError::Parser {
+        source: ParserError::ParserError(e.to_string()),
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -249,7 +284,7 @@ pub struct CreateUser {
 
 pub fn sql_options_to_user_options(
     with_options: Vec<SqlOption>,
-) -> std::result::Result<UserOptions, String> {
+) -> std::result::Result<UserOptions, ParserError> {
     let mut builder = UserOptionsBuilder::default();
 
     for SqlOption { ref name, value } in with_options {
@@ -266,11 +301,18 @@ pub fn sql_options_to_user_options(
             "comment" => {
                 builder.comment(parse_string_value(value)?);
             }
-            _ => return Err(format!("Expected option [comment], found [{}]", name)),
+            _ => {
+                return Err(ParserError::ParserError(format!(
+                    "Expected option [comment], found [{}]",
+                    name
+                )))
+            }
         }
     }
 
-    builder.build().map_err(|e| e.to_string())
+    builder
+        .build()
+        .map_err(|e| ParserError::ParserError(e.to_string()))
 }
 
 #[derive(Debug, Clone)]
@@ -369,8 +411,9 @@ pub enum AlterTableAction {
     },
 }
 
+#[async_trait]
 pub trait LogicalPlanner {
-    fn create_logical_plan(
+    async fn create_logical_plan(
         &self,
         statement: ExtStatement,
         session: &IsiphoSessionCtx,
@@ -416,4 +459,295 @@ pub fn normalize_ident(id: &Ident) -> String {
         Some(_) => id.value.clone(),
         None => id.value.to_ascii_lowercase(),
     }
+}
+
+pub struct CopyOptions {
+    pub auto_infer_schema: bool,
+}
+
+#[derive(Default)]
+pub struct CopyOptionsBuilder {
+    auto_infer_schema: Option<bool>,
+}
+
+impl CopyOptionsBuilder {
+    // Convert sql options to supported parameters
+    // perform value validation
+    pub fn apply_options(
+        mut self,
+        options: Vec<SqlOption>,
+    ) -> std::result::Result<Self, QueryError> {
+        for SqlOption { ref name, value } in options {
+            match normalize_ident(name).as_str() {
+                "auto_infer_schema" => {
+                    self.auto_infer_schema = Some(parse_bool_value(value)?);
+                }
+                option => {
+                    return Err(QueryError::Semantic {
+                        err: format!("Unsupported option [{}]", option),
+                    })
+                }
+            }
+        }
+
+        Ok(self)
+    }
+
+    /// Construct CopyOptions and assign default value
+    pub fn build(self) -> CopyOptions {
+        CopyOptions {
+            auto_infer_schema: self.auto_infer_schema.unwrap_or_default(),
+        }
+    }
+}
+
+pub struct FileFormatOptions {
+    pub file_type: FileType,
+    pub delimiter: char,
+    pub with_header: bool,
+    pub file_compression_type: FileCompressionType,
+}
+
+#[derive(Debug, Default)]
+pub struct FileFormatOptionsBuilder {
+    file_type: Option<FileType>,
+    delimiter: Option<char>,
+    with_header: Option<bool>,
+    file_compression_type: Option<FileCompressionType>,
+}
+
+impl FileFormatOptionsBuilder {
+    fn parse_file_type(s: &str) -> Result<FileType> {
+        let s = s.to_uppercase();
+        match s.as_str() {
+            "AVRO" => Ok(FileType::AVRO),
+            "PARQUET" => Ok(FileType::PARQUET),
+            "CSV" => Ok(FileType::CSV),
+            "JSON" => Ok(FileType::JSON),
+            _ => Err(QueryError::Semantic {
+                err: format!(
+                    "Unknown FileType: {}, only support AVRO | PARQUET | CSV | JSON",
+                    s
+                ),
+            }),
+        }
+    }
+
+    fn parse_file_compression_type(s: &str) -> Result<FileCompressionType> {
+        let s = s.to_uppercase();
+        match s.as_str() {
+            "GZIP" | "GZ" => Ok(FileCompressionType::GZIP),
+            "BZIP2" | "BZ2" => Ok(FileCompressionType::BZIP2),
+            "" => Ok(FileCompressionType::UNCOMPRESSED),
+            _ => Err(QueryError::Semantic {
+                err: format!(
+                    "Unknown FileCompressionType: {}, only support GZIP | BZIP2",
+                    s
+                ),
+            }),
+        }
+    }
+
+    // 将sql options转换为受支持的参数
+    // 执行值校验
+    pub fn apply_options(mut self, options: Vec<SqlOption>) -> Result<Self> {
+        for SqlOption { ref name, value } in options {
+            match normalize_ident(name).as_str() {
+                "type" => {
+                    let file_type = Self::parse_file_type(&parse_string_value(value)?)?;
+                    self.file_type = Some(file_type);
+                }
+                "delimiter" => {
+                    self.delimiter = Some(parse_char_value(value)?);
+                }
+                "with_header" => {
+                    self.with_header = Some(parse_bool_value(value)?);
+                }
+                "file_compression_type" => {
+                    let file_compression_type =
+                        Self::parse_file_compression_type(&parse_string_value(value)?)?;
+                    self.file_compression_type = Some(file_compression_type);
+                }
+                option => {
+                    return Err(QueryError::Semantic {
+                        err: format!("Unsupported option [{}]", option),
+                    })
+                }
+            }
+        }
+
+        Ok(self)
+    }
+
+    /// Construct FileFormatOptions and assign default value
+    pub fn build(self) -> FileFormatOptions {
+        FileFormatOptions {
+            file_type: self.file_type.unwrap_or(FileType::CSV),
+            delimiter: self.delimiter.unwrap_or(','),
+            with_header: self.with_header.unwrap_or(true),
+            file_compression_type: self
+                .file_compression_type
+                .unwrap_or(FileCompressionType::UNCOMPRESSED),
+        }
+    }
+}
+
+pub enum ConnectionOptions {
+    S3(S3StorageConfig),
+    Gcs(GcsStorageConfig),
+    Azblob(AzblobStorageConfig),
+    Local,
+}
+
+/// Construct ConnectionOptions and assign default value
+/// Convert sql options to supported parameters
+/// perform value validation
+pub fn parse_connection_options(
+    url: &UriSchema,
+    bucket: Option<&str>,
+    options: Vec<SqlOption>,
+) -> Result<ConnectionOptions> {
+    let parsed_options = match (url, bucket) {
+        (UriSchema::S3, Some(bucket)) => ConnectionOptions::S3(parse_s3_options(bucket, options)?),
+        (UriSchema::Gcs, Some(bucket)) => {
+            ConnectionOptions::Gcs(parse_gcs_options(bucket, options)?)
+        }
+        (UriSchema::Azblob, Some(bucket)) => {
+            ConnectionOptions::Azblob(parse_azure_options(bucket, options)?)
+        }
+        (UriSchema::Local, _) => ConnectionOptions::Local,
+        (UriSchema::Custom(schema), _) => {
+            return Err(QueryError::Semantic {
+                err: format!("Unsupported url schema [{}]", schema),
+            })
+        }
+        (_, None) => {
+            return Err(QueryError::Semantic {
+                err: "Lost bucket in url".to_string(),
+            })
+        }
+    };
+
+    Ok(parsed_options)
+}
+
+/// s3://<bucket>/<path>
+fn parse_s3_options(bucket: &str, options: Vec<SqlOption>) -> Result<S3StorageConfig> {
+    let mut builder = S3StorageConfigBuilder::default();
+
+    builder.bucket(bucket);
+
+    for SqlOption { ref name, value } in options {
+        match normalize_ident(name).as_str() {
+            "endpoint_url" => {
+                builder.endpoint_url(parse_string_value(value)?);
+            }
+            "region" => {
+                builder.region(parse_string_value(value)?);
+            }
+            "access_key_id" => {
+                builder.access_key_id(parse_string_value(value)?);
+            }
+            "secret_key" => {
+                builder.secret_access_key(parse_string_value(value)?);
+            }
+            "token" => {
+                builder.security_token(parse_string_value(value)?);
+            }
+            "virtual_hosted_style" => {
+                builder.virtual_hosted_style_request(parse_bool_value(value)?);
+            }
+            _ => {
+                return Err(QueryError::Semantic {
+                    err: format!("Unsupported option [{}]", name),
+                })
+            }
+        }
+    }
+
+    builder.build().map_err(|err| QueryError::Semantic {
+        err: err.to_string(),
+    })
+}
+
+/// gcs://<bucket>/<path>
+fn parse_gcs_options(bucket: &str, options: Vec<SqlOption>) -> Result<GcsStorageConfig> {
+    let mut sac_builder = ServiceAccountCredentialsBuilder::default();
+
+    for SqlOption { ref name, value } in options {
+        match normalize_ident(name).as_str() {
+            "gcs_base_url" => {
+                sac_builder.gcs_base_url(parse_string_value(value)?);
+            }
+            "disable_oauth" => {
+                sac_builder.disable_oauth(parse_bool_value(value)?);
+            }
+            "client_email" => {
+                sac_builder.client_email(parse_string_value(value)?);
+            }
+            "private_key" => {
+                sac_builder.private_key(parse_string_value(value)?);
+            }
+            _ => {
+                return Err(QueryError::Semantic {
+                    err: format!("Unsupported option [{}]", name),
+                })
+            }
+        }
+    }
+
+    let sac = sac_builder.build().map_err(|err| QueryError::Semantic {
+        err: err.to_string(),
+    })?;
+    let mut temp = NamedTempFile::new()?;
+    write_tmp_service_account_file(sac, &mut temp)?;
+
+    Ok(GcsStorageConfig {
+        bucket: bucket.to_string(),
+        service_account_path: temp.into_temp_path(),
+    })
+}
+
+/// https://<account>.blob.core.windows.net/<container>[/<path>]
+/// azblob://<container>/<path>
+fn parse_azure_options(bucket: &str, options: Vec<SqlOption>) -> Result<AzblobStorageConfig> {
+    let mut builder = AzblobStorageConfigBuilder::default();
+    builder.container_name(bucket);
+
+    for SqlOption { ref name, value } in options {
+        match normalize_ident(name).as_str() {
+            "account" => {
+                builder.account_name(parse_string_value(value)?);
+            }
+            "access_key" => {
+                builder.access_key(parse_string_value(value)?);
+            }
+            "bearer_token" => {
+                builder.bearer_token(parse_string_value(value)?);
+            }
+            "use_emulator" => {
+                builder.use_emulator(parse_bool_value(value)?);
+            }
+            _ => {
+                return Err(QueryError::Semantic {
+                    err: format!("Unsupported option [{}]", name),
+                })
+            }
+        }
+    }
+
+    builder.build().map_err(|err| QueryError::Semantic {
+        err: err.to_string(),
+    })
+}
+
+fn write_tmp_service_account_file(
+    sac: ServiceAccountCredentials,
+    tmp: &mut NamedTempFile,
+) -> Result<()> {
+    let body = serde_json::to_vec(&sac)?;
+    let _ = tmp.write(&body)?;
+    tmp.flush()?;
+
+    Ok(())
 }

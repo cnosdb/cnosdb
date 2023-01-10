@@ -5,17 +5,20 @@ rm -rf /tmp/cnosdb/1001
 rm -rf /tmp/cnosdb/2001
 
 set -o errexit
-cargo build
+
+PROJ_DIR=$(cd `dirname $0`;cd ..;pwd)
+
+cargo build --package meta --bin cnosdb-meta
 
 kill() {
     if [ "$(uname)" = "Darwin" ]; then
-        SERVICE='metasrv_test'
+        SERVICE='cnosdb-meta'
         if pgrep -xq -- "${SERVICE}"; then
             pkill -f "${SERVICE}"
         fi
     else
         set +e # killall will error if finds no process to kill
-        killall metasrv_test
+        killall cnosdb-meta
         set -e
     fi
 }
@@ -42,25 +45,25 @@ rpc() {
     echo
 }
 
-#export RUST_LOG=debug 
-echo "Killing all running metasrv_test"
+#export RUST_LOG=debug
+echo "Killing all running cnosdb-meta"
 
 kill
 sleep 1
 
-echo "Start 3 uninitialized metasrv_test servers..."
+echo "Start 3 uninitialized cnosdb-meta servers..."
 
 mkdir -p /tmp/cnosdb/logs
 
-nohup ../target/debug/metasrv_test  --id 1 --http-addr 127.0.0.1:21001 > /tmp/cnosdb/logs/meta_node.1.log &
+nohup ${PROJ_DIR}/target/debug/cnosdb-meta  --id 1 --http-addr 127.0.0.1:21001 > /tmp/cnosdb/logs/meta_node.1.log &
 echo "Server 1 started"
 sleep 1
 
-#nohup ../target/debug/metasrv_test  --id 2 --http-addr 127.0.0.1:21002 > /tmp/cnosdb/logs/meta_node.2.log &
+#nohup ${PROJ_DIR}/target/debug/cnosdb-meta  --id 2 --http-addr 127.0.0.1:21002 > /tmp/cnosdb/logs/meta_node.2.log &
 #echo "Server 2 started"
 #sleep 1
 #
-#nohup ../target/debug/metasrv_test  --id 3 --http-addr 127.0.0.1:21003 > /tmp/cnosdb/logs/meta_node.3.log &
+#nohup ${PROJ_DIR}/target/debug/cnosdb-meta  --id 3 --http-addr 127.0.0.1:21003 > /tmp/cnosdb/logs/meta_node.3.log &
 #echo "Server 3 started"
 #sleep 1
 

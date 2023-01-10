@@ -19,7 +19,7 @@ use crate::{
     service::protocol::{Query, QueryHandle, QueryId},
 };
 
-use super::Result;
+use crate::Result;
 
 pub type DBMSRef = Arc<dyn DatabaseManagerSystem + Send + Sync>;
 

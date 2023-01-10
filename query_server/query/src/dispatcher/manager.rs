@@ -2,12 +2,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
-use datafusion::scheduler::Scheduler;
 use models::oid::Oid;
-use snafu::ResultExt;
 
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::Output;
+use spi::query::scheduler::SchedulerRef;
 use spi::{
     query::{
         ast::ExtStatement,
@@ -19,10 +18,10 @@ use spi::{
         session::IsiphoSessionCtxFactory,
     },
     service::protocol::{Query, QueryId},
+    QueryError,
 };
 
-use spi::query::QueryError::{self, BuildQueryDispatcher};
-use spi::query::{BuildFunctionMetaSnafu, LogicalPlannerSnafu, Result};
+use spi::Result;
 
 use crate::extension::expr::load_all_functions;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
@@ -75,7 +74,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             .create_isipho_session_ctx(query.context().clone(), tenant_id);
 
         let mut func_manager = SimpleFunctionMetadataManager::default();
-        load_all_functions(&mut func_manager).context(BuildFunctionMetaSnafu)?;
+        load_all_functions(&mut func_manager)?;
         let scheme_provider = MetadataProvider::new(
             self.coord.clone(),
             func_manager,
@@ -83,7 +82,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             session.clone(),
         );
 
-        let logical_planner = DefaultLogicalPlanner::new(scheme_provider);
+        let logical_planner = DefaultLogicalPlanner::new(&scheme_provider);
 
         let statements = self.parser.parse(query.content())?;
 
@@ -133,17 +132,17 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 }
 
 impl SimpleQueryDispatcher {
-    async fn execute_statement<S: ContextProviderExtension>(
+    async fn execute_statement<S: ContextProviderExtension + Send + Sync>(
         &self,
         stmt: ExtStatement,
-        logical_planner: &DefaultLogicalPlanner<S>,
+        logical_planner: &DefaultLogicalPlanner<'_, S>,
         query_state_machine: Arc<QueryStateMachine>,
     ) -> Result<Output> {
         // begin analyze
         query_state_machine.begin_analyze();
         let logical_plan = logical_planner
             .create_logical_plan(stmt.clone(), &query_state_machine.session)
-            .context(LogicalPlannerSnafu)?;
+            .await?;
         query_state_machine.end_analyze();
 
         let execution = self
@@ -165,8 +164,7 @@ pub struct SimpleQueryDispatcherBuilder {
     parser: Option<Arc<dyn Parser + Send + Sync>>,
     // cnosdb optimizer
     optimizer: Option<Arc<dyn Optimizer + Send + Sync>>,
-    // TODO 需要封装 scheduler
-    scheduler: Option<Arc<Scheduler>>,
+    scheduler: Option<SchedulerRef>,
 
     queries_limit: usize,
 }
@@ -192,7 +190,7 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
-    pub fn with_scheduler(mut self, scheduler: Arc<Scheduler>) -> Self {
+    pub fn with_scheduler(mut self, scheduler: SchedulerRef) -> Self {
         self.scheduler = Some(scheduler);
         self
     }
@@ -203,24 +201,32 @@ impl SimpleQueryDispatcherBuilder {
     }
 
     pub fn build(self) -> Result<SimpleQueryDispatcher> {
-        let coord = self.coord.ok_or_else(|| BuildQueryDispatcher {
+        let coord = self.coord.ok_or_else(|| QueryError::BuildQueryDispatcher {
             err: "lost of coord".to_string(),
         })?;
-        let session_factory = self.session_factory.ok_or_else(|| BuildQueryDispatcher {
-            err: "lost of session_factory".to_string(),
-        })?;
+        let session_factory =
+            self.session_factory
+                .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                    err: "lost of session_factory".to_string(),
+                })?;
 
-        let parser = self.parser.ok_or_else(|| BuildQueryDispatcher {
-            err: "lost of parser".to_string(),
-        })?;
+        let parser = self
+            .parser
+            .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                err: "lost of parser".to_string(),
+            })?;
 
-        let optimizer = self.optimizer.ok_or_else(|| BuildQueryDispatcher {
-            err: "lost of optimizer".to_string(),
-        })?;
+        let optimizer = self
+            .optimizer
+            .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                err: "lost of optimizer".to_string(),
+            })?;
 
-        let scheduler = self.scheduler.ok_or_else(|| BuildQueryDispatcher {
-            err: "lost of scheduler".to_string(),
-        })?;
+        let scheduler = self
+            .scheduler
+            .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                err: "lost of scheduler".to_string(),
+            })?;
 
         let query_tracker = Arc::new(QueryTracker::new(self.queries_limit));
 

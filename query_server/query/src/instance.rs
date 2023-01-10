@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
-use datafusion::scheduler::Scheduler;
 use derive_builder::Builder;
 use models::{
     auth::{
@@ -12,30 +11,31 @@ use models::{
     oid::Identifier,
     schema::TenantOptionsBuilder,
 };
+use spi::AuthSnafu;
 use spi::{
     query::{
         auth::AccessControlRef, dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory,
         DEFAULT_CATALOG,
     },
-    server::BuildSnafu,
-    server::Result,
-    server::{dbms::DatabaseManagerSystem, MetaDataSnafu},
-    server::{AuthSnafu, QuerySnafu},
+    server::dbms::DatabaseManagerSystem,
     service::protocol::{Query, QueryHandle, QueryId},
+    QueryError,
 };
-
 use trace::{debug, info};
 use tskv::kv_option::Options;
 
-use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
+use crate::{
+    auth::auth_control::{AccessControlImpl, AccessControlNoCheck},
+    execution::scheduler::LocalScheduler,
+};
 use meta::error::MetaError;
 use models::schema::DatabaseSchema;
 use snafu::ResultExt;
 use spi::query::DEFAULT_DATABASE;
-use spi::server::ServerError;
+use spi::Result;
 use tskv::engine::EngineRef;
 
 #[derive(Builder)]
@@ -68,8 +68,7 @@ where
         let result = self
             .query_dispatcher
             .execute_query(tenant_id, query_id, query)
-            .await
-            .context(QuerySnafu)?;
+            .await?;
 
         Ok(QueryHandle::new(query_id, query.clone(), result))
     }
@@ -108,7 +107,7 @@ pub fn make_cnosdbms(
     let parser = Arc::new(DefaultParser::default());
     let optimizer = Arc::new(CascadeOptimizerBuilder::default().build());
     // TODO wrap, and num_threads configurable
-    let scheduler = Arc::new(Scheduler::new(num_cpus::get() * 2));
+    let scheduler = Arc::new(LocalScheduler {});
 
     let queries_limit = options.query.max_server_connections;
 
@@ -123,8 +122,7 @@ pub fn make_cnosdbms(
         .with_optimizer(optimizer)
         .with_scheduler(scheduler)
         .with_queries_limit(queries_limit)
-        .build()
-        .context(BuildSnafu)?;
+        .build()?;
 
     let mut builder = CnosdbmsBuilder::default();
 
@@ -149,7 +147,7 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
     // init admin
     let user_manager = coord.meta_manager().user_manager();
     debug!("Check if system user {} exist", ROOT);
-    if user_manager.user(ROOT).context(MetaDataSnafu)?.is_none() {
+    if user_manager.user(ROOT)?.is_none() {
         info!("Initialize the system user {}", ROOT);
 
         let options = UserOptionsBuilder::default()
@@ -161,7 +159,7 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
         if let Err(err) = res {
             match err {
                 MetaError::UserAlreadyExists { .. } => {}
-                _ => return Err(ServerError::MetaData { source: err }),
+                _ => return Err(QueryError::Meta { source: err }),
             }
         }
     }
@@ -169,11 +167,7 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
     // init system tenant
     let tenant_manager = coord.meta_manager().tenant_manager();
     debug!("Check if system tenant {} exist", DEFAULT_CATALOG);
-    if tenant_manager
-        .tenant(DEFAULT_CATALOG)
-        .context(MetaDataSnafu)?
-        .is_none()
-    {
+    if tenant_manager.tenant(DEFAULT_CATALOG)?.is_none() {
         info!("Initialize the system tenant {}", DEFAULT_CATALOG);
 
         let options = TenantOptionsBuilder::default()
@@ -184,19 +178,19 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
         if let Err(err) = res {
             match err {
                 MetaError::TenantAlreadyExists { .. } => {}
-                _ => return Err(ServerError::MetaData { source: err }),
+                _ => return Err(QueryError::Meta { source: err }),
             }
         }
 
         debug!("Add root to the system tenant as owner");
-        if let Some(root) = user_manager.user(ROOT).context(MetaDataSnafu)? {
+        if let Some(root) = user_manager.user(ROOT)? {
             if let Some(client) = tenant_manager.tenant_meta(DEFAULT_CATALOG) {
                 let role = TenantRoleIdentifier::System(SystemTenantRole::Owner);
                 if let Err(err) = client.add_member_with_role(*root.id(), role) {
                     match err {
                         MetaError::UserAlreadyExists { .. }
                         | MetaError::MemberAlreadyExists { .. } => {}
-                        _ => return Err(ServerError::MetaData { source: err }),
+                        _ => return Err(QueryError::Meta { source: err }),
                     }
                 }
             }
@@ -204,17 +198,17 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
 
         debug!("Initialize the system database {}", DEFAULT_DATABASE);
 
-        let client = tenant_manager
-            .tenant_meta(DEFAULT_CATALOG)
-            .ok_or(MetaError::TenantNotFound {
-                tenant: DEFAULT_CATALOG.to_string(),
-            })
-            .context(MetaDataSnafu)?;
+        let client =
+            tenant_manager
+                .tenant_meta(DEFAULT_CATALOG)
+                .ok_or(MetaError::TenantNotFound {
+                    tenant: DEFAULT_CATALOG.to_string(),
+                })?;
         let res = client.create_db(DatabaseSchema::new(DEFAULT_CATALOG, DEFAULT_DATABASE));
         if let Err(err) = res {
             match err {
                 MetaError::DatabaseAlreadyExists { .. } => {}
-                _ => return Err(ServerError::MetaData { source: err }),
+                _ => return Err(QueryError::Meta { source: err }),
             }
         }
     }

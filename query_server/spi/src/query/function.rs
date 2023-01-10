@@ -1,26 +1,9 @@
 use std::sync::Arc;
 
-use datafusion::{
-    error::DataFusionError,
-    logical_expr::{AggregateUDF, ScalarUDF},
-};
+use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
 
-use snafu::Snafu;
+use crate::Result;
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
-
-#[derive(Debug, Snafu)]
-#[snafu(visibility(pub))]
-pub enum Error {
-    #[snafu(display("DataFusion Error, caused:{}", source))]
-    CausedDataFusion { source: DataFusionError },
-
-    #[snafu(display("Udf already exists, name:{}.", name))]
-    Exists { name: String },
-
-    #[snafu(display("Udf not exists, name:{}.", name))]
-    NotExists { name: String },
-}
 pub type FuncMetaManagerRef = Arc<dyn FunctionMetadataManager + Send + Sync>;
 pub trait FunctionMetadataManager {
     fn register_udf(&mut self, udf: ScalarUDF) -> Result<()>;

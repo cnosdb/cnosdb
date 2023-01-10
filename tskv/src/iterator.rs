@@ -35,6 +35,7 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 
+use crate::schema::error::SchemaError;
 use models::predicate::domain::{ColumnDomains, Domain, PredicateRef, Range, ValueEntry};
 use models::schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
 
@@ -594,8 +595,10 @@ pub struct RowIterator {
 }
 
 impl RowIterator {
-    pub fn new(engine: EngineRef, option: QueryOption, vnode_id: u32) -> Result<Self, Error> {
-        let version = engine.get_db_version(&option.tenant, &option.table_schema.db, vnode_id)?;
+    pub async fn new(engine: EngineRef, option: QueryOption, vnode_id: u32) -> Result<Self, Error> {
+        let version = engine
+            .get_db_version(&option.tenant, &option.table_schema.db, vnode_id)
+            .await?;
 
         let series = engine
             .get_series_id_by_filter(
@@ -605,6 +608,7 @@ impl RowIterator {
                 &option.table_schema.name,
                 &option.tags_filter,
             )
+            .await
             .context(error::IndexErrSnafu)?;
 
         debug!("series number: {}", series.len());
@@ -649,6 +653,7 @@ impl RowIterator {
                 self.vnode_id,
                 id,
             )
+            .await
             .context(IndexErrSnafu)?
         {
             self.columns.clear();
@@ -767,7 +772,9 @@ impl RowIterator {
 
             match self.columns[i].val_type() {
                 ValueType::Unknown => {
-                    return Err(Error::UnKnowType);
+                    return Err(Error::CommonError {
+                        reason: format!("unknown type of {}", self.columns[i].name()),
+                    });
                 }
                 ValueType::Float => {
                     let field_builder = builder[i]
@@ -921,8 +928,8 @@ impl RowIterator {
 
             match RecordBatch::try_new(self.option.df_schema.clone(), cols) {
                 Ok(batch) => Some(Ok(batch)),
-                Err(err) => Some(Err(Error::DataFusionNew {
-                    reason: err.to_string(),
+                Err(err) => Some(Err(Error::CommonError {
+                    reason: format!("iterator fail, {}", err),
                 })),
             }
         };

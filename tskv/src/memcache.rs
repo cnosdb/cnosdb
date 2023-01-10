@@ -239,6 +239,20 @@ impl SeriesData {
         }
     }
 
+    pub fn change_column(&mut self, column_name: &str, new_column: &TableColumn) {
+        for item in self.groups.iter_mut() {
+            item.schema.change_column(column_name, new_column.clone());
+            item.schema.schema_id += 1;
+        }
+    }
+
+    pub fn add_column(&mut self, new_column: &TableColumn) {
+        for item in self.groups.iter_mut() {
+            item.schema.add_column(new_column.clone());
+            item.schema.schema_id += 1;
+        }
+    }
+
     pub fn delete_series(&mut self, range: &TimeRange) {
         if range.max_ts < self.range.min_ts || range.min_ts > self.range.max_ts {
             return;
@@ -395,6 +409,26 @@ impl MemCache {
         }
     }
 
+    pub fn change_column(&self, sids: &[SeriesId], column_name: &str, new_column: &TableColumn) {
+        for sid in sids {
+            let index = (*sid as usize) % self.part_count;
+            let part = self.partions[index].read();
+            if let Some(data) = part.get(sid) {
+                data.write().change_column(column_name, new_column);
+            }
+        }
+    }
+
+    pub fn add_column(&self, sids: &[SeriesId], new_column: &TableColumn) {
+        for sid in sids {
+            let index = (*sid as usize) % self.part_count;
+            let part = self.partions[index].read();
+            if let Some(data) = part.get(sid) {
+                data.write().add_column(new_column);
+            }
+        }
+    }
+
     pub fn delete_series(&self, sids: &[SeriesId], range: &TimeRange) {
         for sid in sids {
             let index = (*sid as usize) % self.part_count;
@@ -478,6 +512,16 @@ impl DataType {
             FieldVal::Unsigned(val) => Self::U64(ts, val),
             FieldVal::Boolean(val) => Self::Bool(ts, val),
             FieldVal::Bytes(val) => Self::Str(ts, val),
+        }
+    }
+
+    pub fn to_bytes(&self) -> MiniVec<u8> {
+        match self {
+            DataType::U64(_, val) => MiniVec::from_iter(val.to_be_bytes()),
+            DataType::I64(_, val) => MiniVec::from_iter(val.to_be_bytes()),
+            DataType::F64(_, val) => MiniVec::from_iter(val.to_be_bytes()),
+            DataType::Str(_, val) => val.clone(),
+            DataType::Bool(_, val) => MiniVec::from_iter(if *val { [1_u8] } else { [0_u8] }),
         }
     }
 }

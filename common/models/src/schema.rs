@@ -14,6 +14,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use std::mem::size_of_val;
 use std::str::FromStr;
 
+use datafusion::logical_expr::TableSource;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
@@ -277,10 +278,8 @@ impl TskvTableSchema {
         map
     }
 
-    pub fn next_column_id(&mut self) -> ColumnId {
-        let ans = self.next_column_id;
-        self.next_column_id += 1;
-        ans
+    pub fn next_column_id(&self) -> ColumnId {
+        self.next_column_id
     }
 
     pub fn size(&self) -> usize {
@@ -734,7 +733,7 @@ impl Duration {
         }
     }
 
-    pub fn time_stamp(&self) -> i64 {
+    pub fn to_nanoseconds(&self) -> i64 {
         match self.unit {
             DurationUnit::Minutes => self.time_num as i64 * 60 * 1000000000,
             DurationUnit::Hour => self.time_num as i64 * 3600 * 1000000000,
@@ -790,5 +789,52 @@ impl Display for TenantOptions {
         }
 
         Ok(())
+    }
+}
+
+pub struct TableSourceAdapter {
+    source: Arc<dyn TableSource>,
+
+    tenant_id: Oid,
+    tenant_name: String,
+    database_name: String,
+    table_name: String,
+}
+
+impl TableSourceAdapter {
+    pub fn new(
+        source: Arc<dyn TableSource>,
+        tenant_id: Oid,
+        tenant_name: impl Into<String>,
+        database_name: impl Into<String>,
+        table_name: impl Into<String>,
+    ) -> Self {
+        Self {
+            source,
+            tenant_id,
+            tenant_name: tenant_name.into(),
+            database_name: database_name.into(),
+            table_name: table_name.into(),
+        }
+    }
+
+    pub fn inner(&self) -> Arc<dyn TableSource> {
+        self.source.clone()
+    }
+
+    pub fn tenant_id(&self) -> Oid {
+        self.tenant_id
+    }
+
+    pub fn tenant_name(&self) -> &str {
+        &self.tenant_name
+    }
+
+    pub fn database_name(&self) -> &str {
+        &self.database_name
+    }
+
+    pub fn table_name(&self) -> &str {
+        &self.table_name
     }
 }

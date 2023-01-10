@@ -24,7 +24,7 @@ use tokio::sync::oneshot::Receiver;
 
 use tokio::sync::oneshot;
 use tokio::time::{self, Duration};
-use tskv::engine::EngineRef;
+use tskv::{engine::EngineRef, VersionEdit};
 
 use coordinator::command::*;
 use coordinator::errors::*;
@@ -138,6 +138,26 @@ async fn process_client(
                 .await?;
             }
 
+            CoordinatorTcpCmd::FetchVnodeSummaryCmd(cmd) => {
+                process_fetch_vnode_summary_command(
+                    &mut client,
+                    cmd,
+                    coord.store_engine(),
+                    coord.meta_manager(),
+                )
+                .await?;
+            }
+
+            CoordinatorTcpCmd::ApplyVnodeSummaryCmd(cmd) => {
+                process_apply_vnode_summary_command(
+                    &mut client,
+                    cmd,
+                    coord.store_engine(),
+                    coord.meta_manager(),
+                )
+                .await?
+            }
+
             _ => {}
         }
     }
@@ -182,23 +202,43 @@ async fn process_admin_statement_command(
     let meta = coord.meta_manager();
     let engine = coord.store_engine();
     match cmd.stmt {
-        AdminStatementType::DropDB(db) => {
-            let _ = engine.drop_database(&cmd.tenant, &db);
+        AdminStatementType::DropDB { db } => {
+            let _ = engine.drop_database(&cmd.tenant, &db).await;
         }
 
-        AdminStatementType::DropTable(db, table) => {
-            let _ = engine.drop_table(&cmd.tenant, &db, &table);
+        AdminStatementType::DropTable { db, table } => {
+            let _ = engine.drop_table(&cmd.tenant, &db, &table).await;
         }
 
-        AdminStatementType::DeleteVnode(db, id) => {
-            let _ = engine.remove_tsfamily(&cmd.tenant, &db, id);
+        AdminStatementType::DeleteVnode { db, vnode_id } => {
+            let _ = engine.remove_tsfamily(&cmd.tenant, &db, vnode_id).await;
+        }
+        AdminStatementType::DropColumn { db, table, column } => {
+            let _ = engine
+                .drop_table_column(&cmd.tenant, &db, &table, &column)
+                .await;
+        }
+        AdminStatementType::AddColumn { db, table, column } => {
+            let _ = engine
+                .add_table_column(&cmd.tenant, &db, &table, column)
+                .await;
+        }
+        AdminStatementType::AlterColumn {
+            db,
+            table,
+            column_name,
+            new_column,
+        } => {
+            let _ = engine
+                .change_table_column(&cmd.tenant, &db, &table, &column_name, new_column)
+                .await;
         }
 
-        AdminStatementType::CopyVnode(vnode_id) => {
+        AdminStatementType::CopyVnode { vnode_id } => {
             let manager = VnodeManager::new(meta, engine);
         }
 
-        AdminStatementType::MoveVnode(vnode_id) => {
+        AdminStatementType::MoveVnode { vnode_id } => {
             let manager = VnodeManager::new(meta, engine);
             if let Err(err) = manager.move_vnode(&cmd.tenant, vnode_id).await {
                 rsp_code = FAILED_RESPONSE_CODE;
@@ -206,10 +246,10 @@ async fn process_admin_statement_command(
             }
         }
 
-        AdminStatementType::GetVnodeFilesMeta(db, id) => {
+        AdminStatementType::GetVnodeFilesMeta { db, vnode_id } => {
             let owner = models::schema::make_owner(&cmd.tenant, &db);
             let storage_opt = engine.get_storage_options();
-            let path = storage_opt.ts_family_dir(&owner, id);
+            let path = storage_opt.ts_family_dir(&owner, vnode_id);
             info!("get files meta: {:?}", path);
             let meta = get_files_meta(&path.as_path().to_string_lossy().to_string()).await?;
             rsp_data = serde_json::to_string(&meta)
@@ -218,10 +258,14 @@ async fn process_admin_statement_command(
             info!("files meta: {:?}", meta);
         }
 
-        AdminStatementType::DownloadFile(db, id, filename) => {
+        AdminStatementType::DownloadFile {
+            db,
+            vnode_id,
+            filename,
+        } => {
             let owner = models::schema::make_owner(&cmd.tenant, &db);
             let storage_opt = engine.get_storage_options();
-            let path1 = storage_opt.ts_family_dir(&owner, id);
+            let path1 = storage_opt.ts_family_dir(&owner, vnode_id);
             let path = path1.join(filename);
             info!("download file: {}", path.display());
 
@@ -320,4 +364,83 @@ async fn query_record_batch(
     } else {
         info!("select statement execute success");
     }
+}
+
+async fn process_fetch_vnode_summary_command(
+    client: &mut TcpStream,
+    cmd: FetchVnodeSummaryRequest,
+    engine: EngineRef,
+    meta: MetaRef,
+) -> CoordinatorResult<()> {
+    let version_edit = match engine
+        .get_vnode_summary(&cmd.tenant, &cmd.database, cmd.vnode_id)
+        .await
+    {
+        Ok(version_edit) => version_edit,
+        Err(e) => {
+            let resp = CoordinatorTcpCmd::StatusResponseCmd(StatusResponse {
+                code: FAILED_RESPONSE_CODE,
+                data: format!("failed to get vnode summary: {:?}", e),
+            });
+            return send_command(client, &resp).await;
+        }
+    };
+
+    let resp = if let Some(ve) = version_edit {
+        match ve.encode() {
+            Ok(ve_bytes) => {
+                CoordinatorTcpCmd::FetchVnodeSummaryResponseCmd(FetchVnodeSummaryResponse {
+                    version_edit: ve_bytes,
+                })
+            }
+            Err(e) => CoordinatorTcpCmd::StatusResponseCmd(StatusResponse {
+                code: FAILED_RESPONSE_CODE,
+                data: format!("failed to encode vnode summary: {:?}", e),
+            }),
+        }
+    } else {
+        CoordinatorTcpCmd::FetchVnodeSummaryResponseCmd(FetchVnodeSummaryResponse {
+            version_edit: vec![],
+        })
+    };
+
+    send_command(client, &resp).await?;
+
+    Ok(())
+}
+
+async fn process_apply_vnode_summary_command(
+    client: &mut TcpStream,
+    cmd: ApplyVnodeSummaryRequest,
+    engine: EngineRef,
+    meta: MetaRef,
+) -> CoordinatorResult<()> {
+    let version_edit = match VersionEdit::decode(&cmd.version_edit) {
+        Ok(ve) => ve,
+        Err(e) => {
+            let resp = CoordinatorTcpCmd::StatusResponseCmd(StatusResponse {
+                code: FAILED_RESPONSE_CODE,
+                data: format!("failed to decode vnode summary: {:?}", e),
+            });
+            return send_command(client, &resp).await;
+        }
+    };
+
+    let resp = match engine
+        .apply_vnode_summary(&cmd.tenant, &cmd.database, cmd.vnode_id, version_edit)
+        .await
+    {
+        Ok(_) => CoordinatorTcpCmd::StatusResponseCmd(StatusResponse {
+            code: SUCCESS_RESPONSE_CODE,
+            data: "".to_string(),
+        }),
+        Err(e) => CoordinatorTcpCmd::StatusResponseCmd(StatusResponse {
+            code: FAILED_RESPONSE_CODE,
+            data: format!("failed to apply vnode summary: {:?}", e),
+        }),
+    };
+
+    send_command(client, &resp).await?;
+
+    Ok(())
 }

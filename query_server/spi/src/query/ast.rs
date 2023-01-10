@@ -1,11 +1,13 @@
 use std::fmt;
 
-use datafusion::sql::sqlparser::ast::SqlOption;
 use datafusion::sql::sqlparser::ast::{
     AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, Value,
 };
+use datafusion::sql::sqlparser::ast::{SqlOption, TableFactor};
+use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
+use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 
 use super::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 
@@ -14,6 +16,9 @@ use super::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectT
 pub enum ExtStatement {
     /// ANSI SQL AST node
     SqlStatement(Box<Statement>),
+
+    // bulk load/unload
+    Copy(Copy),
 
     CreateExternalTable(CreateExternalTable),
     CreateTable(CreateTable),
@@ -35,7 +40,6 @@ pub enum ExtStatement {
     ShowSeries(Box<ShowSeries>),
     ShowTagValues(Box<ShowTagValues>),
     Explain(Explain),
-    //todo:  insert/update/alter
 
     // system cmd
     ShowQueries,
@@ -43,6 +47,72 @@ pub enum ExtStatement {
     AlterTable(AlterTable),
     AlterTenant(AlterTenant),
     AlterUser(AlterUser),
+
+    // vnode cmd
+    DropVnode(DropVnode),
+    CopyVnode(CopyVnode),
+    MoveVnode(MoveVnode),
+    CompactVnode(CompactVnode),
+    ChecksumGroup(ChecksumGroup),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChecksumGroup {
+    pub replication_set_id: ReplicationSetId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactVnode {
+    pub vnode_ids: Vec<VnodeId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MoveVnode {
+    pub vnode_id: VnodeId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CopyVnode {
+    pub vnode_id: VnodeId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DropVnode {
+    pub vnode_id: VnodeId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Copy {
+    pub copy_target: CopyTarget,
+    pub file_format_options: Vec<SqlOption>,
+    pub copy_options: Vec<SqlOption>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CopyTarget {
+    IntoTable(CopyIntoTable),
+    IntoLocation(CopyIntoLocation),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CopyIntoTable {
+    pub location: UriLocation,
+    pub table_name: ObjectName,
+    pub columns: Vec<Ident>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CopyIntoLocation {
+    pub from: TableFactor,
+    pub location: UriLocation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UriLocation {
+    pub path: String,
+    pub connection_options: Vec<SqlOption>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -302,16 +372,32 @@ impl fmt::Display for ObjectType {
     }
 }
 
-pub fn parse_bool_value(value: Value) -> std::result::Result<bool, String> {
+pub fn parse_bool_value(value: Value) -> std::result::Result<bool, ParserError> {
     match value {
         Value::Boolean(s) => Ok(s),
-        _ => Err(format!("expected boolean value, but found : {}", value)),
+        _ => Err(ParserError::ParserError(format!(
+            "expected boolean value, but found : {}",
+            value
+        ))),
     }
 }
 
-pub fn parse_string_value(value: Value) -> std::result::Result<String, String> {
+pub fn parse_string_value(value: Value) -> std::result::Result<String, ParserError> {
     match value {
         Value::SingleQuotedString(s) => Ok(s),
-        _ => Err(format!("expected string value, but found : {}", value)),
+        _ => Err(ParserError::ParserError(format!(
+            "expected string value, but found : {}",
+            value
+        ))),
+    }
+}
+
+pub fn parse_char_value(value: Value) -> std::result::Result<char, ParserError> {
+    let token = parse_string_value(value)?;
+    match token.len() {
+        1 => Ok(token.chars().next().unwrap()),
+        _ => Err(ParserError::ParserError(
+            "Delimiter must be a single char".to_string(),
+        )),
     }
 }

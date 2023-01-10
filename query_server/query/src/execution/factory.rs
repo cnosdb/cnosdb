@@ -1,19 +1,18 @@
 use std::sync::Arc;
 
 use crate::{dispatcher::query_tracker::QueryTracker, execution::ddl::DDLExecution};
-use datafusion::scheduler::Scheduler;
 use spi::query::{
     execution::{QueryExecution, QueryExecutionFactory, QueryStateMachineRef},
     logical_planner::Plan,
     optimizer::Optimizer,
+    scheduler::SchedulerRef,
 };
 
 use super::{query::SqlQueryExecution, sys::SystemExecution};
 
 pub struct SqlQueryExecutionFactory {
     optimizer: Arc<dyn Optimizer + Send + Sync>,
-    // TODO 需要封装 scheduler
-    scheduler: Arc<Scheduler>,
+    scheduler: SchedulerRef,
     query_tracker: Arc<QueryTracker>,
 }
 
@@ -21,7 +20,7 @@ impl SqlQueryExecutionFactory {
     #[inline(always)]
     pub fn new(
         optimizer: Arc<dyn Optimizer + Send + Sync>,
-        scheduler: Arc<Scheduler>,
+        scheduler: SchedulerRef,
         query_tracker: Arc<QueryTracker>,
     ) -> Self {
         Self {

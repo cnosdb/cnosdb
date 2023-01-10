@@ -1,15 +1,16 @@
 use async_trait::async_trait;
 use spi::query::{
-    execution::{ExecutionError, MetadataSnafu, Output, QueryStateMachineRef},
+    execution::{Output, QueryStateMachineRef},
     logical_planner::{DropGlobalObject, GlobalObjectType},
 };
+use spi::Result;
 
 use trace::debug;
 
 use super::DDLDefinitionTask;
 
 use meta::error::MetaError;
-use snafu::ResultExt;
+use spi::QueryError;
 
 pub struct DropGlobalObjectTask {
     stmt: DropGlobalObject,
@@ -23,10 +24,7 @@ impl DropGlobalObjectTask {
 
 #[async_trait]
 impl DDLDefinitionTask for DropGlobalObjectTask {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let DropGlobalObject {
             ref name,
             ref if_exist,
@@ -43,10 +41,10 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 //     name: &str
                 // ) -> Result<bool>;
                 debug!("Drop user {}", name);
-                let success = meta.user_manager().drop_user(name).context(MetadataSnafu)?;
+                let success = meta.user_manager().drop_user(name)?;
 
                 if let (false, false) = (if_exist, success) {
-                    return Err(ExecutionError::Metadata {
+                    return Err(QueryError::Meta {
                         source: MetaError::UserNotFound {
                             user: name.to_string(),
                         },
@@ -62,13 +60,11 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 //     name: &str
                 // ) -> Result<bool>;
                 debug!("Drop tenant {}", name);
-                let success = meta
-                    .tenant_manager()
-                    .drop_tenant(name)
-                    .context(MetadataSnafu)?;
+                let success = meta.tenant_manager().drop_tenant(name)?;
+                // .context(MetaSnafu)?;
 
                 if let (false, false) = (if_exist, success) {
-                    return Err(ExecutionError::Metadata {
+                    return Err(QueryError::Meta {
                         source: MetaError::TenantNotFound {
                             tenant: name.to_string(),
                         },

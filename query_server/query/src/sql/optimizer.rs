@@ -6,7 +6,7 @@ use datafusion::{logical_expr::LogicalPlan, physical_plan::ExecutionPlan};
 use spi::query::session::IsiphoSessionCtx;
 use spi::query::{optimizer::Optimizer, physical_planner::PhysicalPlanner};
 
-use spi::query::Result;
+use spi::Result;
 use trace::debug;
 
 use super::{
