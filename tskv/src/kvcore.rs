@@ -565,10 +565,11 @@ impl Engine for TsKv {
     async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             if let Some(tsfamily) = db.read().await.get_tsfamily(id) {
-                let mut tsfamily = tsfamily.write();
-                tsfamily.switch_to_immutable();
-                let request = tsfamily.flush_req(true);
-                drop(tsfamily);
+                let request = {
+                    let mut tsfamily = tsfamily.write();
+                    tsfamily.switch_to_immutable();
+                    tsfamily.flush_req(true)
+                };
 
                 if let Some(req) = request {
                     run_flush_memtable_job(
@@ -762,7 +763,7 @@ impl Engine for TsKv {
             }
         } else {
             return Err(SchemaError::DatabaseNotFound {
-                database: format!("{}.{}", tenant.to_string(), database.to_string()),
+                database: format!("{}.{}", tenant, database),
             }
             .into());
         }
