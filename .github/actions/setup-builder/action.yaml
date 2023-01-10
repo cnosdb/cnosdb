@@ -11,13 +11,9 @@ runs:
     - name: Install Build Dependencies
       shell: bash
       run: |
-        git clone -b v22.9.29 --depth 1 https://github.com/google/flatbuffers.git
-        cd flatbuffers
-        cmake .
-        make
-        sudo make install
-        sudo ldconfig
-        flatc --version
+        curl -o flatbuffers.zip -sL https://github.com/google/flatbuffers/releases/download/v22.9.29/Linux.flatc.binary.clang++-12.zip
+        unzip  flatbuffers.zip
+        mv flatc /usr/local/bin
     - name: Setup Rust toolchain
       shell: bash
       run: |
