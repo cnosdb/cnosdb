@@ -9,9 +9,9 @@ source "$HOME/.cargo/env"
 function start_cnosdb() {
     rm -rf ./data
     if [ -e "./target/release/cnosdb" ];then
-      nohup ./target/release/cnosdb run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
+      nohup ./target/test-ci/cnosdb run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
     else
-      nohup cargo run --release -- run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
+      nohup cargo run --profile test-ci -- run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
     fi
     echo $!
 }

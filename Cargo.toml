@@ -143,6 +143,13 @@ incremental = true
 overflow-checks = true
 debug = 2
 
+[profile.test-ci]
+inherits = "test"
+incremental = true
+overflow-checks = false
+debug-assertions = false
+panic = 'unwind'
+
 [profile.bench]
 lto = false
 opt-level = 3
