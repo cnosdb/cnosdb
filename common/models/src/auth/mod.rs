@@ -1,3 +1,4 @@
+use crate::auth::privilege::DatabasePrivilege;
 use openssl::error::ErrorStack;
 use snafu::Snafu;
 
@@ -49,8 +50,12 @@ pub enum AuthError {
     #[snafu(display("The privilege already exists in the role"))]
     PrivilegeAlreadyExists,
 
-    #[snafu(display("The privilege not found in the role"))]
-    PrivilegeNotFound,
+    #[snafu(display("The privilege {:?} of {} not found in the role", privilege, db))]
+    PrivilegeNotFound {
+        db: String,
+        privilege: DatabasePrivilege,
+        role: String,
+    },
 
     #[snafu(display("The user {} already exists", user))]
     UserAlreadyExists { user: String },

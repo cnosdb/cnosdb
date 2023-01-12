@@ -2,6 +2,7 @@ use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
 use crate::error::MetaSnafu;
+use crate::kv_option::StorageOptions;
 use crate::tsm::codec::get_str_codec;
 use config::ClusterConfig;
 use datafusion::prelude::Column;
@@ -57,8 +58,7 @@ use crate::{
     kv_option::Options,
     memcache::{DataType, MemCache},
     record_file::Reader,
-    summary,
-    summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit},
+    summary::{self, Summary, SummaryProcessor, SummaryTask, VersionEdit, WriteSummaryRequest},
     tseries_family::{SuperVersion, TimeRange, Version},
     tsm::{DataBlock, TsmTombstone, MAX_BLOCK_VALUES},
     version_set,
@@ -267,7 +267,7 @@ impl TsKv {
                 if let Some(tsf) = ts_family {
                     info!("Starting compaction on ts_family {}", ts_family_id);
                     let start = Instant::now();
-                    let compact_req = tsf.read().await.pick_compaction();
+                    let compact_req = tsf.read().pick_compaction();
                     if let Some(req) = compact_req {
                         let database = req.database.clone();
                         let compact_ts_family = req.ts_family_id;
@@ -276,10 +276,10 @@ impl TsKv {
                             Ok(Some(version_edit)) => {
                                 incr_compaction_success();
                                 let (summary_tx, summary_rx) = oneshot::channel();
-                                let ret = summary_task_sender.send(SummaryTask {
-                                    edits: vec![version_edit],
-                                    cb: summary_tx,
-                                });
+                                let ret = summary_task_sender.send(SummaryTask::new_append_task(
+                                    vec![version_edit],
+                                    summary_tx,
+                                ));
                                 sample_tskv_compaction_duration(
                                     database.as_str(),
                                     compact_ts_family.to_string().as_str(),
@@ -337,35 +337,6 @@ impl TsKv {
 
     // Compact TSM files in database into bigger TSM files.
 
-    pub async fn compact(&self, tenant: &str, database: &str) {
-        let database = self.version_set.read().await.get_db(tenant, database);
-        if let Some(db) = database {
-            // TODO: stop current and prevent next flush and compaction.
-            for (ts_family_id, ts_family) in db.read().await.ts_families() {
-                let compact_req = ts_family.read().await.pick_compaction();
-                if let Some(req) = compact_req {
-                    match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
-                        Ok(Some(version_edit)) => {
-                            let (summary_tx, summary_rx) = oneshot::channel();
-                            let ret = self.summary_task_sender.send(SummaryTask {
-                                edits: vec![version_edit],
-                                cb: summary_tx,
-                            });
-
-                            // let _ = summary_rx.await;
-                        }
-                        Ok(None) => {
-                            info!("There is nothing to compact.");
-                        }
-                        Err(e) => {
-                            error!("Compaction job failed: {:?}", e);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     pub async fn get_db(&self, tenant: &str, database: &str) -> Result<Arc<RwLock<Database>>> {
         let db = self
             .version_set
@@ -419,9 +390,9 @@ impl TsKv {
 
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             for (ts_family_id, ts_family) in db.read().await.ts_families().iter() {
-                ts_family.read().await.delete_columns(&storage_field_ids);
+                ts_family.read().delete_columns(&storage_field_ids);
 
-                let version = ts_family.read().await.super_version();
+                let version = ts_family.read().super_version();
                 for column_file in version
                     .version
                     .column_files(&storage_field_ids, &TimeRange::all())
@@ -502,13 +473,14 @@ impl Engine for TsKv {
             None => db.write().await.add_tsfamily(
                 id,
                 seq,
+                None,
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
             ),
         };
 
-        tsf.read().await.put_points(seq, write_group);
-        tsf.write().await.check_to_flush();
+        tsf.read().put_points(seq, write_group);
+        tsf.write().check_to_flush();
         Ok(WritePointsRpcResponse {
             version: 1,
             points: vec![],
@@ -555,12 +527,13 @@ impl Engine for TsKv {
             None => db.write().await.add_tsfamily(
                 id,
                 seq,
+                None,
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
             ),
         };
 
-        tsf.read().await.put_points(seq, write_group);
+        tsf.read().put_points(seq, write_group);
 
         return Ok(WritePointsRpcResponse {
             version: 1,
@@ -573,6 +546,43 @@ impl Engine for TsKv {
             let mut db_wlock = db.write().await;
 
             db_wlock.del_tsfamily(id, self.summary_task_sender.clone());
+
+            let ts_dir = self
+                .options
+                .storage
+                .ts_family_dir(&make_owner(tenant, database), id);
+            let result = std::fs::remove_dir_all(&ts_dir);
+            info!(
+                "Remove TsFamily data '{}', result: {:?}",
+                ts_dir.display(),
+                result
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            if let Some(tsfamily) = db.read().await.get_tsfamily(id) {
+                let request = {
+                    let mut tsfamily = tsfamily.write();
+                    tsfamily.switch_to_immutable();
+                    tsfamily.flush_req(true)
+                };
+
+                if let Some(req) = request {
+                    run_flush_memtable_job(
+                        req,
+                        self.global_ctx.clone(),
+                        self.version_set.clone(),
+                        self.summary_task_sender.clone(),
+                        self.compact_task_sender.clone(),
+                    )
+                    .await
+                    .unwrap()
+                }
+            }
         }
 
         Ok(())
@@ -723,10 +733,79 @@ impl Engine for TsKv {
             .get_tsfamily_by_name_id(tenant, database, vnode_id)
             .await
         {
-            Ok(Some(tsf.read().await.super_version()))
+            Ok(Some(tsf.read().super_version()))
         } else {
             warn!("ts_family with db name '{}' not found.", database);
             Ok(None)
+        }
+    }
+
+    async fn get_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+    ) -> Result<Option<VersionEdit>> {
+        let version_set = self.version_set.read().await;
+        if let Some(db) = version_set.get_db(tenant, database) {
+            let db = db.read().await;
+            if let Some(tsf) = db.get_tsfamily(vnode_id) {
+                let ve = tsf
+                    .read()
+                    .get_version_edit(self.global_ctx.last_seq(), db.owner());
+                Ok(Some(ve))
+            } else {
+                warn!(
+                    "ts_family with db name '{}.{}' not found.",
+                    tenant, database
+                );
+                Ok(None)
+            }
+        } else {
+            return Err(SchemaError::DatabaseNotFound {
+                database: format!("{}.{}", tenant, database),
+            }
+            .into());
+        }
+    }
+
+    async fn apply_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+        mut summary: VersionEdit,
+    ) -> Result<()> {
+        info!("apply tsfamily summary: {:?}", summary);
+        // It should be a version edit that add a vnode.
+        if !summary.add_tsf {
+            return Ok(());
+        }
+
+        summary.tsf_id = vnode_id;
+        let version_set = self.version_set.read().await;
+        if let Some(db) = version_set.get_db(tenant, database) {
+            let mut db_wlock = db.write().await;
+            // If there is a ts_family here, delete and re-build it.
+            if let Some(tsf) = db_wlock.get_tsfamily(vnode_id) {
+                db_wlock.del_tsfamily(vnode_id, self.summary_task_sender.clone());
+            }
+
+            db_wlock.get_ts_index_or_add(vnode_id).await?;
+
+            db_wlock.add_tsfamily(
+                vnode_id,
+                0,
+                Some(summary),
+                self.summary_task_sender.clone(),
+                self.flush_task_sender.clone(),
+            );
+            Ok(())
+        } else {
+            return Err(SchemaError::DatabaseNotFound {
+                database: database.to_string(),
+            }
+            .into());
         }
     }
 
@@ -741,7 +820,7 @@ impl Engine for TsKv {
         let db = db.read().await;
         let sids = db.get_table_sids(table).await?;
         for (ts_family_id, ts_family) in db.ts_families().iter() {
-            ts_family.read().await.add_column(&sids, &new_column);
+            ts_family.read().add_column(&sids, &new_column);
         }
         Ok(())
     }
@@ -787,10 +866,13 @@ impl Engine for TsKv {
         for (ts_family_id, ts_family) in db.ts_families().iter() {
             ts_family
                 .read()
-                .await
                 .change_column(&sids, column_name, &new_column);
         }
         Ok(())
+    }
+
+    fn get_storage_options(&self) -> Arc<StorageOptions> {
+        self.options.storage.clone()
     }
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
@@ -816,6 +898,34 @@ impl Engine for TsKv {
             break;
         }
         Ok(())
+    }
+
+    async fn compact(&self, tenant: &str, database: &str) {
+        let database = self.version_set.read().await.get_db(tenant, database);
+        if let Some(db) = database {
+            // TODO: stop current and prevent next flush and compaction.
+            for (ts_family_id, ts_family) in db.read().await.ts_families() {
+                let compact_req = ts_family.read().pick_compaction();
+                if let Some(req) = compact_req {
+                    match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
+                        Ok(Some(version_edit)) => {
+                            let (summary_tx, summary_rx) = oneshot::channel();
+                            let ret = self
+                                .summary_task_sender
+                                .send(SummaryTask::new_append_task(vec![version_edit], summary_tx));
+
+                            // let _ = summary_rx.await;
+                        }
+                        Ok(None) => {
+                            info!("There is nothing to compact.");
+                        }
+                        Err(e) => {
+                            error!("Compaction job failed: {:?}", e);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

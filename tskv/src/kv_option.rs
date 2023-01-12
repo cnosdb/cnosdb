@@ -32,7 +32,7 @@ impl From<&Config> for Options {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct StorageOptions {
     pub path: PathBuf,
     pub max_summary_size: u64,
@@ -57,6 +57,10 @@ impl StorageOptions {
 
     pub fn database_dir(&self, database: &str) -> PathBuf {
         self.path.join(DATA_PATH).join(database)
+    }
+
+    pub fn ts_family_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.database_dir(database).join(ts_family_id.to_string())
     }
 
     pub fn index_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {

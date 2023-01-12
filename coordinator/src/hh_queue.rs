@@ -459,7 +459,7 @@ impl HintedOffReader {
         debug!("Read hinted off Reader: data_len={}", data_len);
 
         if (data_len + tenant_len) as usize > self.body_buf.len() {
-            self.body_buf.resize(data_len as usize, 0);
+            self.body_buf.resize((data_len + tenant_len) as usize, 0);
         }
 
         let buf = &mut self.body_buf.as_mut_slice()[0..(data_len + tenant_len) as usize];
@@ -546,12 +546,5 @@ mod test {
         if count != 100 {
             panic!("hinted off read write wrong");
         }
-    }
-
-    #[tokio::test]
-    async fn test_list_dir_names() {
-        let list = list_dir_names(PathBuf::from("/tmp/cnosdb".to_string()));
-
-        print!("{:#?}", list);
     }
 }

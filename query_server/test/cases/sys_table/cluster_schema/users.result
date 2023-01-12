@@ -42,9 +42,9 @@
 -- AFTER_SORT --
 200 OK
 user_name,is_admin,user_options
-root,true,"{""password"":null,""must_change_password"":true,""rsa_public_key"":null,""comment"":""system admin""}"
-test_us_u1,false,"{""password"":null,""must_change_password"":null,""rsa_public_key"":null,""comment"":null}"
-test_us_u2,false,"{""password"":null,""must_change_password"":null,""rsa_public_key"":null,""comment"":null}"
+root,true,"{""password"":""*****"",""must_change_password"":true,""rsa_public_key"":null,""comment"":""system admin""}"
+test_us_u1,false,"{""password"":""*****"",""must_change_password"":null,""rsa_public_key"":null,""comment"":null}"
+test_us_u2,false,"{""password"":""*****"",""must_change_password"":null,""rsa_public_key"":null,""comment"":null}"
 
 -- EXECUTE SQL: select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2'); --
 -- AFTER_SORT --

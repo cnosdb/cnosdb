@@ -4,13 +4,14 @@ use std::sync::Arc;
 
 use config::{ClusterConfig, HintedOffConfig};
 use models::consistency_level::ConsistencyLevel;
-use models::meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo};
+use models::meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo, VnodeAllInfo};
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
 use models::*;
 
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
@@ -27,6 +28,7 @@ use tskv::iterator::QueryOption;
 
 use crate::command::*;
 use crate::errors::*;
+use crate::file_info::*;
 use crate::hh_queue::HintedOffManager;
 use crate::reader::{QueryExecutor, ReaderIterator};
 use crate::writer::{PointWriter, VnodeMapping};
@@ -35,6 +37,7 @@ pub type CoordinatorRef = Arc<dyn Coordinator>;
 
 #[async_trait::async_trait]
 pub trait Coordinator: Send + Sync + Debug {
+    fn node_id(&self) -> u64;
     fn meta_manager(&self) -> MetaRef;
     fn store_engine(&self) -> EngineRef;
     fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
@@ -51,6 +54,13 @@ pub trait Coordinator: Send + Sync + Debug {
     ) -> CoordinatorResult<()>;
 
     async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
+
+    async fn vnode_manager(
+        &self,
+        tenant: &str,
+        vnode_id: u32,
+        cmd_type: VnodeManagerCmdType,
+    ) -> CoordinatorResult<()>;
 }
 
 #[derive(Debug, Default)]
@@ -58,6 +68,10 @@ pub struct MockCoordinator {}
 
 #[async_trait::async_trait]
 impl Coordinator for MockCoordinator {
+    fn node_id(&self) -> u64 {
+        0
+    }
+
     fn meta_manager(&self) -> MetaRef {
         Arc::new(MockMetaManager::default())
     }
@@ -90,10 +104,20 @@ impl Coordinator for MockCoordinator {
         let (it, _) = ReaderIterator::new();
         Ok(it)
     }
+
+    async fn vnode_manager(
+        &self,
+        tenant: &str,
+        vnode_id: u32,
+        cmd_type: VnodeManagerCmdType,
+    ) -> CoordinatorResult<()> {
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
 pub struct CoordService {
+    node_id: u64,
     meta: MetaRef,
     kv_inst: EngineRef,
     writer: Arc<PointWriter>,
@@ -127,6 +151,7 @@ impl CoordService {
         let coord = Arc::new(Self {
             kv_inst,
             coord_sender,
+            node_id: cluster.node_id,
             meta: meta_manager,
             writer: point_writer,
             handoff: hh_manager,
@@ -149,8 +174,15 @@ impl CoordService {
                     tokio::spawn(CoordService::select_statement_request(coord.clone(), req));
                 }
 
-                CoordinatorIntCmd::AdminStatementCmd(req, sender) => {
-                    tokio::spawn(CoordService::admin_statement_request(
+                CoordinatorIntCmd::AdminBroadcastCmd(req, sender) => {
+                    tokio::spawn(CoordService::admin_broadcast_request(
+                        coord.clone(),
+                        req,
+                        sender,
+                    ));
+                }
+                CoordinatorIntCmd::VnodeManagerCmd(req, sender) => {
+                    tokio::spawn(CoordService::vnode_manager_request(
                         coord.clone(),
                         req,
                         sender,
@@ -232,7 +264,7 @@ impl CoordService {
         req.sender.send(result).expect("successful");
     }
 
-    async fn admin_statement_request(
+    async fn admin_broadcast_request(
         coord: Arc<CoordService>,
         req: AdminStatementRequest,
         sender: oneshot::Sender<CoordinatorResult<()>>,
@@ -251,6 +283,86 @@ impl CoordService {
             Ok(_) => sender.send(Ok(())).expect("success"),
             Err(err) => sender.send(Err(err)).expect("success"),
         };
+    }
+
+    fn get_vnode_all_info(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<VnodeAllInfo> {
+        match self.tenant_meta(tenant) {
+            Some(meta_client) => match meta_client.get_vnode_all_info(vnode_id) {
+                Some(all_info) => Ok(all_info),
+                None => Err(CoordinatorError::VnodeNotFound { id: vnode_id }),
+            },
+
+            None => Err(CoordinatorError::TenantNotFound {
+                name: tenant.to_string(),
+            }),
+        }
+    }
+
+    async fn vnode_manager_request(
+        coord: Arc<CoordService>,
+        req: VnodeManagerRequest,
+        sender: oneshot::Sender<CoordinatorResult<()>>,
+    ) {
+        sender
+            .send(coord.warp_vnode_manager_request(&req).await)
+            .expect("success");
+    }
+
+    async fn warp_vnode_manager_request(&self, req: &VnodeManagerRequest) -> CoordinatorResult<()> {
+        let all_info = self.get_vnode_all_info(&req.tenant, req.vnode_id)?;
+
+        let (tcp_req, req_node_id) = match req.cmd_type {
+            VnodeManagerCmdType::Copy(node_id) => {
+                if all_info.node_id == node_id {
+                    return Err(CoordinatorError::CommonError {
+                        msg: format!("Vnode: {} Already in {}", all_info.vnode_id, node_id),
+                    });
+                }
+
+                (
+                    AdminStatementRequest {
+                        tenant: req.tenant.clone(),
+                        stmt: AdminStatementType::CopyVnode {
+                            vnode_id: req.vnode_id,
+                        },
+                    },
+                    node_id,
+                )
+            }
+
+            VnodeManagerCmdType::Move(node_id) => {
+                if all_info.node_id == node_id {
+                    return Err(CoordinatorError::CommonError {
+                        msg: format!("move vnode: {} already in {}", all_info.vnode_id, node_id),
+                    });
+                }
+
+                (
+                    AdminStatementRequest {
+                        tenant: req.tenant.clone(),
+                        stmt: AdminStatementType::MoveVnode {
+                            vnode_id: req.vnode_id,
+                        },
+                    },
+                    node_id,
+                )
+            }
+
+            VnodeManagerCmdType::Drop => (
+                AdminStatementRequest {
+                    tenant: req.tenant.clone(),
+                    stmt: AdminStatementType::DeleteVnode {
+                        db: all_info.db_name.clone(),
+                        vnode_id: req.vnode_id,
+                    },
+                },
+                all_info.node_id,
+            ),
+        };
+
+        let cmd = CoordinatorTcpCmd::AdminStatementCmd(tcp_req);
+
+        self.exec_on_node(req_node_id, cmd).await
     }
 
     async fn select_statement_request(coord: Arc<CoordService>, req: SelectStatementRequest) {
@@ -304,8 +416,13 @@ impl CoordService {
     }
 }
 
+//***************************** Coordinator Interface ***************************************** */
 #[async_trait::async_trait]
 impl Coordinator for CoordService {
+    fn node_id(&self) -> u64 {
+        self.node_id
+    }
+
     fn meta_manager(&self) -> MetaRef {
         self.meta.clone()
     }
@@ -346,7 +463,7 @@ impl Coordinator for CoordService {
         let (sender, receiver) = oneshot::channel();
 
         self.coord_sender
-            .send(CoordinatorIntCmd::AdminStatementCmd(req, sender))
+            .send(CoordinatorIntCmd::AdminBroadcastCmd(req, sender))
             .await?;
 
         receiver.await?
@@ -361,5 +478,26 @@ impl Coordinator for CoordService {
             .await?;
 
         Ok(iterator)
+    }
+
+    async fn vnode_manager(
+        &self,
+        tenant: &str,
+        vnode_id: u32,
+        cmd_type: VnodeManagerCmdType,
+    ) -> CoordinatorResult<()> {
+        let (sender, receiver) = oneshot::channel();
+
+        let req = VnodeManagerRequest {
+            tenant: tenant.to_string(),
+            vnode_id,
+            cmd_type,
+        };
+
+        self.coord_sender
+            .send(CoordinatorIntCmd::VnodeManagerCmd(req, sender))
+            .await?;
+
+        receiver.await?
     }
 }

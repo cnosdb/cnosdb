@@ -17,7 +17,7 @@ use datafusion::arrow::datatypes::DataType as ArrowDataType;
 use models::utils::{min_num, unite_id};
 use models::{FieldId, SeriesId, ValueType};
 use snafu::ResultExt;
-use trace::debug;
+use trace::{debug, info};
 
 use super::{
     engine::EngineRef,
@@ -611,7 +611,7 @@ impl RowIterator {
             .await
             .context(error::IndexErrSnafu)?;
 
-        debug!("series number: {}", series.len());
+        info!("vnode_id: {}, series number: {}", vnode_id, series.len());
 
         let metrics = option.metrics.clone();
         let batch_size = option.batch_size;

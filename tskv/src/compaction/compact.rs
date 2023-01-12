@@ -498,8 +498,7 @@ pub async fn run_compaction_job(
     let tsm_dir = storage_opt.tsm_dir(&request.database, tsf_id);
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
     info!("Compaction: File {} been created.", tsm_writer.sequence());
-    let mut version_edit = VersionEdit::new();
-    version_edit.tsf_id = tsf_id;
+    let mut version_edit = VersionEdit::new(tsf_id);
 
     loop {
         let block = iter.next().await;

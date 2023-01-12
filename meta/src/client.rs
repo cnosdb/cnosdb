@@ -159,10 +159,16 @@ impl MetaHttpClient {
 
 #[cfg(test)]
 mod test {
-    use crate::{client::MetaHttpClient, store::command};
+    use crate::{
+        client::MetaHttpClient,
+        store::command::{self, UpdateVnodeReplSetArgs},
+    };
     use std::{thread, time};
 
-    use models::{meta_data::NodeInfo, schema::DatabaseSchema};
+    use models::{
+        meta_data::{NodeInfo, VnodeInfo},
+        schema::DatabaseSchema,
+    };
 
     pub async fn watch_tenant(cluster: &str, tenant: &str) {
         println!("=== begin ================...");
@@ -199,6 +205,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_meta_client() {
         let cluster = "cluster_xxx".to_string();
         let tenant = "tenant_test".to_string();
@@ -248,5 +255,38 @@ mod test {
         thread::sleep(time::Duration::from_secs(3));
 
         // thread::sleep(time::Duration::from_secs(300));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_update_replication_set() {
+        let cluster = "cluster_xxx".to_string();
+        let tenant = "cnosdb".to_string();
+        let db_name = "my_db".to_string();
+
+        let args = UpdateVnodeReplSetArgs {
+            cluster,
+            tenant,
+            db_name,
+            bucket_id: 8,
+            repl_id: 9,
+            del_info: vec![VnodeInfo { id: 11, node_id: 0 }],
+            add_info: vec![
+                VnodeInfo {
+                    id: 333,
+                    node_id: 1333,
+                },
+                VnodeInfo {
+                    id: 444,
+                    node_id: 1444,
+                },
+            ],
+        };
+
+        let req = command::WriteCommand::UpdateVnodeReplSet(args);
+
+        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+        let rsp = client.write::<command::StatusResponse>(&req);
+        println!("=========: {:?}", rsp);
     }
 }

@@ -70,6 +70,11 @@ impl QueryExecutor {
         let mut routines = vec![];
         let mapping = self.map_vnode()?;
         for (node_id, vnodes) in mapping.iter() {
+            info!(
+                "execute select on node {}, vnode list: {:?}",
+                node_id, vnodes
+            );
+
             let routine = self.node_executor(*node_id, vnodes.clone());
             routines.push(routine);
         }

@@ -6,9 +6,7 @@ use spi::query::{
 };
 
 use super::DDLDefinitionTask;
-use meta::error::MetaError;
 
-use spi::QueryError;
 use spi::Result;
 
 pub struct MoveVnodeTask {
@@ -25,20 +23,13 @@ impl MoveVnodeTask {
 #[async_trait]
 impl DDLDefinitionTask for MoveVnodeTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        let MoveVnode {
-            vnode_id: _,
-            node_id: _,
-        } = self.stmt;
+        let (vnode_id, node_id) = (self.stmt.vnode_id, self.stmt.node_id);
         let tenant = query_state_machine.session.tenant();
-        let _meta = query_state_machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .ok_or_else(|| QueryError::Meta {
-                source: MetaError::TenantNotFound {
-                    tenant: tenant.to_string(),
-                },
-            })?;
-        todo!()
+
+        let coord = query_state_machine.coord.clone();
+        let cmd_type = coordinator::command::VnodeManagerCmdType::Move(node_id);
+        coord.vnode_manager(tenant, vnode_id, cmd_type).await?;
+
+        Ok(Output::Nil(()))
     }
 }
