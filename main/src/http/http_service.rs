@@ -6,6 +6,8 @@ use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
+use query::prom::remote_read::PromRemoteSqlServer;
+use spi::server::prom::PromRemoteServerRef;
 
 use super::header::Header;
 use super::Error as HttpError;
@@ -58,6 +60,7 @@ pub struct HttpService {
     dbms: DBMSRef,
     kv_inst: EngineRef,
     coord: CoordinatorRef,
+    prs: PromRemoteServerRef,
     handle: Option<ServiceHandle<()>>,
     query_body_limit: u64,
     write_body_limit: u64,
@@ -73,12 +76,15 @@ impl HttpService {
         query_body_limit: u64,
         write_body_limit: u64,
     ) -> Self {
+        let prs = Arc::new(PromRemoteSqlServer::new(dbms.clone()));
+
         Self {
             tls_config,
             addr,
             dbms,
             kv_inst,
             coord,
+            prs,
             handle: None,
             query_body_limit,
             write_body_limit,
@@ -110,6 +116,12 @@ impl HttpService {
         let coord = self.coord.clone();
         warp::any().map(move || coord.clone())
     }
+    fn with_prom_remote_server(
+        &self,
+    ) -> impl Filter<Extract = (PromRemoteServerRef,), Error = Infallible> + Clone {
+        let prs = self.prs.clone();
+        warp::any().map(move || prs.clone())
+    }
 
     fn routes(
         &self,
@@ -119,6 +131,7 @@ impl HttpService {
             .or(self.write_line_protocol())
             .or(self.metrics())
             .or(self.print_meta())
+            .or(self.prom_remote_read())
     }
 
     fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -262,6 +275,63 @@ impl HttpService {
             debug!("prometheus access");
             warp::reply::Response::new(Body::from(gather_metrics()))
         })
+    }
+
+    fn prom_remote_read(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        // let dbms = self.dbms.clone();
+        warp::path!("api" / "v1" / "prom" / "read")
+            .and(warp::post())
+            .and(warp::body::content_length_limit(self.query_body_limit))
+            .and(warp::body::bytes())
+            .and(self.handle_header())
+            .and(warp::query::<SqlParam>())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and(self.with_prom_remote_server())
+            .and_then(
+                |req: Bytes,
+                 header: Header,
+                 param: SqlParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef,
+                 prs: PromRemoteServerRef| async move {
+                    let start = Instant::now();
+                    debug!(
+                        "Receive rest prom remote read request, header: {:?}, param: {:?}",
+                        header, param
+                    );
+
+                    // Parse req、header and param to construct query request
+                    let user_info = header.try_get_basic_auth().map_err(reject::custom)?;
+                    let tenant = param.tenant;
+                    let user = dbms
+                        .authenticate(&user_info, tenant.as_deref())
+                        .map_err(|e| reject::custom(HttpError::from(e)))?;
+                    let context = ContextBuilder::new(user)
+                        .with_tenant(tenant)
+                        .with_database(param.db)
+                        .with_target_partitions(param.target_partitions)
+                        .build();
+
+                    let result = prs
+                        .remote_read(&context, coord.meta_manager(), req)
+                        .await
+                        .map_err(|e| {
+                            trace::error!("Failed to handle prom remote read request, err: {}", e);
+                            reject::custom(HttpError::from(e))
+                        });
+
+                    sample_query_read_duration(
+                        context.tenant(),
+                        context.database(),
+                        result.is_ok(),
+                        start.elapsed().as_millis() as f64,
+                    );
+                    result
+                },
+            )
     }
 }
 

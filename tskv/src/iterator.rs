@@ -369,6 +369,8 @@ impl FieldCursor {
 
         let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&iterator.option.time_filter);
 
+        debug!("Pushed time range filter: {:?}", time_ranges);
+
         // get data from im_memcache and memcache
         let mut mem_data: Vec<DataType> = Vec::new();
 

@@ -41,6 +41,8 @@ url = { workspace = true }
 async-recursion = { workspace = true }
 tempfile = { workspace = true }
 bytes = { workspace = true }
+snap = { workspace = true, default-features = false }
+regex = { workspace = true }
 
 # use libc on unix like platforms to set worker priority in DedicatedExecutor
 [target."cfg(unix)".dependencies.libc]
