@@ -346,6 +346,21 @@ impl LevelInfo {
         ]
     }
 
+    pub fn with_compact_metas(
+        database: String,
+        vnode_id: TseriesFamilyId,
+        storage_opt: Arc<StorageOptions>,
+        compact_metas: &[CompactMeta],
+    ) -> [LevelInfo; 5] {
+        let mut levels = Self::init_levels(database, vnode_id, storage_opt);
+        if !compact_metas.is_empty() {
+            for c in compact_metas {
+                levels[c.level as usize].push_compact_meta(c);
+            }
+        }
+        levels
+    }
+
     pub fn push_compact_meta(&mut self, compact_meta: &CompactMeta) {
         let file_path = if compact_meta.is_delta {
             let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
@@ -707,13 +722,13 @@ impl TseriesFamily {
         self.new_super_version(self.version.clone());
     }
 
-    /// Check if there is immutable caches to flush.
+    /// Check if there are immutable caches to flush.
     ///
     /// If argument `force` is false, immutable caches number should be greater than
     /// configuration `max_immutable_number`.
     ///
     /// If argument force is set to true, then do not check immutable caches number.
-    pub(crate) fn wrap_flush_req(&mut self, force: bool) {
+    pub(crate) fn flush_req(&mut self, force: bool) -> Option<FlushReq> {
         let len = self.immut_cache.len();
         let mut imut = vec![];
         for mem in self.immut_cache.iter() {
@@ -738,17 +753,23 @@ impl TseriesFamily {
         }
 
         if !force && req_mems.len() < self.cache_opt.max_immutable_number as usize {
-            return;
+            return None;
         }
 
         for mem in req_mems.iter() {
             mem.1.write().flushing = true;
         }
 
-        info!("flush_req send,now req queue len : {}", req_mems.len());
-        self.flush_task_sender
-            .send(FlushReq { mems: req_mems })
-            .expect("error send flush req to kvcore");
+        info!("flush req queue len : {}", req_mems.len());
+        Some(FlushReq { mems: req_mems })
+    }
+
+    pub(crate) fn wrap_flush_req(&mut self, force: bool) {
+        if let Some(req) = self.flush_req(force) {
+            self.flush_task_sender
+                .send(req)
+                .expect("error send flush req to kvcore");
+        }
     }
 
     pub fn put_points(&self, seq: u64, points: HashMap<(SeriesId, SchemaId), RowGroup>) {
@@ -810,6 +831,22 @@ impl TseriesFamily {
         self.compact_picker.pick_compaction(self.version.clone())
     }
 
+    pub fn get_version_edit(&self, last_seq: u64, tsf_name: String) -> VersionEdit {
+        let mut version_edit = VersionEdit::new_add_vnode(self.tf_id, tsf_name);
+        let version = self.version();
+        let max_level_ts = version.max_level_ts;
+        for files in version.levels_info.iter() {
+            for file in files.files.iter() {
+                let mut meta = CompactMeta::from(file.as_ref());
+                meta.tsf_id = files.tsf_id;
+                meta.high_seq = last_seq;
+                version_edit.add_file(meta, max_level_ts);
+            }
+        }
+
+        version_edit
+    }
+
     pub fn tf_id(&self) -> TseriesFamilyId {
         self.tf_id
     }
@@ -853,17 +890,14 @@ mod test {
     use models::{Timestamp, ValueType};
     use trace::info;
 
-    use crate::compaction::flush_tests::default_with_field_id;
     use crate::file_system::file_manager;
     use crate::file_utils::{self, make_tsm_file_name};
-    use crate::memcache::{FieldVal, RowData, RowGroup};
-    use crate::summary::SummaryTask;
     use crate::{
-        compaction::{run_flush_memtable_job, FlushReq},
+        compaction::{flush_tests::default_with_field_id, run_flush_memtable_job, FlushReq},
         context::GlobalContext,
         kv_option::Options,
-        memcache::MemCache,
-        summary::{CompactMeta, VersionEdit},
+        memcache::{FieldVal, MemCache, RowData, RowGroup},
+        summary::{CompactMeta, SummaryTask, VersionEdit, WriteSummaryRequest},
         tseries_family::{TimeRange, TseriesFamily, Version},
         tsm::TsmTombstone,
         version_set::VersionSet,
@@ -940,7 +974,7 @@ mod test {
             ],
         };
         let mut version_edits = Vec::new();
-        let mut ve = VersionEdit::new();
+        let mut ve = VersionEdit::new(1);
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
@@ -957,7 +991,7 @@ mod test {
             3100,
         );
         version_edits.push(ve);
-        let mut ve = VersionEdit::new();
+        let mut ve = VersionEdit::new(1);
         ve.del_file(1, 3, false);
         version_edits.push(ve);
         let new_version = version.copy_apply_version_edits(version_edits, Some(3));
@@ -1040,7 +1074,7 @@ mod test {
             ],
         };
         let mut version_edits = Vec::new();
-        let mut ve = VersionEdit::new();
+        let mut ve = VersionEdit::new(1);
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
@@ -1072,7 +1106,7 @@ mod test {
             3150,
         );
         version_edits.push(ve);
-        let mut ve = VersionEdit::new();
+        let mut ve = VersionEdit::new(1);
         ve.del_file(1, 3, false);
         ve.del_file(1, 4, false);
         ve.del_file(2, 1, false);
@@ -1177,7 +1211,7 @@ mod test {
         let mut version_edits: Vec<VersionEdit> = Vec::new();
         let mut min_seq: u64 = 0;
         while let Some(summary_task) = summary_task_receiver.recv().await {
-            for edit in summary_task.edits.into_iter() {
+            for edit in summary_task.write_summary_request().edits.into_iter() {
                 if edit.tsf_id == ts_family_id {
                     version_edits.push(edit.clone());
                     if edit.has_seq_no {
@@ -1188,7 +1222,7 @@ mod test {
         }
         let version_set = version_set.write().await;
         if let Some(ts_family) = version_set.get_tsfamily_by_tf_id(ts_family_id).await {
-            let mut ts_family = ts_family.write().await;
+            let mut ts_family = ts_family.write();
             let new_version = ts_family
                 .version()
                 .copy_apply_version_edits(version_edits, Some(min_seq));
@@ -1275,9 +1309,14 @@ mod test {
         let ts_family_id = db
             .write()
             .await
-            .add_tsfamily(0, 0, summary_task_sender.clone(), flush_task_sender.clone())
+            .add_tsfamily(
+                0,
+                0,
+                None,
+                summary_task_sender.clone(),
+                flush_task_sender.clone(),
+            )
             .read()
-            .await
             .tf_id();
 
         run_flush_memtable_job(
@@ -1297,7 +1336,7 @@ mod test {
             .get_tsfamily_by_name("cnosdb", &database)
             .await
             .unwrap();
-        let version = tsf.write().await.version();
+        let version = tsf.write().version();
         version.levels_info[1]
             .read_column_file(
                 ts_family_id,

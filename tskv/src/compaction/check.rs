@@ -8,7 +8,6 @@ use std::{
 use blake3::Hasher;
 use chrono::{Duration, DurationRound, NaiveDateTime};
 use models::{schema::ColumnType, utils, ColumnId, FieldId, Timestamp};
-use parking_lot::RwLock;
 use snafu::ResultExt;
 use trace::warn;
 
@@ -166,7 +165,7 @@ pub(crate) async fn get_ts_family_hash_tree(
     // let ts_family_id = ts_family_rlock.tf_id();
     // drop(ts_family_rlock);
     let (version, ts_family_id) = {
-        let ts_family_rlock = ts_family.read().await;
+        let ts_family_rlock = ts_family.read();
         (ts_family_rlock.version(), ts_family_rlock.tf_id())
     };
     let mut readers: Vec<TsmReader> = Vec::new();
@@ -466,7 +465,6 @@ mod test {
             FlushReq,
         },
         engine::Engine,
-        summary::SummaryTask,
         tsm::{codec::DataBlockEncoding, DataBlock},
         version_set::VersionSet,
         Options, TimeRange, TsKv, TseriesFamilyId,
@@ -875,6 +873,7 @@ mod test {
                 )))
                 .unwrap();
 
+            meta_client.drop_db(&database_name).unwrap();
             let _ = engine.drop_database(&tenant_name, &database_name);
             let database = rt
                 .block_on(engine.create_database(&database_schema))
@@ -882,10 +881,11 @@ mod test {
             let ts_family = rt.block_on(database.write()).add_tsfamily(
                 ts_family_id,
                 1,
+                None,
                 engine.summary_task_sender(),
                 engine.flush_task_sender(),
             );
-            assert_eq!(1, rt.block_on(ts_family.read()).tf_id());
+            assert_eq!(1, ts_family.read().tf_id());
         }
 
         // Get created database and ts_family
@@ -918,7 +918,7 @@ mod test {
             rt.block_on(engine.write(ts_family_id, write_batch))
                 .unwrap();
 
-            let mut ts_family_wlock = rt.block_on(ts_family_ref.write());
+            let mut ts_family_wlock = ts_family_ref.write();
             ts_family_wlock.switch_to_immutable();
             let immut_cache_ref = ts_family_wlock
                 .super_version()

@@ -547,11 +547,4 @@ mod test {
             panic!("hinted off read write wrong");
         }
     }
-
-    #[tokio::test]
-    async fn test_list_dir_names() {
-        let list = list_dir_names(PathBuf::from("/tmp/cnosdb".to_string()));
-
-        print!("{:#?}", list);
-    }
 }

@@ -5,11 +5,11 @@ use std::{
 
 use meta::meta_client::{MetaClientRef, MetaRef};
 use models::schema::{make_owner, split_owner, DatabaseSchema};
+use parking_lot::RwLock as SyncRwLock;
 use snafu::ResultExt;
 use tokio::sync::watch::Receiver;
 use tokio::sync::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-
 use trace::error;
 
 use crate::compaction::FlushReq;
@@ -19,7 +19,7 @@ use crate::{
     error::Result,
     kv_option::StorageOptions,
     memcache::MemCache,
-    summary::{SummaryTask, VersionEdit},
+    summary::{VersionEdit, WriteSummaryRequest},
     tseries_family::{LevelInfo, TseriesFamily, Version},
     Options, TseriesFamilyId,
 };
@@ -143,7 +143,10 @@ impl VersionSet {
         size
     }
 
-    pub async fn get_tsfamily_by_tf_id(&self, tf_id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
+    pub async fn get_tsfamily_by_tf_id(
+        &self,
+        tf_id: u32,
+    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
         for db in self.dbs.values() {
             if let Some(v) = db.read().await.get_tsfamily(tf_id) {
                 return Some(v);
@@ -158,7 +161,7 @@ impl VersionSet {
         tenant: &str,
         database: &str,
         tf_id: u32,
-    ) -> Option<Arc<RwLock<TseriesFamily>>> {
+    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
         let owner = make_owner(tenant, database);
         if let Some(db) = self.dbs.get(&owner) {
             return db.read().await.get_tsfamily(tf_id);
@@ -172,12 +175,21 @@ impl VersionSet {
         &self,
         tenant: &str,
         database: &str,
-    ) -> Option<Arc<RwLock<TseriesFamily>>> {
+    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
         let owner = make_owner(tenant, database);
         if let Some(db) = self.dbs.get(&owner) {
             return db.read().await.get_tsfamily_random();
         }
 
         None
+    }
+
+    pub async fn get_version_edits(&self, last_seq: u64) -> Vec<VersionEdit> {
+        let mut version_edits = vec![];
+        for (name, db) in self.dbs.iter() {
+            let mut ves = db.read().await.get_version_edits(last_seq, None);
+            version_edits.append(&mut ves);
+        }
+        version_edits
     }
 }

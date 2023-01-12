@@ -94,6 +94,12 @@ pub enum CoordinatorError {
     CommonError {
         msg: String,
     },
+
+    #[snafu(display("Vnode not found: {}", id))]
+    #[error_code(code = 15)]
+    VnodeNotFound {
+        id: u32,
+    },
 }
 
 impl From<meta::error::MetaError> for CoordinatorError {

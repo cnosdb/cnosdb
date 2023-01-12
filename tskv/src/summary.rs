@@ -19,6 +19,7 @@ use trace::{debug, error, info};
 use crate::compaction::FlushReq;
 use crate::file_system::file_manager::try_exists;
 use crate::{
+    byte_utils,
     context::GlobalContext,
     error::{Error, Result},
     file_utils,
@@ -42,30 +43,6 @@ pub struct CompactMeta {
     pub high_seq: u64,
     pub low_seq: u64,
     pub is_delta: bool,
-}
-
-impl CompactMeta {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        file_id: u64,
-        file_size: u64,
-        tsf_id: TseriesFamilyId,
-        level: LevelId,
-        min_ts: Timestamp,
-        max_ts: Timestamp,
-        is_delta: bool,
-    ) -> Self {
-        Self {
-            file_id,
-            file_size,
-            tsf_id,
-            level,
-            min_ts,
-            max_ts,
-            is_delta,
-            ..Default::default()
-        }
-    }
 }
 
 impl Default for CompactMeta {
@@ -102,6 +79,56 @@ impl From<&ColumnFile> for CompactMeta {
     }
 }
 
+pub struct CompactMetaBuilder {
+    pub ts_family_id: TseriesFamilyId,
+}
+
+impl CompactMetaBuilder {
+    pub fn new(ts_family_id: TseriesFamilyId) -> Self {
+        Self { ts_family_id }
+    }
+
+    pub fn build_tsm(
+        &self,
+        file_id: u64,
+        file_size: u64,
+        level: LevelId,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
+    ) -> CompactMeta {
+        CompactMeta {
+            file_id,
+            file_size,
+            tsf_id: self.ts_family_id,
+            level,
+            min_ts,
+            max_ts,
+            is_delta: false,
+            ..Default::default()
+        }
+    }
+
+    pub fn build_delta(
+        &self,
+        file_id: u64,
+        file_size: u64,
+        level: LevelId,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
+    ) -> CompactMeta {
+        CompactMeta {
+            file_id,
+            file_size,
+            tsf_id: self.ts_family_id,
+            level,
+            min_ts,
+            max_ts,
+            is_delta: true,
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct VersionEdit {
     pub has_seq_no: bool,
@@ -120,39 +147,93 @@ pub struct VersionEdit {
 
 impl Default for VersionEdit {
     fn default() -> Self {
-        VersionEdit::new()
-    }
-}
-
-impl VersionEdit {
-    pub fn new() -> Self {
         Self {
+            has_seq_no: false,
             seq_no: 0,
+            has_file_id: false,
             file_id: 0,
+            max_level_ts: i64::MIN,
             add_files: vec![],
             del_files: vec![],
             del_tsf: false,
             add_tsf: false,
             tsf_id: 0,
             tsf_name: String::from(""),
-            has_seq_no: false,
-            has_file_id: false,
-            max_level_ts: i64::MIN,
+        }
+    }
+}
+
+impl VersionEdit {
+    pub fn new(vnode_id: TseriesFamilyId) -> Self {
+        Self {
+            tsf_id: vnode_id,
+            ..Default::default()
+        }
+    }
+
+    pub fn new_add_vnode(vnode_id: u32, owner: String) -> Self {
+        Self {
+            tsf_id: vnode_id,
+            tsf_name: owner,
+            add_tsf: true,
+            ..Default::default()
+        }
+    }
+
+    pub fn new_del_vnode(vnode_id: u32) -> Self {
+        Self {
+            tsf_id: vnode_id,
+            del_tsf: true,
+            ..Default::default()
         }
     }
 
     pub fn encode(&self) -> Result<Vec<u8>> {
         bincode::serialize(self).map_err(|e| Error::Encode { source: (e) })
     }
+
     pub fn decode(buf: &[u8]) -> Result<Self> {
         bincode::deserialize(buf).map_err(|e| Error::Decode { source: (e) })
+    }
+
+    pub fn encode_vec(data: &[Self]) -> Result<Vec<u8>> {
+        let mut buf: Vec<u8> = Vec::with_capacity(data.len() * 32);
+        for ve in data {
+            let ve_buf = bincode::serialize(ve).map_err(|e| Error::Encode { source: (e) })?;
+            let pos = buf.len();
+            buf.resize(pos + 4 + ve_buf.len(), 0_u8);
+            buf[pos..pos + 4].copy_from_slice((ve_buf.len() as u32).to_be_bytes().as_slice());
+            buf[pos + 4..].copy_from_slice(&ve_buf);
+        }
+
+        Ok(buf)
+    }
+
+    pub fn decode_vec(buf: &[u8]) -> Result<Vec<Self>> {
+        let mut list: Vec<Self> = Vec::with_capacity(buf.len() / 32 + 1);
+        let mut pos = 0_usize;
+        while pos < buf.len() {
+            if buf.len() - pos < 4 {
+                break;
+            }
+            let len = byte_utils::decode_be_u32(&buf[pos..pos + 4]);
+            pos += 4;
+            if buf.len() - pos < len as usize {
+                break;
+            }
+            let ve = Self::decode(&buf[pos..pos + len as usize])?;
+            pos += len as usize;
+            list.push(ve);
+        }
+
+        Ok(list)
     }
 
     pub fn add_file(&mut self, compact_meta: CompactMeta, max_level_ts: i64) {
         self.has_seq_no = true;
         self.seq_no = compact_meta.high_seq;
         self.has_file_id = true;
-        self.file_id = compact_meta.file_id;
+        self.file_id = self.file_id.max(compact_meta.file_id);
         self.max_level_ts = max_level_ts;
         self.tsf_id = compact_meta.tsf_id;
         self.add_files.push(compact_meta);
@@ -165,24 +246,6 @@ impl VersionEdit {
             is_delta,
             ..Default::default()
         });
-    }
-
-    pub fn add_tsfamily(&mut self, tsf_id: u32, tsf_name: String) {
-        self.add_tsf = true;
-        self.tsf_name = tsf_name;
-        self.tsf_id = tsf_id;
-    }
-
-    pub fn del_tsfamily(&mut self, tsf_id: u32) {
-        self.del_tsf = true;
-        self.tsf_id = tsf_id;
-    }
-
-    pub fn set_log_seq(&mut self, file_id: u64) {
-        self.file_id = file_id;
-    }
-    pub fn set_tsf_id(&mut self, tsf_id: u32) {
-        self.tsf_id = tsf_id;
     }
 }
 
@@ -207,7 +270,7 @@ impl Summary {
         opt: Arc<Options>,
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
-        let db = VersionEdit::new();
+        let db = VersionEdit::default();
         let path = file_utils::make_summary_file(opt.storage.summary_dir(), 0);
         let mut w = Writer::open(path, RecordDataType::Summary).await.unwrap();
         let buf = db.encode()?;
@@ -384,10 +447,9 @@ impl Summary {
             if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
                 let new_version = tsf
                     .read()
-                    .await
                     .version()
                     .copy_apply_version_edits(version_edits, min_seq.copied());
-                tsf.write().await.new_version(new_version);
+                tsf.write().new_version(new_version);
             }
         }
 
@@ -396,20 +458,10 @@ impl Summary {
 
     async fn roll_summary_file(&mut self) -> Result<()> {
         if self.writer.file_size() >= self.opt.storage.max_summary_size {
-            let mut edits = vec![];
-            let mut files = vec![];
-            {
+            let edits = {
                 let vs = self.version_set.read().await;
-                let dbs = vs.get_all_db();
-                for (name, db) in dbs {
-                    let (mut tsf, mut tmp_files) =
-                        db.read().await.version_edit(self.ctx.last_seq()).await;
-                    edits.append(&mut tsf);
-                    files.append(&mut tmp_files);
-                }
-
-                edits.append(&mut files);
-            }
+                vs.get_version_edits(self.ctx.last_seq()).await
+            };
 
             let new_path = &file_utils::make_summary_file_tmp(self.opt.storage.summary_dir());
             let old_path = &self.writer.path().clone();
@@ -527,7 +579,8 @@ impl SummaryProcessor {
         }
     }
 
-    pub fn batch(&mut self, mut task: SummaryTask) -> bool {
+    pub fn batch(&mut self, task: SummaryTask) -> bool {
+        let mut task = task.write_summary_request();
         let mut need_apply = self.edits.len() > MAX_BATCH_SIZE;
         if task.edits.len() == 1 && (task.edits[0].del_tsf || task.edits[0].add_tsf) {
             need_apply = true;
@@ -559,7 +612,40 @@ impl SummaryProcessor {
 }
 
 #[derive(Debug)]
-pub struct SummaryTask {
+pub enum SummaryTask {
+    AppendSummary(WriteSummaryRequest),
+    ApplySummary {
+        ts_family_id: TseriesFamilyId,
+        request: WriteSummaryRequest,
+    },
+}
+
+impl SummaryTask {
+    pub fn new_append_task(edits: Vec<VersionEdit>, cb: Sender<Result<()>>) -> Self {
+        Self::AppendSummary(WriteSummaryRequest { edits, cb })
+    }
+
+    pub fn new_apply_task(
+        ts_family_id: TseriesFamilyId,
+        edits: Vec<VersionEdit>,
+        cb: Sender<Result<()>>,
+    ) -> Self {
+        Self::ApplySummary {
+            ts_family_id,
+            request: WriteSummaryRequest { edits, cb },
+        }
+    }
+
+    pub fn write_summary_request(self) -> WriteSummaryRequest {
+        match self {
+            SummaryTask::AppendSummary(req) => req,
+            SummaryTask::ApplySummary { request: req, .. } => req,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct WriteSummaryRequest {
     pub edits: Vec<VersionEdit>,
     pub cb: Sender<Result<()>>,
 }
@@ -590,13 +676,40 @@ mod test {
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
 
     use crate::file_system::file_manager;
+    use crate::summary::SummaryTask;
     use crate::tseries_family::LevelInfo;
     use crate::{
         compaction::FlushReq,
         error,
         kv_option::{Options, StorageOptions},
-        summary::{CompactMeta, Summary, SummaryTask, VersionEdit},
+        summary::{CompactMeta, Summary, VersionEdit, WriteSummaryRequest},
     };
+
+    #[test]
+    fn test_version_edit() {
+        let mut ve = VersionEdit::default();
+
+        let add_file_100 = CompactMeta {
+            file_id: 100,
+            ..Default::default()
+        };
+        ve.add_file(add_file_100, 100_000_000);
+
+        let del_file_101 = CompactMeta {
+            file_id: 101,
+            ..Default::default()
+        };
+        ve.del_files.push(del_file_101);
+
+        let ve_buf = ve.encode().unwrap();
+        let ve2 = VersionEdit::decode(&ve_buf).unwrap();
+        assert_eq!(ve2, ve);
+
+        let ves = vec![ve, ve2];
+        let ves_buf = VersionEdit::encode_vec(&ves).unwrap();
+        let ves_2 = VersionEdit::decode_vec(&ves_buf).unwrap();
+        assert_eq!(ves, ves_2);
+    }
 
     #[tokio::test]
     async fn test_summary() {
@@ -611,7 +724,7 @@ mod test {
             println!("Mock summary job started (test_summary).");
             while let Some(t) = summary_task_receiver.recv().await {
                 // Do nothing
-                let _ = t.cb.send(Ok(()));
+                let _ = t.write_summary_request().cb.send(Ok(()));
             }
             println!("Mock summary job finished (test_summary).");
         });
@@ -641,9 +754,6 @@ mod test {
             config.cluster.clone(),
         )
         .await;
-
-        println!("Running test: test_version_edit");
-        test_version_edit();
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_recover_summary_with_roll_0");
@@ -684,8 +794,7 @@ mod test {
         let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
             .await
             .unwrap();
-        let mut edit = VersionEdit::new();
-        edit.add_tsfamily(100, "cnosdb.hello".to_string());
+        let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
         let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender)
             .await
@@ -709,8 +818,7 @@ mod test {
             .await
             .unwrap();
 
-        let mut edit = VersionEdit::new();
-        edit.add_tsfamily(100, "cnosdb.hello".to_string());
+        let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
         let mut summary =
             Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
@@ -718,30 +826,12 @@ mod test {
                 .unwrap();
         assert_eq!(summary.version_set.read().await.tsf_num().await, 1);
         assert_eq!(summary.ctx.tsfamily_id(), 100);
-        let mut edit = VersionEdit::new();
-        edit.del_tsfamily(100);
+        let edit = VersionEdit::new_del_vnode(100);
         summary.apply_version_edit(vec![edit]).await.unwrap();
         let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender.clone())
             .await
             .unwrap();
         assert_eq!(summary.version_set.read().await.tsf_num().await, 0);
-    }
-
-    fn test_version_edit() {
-        let compact = CompactMeta {
-            file_id: 100,
-            ..Default::default()
-        };
-        let add_list = vec![compact];
-        let compact2 = CompactMeta {
-            file_id: 101,
-            ..Default::default()
-        };
-        let del_list = vec![compact2];
-        let ve = VersionEdit::new();
-        let buf = ve.encode().unwrap();
-        let ve2 = VersionEdit::decode(&buf).unwrap();
-        assert_eq!(ve2, ve);
     }
 
     // tips : we can use a small max_summary_size
@@ -778,11 +868,11 @@ mod test {
             db.write().await.add_tsfamily(
                 i,
                 0,
+                None,
                 summary_task_sender.clone(),
                 flush_task_sender.clone(),
             );
-            let mut edit = VersionEdit::new();
-            edit.add_tsfamily(i, make_owner("cnosdb", &database));
+            let edit = VersionEdit::new_add_vnode(i, make_owner("cnosdb", &database));
             edits.push(edit.clone());
         }
 
@@ -791,9 +881,7 @@ mod test {
                 db.write()
                     .await
                     .del_tsfamily(i, summary_task_sender.clone());
-                let mut edit = VersionEdit::new();
-                edit.del_tsfamily(i);
-                edits.push(edit.clone());
+                edits.push(VersionEdit::new_del_vnode(i));
             }
         }
         summary.apply_version_edit(edits).await.unwrap();
@@ -837,21 +925,20 @@ mod test {
         db.write().await.add_tsfamily(
             10,
             0,
+            None,
             summary_task_sender.clone(),
             flush_task_sender.clone(),
         );
 
         let mut edits = vec![];
-        let mut edit = VersionEdit::new();
-        edit.add_tsfamily(10, "cnosdb.hello".to_string());
+        let edit = VersionEdit::new_add_vnode(10, "cnosdb.hello".to_string());
         edits.push(edit);
 
         for _ in 0..100 {
             db.write()
                 .await
                 .del_tsfamily(0, summary_task_sender.clone());
-            let mut edit = VersionEdit::new();
-            edit.del_tsfamily(0);
+            let edit = VersionEdit::new_del_vnode(0);
             edits.push(edit);
         }
 
@@ -860,12 +947,11 @@ mod test {
             let tsf = vs.get_tsfamily_by_tf_id(10).await.unwrap();
             let mut version = tsf
                 .read()
-                .await
                 .version()
                 .copy_apply_version_edits(edits.clone(), None);
 
             summary.ctx.set_last_seq(1);
-            let mut edit = VersionEdit::new();
+            let mut edit = VersionEdit::new(10);
             let meta = CompactMeta {
                 file_id: 15,
                 is_delta: false,
@@ -878,7 +964,7 @@ mod test {
                 ..Default::default()
             };
             version.levels_info[1].push_compact_meta(&meta);
-            tsf.write().await.new_version(version);
+            tsf.write().new_version(version);
             edit.add_file(meta, 1);
             edits.push(edit);
         }
@@ -892,17 +978,11 @@ mod test {
 
         let vs = summary.version_set.read().await;
         let tsf = vs.get_tsfamily_by_tf_id(10).await.unwrap();
-        assert_eq!(tsf.read().await.version().last_seq, 1);
-        assert_eq!(tsf.read().await.version().levels_info[1].tsf_id, 10);
-        assert!(!tsf.read().await.version().levels_info[1].files[0].is_delta());
-        assert_eq!(
-            tsf.read().await.version().levels_info[1].files[0].file_id(),
-            15
-        );
-        assert_eq!(
-            tsf.read().await.version().levels_info[1].files[0].size(),
-            100
-        );
+        assert_eq!(tsf.read().version().last_seq, 1);
+        assert_eq!(tsf.read().version().levels_info[1].tsf_id, 10);
+        assert!(!tsf.read().version().levels_info[1].files[0].is_delta());
+        assert_eq!(tsf.read().version().levels_info[1].files[0].file_id(), 15);
+        assert_eq!(tsf.read().version().levels_info[1].files[0].size(), 100);
         assert_eq!(summary.ctx.file_id(), 16);
     }
 }

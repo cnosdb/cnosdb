@@ -90,6 +90,7 @@ pub trait AdminMeta: Send + Sync + Debug {
     fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo>;
     async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream>;
     fn put_node_conn(&self, node_id: u64, conn: TcpStream);
+    fn retain_id(&self, count: u32) -> MetaResult<u32>;
 }
 
 pub trait MetaClient: Send + Sync + Debug {
@@ -155,6 +156,8 @@ pub trait MetaClient: Send + Sync + Debug {
     fn database_min_ts(&self, db: &str) -> Option<i64>;
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
 
+    fn get_vnode_all_info(&self, id: u32) -> Option<VnodeAllInfo>;
+
     fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>>;
 
     fn locate_replcation_set_for_write(
@@ -163,6 +166,15 @@ pub trait MetaClient: Send + Sync + Debug {
         hash_id: u64,
         ts: i64,
     ) -> MetaResult<ReplicationSet>;
+
+    fn update_replication_set(
+        &self,
+        db: &str,
+        bucket_id: u32,
+        repl_id: u32,
+        del_info: &[VnodeInfo],
+        add_info: &[VnodeInfo],
+    ) -> MetaResult<()>;
 
     fn print_data(&self) -> String;
 
@@ -402,6 +414,25 @@ impl AdminMeta for RemoteAdminMeta {
         if entry.len() < 32 {
             entry.push_back(conn);
         }
+    }
+
+    fn retain_id(&self, count: u32) -> MetaResult<u32> {
+        let req = command::WriteCommand::RetainID(self.cluster.clone(), count);
+        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+        if rsp.code != command::META_REQUEST_SUCCESS {
+            return Err(MetaError::CommonError {
+                msg: format!("retain id err: {} {}", rsp.code, rsp.msg),
+            });
+        }
+
+        let id = serde_json::from_str::<u32>(&rsp.msg).unwrap_or(0);
+        if id == 0 {
+            return Err(MetaError::CommonError {
+                msg: format!("retain id err: {} ", rsp.msg),
+            });
+        }
+
+        Ok(id)
     }
 
     fn heartbeat(&self) {}
@@ -998,6 +1029,64 @@ impl MetaClient for RemoteMetaClient {
                 msg: rsp.to_string(),
             })
         }
+    }
+
+    fn update_replication_set(
+        &self,
+        db: &str,
+        bucket_id: u32,
+        repl_id: u32,
+        del_info: &[VnodeInfo],
+        add_info: &[VnodeInfo],
+    ) -> MetaResult<()> {
+        let args = command::UpdateVnodeReplSetArgs {
+            cluster: self.cluster.clone(),
+            tenant: self.tenant_name(),
+            db_name: db.to_string(),
+            bucket_id,
+            repl_id,
+            del_info: del_info.to_vec(),
+            add_info: add_info.to_vec(),
+        };
+        let req = command::WriteCommand::UpdateVnodeReplSet(args);
+
+        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+        info!("update replication set: {:?}; {:?}", req, rsp);
+
+        if rsp.code == command::META_REQUEST_SUCCESS {
+            Ok(())
+        } else {
+            Err(MetaError::CommonError {
+                msg: rsp.to_string(),
+            })
+        }
+    }
+
+    fn get_vnode_all_info(&self, id: u32) -> Option<VnodeAllInfo> {
+        let data = self.data.read();
+        for (db_name, db_info) in data.dbs.iter() {
+            for bucket in db_info.buckets.iter() {
+                for repl_set in bucket.shard_group.iter() {
+                    for vnode_info in repl_set.vnodes.iter() {
+                        if vnode_info.id == id {
+                            return Some(VnodeAllInfo {
+                                vnode_id: vnode_info.id,
+                                node_id: vnode_info.node_id,
+                                repl_set_id: repl_set.id,
+                                bucket_id: bucket.id,
+                                db_name: db_name.clone(),
+                                tenant: self.tenant_name(),
+
+                                start_time: bucket.start_time,
+                                end_time: bucket.end_time,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     fn database_min_ts(&self, name: &str) -> Option<i64> {

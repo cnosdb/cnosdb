@@ -1,6 +1,8 @@
 use crate::database::Database;
 use crate::error::Result;
 use crate::index::IndexResult;
+use crate::kv_option::StorageOptions;
+use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
@@ -42,6 +44,8 @@ pub trait Engine: Send + Sync + Debug {
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
+
+    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
 
     async fn add_table_column(
         &self,
@@ -108,7 +112,25 @@ pub trait Engine: Send + Sync + Debug {
         vnode_id: u32,
     ) -> Result<Option<Arc<SuperVersion>>>;
 
+    fn get_storage_options(&self) -> Arc<StorageOptions>;
+    async fn get_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+    ) -> Result<Option<VersionEdit>>;
+
+    async fn apply_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+        mut summary: VersionEdit,
+    ) -> Result<()>;
+
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
+
+    async fn compact(&self, tenant: &str, database: &str);
 }
 
 #[derive(Debug, Default)]
@@ -147,6 +169,10 @@ impl Engine for MockEngine {
     }
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+        Ok(())
+    }
+
+    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
         Ok(())
     }
 
@@ -236,6 +262,25 @@ impl Engine for MockEngine {
         todo!()
     }
 
+    async fn get_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+    ) -> Result<Option<VersionEdit>> {
+        todo!()
+    }
+
+    async fn apply_vnode_summary(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+        summary: VersionEdit,
+    ) -> Result<()> {
+        todo!()
+    }
+
     // fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
     //     todo!()
     // }
@@ -271,7 +316,15 @@ impl Engine for MockEngine {
         todo!()
     }
 
+    fn get_storage_options(&self) -> Arc<StorageOptions> {
+        todo!()
+    }
+
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
+        todo!()
+    }
+
+    async fn compact(&self, tenant: &str, database: &str) {
         todo!()
     }
 }
