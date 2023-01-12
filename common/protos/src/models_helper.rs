@@ -1,7 +1,11 @@
+use protobuf::Message;
 #[cfg(feature = "test")]
 pub use test::*;
 
-use crate::models::{FieldType, Points};
+use crate::{
+    models::{FieldType, Points},
+    prompb::remote::ReadRequest,
+};
 
 pub fn print_points(points: Points) {
     if let Some(db) = points.db() {
@@ -90,6 +94,20 @@ pub fn print_points(points: Points) {
             println!();
         }
     }
+}
+
+pub fn parse_proto_bytes<T>(bytes: &[u8]) -> Result<T, protobuf::Error>
+where
+    T: Message,
+{
+    T::parse_from_bytes(bytes)
+}
+
+pub fn to_proto_bytes<T>(msg: T) -> Result<Vec<u8>, protobuf::Error>
+where
+    T: Message,
+{
+    msg.write_to_bytes()
 }
 
 #[cfg(feature = "test")]

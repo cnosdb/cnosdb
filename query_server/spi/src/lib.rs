@@ -1,3 +1,5 @@
+use std::error;
+
 use crate::service::protocol::QueryId;
 use coordinator::errors::CoordinatorError;
 use datafusion::arrow::error::ArrowError;
@@ -18,6 +20,8 @@ pub mod server;
 pub mod service;
 
 define_result!(QueryError);
+
+pub type GenericError = Box<dyn error::Error + Send + Sync>;
 
 #[derive(Debug, Snafu, ErrorCoder)]
 #[snafu(visibility(pub))]
@@ -129,7 +133,11 @@ pub enum QueryError {
         source: flatbuffers::InvalidFlatbuffer,
     },
 
-    #[snafu(display("{}", msg))]
+    #[snafu(display(
+        "Common error: {}. This was likely caused by a bug in CnosDB's \
+    code and we would welcome that you file an bug report in our issue tracker",
+        msg
+    ))]
     #[error_code(code = 18)]
     CommonError {
         msg: String,
@@ -356,6 +364,18 @@ pub enum QueryError {
     SerdeJsonError {
         source: serde_json::Error,
     },
+
+    #[error_code(code = 55)]
+    #[snafu(display("{}", source))]
+    SnappyError {
+        source: snap::Error,
+    },
+
+    #[error_code(code = 56)]
+    #[snafu(display("Invalid prom remote read request, error: {}", source))]
+    InvalidRemoteReadReq {
+        source: GenericError,
+    },
 }
 
 impl From<ParserError> for QueryError {
@@ -461,6 +481,12 @@ impl From<std::io::Error> for QueryError {
 impl From<serde_json::Error> for QueryError {
     fn from(source: serde_json::Error) -> Self {
         QueryError::SerdeJsonError { source }
+    }
+}
+
+impl From<snap::Error> for QueryError {
+    fn from(source: snap::Error) -> Self {
+        QueryError::SnappyError { source }
     }
 }
 

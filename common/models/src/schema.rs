@@ -265,6 +265,15 @@ impl TskvTableSchema {
             .count()
     }
 
+    pub fn tag_indices(&self) -> Vec<usize> {
+        self.columns
+            .iter()
+            .enumerate()
+            .filter(|(_, column)| column.column_type.is_tag())
+            .map(|(idx, _)| idx)
+            .collect()
+    }
+
     // return (table_field_id, index), index mean field location which column
     pub fn fields_id(&self) -> HashMap<ColumnId, usize> {
         let mut ans = vec![];
