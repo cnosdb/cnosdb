@@ -133,10 +133,10 @@ mod flatbuffers_generated;
             let output_file_path = output_dir_final.join(output_file_name);
             println!("fbs_file: {}", output_file_path.to_str().unwrap());
 
-            Command::new("rustfmt")
-                .arg(output_file_path)
-                .output()
-                .expect("Failed to format file.");
+            // Command::new("rustfmt")
+            //     .arg(output_file_path)
+            //     .output()
+            //     .expect("Failed to format file.");
         }
     }
 
