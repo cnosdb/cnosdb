@@ -1,50 +1,258 @@
-<img src="docs/source/_static/img/cnosdb_logo_white.svg" width="360" alt=""/>
+<div align="center">
+  <img  src="docs/source/_static/img/cnosdb_logo_new_year.gif" width="500" alt="CnodSB Logo">
+</div>
 
-<a href="https://codebeat.co/projects/github-com-cnosdatabase-cnosdb-main"><img alt="codebeat badge" src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9" /></a>
-![GitHub](https://img.shields.io/github/license/cnosdb/cnosdb)
+<p align="center">
+  <a href="https://github.com/cnosdb/cnosdb/actions">
+  <img alt="CI" src="https://github.com/cnosdb/cnosdb/actions/workflows/makefile.yml/badge.svg" />
+  </a>
+
+  <a href="https://www.rust-lang.org/">
+  <img alt="Rust" src="https://img.shields.io/badge/Language-Rust-blue.svg" />
+  </a>
+
+  <a href="https://github.com/cnoshb/cnosdb/blob/main/LICENSE.md">
+  <img alt="License Agpl 3.0" src="https://img.shields.io/badge/License-AGPL_3.0-orange.svg" />
+  </a>
+
+  <a href="https://twitter.com/CnosDB">
+  <img alt="twitter" src="https://img.shields.io/badge/twitter--white.svg?logo=twitter&style=social" />
+  </a>
+
+  <a href="https://www.linkedin.com/company/cnosdb">
+  <img alt="linkedin" src="https://img.shields.io/badge/linkedin--white.svg?logo=linkedin&style=social" />
+  </a>
+</p>
+
+<h3 align="center">
+    <a href="https://www.cnosdb.com/">Website</a>
+    •
+    <a href="https://docs.cnosdb.com/">Documentation</a>
+    •
+    <a href="https://docs.cnosdb.com/zh/guide/quick_start.html">Quick Start</a>
+</h3>
 
 English | [简体中文](./README_CN.md)
 
-CnosDB is An Open Source Distributed Time Series Database with high performance, high compression ratio and high
-usability.
+CnosDB is a high-performance, high-compression, and easy-to-use open-source distributed time-series database, mainly used in the fields of IoT, industrial Internet, connected cars, IT operations, and so on. All the code is open-sourced on GitHub.
 
-CnosDB Isipho is an original new version of CnosDB which use Rust, [Apache Arrow](https://arrow.apache.org/)
-and [DataFusion](https://github.com/apache/arrow-datafusion) to build.
+In the design, we fully utilize the characteristics of time-series data, including structured data, no transactions, less deletion and update, more write and less read, etc. Therefore, CnosDB has a series of advantages that distinguish it from other time-series databases:
 
-## Design Objectives of CnosDB2.0
+- **High performance**: CnosDB solves the problem of time-series data expansion and theoretically supports unlimited time-series data. It supports aggregate queries along the timeline, including queries divided by equal intervals, queries divided by enumeration values of a column, and queries divided by the length of the time interval between adjacent time-series records. It has caching capability for the latest data, and the cache space can be configured for fast access to the latest data.
+- **Easy to use**: CnosDB provides clear and simple interfaces, easy configuration options, standard SQL support, easy to use, seamless integration with third-party tools, and convenient data access functions. It supports schema-less writing mode and supports historical data supplement(including out of order writing).
+- **Cloud native**: CnosDB has a native distributed design, data sharding and partitioning, storage and computing separation, Quorum mechanism, Kubernetes deployment, and complete observability, ensuring final consistency. It can be deployed in public clouds, private clouds, and hybrid clouds. Native support for multi-tenancy. Role-based permission control. The computing nodes and storage nodes support horizontal scaling.
 
-To design and develop a high performance, high compression ratio, highly available, distributed cloud native time series
-database, which meets the following objectives.
+# Architecture
 
-> Time Series Database
+![arch](./docs/source/_static/img/cnosdb_arch.png)
 
-1. Extensibility, theoretically support time series without upper limit, completely solve the problem of time series
-   inflation, support horizontal/vertical expansion.
-2. Separate storage and computation. Compute nodes and storage nodes can expand and shrink independently.
-3. High-performance storage and low cost, high-performance I/O stacks, cloud disk and object storage for storage tiering
-4. Query engine supports vectorized queries.
-5. Supports multiple timing protocols to write and query, and provides external components to import data.
+# Quick Start
 
-> Cloud Native
+## Build&Run from source
 
-1. Supports cloud native, making full use of the convenience brought by cloud infrastructure and integrating into cloud
-   native ecology.
-2. High availability, second-level fault recovery, multi-cloud, and multi-zone disaster recovery and preparedness.
-3. Native support multi-tenant, pay-as-you-go.
-4. CDC, logs can be subscribed to and distributed to other nodes.
-5. More configurable items are provided to meet the complex requirements of public cloud users in multiple scenarios.
-6. Cloud edge - end collaboration provides the edge - end integration capability with the public cloud
-7. Converged OLAP/CloudAI data Ecosystem on the cloud.
+### **Support Platform**
 
-## CnosDB Architecture
+We support the following platforms, if found to work on a platform not listed,
+Please [report](https://github.com/cnosdb/cnosdb/issues) to us.
 
-![整体架构](./docs/source/_static/img/arch.jpg)
+- Linux x86(`x86_64-unknown-linux-gnu`)
+- Darwin arm(`aarch64-apple-darwin`)
 
-## Roadmap
+### **Requirements**
+
+1. Install `Rust`, You can check [official website](https://www.rust-lang.org/learn/get-started) to download and install
+2. Install Cmake
+```shell
+# Debian or Ubuntu
+apt-get install cmake
+# Arch Linux
+pacman -S cmake
+# CentOS
+yum install cmake
+# Fedora
+dnf install cmake
+# macOS
+brew install cmake
+```
+
+3. Install FlatBuffers
+
+```shell
+# Arch Linux
+pacman -S flatbuffers
+# Fedora
+dnf install flatbuffers
+# Ubuntu
+snap install flatbuffers
+# macOS
+brew install flatbuffers
+```
+
+If your system is not listed, you can install FlatBuffers as follows
+
+```shell
+$ git clone -b v22.9.29 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers
+
+# Choose one of the following commands depending on your operating system
+$ cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+$ cmake -G "Visual Studio 10" -DCMAKE_BUILD_TYPE=Release
+$ cmake -G "Xcode" -DCMAKE_BUILD_TYPE=Release
+
+$ sudo make install
+```
+
+### **Compile**
+
+```shell
+git clone https://github.com/cnosdb/cnosdb.git && cd cnosdb
+make build
+```
+
+### **Run**
+
+#### Run CnosDB
+
+The following is a single node startup. If you need to start a cluster, see [Cluster startup process](https://docs.cnosdb.com/zh/guide/cluster/cluster.html#%E9%9B%86%E7%BE%A4%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B)
+
+```bash
+./target/debug/cnosdb-meta --id 1 --http-addr 127.0.0.1:21001
+curl http://127.0.0.1:21001/init -d '{}'
+curl http://127.0.0.1:21001/metrics
+./target/debug/cnosdb run --config ./config/config_31001.toml
+```
+
+#### **Run CLI**
+```shell
+cargo run --package client --bin cnosdb-cli
+```
+
+## Run with Docker
+
+1. Install [Docker](https://www.docker.com/products/docker-desktop/)
+
+2. Start container
+```shell
+docker run --name cnosdb -d  --env cpu=2 --env memory=4 -p 31007:31007 cnosdb/cnosdb:v2.0.1
+```
+3. Run a command in the running container
+```shell
+docker exec -it cnosdb sh
+```
+4. Run `cnosdb-cli`
+```shell
+cnosdb-cli
+```
+
+> Quit `\q`
+> Help `\?`
+> For more details, check [basic operation](https://docs.cnosdb.com/zh/guide/tools/cli.html)
+
+## Write data
+
+- [SQL](https://docs.cnosdb.com/zh/guide/query/insert.html#insert)
+- [influxdb line-protocol](https://docs.influxdata.com/influxdb/v2.6/reference/syntax/line-protocol/)
+- [bulk loading](https://docs.cnosdb.com/zh/guide/query/bulk_load.html)
+- [telegraf](https://docs.cnosdb.com/zh/guide/ecology/telegraf.html)
+
+The following will show an example of using cli to write data by SQL
+
+1. CREATE TABLE
+
+```sql
+CREATE TABLE air (
+    visibility DOUBLE,
+    temperature DOUBLE,
+    pressure DOUBLE,
+    TAGS(station)
+);
+```
+
+```bash
+public ❯ CREATE TABLE air (
+    visibility DOUBLE,
+    temperature DOUBLE,
+    pressure DOUBLE,
+    TAGS(station)
+);
+Query took 0.063 seconds.
+```
+
+2. Insert a row
+
+```sql
+INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES
+                (1673591597000000000, 'XiaoMaiDao', 56, 69, 77);
+```
+
+```bash
+public ❯ INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES
+                (1673591597000000000, 'XiaoMaiDao', 56, 69, 77);
++------+
+| rows |
++------+
+| 1    |
++------+
+Query took 0.032 seconds.
+```
+
+3. insert multiple rows
+
+```sql
+INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES
+                ('2023-01-11 06:40:00', 'XiaoMaiDao', 55, 68, 76),
+                ('2023-01-11 07:40:00', 'DaMaiDao', 65, 68, 76);
+```
+
+```bash
+public ❯ INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES
+                ('2023-01-11 06:40:00', 'XiaoMaiDao', 55, 68, 76),
+                ('2023-01-11 07:40:00', 'DaMaiDao', 65, 68, 76);
++------+
+| rows |
++------+
+| 2    |
++------+
+Query took 0.038 seconds.
+```
+
+## Query data
+
+- [SQL](https://docs.cnosdb.com/zh/guide/query/sql.html), compatible with SQL standard.
+- Prometheus remote read.
+
+The following will show an example of SQL query using cli
+
+```sql
+-- query table data
+SELECT * FROM air;
+```
+
+```bash
+public ❯ -- query table data
+SELECT * FROM air;
++---------------------+------------+------------+-------------+----------+
+| time                | station    | visibility | temperature | pressure |
++---------------------+------------+------------+-------------+----------+
+| 2023-01-11T06:40:00 | XiaoMaiDao | 55         | 68          | 76       |
+| 2023-01-13T06:33:17 | XiaoMaiDao | 56         | 69          | 77       |
+| 2023-01-11T07:40:00 | DaMaiDao   | 65         | 68          | 76       |
++---------------------+------------+------------+-------------+----------+
+Query took 0.036 seconds.
+```
+
+# Connector
+
+- Java: Support [JDBC](https://docs.cnosdb.com/zh/guide/application/JDBC.html) and [Java Arrow Flight](https://docs.cnosdb.com/zh/guide/application/java.html)
+- C++: Support [ODBC](https://docs.cnosdb.com/zh/guide/application/c++.html) and [C++ Arrow Flight](https://docs.cnosdb.com/zh/guide/application/c++.html)
+- [Go](https://docs.cnosdb.com/zh/guide/application/go.html)
+- [Python](https://docs.cnosdb.com/zh/guide/application/python.html): Conforms to the [Python Data Access Specification (PEP 249)](https://peps.python.org/pep-0249/)
+- [Rust](https://docs.cnosdb.com/zh/guide/application/rust.html)
+
+# Roadmap
 
 - Click to view [Roadmap](./docs/roadmap/ROADMAP.md)
 
-## Join the community
+# Join the community
 
 All developers/users who love time series databases are welcome to participate in the CnosDB User Group. Scan the QR
 code below and add CC to join the group.
@@ -53,38 +261,11 @@ Please check [Instructions for joining the group](./docs/guidelines/CnosDBWeChat
 
 <img src="docs/source/_static/img/u.jpg" width="300" alt=""/>
 
-## Use CnosDB
-
-To quick use CnosDB, please refer to [Quick Start](docs/quick-start.md).
-
 ## Contributing
 
 Please refer to [Contribution Guide](./CONTRIBUTING_EN.md) to contribute to CnosDB.
 
-## Contact
+# Acknowledgement
 
-* [Home page](https://cnosdb.com)
-
-* [Stack Overflow](https://stackoverflow.com/questions/tagged/cnosdb)
-
-* [Twitter:@CnosDB](https://twitter.com/CnosDB)
-
-* [LinkedIn Page](https://www.linkedin.com/company/cnosdb)
-
-* [Bilibili](https://space.bilibili.com/36231559)
-
-* [Tiktok CN](https://www.douyin.com/user/MS4wLjABAAAA6ua1UPmYWCcTl0AT0Lf1asILf9ogmj7J257KEq812csox9FBrAkxxKcok1GIzPMv)
-
-* [Zhihu](https://www.zhihu.com/org/cnosdb)
-
-* [CSDN](https://blog.csdn.net/CnosDB)
-
-* [Jianshu](https://www.jianshu.com/u/745811688e9e)
-
-## We are hiring
-
-* If you want to get a job of full-time/part-time/intern, please send us resume by email hr@cnosdb.com
-
-## License
-
-* [AGPL-3.0 License](./LICENSE.md)
+- CnosDB 2.0 uses [Apache Arrow](https://github.com/apache/arrow) as the memory model.
+- CnosDB 2.0's query engine is powered by [Apache Arrow DataFusion](https://github.com/apache/arrow-datafusion).

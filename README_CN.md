@@ -1,81 +1,270 @@
-<img alt="" src="docs/source/_static/img/cnosdb_logo_white.svg" width="360"/>
+<div align="center">
+  <img  src="docs/source/_static/img/cnosdb_logo_new_year.gif" width="500" alt="CnodSB Logo">
+</div>
 
-<a href="https://codebeat.co/projects/github-com-cnosdatabase-cnosdb-main"><img alt="codebeat badge"
-src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9"/></a>
-![GitHub](https://img.shields.io/github/license/cnosdb/cnosdb)
+<p align="center">
+  <a href="https://github.com/cnosdb/cnosdb/actions">
+  <img alt="CI" src="https://github.com/cnosdb/cnosdb/actions/workflows/makefile.yml/badge.svg" />
+  </a>
 
-[English](./README.md) | 简体中文
+  <a href="https://www.rust-lang.org/">
+  <img alt="Rust" src="https://img.shields.io/badge/Language-Rust-blue.svg" />
+  </a>
 
-## CnosDB2.0 的设计目标
+  <a href="https://github.com/cnoshb/cnosdb/blob/main/LICENSE.md">
+  <img alt="License Agpl 3.0" src="https://img.shields.io/badge/License-AGPL_3.0-orange.svg" />
+  </a>
 
-设计并开发一个高性能、高压缩比、高可用的分布式云原生时间序列数据库，满足以下目标：
+  <a href="https://twitter.com/CnosDB">
+  <img alt="twitter" src="https://img.shields.io/badge/twitter--white.svg?logo=twitter&style=social" />
+  </a>
 
-> 时序数据库
+  <a href="https://www.linkedin.com/company/cnosdb">
+  <img alt="linkedin" src="https://img.shields.io/badge/linkedin--white.svg?logo=linkedin&style=social" />
+  </a>
+</p>
 
-1. 扩展性，理论上支持的时间序列无上限，彻底解决时间序列膨胀问题，支持横/纵向扩展。
-2. 计算存储分离，计算节点和存储节点，可以独立扩缩容，秒级伸缩。
-3. 高性能存储和低成本，利用高性能io栈，支持利用云盘和对象存储进行分级存储。
-4. 查询引擎支持矢量化查询。
-5. 支持多种时序协议写入和查询，提供外部组件导入数据。
+<h3 align="center">
+    <a href="https://www.cnosdb.com/">Website</a>
+    •
+    <a href="https://docs.cnosdb.com/">Documentation</a>
+    •
+    <a href="https://docs.cnosdb.com/zh/guide/quick_start.html">Quick Start</a>
+</h3>
 
-> 云原生
+CnosDB 是一款高性能、高压缩率、高易用性的开源分布式时序数据库。主要应用场景为物联网，工业互联网，车联网，IT运维等。所有代码均已在GitHub开源。
 
-1. 支持云原生，支持充分利用云基础设施带来的便捷，融入云原生生态。
-2. 高可用性，秒级故障恢复，支持多云，跨区容灾备灾。
-3. 原生支持多租户，按量付费。
-4. CDC,日志可以提供订阅和分发到其他节点。
-5. 为用户提供更多可配置项，来满足公有云用户的多场景复杂需求。
-6. 云边端协同，提供边端与公有云融合的能力
-7. 融合云上OLAP/CloudAI 数据生态系统。
+我们在设计上充分利用了时序数据特点，包括结构化数据、无事务、较少的删除更新、写多读少等等，因此相比其它时序数据库，CnosDB 有以下特点：
 
-## CnosDB 整体架构
+  - **高性能**：CnosDB 解决了时间序列膨胀，理论上支持时间序列无上限，支持沿时间线的聚合查询，包括按等间隔划分窗口的查询、按某列枚举值划分窗口的查询、按相邻时序记录的时间间隔长度划分窗口。具备对最新数据的缓存能力，并且可以配置缓存空间，能够高速获取最新数据。
+  - **简单易用**：CnosDB 提供清晰明了的接口，简单的配置项目，支持标准SQL，轻松上手，与第三方工具生态无缝集成，拥有便捷的数据访问功能。支持 schemaless （"无模式"）的写入方式，支持历史数据补录（含乱序写入）。
+  - **云原生**： CnosDB 有原生的分布式设计、数据分片和分区、存算分离、Quorum 机制、Kubernetes 部署和完整的可观测性，具有最终一致性，能够部署在公有云、私有云和混合云上。提供多租户的功能，有基于角色的权限控制。支持计算层无状态增减节点，储存层水平扩展提高系统存储容量。
 
-![整体架构](./docs/source/_static/img/arch.jpg)
+# 整体架构 
 
-## 路线图
+![整体架构](./docs/source/_static/img/cnosdb_arch.png)
 
-* [路线图](./docs/roadmap/ROADMAP_CN.md)
+# 快速开始
 
-## 加入社区
+## 源码安装
 
-欢迎所有热爱时序数据库的开发者/用户参与到CnosDB User Group中。扫描下方二维码，加CC为好友，即可入群。
+### **支持平台**
 
-入群前请查看[入群须知](./docs/guidelines/CnosDBWeChatUserGroupGuidelines.md)
+我们支持以下平台，如果发现可以在列表以外的平台上运行，
+请[报告](https://github.com/cnosdb/cnosdb/issues)给我们。
+
+- Linux x86(`x86_64-unknown-linux-gnu`)
+- Darwin arm(`aarch64-apple-darwin`)
+
+### **编译环境**
+
+1. 安装`Rust`，可前往[官网](https://www.rust-lang.org/learn/get-started)下载安装
+2. 安装Cmake
+```shell
+# Debian or Ubuntu
+apt-get install cmake
+# Arch Linux
+pacman -S cmake
+# CentOS
+yum install cmake
+# Fedora
+dnf install cmake
+# macOS
+brew install cmake
+```
+
+3. 安装FlatBuffers
+
+```shell
+# Arch Linux
+pacman -S flatbuffers
+# Fedora
+dnf install flatbuffers
+# Ubuntu
+snap install flatbuffers
+# macOS
+brew install flatbuffers
+```
+
+如果您的系统不在此列，可按照如下方法安装FlatBuffers
+
+```shell
+$ git clone -b v22.9.29 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers
+
+# 根据操作系统选择以下命令之一
+$ cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+$ cmake -G "Visual Studio 10" -DCMAKE_BUILD_TYPE=Release
+$ cmake -G "Xcode" -DCMAKE_BUILD_TYPE=Release
+
+$ sudo make install
+```
+
+### **编译**
+
+```shell
+git clone https://github.com/cnosdb/cnosdb.git && cd cnosdb
+make build
+```
+
+### **运行**
+
+#### 运行CnosDB
+
+以下为单节点启动，如需启动集群，见[集群启动流程](https://docs.cnosdb.com/zh/guide/cluster/cluster.html#%E9%9B%86%E7%BE%A4%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B)
+
+```bash
+./target/debug/cnosdb-meta --id 1 --http-addr 127.0.0.1:21001
+curl http://127.0.0.1:21001/init -d '{}'
+curl http://127.0.0.1:21001/metrics
+./target/debug/cnosdb run --config ./config/config_31001.toml
+```
+
+#### **运行CLI**
+```shell
+cargo run --package client --bin cnosdb-cli
+```
+
+## Docker安装
+
+1. 安装 [Docker](https://www.docker.com/products/docker-desktop/)
+
+2. 使用 Docker 启动容器
+```shell
+docker run --name cnosdb -d  --env cpu=2 --env memory=4 -p 31007:31007 cnosdb/cnosdb:v2.0.1
+```
+3. 进入容器
+```shell
+docker exec -it cnosdb sh
+```
+4. 运行`cnosdb-cli`
+```shell
+cnosdb-cli
+```
+
+> 退出请输入`\q`
+> 查看帮助请输入`\?`
+> 更多内容请查看[基本操作](https://docs.cnosdb.com/zh/guide/tools/cli.html)
+
+## 数据写入
+
+- [SQL写入](https://docs.cnosdb.com/zh/guide/query/insert.html#insert)
+- [influxdb行协议](https://docs.influxdata.com/influxdb/v2.6/reference/syntax/line-protocol/)
+- [批量导入](https://docs.cnosdb.com/zh/guide/query/bulk_load.html)
+- [telegraf](https://docs.cnosdb.com/zh/guide/ecology/telegraf.html)
+
+下面将展示使用cli进行SQL写入的例子
+
+1. 创建表
+
+```sql
+CREATE TABLE air (
+    visibility DOUBLE,
+    temperature DOUBLE,
+    pressure DOUBLE,
+    TAGS(station)
+);
+```
+
+```bash
+public ❯ CREATE TABLE air (
+    visibility DOUBLE,
+    temperature DOUBLE,
+    pressure DOUBLE,
+    TAGS(station)
+);
+Query took 0.063 seconds.
+```
+
+2. 插入一条数据
+
+```sql
+INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES
+                (1673591597000000000, 'XiaoMaiDao', 56, 69, 77);
+```
+
+```bash
+public ❯ INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES
+                (1673591597000000000, 'XiaoMaiDao', 56, 69, 77);
++------+
+| rows |
++------+
+| 1    |
++------+
+Query took 0.032 seconds.
+```
+
+3. 插入多条数据
+
+```sql
+INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES
+                ('2023-01-11 06:40:00', 'XiaoMaiDao', 55, 68, 76),
+                ('2023-01-11 07:40:00', 'DaMaiDao', 65, 68, 76);
+```
+
+```bash
+public ❯ INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES
+                ('2023-01-11 06:40:00', 'XiaoMaiDao', 55, 68, 76),
+                ('2023-01-11 07:40:00', 'DaMaiDao', 65, 68, 76);
++------+
+| rows |
++------+
+| 2    |
++------+
+Query took 0.038 seconds.
+```
+
+## 数据查询
+
+- [SQL](https://docs.cnosdb.com/zh/guide/query/sql.html)，兼容SQL标准
+- Prometheus remote read
+
+下面将展示使用cli进行SQL查询的例子
+
+```sql
+-- 查询表数据
+SELECT * FROM air;
+```
+
+```bash
+public ❯ -- 查询表数据
+SELECT * FROM air;
++---------------------+------------+------------+-------------+----------+
+| time                | station    | visibility | temperature | pressure |
++---------------------+------------+------------+-------------+----------+
+| 2023-01-11T06:40:00 | XiaoMaiDao | 55         | 68          | 76       |
+| 2023-01-13T06:33:17 | XiaoMaiDao | 56         | 69          | 77       |
+| 2023-01-11T07:40:00 | DaMaiDao   | 65         | 68          | 76       |
++---------------------+------------+------------+-------------+----------+
+Query took 0.036 seconds.
+```
+
+# 连接器
+
+- Java: 支持[JDBC](https://docs.cnosdb.com/zh/guide/application/JDBC.html)和[Java Arrow Flight](https://docs.cnosdb.com/zh/guide/application/java.html)
+- C++: 支持[ODBC](https://docs.cnosdb.com/zh/guide/application/c++.html)和[C++ Arrow Flight](https://docs.cnosdb.com/zh/guide/application/c++.html)
+- [Go](https://docs.cnosdb.com/zh/guide/application/go.html)
+- [Python](https://docs.cnosdb.com/zh/guide/application/python.html): 符合[Python数据访问规范(PEP 249)](https://peps.python.org/pep-0249/)
+- [Rust](https://docs.cnosdb.com/zh/guide/application/rust.html)
+
+# 路线图
+
+- [路线图](./docs/roadmap/ROADMAP_CN.md)
+
+# 加入社区
+
+## 加入社区群
+
+欢迎所有热爱时序数据库的开发者/用户参与到CnosDB User Group中。扫描下方二维码，加CC为好友，即可入群。
+
+入群前请查看[入群须知](https://github.com/cnoshb/cnosdb/blob/main/docs/guidelines/CnosDBWeChatUserGroupGuidelines.md)
 
 <img src="docs/source/_static/img/u.jpg" width="300" alt=""/>
 
-## 使用CnosDB
-
-点击[使用CnosDB](docs/quick-start-cn.md)快速开始
-
 ## 社区贡献指南
 
-请参照[贡献指南](CONTRIBUTING.md)成为CnosDB的Contributor。
+请参照[贡献指南](https://github.com/cnoshb/cnosdb/blob/main/CONTRIBUTING.md)成为CnosDB的Contributor。
 
-## 联系我们
+# 致谢
 
-* [官方主页](https://www.cnosdb.com)
-
-* [Stack Overflow](https://stackoverflow.com/questions/tagged/cnosdb)
-
-* [推特:@CnosDB](https://twitter.com/CnosDB)
-
-* [领英主页](https://www.linkedin.com/company/cnosdb)
-
-* [B站](https://space.bilibili.com/36231559)
-
-* [抖音](https://www.douyin.com/user/MS4wLjABAAAA6ua1UPmYWCcTl0AT0Lf1asILf9ogmj7J257KEq812csox9FBrAkxxKcok1GIzPMv)
-
-* [知乎](https://www.zhihu.com/org/cnosdb)
-
-* [CSDN](https://blog.csdn.net/CnosDB)
-
-* [简书](https://www.jianshu.com/u/745811688e9e)
-
-## 我们正在招聘
-
-* 如果您对全职、兼职或者实习工作感兴趣，请发简历到 hr@cnosdb.com
-
-## 许可证
-
-* [AGPL-3.0 License](./LICENSE.md)
+- CnosDB 2.0使用[Apache Arrow](https://github.com/apache/arrow)作为内存模型。
+- CnosDB 2.0的查询引擎基于[Apache Arrow DataFusion](https://github.com/apache/arrow-datafusion)构建。
