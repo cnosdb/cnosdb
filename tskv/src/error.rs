@@ -28,7 +28,7 @@ pub enum Error {
         source: flatbuffers::InvalidFlatbuffer,
     },
 
-    #[snafu(display("Tags or fields can't be empty"))]
+    #[snafu(display("Fields can't be empty"))]
     #[error_code(code = 2)]
     InvalidPoint,
 

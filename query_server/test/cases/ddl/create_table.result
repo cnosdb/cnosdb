@@ -69,14 +69,15 @@ rows
 
 -- EXECUTE SQL: insert createtable.test0(TIME, column1, column2, column3, column4, column5) values (100, -1234, 'hello', 1234, false, 1.2); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"020002","error_message":"Tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+1
 
 -- EXECUTE SQL: select ALL * from createtable.test0; --
 -- AFTER_SORT --
 200 OK
 time,column6,column7,column1,column2,column3,column4,column5
+1970-01-01T00:00:00.000000100,,,-1234,hello,1234,false,1.2
 1970-01-01T00:00:00.000000100,beijing,,,hello,1234,false,1.2
 1970-01-01T00:00:00.000000100,beijing,shanghai,-1234,hello,1234,false,1.2
 1970-01-01T00:00:00.000000103,beijing,shanghai,-1234,hello,1234,false,1.2
@@ -86,6 +87,7 @@ time,column6,column7,column1,column2,column3,column4,column5
 -- AFTER_SORT --
 200 OK
 time,column6,column7,column1,column2,column3,column4,column5
+1970-01-01T00:00:00.000000100,,,-1234,hello,1234,false,1.2
 1970-01-01T00:00:00.000000100,beijing,,,hello,1234,false,1.2
 1970-01-01T00:00:00.000000100,beijing,shanghai,-1234,hello,1234,false,1.2
 1970-01-01T00:00:00.000000103,beijing,shanghai,-1234,hello,1234,false,1.2
@@ -105,6 +107,7 @@ time,column6,column7,column1,column2,column3,column4,column5
 -- AFTER_SORT --
 200 OK
 time,column6,column7,column1,column3,column4,column5
+1970-01-01T00:00:00.000000100,,,-1234,1234,false,1.2
 1970-01-01T00:00:00.000000100,beijing,,,1234,false,1.2
 1970-01-01T00:00:00.000000100,beijing,shanghai,-1234,1234,false,1.2
 1970-01-01T00:00:00.000000103,beijing,shanghai,-1234,1234,false,1.2
@@ -119,6 +122,7 @@ time,column6,column7,column1,column3,column4,column5
 -- AFTER_SORT --
 200 OK
 time,column6,column7,column1,column3,column4,column5
+1970-01-01T00:00:00.000000100,,,-1234,1234,false,1.2
 1970-01-01T00:00:00.000000100,beijing,,,1234,false,1.2
 1970-01-01T00:00:00.000000100,beijing,shanghai,-1234,1234,false,1.2
 1970-01-01T00:00:00.000000103,beijing,shanghai,-1234,1234,false,1.2
@@ -132,6 +136,7 @@ time,column6,column7,column1,column3,column4,column5
 -- AFTER_SORT --
 200 OK
 time,column6,column7,column1,column3,column4,column5,column8
+1970-01-01T00:00:00.000000100,,,-1234,1234,false,1.2,
 1970-01-01T00:00:00.000000100,beijing,,,1234,false,1.2,
 1970-01-01T00:00:00.000000100,beijing,shanghai,-1234,1234,false,1.2,
 1970-01-01T00:00:00.000000103,beijing,shanghai,-1234,1234,false,1.2,
@@ -146,6 +151,7 @@ time,column6,column7,column1,column3,column4,column5,column8
 -- AFTER_SORT --
 200 OK
 time,column6,column7,column1,column3,column4,column5,column8
+1970-01-01T00:00:00.000000100,,,-1234,1234,false,1.2,
 1970-01-01T00:00:00.000000100,beijing,,,1234,false,1.2,
 1970-01-01T00:00:00.000000100,beijing,shanghai,-1234,1234,false,1.2,
 1970-01-01T00:00:00.000000103,beijing,shanghai,-1234,1234,false,1.2,
@@ -157,9 +163,8 @@ time,column6,column7,column1,column3,column4,column5,column8
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE TABLE test2( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA)); --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: table should have TAGS"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: CREATE TABLE test0( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity

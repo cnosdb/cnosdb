@@ -125,19 +125,19 @@ rows
 
 -- EXECUTE SQL: INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:41:00', NULL, 56, 69, 77); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"020002","error_message":"Tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+1
 
 -- EXECUTE SQL: INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:42:00', 'XiaoMaiDao', NULL, NULL, NULL); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"020002","error_message":"Tags or fields can't be empty"}
+{"error_code":"020002","error_message":"Fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:43:00', NULL, NULL, NULL, NULL); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"020002","error_message":"Tags or fields can't be empty"}
+{"error_code":"020002","error_message":"Fields can't be empty"}
 -- ERROR:  --
 

@@ -1333,7 +1333,8 @@ impl<'a> ExtParser<'a> {
             let comma = self.consume_token(&Token::Comma);
             if self.consume_token(&Token::RParen) {
                 // allow a trailing comma, even though it's not in standard
-                return parser_err!(format!("table should have TAGS"));
+                // return parser_err!(format!("table should have TAGS"));
+                break;
             } else if !comma {
                 return self.expected(
                     "',' or ')' after column definition",
