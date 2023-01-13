@@ -171,7 +171,9 @@ impl TsKv {
     }
 
     async fn recover_wal(&self) -> WalManager {
-        let wal_manager = WalManager::open(self.options.wal.clone()).await.unwrap();
+        let wal_manager = WalManager::open(self.options.wal.clone(), self.version_set.clone())
+            .await
+            .unwrap();
 
         wal_manager
             .recover(self, self.global_ctx.clone())

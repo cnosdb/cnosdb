@@ -17,9 +17,10 @@ clippy:
 	cargo clippy --workspace  --all-targets --fix
 
 build:
-	cargo build --all-features --all-targets --package main
-	cargo build --all-features --all-targets --package meta
-	cargo build --all-features --all-targets --package client
+	cargo build --workspace --bins
+
+build_release:
+	cargo build --release --workspace --bins
 
 test:
 	cargo test --workspace --exclude e2e_test
@@ -32,4 +33,4 @@ clean:
 run:
 	cargo run -- run
 
-.PHONY: docs check fmt fmt_check clippy clippy_check build test docs_check clean run
+.PHONY: docs check fmt fmt_check clippy clippy_check build build_release test docs_check clean run

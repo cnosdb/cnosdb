@@ -441,7 +441,7 @@ impl Summary {
                 tsf_min_seq.insert(edit.tsf_id, edit.seq_no);
             }
         }
-        let version_set = self.version_set.write().await;
+        let mut version_set = self.version_set.write().await;
         for (tsf_id, version_edits) in tsf_version_edits {
             let min_seq = tsf_min_seq.get(&tsf_id);
             if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
@@ -452,6 +452,7 @@ impl Summary {
                 tsf.write().new_version(new_version);
             }
         }
+        version_set.update_min_seq_no().await;
 
         Ok(())
     }

@@ -381,6 +381,18 @@ impl Database {
         check::get_ts_family_hash_tree(self, ts_family_id).await
     }
 
+    pub async fn get_min_ts_family_seq_no(&self) -> u64 {
+        let mut min_seq_no = if self.ts_families.is_empty() {
+            0_u64
+        } else {
+            u64::MAX
+        };
+        for (_, ts_family) in self.ts_families.iter() {
+            min_seq_no = min_seq_no.min(ts_family.read().seq_no());
+        }
+        min_seq_no
+    }
+
     pub fn owner(&self) -> String {
         self.owner.clone()
     }
