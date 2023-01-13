@@ -874,6 +874,10 @@ impl TseriesFamily {
     pub fn storage_opt(&self) -> Arc<StorageOptions> {
         self.storage_opt.clone()
     }
+
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
+    }
 }
 
 #[cfg(test)]

@@ -22,6 +22,7 @@
 
 use datafusion::parquet::data_type::AsBytes;
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     string::String,
     sync::Arc,
@@ -31,7 +32,7 @@ use models::auth::user::{ROOT, ROOT_PWD};
 use models::codec::Encoding;
 use protos::kv_service::{Meta, WritePointsRpcRequest};
 use snafu::ResultExt;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn};
 
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
@@ -44,6 +45,7 @@ use crate::{
     kv_option::WalOptions,
     record_file::{self, Record, RecordDataType, RecordDataVersion},
     tsm::{codec::get_str_codec, DecodeSnafu, EncodeSnafu},
+    version_set::VersionSet,
 };
 use crate::{engine, TseriesFamilyId};
 
@@ -235,9 +237,11 @@ impl WalWriter {
 
 pub struct WalManager {
     config: Arc<WalOptions>,
+    version_set: Arc<RwLock<VersionSet>>,
 
     current_dir: PathBuf,
     current_file: WalWriter,
+    old_file_max_sequence: HashMap<u64, u64>,
 }
 
 unsafe impl Send for WalManager {}
@@ -245,32 +249,53 @@ unsafe impl Send for WalManager {}
 unsafe impl Sync for WalManager {}
 
 impl WalManager {
-    pub async fn open(config: Arc<WalOptions>) -> Result<Self> {
+    pub async fn open(
+        config: Arc<WalOptions>,
+        version_set: Arc<RwLock<VersionSet>>,
+    ) -> Result<Self> {
         if !file_manager::try_exists(&config.path) {
             std::fs::create_dir_all(&config.path).unwrap();
         }
+        let base_path = config.path.to_path_buf();
+
+        let mut old_file_max_sequence: HashMap<u64, u64> = HashMap::new();
+        let file_names = file_manager::list_file_names(&config.path);
+        for f in file_names {
+            match read_footer(base_path.join(&f)).await {
+                Ok(Some((_, max_seq))) => match file_utils::get_wal_file_id(&f) {
+                    Ok(file_id) => {
+                        old_file_max_sequence.insert(file_id, max_seq);
+                    }
+                    Err(e) => warn!("Failed to parse WAL file name for '{}': {:?}", &f, e),
+                },
+                Ok(None) => warn!("Failed to parse WAL file footer for '{}'", &f),
+                Err(e) => warn!("Failed to parse WAL file footer for '{}': {:?}", &f, e),
+            }
+        }
 
         // Create a new wal file every time it starts.
-        let (pre_max_seq, next_file_id) = match file_utils::get_max_sequence_file_name(
-            config.path.clone(),
-            file_utils::get_wal_file_id,
-        ) {
-            Some((_, id)) => {
-                let path = file_utils::make_wal_file(&config.path, id);
-                let (_, max_seq) = read_footer(&path).await?.unwrap_or((1_u64, 1_u64));
-                (max_seq + 1, id + 1)
-            }
-            None => (1_u64, 1_u64),
-        };
+        let (pre_max_seq, next_file_id) =
+            match file_utils::get_max_sequence_file_name(&config.path, file_utils::get_wal_file_id)
+            {
+                Some((_, id)) => {
+                    let path = file_utils::make_wal_file(&config.path, id);
+                    let (_, max_seq) = read_footer(&path).await?.unwrap_or((1_u64, 1_u64));
+                    (max_seq + 1, id + 1)
+                }
+                None => (1_u64, 1_u64),
+            };
 
         let new_wal = file_utils::make_wal_file(&config.path, next_file_id);
         let current_file =
             WalWriter::open(config.clone(), next_file_id, new_wal, pre_max_seq).await?;
+        info!("WAL '{}' starts write", current_file.id);
         let current_dir = config.path.clone();
         Ok(WalManager {
             config,
+            version_set,
             current_dir,
             current_file,
+            old_file_max_sequence,
         })
     }
 
@@ -278,8 +303,8 @@ impl WalManager {
         self.current_file.max_sequence
     }
 
-    async fn roll_wal_file(&mut self) -> Result<()> {
-        if self.current_file.size > SEGMENT_SIZE {
+    async fn roll_wal_file(&mut self, max_file_size: u64) -> Result<()> {
+        if self.current_file.size > max_file_size {
             info!(
                 "WAL '{}' is full at seq '{}', begin rolling.",
                 self.current_file.id, self.current_file.max_sequence
@@ -295,12 +320,45 @@ impl WalManager {
                 self.current_file.max_sequence,
             )
             .await?;
-            let old_file = std::mem::replace(&mut self.current_file, new_file);
+            info!(
+                "WAL '{}' starts write at seq {}",
+                self.current_file.id, self.current_file.max_sequence
+            );
+
+            let mut old_file = std::mem::replace(&mut self.current_file, new_file);
+            if old_file.max_sequence <= old_file.min_sequence {
+                old_file.max_sequence = old_file.min_sequence;
+            } else {
+                old_file.max_sequence -= 1;
+            }
+            self.old_file_max_sequence
+                .insert(old_file.id, old_file.max_sequence);
             old_file.close().await?;
 
-            info!("WAL '{}' starts write", self.current_file.id);
+            self.check_to_delete().await;
         }
         Ok(())
+    }
+
+    async fn check_to_delete(&mut self) {
+        let min_seq = self.version_set.read().await.min_seq_no();
+        let mut old_files_to_delete: Vec<u64> = Vec::new();
+        for (old_file_id, old_file_max_seq) in self.old_file_max_sequence.iter() {
+            if *old_file_max_seq < min_seq {
+                old_files_to_delete.push(*old_file_id);
+            }
+        }
+
+        if !old_files_to_delete.is_empty() {
+            for file_id in old_files_to_delete {
+                let file_path = file_utils::make_wal_file(&self.config.path, file_id);
+                debug!("Removing wal file '{}'", file_path.display());
+                if let Err(e) = std::fs::remove_file(&file_path) {
+                    error!("failed to remove file '{}': {:?}", file_path.display(), e);
+                }
+                self.old_file_max_sequence.remove(&file_id);
+            }
+        }
     }
 
     /// Checks if wal file is full then writes data. Return data sequence and data size.
@@ -311,7 +369,7 @@ impl WalManager {
         id: TseriesFamilyId,
         tenant: Arc<Vec<u8>>,
     ) -> Result<(u64, usize)> {
-        self.roll_wal_file().await?;
+        self.roll_wal_file(SEGMENT_SIZE).await?;
         self.current_file.write(typ, data, id, tenant).await
     }
 
@@ -496,6 +554,7 @@ mod test {
     use lazy_static::lazy_static;
     use serial_test::serial;
     use tokio::runtime;
+    use tokio::sync::RwLock;
     use tokio::time::sleep;
 
     use config::get_config;
@@ -511,9 +570,10 @@ mod test {
     use crate::{
         file_system::FileCursor,
         kv_option::WalOptions,
+        version_set::VersionSet,
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };
-    use crate::{kv_option, Error, Result, TsKv};
+    use crate::{kv_option, Error, Options, Result, TsKv};
 
     fn random_write_data() -> Vec<u8> {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -536,20 +596,28 @@ mod test {
     ) -> Result<()> {
         let wal_dir = wal_dir.as_ref();
         let wal_files = list_file_names(wal_dir);
+        let mut data_iter = data.iter();
         for wal_file in wal_files {
             let path = wal_dir.join(wal_file);
 
-            let mut data_iter = data.iter();
             let mut reader = WalReader::open(&path).await.unwrap();
             let decoder = get_str_codec(Encoding::Zstd);
+            println!("Reading data from wal file '{}'", path.display());
             loop {
                 match reader.next_wal_entry().await {
                     Ok(Some(entry)) => {
-                        let mut data_buf = Vec::new();
-                        decoder.decode(entry.data(), &mut data_buf).unwrap();
-                        let ori_data = data_iter.next().unwrap();
-                        assert_eq!(data_buf[0].as_slice(), ori_data.as_ref().as_slice());
+                        println!("Reading entry from wal file '{}'", path.display());
+                        let ety_data = entry.data();
+                        let ori_data = match data_iter.next() {
+                            Some(d) => d,
+                            None => {
+                                panic!("unexpected data to compare that is less than file count.")
+                            }
+                        };
                         if is_flatbuffers {
+                            let mut data_buf = Vec::new();
+                            decoder.decode(ety_data, &mut data_buf).unwrap();
+                            assert_eq!(data_buf[0].as_slice(), ori_data.as_ref().as_slice());
                             if let Err(e) = flatbuffers::root::<fb_models::Points>(&data_buf[0]) {
                                 panic!(
                                     "unexpected data in wal file, ignored file '{}' because '{}'",
@@ -557,9 +625,14 @@ mod test {
                                     e
                                 );
                             }
+                        } else {
+                            assert_eq!(ety_data, ori_data.as_ref().as_slice());
                         }
                     }
-                    Ok(None) => break,
+                    Ok(None) => {
+                        println!("Reae none from wal file '{}'", path.display());
+                        break;
+                    }
                     Err(Error::WalTruncated) => {
                         println!("WAL file truncated: {}", path.display());
                         return Err(Error::WalTruncated);
@@ -579,32 +652,22 @@ mod test {
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir.clone();
+        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
-        let mut mgr = WalManager::open(Arc::new(wal_config)).await.unwrap();
-        let coder = get_str_codec(Encoding::Zstd);
+        let vs = VersionSet::empty(Arc::new(options));
+
+        let mut mgr = WalManager::open(Arc::new(wal_config), Arc::new(RwLock::new(vs)))
+            .await
+            .unwrap();
         let mut data_vec = Vec::new();
         for _ in 0..10 {
             let data = Arc::new(b"hello".to_vec());
             data_vec.push(data.clone());
 
-            let mut enc_points = Vec::new();
-            coder
-                .encode(&[&data], &mut enc_points)
-                .map_err(|_| Error::Send)
+            mgr.write(WalEntryType::Write, data, 0, Arc::new(b"cnosdb".to_vec()))
+                .await
                 .unwrap();
-
-            let mut dec_points = Vec::new();
-            coder.decode(&enc_points, &mut dec_points).unwrap();
-
-            mgr.write(
-                WalEntryType::Write,
-                Arc::new(enc_points),
-                0,
-                Arc::new("cnosdb".as_bytes().to_vec()),
-            )
-            .await
-            .unwrap();
         }
         mgr.close().await.unwrap();
 
@@ -621,38 +684,38 @@ mod test {
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir.clone();
         global_config.wal.sync = false;
+        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
+        let tenant = Arc::new(b"cnosdb".to_vec());
         let database = "test_db".to_string();
         let table = "test_table".to_string();
-        let mut mgr = WalManager::open(Arc::new(wal_config)).await.unwrap();
-        let coder = get_str_codec(Encoding::Zstd);
-        let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
-        for _i in 0..1 {
-            let mut fbb = flatbuffers::FlatBufferBuilder::new();
-            let points = models_helper::create_dev_ops_points(&mut fbb, 10, &database, &table);
-            fbb.finish(points, None);
+        let version_set_min_seq_no = 6;
 
-            let data = Arc::new(fbb.finished_data().to_vec());
-            data_vec.push(data.clone());
-
-            let mut enc_points = Vec::new();
-            coder
-                .encode(&[&data], &mut enc_points)
-                .map_err(|_| Error::Send)
-                .unwrap();
-            mgr.write(
-                WalEntryType::Write,
-                Arc::new(enc_points),
-                0,
-                Arc::new("cnosdb".as_bytes().to_vec()),
-            )
+        let vs = Arc::new(RwLock::new(VersionSet::empty(Arc::new(options))));
+        vs.write().await.set_min_seq_no(version_set_min_seq_no);
+        let mut mgr = WalManager::open(Arc::new(wal_config), vs.clone())
             .await
             .unwrap();
+        let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
+        for seq in 1..11 {
+            let data = Arc::new(format!("{}", seq).as_bytes().to_vec());
+            if seq >= version_set_min_seq_no {
+                // Data in file_id taat less than version_set_min_seq_no will be deleted.
+                data_vec.push(data.clone());
+            }
+
+            mgr.write(WalEntryType::Write, data.clone(), 0, tenant.clone())
+                .await
+                .unwrap();
+            if seq < 10 {
+                // Argument max_file_size is so small that there must a new wal file created.
+                mgr.roll_wal_file(1).await.unwrap();
+            }
         }
         mgr.close().await.unwrap();
 
-        check_wal_files(dir, data_vec, true).await.unwrap();
+        check_wal_files(dir, data_vec, false).await.unwrap();
     }
 
     #[tokio::test]
@@ -662,9 +725,13 @@ mod test {
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir.clone();
+        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
-        let mut mgr = WalManager::open(Arc::new(wal_config)).await.unwrap();
+        let vs = VersionSet::empty(Arc::new(options));
+        let mut mgr = WalManager::open(Arc::new(wal_config), Arc::new(RwLock::new(vs)))
+            .await
+            .unwrap();
         let coder = get_str_codec(Encoding::Zstd);
         let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
 
@@ -701,9 +768,16 @@ mod test {
         let mut global_config = get_config("../config/config_31001.toml");
         global_config.wal.path = dir.to_string();
         global_config.storage.path = "/tmp/test/wal/4".to_string();
+        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
-        let mut mgr = rt.block_on(WalManager::open(Arc::new(wal_config))).unwrap();
+        let vs = VersionSet::empty(Arc::new(options));
+        let mut mgr = rt
+            .block_on(WalManager::open(
+                Arc::new(wal_config),
+                Arc::new(RwLock::new(vs)),
+            ))
+            .unwrap();
         let coder = get_str_codec(Encoding::Zstd);
         let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
 

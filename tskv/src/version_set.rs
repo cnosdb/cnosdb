@@ -27,8 +27,10 @@ use crate::{
 #[derive(Debug)]
 pub struct VersionSet {
     opt: Arc<Options>,
-    // DBName -> DB
+    /// Maps DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
+    /// Minimum seq_no of all `TseriesFamily`s in all `Database`s
+    min_seq_no: u64,
 }
 
 impl VersionSet {
@@ -36,6 +38,7 @@ impl VersionSet {
         Self {
             opt,
             dbs: HashMap::new(),
+            min_seq_no: 0,
         }
     }
 
@@ -46,11 +49,11 @@ impl VersionSet {
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
-
+        let mut min_seq_no = if ver_set.is_empty() { 0_u64 } else { u64::MAX };
         for (id, ver) in ver_set {
             let owner = ver.database().to_string();
             let (tenant, database) = split_owner(&owner);
-            let seq = ver.last_seq;
+            min_seq_no = min_seq_no.min(ver.last_seq);
 
             let schema = match meta.tenant_manager().tenant_meta(tenant) {
                 None => DatabaseSchema::new(tenant, database),
@@ -74,7 +77,11 @@ impl VersionSet {
             db.write().await.get_ts_index_or_add(tf_id).await?;
         }
 
-        Ok(Self { dbs, opt })
+        Ok(Self {
+            dbs,
+            opt,
+            min_seq_no,
+        })
     }
 
     pub fn options(&self) -> Arc<Options> {
@@ -191,5 +198,24 @@ impl VersionSet {
             version_edits.append(&mut ves);
         }
         version_edits
+    }
+
+    pub async fn update_min_seq_no(&mut self) {
+        let mut min_seq_no = if self.dbs.is_empty() { 0_u64 } else { u64::MAX };
+        for (_, db) in self.dbs.iter() {
+            min_seq_no = min_seq_no.min(db.read().await.get_min_ts_family_seq_no().await);
+        }
+        self.min_seq_no = min_seq_no
+    }
+
+    pub fn min_seq_no(&self) -> u64 {
+        self.min_seq_no
+    }
+}
+
+#[cfg(test)]
+impl VersionSet {
+    pub fn set_min_seq_no(&mut self, min_seq_no: u64) {
+        self.min_seq_no = min_seq_no;
     }
 }
