@@ -13,11 +13,9 @@ RUN dnf groupinstall -y "Development Tools" && \
     dnf clean all
 
 # Install flatbuffers
-RUN git clone https://github.com/google/flatbuffers.git && \
-    cd flatbuffers && \
-    git checkout -b v2.0.6 v2.0.6 && \
-    cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release && \
-    make install
+RUN git clone -b v22.9.29 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers \
+    && cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
+    && make install && cd .. && rm -rf flatbuffers
 
 # Install Rust
 RUN curl https://sh.rustup.rs -sSf | sh -s -- --no-modify-path --default-toolchain none -y
