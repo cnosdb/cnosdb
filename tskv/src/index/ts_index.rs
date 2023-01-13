@@ -199,6 +199,10 @@ impl TSIndex {
             let key = encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
             self.storage.modify(&key, id, true)?;
         }
+        if series_key.tags().is_empty() {
+            let key = encode_inverted_index_key(series_key.table(), &[], &[]);
+            self.storage.modify(&key, id, true)?;
+        }
 
         let _ = self.check_to_flush(false).await;
 

@@ -234,9 +234,7 @@ impl Database {
         info: &Point<'_>,
         ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<u32> {
-        if info.tags().ok_or(InvalidPoint)?.is_empty()
-            || info.fields().ok_or(InvalidPoint)?.is_empty()
-        {
+        if info.fields().ok_or(InvalidPoint)?.is_empty() {
             return Err(InvalidPoint);
         }
 
