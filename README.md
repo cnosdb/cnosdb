@@ -34,13 +34,13 @@
 
 English | [简体中文](./README_CN.md)
 
-CnosDB is a high-performance, high-compression, and easy-to-use open-source distributed time-series database, mainly used in the fields of IoT, industrial Internet, connected cars, IT operations, and so on. All the code is open-sourced on GitHub.
+CnosDB is a high-performance, high-compression, and easy-to-use open-source distributed time-series database. It is primarily used in fields such as IoT, industrial internet, connected cars, and IT operations. All of the code is open-sourced and available on GitHub.
 
-In the design, we fully utilize the characteristics of time-series data, including structured data, no transactions, less deletion and update, more write and less read, etc. Therefore, CnosDB has a series of advantages that distinguish it from other time-series databases:
+In its design, we fully utilize the characteristics of time-series data, including structured data, non-transactions, fewer deletions and updates, more writes and less reads, etc. As a result, CnosDB has a number of advantages that set it apart from other time-series databases:
 
-- **High performance**: CnosDB solves the problem of time-series data expansion and theoretically supports unlimited time-series data. It supports aggregate queries along the timeline, including queries divided by equal intervals, queries divided by enumeration values of a column, and queries divided by the length of the time interval between adjacent time-series records. It has caching capability for the latest data, and the cache space can be configured for fast access to the latest data.
-- **Easy to use**: CnosDB provides clear and simple interfaces, easy configuration options, standard SQL support, easy to use, seamless integration with third-party tools, and convenient data access functions. It supports schema-less writing mode and supports historical data supplement(including out of order writing).
-- **Cloud native**: CnosDB has a native distributed design, data sharding and partitioning, storage and computing separation, Quorum mechanism, Kubernetes deployment, and complete observability, ensuring final consistency. It can be deployed in public clouds, private clouds, and hybrid clouds. Native support for multi-tenancy. Role-based permission control. The computing nodes and storage nodes support horizontal scaling.
+- **High performance**: CnosDB addresses the issue of time-series data expansion and theoretically supports unlimited time-series data. It supports aggregate queries along the timeline, including queries divided by equal intervals, queries divided by enumeration values of a column, and queries divided by the length of the time interval between adjacent time-series records. It also has caching capabilities for the latest data and the cache space can be configured for fast access to the latest data.
+- **Easy to use**: CnosDB provides clear and simple interfaces, easy configuration options, standard SQL support, seamless integration with third-party tools, and convenient data access functions. It supports schema-less writing mode and supports historical data supplement(including out of order writing).
+- **Cloud native**: CnosDB has a native distributed design, data sharding and partitioning, separation of storage and computing, Quorum mechanism, Kubernetes deployment and complete observability, ensuring final consistency. It can be deployed in public clouds, private clouds, and hybrid clouds. t also supports multi-tenancy and has role-based permission control. The computing and storage nodes support horizontal scaling.
 
 # Architecture
 
