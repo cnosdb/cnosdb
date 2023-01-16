@@ -205,6 +205,12 @@ impl DBIndex {
             let key = encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
             self.storage.push(&key, id.to_be_bytes().as_ref())?;
         }
+
+        if series_key.tags().is_empty() {
+            let key = encode_inverted_index_key(series_key.table(), &[], &[]);
+            self.storage.push(&key, id.to_be_bytes().as_ref())?;
+        }
+
         Ok(id)
     }
 

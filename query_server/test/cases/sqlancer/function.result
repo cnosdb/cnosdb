@@ -28,15 +28,15 @@
 
 -- EXECUTE SQL: INSERT m1(TIME, f2) VALUES(3894556692135729687, -803836627), (4555921208464455397, -25284663); -- 0ms; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+2
 
 -- EXECUTE SQL: INSERT m1(TIME, f0) VALUES(1191631107457969673, '9195442692708162668'); -- 0ms; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+1
 
 -- EXECUTE SQL: INSERT m1(TIME, f1, f0, t0) VALUES(2645614256296351398, FALSE, '7276138141691785489', '4'), (4523696464976555956, TRUE, 'IG', ''), (1252859358085287398, TRUE, '0.12602752741440792', 'pR'), (6971753681441287817, FALSE, 'Y', ''); -- 1ms; --
 -- AFTER_SORT --
@@ -65,7 +65,7 @@ rows
 -- EXECUTE SQL: INSERT m3(TIME, t1, t0) VALUES(8357345634210517894, 'T!', 't'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: Fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(4963944696064243826, 4872214110337414144), (8906039179956143515, 0.8770889075333576645476796329603530466556549072265625); -- 0ms; --
@@ -89,7 +89,7 @@ rows
 -- EXECUTE SQL: INSERT m4(TIME, t0) VALUES(1641279124618714342, '*Yk'), (6904427846636587726, 'Ff(u'), (8501508840232273345, 'CB<7E]'), (4535575739230910918, '9065525203050843594'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: Fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m2(TIME, f0, f1, t0) VALUES(8033277448126677494, -719146430, 0.637860522993480838493951523560099303722381591796875, 'sGh[2[*?Q'); -- 1ms; --
@@ -100,9 +100,9 @@ rows
 
 -- EXECUTE SQL: INSERT m3(TIME, f0) VALUES(7874484282556631665, -184853823), (6101230550563449153, -2085716189); -- 0ms; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+2
 
 -- EXECUTE SQL: INSERT m4(TIME, t1, f0) VALUES(8297020634243142773, '', FALSE); -- 2ms; --
 -- AFTER_SORT --
@@ -112,15 +112,15 @@ rows
 
 -- EXECUTE SQL: INSERT m3(TIME, f0) VALUES(3415710888110090697, -1134968677), (7304141719206898387, -374901666); -- 0ms; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+2
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(4690298394886424922, 0.7365373850922811715946636468288488686084747314453125); -- 0ms; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+1
 
 -- EXECUTE SQL: INSERT m2(TIME, t2, f1, t0) VALUES(6848635358907743076, '7825004207928641098', 0.02312444644650846203859373417799361050128936767578125, 'n'), (6623331093118139075, 'sW', 0.54727668609854573933404253693879581987857818603515625, '4683132071972081202'); -- 0ms; --
 -- AFTER_SORT --
@@ -143,7 +143,7 @@ rows
 -- EXECUTE SQL: INSERT m2(TIME, t0, t2) VALUES(3792508435101275658, 't5sd/,D?7', ',d'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: Fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(1128201073465455417, 0.7520663873197779292212317159282974898815155029296875), (8928495096372163377, 419303373304867648), (7728172917082845593, 418797746943372864); -- 0ms; --
@@ -166,9 +166,9 @@ rows
 
 -- EXECUTE SQL: INSERT m1(TIME, f1) VALUES(3445745323472776741, FALSE), (4004885874743297811, FALSE); -- 1ms; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+2
 
 -- EXECUTE SQL: INSERT m2(TIME, t0, f1) VALUES(7255535569352092297, '0.14928332458710802', -179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368); -- 0ms; --
 -- AFTER_SORT --
@@ -202,14 +202,14 @@ rows
 
 -- EXECUTE SQL: INSERT m1(TIME, f1) VALUES(4405135655254137840, TRUE), (5010135736173590510, TRUE); -- 0ms; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+2
 
 -- EXECUTE SQL: INSERT m0(TIME, t0) VALUES(7830195537671872289, ''), (2960157668810740158, '0.08834751653967488'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: Fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m3(TIME, f0, t1) VALUES(5760405580491443116, 951192745, '[%^TQVy8'); -- 0ms; --
@@ -220,9 +220,9 @@ rows
 
 -- EXECUTE SQL: INSERT m1(TIME, f2, f0) VALUES(341303125816519819, NULL, '3309273192353118515'), (5491711760282782714, 1700015934, 'Vb5P落ꦀ'); -- 0ms; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+2
 
 -- EXECUTE SQL: INSERT m3(TIME, f0, t0) VALUES(6634512753791616118, 1296743770, 'O~'); -- 0ms; --
 -- AFTER_SORT --
@@ -233,26 +233,26 @@ rows
 -- EXECUTE SQL: INSERT m0(TIME, t0) VALUES(681590122943006574, ''); -- 1ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: Fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(7034851862018480562, 0.7802602952255794921399001395911909639835357666015625); -- 0ms; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+1
 
 -- EXECUTE SQL: INSERT m1(TIME, f0) VALUES(4632089311642511003, ''), (1284932644367558414, 's'); -- 0ms; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+2
 
 -- EXECUTE SQL: INSERT m4(TIME, f0) VALUES(8628134510828718363, TRUE), (5632091374246825572, TRUE); -- 0ms; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
--- ERROR:  --
+200 OK
+rows
+2
 
 -- EXECUTE SQL: INSERT m0(TIME, t0, f0) VALUES(8573280033733946014, 'z', 0.45063825268152390979281562977121211588382720947265625); -- 0ms; --
 -- AFTER_SORT --
@@ -263,7 +263,7 @@ rows
 -- EXECUTE SQL: INSERT m1(TIME, t0) VALUES(9025730320552868594, NULL); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: Fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m2(TIME, t2, f1, f0, t0) VALUES(3116582321238022207, '', 1692022416413118976, 19144301, ''); -- 0ms; --
@@ -287,7 +287,7 @@ rows
 -- EXECUTE SQL: INSERT m3(TIME, t0) VALUES(5961690929868572693, 'Rn3'), (6927680728977609390, '0.46917222743479703'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: Fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m1(TIME, t0, f1, f0, f2) VALUES(567722332927164807, '.1''㔱鎫c9', TRUE, '\g', -1359365092); -- 0ms; --
@@ -300,6 +300,7 @@ rows
 -- AFTER_SORT --
 200 OK
 t0
+""
 .
 0.20625602818030442
 2090966948559537515
@@ -314,10 +315,11 @@ z
 200 OK
 t0
 ""
+""
 '9
 .1'㔱鎫c9
 4
-8N] 
+8N]
 B
 pR
 ꆪswp
@@ -339,6 +341,7 @@ sGh[2[*?Q,,
 -- AFTER_SORT --
 200 OK
 t0,t1
+,
 ,[%^TQVy8
 0.002147298221788496,2350431228203406322
 0.4140742380785405,1067185949319247413
@@ -352,6 +355,7 @@ c]_tcQrM,	0
 -- AFTER_SORT --
 200 OK
 t0,t1
+,
 ,
 ,-719146430
 ,[
@@ -405,7 +409,7 @@ f0,t1,f1,t0
 -- AFTER_SORT --
 200 OK
 SUM((- m3.f0))
--9065525202987418310
+-9065525199206977955
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT SUM(+ (CAST(- (m3.f0) AS BIGINT)))  as agg0 FROM m3 WHERE CAST(CAST(CAST(to_timestamp(4684102303763482212) AS STRING) AS BIGINT) AS BOOLEAN) UNION ALL SELECT ALL SUM(+ (CAST(- (m3.f0) AS BIGINT)))  as agg0 FROM m3 WHERE NOT (CAST(CAST(CAST(to_timestamp(4684102303763482212) AS STRING) AS BIGINT) AS BOOLEAN)) UNION ALL SELECT ALL SUM(+ (CAST(- (m3.f0) AS BIGINT)))  as agg0 FROM m3 WHERE (CAST(CAST(CAST(to_timestamp(4684102303763482212) AS STRING) AS BIGINT) AS BOOLEAN)) IS NULL) as asdf; --
 -- AFTER_SORT --
@@ -417,37 +421,59 @@ SUM((- m3.f0))
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.22543645182013572))
-1.1271822591006786
+1.57805516274095
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f2, m1.f1, m1.t0 FROM m1; --
 -- AFTER_SORT --
 200 OK
 f0,f2,f1,t0
 ",p",-1628140570,true,B
+,,,
+,,false,
+,,false,
+,,true,
+,,true,
+,-25284663,,
+,-803836627,,
 0.12602752741440792,,true,pR
+3309273192353118515,,,
 7276138141691785489,,false,4
+9195442692708162668,,,
 IG,,true,
-M,10435154,false,8N] 
+M,10435154,false,8N]
 N粶i!cm+R.,,true,
+Vb5P落ꦀ,1700015934,,
 Y,,false,
 Y,,false,'9
 \WY%,,false,ꆪswp
 \g,-1359365092,true,.1'㔱鎫c9
+s,,,
 
 -- EXECUTE SQL: SELECT m1.f0, m1.f2, m1.f1, m1.t0 FROM m1 WHERE CAST(NOT (((CAST(8241995052092137898 AS STRING))LIKE(upper(m1.t0)))) AS BOOLEAN) UNION ALL SELECT ALL m1.f0, m1.f2, m1.f1, m1.t0 FROM m1 WHERE NOT (CAST(NOT (((CAST(8241995052092137898 AS STRING))LIKE(upper(m1.t0)))) AS BOOLEAN)) UNION ALL SELECT ALL m1.f0, m1.f2, m1.f1, m1.t0 FROM m1 WHERE (CAST(NOT (((CAST(8241995052092137898 AS STRING))LIKE(upper(m1.t0)))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 200 OK
 f0,f2,f1,t0
 ",p",-1628140570,true,B
+,,,
+,,false,
+,,false,
+,,true,
+,,true,
+,-25284663,,
+,-803836627,,
 0.12602752741440792,,true,pR
+3309273192353118515,,,
 7276138141691785489,,false,4
+9195442692708162668,,,
 IG,,true,
-M,10435154,false,8N] 
+M,10435154,false,8N]
 N粶i!cm+R.,,true,
+Vb5P落ꦀ,1700015934,,
 Y,,false,
 Y,,false,'9
 \WY%,,false,ꆪswp
 \g,-1359365092,true,.1'㔱鎫c9
+s,,,
 
 -- EXECUTE SQL: SELECT ALL m2.t1 FROM m2; --
 -- AFTER_SORT --
@@ -478,16 +504,21 @@ MIN(m4.t1)
 -- AFTER_SORT --
 200 OK
 f0
+""
 ",p"
 0.12602752741440792
+3309273192353118515
 7276138141691785489
+9195442692708162668
 IG
 M
 N粶i!cm+R.
+Vb5P落ꦀ
 Y
 Y
 \WY%
 \g
+s
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE (NOT ((m1.f0) BETWEEN (lower(m1.t0)) AND (lower(m1.f0)))) IS NOT UNKNOWN; --
 -- AFTER_SORT --
@@ -507,7 +538,12 @@ Y
 -- EXECUTE SQL: SELECT m1.f0 FROM m1 WHERE NOT ((NOT ((m1.f0) BETWEEN (lower(m1.t0)) AND (lower(m1.f0)))) IS NOT UNKNOWN); --
 -- AFTER_SORT --
 200 OK
-
+f0
+""
+3309273192353118515
+9195442692708162668
+Vb5P落ꦀ
+s
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE ((NOT ((m1.f0) BETWEEN (lower(m1.t0)) AND (lower(m1.f0)))) IS NOT UNKNOWN) IS NULL; --
 -- AFTER_SORT --
@@ -560,8 +596,10 @@ time,t0,f0
 2047-07-05T20:22:55.255359552,0.20625602818030442,0.33339264393462475
 2066-01-03T07:08:35.798971109,gh+1,0.12530605778114434
 2067-05-27T15:39:19.632055652,R,0.2994223801612098
+2118-08-18T20:39:54.886424922,,0.7365373850922812
 2134-10-05T16:18:40.241642214,_fq,0.9046718662186112
 2177-09-12T21:59:19.332105564,2090966948559537515,0.10574448926145164
+2192-12-03T21:31:02.018480562,,0.7802602952255795
 2241-09-04T18:40:33.733946014,z,0.4506382526815239
 
 -- EXECUTE SQL: SELECT * FROM m0 WHERE CAST(((lower(m0.t0))LIKE(((CAST(to_timestamp(5320242264547123554) AS STRING))||(NOT (TRUE))))) AS BOOLEAN); --
@@ -593,11 +631,18 @@ MIN(totimestamp(Int64(3261280258043984262)))
 -- AFTER_SORT --
 200 OK
 f1,f2,t0
+,-25284663,
+,-803836627,
+,1700015934,
+false,,
+false,,
 false,,
 false,,'9
 false,,4
 false,,ꆪswp
-false,10435154,8N] 
+false,10435154,8N]
+true,,
+true,,
 true,,
 true,,
 true,,pR
@@ -608,11 +653,22 @@ true,-1628140570,B
 -- AFTER_SORT --
 200 OK
 f1,f2,t0
+,,
+,,
+,,
+,,
+,-25284663,
+,-803836627,
+,1700015934,
+false,,
+false,,
 false,,
 false,,'9
 false,,4
 false,,ꆪswp
-false,10435154,8N] 
+false,10435154,8N]
+true,,
+true,,
 true,,
 true,,
 true,,pR
@@ -640,6 +696,8 @@ f0,t0
 0.2994223801612098,R
 0.33339264393462475,0.20625602818030442
 0.4506382526815239,z
+0.7365373850922812,
+0.7802602952255795,
 0.8266616373816802,.
 0.8910983143439503,5468993521555465265
 0.9046718662186112,_fq
@@ -703,7 +761,7 @@ time,t0,t1,t2,f0,f1
 -- AFTER_SORT --
 200 OK
 COUNT(m3.f0)
-8
+12
 
 -- EXECUTE SQL: SELECT MIN(CAST(to_timestamp(274674721044742811) AS TIMESTAMP)), ((CAST(CAST(CAST(1359896436152285429 AS TIMESTAMP) AS TIMESTAMP) AS STRING))LIKE(m4.t1)), NOT (CAST(round(0.61858251292625665573865489932359196245670318603515625) AS BOOLEAN)), btrim(LAG(CAST(CAST(+ (((0.60249446260118888485379784469841979444026947021484375)+(0.4482139243283487228808326108264736831188201904296875))) AS STRING) AS STRING), + (((CAST(((m4.t0)LIKE(m4.t0)) AS BIGINT))-(CAST(initcap(m4.t1) AS BIGINT)))), CAST(CAST(+ (length(m4.t1)) AS BIGINT) AS STRING)) OVER (), m4.t0) FROM m4 GROUP BY round(round(0.062146536800250284926505628391169011592864990234375)), - (((length(m4.t0))-(+ (-1846698508)))); --
 -- AFTER_SORT --
@@ -721,7 +779,7 @@ MAX(Int64(9128294059941661696))
 -- AFTER_SORT --
 200 OK
 SUM(characterlength(m1.f0) * abs(m1.f2))
-5985446478.0
+1.6185542082e10
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL SUM(((length(m1.f0))*(+ (abs(m1.f2)))))  as agg0 FROM m1 WHERE ((CAST(to_hex(m1.t0) AS BOOLEAN))IS DISTINCT FROM((((CAST(-783543705 AS BIGINT))+(+ (m1.f2)))) BETWEEN (((strpos(m1.t0, m1.f0))%(- (m1.f2)))) AND (length(m1.t0)))) UNION ALL SELECT ALL SUM(((length(m1.f0))*(+ (abs(m1.f2)))))  as agg0 FROM m1 WHERE NOT (((CAST(to_hex(m1.t0) AS BOOLEAN))IS DISTINCT FROM((((CAST(-783543705 AS BIGINT))+(+ (m1.f2)))) BETWEEN (((strpos(m1.t0, m1.f0))%(- (m1.f2)))) AND (length(m1.t0))))) UNION ALL SELECT SUM(((length(m1.f0))*(+ (abs(m1.f2)))))  as agg0 FROM m1 WHERE (((CAST(to_hex(m1.t0) AS BOOLEAN))IS DISTINCT FROM((((CAST(-783543705 AS BIGINT))+(+ (m1.f2)))) BETWEEN (((strpos(m1.t0, m1.f0))%(- (m1.f2)))) AND (length(m1.t0))))) IS NULL) as asdf; --
 -- AFTER_SORT --
@@ -739,6 +797,8 @@ SUM(characterlength(m1.f0) * abs(m1.f2))
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -752,6 +812,8 @@ z,0.4506382526815239
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -771,6 +833,8 @@ z,0.4506382526815239
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -784,6 +848,8 @@ z,0.4506382526815239
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -797,7 +863,7 @@ z,0.4506382526815239
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.646021966611711) NOT IN (Map { iter: Iter([Float64(0.870084337259223)]) }))
-8.0
+12.0
 
 -- EXECUTE SQL: SELECT SUM(ceil(((strpos(m4.t0, m4.t1))+(floor(0.11052835832118024228520880569703876972198486328125))))) FROM m4 ORDER BY m4.f0 DESC; --
 -- AFTER_SORT --
@@ -809,8 +875,11 @@ SUM(Float64(0.646021966611711) NOT IN (Map { iter: Iter([Float64(0.8700843372592
 -- AFTER_SORT --
 200 OK
 t0
+""
+""
+""
 .1'㔱鎫c9
-8N] 
+8N]
 B
 
 -- EXECUTE SQL: SELECT m1.t0 FROM m1 WHERE ((((((((m1.t0)||(to_timestamp(73830588280500569))))||(to_timestamp(6628811948108261554))))||(+ (+ (541394655)))))LIKE(((CAST(- (m1.f2) AS STRING))||(NOT (starts_with(m1.t0, m1.t0)))))); --
@@ -827,12 +896,16 @@ true
 true
 true
 true
+true
+true
 
 -- EXECUTE SQL: SELECT ALL m4.f0 FROM m4 WHERE NOT ((m4.f0) BETWEEN (NOT (starts_with(m4.t1, m4.t0))) AND (((m4.t1) BETWEEN (m4.t0) AND (m4.t0)) IS UNKNOWN)) UNION ALL SELECT ALL m4.f0 FROM m4 WHERE NOT (NOT ((m4.f0) BETWEEN (NOT (starts_with(m4.t1, m4.t0))) AND (((m4.t1) BETWEEN (m4.t0) AND (m4.t0)) IS UNKNOWN))) UNION ALL SELECT ALL m4.f0 FROM m4 WHERE (NOT ((m4.f0) BETWEEN (NOT (starts_with(m4.t1, m4.t0))) AND (((m4.t1) BETWEEN (m4.t0) AND (m4.t0)) IS UNKNOWN))) IS NULL; --
 -- AFTER_SORT --
 200 OK
 f0
 false
+true
+true
 true
 true
 true
@@ -849,6 +922,8 @@ true
 200 OK
 f0,t1,t0
 false,,
+true,,
+true,,
 true,-719146430,
 true,[,
 true,cU,
@@ -858,6 +933,8 @@ true,m?gbg&),
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -885,6 +962,10 @@ z,0.4506382526815239
 t1,f0,t0
 	0,-1598798851,c]_tcQrM
 *,-370874632,174906244
+,-1134968677,
+,-184853823,
+,-2085716189,
+,-374901666,
 ,1296743770,O~
 1067185949319247413,-603220388,0.4140742380785405
 1889832286,796269585,{\
@@ -898,6 +979,10 @@ os,-534737513,2939042495407010978
 t1,f0,t0
 	0,-1598798851,c]_tcQrM
 *,-370874632,174906244
+,-1134968677,
+,-184853823,
+,-2085716189,
+,-374901666,
 ,1296743770,O~
 1067185949319247413,-603220388,0.4140742380785405
 1889832286,796269585,{\
@@ -921,13 +1006,13 @@ os,-534737513,2939042495407010978
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.14748782937025018))
-0.7374391468512509
+1.0324148055917513
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL SUM(0.147487829370250178584456079988740384578704833984375)  as agg0 FROM m4 WHERE ((lower(CAST(-886021223 AS STRING)))LIKE(upper(CAST(to_timestamp(75250690674324403) AS STRING)))) UNION ALL SELECT SUM(0.147487829370250178584456079988740384578704833984375)  as agg0 FROM m4 WHERE NOT (((lower(CAST(-886021223 AS STRING)))LIKE(upper(CAST(to_timestamp(75250690674324403) AS STRING))))) UNION ALL SELECT ALL SUM(0.147487829370250178584456079988740384578704833984375)  as agg0 FROM m4 WHERE (((lower(CAST(-886021223 AS STRING)))LIKE(upper(CAST(to_timestamp(75250690674324403) AS STRING))))) IS NULL) as asdf; --
 -- AFTER_SORT --
 200 OK
 SUM(asdf.agg0)
-0.7374391468512509
+1.0324148055917513
 
 -- EXECUTE SQL: SELECT ALL MAX(CAST(((((m2.f0)*(floor(m2.f1))))-(to_hex(((m2.t0)||(m2.f0))))) AS TIMESTAMP)), CAST(PERCENT_RANK() OVER () AS STRING) FROM m2 GROUP BY ((((((CAST(m2.f1 AS STRING))||(0.39756258998699911533236672767088748514652252197265625)))||(nullif(m2.f0, m2.f0))))||(((CAST(lower(m2.t0) AS BIGINT))*(m2.f0)))), upper(CAST(upper('0.18376543680646096') AS STRING)), abs(+ (CAST(m2.f1 AS BIGINT))), upper(((upper(m2.t0))||(((m2.t2)>=(m2.t0))))); --
 -- AFTER_SORT --
@@ -945,7 +1030,7 @@ MIN(Float64(0.22481903897713806) + Int64(746518992))
 -- AFTER_SORT --
 200 OK
 SUM(Int64(1025561311408145024))
-8204490491265160192
+-6140008336811811328
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT SUM(1025561311408145024)  as agg0 FROM m3 WHERE CAST(((btrim(m3.t1, m3.t1))||((('')>(substr(m3.t0, m3.f0, m3.f0))))) AS BOOLEAN) GROUP BY ((lower(((m3.t1)||(to_timestamp(6885523128782352370)))))>(((((((m3.t0)||(to_timestamp(5901555110772389986))))||(+ (m3.f0))))||(((abs(-682635667))/(CAST(TRUE AS BIGINT))))))), (((abs(0.41713529943645977215993525533122010529041290283203125))/(((1905482740356971090)*(m3.f0))))) IN (0.77499041932336443228024336349335499107837677001953125), ((CAST(starts_with(m3.t1, m3.t0) AS STRING))||(CAST(((m3.f0)-(signum(m3.f0))) AS BIGINT))) UNION ALL SELECT ALL SUM(1025561311408145024)  as agg0 FROM m3 WHERE NOT (CAST(((btrim(m3.t1, m3.t1))||((('')>(substr(m3.t0, m3.f0, m3.f0))))) AS BOOLEAN)) UNION ALL SELECT ALL SUM(1025561311408145024)  as agg0 FROM m3 WHERE (CAST(((btrim(m3.t1, m3.t1))||((('')>(substr(m3.t0, m3.f0, m3.f0))))) AS BOOLEAN)) IS NULL) as asdf; --
 -- AFTER_SORT --
@@ -959,9 +1044,11 @@ SUM(Int64(1025561311408145024))
 time,t0,t1,f0
 2031-11-21T07:38:07.506775363,,[,true
 2054-10-06T19:19:39.624648828,,m?gbg&),true
+2148-06-22T05:49:34.246825572,,,true
 2159-08-03T08:04:37.631075636,,cU,true
 2177-06-07T06:12:05.773293536,,-719146430,true
 2232-12-03T07:57:14.243142773,,,false
+2243-06-01T16:01:50.828718363,,,true
 
 -- EXECUTE SQL: SELECT ALL * FROM m4 WHERE (((((-1322939285) IN (791521572)) IS FALSE) IS FALSE)=(CAST(((CAST(to_timestamp(1335069212426862162) AS STRING))||(acos(-1825578999))) AS BOOLEAN))) UNION ALL SELECT ALL * FROM m4 WHERE NOT ((((((-1322939285) IN (791521572)) IS FALSE) IS FALSE)=(CAST(((CAST(to_timestamp(1335069212426862162) AS STRING))||(acos(-1825578999))) AS BOOLEAN)))) UNION ALL SELECT * FROM m4 WHERE ((((((-1322939285) IN (791521572)) IS FALSE) IS FALSE)=(CAST(((CAST(to_timestamp(1335069212426862162) AS STRING))||(acos(-1825578999))) AS BOOLEAN)))) IS NULL; --
 -- AFTER_SORT --
@@ -999,6 +1086,10 @@ COUNT(characterlength(upper(m0.t0)))
 f2,t0,f1
 ,'9,false
 ,,false
+,,false
+,,false
+,,true
+,,true
 ,,true
 ,,true
 ,4,false
@@ -1006,7 +1097,10 @@ f2,t0,f1
 ,ꆪswp,false
 -1359365092,.1'㔱鎫c9,true
 -1628140570,B,true
+-25284663,,
+-803836627,,
 10435154,8N] ,false
+1700015934,,
 
 -- EXECUTE SQL: SELECT ALL m1.f2, m1.t0, m1.f1 FROM m1 WHERE ((NOT ((m1.f1) IS FALSE))OR(((CAST(CAST(to_timestamp(8351189039879735387) AS TIMESTAMP) AS STRING))LIKE(upper(m1.t0))))) UNION ALL SELECT ALL m1.f2, m1.t0, m1.f1 FROM m1 WHERE NOT (((NOT ((m1.f1) IS FALSE))OR(((CAST(CAST(to_timestamp(8351189039879735387) AS TIMESTAMP) AS STRING))LIKE(upper(m1.t0)))))) UNION ALL SELECT m1.f2, m1.t0, m1.f1 FROM m1 WHERE (((NOT ((m1.f1) IS FALSE))OR(((CAST(CAST(to_timestamp(8351189039879735387) AS TIMESTAMP) AS STRING))LIKE(upper(m1.t0)))))) IS NULL; --
 -- AFTER_SORT --
@@ -1014,6 +1108,10 @@ f2,t0,f1
 f2,t0,f1
 ,'9,false
 ,,false
+,,false
+,,false
+,,true
+,,true
 ,,true
 ,,true
 ,4,false
@@ -1021,7 +1119,10 @@ f2,t0,f1
 ,ꆪswp,false
 -1359365092,.1'㔱鎫c9,true
 -1628140570,B,true
+-25284663,,
+-803836627,,
 10435154,8N] ,false
+1700015934,,
 
 -- EXECUTE SQL: SELECT ALL SUM(0.1791777327083228232851297434535808861255645751953125) FROM m2; --
 -- AFTER_SORT --
@@ -1145,13 +1246,15 @@ t2,t0,f0
 -- AFTER_SORT --
 200 OK
 COUNT((- abs(m3.f0)) % totimestamp(Int64(5532910437542032780)))
-8
+12
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1 FROM m4; --
 -- AFTER_SORT --
 200 OK
 t0,f0,t1
 ,false,
+,true,
+,true,
 ,true,-719146430
 ,true,[
 ,true,cU
@@ -1162,6 +1265,8 @@ t0,f0,t1
 200 OK
 t1,f0
 ,false
+,true
+,true
 -719146430,true
 [,true
 cU,true
@@ -1178,9 +1283,20 @@ m?gbg&),true
 200 OK
 t0,f2,f0,f1
 '9,,Y,false
+,,,
+,,,false
+,,,false
+,,,true
+,,,true
+,,3309273192353118515,
+,,9195442692708162668,
 ,,IG,true
 ,,N粶i!cm+R.,true
 ,,Y,false
+,,s,
+,-25284663,,
+,-803836627,,
+,1700015934,Vb5P落ꦀ,
 .1'㔱鎫c9,-1359365092,\g,true
 4,,7276138141691785489,false
 8N] ,10435154,M,false
@@ -1193,9 +1309,20 @@ pR,,0.12602752741440792,true
 200 OK
 t0,f2,f0,f1
 '9,,Y,false
+,,,
+,,,false
+,,,false
+,,,true
+,,,true
+,,3309273192353118515,
+,,9195442692708162668,
 ,,IG,true
 ,,N粶i!cm+R.,true
 ,,Y,false
+,,s,
+,-25284663,,
+,-803836627,,
+,1700015934,Vb5P落ꦀ,
 4,,7276138141691785489,false
 pR,,0.12602752741440792,true
 ꆪswp,,\WY%,false
@@ -1204,11 +1331,20 @@ pR,,0.12602752741440792,true
 -- AFTER_SORT --
 200 OK
 f1,t0,f0
+,,
+,,3309273192353118515
+,,9195442692708162668
+,,Vb5P落ꦀ
+,,s
 false,'9,Y
+false,,
+false,,
 false,,Y
 false,4,7276138141691785489
 false,8N] ,M
 false,ꆪswp,\WY%
+true,,
+true,,
 true,,IG
 true,,N粶i!cm+R.
 true,.1'㔱鎫c9,\g
@@ -1219,11 +1355,20 @@ true,pR,0.12602752741440792
 -- AFTER_SORT --
 200 OK
 f1,t0,f0
+,,
+,,3309273192353118515
+,,9195442692708162668
+,,Vb5P落ꦀ
+,,s
 false,'9,Y
+false,,
+false,,
 false,,Y
 false,4,7276138141691785489
 false,8N] ,M
 false,ꆪswp,\WY%
+true,,
+true,,
 true,,IG
 true,,N粶i!cm+R.
 true,.1'㔱鎫c9,\g
@@ -1273,6 +1418,8 @@ f0
 200 OK
 f0,t0,t1
 false,,
+true,,
+true,,
 true,,-719146430
 true,,[
 true,,cU
@@ -1303,6 +1450,8 @@ f0,t0
 0.2994223801612098,R
 0.33339264393462475,0.20625602818030442
 0.4506382526815239,z
+0.7365373850922812,
+0.7802602952255795,
 0.8266616373816802,.
 0.8910983143439503,5468993521555465265
 0.9046718662186112,_fq
@@ -1322,8 +1471,12 @@ f0,t0
 -- AFTER_SORT --
 200 OK
 f0,t0
+-1134968677,
 -1598798851,c]_tcQrM
+-184853823,
+-2085716189,
 -370874632,174906244
+-374901666,
 -534737513,2939042495407010978
 -603220388,0.4140742380785405
 1296743770,O~
@@ -1346,7 +1499,7 @@ NaN
 -- AFTER_SORT --
 200 OK
 COUNT(abs(m3.f0 % m3.f0))
-8
+12
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT COUNT(+ (abs(((m3.f0)%(m3.f0)))))  as agg0 FROM m3 WHERE starts_with(replace(((m3.t0)||(0.9983656595303163072685492807067930698394775390625)), lower(m3.t1)), CAST(CAST(((m3.f0)%(m3.f0)) AS BIGINT) AS STRING)) UNION ALL SELECT COUNT(+ (abs(((m3.f0)%(m3.f0)))))  as agg0 FROM m3 WHERE NOT (starts_with(replace(((m3.t0)||(0.9983656595303163072685492807067930698394775390625)), lower(m3.t1)), CAST(CAST(((m3.f0)%(m3.f0)) AS BIGINT) AS STRING))) UNION ALL SELECT ALL COUNT(+ (abs(((m3.f0)%(m3.f0)))))  as agg0 FROM m3 WHERE (starts_with(replace(((m3.t0)||(0.9983656595303163072685492807067930698394775390625)), lower(m3.t1)), CAST(CAST(((m3.f0)%(m3.f0)) AS BIGINT) AS STRING))) IS NULL) as asdf; --
 -- AFTER_SORT --
@@ -1359,11 +1512,15 @@ COUNT(abs(m3.f0 % m3.f0))
 200 OK
 time,t0,t1,f0
 2034-07-14T08:19:58.970597255,0.002147298221788496,2350431228203406322,9065525203050843594
+2078-03-28T16:34:48.110090697,,,-1134968677
 2092-05-24T08:20:59.464635599,{\,1889832286,796269585
 2142-09-14T01:44:58.274322724,0.4140742380785405,1067185949319247413,-603220388
 2152-07-16T08:39:40.491443116,,[%^TQVy8,951192745
+2163-05-05T02:15:50.563449153,,,-2085716189
 2180-03-28T08:12:33.791616118,O~,,1296743770
+2201-06-17T16:15:19.206898387,,,-374901666
 2203-12-02T10:50:03.680827764,c]_tcQrM,	0,-1598798851
+2219-07-14T20:44:42.556631665,,,-184853823
 2219-09-21T05:13:52.659694555,174906244,*,-370874632
 2237-09-15T01:30:45.664699102,2939042495407010978,os,-534737513
 
@@ -1372,11 +1529,15 @@ time,t0,t1,f0
 200 OK
 time,t0,t1,f0
 2034-07-14T08:19:58.970597255,0.002147298221788496,2350431228203406322,9065525203050843594
+2078-03-28T16:34:48.110090697,,,-1134968677
 2092-05-24T08:20:59.464635599,{\,1889832286,796269585
 2142-09-14T01:44:58.274322724,0.4140742380785405,1067185949319247413,-603220388
 2152-07-16T08:39:40.491443116,,[%^TQVy8,951192745
+2163-05-05T02:15:50.563449153,,,-2085716189
 2180-03-28T08:12:33.791616118,O~,,1296743770
+2201-06-17T16:15:19.206898387,,,-374901666
 2203-12-02T10:50:03.680827764,c]_tcQrM,	0,-1598798851
+2219-07-14T20:44:42.556631665,,,-184853823
 2219-09-21T05:13:52.659694555,174906244,*,-370874632
 2237-09-15T01:30:45.664699102,2939042495407010978,os,-534737513
 
@@ -1401,6 +1562,7 @@ time,t0,t1,f0
 200 OK
 t1
 ""
+""
 -719146430
 [
 cU
@@ -1410,6 +1572,8 @@ m?gbg&)
 -- AFTER_SORT --
 200 OK
 t1
+""
+""
 ""
 -719146430
 [
@@ -1421,6 +1585,8 @@ m?gbg&)
 200 OK
 t1,t0,f0
 ,,false
+,,true
+,,true
 -719146430,,true
 [,,true
 cU,,true
@@ -1431,6 +1597,8 @@ m?gbg&),,true
 200 OK
 t1,t0,f0
 ,,false
+,,true
+,,true
 -719146430,,true
 [,,true
 cU,,true
@@ -1441,6 +1609,8 @@ m?gbg&),,true
 200 OK
 t0,f0
 ,false
+,true
+,true
 ,true
 ,true
 ,true
@@ -1467,6 +1637,8 @@ t0,f0
 200 OK
 f0,t0,t1
 false,,
+true,,
+true,,
 true,,-719146430
 true,,[
 true,,cU
@@ -1477,6 +1649,8 @@ true,,m?gbg&)
 200 OK
 t1,f0,t0
 ,false,
+,true,
+,true,
 -719146430,true,
 [,true,
 cU,true,
@@ -1486,6 +1660,8 @@ m?gbg&),true,
 -- AFTER_SORT --
 200 OK
 t1,f0,t0
+,true,
+,true,
 -719146430,true,
 [,true,
 cU,true,
@@ -1518,8 +1694,12 @@ MIN((- Int64(2816775355401660872) * Int64(-138267314)) % Int64(56116046457541406
 -- AFTER_SORT --
 200 OK
 f0,t1,t0
+-1134968677,,
 -1598798851,	0,c]_tcQrM
+-184853823,,
+-2085716189,,
 -370874632,*,174906244
+-374901666,,
 -534737513,os,2939042495407010978
 -603220388,1067185949319247413,0.4140742380785405
 1296743770,,O~
@@ -1536,8 +1716,12 @@ f0,t1,t0
 -- AFTER_SORT --
 200 OK
 f0,t1,t0
+-1134968677,,
 -1598798851,	0,c]_tcQrM
+-184853823,,
+-2085716189,,
 -370874632,*,174906244
+-374901666,,
 -534737513,os,2939042495407010978
 -603220388,1067185949319247413,0.4140742380785405
 1296743770,,O~
@@ -1559,7 +1743,7 @@ f0,t1,t0
 -- EXECUTE SQL: SELECT SUM(CAST(lower(CAST(m0.f0 AS STRING)) AS BIGINT)) FROM m0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '0.8910983143439503' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '0.7365373850922812' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT MIN(((upper(CAST(TRUE AS STRING)))||(((((- (399102672))*(octet_length(m0.t0))))/(nullif(9128294059941661688, 467224302)))))), to_timestamp(4855360540374673284), upper(CAST(((m0.t0)LIKE(m0.t0)) AS STRING)), LAST_VALUE((2939004359518327808) BETWEEN (- (((((4937133)/(4427397264085496521)))-(tan(m0.f0))))) AND (CAST(CAST(((-1544300553)+(m0.f0)) AS BIGINT) AS BIGINT))) OVER () FROM m0 WHERE starts_with(md5(((m0.t0)||(to_timestamp(8820075756143557622)))), lower(m0.t0)) GROUP BY ((m0.t0)||(CAST(CAST(CAST(1252075524 AS STRING) AS BOOLEAN) AS DOUBLE))); --
@@ -1572,6 +1756,7 @@ f0,t1,t0
 -- AFTER_SORT --
 200 OK
 t0
+""
 .
 0.20625602818030442
 2090966948559537515
@@ -1585,6 +1770,7 @@ z
 -- AFTER_SORT --
 200 OK
 t0
+""
 .
 0.20625602818030442
 2090966948559537515
@@ -1684,18 +1870,20 @@ COUNT(octetlength(m0.t0) * ascii(m0.t0))
 -- AFTER_SORT --
 200 OK
 MAX(ascii(m1.f0))
-92
+115
 
 -- EXECUTE SQL: SELECT MAX(agg0) FROM (SELECT MAX(ascii(m1.f0))  as agg0 FROM m1 WHERE (to_timestamp(1057164731485686238)) NOT IN (to_timestamp(7359464724405630432), to_timestamp(5599708812752730805)) UNION ALL SELECT ALL MAX(ascii(m1.f0))  as agg0 FROM m1 WHERE NOT ((to_timestamp(1057164731485686238)) NOT IN (to_timestamp(7359464724405630432), to_timestamp(5599708812752730805))) UNION ALL SELECT MAX(ascii(m1.f0))  as agg0 FROM m1 WHERE ((to_timestamp(1057164731485686238)) NOT IN (to_timestamp(7359464724405630432), to_timestamp(5599708812752730805))) IS NULL) as asdf; --
 -- AFTER_SORT --
 200 OK
 MAX(asdf.agg0)
-92
+115
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0; --
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -1740,13 +1928,13 @@ I,A,0.545203526083238,,
 -- AFTER_SORT --
 200 OK
 "COUNT((- (- Int64(-1485620479) / Int64(-25284663))) - characterlength(lower(Utf8(""""))))"
-8
+10
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL COUNT(((- (- (((-1485620479)/(-25284663)))))-(length(lower('')))))  as agg0 FROM m0 WHERE (upper(m0.t0)) IN ('O') UNION ALL SELECT COUNT(((- (- (((-1485620479)/(-25284663)))))-(length(lower('')))))  as agg0 FROM m0 WHERE NOT ((upper(m0.t0)) IN ('O')) UNION ALL SELECT ALL COUNT(((- (- (((-1485620479)/(-25284663)))))-(length(lower('')))))  as agg0 FROM m0 WHERE ((upper(m0.t0)) IN ('O')) IS NULL) as asdf; --
 -- AFTER_SORT --
 200 OK
 SUM(asdf.agg0)
-8
+9
 
 -- EXECUTE SQL: SELECT m2.t1, m2.f1, m2.t2 FROM m2; --
 -- AFTER_SORT --
@@ -1786,7 +1974,7 @@ I,0.545203526083238,A
 -- AFTER_SORT --
 200 OK
 COUNT(totimestamp(Int64(4110526935488757249)))
-5
+7
 
 -- EXECUTE SQL: SELECT MIN(CAST(NOT (starts_with(m4.t1, m4.t1)) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
@@ -1798,6 +1986,8 @@ COUNT(totimestamp(Int64(4110526935488757249)))
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -1811,6 +2001,8 @@ z,0.4506382526815239
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -1831,12 +2023,23 @@ COUNT(totimestamp(Int64(267163008722010601)) - bitlength(m1.t0 || totimestamp(In
 200 OK
 time,t0,f0,f1,f2
 1975-11-05T14:04:43.612200364,B,",p",true,-1628140570
+1980-10-25T06:25:25.816519819,,3309273192353118515,,
 1987-12-28T20:38:52.927164807,.1'㔱鎫c9,\g,true,-1359365092
 1988-03-30T01:56:00.965763765,,N粶i!cm+R.,true,
+2007-10-06T00:38:27.457969673,,9195442692708162668,,
 2009-09-13T16:29:18.085287398,pR,0.12602752741440792,true,
+2010-09-19T21:44:04.367558414,,s,,
 2035-06-29T00:54:54.277386248,ꆪswp,\WY%,false,
 2053-11-01T12:50:56.296351398,4,7276138141691785489,false,
+2079-03-11T07:28:43.472776741,,,false,
+2093-05-30T21:18:12.135729687,,,,-803836627
+2096-11-27T20:17:54.743297811,,,false,
+2109-08-05T08:47:35.254137840,,,true,
 2113-05-08T14:21:04.976555956,,IG,true,
+2114-05-16T13:40:08.464455397,,,,-25284663
+2116-10-14T03:28:31.642511003,,,,
+2128-10-06T16:22:16.173590510,,,true,
+2144-01-10T11:29:20.282782714,,Vb5P落ꦀ,,1700015934
 2152-09-07T20:05:04.647749526,'9,Y,false,
 2159-06-30T10:56:12.620384424,8N] ,M,false,10435154
 2190-12-04T14:14:41.441287817,,Y,false,
@@ -1863,6 +2066,8 @@ time,t0,f0,f1,f2
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -1876,6 +2081,8 @@ z,0.4506382526815239
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -1890,7 +2097,18 @@ z,0.4506382526815239
 200 OK
 t0,f1,f0,f2
 '9,false,Y,
+,,,
+,,,-25284663
+,,,-803836627
+,,3309273192353118515,
+,,9195442692708162668,
+,,Vb5P落ꦀ,1700015934
+,,s,
+,false,,
+,false,,
 ,false,Y,
+,true,,
+,true,,
 ,true,IG,
 ,true,N粶i!cm+R.,
 .1'㔱鎫c9,true,\g,-1359365092
@@ -1904,6 +2122,9 @@ pR,true,0.12602752741440792,
 -- AFTER_SORT --
 200 OK
 t0,f1,f0,f2
+,,,-25284663
+,,,-803836627
+,,Vb5P落ꦀ,1700015934
 .1'㔱鎫c9,true,\g,-1359365092
 8N] ,false,M,10435154
 B,true,",p",-1628140570
@@ -1929,6 +2150,8 @@ t0,f0
 ,true
 ,true
 ,true
+,true
+,true
 
 -- EXECUTE SQL: SELECT m4.t0, m4.f0 FROM m4 WHERE ((CAST(+ (0.99289772954438582086567066653515212237834930419921875) AS BOOLEAN)) IS NOT UNKNOWN) IS FALSE UNION ALL SELECT ALL m4.t0, m4.f0 FROM m4 WHERE NOT (((CAST(+ (0.99289772954438582086567066653515212237834930419921875) AS BOOLEAN)) IS NOT UNKNOWN) IS FALSE) UNION ALL SELECT ALL m4.t0, m4.f0 FROM m4 WHERE (((CAST(+ (0.99289772954438582086567066653515212237834930419921875) AS BOOLEAN)) IS NOT UNKNOWN) IS FALSE) IS NULL; --
 -- AFTER_SORT --
@@ -1939,18 +2162,31 @@ t0,f0
 ,true
 ,true
 ,true
+,true
+,true
 
 -- EXECUTE SQL: SELECT * FROM m1; --
 -- AFTER_SORT --
 200 OK
 time,t0,f0,f1,f2
 1975-11-05T14:04:43.612200364,B,",p",true,-1628140570
+1980-10-25T06:25:25.816519819,,3309273192353118515,,
 1987-12-28T20:38:52.927164807,.1'㔱鎫c9,\g,true,-1359365092
 1988-03-30T01:56:00.965763765,,N粶i!cm+R.,true,
+2007-10-06T00:38:27.457969673,,9195442692708162668,,
 2009-09-13T16:29:18.085287398,pR,0.12602752741440792,true,
+2010-09-19T21:44:04.367558414,,s,,
 2035-06-29T00:54:54.277386248,ꆪswp,\WY%,false,
 2053-11-01T12:50:56.296351398,4,7276138141691785489,false,
+2079-03-11T07:28:43.472776741,,,false,
+2093-05-30T21:18:12.135729687,,,,-803836627
+2096-11-27T20:17:54.743297811,,,false,
+2109-08-05T08:47:35.254137840,,,true,
 2113-05-08T14:21:04.976555956,,IG,true,
+2114-05-16T13:40:08.464455397,,,,-25284663
+2116-10-14T03:28:31.642511003,,,,
+2128-10-06T16:22:16.173590510,,,true,
+2144-01-10T11:29:20.282782714,,Vb5P落ꦀ,,1700015934
 2152-09-07T20:05:04.647749526,'9,Y,false,
 2159-06-30T10:56:12.620384424,8N] ,M,false,10435154
 2190-12-04T14:14:41.441287817,,Y,false,
@@ -1958,7 +2194,7 @@ time,t0,f0,f1,f2
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE CAST(((- (+ (-25284663)))-(CAST(translate(m1.f0, '418797746943372845', m1.f0) AS BIGINT))) AS BOOLEAN) UNION ALL SELECT ALL * FROM m1 WHERE NOT (CAST(((- (+ (-25284663)))-(CAST(translate(m1.f0, '418797746943372845', m1.f0) AS BIGINT))) AS BOOLEAN)) UNION ALL SELECT * FROM m1 WHERE (CAST(((- (+ (-25284663)))-(CAST(translate(m1.f0, '418797746943372845', m1.f0) AS BIGINT))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'N粶i!cm+R.' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 's' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(nullif(CAST(CAST(m2.f0 AS BOOLEAN) AS BIGINT), - (((m2.f0)%(m2.f0))))) FROM m2; --
@@ -1977,6 +2213,7 @@ time,t0,f0,f1,f2
 -- AFTER_SORT --
 200 OK
 t0
+""
 .
 0.20625602818030442
 2090966948559537515
@@ -2045,11 +2282,18 @@ I,A,0.545203526083238
 -- AFTER_SORT --
 200 OK
 f1,f2
+,-25284663
+,-803836627
+,1700015934
+false,
+false,
 false,
 false,
 false,
 false,
 false,10435154
+true,
+true,
 true,
 true,
 true,
@@ -2066,6 +2310,8 @@ true,-1628140570
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -2091,6 +2337,7 @@ z,0.4506382526815239
 -- AFTER_SORT --
 200 OK
 t0,t1
+,
 ,[%^TQVy8
 0.002147298221788496,2350431228203406322
 0.4140742380785405,1067185949319247413
@@ -2104,6 +2351,10 @@ c]_tcQrM,	0
 -- AFTER_SORT --
 200 OK
 t0,t1
+,
+,
+,
+,
 ,[%^TQVy8
 0.002147298221788496,2350431228203406322
 0.4140742380785405,1067185949319247413
@@ -2140,6 +2391,8 @@ f0
 0.2994223801612098
 0.33339264393462475
 0.4506382526815239
+0.7365373850922812
+0.7802602952255795
 0.8266616373816802
 0.8910983143439503
 0.9046718662186112
@@ -2153,6 +2406,8 @@ f0
 0.2994223801612098
 0.33339264393462475
 0.4506382526815239
+0.7365373850922812
+0.7802602952255795
 0.8266616373816802
 0.8910983143439503
 0.9046718662186112
@@ -2186,6 +2441,8 @@ MIN(asdf.agg0)
 200 OK
 t1,t0,f0
 ,,false
+,,true
+,,true
 -719146430,,true
 [,,true
 cU,,true
@@ -2196,6 +2453,8 @@ m?gbg&),,true
 200 OK
 t1,t0,f0
 ,,false
+,,true
+,,true
 -719146430,,true
 [,,true
 cU,,true
@@ -2225,30 +2484,44 @@ sW,,,4683132071972081202,0.5472766860985457
 200 OK
 f0,t0,f2
 ",p",B,-1628140570
+,,
+,,-25284663
+,,-803836627
 0.12602752741440792,pR,
+3309273192353118515,,
 7276138141691785489,4,
+9195442692708162668,,
 IG,,
 M,8N] ,10435154
 N粶i!cm+R.,,
+Vb5P落ꦀ,,1700015934
 Y,'9,
 Y,,
 \WY%,ꆪswp,
 \g,.1'㔱鎫c9,-1359365092
+s,,
 
 -- EXECUTE SQL: SELECT m1.f0, m1.t0, m1.f2 FROM m1 WHERE ((CAST(FALSE AS STRING)) IS NULL) NOT IN (FALSE) UNION ALL SELECT m1.f0, m1.t0, m1.f2 FROM m1 WHERE NOT (((CAST(FALSE AS STRING)) IS NULL) NOT IN (FALSE)) UNION ALL SELECT m1.f0, m1.t0, m1.f2 FROM m1 WHERE (((CAST(FALSE AS STRING)) IS NULL) NOT IN (FALSE)) IS NULL; --
 -- AFTER_SORT --
 200 OK
 f0,t0,f2
 ",p",B,-1628140570
+,,
+,,-25284663
+,,-803836627
 0.12602752741440792,pR,
+3309273192353118515,,
 7276138141691785489,4,
+9195442692708162668,,
 IG,,
 M,8N] ,10435154
 N粶i!cm+R.,,
+Vb5P落ꦀ,,1700015934
 Y,'9,
 Y,,
 \WY%,ꆪswp,
 \g,.1'㔱鎫c9,-1359365092
+s,,
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f2, m1.f1 FROM m1; --
 -- AFTER_SORT --
@@ -2256,8 +2529,15 @@ Y,,
 t0,f2,f1
 '9,,false
 ,,false
+,,false
+,,false
 ,,true
 ,,true
+,,true
+,,true
+,-25284663,
+,-803836627,
+,1700015934,
 .1'㔱鎫c9,-1359365092,true
 4,,false
 8N] ,10435154,false
@@ -2271,8 +2551,15 @@ pR,,true
 t0,f2,f1
 '9,,false
 ,,false
+,,false
+,,false
 ,,true
 ,,true
+,,true
+,,true
+,-25284663,
+,-803836627,
+,1700015934,
 .1'㔱鎫c9,-1359365092,true
 4,,false
 8N] ,10435154,false
@@ -2284,11 +2571,22 @@ pR,,true
 -- AFTER_SORT --
 200 OK
 f1,t0,f0,f2
+,,,
+,,,-25284663
+,,,-803836627
+,,3309273192353118515,
+,,9195442692708162668,
+,,Vb5P落ꦀ,1700015934
+,,s,
 false,'9,Y,
+false,,,
+false,,,
 false,,Y,
 false,4,7276138141691785489,
 false,8N] ,M,10435154
 false,ꆪswp,\WY%,
+true,,,
+true,,,
 true,,IG,
 true,,N粶i!cm+R.,
 true,.1'㔱鎫c9,\g,-1359365092
@@ -2299,11 +2597,22 @@ true,pR,0.12602752741440792,
 -- AFTER_SORT --
 200 OK
 f1,t0,f0,f2
+,,,
+,,,-25284663
+,,,-803836627
+,,3309273192353118515,
+,,9195442692708162668,
+,,Vb5P落ꦀ,1700015934
+,,s,
 false,'9,Y,
+false,,,
+false,,,
 false,,Y,
 false,4,7276138141691785489,
 false,8N] ,M,10435154
 false,ꆪswp,\WY%,
+true,,,
+true,,,
 true,,IG,
 true,,N粶i!cm+R.,
 true,.1'㔱鎫c9,\g,-1359365092
@@ -2315,12 +2624,23 @@ true,pR,0.12602752741440792,
 200 OK
 time,t0,f0,f1,f2
 1975-11-05T14:04:43.612200364,B,",p",true,-1628140570
+1980-10-25T06:25:25.816519819,,3309273192353118515,,
 1987-12-28T20:38:52.927164807,.1'㔱鎫c9,\g,true,-1359365092
 1988-03-30T01:56:00.965763765,,N粶i!cm+R.,true,
+2007-10-06T00:38:27.457969673,,9195442692708162668,,
 2009-09-13T16:29:18.085287398,pR,0.12602752741440792,true,
+2010-09-19T21:44:04.367558414,,s,,
 2035-06-29T00:54:54.277386248,ꆪswp,\WY%,false,
 2053-11-01T12:50:56.296351398,4,7276138141691785489,false,
+2079-03-11T07:28:43.472776741,,,false,
+2093-05-30T21:18:12.135729687,,,,-803836627
+2096-11-27T20:17:54.743297811,,,false,
+2109-08-05T08:47:35.254137840,,,true,
 2113-05-08T14:21:04.976555956,,IG,true,
+2114-05-16T13:40:08.464455397,,,,-25284663
+2116-10-14T03:28:31.642511003,,,,
+2128-10-06T16:22:16.173590510,,,true,
+2144-01-10T11:29:20.282782714,,Vb5P落ꦀ,,1700015934
 2152-09-07T20:05:04.647749526,'9,Y,false,
 2159-06-30T10:56:12.620384424,8N] ,M,false,10435154
 2190-12-04T14:14:41.441287817,,Y,false,
@@ -2330,12 +2650,23 @@ time,t0,f0,f1,f2
 200 OK
 time,t0,f0,f1,f2
 1975-11-05T14:04:43.612200364,B,",p",true,-1628140570
+1980-10-25T06:25:25.816519819,,3309273192353118515,,
 1987-12-28T20:38:52.927164807,.1'㔱鎫c9,\g,true,-1359365092
 1988-03-30T01:56:00.965763765,,N粶i!cm+R.,true,
+2007-10-06T00:38:27.457969673,,9195442692708162668,,
 2009-09-13T16:29:18.085287398,pR,0.12602752741440792,true,
+2010-09-19T21:44:04.367558414,,s,,
 2035-06-29T00:54:54.277386248,ꆪswp,\WY%,false,
 2053-11-01T12:50:56.296351398,4,7276138141691785489,false,
+2079-03-11T07:28:43.472776741,,,false,
+2093-05-30T21:18:12.135729687,,,,-803836627
+2096-11-27T20:17:54.743297811,,,false,
+2109-08-05T08:47:35.254137840,,,true,
 2113-05-08T14:21:04.976555956,,IG,true,
+2114-05-16T13:40:08.464455397,,,,-25284663
+2116-10-14T03:28:31.642511003,,,,
+2128-10-06T16:22:16.173590510,,,true,
+2144-01-10T11:29:20.282782714,,Vb5P落ꦀ,,1700015934
 2152-09-07T20:05:04.647749526,'9,Y,false,
 2159-06-30T10:56:12.620384424,8N] ,M,false,10435154
 2190-12-04T14:14:41.441287817,,Y,false,
@@ -2350,31 +2681,53 @@ time,t0,f0,f1,f2
 -- AFTER_SORT --
 200 OK
 f2,f0,t0,f1
+,,,
+,,,false
+,,,false
+,,,true
+,,,true
 ,0.12602752741440792,pR,true
+,3309273192353118515,,
 ,7276138141691785489,4,false
+,9195442692708162668,,
 ,IG,,true
 ,N粶i!cm+R.,,true
 ,Y,'9,false
 ,Y,,false
 ,\WY%,ꆪswp,false
+,s,,
 -1359365092,\g,.1'㔱鎫c9,true
 -1628140570,",p",B,true
+-25284663,,,
+-803836627,,,
 10435154,M,8N] ,false
+1700015934,Vb5P落ꦀ,,
 
 -- EXECUTE SQL: SELECT m1.f2, m1.f0, m1.t0, m1.f1 FROM m1 WHERE starts_with(right(m1.t0, 5276657375400990514), lower(m1.t0)) UNION ALL SELECT m1.f2, m1.f0, m1.t0, m1.f1 FROM m1 WHERE NOT (starts_with(right(m1.t0, 5276657375400990514), lower(m1.t0))) UNION ALL SELECT m1.f2, m1.f0, m1.t0, m1.f1 FROM m1 WHERE (starts_with(right(m1.t0, 5276657375400990514), lower(m1.t0))) IS NULL; --
 -- AFTER_SORT --
 200 OK
 f2,f0,t0,f1
+,,,
+,,,false
+,,,false
+,,,true
+,,,true
 ,0.12602752741440792,pR,true
+,3309273192353118515,,
 ,7276138141691785489,4,false
+,9195442692708162668,,
 ,IG,,true
 ,N粶i!cm+R.,,true
 ,Y,'9,false
 ,Y,,false
 ,\WY%,ꆪswp,false
+,s,,
 -1359365092,\g,.1'㔱鎫c9,true
 -1628140570,",p",B,true
+-25284663,,,
+-803836627,,,
 10435154,M,8N] ,false
+1700015934,Vb5P落ꦀ,,
 
 -- EXECUTE SQL: SELECT APPROX_DISTINCT(((+ (sqrt(m1.f2))) IS NULL) IS UNKNOWN), to_timestamp(9071790872991556271), FIRST_VALUE(((CAST(CAST(length(m1.t0) AS BIGINT) AS DOUBLE))+(((CAST(CAST(to_timestamp(2549671370198843274) AS BIGINT) AS DOUBLE))/(abs(m1.f2)))))) OVER () FROM m1 WHERE m1.f1 GROUP BY nullif(to_timestamp(5932437593688946928), to_timestamp(- (m1.f2))); --
 -- AFTER_SORT --
@@ -2400,6 +2753,10 @@ f2,f0,t0,f1
 t0,f1
 '9,false
 ,false
+,false
+,false
+,true
+,true
 ,true
 ,true
 .1'㔱鎫c9,true
@@ -2414,7 +2771,14 @@ pR,true
 200 OK
 t0,f1
 '9,false
+,
+,
+,
 ,false
+,false
+,false
+,true
+,true
 ,true
 ,true
 .1'㔱鎫c9,true
@@ -2445,6 +2809,8 @@ t0,f0
 ,true
 ,true
 ,true
+,true
+,true
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0 FROM m4 WHERE (((ltrim(m4.t1))LIKE(lower(m4.t0)))) BETWEEN (starts_with(CAST(((((m4.f0)OR(m4.f0)))AND(m4.f0)) AS STRING), ((CAST(to_timestamp(3422035704230732300) AS STRING))||(CAST(m4.t0 AS TIMESTAMP))))) AND ((CAST(NULL AS BIGINT)) NOT IN (289051392, -88103715)); --
 -- AFTER_SORT --
@@ -2455,8 +2821,12 @@ t0,f0
 -- AFTER_SORT --
 200 OK
 f0
+-1134968677
 -1598798851
+-184853823
+-2085716189
 -370874632
+-374901666
 -534737513
 -603220388
 1296743770
@@ -2468,8 +2838,12 @@ f0
 -- AFTER_SORT --
 200 OK
 f0
+-1134968677
 -1598798851
+-184853823
+-2085716189
 -370874632
+-374901666
 -534737513
 -603220388
 1296743770
@@ -2481,8 +2855,12 @@ f0
 -- AFTER_SORT --
 200 OK
 f0
+-1134968677
 -1598798851
+-184853823
+-2085716189
 -370874632
+-374901666
 -534737513
 -603220388
 1296743770
@@ -2519,6 +2897,7 @@ f1,t2,f0,t0
 200 OK
 t1,t0
 ,
+,
 -719146430,
 [,
 cU,
@@ -2541,6 +2920,7 @@ COUNT((- characterlength(m4.t0) / characterlength(m4.t0)))
 t1,t0
 	0,c]_tcQrM
 *,174906244
+,
 ,O~
 1067185949319247413,0.4140742380785405
 1889832286,{\
@@ -2554,6 +2934,10 @@ os,2939042495407010978
 t1,t0
 	0,c]_tcQrM
 *,174906244
+,
+,
+,
+,
 ,O~
 1067185949319247413,0.4140742380785405
 1889832286,{\
@@ -2579,6 +2963,10 @@ os,2939042495407010978
 t1,f0,t0
 	0,-1598798851,c]_tcQrM
 *,-370874632,174906244
+,-1134968677,
+,-184853823,
+,-2085716189,
+,-374901666,
 ,1296743770,O~
 1067185949319247413,-603220388,0.4140742380785405
 1889832286,796269585,{\
@@ -2590,6 +2978,10 @@ os,-534737513,2939042495407010978
 -- AFTER_SORT --
 200 OK
 t0,f0,t1
+,-1134968677,
+,-184853823,
+,-2085716189,
+,-374901666,
 ,951192745,[%^TQVy8
 0.002147298221788496,9065525203050843594,2350431228203406322
 0.4140742380785405,-603220388,1067185949319247413
@@ -2603,6 +2995,10 @@ c]_tcQrM,-1598798851,	0
 -- AFTER_SORT --
 200 OK
 t0,f0,t1
+,-1134968677,
+,-184853823,
+,-2085716189,
+,-374901666,
 ,951192745,[%^TQVy8
 0.002147298221788496,9065525203050843594,2350431228203406322
 0.4140742380785405,-603220388,1067185949319247413
@@ -2621,8 +3017,10 @@ time,t0,f0
 2047-07-05T20:22:55.255359552,0.20625602818030442,0.33339264393462475
 2066-01-03T07:08:35.798971109,gh+1,0.12530605778114434
 2067-05-27T15:39:19.632055652,R,0.2994223801612098
+2118-08-18T20:39:54.886424922,,0.7365373850922812
 2134-10-05T16:18:40.241642214,_fq,0.9046718662186112
 2177-09-12T21:59:19.332105564,2090966948559537515,0.10574448926145164
+2192-12-03T21:31:02.018480562,,0.7802602952255795
 2241-09-04T18:40:33.733946014,z,0.4506382526815239
 
 -- EXECUTE SQL: SELECT ALL MAX(CAST(m0.f0 AS TIMESTAMP)), lower(((translate(m0.t0, m0.t0, ''))||(acos(NULL)))), ((sha512(CAST(m0.f0 AS STRING), nullif(1200478739, 360686353)))||(chr(- (-120028142)))), to_timestamp(6406582538976071604), ((LAST_VALUE(+ (nullif(- (-1929791383), ((101093301)*(1056190380))))) OVER ())-(CAST(2074111823 AS BIGINT))) FROM m0 GROUP BY + (((CAST(abs(407624017) AS BIGINT))+(- (CAST(m0.f0 AS BIGINT))))); --
@@ -2685,6 +3083,8 @@ f0,t0
 0.2994223801612098,R
 0.33339264393462475,0.20625602818030442
 0.4506382526815239,z
+0.7365373850922812,
+0.7802602952255795,
 0.8266616373816802,.
 0.8910983143439503,5468993521555465265
 0.9046718662186112,_fq
@@ -2713,6 +3113,10 @@ c]_tcQrM
 200 OK
 t0
 ""
+""
+""
+""
+""
 0.002147298221788496
 0.4140742380785405
 174906244
@@ -2732,6 +3136,8 @@ c]_tcQrM
 200 OK
 f0,t1
 false,
+true,
+true,
 true,-719146430
 true,[
 true,cU
@@ -2741,6 +3147,8 @@ true,m?gbg&)
 -- AFTER_SORT --
 200 OK
 f0,t1
+true,
+true,
 true,-719146430
 true,[
 true,cU
@@ -2796,18 +3204,22 @@ sGh[2[*?Q
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.44286425699534593))
-2.2143212849767298
+3.100049798967422
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL SUM(0.44286425699534592848038982992875389754772186279296875)  as agg0 FROM m4 WHERE (0.50526250740283329410118540181429125368595123291015625) IS NOT NULL UNION ALL SELECT ALL SUM(0.44286425699534592848038982992875389754772186279296875)  as agg0 FROM m4 WHERE NOT ((0.50526250740283329410118540181429125368595123291015625) IS NOT NULL) UNION ALL SELECT ALL SUM(0.44286425699534592848038982992875389754772186279296875)  as agg0 FROM m4 WHERE ((0.50526250740283329410118540181429125368595123291015625) IS NOT NULL) IS NULL) as asdf; --
 -- AFTER_SORT --
 200 OK
 SUM(asdf.agg0)
-2.2143212849767298
+3.100049798967422
 
 -- EXECUTE SQL: SELECT ALL m3.t0, m3.f0 FROM m3 ORDER BY m3.f0 ASC; --
 -- AFTER_SORT --
 200 OK
 t0,f0
+,-1134968677
+,-184853823
+,-2085716189
+,-374901666
 ,951192745
 0.002147298221788496,9065525203050843594
 0.4140742380785405,-603220388
@@ -2821,8 +3233,12 @@ c]_tcQrM,-1598798851
 -- AFTER_SORT --
 200 OK
 f0,t0
+-1134968677,
 -1598798851,c]_tcQrM
+-184853823,
+-2085716189,
 -370874632,174906244
+-374901666,
 -534737513,2939042495407010978
 -603220388,0.4140742380785405
 1296743770,O~
@@ -2862,9 +3278,11 @@ f1,t2,f0
 time,t0,t1,f0
 2031-11-21T07:38:07.506775363,,[,true
 2054-10-06T19:19:39.624648828,,m?gbg&),true
+2148-06-22T05:49:34.246825572,,,true
 2159-08-03T08:04:37.631075636,,cU,true
 2177-06-07T06:12:05.773293536,,-719146430,true
 2232-12-03T07:57:14.243142773,,,false
+2243-06-01T16:01:50.828718363,,,true
 
 -- EXECUTE SQL: SELECT ALL * FROM m4 WHERE m4.f0; --
 -- AFTER_SORT --
@@ -2872,8 +3290,10 @@ time,t0,t1,f0
 time,t0,t1,f0
 2031-11-21T07:38:07.506775363,,[,true
 2054-10-06T19:19:39.624648828,,m?gbg&),true
+2148-06-22T05:49:34.246825572,,,true
 2159-08-03T08:04:37.631075636,,cU,true
 2177-06-07T06:12:05.773293536,,-719146430,true
+2243-06-01T16:01:50.828718363,,,true
 
 -- EXECUTE SQL: SELECT * FROM m4 WHERE NOT (m4.f0); --
 -- AFTER_SORT --
@@ -2891,10 +3311,11 @@ time,t0,t1,f0
 200 OK
 t0
 ""
+""
 '9
 .1'㔱鎫c9
 4
-8N] 
+8N]
 B
 pR
 ꆪswp
@@ -2919,6 +3340,8 @@ f0,t0
 0.2994223801612098,R
 0.33339264393462475,0.20625602818030442
 0.4506382526815239,z
+0.7365373850922812,
+0.7802602952255795,
 0.8266616373816802,.
 0.8910983143439503,5468993521555465265
 0.9046718662186112,_fq
@@ -2950,6 +3373,8 @@ f0
 0.2994223801612098
 0.33339264393462475
 0.4506382526815239
+0.7365373850922812
+0.7802602952255795
 0.8266616373816802
 0.8910983143439503
 0.9046718662186112
@@ -2981,6 +3406,8 @@ true
 true
 true
 true
+true
+true
 
 -- EXECUTE SQL: SELECT ALL m4.f0 FROM m4 WHERE starts_with(CAST(- (ascii(m4.t1)) AS STRING), CAST(CAST(((m4.t1)LIKE(m4.t1)) AS BIGINT) AS STRING)); --
 -- AFTER_SORT --
@@ -3008,6 +3435,8 @@ f0,t0
 0.2994223801612098,R
 0.33339264393462475,0.20625602818030442
 0.4506382526815239,z
+0.7365373850922812,
+0.7802602952255795,
 0.8266616373816802,.
 0.8910983143439503,5468993521555465265
 0.9046718662186112,_fq
@@ -3058,6 +3487,10 @@ false
 false
 false
 false
+false
+false
+true
+true
 true
 true
 true
@@ -3087,7 +3520,16 @@ true
 -- EXECUTE SQL: SELECT m1.f1 FROM m1 WHERE (starts_with(lower(m1.t0), ((((m1.f0)||(m1.f1)))||(((m1.t0)||(0.599937629292316643159210798330605030059814453125)))))) IS NULL; --
 -- AFTER_SORT --
 200 OK
-
+f1
+""
+""
+""
+""
+""
+false
+false
+true
+true
 
 -- EXECUTE SQL: SELECT ALL MAX(- (CAST(m2.t1 AS DOUBLE))) FROM (select t1 from m2 order by t1); --
 -- AFTER_SORT --
@@ -3100,15 +3542,26 @@ true
 200 OK
 f0,f1,f2
 ",p",true,-1628140570
+,,
+,,-25284663
+,,-803836627
+,false,
+,false,
+,true,
+,true,
 0.12602752741440792,true,
+3309273192353118515,,
 7276138141691785489,false,
+9195442692708162668,,
 IG,true,
 M,false,10435154
 N粶i!cm+R.,true,
+Vb5P落ꦀ,,1700015934
 Y,false,
 Y,false,
 \WY%,false,
 \g,true,-1359365092
+s,,
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f1, m1.f2 FROM m1 WHERE ((upper(upper('7812245507234280753')))LIKE(btrim(CAST(m1.f2 AS STRING), lower('0.9849241975986696')))); --
 -- AFTER_SORT --
@@ -3119,17 +3572,28 @@ Y,false,
 -- AFTER_SORT --
 200 OK
 SUM(characterlength(totimestamp(Int64(2195076343508467114))) + abs((- m1.f2)))
-2997940903.0
+5527078214.0
 
 -- EXECUTE SQL: SELECT m1.f1, m1.f2, m1.f0, m1.t0 FROM m1; --
 -- AFTER_SORT --
 200 OK
 f1,f2,f0,t0
+,,,
+,,3309273192353118515,
+,,9195442692708162668,
+,,s,
+,-25284663,,
+,-803836627,,
+,1700015934,Vb5P落ꦀ,
+false,,,
+false,,,
 false,,7276138141691785489,4
 false,,Y,
 false,,Y,'9
 false,,\WY%,ꆪswp
-false,10435154,M,8N] 
+false,10435154,M,8N]
+true,,,
+true,,,
 true,,0.12602752741440792,pR
 true,,IG,
 true,,N粶i!cm+R.,
@@ -3152,6 +3616,7 @@ MAX((- Int64(1718529434)) * ascii(totimestamp(Int64(6347743030140167950))))
 -- AFTER_SORT --
 200 OK
 totimestampseconds((- SUM(characterlength(Boolean(false) || m0.f0 BETWEEN m0.f0 AND m0.f0)))),totimestamp(Int64(4018311307294132213)),Boolean(true) OR Int64(-25284663) OR Int64(1034502539) - Int64(-597954662) NOT IN (Map { iter: Iter([Int64(1222719032)]) }),Int64(6687693621343321678)
+1969-12-31T23:59:56.000000000,2097-05-02T05:35:07.294132213,true,6687693621343321678
 1969-12-31T23:59:58.000000000,2097-05-02T05:35:07.294132213,true,6687693621343321678
 1969-12-31T23:59:58.000000000,2097-05-02T05:35:07.294132213,true,6687693621343321678
 1969-12-31T23:59:58.000000000,2097-05-02T05:35:07.294132213,true,6687693621343321678
@@ -3164,10 +3629,11 @@ totimestampseconds((- SUM(characterlength(Boolean(false) || m0.f0 BETWEEN m0.f0 
 200 OK
 t0
 ""
+""
 '9
 .1'㔱鎫c9
 4
-8N] 
+8N]
 B
 pR
 ꆪswp
@@ -3179,7 +3645,7 @@ t0
 '9
 .1'㔱鎫c9
 4
-8N] 
+8N]
 B
 pR
 ꆪswp
@@ -3212,6 +3678,8 @@ I,A,0.545203526083238,
 -- AFTER_SORT --
 200 OK
 t0,f0
+,0.7365373850922812
+,0.7802602952255795
 .,0.8266616373816802
 0.20625602818030442,0.33339264393462475
 2090966948559537515,0.10574448926145164
@@ -3258,6 +3726,7 @@ f0,t0,f1,t1
 200 OK
 t1
 ""
+""
 -719146430
 [
 cU
@@ -3279,8 +3748,12 @@ MAX(Int64(-933855729) * abs(Int64(-1970168186)) - Int64(2004098995))
 -- AFTER_SORT --
 200 OK
 f0,t1,t0
+-1134968677,,
 -1598798851,	0,c]_tcQrM
+-184853823,,
+-2085716189,,
 -370874632,*,174906244
+-374901666,,
 -534737513,os,2939042495407010978
 -603220388,1067185949319247413,0.4140742380785405
 1296743770,,O~
@@ -3328,7 +3801,7 @@ time,t0,t1,t2,f0,f1
 -- AFTER_SORT --
 200 OK
 SUM(totimestamp(Int64(1776482811613218723)))
--4234881580803801832
+-681915957577364386
 
 -- EXECUTE SQL: SELECT CAST((MAX(((+ (+ (- (m3.f0))))*(to_hex(CAST(m3.t0 AS STRING)))))) IN (1290782431, -1802715932) AS BIGINT), - (CAST(LAG(CAST(to_timestamp(5054496120248632580) AS TIMESTAMP), CAST(date_trunc(m3.t0, CAST(0.65862498508339639702313661473453976213932037353515625 AS TIMESTAMP)) AS BIGINT), to_timestamp(9057611853949500295)) OVER () AS BIGINT)) FROM m3 WHERE (((((((CAST('0.9587377467691562' AS BIGINT))<(signum(0.63102229791705999328854659324861131608486175537109375))))OR(CAST(CAST(TRUE AS BOOLEAN) AS BOOLEAN))))OR(starts_with(chr('-75347395'), ((m3.t0)||(to_timestamp(7256934518925037348))))))) IS FALSE GROUP BY ((((CAST(CAST((TRUE) IS NULL AS BIGINT) AS BOOLEAN))OR(NOT ((0.6604209726380354528174621009384281933307647705078125) NOT IN (0.1334654947254765300357348678517155349254608154296875)))))AND(CAST(btrim('*', m3.t0) AS BOOLEAN))), 0.322467290479330426222759342635981738567352294921875; --
 -- AFTER_SORT --
@@ -3365,7 +3838,7 @@ c]_tcQrM
 -- AFTER_SORT --
 200 OK
 COUNT(Boolean(true) IS TRUE OR totimestamp(Int64(1790625706534557306)) IS NULL + (- Float64(0.8855766574806848)))
-8
+12
 
 -- EXECUTE SQL: SELECT m1.f1 FROM m1 ORDER BY m1.t0 DESC; --
 -- AFTER_SORT --
@@ -3376,6 +3849,10 @@ false
 false
 false
 false
+false
+false
+true
+true
 true
 true
 true
@@ -3386,6 +3863,7 @@ true
 -- AFTER_SORT --
 200 OK
 t0,t1
+,
 ,[%^TQVy8
 0.002147298221788496,2350431228203406322
 0.4140742380785405,1067185949319247413
@@ -3411,7 +3889,7 @@ SUM(m2.f0 % m2.f0 - m2.f0)
 -- AFTER_SORT --
 200 OK
 "SUM(nullif(m1.f2 * m1.f2,(- m1.f2)))",totimestamp(Int64(7471884146429218210))
-4498824061467097080,7471884146429218210
+8035670874410750134,7471884146429218210
 
 -- EXECUTE SQL: SELECT ALL COUNT(- (((((((m3.f0)%(m3.f0)))%(((-2077047242)-(m3.f0)))))-(((m3.f0)*(ceil(0.09536445145759275821006895057507790625095367431640625))))))), NTH_VALUE(to_timestamp(- (- (m3.f0))), CAST(NOT (TRUE) AS BIGINT)) OVER ( ORDER BY m3.t0 ASC) FROM m3 WHERE ((CAST(NOT (((m3.t0)LIKE(m3.t0))) AS STRING))LIKE(lower(((m3.t0)||(TRUE))))) GROUP BY + (CAST(CAST(to_timestamp(3215235075569632469) AS STRING) AS BIGINT)), to_timestamp(4979053746168115537); --
 -- AFTER_SORT --
@@ -3452,6 +3930,8 @@ f0
 0.2994223801612098
 0.33339264393462475
 0.4506382526815239
+0.7365373850922812
+0.7802602952255795
 0.8266616373816802
 0.8910983143439503
 0.9046718662186112
@@ -3465,6 +3945,8 @@ f0
 0.2994223801612098
 0.33339264393462475
 0.4506382526815239
+0.7365373850922812
+0.7802602952255795
 0.8266616373816802
 0.8910983143439503
 0.9046718662186112
@@ -3484,6 +3966,8 @@ true,
 true,
 true,
 true,
+true,
+true,
 
 -- EXECUTE SQL: SELECT ALL m4.f0, m4.t0 FROM m4 WHERE starts_with(ltrim(((m4.t0)||(to_timestamp(4806813345626914634)))), upper(m4.t1)); --
 -- AFTER_SORT --
@@ -3494,6 +3978,10 @@ true,
 -- AFTER_SORT --
 200 OK
 t0,f0
+,-1134968677
+,-184853823
+,-2085716189
+,-374901666
 ,951192745
 0.002147298221788496,9065525203050843594
 0.4140742380785405,-603220388
@@ -3536,16 +4024,27 @@ sGh[2[*?Q,,0.6378605229934808,
 -- AFTER_SORT --
 200 OK
 f2,f0,f1,t0
+,,,
+,,false,
+,,false,
+,,true,
+,,true,
 ,0.12602752741440792,true,pR
+,3309273192353118515,,
 ,7276138141691785489,false,4
+,9195442692708162668,,
 ,IG,true,
 ,N粶i!cm+R.,true,
 ,Y,false,
 ,Y,false,'9
 ,\WY%,false,ꆪswp
+,s,,
 -1359365092,\g,true,.1'㔱鎫c9
 -1628140570,",p",true,B
-10435154,M,false,8N] 
+-25284663,,,
+-803836627,,,
+10435154,M,false,8N]
+1700015934,Vb5P落ꦀ,,
 
 -- EXECUTE SQL: SELECT m1.f2, m1.f0, m1.f1, m1.t0 FROM m1 WHERE ((((((('ijpj李]&%C')||(m1.f0)))||(CAST(0.37948870816901791869213411700911819934844970703125 AS TIMESTAMP))))||(CAST((('0.8007534155203164')||(m1.t0)) AS STRING)))) BETWEEN (sha384(((m1.f0)||(m1.f2)), CAST(m1.f2 AS BIGINT))) AND (m1.t0) UNION ALL SELECT m1.f2, m1.f0, m1.f1, m1.t0 FROM m1 WHERE NOT (((((((('ijpj李]&%C')||(m1.f0)))||(CAST(0.37948870816901791869213411700911819934844970703125 AS TIMESTAMP))))||(CAST((('0.8007534155203164')||(m1.t0)) AS STRING)))) BETWEEN (sha384(((m1.f0)||(m1.f2)), CAST(m1.f2 AS BIGINT))) AND (m1.t0)) UNION ALL SELECT m1.f2, m1.f0, m1.f1, m1.t0 FROM m1 WHERE (((((((('ijpj李]&%C')||(m1.f0)))||(CAST(0.37948870816901791869213411700911819934844970703125 AS TIMESTAMP))))||(CAST((('0.8007534155203164')||(m1.t0)) AS STRING)))) BETWEEN (sha384(((m1.f0)||(m1.f2)), CAST(m1.f2 AS BIGINT))) AND (m1.t0)) IS NULL; --
 -- AFTER_SORT --
@@ -3601,6 +4100,7 @@ MAX(Int64(2939042495407010816))
 t1,t0
 	0,c]_tcQrM
 *,174906244
+,
 ,O~
 1067185949319247413,0.4140742380785405
 1889832286,{\
@@ -3649,6 +4149,8 @@ MAX(totimestamp(Int64(7091494307117128533)))
 200 OK
 f0,t1
 false,
+true,
+true,
 true,-719146430
 true,[
 true,cU
@@ -3663,6 +4165,8 @@ f0
 0.2994223801612098
 0.33339264393462475
 0.4506382526815239
+0.7365373850922812
+0.7802602952255795
 0.8266616373816802
 0.8910983143439503
 0.9046718662186112
@@ -3676,6 +4180,8 @@ f0
 0.2994223801612098
 0.33339264393462475
 0.4506382526815239
+0.7365373850922812
+0.7802602952255795
 0.8266616373816802
 0.8910983143439503
 0.9046718662186112
