@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub mod lru_cache;
 
@@ -7,7 +7,8 @@ pub mod lru_cache;
 pub trait NodeVal<T> {
     fn get_value(&self) -> &T;
 }
-type NodeValPtr<T> = Rc<RefCell<dyn NodeVal<T>>>;
+
+type NodeValPtr<T> = Arc<RefCell<dyn NodeVal<T>>>;
 
 pub trait Cache<T> {
     /// Insert a mapping from key->value into the cache and assign it the specified charge

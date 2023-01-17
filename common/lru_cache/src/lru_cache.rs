@@ -7,7 +7,6 @@ use std::hash::Hasher;
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
@@ -16,7 +15,7 @@ use utils::BkdrHasher;
 
 use crate::{Cache, NodeVal, NodeValPtr};
 
-struct LRUNode<T: Default + Debug+ Send + Sync> {
+struct LRUNode<T: Default + Debug + Send + Sync> {
     key: Box<[u8]>,
     value: T,
     charge: usize,
@@ -80,14 +79,14 @@ impl<T> LRUNode<T>
 
 impl<T> NodeVal<T> for LRUNode<T>
     where
-        T: Default + Debug+ Send + Sync,
+        T: Default + Debug + Send + Sync,
 {
     fn get_value(&self) -> &T {
         &self.value
     }
 }
 
-struct HashData<T: Default + Debug+ Send + Sync> {
+struct HashData<T: Default + Debug + Send + Sync> {
     usage: usize,
     lru: *mut LRUNode<T>,
     in_use: *mut LRUNode<T>,
@@ -145,7 +144,7 @@ impl<T> LRUCache<T>
     }
 
     fn inc_ref(list: *mut LRUNode<T>, h: &LRUNodePtr<T>) {
-        if Rc::strong_count(h) == 1 {
+        if Arc::strong_count(h) == 1 {
             let p = h.borrow_mut().deref_mut() as *mut LRUNode<T>;
             Self::lru_remove(p);
             Self::lru_append(list, p);
@@ -153,7 +152,7 @@ impl<T> LRUCache<T>
     }
 
     fn dec_ref(list: *mut LRUNode<T>, h: NodeValPtr<T>) {
-        let c = Rc::strong_count(&h);
+        let c = Arc::strong_count(&h);
         if c == 2 {
             let p = h.borrow_mut().deref_mut() as *mut dyn NodeVal<T> as *mut LRUNode<T>;
             Self::lru_remove(p);
@@ -198,7 +197,7 @@ impl<T: Default + Debug + Send + Sync + 'static> Cache<T> for LRUCache<T> {
         let mut e = LRUNode::new(b, value, charge, deleter);
 
         let r = if self.capacity > 0 {
-            let r = Rc::new(RefCell::new(e));
+            let r = Arc::new(RefCell::new(e));
             Self::lru_append(mutex_data.in_use, r.clone().borrow_mut().deref_mut());
             mutex_data.usage += charge;
             if let Some(old) = mutex_data.table.insert(key, r.clone()) {
@@ -207,7 +206,7 @@ impl<T: Default + Debug + Send + Sync + 'static> Cache<T> for LRUCache<T> {
             r
         } else {
             e.next = ptr::null_mut();
-            Rc::new(RefCell::new(e))
+            Arc::new(RefCell::new(e))
         };
 
         let lru: *mut LRUNode<T> = mutex_data.lru;
@@ -215,7 +214,7 @@ impl<T: Default + Debug + Send + Sync + 'static> Cache<T> for LRUCache<T> {
             while mutex_data.usage > self.capacity && (*lru).next != lru {
                 let old: *mut LRUNode<T> = (*lru).next;
                 if let Some(old) = mutex_data.table.remove(&(*old).key()) {
-                    assert_eq!(Rc::strong_count(&old), 1);
+                    assert_eq!(Arc::strong_count(&old), 1);
                     Self::finish_erase(&mut mutex_data, old);
                 }
             }
