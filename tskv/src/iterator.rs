@@ -1,23 +1,34 @@
 use std::collections::HashMap;
 use std::ops::{Bound, RangeBounds};
-use std::task::Poll;
-
-use datafusion::arrow::error::ArrowError;
-use datafusion::physical_plan::metrics::{
-    self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
-};
-
-use datafusion::scalar::ScalarValue;
-use minivec::MiniVec;
 use std::sync::Arc;
-use tokio::time::Instant;
+use std::task::Poll;
 
 use datafusion::arrow::array::{ArrayBuilder, TimestampNanosecondBuilder};
 use datafusion::arrow::datatypes::DataType as ArrowDataType;
-use models::utils::{min_num, unite_id};
-use models::{FieldId, SeriesId, ValueType};
+use datafusion::arrow::error::ArrowError;
+use datafusion::arrow::{
+    array::{BooleanBuilder, Float64Builder, Int64Builder, StringBuilder, UInt64Builder},
+    datatypes::SchemaRef,
+    record_batch::RecordBatch,
+};
+use datafusion::physical_plan::metrics::{
+    self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
+};
+use datafusion::scalar::ScalarValue;
+use minivec::MiniVec;
 use snafu::ResultExt;
+use tokio::time::Instant;
+
+use models::{
+    predicate::domain::{ColumnDomains, Domain, PredicateRef, Range, ValueEntry},
+    schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME},
+    utils::{min_num, unite_id},
+    FieldId, SeriesId, ValueType,
+};
 use trace::{debug, info};
+
+use crate::schema::error::SchemaError;
+use crate::tseries_family::Version;
 
 use super::{
     engine::EngineRef,
@@ -28,16 +39,6 @@ use super::{
     tsm::{BlockMetaIterator, DataBlock, TsmReader},
     ColumnFileId, Error,
 };
-
-use datafusion::arrow::{
-    array::{BooleanBuilder, Float64Builder, Int64Builder, StringBuilder, UInt64Builder},
-    datatypes::SchemaRef,
-    record_batch::RecordBatch,
-};
-
-use crate::schema::error::SchemaError;
-use models::predicate::domain::{ColumnDomains, Domain, PredicateRef, Range, ValueEntry};
-use models::schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
 
 pub type CursorPtr = Box<dyn Cursor>;
 pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
@@ -283,22 +284,23 @@ impl Cursor for TimeCursor {
         &self.name
     }
 
-    async fn peek(&mut self) -> Result<Option<DataType>, Error> {
-        let data = DataType::I64(self.ts, self.ts);
-
-        Ok(Some(data))
+    fn is_field(&self) -> bool {
+        false
     }
-
-    async fn next(&mut self, _ts: i64) {}
 
     fn val_type(&self) -> ValueType {
         ValueType::Integer
     }
 
-    fn is_field(&self) -> bool {
-        false
+    async fn next(&mut self, _ts: i64) {}
+
+    async fn peek(&mut self) -> Result<Option<DataType>, Error> {
+        let data = DataType::I64(self.ts, self.ts);
+
+        Ok(Some(data))
     }
 }
+
 //-----------Tag Cursor----------------
 pub struct TagCursor {
     name: String,
@@ -362,7 +364,7 @@ impl FieldCursor {
         vtype: ValueType,
         iterator: &mut RowIterator,
     ) -> Result<Self, Error> {
-        let version = match iterator.version.clone() {
+        let super_version = match iterator.version.clone() {
             Some(v) => v,
             None => return Ok(Self::empty(vtype, name)),
         };
@@ -380,7 +382,7 @@ impl FieldCursor {
                 .any(|time_range| time_range.is_boundless() || time_range.contains(ts))
         };
 
-        version
+        super_version
             .caches
             .immut_cache
             .iter()
@@ -389,7 +391,7 @@ impl FieldCursor {
                 mem_data.append(&mut m.read().get_data(field_id, time_predicate, |_| true))
             });
 
-        mem_data.append(&mut version.caches.mut_cache.read().get_data(
+        mem_data.append(&mut super_version.caches.mut_cache.read().get_data(
             field_id,
             time_predicate,
             |_| true,
@@ -405,7 +407,7 @@ impl FieldCursor {
 
         // get data from levelinfo
         let mut locations = vec![];
-        for level in version.version.levels_info.iter().rev() {
+        for level in super_version.version.levels_info.iter().rev() {
             for file in level.files.iter() {
                 if file.is_deleted() {
                     continue;
@@ -422,7 +424,9 @@ impl FieldCursor {
                         file.file_path().display()
                     );
 
-                    let tsm_reader = iterator.get_tsm_reader(file.clone()).await?;
+                    let tsm_reader = iterator
+                        .get_tsm_reader(super_version.version.clone(), file.clone())
+                        .await?;
                     for idx in tsm_reader.index_iterator_opt(field_id) {
                         let block_it = idx.block_iterator_opt(time_range);
                         let location = FieldFileLocation::new(tsm_reader.clone(), block_it, vtype);
@@ -633,12 +637,16 @@ impl RowIterator {
         })
     }
 
-    pub async fn get_tsm_reader(&mut self, file: Arc<ColumnFile>) -> Result<TsmReader, Error> {
+    pub async fn get_tsm_reader(
+        &mut self,
+        version: Arc<Version>,
+        file: Arc<ColumnFile>,
+    ) -> Result<TsmReader, Error> {
         if let Some(val) = self.open_files.get(&file.file_id()) {
             return Ok(val.clone());
         }
-
-        let tsm_reader = TsmReader::open(file.file_path()).await?;
+        // let tsm_reader = TsmReader::open(file.file_path()).await?;
+        let tsm_reader = version.get_tsm_reader(file.file_path()).await?;
         self.open_files.insert(file.file_id(), tsm_reader.clone());
 
         Ok(tsm_reader)

@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Index {
     /// In-memory index-block data
     ///

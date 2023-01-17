@@ -5,25 +5,26 @@ use std::{
 };
 
 use minivec::MiniVec;
-use models::{utils as model_utils, FieldId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
+
+use models::{FieldId, Timestamp, utils as model_utils, ValueType};
 
 use crate::{
     byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
     error::{self, Error, Result},
-    file_system::{file_manager, AsyncFile, IFile},
+    file_system::{AsyncFile, file_manager, IFile},
     file_utils,
     tseries_family::TimeRange,
     tsm::{
+        BLOCK_META_SIZE,
+        BlockEntry, BlockMeta,
         codec::{
-            get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec,
-            get_ts_codec, get_u64_codec, DataBlockEncoding,
+            DataBlockEncoding, get_bool_codec, get_encoding, get_f64_codec, get_i64_codec,
+            get_str_codec, get_ts_codec, get_u64_codec,
         },
-        get_data_block_meta_unchecked, get_index_meta_unchecked,
-        tombstone::TsmTombstone,
-        BlockEntry, BlockMeta, DataBlock, Index, IndexEntry, IndexMeta, BLOCK_META_SIZE,
-        FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
+        DataBlock, FOOTER_SIZE, get_data_block_meta_unchecked, get_index_meta_unchecked, Index, INDEX_META_SIZE, IndexEntry,
+        IndexMeta, MAX_BLOCK_VALUES, tombstone::TsmTombstone,
     },
 };
 
@@ -389,7 +390,7 @@ impl Iterator for BlockMetaIterator {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct TsmReader {
     reader: Arc<AsyncFile>,
     index_reader: Arc<IndexReader>,
@@ -430,7 +431,7 @@ impl TsmReader {
             block_meta.offset(),
             block_meta.val_off(),
         )
-        .await?;
+            .await?;
         self.tombstone
             .read()
             .data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
@@ -504,7 +505,7 @@ impl ColumnReader {
             block_meta.offset(),
             block_meta.val_off(),
         )
-        .await
+            .await
     }
 }
 
@@ -630,17 +631,19 @@ pub mod tsm_reader_tests {
         sync::Arc,
     };
 
-    use models::{FieldId, Timestamp};
     use parking_lot::Mutex;
 
-    use super::print_tsm_statistics;
-    use crate::file_system::file_manager::{self, get_file_manager};
-    use crate::tsm::codec::DataBlockEncoding;
+    use models::{FieldId, Timestamp};
+
     use crate::{
         file_utils,
         tseries_family::TimeRange,
         tsm::{BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone, TsmWriter},
     };
+    use crate::file_system::file_manager::{self, get_file_manager};
+    use crate::tsm::codec::DataBlockEncoding;
+
+    use super::print_tsm_statistics;
 
     async fn prepare(path: impl AsRef<Path>) -> (PathBuf, PathBuf) {
         if file_manager::try_exists(&path) {
@@ -657,7 +660,7 @@ pub mod tsm_reader_tests {
         );
 
         #[rustfmt::skip]
-        let ori_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+            let ori_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (1, vec![DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![11, 12, 13, 15], enc: DataBlockEncoding::default() }]
             ),
             (2, vec![
@@ -719,7 +722,7 @@ pub mod tsm_reader_tests {
         let reader = TsmReader::open(&tsm_file).await.unwrap();
 
         #[rustfmt::skip]
-        let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+            let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (1, vec![DataBlock::U64 { ts: vec![1], val: vec![11], enc: DataBlockEncoding::default() }]
             ),
             (2, vec![
@@ -765,7 +768,7 @@ pub mod tsm_reader_tests {
 
         {
             #[rustfmt::skip]
-            let expected_data = HashMap::from([
+                let expected_data = HashMap::from([
                 (2, vec![
                     DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], enc: DataBlockEncoding::default() },
                 ])
@@ -775,7 +778,7 @@ pub mod tsm_reader_tests {
 
         {
             #[rustfmt::skip]
-            let expected_data = HashMap::from([
+                let expected_data = HashMap::from([
                 (2, vec![
                     DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
                 ])
@@ -785,7 +788,7 @@ pub mod tsm_reader_tests {
 
         {
             #[rustfmt::skip]
-            let expected_data = HashMap::from([
+                let expected_data = HashMap::from([
                 (2, vec![
                     DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
                     DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
@@ -796,7 +799,7 @@ pub mod tsm_reader_tests {
 
         {
             #[rustfmt::skip]
-            let expected_data = HashMap::from([
+                let expected_data = HashMap::from([
                 (2, vec![
                     DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
                     DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
@@ -807,7 +810,7 @@ pub mod tsm_reader_tests {
 
         {
             #[rustfmt::skip]
-            let expected_data = HashMap::from([
+                let expected_data = HashMap::from([
                 (2, vec![
                     DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
                     DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },

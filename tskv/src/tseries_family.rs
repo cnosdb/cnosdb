@@ -19,12 +19,15 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch::Receiver;
 
 use config::get_config;
+use lru_cache::lru_cache::ShardedLRUCache;
+use lru_cache::Cache;
 use models::schema::TableColumn;
 use models::{ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
 use crate::file_system::file_manager;
+use crate::tsm::Index;
 use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     error::{Error, Result},
@@ -452,6 +455,7 @@ pub struct Version {
     /// The max timestamp of write batch in wal flushed to column file.
     pub max_level_ts: i64,
     pub levels_info: [LevelInfo; 5],
+    pub cache: Arc<ShardedLRUCache<TsmReader>>,
 }
 
 impl Version {
@@ -462,6 +466,7 @@ impl Version {
         last_seq: u64,
         levels_info: [LevelInfo; 5],
         max_level_ts: i64,
+        cache: Arc<ShardedLRUCache<Index>>,
     ) -> Self {
         Self {
             ts_family_id,
@@ -470,6 +475,7 @@ impl Version {
             last_seq,
             max_level_ts,
             levels_info,
+            cache,
         }
     }
 
@@ -529,6 +535,7 @@ impl Version {
             last_seq: last_seq.unwrap_or(self.last_seq),
             max_level_ts: self.max_level_ts,
             levels_info: new_levels,
+            cache: self.cache.clone(),
         };
         new_version.update_max_level_ts();
         new_version
@@ -588,6 +595,14 @@ impl Version {
     pub fn get_ts_overlap(&self, level: u32, ts_min: i64, ts_max: i64) -> Vec<Arc<ColumnFile>> {
         vec![]
     }
+
+    pub async fn get_tsm_reader(&self, file: impl AsRef<Path>) -> Result<TsmReader> {
+        let cache_index = self.cache.lookup(file.into_os_string().into_string());
+        match cache_index {
+            Some(val) => Ok(*val.borrow().get_value()),
+            None => TsmReader::open(file).await?,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -629,6 +644,7 @@ pub struct TseriesFamily {
     database: String,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
+    cache: ShardedLRUCache<TsmReader>,
     super_version: Arc<SuperVersion>,
     super_version_id: AtomicU64,
     version: Arc<Version>,
@@ -890,25 +906,28 @@ mod test {
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::UnboundedReceiver;
 
-    use models::schema::{DatabaseSchema, TenantOptions};
-    use models::{Timestamp, ValueType};
+    use config::{get_config, ClusterConfig};
+    use meta::meta_client::{MetaRef, RemoteMetaManager};
+    use models::{
+        schema::{DatabaseSchema, TenantOptions},
+        Timestamp, ValueType,
+    };
     use trace::info;
 
-    use crate::file_system::file_manager;
-    use crate::file_utils::{self, make_tsm_file_name};
     use crate::{
         compaction::{flush_tests::default_with_field_id, run_flush_memtable_job, FlushReq},
         context::GlobalContext,
+        file_system::file_manager,
+        file_utils::{self, make_tsm_file_name},
         kv_option::Options,
         memcache::{FieldVal, MemCache, RowData, RowGroup},
+        summary::SummaryTask,
         summary::{CompactMeta, SummaryTask, VersionEdit, WriteSummaryRequest},
         tseries_family::{TimeRange, TseriesFamily, Version},
         tsm::TsmTombstone,
         version_set::VersionSet,
         TseriesFamilyId,
     };
-    use config::{get_config, ClusterConfig};
-    use meta::meta_client::{MetaRef, RemoteMetaManager};
 
     use super::{ColumnFile, LevelInfo};
 
@@ -974,7 +993,7 @@ mod test {
                     time_range: TimeRange::new(1, 2000),
                 },
                 LevelInfo::init(database.clone(), 3, 0, opt.storage.clone()),
-                LevelInfo::init(database, 4, 0,opt.storage.clone()),
+                LevelInfo::init(database, 4, 0, opt.storage.clone()),
             ],
         };
         let mut version_edits = Vec::new();
@@ -1073,7 +1092,7 @@ mod test {
                     max_size: 10000,
                     time_range: TimeRange::new(1, 2000),
                 },
-                LevelInfo::init(database.clone(), 3, 1,opt.storage.clone()),
+                LevelInfo::init(database.clone(), 3, 1, opt.storage.clone()),
                 LevelInfo::init(database, 4, 1, opt.storage.clone()),
             ],
         };
