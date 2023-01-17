@@ -60,7 +60,6 @@ const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'w', b'a', b'l', b'o']);
 const FOOTER_MAGIC_NUMBER_LEN: usize = 4;
 
 const SEGMENT_MAGIC: [u8; 4] = [0x57, 0x47, 0x4c, 0x00];
-const SEGMENT_SIZE: u64 = 1073741824; // 1 GiB
 
 const BLOCK_HEADER_SIZE: usize = 25;
 
@@ -370,7 +369,7 @@ impl WalManager {
         id: TseriesFamilyId,
         tenant: Arc<Vec<u8>>,
     ) -> Result<(u64, usize)> {
-        self.roll_wal_file(SEGMENT_SIZE).await?;
+        self.roll_wal_file(self.config.max_file_size).await?;
         self.current_file.write(typ, data, id, tenant).await
     }
 
@@ -686,6 +685,8 @@ mod test {
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir.clone();
+        // Argument max_file_size is so small that there must a new wal file created.
+        global_config.wal.max_file_size = 1;
         global_config.wal.sync = false;
         let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
@@ -710,10 +711,6 @@ mod test {
             mgr.write(WalEntryType::Write, data.clone(), 0, tenant.clone())
                 .await
                 .unwrap();
-            if seq < 10 {
-                // Argument max_file_size is so small that there must a new wal file created.
-                mgr.roll_wal_file(1).await.unwrap();
-            }
         }
         mgr.close().await.unwrap();
 

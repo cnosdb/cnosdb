@@ -119,6 +119,7 @@ impl From<&Config> for QueryOptions {
 pub struct WalOptions {
     pub enabled: bool,
     pub path: PathBuf,
+    pub max_file_size: u64,
     pub sync: bool,
 }
 
@@ -127,6 +128,7 @@ impl From<&Config> for WalOptions {
         Self {
             enabled: config.wal.enabled,
             path: PathBuf::from(config.wal.path.clone()),
+            max_file_size: config.wal.max_file_size,
             sync: config.wal.sync,
         }
     }
