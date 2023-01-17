@@ -12,8 +12,9 @@ use tokio::sync::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use trace::error;
 
-use crate::compaction::FlushReq;
 use crate::{
+    compaction::FlushReq,
+    context::GlobalSequenceContext,
     database::Database,
     error::MetaSnafu,
     error::Result,
@@ -29,8 +30,6 @@ pub struct VersionSet {
     opt: Arc<Options>,
     /// Maps DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
-    /// Minimum seq_no of all `TseriesFamily`s in all `Database`s
-    min_seq_no: u64,
 }
 
 impl VersionSet {
@@ -38,7 +37,6 @@ impl VersionSet {
         Self {
             opt,
             dbs: HashMap::new(),
-            min_seq_no: 0,
         }
     }
 
@@ -49,11 +47,9 @@ impl VersionSet {
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
-        let mut min_seq_no = if ver_set.is_empty() { 0_u64 } else { u64::MAX };
         for (id, ver) in ver_set {
             let owner = ver.database().to_string();
             let (tenant, database) = split_owner(&owner);
-            min_seq_no = min_seq_no.min(ver.last_seq);
 
             let schema = match meta.tenant_manager().tenant_meta(tenant) {
                 None => DatabaseSchema::new(tenant, database),
@@ -77,11 +73,7 @@ impl VersionSet {
             db.write().await.get_ts_index_or_add(tf_id).await?;
         }
 
-        Ok(Self {
-            dbs,
-            opt,
-            min_seq_no,
-        })
+        Ok(Self { dbs, opt })
     }
 
     pub fn options(&self) -> Arc<Options> {
@@ -200,22 +192,21 @@ impl VersionSet {
         version_edits
     }
 
-    pub async fn update_min_seq_no(&mut self) {
-        let mut min_seq_no = if self.dbs.is_empty() { 0_u64 } else { u64::MAX };
-        for (_, db) in self.dbs.iter() {
-            min_seq_no = min_seq_no.min(db.read().await.get_min_ts_family_seq_no().await);
+    /// **Please call this function after system recovered.**
+    ///
+    /// Get GlobalSequenceContext to store current minimum sequence number of all TseriesFamilies,
+    /// one use is fetching wal files which could be deleted.
+    pub async fn get_global_sequence_context(&self) -> GlobalSequenceContext {
+        let mut min_seq = 0_u64;
+        let mut tsf_seq_map: HashMap<TseriesFamilyId, u64> = HashMap::new();
+        for (_, database) in self.dbs.iter() {
+            for (tsf_id, tsf) in database.read().await.ts_families().iter() {
+                let tsf = tsf.read();
+                min_seq = min_seq.min(tsf.seq_no());
+                tsf_seq_map.insert(*tsf_id, tsf.seq_no());
+            }
         }
-        self.min_seq_no = min_seq_no
-    }
 
-    pub fn min_seq_no(&self) -> u64 {
-        self.min_seq_no
-    }
-}
-
-#[cfg(test)]
-impl VersionSet {
-    pub fn set_min_seq_no(&mut self, min_seq_no: u64) {
-        self.min_seq_no = min_seq_no;
+        GlobalSequenceContext::new(min_seq, tsf_seq_map)
     }
 }
