@@ -1,6 +1,7 @@
 use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
+use crate::context::{self, GlobalSequenceContext, GlobalSequenceTask};
 use crate::error::MetaSnafu;
 use crate::kv_option::StorageOptions;
 use crate::tsm::codec::get_str_codec;
@@ -71,6 +72,7 @@ use crate::{
 pub struct TsKv {
     options: Arc<Options>,
     global_ctx: Arc<GlobalContext>,
+    global_seq_ctx: Arc<GlobalSequenceContext>,
     version_set: Arc<RwLock<VersionSet>>,
     meta_manager: MetaRef,
 
@@ -79,6 +81,7 @@ pub struct TsKv {
     flush_task_sender: UnboundedSender<FlushReq>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
     summary_task_sender: UnboundedSender<SummaryTask>,
+    global_seq_task_sender: UnboundedSender<GlobalSequenceTask>,
     close_sender: BroadcastSender<UnboundedSender<()>>,
 }
 
@@ -90,29 +93,37 @@ impl TsKv {
     ) -> Result<TsKv> {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
         let shared_options = Arc::new(opt);
-        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
-        let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
-        let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
-        let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
+        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel::<FlushReq>();
+        let (compact_task_sender, compact_task_receiver) =
+            mpsc::unbounded_channel::<TseriesFamilyId>();
+        let (wal_sender, wal_receiver) = mpsc::unbounded_channel::<WalTask>();
+        let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel::<SummaryTask>();
+        let (global_seq_task_sender, global_seq_task_receiver) =
+            mpsc::unbounded_channel::<GlobalSequenceTask>();
         let (close_sender, _close_receiver) = broadcast::channel(1);
         let (version_set, summary) = Self::recover_summary(
             meta_manager.clone(),
             shared_options.clone(),
             flush_task_sender.clone(),
+            global_seq_task_sender.clone(),
         )
         .await;
+        let global_seq_ctx = version_set.read().await.get_global_sequence_context().await;
+        let global_seq_ctx = Arc::new(global_seq_ctx);
         let wal_cfg = shared_options.wal.clone();
         let core = Self {
-            version_set,
+            options: shared_options,
             global_ctx: summary.global_context(),
+            global_seq_ctx: global_seq_ctx.clone(),
+            version_set,
+            meta_manager,
             runtime,
             wal_sender,
-            options: shared_options,
             flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
+            global_seq_task_sender: global_seq_task_sender.clone(),
             close_sender,
-            meta_manager,
         };
 
         let wal_manager = core.recover_wal().await;
@@ -132,6 +143,11 @@ impl TsKv {
         )
         .await;
         core.run_summary_job(summary, summary_task_receiver);
+        context::run_global_context_job(
+            core.runtime.clone(),
+            global_seq_task_receiver,
+            global_seq_ctx,
+        );
         Ok(core)
     }
 
@@ -150,6 +166,7 @@ impl TsKv {
         meta: MetaRef,
         opt: Arc<Options>,
         flush_task_sender: UnboundedSender<FlushReq>,
+        global_seq_task_sender: UnboundedSender<GlobalSequenceTask>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -159,11 +176,13 @@ impl TsKv {
         }
         let summary_file = file_utils::make_summary_file(&summary_dir, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(meta, opt.clone(), flush_task_sender)
+            Summary::recover(meta, opt.clone(), flush_task_sender, global_seq_task_sender)
                 .await
                 .unwrap()
         } else {
-            Summary::new(opt.clone(), flush_task_sender).await.unwrap()
+            Summary::new(opt.clone(), global_seq_task_sender)
+                .await
+                .unwrap()
         };
         let version_set = summary.version_set();
 
@@ -171,7 +190,7 @@ impl TsKv {
     }
 
     async fn recover_wal(&self) -> WalManager {
-        let wal_manager = WalManager::open(self.options.wal.clone(), self.version_set.clone())
+        let wal_manager = WalManager::open(self.options.wal.clone(), self.global_seq_ctx.clone())
             .await
             .unwrap();
 

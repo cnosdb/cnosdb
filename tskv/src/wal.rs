@@ -28,26 +28,28 @@ use std::{
     sync::Arc,
 };
 
-use models::auth::user::{ROOT, ROOT_PWD};
-use models::codec::Encoding;
+use models::{
+    auth::user::{ROOT, ROOT_PWD},
+    codec::Encoding,
+};
 use protos::kv_service::{Meta, WritePointsRpcRequest};
 use snafu::ResultExt;
 use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn};
 
-use crate::byte_utils::{decode_be_u32, decode_be_u64};
-use crate::file_system::file_manager::{self, FileManager};
 use crate::{
-    byte_utils,
-    context::GlobalContext,
+    byte_utils::{decode_be_u32, decode_be_u64},
+    context::{GlobalContext, GlobalSequenceContext},
+    engine,
     error::{self, Error, Result},
+    file_system::file_manager::{self, FileManager},
     file_utils,
     kv_option::WalOptions,
     record_file::{self, Record, RecordDataType, RecordDataVersion},
     tsm::{codec::get_str_codec, DecodeSnafu, EncodeSnafu},
     version_set::VersionSet,
+    TseriesFamilyId,
 };
-use crate::{engine, TseriesFamilyId};
 
 const ENTRY_TYPE_LEN: usize = 1;
 const ENTRY_SEQUENCE_LEN: usize = 8;
@@ -237,8 +239,7 @@ impl WalWriter {
 
 pub struct WalManager {
     config: Arc<WalOptions>,
-    version_set: Arc<RwLock<VersionSet>>,
-
+    global_seq_ctx: Arc<GlobalSequenceContext>,
     current_dir: PathBuf,
     current_file: WalWriter,
     old_file_max_sequence: HashMap<u64, u64>,
@@ -251,7 +252,7 @@ unsafe impl Sync for WalManager {}
 impl WalManager {
     pub async fn open(
         config: Arc<WalOptions>,
-        version_set: Arc<RwLock<VersionSet>>,
+        global_seq_ctx: Arc<GlobalSequenceContext>,
     ) -> Result<Self> {
         if !file_manager::try_exists(&config.path) {
             std::fs::create_dir_all(&config.path).unwrap();
@@ -292,7 +293,7 @@ impl WalManager {
         let current_dir = config.path.clone();
         Ok(WalManager {
             config,
-            version_set,
+            global_seq_ctx,
             current_dir,
             current_file,
             old_file_max_sequence,
@@ -341,7 +342,7 @@ impl WalManager {
     }
 
     async fn check_to_delete(&mut self) {
-        let min_seq = self.version_set.read().await.min_seq_no();
+        let min_seq = self.global_seq_ctx.min_seq();
         let mut old_files_to_delete: Vec<u64> = Vec::new();
         for (old_file_id, old_file_max_seq) in self.old_file_max_sequence.iter() {
             if *old_file_max_seq < min_seq {
@@ -493,13 +494,13 @@ impl WalReader {
 
     /// Parses wal footer, returns sequence range.
     pub fn parse_footer(footer: [u8; record_file::FILE_FOOTER_LEN]) -> Option<(u64, u64)> {
-        let magic_number = byte_utils::decode_be_u32(&footer[0..4]);
+        let magic_number = decode_be_u32(&footer[0..4]);
         if magic_number != FOOTER_MAGIC_NUMBER {
             // There is no footer in wal file.
             return None;
         }
-        let min_sequence = byte_utils::decode_be_u64(&footer[16..24]);
-        let max_sequence = byte_utils::decode_be_u64(&footer[24..32]);
+        let min_sequence = decode_be_u64(&footer[16..24]);
+        let max_sequence = decode_be_u64(&footer[24..32]);
         Some((min_sequence, max_sequence))
     }
 
@@ -564,16 +565,20 @@ mod test {
     use protos::{models as fb_models, models_helper};
     use trace::{info, init_default_global_tracing};
 
-    use crate::engine::Engine;
-    use crate::file_system::file_manager::{self, list_file_names, FileManager};
-    use crate::tsm::codec::get_str_codec;
     use crate::{
-        file_system::FileCursor,
+        context::GlobalSequenceContext,
+        engine::Engine,
+        file_system::{
+            file_manager::{self, list_file_names, FileManager},
+            FileCursor,
+        },
+        kv_option,
         kv_option::WalOptions,
+        tsm::codec::get_str_codec,
         version_set::VersionSet,
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
+        Error, Options, Result, TsKv,
     };
-    use crate::{kv_option, Error, Options, Result, TsKv};
 
     fn random_write_data() -> Vec<u8> {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -655,9 +660,7 @@ mod test {
         let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
-        let vs = VersionSet::empty(Arc::new(options));
-
-        let mut mgr = WalManager::open(Arc::new(wal_config), Arc::new(RwLock::new(vs)))
+        let mut mgr = WalManager::open(Arc::new(wal_config), GlobalSequenceContext::empty())
             .await
             .unwrap();
         let mut data_vec = Vec::new();
@@ -690,17 +693,16 @@ mod test {
         let tenant = Arc::new(b"cnosdb".to_vec());
         let database = "test_db".to_string();
         let table = "test_table".to_string();
-        let version_set_min_seq_no = 6;
+        let min_seq_no = 6;
 
-        let vs = Arc::new(RwLock::new(VersionSet::empty(Arc::new(options))));
-        vs.write().await.set_min_seq_no(version_set_min_seq_no);
-        let mut mgr = WalManager::open(Arc::new(wal_config), vs.clone())
-            .await
-            .unwrap();
+        let gcs = GlobalSequenceContext::empty();
+        gcs.set_min_seq(min_seq_no);
+
+        let mut mgr = WalManager::open(Arc::new(wal_config), gcs).await.unwrap();
         let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
         for seq in 1..11 {
             let data = Arc::new(format!("{}", seq).as_bytes().to_vec());
-            if seq >= version_set_min_seq_no {
+            if seq >= min_seq_no {
                 // Data in file_id taat less than version_set_min_seq_no will be deleted.
                 data_vec.push(data.clone());
             }
@@ -728,8 +730,7 @@ mod test {
         let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
-        let vs = VersionSet::empty(Arc::new(options));
-        let mut mgr = WalManager::open(Arc::new(wal_config), Arc::new(RwLock::new(vs)))
+        let mut mgr = WalManager::open(Arc::new(wal_config), GlobalSequenceContext::empty())
             .await
             .unwrap();
         let coder = get_str_codec(Encoding::Zstd);
@@ -771,11 +772,10 @@ mod test {
         let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
-        let vs = VersionSet::empty(Arc::new(options));
         let mut mgr = rt
             .block_on(WalManager::open(
                 Arc::new(wal_config),
-                Arc::new(RwLock::new(vs)),
+                GlobalSequenceContext::empty(),
             ))
             .unwrap();
         let coder = get_str_codec(Encoding::Zstd);

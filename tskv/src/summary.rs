@@ -1,4 +1,5 @@
 use std::cmp::max;
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::fs::{remove_file, rename};
 use std::path::Path;
@@ -20,7 +21,7 @@ use crate::compaction::FlushReq;
 use crate::file_system::file_manager::try_exists;
 use crate::{
     byte_utils,
-    context::GlobalContext,
+    context::{GlobalContext, GlobalSequenceTask},
     error::{Error, Result},
     file_utils,
     kv_option::{Options, StorageOptions},
@@ -262,13 +263,14 @@ pub struct Summary {
     ctx: Arc<GlobalContext>,
     writer: Writer,
     opt: Arc<Options>,
+    sequence_task_sender: UnboundedSender<GlobalSequenceTask>,
 }
 
 impl Summary {
     // create a new summary file
     pub async fn new(
         opt: Arc<Options>,
-        flush_task_sender: UnboundedSender<FlushReq>,
+        sequence_task_sender: UnboundedSender<GlobalSequenceTask>,
     ) -> Result<Self> {
         let db = VersionEdit::default();
         let path = file_utils::make_summary_file(opt.storage.summary_dir(), 0);
@@ -289,6 +291,7 @@ impl Summary {
             ctx: Arc::new(GlobalContext::default()),
             writer: w,
             opt,
+            sequence_task_sender,
         })
     }
 
@@ -296,6 +299,7 @@ impl Summary {
         meta: MetaRef,
         opt: Arc<Options>,
         flush_task_sender: UnboundedSender<FlushReq>,
+        sequence_task_sender: UnboundedSender<GlobalSequenceTask>,
     ) -> Result<Self> {
         let summary_path = opt.storage.summary_dir();
         let path = file_utils::make_summary_file(&summary_path, 0);
@@ -314,6 +318,7 @@ impl Summary {
             ctx,
             writer,
             opt,
+            sequence_task_sender,
         })
     }
 
@@ -418,9 +423,12 @@ impl Summary {
         Ok(())
     }
 
+    /// Write VersionEdits into summary file, generate and then apply new Versions for TseriesFamilies.
     async fn write_summary(&mut self, eds: Vec<VersionEdit>) -> Result<()> {
+        // Write VersionEdits into summary file and join VersionEdits by Database/TseriesFamilyId.
         let mut tsf_version_edits: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
         let mut tsf_min_seq: HashMap<TseriesFamilyId, u64> = HashMap::new();
+        let mut del_tsf: HashSet<TseriesFamilyId> = HashSet::new();
         for edit in eds.into_iter() {
             let buf = edit.encode()?;
             let _ = self
@@ -440,8 +448,13 @@ impl Summary {
             if edit.has_seq_no {
                 tsf_min_seq.insert(edit.tsf_id, edit.seq_no);
             }
+            if edit.del_tsf {
+                del_tsf.insert(edit.tsf_id);
+            }
         }
-        let mut version_set = self.version_set.write().await;
+
+        // For each TsereiesFamily - VersionEdits，generate a new Version and then apply it.
+        let version_set = self.version_set.read().await;
         for (tsf_id, version_edits) in tsf_version_edits {
             let min_seq = tsf_min_seq.get(&tsf_id);
             if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
@@ -452,7 +465,15 @@ impl Summary {
                 tsf.write().new_version(new_version);
             }
         }
-        version_set.update_min_seq_no().await;
+        drop(version_set);
+
+        // Send a GlobalSequenceTask to get a global min_sequence
+        if let Err(e) = self.sequence_task_sender.send(GlobalSequenceTask {
+            del_ts_family: del_tsf,
+            ts_family_min_seq: tsf_min_seq,
+        }) {
+            error!("Failed to send AfterSummaryTask");
+        }
 
         Ok(())
     }
@@ -676,6 +697,7 @@ mod test {
     use meta::meta_client::{MetaRef, RemoteMetaManager};
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
 
+    use crate::context::GlobalSequenceTask;
     use crate::file_system::file_manager;
     use crate::summary::SummaryTask;
     use crate::tseries_family::LevelInfo;
@@ -737,12 +759,22 @@ mod test {
             }
             println!("Mock flush job finished (test_summary).");
         });
+        let (global_seq_task_sender, mut global_seq_task_receiver) =
+            mpsc::unbounded_channel::<GlobalSequenceTask>();
+        let global_seq_job_mock = tokio::spawn(async move {
+            println!("Mock global sequence job started (test_summary).");
+            while let Some(t) = global_seq_task_receiver.recv().await {
+                // Do nothing
+            }
+            println!("Mock global sequence job finished (test_summary).");
+        });
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_summary_recover");
         test_summary_recover(
             opt.clone(),
             flush_task_sender.clone(),
+            global_seq_task_sender.clone(),
             config.cluster.clone(),
         )
         .await;
@@ -752,6 +784,7 @@ mod test {
         test_tsf_num_recover(
             opt.clone(),
             flush_task_sender.clone(),
+            global_seq_task_sender.clone(),
             config.cluster.clone(),
         )
         .await;
@@ -762,6 +795,7 @@ mod test {
             opt.clone(),
             summary_task_sender.clone(),
             flush_task_sender.clone(),
+            global_seq_task_sender.clone(),
             config.cluster.clone(),
         )
         .await;
@@ -772,6 +806,7 @@ mod test {
             opt,
             summary_task_sender,
             flush_task_sender,
+            global_seq_task_sender,
             config.cluster.clone(),
         )
         .await;
@@ -782,6 +817,7 @@ mod test {
     async fn test_summary_recover(
         opt: Arc<Options>,
         flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        global_seq_task_sender: mpsc::UnboundedSender<GlobalSequenceTask>,
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
@@ -792,19 +828,25 @@ mod test {
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
-        let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
+        let mut summary = Summary::new(opt.clone(), global_seq_task_sender.clone())
             .await
             .unwrap();
         let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender)
-            .await
-            .unwrap();
+        let summary = Summary::recover(
+            meta_manager,
+            opt.clone(),
+            flush_task_sender,
+            global_seq_task_sender,
+        )
+        .await
+        .unwrap();
     }
 
     async fn test_tsf_num_recover(
         opt: Arc<Options>,
         flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        global_seq_task_sender: mpsc::UnboundedSender<GlobalSequenceTask>,
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
@@ -815,23 +857,32 @@ mod test {
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
-        let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
+        let mut summary = Summary::new(opt.clone(), global_seq_task_sender.clone())
             .await
             .unwrap();
 
         let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let mut summary =
-            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
-                .await
-                .unwrap();
+        let mut summary = Summary::recover(
+            meta_manager.clone(),
+            opt.clone(),
+            flush_task_sender.clone(),
+            global_seq_task_sender.clone(),
+        )
+        .await
+        .unwrap();
         assert_eq!(summary.version_set.read().await.tsf_num().await, 1);
         assert_eq!(summary.ctx.tsfamily_id(), 100);
         let edit = VersionEdit::new_del_vnode(100);
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender.clone())
-            .await
-            .unwrap();
+        let summary = Summary::recover(
+            meta_manager,
+            opt.clone(),
+            flush_task_sender.clone(),
+            global_seq_task_sender.clone(),
+        )
+        .await
+        .unwrap();
         assert_eq!(summary.version_set.read().await.tsf_num().await, 0);
     }
 
@@ -840,6 +891,7 @@ mod test {
         opt: Arc<Options>,
         summary_task_sender: mpsc::UnboundedSender<SummaryTask>,
         flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        global_seq_task_sender: mpsc::UnboundedSender<GlobalSequenceTask>,
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
@@ -851,7 +903,7 @@ mod test {
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
-        let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
+        let mut summary = Summary::new(opt.clone(), global_seq_task_sender.clone())
             .await
             .unwrap();
 
@@ -887,10 +939,14 @@ mod test {
         }
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary =
-            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
-                .await
-                .unwrap();
+        let summary = Summary::recover(
+            meta_manager.clone(),
+            opt.clone(),
+            flush_task_sender.clone(),
+            global_seq_task_sender.clone(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(summary.version_set.read().await.tsf_num().await, 20);
     }
@@ -899,6 +955,7 @@ mod test {
         opt: Arc<Options>,
         summary_task_sender: mpsc::UnboundedSender<SummaryTask>,
         flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        global_seq_task_sender: mpsc::UnboundedSender<GlobalSequenceTask>,
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
@@ -910,7 +967,7 @@ mod test {
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
-        let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
+        let mut summary = Summary::new(opt.clone(), global_seq_task_sender.clone())
             .await
             .unwrap();
 
@@ -972,10 +1029,14 @@ mod test {
 
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary =
-            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
-                .await
-                .unwrap();
+        let summary = Summary::recover(
+            meta_manager.clone(),
+            opt.clone(),
+            flush_task_sender.clone(),
+            global_seq_task_sender.clone(),
+        )
+        .await
+        .unwrap();
 
         let vs = summary.version_set.read().await;
         let tsf = vs.get_tsfamily_by_tf_id(10).await.unwrap();
