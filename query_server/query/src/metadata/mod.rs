@@ -1,6 +1,7 @@
 mod cluster_schema_provider;
 mod information_schema_provider;
 
+use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::sql::ResolvedTableReference;
@@ -9,7 +10,8 @@ use datafusion::{
     logical_expr::{AggregateUDF, ScalarUDF, TableSource},
     sql::{planner::ContextProvider, TableReference},
 };
-use meta::meta_client::MetaClientRef;
+use futures::executor::block_on;
+use meta::MetaClientRef;
 use models::auth::user::UserDesc;
 use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
 
@@ -37,9 +39,10 @@ pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
 /// remote meta
 pub struct RemoteCatalogMeta {}
 
+#[async_trait]
 pub trait ContextProviderExtension: ContextProvider {
-    fn get_user(&self, name: &str) -> Result<UserDesc, MetaError>;
-    fn get_tenant(&self, name: &str) -> Result<Tenant, MetaError>;
+    async fn get_user(&self, name: &str) -> Result<UserDesc, MetaError>;
+    async fn get_tenant(&self, name: &str) -> Result<Tenant, MetaError>;
     /// Clear the access record and return the content before clearing
     fn reset_access_databases(&self) -> DatabaseSet;
     fn get_table_source(
@@ -74,10 +77,10 @@ impl MetadataProvider {
         }
     }
 
-    fn build_df_data_source(
+    async fn build_df_data_source(
         &self,
         client: MetaClientRef,
-        name: ResolvedTableReference,
+        name: ResolvedTableReference<'_>,
     ) -> datafusion::common::Result<Arc<dyn TableSource>> {
         let tenant_name = name.catalog;
         let database_name = name.schema;
@@ -88,6 +91,7 @@ impl MetadataProvider {
             let mem_table = self
                 .information_schema_provider
                 .table(self.session.user(), table_name, client)
+                .await
                 .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
             return Ok(provider_as_source(mem_table));
@@ -100,6 +104,7 @@ impl MetadataProvider {
             let mem_table = self
                 .cluster_schema_provider
                 .table(self.session.user(), table_name, self.coord.meta_manager())
+                .await
                 .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
             return Ok(provider_as_source(mem_table));
@@ -135,22 +140,25 @@ impl MetadataProvider {
     }
 }
 
+#[async_trait::async_trait]
 impl ContextProviderExtension for MetadataProvider {
-    fn get_user(&self, name: &str) -> Result<UserDesc, MetaError> {
+    async fn get_user(&self, name: &str) -> Result<UserDesc, MetaError> {
         self.coord
             .meta_manager()
             .user_manager()
-            .user(name)?
+            .user(name)
+            .await?
             .ok_or_else(|| MetaError::UserNotFound {
                 user: name.to_string(),
             })
     }
 
-    fn get_tenant(&self, name: &str) -> Result<Tenant, MetaError> {
+    async fn get_tenant(&self, name: &str) -> Result<Tenant, MetaError> {
         self.coord
             .meta_manager()
             .tenant_manager()
-            .tenant(name)?
+            .tenant(name)
+            .await?
             .ok_or_else(|| MetaError::TenantNotFound {
                 tenant: name.to_string(),
             })
@@ -186,18 +194,19 @@ impl ContextProviderExtension for MetadataProvider {
             .write()
             .push_table(database_name, table_name);
 
-        let client = self
-            .coord
-            .meta_manager()
-            .tenant_manager()
-            .tenant_meta(name.catalog)
-            .ok_or_else(|| {
-                DataFusionError::External(Box::new(MetaError::TenantNotFound {
-                    tenant: name.catalog.to_string(),
-                }))
-            })?;
+        let client = block_on(
+            self.coord
+                .meta_manager()
+                .tenant_manager()
+                .tenant_meta(name.catalog),
+        )
+        .ok_or_else(|| {
+            DataFusionError::External(Box::new(MetaError::TenantNotFound {
+                tenant: name.catalog.to_string(),
+            }))
+        })?;
 
-        let df_table_source = self.build_df_data_source(client, name)?;
+        let df_table_source = block_on(self.build_df_data_source(client, name))?;
 
         Ok(TableSourceAdapter::new(
             df_table_source,

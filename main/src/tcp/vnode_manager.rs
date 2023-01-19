@@ -15,16 +15,12 @@ use trace::{error, info};
 
 pub struct VnodeManager {
     node_id: u64,
-    meta: meta::meta_client::MetaRef,
+    meta: meta::MetaRef,
     kv_inst: tskv::engine::EngineRef,
 }
 
 impl VnodeManager {
-    pub fn new(
-        meta: meta::meta_client::MetaRef,
-        kv_inst: tskv::engine::EngineRef,
-        node_id: u64,
-    ) -> Self {
+    pub fn new(meta: meta::MetaRef, kv_inst: tskv::engine::EngineRef, node_id: u64) -> Self {
         Self {
             node_id,
             meta,
@@ -41,14 +37,14 @@ impl VnodeManager {
 
     pub async fn copy_vnode(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
         let admin_meta = self.meta.admin_meta();
-        let meta_client = self.meta.tenant_manager().tenant_meta(tenant).ok_or(
+        let meta_client = self.meta.tenant_manager().tenant_meta(tenant).await.ok_or(
             CoordinatorError::TenantNotFound {
                 name: tenant.to_string(),
             },
         )?;
 
-        let new_id = admin_meta.retain_id(1)?;
-        let all_info = self.get_vnode_all_info(tenant, vnode_id)?;
+        let new_id = admin_meta.retain_id(1).await?;
+        let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
         info!(
             "Copy Vnode:{} from: {} to: {}; new id: {}",
             vnode_id, all_info.node_id, self.node_id, new_id
@@ -69,13 +65,15 @@ impl VnodeManager {
             id: new_id,
             node_id: self.node_id,
         }];
-        meta_client.update_replication_set(
-            &all_info.db_name,
-            all_info.bucket_id,
-            all_info.repl_set_id,
-            &[],
-            &add_repl,
-        )?;
+        meta_client
+            .update_replication_set(
+                &all_info.db_name,
+                all_info.bucket_id,
+                all_info.repl_set_id,
+                &[],
+                &add_repl,
+            )
+            .await?;
 
         let ve = self.fetch_vnode_summary(&all_info, &mut conn).await?;
         self.kv_inst
@@ -88,10 +86,10 @@ impl VnodeManager {
     }
 
     pub async fn drop_vnode(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
-        let all_info = self.get_vnode_all_info(tenant, vnode_id)?;
+        let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
 
         if all_info.node_id == self.node_id {
-            let meta_client = self.meta.tenant_manager().tenant_meta(tenant).ok_or(
+            let meta_client = self.meta.tenant_manager().tenant_meta(tenant).await.ok_or(
                 CoordinatorError::TenantNotFound {
                     name: tenant.to_string(),
                 },
@@ -105,13 +103,15 @@ impl VnodeManager {
                 id: vnode_id,
                 node_id: all_info.node_id,
             }];
-            meta_client.update_replication_set(
-                &all_info.db_name,
-                all_info.bucket_id,
-                all_info.repl_set_id,
-                &del_repl,
-                &[],
-            )?;
+            meta_client
+                .update_replication_set(
+                    &all_info.db_name,
+                    all_info.bucket_id,
+                    all_info.repl_set_id,
+                    &del_repl,
+                    &[],
+                )
+                .await?;
         } else {
             let admin_meta = self.meta.admin_meta();
             let mut conn = admin_meta.get_node_conn(all_info.node_id).await?;
@@ -276,8 +276,12 @@ impl VnodeManager {
         Ok(())
     }
 
-    fn get_vnode_all_info(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<VnodeAllInfo> {
-        match self.meta.tenant_manager().tenant_meta(tenant) {
+    async fn get_vnode_all_info(
+        &self,
+        tenant: &str,
+        vnode_id: u32,
+    ) -> CoordinatorResult<VnodeAllInfo> {
+        match self.meta.tenant_manager().tenant_meta(tenant).await {
             Some(meta_client) => match meta_client.get_vnode_all_info(vnode_id) {
                 Some(all_info) => Ok(all_info),
                 None => Err(CoordinatorError::VnodeNotFound { id: vnode_id }),

@@ -33,6 +33,7 @@ impl DDLDefinitionTask for AlterTenantTask {
 
         let meta = tenant_manager
             .tenant_meta(tenant_name)
+            .await
             .ok_or_else(|| QueryError::Meta {
                 source: MetaError::TenantNotFound {
                     tenant: tenant_name.to_string(),
@@ -55,7 +56,7 @@ impl DDLDefinitionTask for AlterTenantTask {
                     "Add user {} to tenant {} with role {:?}",
                     user_id, tenant_name, role
                 );
-                meta.add_member_with_role(*user_id, role.clone())?;
+                meta.add_member_with_role(*user_id, role.clone()).await?;
                 // .context(MetaSnafu)?;
             }
             AlterTenantAction::SetUser(AlterTenantSetUser { user_id, role }) => {
@@ -73,7 +74,7 @@ impl DDLDefinitionTask for AlterTenantTask {
                     "Reasign role {:?} of user {} in tenant {}",
                     role, user_id, tenant_name
                 );
-                meta.reasign_member_role(*user_id, role.clone())?;
+                meta.reasign_member_role(*user_id, role.clone()).await?;
                 // .context(MetaSnafu)?;
             }
             AlterTenantAction::RemoveUser(user_id) => {
@@ -86,7 +87,7 @@ impl DDLDefinitionTask for AlterTenantTask {
                 //     tenant_id: Oid
                 // ) -> Result<()>;
                 debug!("Remove user {} from tenant {}", user_id, tenant_name);
-                meta.remove_member(*user_id)?;
+                meta.remove_member(*user_id).await?;
                 // .context(MetaSnafu)?;
             }
             AlterTenantAction::Set(options) => {
@@ -99,7 +100,9 @@ impl DDLDefinitionTask for AlterTenantTask {
                 //     options: TenantOptions
                 // ) -> Result<()>;
                 debug!("Alter tenant {} with options [{}]", tenant_name, options);
-                tenant_manager.alter_tenant(tenant_name, *options.clone())?;
+                tenant_manager
+                    .alter_tenant(tenant_name, *options.clone())
+                    .await?;
             }
         }
 

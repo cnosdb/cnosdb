@@ -53,6 +53,7 @@ impl DDLDefinitionTask for CreateExternalTableTask {
             .meta
             .tenant_manager()
             .tenant_meta(table_name.catalog)
+            .await
             .ok_or(MetaError::TenantNotFound {
                 tenant: table_name.catalog.to_string(),
             })?;
@@ -98,12 +99,15 @@ async fn create_exernal_table(
         .meta
         .tenant_manager()
         .tenant_meta(tenant)
+        .await
         .ok_or(MetaError::TenantNotFound {
             tenant: tenant.to_string(),
         })?;
     // .context(MetaSnafu)?;
 
-    Ok(client.create_table(&TableSchema::ExternalTableSchema(schema))?)
+    Ok(client
+        .create_table(&TableSchema::ExternalTableSchema(schema))
+        .await?)
     // .context(MetaSnafu)
 }
 

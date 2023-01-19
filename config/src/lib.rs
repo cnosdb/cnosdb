@@ -176,6 +176,7 @@ pub struct ClusterConfig {
     pub node_id: u64,
     pub name: String,
     pub meta: String,
+    pub tenant: String,
 
     pub http_server: String,
     pub grpc_server: String,
@@ -190,6 +191,9 @@ impl ClusterConfig {
         }
         if let Ok(meta) = std::env::var("CNOSDB_CLUSTER_META") {
             self.meta = meta;
+        }
+        if let Ok(tenant) = std::env::var("CNOSDB_TENANT_NAME") {
+            self.tenant = tenant;
         }
         if let Ok(id) = std::env::var("CNOSDB_NODE_ID") {
             self.node_id = id.parse::<u64>().unwrap();
@@ -278,6 +282,7 @@ path = 'data/log'
 node_id = 100
 name = 'cluster_xxx'
 meta = '127.0.0.1,22001'
+tenant = ''
 
 flight_rpc_server = '127.0.0.1:31006'
 http_server = '127.0.0.1:31007'

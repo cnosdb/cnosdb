@@ -24,7 +24,7 @@ use crate::{
     errors::{CoordinatorError, CoordinatorResult},
 };
 
-use meta::meta_client::MetaRef;
+use meta::MetaRef;
 
 #[derive(Debug)]
 pub struct ReaderIterator {
@@ -68,7 +68,7 @@ impl QueryExecutor {
     }
     pub async fn execute(&self) -> CoordinatorResult<()> {
         let mut routines = vec![];
-        let mapping = self.map_vnode()?;
+        let mapping = self.map_vnode().await?;
         for (node_id, vnodes) in mapping.iter() {
             info!(
                 "execute select on node {}, vnode list: {:?}",
@@ -135,8 +135,11 @@ impl QueryExecutor {
 
                 CoordinatorTcpCmd::RecordBatchResponseCmd(rsp) => {
                     let tenant = self.option.tenant.clone();
-                    if let Some(meta_client) =
-                        self.meta_manager.tenant_manager().tenant_meta(&tenant)
+                    if let Some(meta_client) = self
+                        .meta_manager
+                        .tenant_manager()
+                        .tenant_meta(&tenant)
+                        .await
                     {
                         meta_client
                             .limiter()
@@ -182,6 +185,7 @@ impl QueryExecutor {
                         .meta_manager
                         .tenant_manager()
                         .tenant_meta(tenant.as_str())
+                        .await
                     {
                         meta_client
                             .limiter()
@@ -201,11 +205,12 @@ impl QueryExecutor {
         Ok(())
     }
 
-    fn map_vnode(&self) -> CoordinatorResult<HashMap<u64, Vec<VnodeInfo>>> {
+    async fn map_vnode(&self) -> CoordinatorResult<HashMap<u64, Vec<VnodeInfo>>> {
         let meta = self
             .meta_manager
             .tenant_manager()
             .tenant_meta(&self.option.tenant)
+            .await
             .ok_or(CoordinatorError::TenantNotFound {
                 name: self.option.tenant.clone(),
             })?;

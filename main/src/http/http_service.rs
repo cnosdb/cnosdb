@@ -27,7 +27,7 @@ use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
 use line_protocol::{line_protocol_to_lines, Line};
-use meta::meta_client::MetaClientRef;
+use meta::MetaClientRef;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
 use models::consistency_level::ConsistencyLevel;
 use models::error_code::{ErrorCode, UnknownCode, UnknownCodeWithMessage};
@@ -163,8 +163,9 @@ impl HttpService {
                     );
 
                     // Parse req、header and param to construct query request
-                    let query =
-                        construct_query(req, &header, param, dbms.clone()).map_err(|e| {
+                    let query = construct_query(req, &header, param, dbms.clone())
+                        .await
+                        .map_err(|e| {
                             sample_query_read_duration("", "", false, 0.0);
                             reject::custom(e)
                         })?;
@@ -253,7 +254,7 @@ impl HttpService {
             .and_then(|header: Header, coord: CoordinatorRef| async move {
                 let tenant = DEFAULT_CATALOG.to_string();
 
-                let meta_client = match coord.tenant_meta(&tenant) {
+                let meta_client = match coord.tenant_meta(&tenant).await {
                     Some(client) => client,
                     None => {
                         return Err(reject::custom(HttpError::Meta {
@@ -308,6 +309,7 @@ impl HttpService {
                     let tenant = param.tenant;
                     let user = dbms
                         .authenticate(&user_info, tenant.as_deref())
+                        .await
                         .map_err(|e| reject::custom(HttpError::from(e)))?;
                     let context = ContextBuilder::new(user)
                         .with_tenant(tenant)
@@ -447,7 +449,7 @@ fn parse_lines_to_points<'a>(db: &'a str, lines: &'a mut [Line]) -> Result<Vec<u
     Ok(fbb.finished_data().to_vec())
 }
 
-fn construct_query(
+async fn construct_query(
     req: Bytes,
     header: &Header,
     param: SqlParam,
@@ -458,6 +460,7 @@ fn construct_query(
     let tenant = param.tenant;
     let user = dbms
         .authenticate(&user_info, tenant.as_deref())
+        .await
         .context(QuerySnafu)?;
 
     let context = ContextBuilder::new(user)

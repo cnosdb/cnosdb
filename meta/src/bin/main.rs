@@ -69,7 +69,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
             .service(api::write)
             .service(api::read)
             .service(api::debug)
-            .service(api::watch_tenant)
+            .service(api::watch)
     })
     .keep_alive(Duration::from_secs(5));
 

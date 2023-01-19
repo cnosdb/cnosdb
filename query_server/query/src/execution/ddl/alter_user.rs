@@ -40,7 +40,7 @@ impl DDLDefinitionTask for AlterUserTask {
                 //     new_name: String
                 // ) -> Result<()>;
                 debug!("Rename user {} to {}", user_name, new_name);
-                meta.rename_user(user_name, new_name.to_string())?;
+                meta.rename_user(user_name, new_name.to_string()).await?;
             }
             AlterUserAction::Set(options) => {
                 // TODO 修改用户的信息
@@ -52,7 +52,7 @@ impl DDLDefinitionTask for AlterUserTask {
                 //     options: UserOptions
                 // ) -> Result<()>;
                 debug!("Alter user {} with options [{}]", user_name, options);
-                meta.alter_user(user_name, options.clone())?;
+                meta.alter_user(user_name, options.clone()).await?;
                 // .context(MetaSnafu)?;
             }
         }

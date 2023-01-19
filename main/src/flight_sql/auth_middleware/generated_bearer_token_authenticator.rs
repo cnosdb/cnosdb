@@ -46,14 +46,15 @@ where
     }
 }
 
+#[async_trait::async_trait]
 impl<T> CallHeaderAuthenticator for GeneratedBearerTokenAuthenticator<T>
 where
-    T: CallHeaderAuthenticator,
+    T: CallHeaderAuthenticator + std::marker::Sync + std::marker::Send,
     T: Clone,
 {
     type AuthResult = GeneratedBearerTokenAuthResult;
 
-    fn authenticate(&self, req_headers: &MetadataMap) -> Result<Self::AuthResult, Status> {
+    async fn authenticate(&self, req_headers: &MetadataMap) -> Result<Self::AuthResult, Status> {
         debug!("authenticate, request headers: {:?}", req_headers);
 
         // Check if headers contain a bearer token and if so, validate the token.
@@ -75,7 +76,7 @@ where
         debug!("bearer_token not exists, delegate to initial_authenticator");
 
         // Delegate to the basic auth handler to do the validation.
-        let auth_result = self.initial_authenticator.authenticate(req_headers)?;
+        let auth_result = self.initial_authenticator.authenticate(req_headers).await?;
         self.process_auth_result(auth_result)
     }
 }
@@ -147,10 +148,11 @@ mod test {
     #[derive(Clone)]
     struct CallHeaderAuthenticatorMock {}
 
+    #[async_trait::async_trait]
     impl CallHeaderAuthenticator for CallHeaderAuthenticatorMock {
         type AuthResult = CommonAuthResult;
 
-        fn authenticate(
+        async fn authenticate(
             &self,
             req_headers: &MetadataMap,
         ) -> Result<Self::AuthResult, tonic::Status> {
@@ -166,8 +168,8 @@ mod test {
         }
     }
 
-    #[test]
-    fn test() {
+    #[tokio::test]
+    async fn test() {
         let instance = Arc::new(DatabaseManagerSystemMock {});
 
         let authenticator = GeneratedBearerTokenAuthenticator::new(CallHeaderAuthenticatorMock {});
@@ -180,6 +182,7 @@ mod test {
 
         authenticator
             .authenticate(&req_headers)
+            .await
             .expect("authenticate")
             .append_to_outgoing_headers(&mut req_headers)
             .expect("append_to_outgoing_headers");

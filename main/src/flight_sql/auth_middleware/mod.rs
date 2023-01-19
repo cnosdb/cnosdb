@@ -1,16 +1,18 @@
 pub mod basic_call_header_authenticator;
 pub mod generated_bearer_token_authenticator;
 
+use async_trait::async_trait;
 use models::auth::user::{User, UserInfo};
 use tonic::{metadata::MetadataMap, service::Interceptor, Status};
 
 /// Interface for Server side authentication handlers.
+#[async_trait]
 pub trait CallHeaderAuthenticator {
     type AuthResult: AuthResult + Send + Sync;
     /// Implementations of CallHeaderAuthenticator should
     /// take care not to provide leak confidential details
     /// for security reasons when reporting errors back to clients.
-    fn authenticate(&self, req_headers: &MetadataMap) -> Result<Self::AuthResult, Status>;
+    async fn authenticate(&self, req_headers: &MetadataMap) -> Result<Self::AuthResult, Status>;
 }
 
 pub trait AuthResult {

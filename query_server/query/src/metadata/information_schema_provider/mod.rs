@@ -3,8 +3,9 @@ mod factory;
 
 use std::{collections::HashMap, sync::Arc};
 
+use async_trait::async_trait;
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, meta_client::MetaClientRef};
+use meta::{error::MetaError, MetaClientRef};
 use models::auth::user::User;
 
 use crate::dispatcher::query_tracker::QueryTracker;
@@ -56,14 +57,16 @@ impl InformationSchemaProvider {
         self.table_factories.keys().cloned().collect()
     }
 
-    pub fn table(
+    pub async fn table(
         &self,
         user: &User,
         name: &str,
         metadata: MetaClientRef,
     ) -> std::result::Result<Arc<MemTable>, MetaError> {
         if let Some(f) = self.table_factories.get(name.to_ascii_lowercase().as_str()) {
-            return f.create(user, metadata.clone(), self.query_tracker.clone());
+            return f
+                .create(user, metadata.clone(), self.query_tracker.clone())
+                .await;
         }
 
         Err(MetaError::TableNotFound {
@@ -74,9 +77,10 @@ impl InformationSchemaProvider {
 
 type BoxSystemTableFactory = Box<dyn InformationSchemaTableFactory + Send + Sync>;
 
+#[async_trait]
 pub trait InformationSchemaTableFactory {
     fn table_name(&self) -> &str;
-    fn create(
+    async fn create(
         &self,
         user: &User,
         metadata: MetaClientRef,

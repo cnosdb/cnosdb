@@ -3,7 +3,7 @@ use std::{
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
 
-use meta::meta_client::{MetaClientRef, MetaRef};
+use meta::MetaRef;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use parking_lot::RwLock as SyncRwLock;
 use snafu::ResultExt;
@@ -51,20 +51,16 @@ impl VersionSet {
             let owner = ver.database().to_string();
             let (tenant, database) = split_owner(&owner);
 
-            let schema = match meta.tenant_manager().tenant_meta(tenant) {
+            let schema = match meta.tenant_manager().tenant_meta(tenant).await {
                 None => DatabaseSchema::new(tenant, database),
                 Some(client) => match client.get_db_schema(database).context(MetaSnafu)? {
                     None => DatabaseSchema::new(tenant, database),
                     Some(schema) => schema,
                 },
             };
-            let db: &mut Arc<RwLock<Database>> =
-                dbs.entry(owner)
-                    .or_insert(Arc::new(RwLock::new(Database::new(
-                        schema,
-                        opt.clone(),
-                        meta.clone(),
-                    )?)));
+            let db: &mut Arc<RwLock<Database>> = dbs.entry(owner).or_insert(Arc::new(RwLock::new(
+                Database::new(schema, opt.clone(), meta.clone()).await?,
+            )));
 
             let tf_id = ver.tf_id();
             db.write()
@@ -80,7 +76,7 @@ impl VersionSet {
         self.opt.clone()
     }
 
-    pub fn create_db(
+    pub async fn create_db(
         &mut self,
         schema: DatabaseSchema,
         meta: MetaRef,
@@ -88,11 +84,9 @@ impl VersionSet {
         let db = self
             .dbs
             .entry(schema.owner())
-            .or_insert(Arc::new(RwLock::new(Database::new(
-                schema,
-                self.opt.clone(),
-                meta.clone(),
-            )?)))
+            .or_insert(Arc::new(RwLock::new(
+                Database::new(schema, self.opt.clone(), meta.clone()).await?,
+            )))
             .clone();
         Ok(db)
     }

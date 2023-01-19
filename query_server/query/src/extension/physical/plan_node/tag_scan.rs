@@ -20,7 +20,7 @@ use datafusion::{
         SendableRecordBatchStream, Statistics,
     },
 };
-use futures::Stream;
+use futures::{executor::block_on, Stream};
 use meta::error::MetaError;
 use models::arrow_array::WriteArrow;
 use models::{
@@ -126,14 +126,14 @@ impl ExecutionPlan for TagScanExec {
                 _ => None,
             });
 
-        do_tag_scan(
+        block_on(do_tag_scan(
             self.table_schema.clone(),
             self.schema(),
             tags_filter,
             self.coord.clone(),
             metrics,
             batch_size,
-        )
+        ))
     }
 
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -182,7 +182,7 @@ impl<'a> Display for PredicateDisplay<'a> {
     }
 }
 
-fn do_tag_scan(
+async fn do_tag_scan(
     table_schema: TskvTableSchemaRef,
     proj_schema: SchemaRef,
     tags_filter: ColumnDomains<String>,
@@ -199,7 +199,7 @@ fn do_tag_scan(
     let _db = &table_schema.db;
     let tenant = &table_schema.tenant;
 
-    let _client = coord.tenant_meta(tenant).ok_or_else(|| {
+    let _client = coord.tenant_meta(tenant).await.ok_or_else(|| {
         DataFusionError::External(Box::new(MetaError::TenantNotFound {
             tenant: tenant.to_string(),
         }))

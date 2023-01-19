@@ -1,6 +1,7 @@
 use crate::schema::error::{MetaSnafu, Result, SchemaError};
 use meta::error::MetaError;
-use meta::meta_client::{MetaClientRef, MetaRef};
+use meta::meta_manager::RemoteMetaManager;
+use meta::{MetaClientRef, MetaRef};
 use models::codec::Encoding;
 use models::schema::{
     ColumnType, DatabaseSchema, TableColumn, TableSchema, TenantOptions, TskvTableSchema,
@@ -24,16 +25,17 @@ pub struct DBschemas {
 }
 
 impl DBschemas {
-    pub fn new(db_schema: DatabaseSchema, meta: MetaRef) -> Result<Self> {
+    pub async fn new(db_schema: DatabaseSchema, meta: MetaRef) -> Result<Self> {
         let table_schemas: HashMap<String, TskvTableSchema> = HashMap::new();
         let client = meta
             .tenant_manager()
             .tenant_meta(db_schema.tenant_name())
+            .await
             .ok_or(SchemaError::TenantNotFound {
                 tenant: db_schema.tenant_name().to_string(),
             })?;
         if client.get_db_schema(db_schema.database_name())?.is_none() {
-            client.create_db(db_schema.clone())?;
+            client.create_db(db_schema.clone()).await?;
         }
         Ok(Self {
             tenant_name: db_schema.tenant_name().to_string(),
@@ -97,7 +99,7 @@ impl DBschemas {
         Ok(())
     }
 
-    pub fn check_field_type_or_else_add(&self, info: &Point) -> Result<()> {
+    pub async fn check_field_type_or_else_add(&self, info: &Point<'_>) -> Result<()> {
         //load schema first from cache,or else from storage and than cache it!
         let table_name =
             unsafe { String::from_utf8_unchecked(info.tab().unwrap().bytes().to_vec()) };
@@ -173,11 +175,13 @@ impl DBschemas {
         if new_schema {
             schema.schema_id = 0;
             self.client
-                .create_table(&TableSchema::TsKvTableSchema(schema.clone()))?;
+                .create_table(&TableSchema::TsKvTableSchema(schema.clone()))
+                .await?;
         } else if schema_change {
             schema.schema_id += 1;
             self.client
-                .update_table(&TableSchema::TsKvTableSchema(schema.clone()))?;
+                .update_table(&TableSchema::TsKvTableSchema(schema.clone()))
+                .await?;
         }
         Ok(())
     }
@@ -195,8 +199,8 @@ impl DBschemas {
         Ok(tables)
     }
 
-    pub fn del_table_schema(&self, tab: &str) -> Result<()> {
-        self.client.drop_table(&self.database_name, tab)?;
+    pub async fn del_table_schema(&self, tab: &str) -> Result<()> {
+        self.client.drop_table(&self.database_name, tab).await?;
         Ok(())
     }
 

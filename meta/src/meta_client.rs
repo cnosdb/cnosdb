@@ -1,5 +1,6 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code, unused_imports, unused_variables, clippy::if_same_then_else)]
 
+use async_trait::async_trait;
 use client::MetaHttpClient;
 use config::ClusterConfig;
 use models::auth::privilege::DatabasePrivilege;
@@ -9,9 +10,11 @@ use models::auth::role::{
 use models::auth::user::{User, UserDesc};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
+use models::utils::min_num;
 use parking_lot::RwLock;
 use rand::distributions::{Alphanumeric, DistString};
 use snafu::Snafu;
+use tokio::sync::mpsc::{self, Receiver};
 
 use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -23,9 +26,10 @@ use std::{fmt::Debug, io};
 use store::command;
 use tokio::net::TcpStream;
 
-use trace::{debug, info, warn};
+use trace::{debug, error, info, warn};
 
 use crate::error::{MetaError, MetaResult};
+use crate::store::key_path;
 use models::schema::{
     DatabaseSchema, ExternalTableSchema, LimiterConfig, TableColumn, TableSchema, Tenant,
     TenantOptions, TskvTableSchema,
@@ -33,7 +37,7 @@ use models::schema::{
 
 use crate::limiter::{Limiter, LimiterImpl, NoneLimiter};
 use crate::store::command::{
-    META_REQUEST_FAILED, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
+    EntryLog, META_REQUEST_FAILED, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
     META_REQUEST_ROLE_EXIST, META_REQUEST_ROLE_NOT_FOUND, META_REQUEST_SUCCESS,
     META_REQUEST_TENANT_NOT_FOUND, META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND,
 };
@@ -41,58 +45,7 @@ use crate::tenant_manager::RemoteTenantManager;
 use crate::user_manager::{RemoteUserManager, UserManager, UserManagerMock};
 use crate::{client, store};
 
-pub type UserManagerRef = Arc<dyn UserManager>;
-pub type TenantManagerRef = Arc<dyn TenantManager>;
-pub type MetaClientRef = Arc<dyn MetaClient>;
-pub type AdminMetaRef = Arc<dyn AdminMeta>;
-pub type MetaRef = Arc<dyn MetaManager>;
-
-pub trait MetaManager: Send + Sync + Debug {
-    fn node_id(&self) -> u64;
-    fn admin_meta(&self) -> AdminMetaRef;
-    fn user_manager(&self) -> UserManagerRef;
-    fn tenant_manager(&self) -> TenantManagerRef;
-    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
-    fn user_with_privileges(&self, user_name: &str, tenant_name: Option<&str>) -> MetaResult<User>;
-}
-
-pub trait TenantManager: Send + Sync + Debug {
-    // tenant
-    fn create_tenant(&self, name: String, options: TenantOptions) -> MetaResult<MetaClientRef>;
-    fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>>;
-    fn tenants(&self) -> MetaResult<Vec<Tenant>>;
-    fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()>;
-    fn drop_tenant(&self, name: &str) -> MetaResult<bool>;
-    // tenant object meta manager
-    fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
-    fn tenant_set_limiter(
-        &self,
-        tenant_name: &str,
-        limiter_config: Option<LimiterConfig>,
-    ) -> MetaResult<()>;
-
-    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
-}
-
-#[async_trait::async_trait]
-pub trait AdminMeta: Send + Sync + Debug {
-    // *数据节点上下线管理 */
-    fn data_nodes(&self) -> Vec<NodeInfo>;
-    fn add_data_node(&self, node: &NodeInfo) -> MetaResult<()>;
-    // fn del_data_node(&self, id: u64) -> MetaResult<()>;
-
-    // fn meta_nodes(&self);
-    // fn add_meta_node(&self, node: &NodeInfo) -> MetaResult<()>;
-    // fn del_meta_node(&self, id: u64) -> MetaResult<()>;
-
-    fn heartbeat(&self); // update node status
-
-    fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo>;
-    async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream>;
-    fn put_node_conn(&self, node_id: u64, conn: TcpStream);
-    fn retain_id(&self, count: u32) -> MetaResult<u32>;
-}
-
+#[async_trait]
 pub trait MetaClient: Send + Sync + Debug {
     fn tenant(&self) -> &Tenant;
     fn tenant_name(&self) -> String {
@@ -104,42 +57,47 @@ pub trait MetaClient: Send + Sync + Debug {
     // tenant member
     // fn tenants_of_user(&mut self, user_id: &Oid) -> MetaResult<Option<&HashSet<Oid>>>;
     // fn remove_member_from_all_tenants(&mut self, user_id: &Oid) -> MetaResult<bool>;
-    fn add_member_with_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()>;
-    fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>>;
-    fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>>;
-    fn reasign_member_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()>;
-    fn remove_member(&self, user_id: Oid) -> MetaResult<()>;
+    async fn add_member_with_role(
+        &self,
+        user_id: Oid,
+        role: TenantRoleIdentifier,
+    ) -> MetaResult<()>;
+    async fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>>;
+    async fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>>;
+    async fn reasign_member_role(&self, user_id: Oid, role: TenantRoleIdentifier)
+        -> MetaResult<()>;
+    async fn remove_member(&self, user_id: Oid) -> MetaResult<()>;
 
     // tenant role
-    fn create_custom_role(
+    async fn create_custom_role(
         &self,
         role_name: String,
         system_role: SystemTenantRole,
         additiona_privileges: HashMap<String, DatabasePrivilege>,
     ) -> MetaResult<()>;
-    fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>>;
-    fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>>;
-    fn grant_privilege_to_custom_role(
+    async fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>>;
+    async fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>>;
+    async fn grant_privilege_to_custom_role(
         &self,
         database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
     ) -> MetaResult<()>;
-    fn revoke_privilege_from_custom_role(
+    async fn revoke_privilege_from_custom_role(
         &self,
         database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
     ) -> MetaResult<()>;
-    fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool>;
+    async fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool>;
 
-    fn create_db(&self, info: DatabaseSchema) -> MetaResult<()>;
-    fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()>;
+    async fn create_db(&self, info: DatabaseSchema) -> MetaResult<()>;
+    async fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()>;
     fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>>;
     fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>>;
     fn list_databases(&self) -> MetaResult<Vec<String>>;
-    fn drop_db(&self, name: &str) -> MetaResult<bool>;
+    async fn drop_db(&self, name: &str) -> MetaResult<bool>;
 
-    fn create_table(&self, schema: &TableSchema) -> MetaResult<()>;
-    fn update_table(&self, schema: &TableSchema) -> MetaResult<()>;
+    async fn create_table(&self, schema: &TableSchema) -> MetaResult<()>;
+    async fn update_table(&self, schema: &TableSchema) -> MetaResult<()>;
     fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>>;
     fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>>;
     fn get_external_table_schema(
@@ -148,10 +106,10 @@ pub trait MetaClient: Send + Sync + Debug {
         table: &str,
     ) -> MetaResult<Option<ExternalTableSchema>>;
     fn list_tables(&self, db: &str) -> MetaResult<Vec<String>>;
-    fn drop_table(&self, db: &str, table: &str) -> MetaResult<()>;
+    async fn drop_table(&self, db: &str, table: &str) -> MetaResult<()>;
 
-    fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo>;
-    fn delete_bucket(&self, db: &str, id: u32) -> MetaResult<()>;
+    async fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo>;
+    async fn delete_bucket(&self, db: &str, id: u32) -> MetaResult<()>;
 
     fn database_min_ts(&self, db: &str) -> Option<i64>;
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
@@ -160,14 +118,14 @@ pub trait MetaClient: Send + Sync + Debug {
 
     fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>>;
 
-    fn locate_replcation_set_for_write(
+    async fn locate_replcation_set_for_write(
         &self,
         db: &str,
         hash_id: u64,
         ts: i64,
     ) -> MetaResult<ReplicationSet>;
 
-    fn update_replication_set(
+    async fn update_replication_set(
         &self,
         db: &str,
         bucket_id: u32,
@@ -176,266 +134,13 @@ pub trait MetaClient: Send + Sync + Debug {
         add_info: &[VnodeInfo],
     ) -> MetaResult<()>;
 
+    async fn version(&self) -> u64;
+
+    async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()>;
+
     fn print_data(&self) -> String;
 
     fn limiter(&self) -> Arc<dyn Limiter>;
-}
-
-#[derive(Debug)]
-pub struct RemoteMetaManager {
-    config: ClusterConfig,
-    node_info: NodeInfo,
-
-    admin: AdminMetaRef,
-    user_manager: UserManagerRef,
-    tenant_manager: TenantManagerRef,
-}
-
-impl RemoteMetaManager {
-    pub fn new(config: ClusterConfig) -> Self {
-        let admin: AdminMetaRef = Arc::new(RemoteAdminMeta::new(
-            config.name.clone(),
-            config.meta.clone(),
-        ));
-        let user_manager = Arc::new(RemoteUserManager::new(
-            config.name.clone(),
-            config.meta.clone(),
-        ));
-        let tenant_manager = Arc::new(RemoteTenantManager::new(
-            config.name.clone(),
-            config.meta.clone(),
-            config.node_id,
-        ));
-
-        let node_info = NodeInfo {
-            status: 0,
-            id: config.node_id,
-            tcp_addr: config.tcp_server.clone(),
-            http_addr: config.http_server.clone(),
-        };
-
-        admin.add_data_node(&node_info).unwrap();
-
-        Self {
-            config,
-            admin,
-            node_info,
-            user_manager,
-            tenant_manager,
-        }
-    }
-}
-
-impl MetaManager for RemoteMetaManager {
-    fn node_id(&self) -> u64 {
-        self.config.node_id
-    }
-
-    fn admin_meta(&self) -> AdminMetaRef {
-        self.admin.clone()
-    }
-
-    fn user_manager(&self) -> UserManagerRef {
-        self.user_manager.clone()
-    }
-
-    fn tenant_manager(&self) -> TenantManagerRef {
-        self.tenant_manager.clone()
-    }
-
-    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
-        self.tenant_manager.expired_bucket()
-    }
-
-    fn user_with_privileges(&self, user_name: &str, tenant_name: Option<&str>) -> MetaResult<User> {
-        let user_desc =
-            self.user_manager
-                .user(user_name)?
-                .ok_or_else(|| MetaError::UserNotFound {
-                    user: user_name.to_string(),
-                })?;
-
-        // admin user
-        if user_desc.is_admin() {
-            return Ok(User::new(user_desc, UserRole::Dba.to_privileges()));
-        }
-
-        // common user & with tenant
-        if let Some(tenant_name) = tenant_name {
-            let client = self
-                .tenant_manager
-                .tenant_meta(tenant_name)
-                .ok_or_else(|| MetaError::TenantNotFound {
-                    tenant: tenant_name.to_string(),
-                })?;
-
-            let tenant_id = *client.tenant().id();
-            let role =
-                client
-                    .member_role(user_desc.id())?
-                    .ok_or_else(|| MetaError::MemberNotFound {
-                        member_name: user_desc.name().to_string(),
-                        tenant_name: tenant_name.to_string(),
-                    })?;
-
-            let privileges = match role {
-                TenantRoleIdentifier::System(sys_role) => sys_role.to_privileges(&tenant_id),
-                TenantRoleIdentifier::Custom(ref role_name) => client
-                    .custom_role(role_name)?
-                    .map(|e| e.to_privileges(&tenant_id))
-                    .unwrap_or_default(),
-            };
-
-            return Ok(User::new(user_desc, privileges));
-        }
-
-        // common user & without tenant
-        Ok(User::new(user_desc, Default::default()))
-    }
-}
-
-#[derive(Debug)]
-pub struct RemoteAdminMeta {
-    cluster: String,
-    meta_url: String,
-    data_nodes: RwLock<HashMap<u64, NodeInfo>>,
-    conn_map: RwLock<HashMap<u64, VecDeque<TcpStream>>>,
-
-    client: MetaHttpClient,
-}
-
-impl RemoteAdminMeta {
-    pub fn new(cluster: String, meta_url: String) -> Self {
-        Self {
-            cluster,
-            meta_url: meta_url.clone(),
-            conn_map: RwLock::new(HashMap::new()),
-            data_nodes: RwLock::new(HashMap::new()),
-            client: MetaHttpClient::new(1, meta_url),
-        }
-    }
-
-    pub fn sys_info() -> SysInfo {
-        let mut info = SysInfo::default();
-
-        if let Ok(val) = sys_info::disk_info() {
-            info.disk_free = val.free;
-        }
-
-        if let Ok(val) = sys_info::mem_info() {
-            info.mem_free = val.free;
-        }
-
-        if let Ok(val) = sys_info::loadavg() {
-            info.cpu_load = val.one;
-        }
-
-        info
-    }
-}
-
-#[async_trait::async_trait]
-impl AdminMeta for RemoteAdminMeta {
-    fn add_data_node(&self, node: &NodeInfo) -> MetaResult<()> {
-        let req = command::WriteCommand::AddDataNode(self.cluster.clone(), node.clone());
-        let rsp = self.client.write::<command::StatusResponse>(&req)?;
-        if rsp.code != command::META_REQUEST_SUCCESS {
-            return Err(MetaError::CommonError {
-                msg: format!("add data node err: {} {}", rsp.code, rsp.msg),
-            });
-        }
-
-        Ok(())
-    }
-
-    fn data_nodes(&self) -> Vec<NodeInfo> {
-        let req = command::ReadCommand::DataNodes(self.cluster.clone());
-        let resp = self.client.read::<Vec<NodeInfo>>(&req).unwrap();
-        {
-            let mut nodes = self.data_nodes.write();
-            for item in resp.iter() {
-                nodes.insert(item.id, item.clone());
-            }
-        }
-
-        let mut nodes = vec![];
-        for (_, val) in self.data_nodes.read().iter() {
-            nodes.push(val.clone())
-        }
-
-        nodes
-    }
-
-    fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {
-        if let Some(val) = self.data_nodes.read().get(&id) {
-            return Ok(val.clone());
-        }
-
-        let req = command::ReadCommand::DataNodes(self.cluster.clone());
-        let resp = self.client.read::<Vec<NodeInfo>>(&req)?;
-        {
-            let mut nodes = self.data_nodes.write();
-            for item in resp.iter() {
-                nodes.insert(item.id, item.clone());
-            }
-        }
-
-        if let Some(val) = self.data_nodes.read().get(&id) {
-            return Ok(val.clone());
-        }
-
-        Err(MetaError::NotFoundNode { id })
-    }
-
-    async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream> {
-        {
-            let mut write = self.conn_map.write();
-            let entry = write
-                .entry(node_id)
-                .or_insert_with(|| VecDeque::with_capacity(32));
-            if let Some(val) = entry.pop_front() {
-                return Ok(val);
-            }
-        }
-
-        let info = self.node_info_by_id(node_id)?;
-        let client = TcpStream::connect(info.tcp_addr).await?;
-
-        return Ok(client);
-    }
-
-    fn put_node_conn(&self, node_id: u64, conn: TcpStream) {
-        let mut write = self.conn_map.write();
-        let entry = write
-            .entry(node_id)
-            .or_insert_with(|| VecDeque::with_capacity(32));
-
-        // close too more idle connection
-        if entry.len() < 32 {
-            entry.push_back(conn);
-        }
-    }
-
-    fn retain_id(&self, count: u32) -> MetaResult<u32> {
-        let req = command::WriteCommand::RetainID(self.cluster.clone(), count);
-        let rsp = self.client.write::<command::StatusResponse>(&req)?;
-        if rsp.code != command::META_REQUEST_SUCCESS {
-            return Err(MetaError::CommonError {
-                msg: format!("retain id err: {} {}", rsp.code, rsp.msg),
-            });
-        }
-
-        let id = serde_json::from_str::<u32>(&rsp.msg).unwrap_or(0);
-        if id == 0 {
-            return Err(MetaError::CommonError {
-                msg: format!("retain id err: {} ", rsp.msg),
-            });
-        }
-
-        Ok(id)
-    }
-
-    fn heartbeat(&self) {}
 }
 
 #[derive(Debug)]
@@ -447,76 +152,40 @@ pub struct RemoteMetaClient {
 
     data: RwLock<TenantMetaData>,
     client: MetaHttpClient,
-    client_id: String,
 }
 
 impl RemoteMetaClient {
-    pub fn new(cluster: String, tenant: Tenant, meta_url: String, node_id: u64) -> Arc<Self> {
-        let mut rng = rand::thread_rng();
-        let random = Alphanumeric.sample_string(&mut rng, 16);
-
-        let client_id = format!("{}.{}.{}.{}", &cluster, &tenant.name(), node_id, random);
-
+    pub async fn new(
+        cluster: String,
+        tenant: Tenant,
+        meta_url: String,
+        node_id: u64,
+    ) -> MetaResult<Arc<Self>> {
         let limiter: Arc<dyn Limiter> = match &tenant.options().limiter_config {
             Some(config) => Arc::new(LimiterImpl::from(config)),
             None => Arc::new(NoneLimiter),
         };
+
         let client = Arc::new(Self {
             cluster,
             tenant,
-            client_id,
             limiter,
             meta_url: meta_url.clone(),
             data: RwLock::new(TenantMetaData::new()),
             client: MetaHttpClient::new(1, meta_url),
         });
 
-        let _ = client.sync_all_tenant_metadata();
+        client.sync_all_tenant_metadata().await?;
 
-        let client_local = client.clone();
-        let hand = std::thread::spawn(|| RemoteMetaClient::watch_data(client_local));
-
-        client
+        Ok(client)
     }
 
-    pub fn watch_data(client: Arc<RemoteMetaClient>) {
-        let mut cmd = (
-            client.client_id.clone(),
-            client.cluster.clone(),
-            client.tenant.name().to_string(),
-            0,
-        );
-
-        loop {
-            cmd.3 = client.data.read().version;
-            match client
-                .client
-                .watch_tenant::<command::TenantMetaDataDelta>(&cmd)
-            {
-                Ok(delta) => {
-                    let mut data = client.data.write();
-                    if delta.full_load {
-                        if delta.update.version > data.version {
-                            *data = delta.update;
-                        }
-                    } else if data.version >= delta.ver_range.0 && data.version < delta.ver_range.1
-                    {
-                        data.merge_into(&delta.update);
-                        data.delete_from(&delta.delete);
-                        data.version = delta.ver_range.1;
-                    }
-                }
-
-                Err(err) => {
-                    info!("watch data result: {:?} {}", &cmd, err);
-                }
-            }
-        }
-    }
-
-    fn sync_all_tenant_metadata(&self) -> MetaResult<()> {
+    async fn sync_all_tenant_metadata(&self) -> MetaResult<()> {
         let req = command::ReadCommand::TenaneMetaData(self.cluster.clone(), self.tenant_name());
-        let resp = self.client.read::<command::TenaneMetaDataResp>(&req)?;
+        let resp = self
+            .client
+            .read::<command::TenaneMetaDataResp>(&req)
+            .await?;
         if resp.status.code < 0 {
             return Err(MetaError::CommonError {
                 msg: format!("open meta err: {} {}", resp.status.code, resp.status.msg),
@@ -538,11 +207,21 @@ impl MetaClient for RemoteMetaClient {
         &self.tenant
     }
 
+    async fn version(&self) -> u64 {
+        self.data.read().version
+    }
+
     // tenant member start
 
-    fn add_member_with_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
-        let user_number = self.data.read().users.len();
-        self.limiter().check_add_user(user_number)?;
+    async fn add_member_with_role(
+        &self,
+        user_id: Oid,
+        role: TenantRoleIdentifier,
+    ) -> MetaResult<()> {
+        {
+            let user_number = self.data.read().users.len();
+            self.limiter().check_add_user(user_number)?;
+        }
 
         let req = command::WriteCommand::AddMemberToTenant(
             self.cluster.clone(),
@@ -551,7 +230,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant().name().to_string(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req)? {
+        match self.client.write::<command::CommonResp<()>>(&req).await? {
             command::CommonResp::Ok(_) => Ok(()),
             command::CommonResp::Err(status) => {
                 // TODO improve response
@@ -564,7 +243,7 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>> {
+    async fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>> {
         let req = command::ReadCommand::MemberRole(
             self.cluster.clone(),
             self.tenant().name().to_string(),
@@ -573,7 +252,8 @@ impl MetaClient for RemoteMetaClient {
 
         match self
             .client
-            .read::<command::CommonResp<Option<TenantRoleIdentifier>>>(&req)?
+            .read::<command::CommonResp<Option<TenantRoleIdentifier>>>(&req)
+            .await?
         {
             command::CommonResp::Ok(e) => Ok(e),
             command::CommonResp::Err(status) => {
@@ -587,12 +267,13 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>> {
+    async fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>> {
         let req = command::ReadCommand::Members(self.cluster.clone(), self.tenant_name());
 
         match self
             .client
-            .read::<command::CommonResp<HashMap<String, TenantRoleIdentifier>>>(&req)?
+            .read::<command::CommonResp<HashMap<String, TenantRoleIdentifier>>>(&req)
+            .await?
         {
             command::CommonResp::Ok(e) => Ok(e),
             command::CommonResp::Err(status) => {
@@ -607,7 +288,11 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn reasign_member_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
+    async fn reasign_member_role(
+        &self,
+        user_id: Oid,
+        role: TenantRoleIdentifier,
+    ) -> MetaResult<()> {
         let req = command::WriteCommand::ReasignMemberRole(
             self.cluster.clone(),
             user_id,
@@ -615,7 +300,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req)? {
+        match self.client.write::<command::CommonResp<()>>(&req).await? {
             command::CommonResp::Ok(_) => Ok(()),
             command::CommonResp::Err(status) => {
                 // TODO improve response
@@ -628,14 +313,14 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn remove_member(&self, user_id: Oid) -> MetaResult<()> {
+    async fn remove_member(&self, user_id: Oid) -> MetaResult<()> {
         let req = command::WriteCommand::RemoveMemberFromTenant(
             self.cluster.clone(),
             user_id,
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req)? {
+        match self.client.write::<command::CommonResp<()>>(&req).await? {
             command::CommonResp::Ok(_) => Ok(()),
             command::CommonResp::Err(status) => {
                 // TODO improve response
@@ -652,7 +337,7 @@ impl MetaClient for RemoteMetaClient {
 
     // tenant role start
 
-    fn create_custom_role(
+    async fn create_custom_role(
         &self,
         role_name: String,
         system_role: SystemTenantRole,
@@ -666,7 +351,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req)? {
+        match self.client.write::<command::CommonResp<()>>(&req).await? {
             command::CommonResp::Ok(_) => Ok(()),
             command::CommonResp::Err(status) => {
                 // TODO improve response
@@ -679,7 +364,7 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>> {
+    async fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>> {
         let req = command::ReadCommand::CustomRole(
             self.cluster.clone(),
             role_name.to_string(),
@@ -688,7 +373,8 @@ impl MetaClient for RemoteMetaClient {
 
         match self
             .client
-            .read::<command::CommonResp<Option<CustomTenantRole<Oid>>>>(&req)?
+            .read::<command::CommonResp<Option<CustomTenantRole<Oid>>>>(&req)
+            .await?
         {
             command::CommonResp::Ok(e) => Ok(e),
             command::CommonResp::Err(status) => {
@@ -698,12 +384,13 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>> {
+    async fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>> {
         let req = command::ReadCommand::CustomRoles(self.cluster.clone(), self.tenant_name());
 
         match self
             .client
-            .read::<command::CommonResp<Vec<CustomTenantRole<Oid>>>>(&req)?
+            .read::<command::CommonResp<Vec<CustomTenantRole<Oid>>>>(&req)
+            .await?
         {
             command::CommonResp::Ok(e) => Ok(e),
             command::CommonResp::Err(status) => {
@@ -714,7 +401,7 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn grant_privilege_to_custom_role(
+    async fn grant_privilege_to_custom_role(
         &self,
         database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
@@ -726,7 +413,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req)? {
+        match self.client.write::<command::CommonResp<()>>(&req).await? {
             command::CommonResp::Ok(_) => Ok(()),
             command::CommonResp::Err(status) => {
                 // TODO improve response
@@ -741,7 +428,7 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn revoke_privilege_from_custom_role(
+    async fn revoke_privilege_from_custom_role(
         &self,
         database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
@@ -753,7 +440,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req)? {
+        match self.client.write::<command::CommonResp<()>>(&req).await? {
             command::CommonResp::Ok(_) => Ok(()),
             command::CommonResp::Err(status) => {
                 // TODO improve response
@@ -768,14 +455,14 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool> {
+    async fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool> {
         let req = command::WriteCommand::DropRole(
             self.cluster.clone(),
             role_name.to_string(),
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<bool>>(&req)? {
+        match self.client.write::<command::CommonResp<bool>>(&req).await? {
             command::CommonResp::Ok(e) => Ok(e),
             command::CommonResp::Err(status) => {
                 // TODO improve response
@@ -786,7 +473,7 @@ impl MetaClient for RemoteMetaClient {
 
     // tenant role end
 
-    fn create_db(&self, mut schema: DatabaseSchema) -> MetaResult<()> {
+    async fn create_db(&self, mut schema: DatabaseSchema) -> MetaResult<()> {
         let db_number = self.data.read().dbs.len();
         self.limiter().check_create_db(db_number, &mut schema)?;
         let req = command::WriteCommand::CreateDB(
@@ -795,7 +482,10 @@ impl MetaClient for RemoteMetaClient {
             schema.clone(),
         );
 
-        let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
+        let rsp = self
+            .client
+            .write::<command::TenaneMetaDataResp>(&req)
+            .await?;
         let mut data = self.data.write();
         if rsp.data.version > data.version {
             *data = rsp.data;
@@ -814,11 +504,11 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
+    async fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
         let req =
             command::WriteCommand::AlterDB(self.cluster.clone(), self.tenant_name(), info.clone());
 
-        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
         info!("alter db: {:?}; {:?}", req, rsp);
 
         if rsp.code == command::META_REQUEST_SUCCESS {
@@ -851,7 +541,7 @@ impl MetaClient for RemoteMetaClient {
         Ok(list)
     }
 
-    fn drop_db(&self, name: &str) -> MetaResult<bool> {
+    async fn drop_db(&self, name: &str) -> MetaResult<bool> {
         let mut exist = false;
         if self.data.read().dbs.contains_key(name) {
             exist = true;
@@ -863,7 +553,7 @@ impl MetaClient for RemoteMetaClient {
             name.to_string(),
         );
 
-        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
         info!("drop db: {:?}; {:?}", req, rsp);
 
         if rsp.code == command::META_REQUEST_SUCCESS {
@@ -875,7 +565,7 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn create_table(&self, schema: &TableSchema) -> MetaResult<()> {
+    async fn create_table(&self, schema: &TableSchema) -> MetaResult<()> {
         let req = command::WriteCommand::CreateTable(
             self.cluster.clone(),
             self.tenant_name(),
@@ -884,7 +574,10 @@ impl MetaClient for RemoteMetaClient {
 
         debug!("create_table: {:?}", req);
 
-        let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
+        let rsp = self
+            .client
+            .write::<command::TenaneMetaDataResp>(&req)
+            .await?;
         let mut data = self.data.write();
         if rsp.data.version > data.version {
             *data = rsp.data;
@@ -932,14 +625,17 @@ impl MetaClient for RemoteMetaClient {
         Ok(None)
     }
 
-    fn update_table(&self, schema: &TableSchema) -> MetaResult<()> {
+    async fn update_table(&self, schema: &TableSchema) -> MetaResult<()> {
         let req = command::WriteCommand::UpdateTable(
             self.cluster.clone(),
             self.tenant_name(),
             schema.clone(),
         );
 
-        let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
+        let rsp = self
+            .client
+            .write::<command::TenaneMetaDataResp>(&req)
+            .await?;
         let mut data = self.data.write();
         if rsp.data.version > data.version {
             *data = rsp.data;
@@ -961,7 +657,7 @@ impl MetaClient for RemoteMetaClient {
         Ok(list)
     }
 
-    fn drop_table(&self, db: &str, table: &str) -> MetaResult<()> {
+    async fn drop_table(&self, db: &str, table: &str) -> MetaResult<()> {
         let req = command::WriteCommand::DropTable(
             self.cluster.clone(),
             self.tenant_name(),
@@ -969,7 +665,7 @@ impl MetaClient for RemoteMetaClient {
             table.to_string(),
         );
 
-        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
 
         if rsp.code == command::META_REQUEST_SUCCESS {
             Ok(())
@@ -980,7 +676,7 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo> {
+    async fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo> {
         let req = command::WriteCommand::CreateBucket(
             self.cluster.clone(),
             self.tenant_name(),
@@ -988,7 +684,10 @@ impl MetaClient for RemoteMetaClient {
             ts,
         );
 
-        let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
+        let rsp = self
+            .client
+            .write::<command::TenaneMetaDataResp>(&req)
+            .await?;
         {
             let mut data = self.data.write();
             if rsp.data.version > data.version {
@@ -1011,7 +710,7 @@ impl MetaClient for RemoteMetaClient {
         })
     }
 
-    fn delete_bucket(&self, db: &str, id: u32) -> MetaResult<()> {
+    async fn delete_bucket(&self, db: &str, id: u32) -> MetaResult<()> {
         let req = command::WriteCommand::DeleteBucket(
             self.cluster.clone(),
             self.tenant_name(),
@@ -1019,7 +718,7 @@ impl MetaClient for RemoteMetaClient {
             id,
         );
 
-        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
         info!("delete bucket: {:?}; {:?}", req, rsp);
 
         if rsp.code == command::META_REQUEST_SUCCESS {
@@ -1031,7 +730,7 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn update_replication_set(
+    async fn update_replication_set(
         &self,
         db: &str,
         bucket_id: u32,
@@ -1050,7 +749,7 @@ impl MetaClient for RemoteMetaClient {
         };
         let req = command::WriteCommand::UpdateVnodeReplSet(args);
 
-        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
         info!("update replication set: {:?}; {:?}", req, rsp);
 
         if rsp.code == command::META_REQUEST_SUCCESS {
@@ -1093,7 +792,7 @@ impl MetaClient for RemoteMetaClient {
         self.data.read().database_min_ts(name)
     }
 
-    fn locate_replcation_set_for_write(
+    async fn locate_replcation_set_for_write(
         &self,
         db: &str,
         hash_id: u64,
@@ -1103,7 +802,7 @@ impl MetaClient for RemoteMetaClient {
             return Ok(bucket.vnode_for(hash_id));
         }
 
-        let bucket = self.create_bucket(db, ts)?;
+        let bucket = self.create_bucket(db, ts).await?;
 
         Ok(bucket.vnode_for(hash_id))
     }
@@ -1134,6 +833,74 @@ impl MetaClient for RemoteMetaClient {
         }
 
         list
+    }
+
+    async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()> {
+        let strs: Vec<&str> = entry.key.split('/').collect();
+
+        let len = strs.len();
+        if len == 8
+            && strs[6] == key_path::SCHEMAS
+            && strs[4] == key_path::DBS
+            && strs[2] == key_path::TENANTS
+        {
+            let tenant = strs[3];
+            let db_name = strs[5];
+            let tab_name = strs[7];
+            if let Some(db) = self.data.write().dbs.get_mut(db_name) {
+                if entry.tye == command::ENTRY_LOG_TYPE_SET {
+                    if let Ok(info) = serde_json::from_str::<TableSchema>(&entry.val) {
+                        db.tables.insert(tab_name.to_string(), info);
+                    }
+                } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
+                    db.tables.remove(tab_name);
+                }
+            }
+        } else if len == 8
+            && strs[6] == key_path::BUCKETS
+            && strs[4] == key_path::DBS
+            && strs[2] == key_path::TENANTS
+        {
+            let tenant = strs[3];
+            let db_name = strs[5];
+            if let Some(db) = self.data.write().dbs.get_mut(db_name) {
+                if let Ok(bucket_id) = serde_json::from_str::<u32>(strs[7]) {
+                    if entry.tye == command::ENTRY_LOG_TYPE_SET {
+                        if let Ok(info) = serde_json::from_str::<BucketInfo>(&entry.val) {
+                            match db.buckets.binary_search_by(|v| v.id.cmp(&bucket_id)) {
+                                Ok(index) => db.buckets[index] = info,
+                                Err(index) => db.buckets.insert(index, info),
+                            }
+                        }
+                    } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
+                        if let Ok(index) = db.buckets.binary_search_by(|v| v.id.cmp(&bucket_id)) {
+                            db.buckets.remove(index);
+                        }
+                    }
+                }
+            }
+        } else if len == 6 && strs[4] == key_path::DBS && strs[2] == key_path::TENANTS {
+            let tenant = strs[3];
+            let db_name = strs[5];
+            let mut data = self.data.write();
+            if entry.tye == command::ENTRY_LOG_TYPE_SET {
+                if let Ok(info) = serde_json::from_str::<DatabaseSchema>(&entry.val) {
+                    let db = data
+                        .dbs
+                        .entry(db_name.to_string())
+                        .or_insert_with(DatabaseInfo::default);
+
+                    db.schema = info;
+                }
+            } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
+                data.dbs.remove(db_name);
+            }
+        } else if len == 6 && strs[4] == key_path::USERS && strs[2] == key_path::TENANTS {
+        } else if len == 6 && strs[4] == key_path::MEMBERS && strs[2] == key_path::TENANTS {
+        } else if len == 6 && strs[4] == key_path::ROLES && strs[2] == key_path::TENANTS {
+        }
+
+        Ok(())
     }
 
     fn print_data(&self) -> String {

@@ -111,7 +111,7 @@ where
         sql: String,
         metadata: &MetadataMap,
     ) -> Result<(Vec<u8>, QueryHandle), Status> {
-        let auth_result = self.authenticator.authenticate(metadata)?;
+        let auth_result = self.authenticator.authenticate(metadata).await?;
         let user = auth_result.identity();
 
         // construct context by user_info and headers(parse tenant & default database)
@@ -298,7 +298,8 @@ where
     > {
         debug!("do_handshake: {:?}", request);
 
-        let auth_result = self.authenticator.authenticate(request.metadata())?;
+        let meta_data = request.metadata();
+        let auth_result = self.authenticator.authenticate(meta_data).await?;
 
         let output: Pin<Box<dyn Stream<Item = Result<HandshakeResponse, Status>> + Send>> =
             Box::pin(futures::stream::empty());
@@ -610,7 +611,7 @@ where
         let ActionCreatePreparedStatementRequest { query: sql } = query;
         let metadata = request.metadata();
 
-        let user_info = self.authenticator.authenticate(metadata)?.identity();
+        let user_info = self.authenticator.authenticate(metadata).await?.identity();
 
         // construct context by user_info and headers(parse tenant & default database)
         let ctx = self.construct_context(user_info, metadata)?;

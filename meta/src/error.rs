@@ -84,6 +84,9 @@ pub enum MetaError {
     #[error_code(code = 17)]
     DatabaseNotFound { database: String },
 
+    #[snafu(display("Meta Store Operator Error: {:?}", msg))]
+    MetaStoreErr { msg: String },
+
     #[snafu(display("Database {:?} already exists", database))]
     #[error_code(code = 18)]
     DatabaseAlreadyExists { database: String },

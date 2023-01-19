@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, meta_client::MetaClientRef};
+use meta::{error::MetaError, MetaClientRef};
 use models::{
     auth::user::User,
     oid::Identifier,
@@ -21,12 +21,13 @@ const INFORMATION_SCHEMA_COLUMNS: &str = "COLUMNS";
 /// This view only displays the column information of tables under the database that the current user has Read permission or higher.
 pub struct ColumnsFactory {}
 
+#[async_trait::async_trait]
 impl InformationSchemaTableFactory for ColumnsFactory {
     fn table_name(&self) -> &'static str {
         INFORMATION_SCHEMA_COLUMNS
     }
 
-    fn create(
+    async fn create(
         &self,
         user: &User,
         metadata: MetaClientRef,

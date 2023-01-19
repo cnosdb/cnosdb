@@ -55,6 +55,7 @@ walkdir = { workspace = true }
 zstd = { workspace = true }
 radixdb = {version = "0.2.5", features = ["custom-store"] }
 roaring = "0.10.1"
+lru = "0.9.0"
 rand = { workspace = true }
 
 [target.'cfg(any(target_os = "linux"))'.dependencies]

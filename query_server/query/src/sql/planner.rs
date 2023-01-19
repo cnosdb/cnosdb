@@ -110,7 +110,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
         match statement {
-            ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt, session),
+            ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt, session).await,
             ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt, session),
             ExtStatement::CreateTable(stmt) => self.create_table_to_plan(stmt, session),
             ExtStatement::CreateDatabase(stmt) => self.database_to_plan(stmt, session),
@@ -125,7 +125,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             ExtStatement::ShowDatabases() => self.database_to_show(session),
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt, session),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
-            ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(*stmt, session),
+            ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(*stmt, session).await,
             ExtStatement::Explain(stmt) => {
                 self.explain_statement_to_plan(
                     stmt.analyze,
@@ -135,10 +135,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 )
                 .await
             }
-            ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt, session),
-            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt, session),
-            ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt),
-            ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt),
+            ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt, session).await,
+            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt, session).await,
+            ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt).await,
+            ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt).await,
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
             // system statement
             ExtStatement::ShowQueries => {
@@ -159,7 +159,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         }
     }
 
-    fn df_sql_to_plan(
+    async fn df_sql_to_plan(
         &self,
         stmt: Statement,
         session: &IsiphoSessionCtx,
@@ -183,7 +183,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 columns: ref sql_column_names,
                 source,
                 ..
-            } => self.insert_to_plan(sql_object_name, sql_column_names, source, session),
+            } => {
+                self.insert_to_plan(sql_object_name, sql_column_names, source, session)
+                    .await
+            }
             Statement::Kill { id, .. } => {
                 let plan = Plan::SYSTEM(SYSPlan::KillQuery(id.into()));
                 // TODO privileges
@@ -242,7 +245,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         Ok(PlanWithPrivileges { plan, privileges })
     }
 
-    fn insert_to_plan(
+    async fn insert_to_plan(
         &self,
         sql_object_name: &ObjectName,
         sql_column_names: &[Ident],
@@ -571,13 +574,13 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    fn table_to_alter(
+    async fn table_to_alter(
         &self,
         statement: ASTAlterTable,
         session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let table_name = normalize_sql_object_name(&statement.table_name);
-        let table_schema = self.get_tskv_schema(&table_name)?;
+        let table_schema = self.get_tskv_schema(&table_name).await?;
 
         let alter_action = match statement.alter_action {
             ASTAlterTableAction::AddColumn { column } => {
@@ -695,7 +698,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    fn show_tag_body(
+    async fn show_tag_body(
         &self,
         session: &IsiphoSessionCtx,
         body: ShowTagBody,
@@ -718,7 +721,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
 
         let table_name = normalize_sql_object_name(&table);
         let table_source = self.get_table_source(&table_name)?;
-        let table_schema = self.get_tskv_schema(&table_name)?;
+        let table_schema = self.get_tskv_schema(&table_name).await?;
         let table_df_schema = table_source.schema().to_dfschema_ref()?;
 
         // build from
@@ -778,15 +781,16 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    fn show_series_to_plan(
+    async fn show_series_to_plan(
         &self,
         stmt: ASTShowSeries,
         session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
         self.show_tag_body(session, stmt.body, show_series_projection)
+            .await
     }
 
-    fn show_tag_values(
+    async fn show_tag_values(
         &self,
         stmt: ASTShowTagValues,
         session: &IsiphoSessionCtx,
@@ -799,6 +803,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 show_tag_value_projections(schema, plan_builder, where_contain_time, stmt.with)
             },
         )
+        .await
     }
 
     fn database_to_plan(
@@ -1028,7 +1033,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         Ok(self.schema_provider.get_table_source(table_ref)?.inner())
     }
 
-    fn get_table_provider(&self, table_name: &str) -> Result<Arc<dyn TableProvider>> {
+    async fn get_table_provider(&self, table_name: &str) -> Result<Arc<dyn TableProvider>> {
         let table_source = self.get_table_source(table_name)?;
         Ok(source_as_provider(&table_source)?)
     }
@@ -1112,7 +1117,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    fn construct_alter_tenant_action_with_privilege(
+    async fn construct_alter_tenant_action_with_privilege(
         &self,
         operation: AlterTenantOperation,
         tenant_id: Oid,
@@ -1131,7 +1136,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 //     &self,
                 //     name: &str
                 // ) -> Result<Option<UserDesc>>;
-                let user_desc = self.schema_provider.get_user(&user_name)?;
+                let user_desc = self.schema_provider.get_user(&user_name).await?;
                 let user_id = *user_desc.id();
 
                 let role_name = normalize_ident(role);
@@ -1158,7 +1163,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 //     &self,
                 //     name: &str
                 // ) -> Result<Option<UserDesc>>;
-                let user_desc = self.schema_provider.get_user(&user_name)?;
+                let user_desc = self.schema_provider.get_user(&user_name).await?;
                 let user_id = *user_desc.id();
 
                 let role_name = normalize_ident(role);
@@ -1184,7 +1189,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 //     &self,
                 //     name: &str
                 // ) -> Result<Option<UserDesc>>;
-                let user_desc = self.schema_provider.get_user(&user_name)?;
+                let user_desc = self.schema_provider.get_user(&user_name).await?;
                 let user_id = *user_desc.id();
 
                 (AlterTenantAction::RemoveUser(user_id), privilege)
@@ -1203,7 +1208,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         Ok(alter_tenant_action_with_privileges)
     }
 
-    fn alter_tenant_to_plan(&self, stmt: ast::AlterTenant) -> Result<PlanWithPrivileges> {
+    async fn alter_tenant_to_plan(&self, stmt: ast::AlterTenant) -> Result<PlanWithPrivileges> {
         let ast::AlterTenant {
             ref name,
             operation,
@@ -1215,10 +1220,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         //     &self,
         //     name: &str
         // ) -> Result<Tenant>;
-        let tenant = self.schema_provider.get_tenant(&tenant_name)?;
+        let tenant = self.schema_provider.get_tenant(&tenant_name).await?;
 
-        let (alter_tenant_action, privilege) =
-            self.construct_alter_tenant_action_with_privilege(operation, *tenant.id())?;
+        let (alter_tenant_action, privilege) = self
+            .construct_alter_tenant_action_with_privilege(operation, *tenant.id())
+            .await?;
 
         let plan = Plan::DDL(DDLPlan::AlterTenant(AlterTenant {
             tenant_name,
@@ -1231,7 +1237,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    fn alter_user_to_plan(&self, stmt: ast::AlterUser) -> Result<PlanWithPrivileges> {
+    async fn alter_user_to_plan(&self, stmt: ast::AlterUser) -> Result<PlanWithPrivileges> {
         let ast::AlterUser { name, operation } = stmt;
 
         let user_name = normalize_ident(&name);
@@ -1240,7 +1246,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         //     &self,
         //     name: &str
         // ) -> Result<Option<UserDesc>>;
-        let user_desc = self.schema_provider.get_user(&user_name)?;
+        let user_desc = self.schema_provider.get_user(&user_name).await?;
         let user_id = *user_desc.id();
 
         let alter_user_action = match operation {
@@ -1368,9 +1374,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    fn get_tskv_schema(&self, table_name: &str) -> Result<TskvTableSchemaRef> {
+    async fn get_tskv_schema(&self, table_name: &str) -> Result<TskvTableSchemaRef> {
         Ok(self
-            .get_table_provider(table_name)?
+            .get_table_provider(table_name)
+            .await?
             .as_any()
             .downcast_ref::<ClusterTable>()
             .ok_or_else(|| MetaError::TableNotFound {
@@ -2051,12 +2058,13 @@ mod tests {
     #[derive(Debug)]
     struct MockContext {}
 
+    #[async_trait::async_trait]
     impl ContextProviderExtension for MockContext {
-        fn get_user(&self, _name: &str) -> std::result::Result<UserDesc, MetaError> {
+        async fn get_user(&self, _name: &str) -> std::result::Result<UserDesc, MetaError> {
             todo!()
         }
 
-        fn get_tenant(&self, _name: &str) -> std::result::Result<Tenant, MetaError> {
+        async fn get_tenant(&self, _name: &str) -> std::result::Result<Tenant, MetaError> {
             todo!()
         }
 

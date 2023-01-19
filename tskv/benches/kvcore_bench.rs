@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
+use meta::{meta_manager::RemoteMetaManager, MetaRef};
 use parking_lot::Mutex;
 
 use tokio::runtime::{self, Runtime};
@@ -20,9 +21,9 @@ async fn get_tskv() -> TsKv {
             .unwrap(),
     );
 
-    TsKv::open(global_config.cluster, opt, runtime)
-        .await
-        .unwrap()
+    let meta_manager: MetaRef = RemoteMetaManager::new(global_config.cluster.clone()).await;
+
+    TsKv::open(meta_manager, opt, runtime).await.unwrap()
 }
 
 fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRpcRequest) {
