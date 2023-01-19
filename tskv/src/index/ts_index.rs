@@ -31,6 +31,7 @@ use protos::models::Point;
 use trace::{debug, error, info, warn};
 
 use super::binlog::*;
+use super::cache::{ForwardIndexCache, SeriesKeyInfo};
 use super::*;
 use super::{errors, IndexEngine, IndexError, IndexResult};
 
@@ -50,6 +51,7 @@ pub struct TSIndex {
 
     binlog: IndexBinlog,
     storage: IndexEngine,
+    forward_cache: RwLock<ForwardIndexCache>,
 }
 
 impl TSIndex {
@@ -70,6 +72,7 @@ impl TSIndex {
             incr_id,
             write_count: 0,
             path: path.into(),
+            forward_cache: RwLock::new(ForwardIndexCache::new(1_000_000)),
         };
 
         ts_index.recover().await?;
@@ -159,10 +162,22 @@ impl TSIndex {
     }
 
     pub fn get_series_id(&self, series_key: &SeriesKey) -> IndexResult<Option<u32>> {
-        //is exist
+        if let Some(id) = self.forward_cache.write().get_series_id_by_key(series_key) {
+            return Ok(Some(id));
+        }
+
         let key_buf = encode_series_key(series_key.table(), series_key.tags());
         if let Some(val) = self.storage.get(&key_buf)? {
-            return Ok(Some(byte_utils::decode_be_u32(&val)));
+            let id = byte_utils::decode_be_u32(&val);
+
+            let info = SeriesKeyInfo {
+                id,
+                key: series_key.clone(),
+                hash: series_key.hash(),
+            };
+            self.forward_cache.write().add(info);
+
+            return Ok(Some(id));
         }
 
         Ok(None)
@@ -210,9 +225,20 @@ impl TSIndex {
     }
 
     pub fn get_series_key(&self, sid: u32) -> IndexResult<Option<SeriesKey>> {
+        if let Some(key) = self.forward_cache.write().get_series_key_by_id(sid) {
+            return Ok(Some(key));
+        }
+
         if let Some(res) = self.storage.get(&encode_series_id_key(sid))? {
             let key = SeriesKey::decode(&res)
                 .map_err(|e| IndexError::DecodeSeriesKey { msg: e.to_string() })?;
+
+            let info = SeriesKeyInfo {
+                id: sid,
+                key: key.clone(),
+                hash: key.hash(),
+            };
+            self.forward_cache.write().add(info);
 
             return Ok(Some(key));
         }
@@ -242,6 +268,7 @@ impl TSIndex {
         let series_key = self.get_series_key(sid)?;
         let _ = self.storage.delete(&encode_series_id_key(sid));
         if let Some(series_key) = series_key {
+            self.forward_cache.write().del(sid, series_key.hash());
             let key_buf = encode_series_key(series_key.table(), series_key.tags());
             let _ = self.storage.delete(&key_buf);
             for tag in series_key.tags() {
