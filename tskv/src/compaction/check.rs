@@ -877,7 +877,7 @@ mod test {
             )))
             .unwrap();
 
-            rt.block_on(meta_client.drop_db(&database_name)).unwrap();
+            //rt.block_on(meta_client.drop_db(&database_name)).unwrap();
             let _ = rt.block_on(engine.drop_database(&tenant_name, &database_name));
             let database = rt
                 .block_on(engine.create_database(&database_schema))
