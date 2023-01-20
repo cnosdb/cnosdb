@@ -6,6 +6,7 @@ use std::{
 };
 
 use datafusion::sql::sqlparser::test_utils::table;
+use lru_cache::ShardedCache;
 use meta::meta_client::MetaRef;
 use models::{
     schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema},
@@ -113,6 +114,7 @@ impl Database {
             seq_no,
             LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone()),
             i64::MIN,
+            Arc::new(ShardedCache::default()),
         ));
 
         let tf = TseriesFamily::new(

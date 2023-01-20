@@ -1,44 +1,41 @@
-use std::ops::Bound;
-use std::time::Duration;
 use std::{
     borrow::{Borrow, BorrowMut},
     cmp::{self, max, min},
     collections::{HashMap, HashSet},
-    ops::{Deref, DerefMut},
+    ops::{Bound, Deref, DerefMut},
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
         atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
         Arc,
     },
+    time::Duration,
 };
 
+use config::get_config;
 use lazy_static::lazy_static;
+use lru_cache::ShardedCache;
+use models::{
+    schema::TableColumn, ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType,
+};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::watch::Receiver;
-
-use config::get_config;
-use lru_cache::lru_cache::ShardedLRUCache;
-use lru_cache::Cache;
-use models::schema::TableColumn;
-use models::{ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
-use crate::file_system::file_manager;
-use crate::tsm::Index;
 use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     error::{Error, Result},
+    file_system::file_manager,
     file_utils::{make_delta_file_name, make_tsm_file_name},
     kv_option::{CacheOptions, Options, StorageOptions},
-    memcache::{DataType, MemCache},
+    memcache::{DataType, MemCache, RowGroup},
     summary::{CompactMeta, VersionEdit},
-    tsm::{ColumnReader, DataBlock, IndexReader, TsmReader, TsmTombstone},
+    tsm::{
+        BlockMetaIterator, ColumnReader, DataBlock, Index, IndexReader, TsmReader, TsmTombstone,
+    },
     ColumnFileId, LevelId, TseriesFamilyId,
 };
-use crate::{memcache::RowGroup, tsm::BlockMetaIterator};
 
 lazy_static! {
     pub static ref FLUSH_REQ: Arc<Mutex<Vec<FlushReq>>> = Arc::new(Mutex::new(vec![]));
@@ -455,10 +452,11 @@ pub struct Version {
     /// The max timestamp of write batch in wal flushed to column file.
     pub max_level_ts: i64,
     pub levels_info: [LevelInfo; 5],
-    pub cache: Arc<ShardedLRUCache<TsmReader>>,
+    pub tsm_reader_cache: Arc<ShardedCache<String, Arc<TsmReader>>>,
 }
 
 impl Version {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ts_family_id: TseriesFamilyId,
         database: String,
@@ -466,7 +464,7 @@ impl Version {
         last_seq: u64,
         levels_info: [LevelInfo; 5],
         max_level_ts: i64,
-        cache: Arc<ShardedLRUCache<Index>>,
+        tsm_reader_cache: Arc<ShardedCache<String, Arc<TsmReader>>>,
     ) -> Self {
         Self {
             ts_family_id,
@@ -475,7 +473,7 @@ impl Version {
             last_seq,
             max_level_ts,
             levels_info,
-            cache,
+            tsm_reader_cache,
         }
     }
 
@@ -535,7 +533,7 @@ impl Version {
             last_seq: last_seq.unwrap_or(self.last_seq),
             max_level_ts: self.max_level_ts,
             levels_info: new_levels,
-            cache: self.cache.clone(),
+            tsm_reader_cache: self.tsm_reader_cache.clone(),
         };
         new_version.update_max_level_ts();
         new_version
@@ -596,12 +594,19 @@ impl Version {
         vec![]
     }
 
-    pub async fn get_tsm_reader(&self, file: impl AsRef<Path>) -> Result<TsmReader> {
-        let cache_index = self.cache.lookup(file.into_os_string().into_string());
-        match cache_index {
-            Some(val) => Ok(*val.borrow().get_value()),
-            None => TsmReader::open(file).await?,
-        }
+    pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
+        let path = format!("{}", path.as_ref().display());
+        let tsm_reader = match self.tsm_reader_cache.get(&path) {
+            Some(val) => val.clone(),
+            None => {
+                let tsm_reader = TsmReader::open(&path).await?;
+                self.tsm_reader_cache
+                    .insert(path, Arc::new(tsm_reader))
+                    .unwrap()
+                    .clone()
+            }
+        };
+        Ok(tsm_reader)
     }
 }
 
@@ -644,7 +649,7 @@ pub struct TseriesFamily {
     database: String,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
-    cache: ShardedLRUCache<TsmReader>,
+    tsm_reader_cache: ShardedCache<String, TsmReader>,
     super_version: Arc<SuperVersion>,
     super_version_id: AtomicU64,
     version: Arc<Version>,
@@ -678,6 +683,7 @@ impl TseriesFamily {
             seq_no: seq,
             mut_cache: mm.clone(),
             immut_cache: Default::default(),
+            tsm_reader_cache: ShardedCache::with_capacity(16),
             super_version: Arc::new(SuperVersion::new(
                 tf_id,
                 storage_opt.clone(),
@@ -902,16 +908,16 @@ mod test {
     use std::mem::{size_of, size_of_val};
     use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-    use parking_lot::{Mutex, RwLock};
-    use tokio::sync::mpsc;
-    use tokio::sync::mpsc::UnboundedReceiver;
-
     use config::{get_config, ClusterConfig};
+    use lru_cache::ShardedCache;
     use meta::meta_client::{MetaRef, RemoteMetaManager};
     use models::{
         schema::{DatabaseSchema, TenantOptions},
         Timestamp, ValueType,
     };
+    use parking_lot::{Mutex, RwLock};
+    use tokio::sync::mpsc;
+    use tokio::sync::mpsc::UnboundedReceiver;
     use trace::info;
 
     use crate::{
@@ -921,8 +927,7 @@ mod test {
         file_utils::{self, make_tsm_file_name},
         kv_option::Options,
         memcache::{FieldVal, MemCache, RowData, RowGroup},
-        summary::SummaryTask,
-        summary::{CompactMeta, SummaryTask, VersionEdit, WriteSummaryRequest},
+        summary::{CompactMeta, SummaryTask, VersionEdit},
         tseries_family::{TimeRange, TseriesFamily, Version},
         tsm::TsmTombstone,
         version_set::VersionSet,
@@ -995,6 +1000,7 @@ mod test {
                 LevelInfo::init(database.clone(), 3, 0, opt.storage.clone()),
                 LevelInfo::init(database, 4, 0, opt.storage.clone()),
             ],
+            tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
         };
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
@@ -1095,6 +1101,7 @@ mod test {
                 LevelInfo::init(database.clone(), 3, 1, opt.storage.clone()),
                 LevelInfo::init(database, 4, 1, opt.storage.clone()),
             ],
+            tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
         };
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
@@ -1181,6 +1188,7 @@ mod test {
                 0,
                 LevelInfo::init_levels(database, 0, opt.storage.clone()),
                 0,
+                Arc::new(ShardedCache::with_capacity(1)),
             )),
             opt.cache.clone(),
             opt.storage.clone(),

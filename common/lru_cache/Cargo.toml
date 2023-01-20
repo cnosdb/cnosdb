@@ -5,6 +5,15 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bench]]
+name = "main"
+harness = false
+
 [dependencies]
-utils = { path = "../utils" }
 parking_lot = { workspace = true }
+utils = { path = "../utils" }
+
+[dev-dependencies]
+criterion = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true, features = ["full"] }

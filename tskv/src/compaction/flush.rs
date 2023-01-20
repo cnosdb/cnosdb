@@ -421,6 +421,7 @@ pub mod flush_tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
+    use lru_cache::ShardedCache;
     use models::codec::Encoding;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{utils as model_utils, ColumnId, FieldId, Timestamp, ValueType};
@@ -582,6 +583,7 @@ pub mod flush_tests {
             ts_family_id, database: database.clone(), storage_opt: options.storage.clone(),
             last_seq: 1, max_level_ts,
             levels_info: LevelInfo::init_levels(database, 0, options.storage),
+            tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
         });
         let flush_task = FlushTask::new(caches, 1, global_context, &tsm_dir, &delta_dir);
         let mut version_edits = vec![];

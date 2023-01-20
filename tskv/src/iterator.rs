@@ -220,7 +220,7 @@ impl QueryOption {
 }
 
 pub struct FieldFileLocation {
-    reader: TsmReader,
+    reader: Arc<TsmReader>,
     block_it: BlockMetaIterator,
 
     read_index: usize,
@@ -228,7 +228,7 @@ pub struct FieldFileLocation {
 }
 
 impl FieldFileLocation {
-    pub fn new(reader: TsmReader, block_it: BlockMetaIterator, vtype: ValueType) -> Self {
+    pub fn new(reader: Arc<TsmReader>, block_it: BlockMetaIterator, vtype: ValueType) -> Self {
         Self {
             reader,
             block_it,
@@ -593,7 +593,7 @@ pub struct RowIterator {
     columns: Vec<CursorPtr>,
     version: Option<Arc<SuperVersion>>,
 
-    open_files: HashMap<ColumnFileId, TsmReader>,
+    open_files: HashMap<ColumnFileId, Arc<TsmReader>>,
 
     batch_size: usize,
     vnode_id: u32,
@@ -641,7 +641,7 @@ impl RowIterator {
         &mut self,
         version: Arc<Version>,
         file: Arc<ColumnFile>,
-    ) -> Result<TsmReader, Error> {
+    ) -> Result<Arc<TsmReader>, Error> {
         if let Some(val) = self.open_files.get(&file.file_id()) {
             return Ok(val.clone());
         }

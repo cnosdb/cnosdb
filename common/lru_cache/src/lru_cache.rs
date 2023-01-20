@@ -13,7 +13,55 @@ use parking_lot::RwLock;
 
 use utils::BkdrHasher;
 
-use crate::{Cache, NodeVal, NodeValPtr};
+pub trait NodeVal<T> {
+    fn get_value(&self) -> &T;
+}
+
+type NodeValPtr<T> = Arc<RefCell<dyn NodeVal<T>>>;
+
+pub trait Cache<T> {
+    /// Insert a mapping from key->value into the cache and assign it the specified charge
+    /// against the total cache capacity.
+    ///
+    /// Return a handle that corresponds to the mapping. the caller must call
+    /// `release(handle)` when the returned mapping is no longer needed.
+    ///
+    /// When the inserted entry is no longer needed, the key and value will be passed to
+    /// `deleter`.
+    fn insert(
+        &mut self,
+        key: String,
+        value: T,
+        charge: usize,
+        deleter: Box<dyn FnMut(&String, &T)>,
+    ) -> NodeValPtr<T>;
+
+    /// If the cache has no mapping for `key`, returns `None`. Otherwise, return a handle
+    /// that corresponds to the mapping. The caller must call `release(handle)` when the
+    /// returned mapping is no longer needed.
+    fn lookup(&self, key: &String) -> Option<NodeValPtr<T>>;
+
+    /// Release a mapping returned by a previous `insert` or `lookup`.
+    /// REQUIRES: `handle` must not have been released yet.
+    /// REQUIRES: `handle` must have been returned by a method on this instance.
+    fn release(&mut self, handle: NodeValPtr<T>);
+
+    /// If the cache contains entry for the key, erase it. Note that the underlying entry
+    /// will be kept around until all existing handles to it have been released.
+    fn erase(&mut self, key: &String);
+
+    /// Return a new numeric id. May be used by multiple clients who are sharing the same
+    /// cache to partition the key space. Typically the client will allocate a new id at
+    /// startup and prepend the id to its cache keys.
+    fn new_id(&self) -> u64;
+
+    /// Remove all cache entries that are not actively in use. Memory-constrained
+    /// applications may wish to call this method to reduce memory usage.
+    fn prune(&mut self);
+
+    /// Return an estimate of the combined charges of all elements stored in the cache.
+    fn total_charge(&self) -> usize;
+}
 
 struct LRUNode<T: Default + Debug + Send + Sync> {
     key: Box<[u8]>,
@@ -24,13 +72,12 @@ struct LRUNode<T: Default + Debug + Send + Sync> {
     prev: *mut LRUNode<T>,
 }
 
-
 // type LRUNodePtr<T> = Rc<RefCell<LRUNode<T>>>;
 type LRUNodePtr<T> = Arc<RefCell<LRUNode<T>>>;
 
 impl<T> Drop for LRUNode<T>
-    where
-        T: Default + Debug + Send + Sync,
+where
+    T: Default + Debug + Send + Sync,
 {
     fn drop(&mut self) {
         let key = self.key();
@@ -41,8 +88,8 @@ impl<T> Drop for LRUNode<T>
 }
 
 impl<T> Default for LRUNode<T>
-    where
-        T: Default + Debug + Send + Sync,
+where
+    T: Default + Debug + Send + Sync,
 {
     fn default() -> Self {
         LRUNode {
@@ -57,8 +104,8 @@ impl<T> Default for LRUNode<T>
 }
 
 impl<T> LRUNode<T>
-    where
-        T: Default + Debug + Send + Sync,
+where
+    T: Default + Debug + Send + Sync,
 {
     fn new(key: Box<[u8]>, value: T, charge: usize, deleter: Box<dyn FnMut(&String, &T)>) -> Self {
         Self {
@@ -78,8 +125,8 @@ impl<T> LRUNode<T>
 }
 
 impl<T> NodeVal<T> for LRUNode<T>
-    where
-        T: Default + Debug + Send + Sync,
+where
+    T: Default + Debug + Send + Sync,
 {
     fn get_value(&self) -> &T {
         &self.value
@@ -99,8 +146,8 @@ struct LRUCache<T: Default + Debug + Send + Sync + 'static> {
 }
 
 impl<T> Drop for LRUCache<T>
-    where
-        T: Default + Debug + Send + Sync + 'static,
+where
+    T: Default + Debug + Send + Sync + 'static,
 {
     fn drop(&mut self) {
         let mutex_data = self.inner_data.write();
@@ -110,8 +157,8 @@ impl<T> Drop for LRUCache<T>
 }
 
 impl<T> LRUCache<T>
-    where
-        T: Default + Debug + Send + Sync + 'static,
+where
+    T: Default + Debug + Send + Sync + 'static,
 {
     fn new(capacity: usize) -> Self {
         let mutex_data = HashData {
@@ -348,8 +395,7 @@ impl<T: Default + Debug + Send + Sync + 'static> Cache<T> for ShardedLRUCache<T>
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use crate::{Cache, NodeValPtr};
-    use crate::lru_cache::ShardedLRUCache;
+    use crate::lru_cache::{Cache, NodeValPtr, ShardedLRUCache};
 
     struct TesterCache {
         cache: Box<dyn Cache<i32>>,
