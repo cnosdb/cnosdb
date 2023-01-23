@@ -29,7 +29,7 @@
     •
     <a href="https://docs.cnosdb.com/">Documentation</a>
     •
-    <a href="https://docs.cnosdb.com/zh/guide/quick_start.html">Quick Start</a>
+    <a href="https://docs.cnosdb.com/en/quick_start.html">Quick Start</a>
 </h3>
 
 English | [简体中文](./README_CN.md)
