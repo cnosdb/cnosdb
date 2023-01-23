@@ -27,7 +27,7 @@
 <h3 align="center">
     <a href="https://www.cnosdb.com/">Website</a>
     •
-    <a href="https://docs.cnosdb.com/">Documentation</a>
+    <a href="https://docs.cnosdb.com/zh/">Documentation</a>
     •
     <a href="https://docs.cnosdb.com/zh/guide/quick_start.html">Quick Start</a>
 </h3>
