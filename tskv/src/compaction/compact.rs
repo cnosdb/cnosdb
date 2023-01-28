@@ -600,7 +600,9 @@ fn new_compact_meta(tsm_writer: &TsmWriter, level: LevelId) -> CompactMeta {
 #[cfg(test)]
 pub mod test {
     use core::panic;
+    use lru_cache::ShardedCache;
     use minivec::MiniVec;
+    use parking_lot::RwLock;
     use std::{
         collections::HashMap,
         default,
@@ -729,6 +731,7 @@ pub mod test {
             1,
             LevelInfo::init_levels(database.clone(), 0, opt.storage.clone()),
             1000,
+            Arc::new(ShardedCache::with_capacity(1)),
         ));
         let compact_req = CompactReq {
             ts_family_id: 1,

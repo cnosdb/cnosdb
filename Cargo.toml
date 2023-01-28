@@ -10,6 +10,7 @@ members = [
     "common/http_protocol",
     "common/error_code",
     "common/error_code/error_code_macro",
+    "common/lru_cache",
     "query_server/spi",
     "query_server/query",
     "query_server/test",

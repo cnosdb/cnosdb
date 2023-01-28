@@ -396,6 +396,8 @@ impl LevelCompatContext {
 }
 
 mod test {
+    use lru_cache::ShardedCache;
+    use parking_lot::RwLock;
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
@@ -478,6 +480,7 @@ mod test {
             1,
             level_infos,
             1000,
+            Arc::new(ShardedCache::with_capacity(1)),
         ));
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         TseriesFamily::new(

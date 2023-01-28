@@ -5,16 +5,17 @@ use std::fs::{remove_file, rename};
 use std::path::Path;
 use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
+use config::get_config;
 use futures::TryFutureExt;
 use libc::write;
+use lru_cache::ShardedCache;
+use meta::meta_client::MetaRef;
+use models::Timestamp;
+use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch::Receiver;
 use tokio::sync::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
-
-use config::get_config;
-use meta::meta_client::MetaRef;
-use models::Timestamp;
 use trace::{debug, error, info};
 
 use crate::compaction::FlushReq;
@@ -401,6 +402,7 @@ impl Summary {
                 max_log,
                 levels,
                 max_level_ts,
+                Arc::new(ShardedCache::default()),
             );
             versions.insert(id, Arc::new(ver));
         }

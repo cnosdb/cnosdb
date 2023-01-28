@@ -1,13 +1,15 @@
 use std::{
     borrow::Borrow,
+    fmt::Debug,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use minivec::MiniVec;
-use models::{utils as model_utils, FieldId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
+
+use models::{utils as model_utils, FieldId, Timestamp, ValueType};
 
 use crate::{
     byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
@@ -479,6 +481,12 @@ impl TsmReader {
     }
 }
 
+impl Debug for TsmReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TsmReader").finish()
+    }
+}
+
 pub struct ColumnReader {
     reader: Arc<AsyncFile>,
     inner: BlockMetaIterator,
@@ -630,10 +638,10 @@ pub mod tsm_reader_tests {
         sync::Arc,
     };
 
-    use models::{FieldId, Timestamp};
     use parking_lot::Mutex;
 
-    use super::print_tsm_statistics;
+    use models::{FieldId, Timestamp};
+
     use crate::file_system::file_manager::{self, get_file_manager};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::{
@@ -641,6 +649,8 @@ pub mod tsm_reader_tests {
         tseries_family::TimeRange,
         tsm::{BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone, TsmWriter},
     };
+
+    use super::print_tsm_statistics;
 
     async fn prepare(path: impl AsRef<Path>) -> (PathBuf, PathBuf) {
         if file_manager::try_exists(&path) {

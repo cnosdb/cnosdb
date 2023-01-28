@@ -5,13 +5,14 @@ edition.workspace = true
 
 [dependencies]
 config = { path = "../config" }
-meta = {path = "../meta" }
+meta = { path = "../meta" }
 models = { path = "../common/models" }
 metrics = { path = "../common/metrics" }
 protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
-error_code = {path = "../common/error_code" }
+error_code = { path = "../common/error_code" }
+lru_cache = { path = "../common/lru_cache" }
 
 async-recursion = { workspace = true }
 async-trait = { workspace = true }
@@ -53,7 +54,7 @@ static_assertions = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 walkdir = { workspace = true }
 zstd = { workspace = true }
-radixdb = {version = "0.2.5", features = ["custom-store"] }
+radixdb = { version = "0.2.5", features = ["custom-store"] }
 roaring = "0.10.1"
 lru = "0.9.0"
 rand = { workspace = true }
