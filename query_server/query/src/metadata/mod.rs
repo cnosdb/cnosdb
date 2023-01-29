@@ -11,7 +11,6 @@ use datafusion::{
     sql::{planner::ContextProvider, TableReference},
 };
 use futures::executor::block_on;
-use meta::MetaClientRef;
 use models::auth::user::UserDesc;
 use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
 
@@ -79,12 +78,23 @@ impl MetadataProvider {
 
     async fn build_df_data_source(
         &self,
-        client: MetaClientRef,
         name: ResolvedTableReference<'_>,
     ) -> datafusion::common::Result<Arc<dyn TableSource>> {
         let tenant_name = name.catalog;
         let database_name = name.schema;
         let table_name = name.table;
+
+        let client = self
+            .coord
+            .meta_manager()
+            .tenant_manager()
+            .tenant_meta(name.catalog)
+            .await
+            .ok_or_else(|| {
+                DataFusionError::External(Box::new(MetaError::TenantNotFound {
+                    tenant: name.catalog.to_string(),
+                }))
+            })?;
 
         // process INFORMATION_SCHEMA
         if database_name.eq_ignore_ascii_case(self.information_schema_provider.name()) {
@@ -194,19 +204,7 @@ impl ContextProviderExtension for MetadataProvider {
             .write()
             .push_table(database_name, table_name);
 
-        let client = block_on(
-            self.coord
-                .meta_manager()
-                .tenant_manager()
-                .tenant_meta(name.catalog),
-        )
-        .ok_or_else(|| {
-            DataFusionError::External(Box::new(MetaError::TenantNotFound {
-                tenant: name.catalog.to_string(),
-            }))
-        })?;
-
-        let df_table_source = block_on(self.build_df_data_source(client, name))?;
+        let df_table_source = block_on(self.build_df_data_source(name))?;
 
         Ok(TableSourceAdapter::new(
             df_table_source,

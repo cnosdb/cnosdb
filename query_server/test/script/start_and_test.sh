@@ -8,7 +8,7 @@ source "$HOME/.cargo/env"
 
 function start_cnosdb() {
     rm -rf ./data
-    if [ -e "./target/release/cnosdb" ];then
+    if [ -e "./target/test-ci/cnosdb" ];then
       nohup ./target/test-ci/cnosdb run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
     else
       nohup cargo run --profile test-ci -- run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&

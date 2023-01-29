@@ -865,6 +865,7 @@ impl MetaClient for RemoteMetaClient {
             let db_name = strs[5];
             if let Some(db) = self.data.write().dbs.get_mut(db_name) {
                 if let Ok(bucket_id) = serde_json::from_str::<u32>(strs[7]) {
+                    db.buckets.sort_by(|a, b| a.id.cmp(&b.id));
                     if entry.tye == command::ENTRY_LOG_TYPE_SET {
                         if let Ok(info) = serde_json::from_str::<BucketInfo>(&entry.val) {
                             match db.buckets.binary_search_by(|v| v.id.cmp(&bucket_id)) {
