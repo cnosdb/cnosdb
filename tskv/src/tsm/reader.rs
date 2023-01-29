@@ -142,7 +142,8 @@ pub async fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) 
             buffer.truncate(buffer.len() - 1);
         }
         println!("============================================================");
-        println!("Field | FieldId: {}, FieldType: {:?}, BlockCount: {}, MinTime: {}, MaxTime: {}, PointsCount: {}",
+        println!("Offset: {} | Field | FieldId: {}, FieldType: {:?}, BlockCount: {}, MinTime: {}, MaxTime: {}, PointsCount: {}",
+                 idx.offset(),
                  idx.field_id(),
                  idx.field_type(),
                  idx.block_count(),
@@ -176,7 +177,7 @@ pub async fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) 
     println!("PointsCount: {}", points_cnt);
 }
 
-pub async fn load_index(reader: Arc<AsyncFile>) -> ReadTsmResult<Index> {
+pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<Index> {
     let len = reader.len();
     if len < FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
@@ -221,7 +222,7 @@ pub async fn load_index(reader: Arc<AsyncFile>) -> ReadTsmResult<Index> {
         offsets.swap(i, j);
     }
 
-    Ok(Index::new(data, field_ids, offsets))
+    Ok(Index::new(tsm_id, data, field_ids, offsets))
 }
 
 /// Memory-based index reader
@@ -230,8 +231,10 @@ pub struct IndexReader {
 }
 
 impl IndexReader {
-    pub async fn open(reader: Arc<AsyncFile>) -> Result<Self> {
-        let idx = load_index(reader).await.context(error::ReadTsmSnafu)?;
+    pub async fn open(tsm_id: u64, reader: Arc<AsyncFile>) -> Result<Self> {
+        let idx = load_index(tsm_id, reader)
+            .await
+            .context(error::ReadTsmSnafu)?;
 
         Ok(Self {
             index_ref: Arc::new(idx),
@@ -328,7 +331,7 @@ impl BlockMetaIterator {
             field_type,
             block_offset: index_offset + INDEX_META_SIZE,
             block_count,
-            block_meta_idx_end: block_count as usize - 1,
+            block_meta_idx_end: block_count as usize,
             block_meta_idx: 0,
         }
     }
@@ -336,34 +339,47 @@ impl BlockMetaIterator {
     /// Set iterator start & end position by time range
     pub(crate) fn filter_time_range(&mut self, time_range: &TimeRange) {
         let TimeRange { min_ts, max_ts } = *time_range;
+        if min_ts > max_ts {
+            // This condition will match no results.
+
+            // TODO: Drop this iterator and return a new type of
+            // iterator that always returns none.
+            return;
+        }
         let base = self.index_offset + INDEX_META_SIZE;
         let sli = &self.index_ref.data()[base..base + self.block_count as usize * BLOCK_META_SIZE];
         let mut pos = 0_usize;
         let mut idx = 0_usize;
+        // Find `idx` of index blocks that time_range.min_ts <= block.max_ts .
         while pos < sli.len() {
             if min_ts > decode_be_i64(&sli[pos + 8..pos + 16]) {
+                // If time_range.min_ts > block.max_ts, go on to check next block.
                 pos += BLOCK_META_SIZE;
                 idx += 1;
             } else {
-                // First data block in time range
+                // If time_range.min_ts <= block.max_ts, This block may be the start block.
                 self.block_offset = pos;
                 break;
             }
         }
-        if max_ts == min_ts {
-            self.block_meta_idx_end = 1;
-            return;
-        }
         self.block_meta_idx = idx;
         self.block_meta_idx_end = idx;
-        pos += BLOCK_META_SIZE;
+        if idx >= self.block_count as usize {
+            // If there are no blocks that time_range.min_ts <= block.max_ts .
+            return;
+        }
+
+        // Find idx of index blocks that block.min_ts <= time_range.max_ts >= block.max_ts .
         while pos < sli.len() {
             if max_ts < decode_be_i64(&sli[pos..pos + 8]) {
+                // If time_range.max_ts < block.min_ts, previous block is the end block.
                 return;
             } else if max_ts < decode_be_i64(&sli[pos + 8..pos + 16]) {
+                // If time_range.max_ts < block.max_ts, this block is the end block.
                 self.block_meta_idx_end += 1;
                 return;
             } else {
+                // If time_range.max_ts >= block.max_ts, go on to check next block.
                 self.block_meta_idx_end += 1;
                 pos += BLOCK_META_SIZE;
             }
@@ -375,7 +391,7 @@ impl Iterator for BlockMetaIterator {
     type Item = BlockMeta;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.block_meta_idx > self.block_meta_idx_end {
+        if self.block_meta_idx >= self.block_meta_idx_end {
             return None;
         }
         let ret = Some(get_data_block_meta_unchecked(
@@ -393,6 +409,7 @@ impl Iterator for BlockMetaIterator {
 
 #[derive(Clone)]
 pub struct TsmReader {
+    tsm_id: u64,
     reader: Arc<AsyncFile>,
     index_reader: Arc<IndexReader>,
     tombstone: Arc<RwLock<TsmTombstone>>,
@@ -403,10 +420,11 @@ impl TsmReader {
         let path = tsm_path.as_ref().to_path_buf();
         let tsm_id = file_utils::get_tsm_file_id_by_path(&path)?;
         let tsm = Arc::new(file_manager::open_file(tsm_path).await?);
-        let tsm_idx = IndexReader::open(tsm.clone()).await?;
+        let tsm_idx = IndexReader::open(tsm_id, tsm.clone()).await?;
         let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
         let tombstone = TsmTombstone::open(tombstone_path, tsm_id).await?;
         Ok(Self {
+            tsm_id,
             reader: tsm,
             index_reader: Arc::new(tsm_idx),
             tombstone: Arc::new(RwLock::new(tombstone)),
@@ -675,6 +693,10 @@ pub mod tsm_reader_tests {
                 DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
                 DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
             ]),
+            (3, vec![
+                DataBlock::U64 { ts: vec![5], val: vec![105], enc: DataBlockEncoding::default() },
+                DataBlock::U64 { ts: vec![9], val: vec![109], enc: DataBlockEncoding::default() },
+            ]),
         ]);
         let mut writer = TsmWriter::open(&tsm_file, 1, false, 0).await.unwrap();
         for (fid, blks) in ori_data.iter() {
@@ -737,6 +759,10 @@ pub mod tsm_reader_tests {
                 DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
                 DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
             ]),
+            (3, vec![
+                DataBlock::U64 { ts: vec![5], val: vec![105], enc: DataBlockEncoding::default() },
+                DataBlock::U64 { ts: vec![9], val: vec![109], enc: DataBlockEncoding::default() },
+            ]),
         ]);
         read_and_check(&reader, expected_data).await;
     }
@@ -745,10 +771,10 @@ pub mod tsm_reader_tests {
         reader: &TsmReader,
         field_id: FieldId,
         time_range: (Timestamp, Timestamp),
-        expected_data: HashMap<FieldId, Vec<DataBlock>>,
+        expected_data: &HashMap<FieldId, Vec<DataBlock>>,
     ) {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
-        for idx in reader.index_iterator_opt(2) {
+        for idx in reader.index_iterator_opt(field_id) {
             for blk in idx.block_iterator_opt(&TimeRange::from(time_range)) {
                 let data_blk = reader.get_data_block(&blk).await.unwrap();
                 read_data.entry(idx.field_id()).or_default().push(data_blk);
@@ -780,7 +806,12 @@ pub mod tsm_reader_tests {
                     DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], enc: DataBlockEncoding::default() },
                 ])
             ]);
-            read_opt_and_check(&reader, 2, (2, 3), expected_data).await;
+            read_opt_and_check(&reader, 2, (0, 4), &expected_data).await;
+            read_opt_and_check(&reader, 2, (1, 1), &expected_data).await;
+            read_opt_and_check(&reader, 2, (1, 4), &expected_data).await;
+            read_opt_and_check(&reader, 2, (2, 3), &expected_data).await;
+            read_opt_and_check(&reader, 2, (2, 2), &expected_data).await;
+            read_opt_and_check(&reader, 2, (4, 4), &expected_data).await;
         }
 
         {
@@ -790,29 +821,9 @@ pub mod tsm_reader_tests {
                     DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
                 ])
             ]);
-            read_opt_and_check(&reader, 2, (5, 8), expected_data).await;
-        }
-
-        {
-            #[rustfmt::skip]
-            let expected_data = HashMap::from([
-                (2, vec![
-                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
-                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
-                ])
-            ]);
-            read_opt_and_check(&reader, 2, (6, 10), expected_data).await;
-        }
-
-        {
-            #[rustfmt::skip]
-            let expected_data = HashMap::from([
-                (2, vec![
-                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
-                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
-                ])
-            ]);
-            read_opt_and_check(&reader, 2, (8, 9), expected_data).await;
+            read_opt_and_check(&reader, 2, (5, 5), &expected_data).await;
+            read_opt_and_check(&reader, 2, (5, 8), &expected_data).await;
+            read_opt_and_check(&reader, 2, (8, 8), &expected_data).await;
         }
 
         {
@@ -823,7 +834,49 @@ pub mod tsm_reader_tests {
                     DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
                 ])
             ]);
-            read_opt_and_check(&reader, 2, (5, 12), expected_data).await;
+            read_opt_and_check(&reader, 2, (5, 9), &expected_data).await;
+            read_opt_and_check(&reader, 2, (5, 12), &expected_data).await;
+            read_opt_and_check(&reader, 2, (5, 13), &expected_data).await;
+            read_opt_and_check(&reader, 2, (6, 10), &expected_data).await;
+            read_opt_and_check(&reader, 2, (8, 9), &expected_data).await;
+            read_opt_and_check(&reader, 2, (8, 12), &expected_data).await;
+            read_opt_and_check(&reader, 2, (8, 13), &expected_data).await;
+        }
+
+        {
+            let expected_data = HashMap::new();
+            read_opt_and_check(&reader, 3, (1, 1), &expected_data).await;
+            read_opt_and_check(&reader, 3, (1, 4), &expected_data).await;
+            read_opt_and_check(&reader, 3, (3, 4), &expected_data).await;
+            read_opt_and_check(&reader, 3, (4, 4), &expected_data).await;
+            read_opt_and_check(&reader, 3, (6, 8), &expected_data).await;
+            read_opt_and_check(&reader, 3, (8, 8), &expected_data).await;
+            read_opt_and_check(&reader, 3, (10, 10), &expected_data).await;
+            read_opt_and_check(&reader, 3, (10, 11), &expected_data).await;
+        }
+
+        {
+            #[rustfmt::skip]
+            let expected_data = HashMap::from([
+                (3, vec![DataBlock::U64 { ts: vec![5], val: vec![105], enc: DataBlockEncoding::default() }])
+            ]);
+            read_opt_and_check(&reader, 3, (4, 6), &expected_data).await;
+            read_opt_and_check(&reader, 3, (4, 5), &expected_data).await;
+            read_opt_and_check(&reader, 3, (5, 5), &expected_data).await;
+            read_opt_and_check(&reader, 3, (5, 6), &expected_data).await;
+        }
+
+        {
+            #[rustfmt::skip]
+            let expected_data = HashMap::from([
+                (3, vec![
+                    DataBlock::U64 { ts: vec![5], val: vec![105], enc: DataBlockEncoding::default() },
+                    DataBlock::U64 { ts: vec![9], val: vec![109], enc: DataBlockEncoding::default() },
+                ])
+            ]);
+            read_opt_and_check(&reader, 3, (4, 10), &expected_data).await;
+            read_opt_and_check(&reader, 3, (5, 9), &expected_data).await;
+            read_opt_and_check(&reader, 3, (5, 10), &expected_data).await;
         }
     }
 

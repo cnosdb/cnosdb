@@ -232,8 +232,12 @@ impl VersionEdit {
     }
 
     pub fn add_file(&mut self, compact_meta: CompactMeta, max_level_ts: i64) {
-        self.has_seq_no = true;
-        self.seq_no = compact_meta.high_seq;
+        if compact_meta.high_seq != 0 {
+            // ComapctMeta.seq_no only makes sense when flush.
+            // In other processes, we set high_seq 0 .
+            self.has_seq_no = true;
+            self.seq_no = compact_meta.high_seq;
+        }
         self.has_file_id = true;
         self.file_id = self.file_id.max(compact_meta.file_id);
         self.max_level_ts = max_level_ts;
@@ -534,7 +538,7 @@ pub async fn print_summary_statistics(path: impl AsRef<Path>) {
         match reader.read_record().await {
             Ok(record) => {
                 let ve = VersionEdit::decode(&record.data).unwrap();
-                println!("VersionEdit #{}", i);
+                println!("VersionEdit #{}, vnode_id: {}", i, ve.tsf_id);
                 println!("------------------------------------------------------------");
                 i += 1;
                 if ve.add_tsf {
