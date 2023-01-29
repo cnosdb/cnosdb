@@ -110,6 +110,21 @@ where
     msg.write_to_bytes()
 }
 
+pub fn to_prost_bytes<T>(msg: T) -> Vec<u8>
+where
+    T: prost::Message,
+{
+    msg.encode_to_vec()
+}
+
+pub fn parse_prost_bytes<T>(bytes: &[u8]) -> Result<T, prost::DecodeError>
+where
+    T: prost::Message,
+    T: Default,
+{
+    T::decode(bytes)
+}
+
 #[cfg(feature = "test")]
 mod test {
     use chrono::prelude::*;

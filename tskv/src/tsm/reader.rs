@@ -6,17 +6,15 @@ use std::{
 };
 
 use minivec::MiniVec;
+use models::{predicate::domain::TimeRange, utils as model_utils, FieldId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
-
-use models::{utils as model_utils, FieldId, Timestamp, ValueType};
 
 use crate::{
     byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
     error::{self, Error, Result},
     file_system::{file_manager, AsyncFile, IFile},
     file_utils,
-    tseries_family::TimeRange,
     tsm::{
         codec::{
             get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec,
@@ -656,15 +654,13 @@ pub mod tsm_reader_tests {
         sync::Arc,
     };
 
+    use models::{predicate::domain::TimeRange, FieldId, Timestamp};
     use parking_lot::Mutex;
-
-    use models::{FieldId, Timestamp};
 
     use crate::file_system::file_manager::{self, get_file_manager};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::{
         file_utils,
-        tseries_family::TimeRange,
         tsm::{BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone, TsmWriter},
     };
 

@@ -13,6 +13,7 @@ use chrono::{
     DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc,
 };
 use lazy_static::lazy_static;
+use models::predicate::domain::TimeRange;
 use models::Timestamp;
 use parking_lot::RwLock;
 use trace::{error, info};
@@ -22,7 +23,7 @@ use crate::{
     error::Result,
     kv_option::{Options, StorageOptions},
     tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
-    LevelId, TimeRange, TseriesFamilyId,
+    LevelId, TseriesFamilyId,
 };
 
 pub trait Picker: Send + Sync + Debug {
@@ -397,6 +398,7 @@ impl LevelCompatContext {
 
 mod test {
     use lru_cache::ShardedCache;
+    use models::predicate::domain::TimeRange;
     use parking_lot::RwLock;
     use std::sync::Arc;
     use tokio::sync::mpsc;
@@ -406,7 +408,6 @@ mod test {
         kv_option::{Options, StorageOptions},
         memcache::MemCache,
         tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
-        TimeRange,
     };
 
     fn create_options(base_dir: String) -> Arc<Options> {

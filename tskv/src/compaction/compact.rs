@@ -20,7 +20,7 @@ use crate::{
     kv_option::Options,
     memcache::DataType,
     summary::{CompactMeta, VersionEdit},
-    tseries_family::{ColumnFile, TimeRange},
+    tseries_family::ColumnFile,
     tsm::{
         self, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index, IndexIterator,
         IndexMeta, IndexReader, TsmReader, TsmWriter,
@@ -621,7 +621,7 @@ pub mod test {
         },
     };
 
-    use models::{FieldId, Timestamp, ValueType};
+    use models::{predicate::domain::TimeRange, FieldId, Timestamp, ValueType};
     use utils::BloomFilter;
 
     use crate::{
@@ -631,7 +631,7 @@ pub mod test {
         file_utils,
         kv_option::Options,
         summary::VersionEdit,
-        tseries_family::{ColumnFile, LevelInfo, TimeRange, Version},
+        tseries_family::{ColumnFile, LevelInfo, Version},
         tsm::{self, codec::DataBlockEncoding, DataBlock, Tombstone, TsmReader, TsmTombstone},
         TseriesFamilyId,
     };

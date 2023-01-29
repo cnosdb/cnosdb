@@ -1,11 +1,10 @@
 use std::{cmp, fmt::Display, io::SeekFrom, sync::Arc};
 
-use models::{FieldId, Timestamp, ValueType};
+use models::{predicate::domain::TimeRange, FieldId, Timestamp, ValueType};
 
 use crate::{
     byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
     error::{Error, Result},
-    tseries_family::TimeRange,
     tsm::{
         BlockMetaIterator, WriteTsmError, WriteTsmResult, BLOCK_META_SIZE, FOOTER_SIZE,
         INDEX_META_SIZE,

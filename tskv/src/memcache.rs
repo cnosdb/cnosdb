@@ -1,6 +1,7 @@
 use flatbuffers::{ForwardsUOffset, Push, Vector};
 use futures::future::ok;
 
+use models::predicate::domain::TimeRange;
 use models::{
     utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TableId, Timestamp, ValueType,
 };
@@ -21,7 +22,7 @@ use minivec::{mini_vec, MiniVec};
 use trace::{error, info, warn};
 
 use crate::tsm::DataBlock;
-use crate::{byte_utils, error::Result, tseries_family::TimeRange, TseriesFamilyId};
+use crate::{byte_utils, error::Result, TseriesFamilyId};
 use models::schema::{TableColumn, TskvTableSchema};
 use models::utils::{split_id, unite_id};
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -541,11 +542,12 @@ impl Display for DataType {
 #[cfg(test)]
 pub(crate) mod test {
     use bytes::buf;
+    use models::predicate::domain::TimeRange;
     use models::schema::TskvTableSchema;
     use models::{SchemaId, SeriesId, Timestamp};
     use std::mem::{size_of, size_of_val};
 
-    use crate::{tsm::DataBlock, TimeRange};
+    use crate::tsm::DataBlock;
 
     use super::{DataType, FieldVal, MemCache, RowData, RowGroup};
 

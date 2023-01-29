@@ -1,5 +1,14 @@
 use std::{any::Any, sync::Arc};
 
+use crate::{
+    data_source::{
+        sink::tskv::TskvRecordBatchSinkProvider,
+        split::{tskv::TableLayoutHandle, SplitManagerRef},
+        WriteExecExt,
+    },
+    extension::physical::plan_node::{table_writer::TableWriterExec, tag_scan::TagScanExec},
+    tskv_exec::TskvExec,
+};
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::{
@@ -13,39 +22,54 @@ use datafusion::{
 };
 use meta::error::MetaError;
 use models::predicate::domain::{Predicate, PredicateRef};
-use models::schema::{TskvTableSchema, TskvTableSchemaRef};
-
-use crate::{
-    data_source::{sink::tskv::TskvRecordBatchSinkProvider, WriteExecExt},
-    extension::physical::plan_node::{table_writer::TableWriterExec, tag_scan::TagScanExec},
-    tskv_exec::TskvExec,
+use models::{
+    meta_data::DatabaseInfo,
+    schema::{TskvTableSchema, TskvTableSchemaRef},
 };
 
 #[derive(Clone)]
 pub struct ClusterTable {
     coord: CoordinatorRef,
+    split_manager: SplitManagerRef,
+    database_info: Arc<DatabaseInfo>,
     schema: TskvTableSchemaRef,
 }
 
 impl ClusterTable {
     pub(crate) async fn create_physical_plan(
         &self,
+        ctx: &SessionState,
         projection: &Option<Vec<usize>>,
         predicate: PredicateRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let proj_schema = self.project_schema(projection)?;
+
+        let table_layout = TableLayoutHandle {
+            db: self.database_info.clone(),
+            table: self.schema.clone(),
+            predicate: predicate.clone(),
+        };
+        let splits = self.split_manager.splits(ctx, table_layout);
 
         Ok(Arc::new(TskvExec::new(
             self.schema.clone(),
             proj_schema,
             predicate,
             self.coord.clone(),
+            splits,
         )))
     }
 
-    pub fn new(coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
+    pub fn new(
+        coord: CoordinatorRef,
+        split_manager: SplitManagerRef,
+        database_info: Arc<DatabaseInfo>,
+        schema: TskvTableSchema,
+    ) -> Self {
         ClusterTable {
             coord,
+            split_manager,
+            database_info,
             schema: Arc::new(schema),
         }
     }
@@ -99,7 +123,7 @@ impl TableProvider for ClusterTable {
 
     async fn scan(
         &self,
-        _ctx: &SessionState,
+        ctx: &SessionState,
         projection: &Option<Vec<usize>>,
         filters: &[Expr],
         limit: Option<usize>,
@@ -110,7 +134,7 @@ impl TableProvider for ClusterTable {
                 .push_down_filter(filters, &self.schema),
         );
 
-        return self.create_physical_plan(projection, filter).await;
+        return self.create_physical_plan(ctx, projection, filter).await;
     }
     fn supports_filter_pushdown(&self, _: &Expr) -> Result<TableProviderFilterPushDown> {
         Ok(TableProviderFilterPushDown::Inexact)

@@ -15,7 +15,7 @@ use datafusion::{
         SendableRecordBatchStream, Statistics,
     },
 };
-use models::predicate::domain::PredicateRef;
+use models::predicate::{domain::PredicateRef, Split};
 use models::schema::TskvTableSchemaRef;
 use trace::debug;
 
@@ -30,6 +30,7 @@ pub struct TskvExec {
     proj_schema: SchemaRef,
     filter: PredicateRef,
     coord: CoordinatorRef,
+    splits: Vec<Split>,
 
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
@@ -41,6 +42,7 @@ impl TskvExec {
         proj_schema: SchemaRef,
         filter: PredicateRef,
         coord: CoordinatorRef,
+        splits: Vec<Split>,
     ) -> Self {
         let metrics = ExecutionPlanMetricsSet::new();
 
@@ -49,6 +51,7 @@ impl TskvExec {
             proj_schema,
             filter,
             coord,
+            splits,
             metrics,
         }
     }
@@ -67,7 +70,7 @@ impl ExecutionPlan for TskvExec {
     }
 
     fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(1)
+        Partitioning::UnknownPartitioning(self.splits.len())
     }
 
     fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
@@ -87,6 +90,7 @@ impl ExecutionPlan for TskvExec {
             proj_schema: self.proj_schema.clone(),
             filter: self.filter.clone(),
             coord: self.coord.clone(),
+            splits: self.splits.clone(),
             metrics: self.metrics.clone(),
         }))
     }
@@ -103,6 +107,13 @@ impl ExecutionPlan for TskvExec {
             context.task_id()
         );
 
+        let split = unsafe {
+            debug_assert!(partition < self.splits.len(), "Partition not exists");
+            self.splits.get_unchecked(partition).clone()
+        };
+
+        debug!("Split of partition: {:?}", split);
+
         let batch_size = context.session_config().batch_size();
 
         let metrics = TableScanMetrics::new(&self.metrics, partition);
@@ -111,7 +122,7 @@ impl ExecutionPlan for TskvExec {
             self.table_schema.clone(),
             self.schema(),
             self.coord.clone(),
-            self.filter(),
+            split,
             batch_size,
             metrics,
         )

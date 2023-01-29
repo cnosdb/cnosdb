@@ -7,12 +7,9 @@ use datafusion::{
     physical_plan::RecordBatchStream,
 };
 use futures::{executor::block_on, FutureExt, Stream};
-use models::codec::Encoding;
 use models::schema::TskvTableSchemaRef;
-use models::{
-    predicate::domain::PredicateRef,
-    schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD},
-};
+use models::schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD};
+use models::{codec::Encoding, predicate::Split};
 
 use spi::{QueryError, Result};
 use tskv::iterator::{QueryOption, TableScanMetrics};
@@ -33,7 +30,7 @@ impl TableScanStream {
         table_schema: TskvTableSchemaRef,
         proj_schema: SchemaRef,
         coord: CoordinatorRef,
-        filter: PredicateRef,
+        split: Split,
         batch_size: usize,
         metrics: TableScanMetrics,
     ) -> Result<Self> {
@@ -76,7 +73,7 @@ impl TableScanStream {
         let option = QueryOption::new(
             batch_size,
             table_schema.tenant.clone(),
-            filter,
+            split,
             proj_schema.clone(),
             proj_table_schema,
             metrics.tskv_metrics(),

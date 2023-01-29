@@ -376,6 +376,12 @@ pub enum QueryError {
     InvalidRemoteReadReq {
         source: GenericError,
     },
+
+    #[snafu(display("Database {} not found.", name))]
+    #[error_code(code = 57)]
+    DatabaseNotFound {
+        name: String,
+    },
 }
 
 impl From<ParserError> for QueryError {

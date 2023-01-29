@@ -32,7 +32,6 @@ use protos::kv_service::WritePointsRpcResponse;
 pub use summary::print_summary_statistics;
 pub use summary::{Summary, VersionEdit};
 use tokio::sync::oneshot;
-pub use tseries_family::TimeRange;
 pub use tsm::print_tsm_statistics;
 use utils::BloomFilter;
 

@@ -24,7 +24,7 @@ use std::{
 
 use bytes::buf;
 use datafusion::parquet::record;
-use models::{FieldId, SeriesId, Timestamp, ValueType};
+use models::{predicate::domain::TimeRange, FieldId, SeriesId, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 use trace::error;
@@ -34,7 +34,7 @@ use crate::{
     file_system::{file_manager, AsyncFile, FileCursor, IFile},
     file_utils,
     record_file::{self, RecordDataType, RecordDataVersion},
-    tseries_family::{ColumnFile, TimeRange},
+    tseries_family::ColumnFile,
     Error, Result,
 };
 
@@ -229,9 +229,11 @@ mod test {
         sync::Arc,
     };
 
+    use models::predicate::domain::TimeRange;
+
     use super::TsmTombstone;
     use crate::file_system::file_manager;
-    use crate::{byte_utils, file_utils, tseries_family::TimeRange};
+    use crate::{byte_utils, file_utils};
 
     #[tokio::test]
     async fn test_write_read_1() {

@@ -9,11 +9,10 @@ use models::{
     utils::now_timestamp,
 };
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use trace::info;
+use trace::{debug, info};
 use tskv::{
     engine::EngineRef,
-    iterator::{filter_to_time_ranges, QueryOption, RowIterator, TableScanMetrics},
-    TimeRange,
+    iterator::{QueryOption, RowIterator, TableScanMetrics},
 };
 
 use crate::{
@@ -70,7 +69,7 @@ impl QueryExecutor {
         let mut routines = vec![];
         let mapping = self.map_vnode()?;
         for (node_id, vnodes) in mapping.iter() {
-            info!(
+            debug!(
                 "execute select on node {}, vnode list: {:?}",
                 node_id, vnodes
             );
@@ -110,12 +109,12 @@ impl QueryExecutor {
         let args = QueryArgs {
             vnode_ids,
             tenant: self.option.tenant.clone(),
-            limit: self.option.filter.limit(),
+            limit: self.option.split.limit(),
             batch_size: self.option.batch_size,
         };
         let expr = QueryExpr {
-            filters: self.option.filter.exprs().to_vec(),
-            df_schema: self.option.df_schema.clone(),
+            split: self.option.split.clone(),
+            df_schema: self.option.df_schema.as_ref().clone(),
             table_schema: self.option.table_schema.clone(),
         };
         let req_cmd = QueryRecordBatchRequest { args, expr };
@@ -211,26 +210,23 @@ impl QueryExecutor {
             })?;
 
         let mut vnode_mapping: HashMap<u64, Vec<VnodeInfo>> = HashMap::new();
-        for item in QueryOption::parse_time_ranges(
-            self.option.filter.clone(),
-            self.option.table_schema.clone(),
-        )
-        .iter()
-        {
-            let buckets =
-                meta.mapping_bucket(&self.option.table_schema.db, item.min_ts, item.max_ts)?;
-            for bucket in buckets.iter() {
-                for repl in bucket.shard_group.iter() {
-                    if repl.vnodes.is_empty() {
-                        continue;
-                    }
-
-                    let random = now_timestamp() as usize % repl.vnodes.len();
-                    let vnode = repl.vnodes[random].clone();
-
-                    let list = vnode_mapping.entry(vnode.node_id).or_default();
-                    list.push(vnode);
+        let time_range = self.option.split.time_range();
+        let buckets = meta.mapping_bucket(
+            &self.option.table_schema.db,
+            time_range.min_ts,
+            time_range.max_ts,
+        )?;
+        for bucket in buckets.iter() {
+            for repl in bucket.shard_group.iter() {
+                if repl.vnodes.is_empty() {
+                    continue;
                 }
+
+                let random = now_timestamp() as usize % repl.vnodes.len();
+                let vnode = repl.vnodes[random].clone();
+
+                let list = vnode_mapping.entry(vnode.node_id).or_default();
+                list.push(vnode);
             }
         }
         for (_, list) in vnode_mapping.iter_mut() {

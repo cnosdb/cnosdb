@@ -7,14 +7,16 @@
 //!         - Column #3
 //!         - Column #4
 
+use arrow_schema::Field as DFField;
+use datafusion::arrow::datatypes::DataType as DFDataType;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
-use std::{collections::BTreeMap, sync::Arc};
-
 use std::mem::size_of_val;
 use std::str::FromStr;
+use std::{collections::BTreeMap, sync::Arc};
 
 use datafusion::logical_expr::TableSource;
+use datafusion::scalar::ScalarValue;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
@@ -848,5 +850,86 @@ impl TableSourceAdapter {
 
     pub fn table_name(&self) -> &str {
         &self.table_name
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum ScalarValueForkDF {
+    /// represents `DataType::Null` (castable to/from any other type)
+    Null,
+    /// true or false value
+    Boolean(Option<bool>),
+    /// 32bit float
+    Float32(Option<f32>),
+    /// 64bit float
+    Float64(Option<f64>),
+    /// 128bit decimal, using the i128 to represent the decimal, precision scale
+    Decimal128(Option<i128>, u8, u8),
+    /// signed 8bit int
+    Int8(Option<i8>),
+    /// signed 16bit int
+    Int16(Option<i16>),
+    /// signed 32bit int
+    Int32(Option<i32>),
+    /// signed 64bit int
+    Int64(Option<i64>),
+    /// unsigned 8bit int
+    UInt8(Option<u8>),
+    /// unsigned 16bit int
+    UInt16(Option<u16>),
+    /// unsigned 32bit int
+    UInt32(Option<u32>),
+    /// unsigned 64bit int
+    UInt64(Option<u64>),
+    /// utf-8 encoded string.
+    Utf8(Option<String>),
+    /// utf-8 encoded string representing a LargeString's arrow type.
+    LargeUtf8(Option<String>),
+    /// binary
+    Binary(Option<Vec<u8>>),
+    /// fixed size binary
+    FixedSizeBinary(i32, Option<Vec<u8>>),
+    /// large binary
+    LargeBinary(Option<Vec<u8>>),
+    /// list of nested ScalarValue
+    List(Option<Vec<ScalarValueForkDF>>, Box<DFField>),
+    /// Date stored as a signed 32bit int days since UNIX epoch 1970-01-01
+    Date32(Option<i32>),
+    /// Date stored as a signed 64bit int milliseconds since UNIX epoch 1970-01-01
+    Date64(Option<i64>),
+    /// Time stored as a signed 64bit int as nanoseconds since midnight
+    Time64(Option<i64>),
+    /// Timestamp Second
+    TimestampSecond(Option<i64>, Option<String>),
+    /// Timestamp Milliseconds
+    TimestampMillisecond(Option<i64>, Option<String>),
+    /// Timestamp Microseconds
+    TimestampMicrosecond(Option<i64>, Option<String>),
+    /// Timestamp Nanoseconds
+    TimestampNanosecond(Option<i64>, Option<String>),
+    /// Number of elapsed whole months
+    IntervalYearMonth(Option<i32>),
+    /// Number of elapsed days and milliseconds (no leap seconds)
+    /// stored as 2 contiguous 32-bit signed integers
+    IntervalDayTime(Option<i64>),
+    /// A triple of the number of elapsed months, days, and nanoseconds.
+    /// Months and days are encoded as 32-bit signed integers.
+    /// Nanoseconds is encoded as a 64-bit signed integer (no leap seconds).
+    IntervalMonthDayNano(Option<i128>),
+    /// struct of nested ScalarValue
+    Struct(Option<Vec<ScalarValueForkDF>>, Box<Vec<DFField>>),
+    /// Dictionary type: index type and value
+    Dictionary(Box<DFDataType>, Box<ScalarValueForkDF>),
+}
+
+impl From<ScalarValue> for ScalarValueForkDF {
+    fn from(value: ScalarValue) -> Self {
+        unsafe { std::mem::transmute::<ScalarValue, Self>(value) }
+    }
+}
+
+impl From<ScalarValueForkDF> for ScalarValue {
+    fn from(value: ScalarValueForkDF) -> Self {
+        unsafe { std::mem::transmute::<ScalarValueForkDF, Self>(value) }
     }
 }

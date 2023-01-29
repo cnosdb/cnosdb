@@ -16,6 +16,8 @@ use datafusion::physical_plan::metrics::{
 };
 use datafusion::scalar::ScalarValue;
 use minivec::MiniVec;
+use models::predicate::utils::filter_to_time_ranges;
+use models::predicate::Split;
 use snafu::ResultExt;
 use tokio::time::Instant;
 
@@ -35,7 +37,7 @@ use super::{
     error,
     error::IndexErrSnafu,
     memcache::DataType,
-    tseries_family::{ColumnFile, SuperVersion, TimeRange},
+    tseries_family::{ColumnFile, SuperVersion},
     tsm::{BlockMetaIterator, DataBlock, TsmReader},
     ColumnFileId, Error,
 };
@@ -147,75 +149,32 @@ impl TskvSourceMetrics {
 pub struct QueryOption {
     pub batch_size: usize,
     pub tenant: String,
-    pub filter: PredicateRef,
+    // pub filter: PredicateRef,
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchema,
     pub metrics: TskvSourceMetrics,
 
-    pub time_filter: ColumnDomains<String>,
-    pub tags_filter: ColumnDomains<String>,
-    pub fields_filter: ColumnDomains<String>,
+    pub split: Split,
 }
 
 impl QueryOption {
     pub fn new(
         batch_size: usize,
         tenant: String,
-        filter: PredicateRef,
+        split: Split,
         df_schema: SchemaRef,
         table_schema: TskvTableSchema,
         metrics: TskvSourceMetrics,
     ) -> Self {
-        let domains_filter = filter
-            .filter()
-            .translate_column(|c| table_schema.column(&c.name).cloned());
-
-        // 提取过滤条件
-        let time_filter = domains_filter.translate_column(|e| match e.column_type {
-            ColumnType::Time => Some(e.name.clone()),
-            _ => None,
-        });
-
-        let tags_filter = domains_filter.translate_column(|e| match e.column_type {
-            ColumnType::Tag => Some(e.name.clone()),
-            _ => None,
-        });
-
-        let fields_filter = domains_filter.translate_column(|e| match e.column_type {
-            ColumnType::Field(_) => Some(e.name.clone()),
-            _ => None,
-        });
-
         Self {
             batch_size,
             tenant,
-            filter,
             table_schema,
             df_schema,
             metrics,
 
-            time_filter,
-            tags_filter,
-            fields_filter,
+            split,
         }
-    }
-
-    pub fn parse_time_ranges(
-        filter: PredicateRef,
-        table_schema: TskvTableSchema,
-    ) -> Vec<TimeRange> {
-        let filter = filter
-            .filter()
-            .translate_column(|c| table_schema.column(&c.name).cloned());
-
-        let time_filter = filter.translate_column(|e| match e.column_type {
-            ColumnType::Time => Some(e.name.clone()),
-            _ => None,
-        });
-
-        let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&time_filter);
-
-        time_ranges
     }
 }
 
@@ -369,9 +328,13 @@ impl FieldCursor {
             None => return Ok(Self::empty(vtype, name)),
         };
 
-        let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&iterator.option.time_filter);
+        let time_ranges = vec![*iterator.option.split.time_range()];
 
-        debug!("Pushed time range filter: {:?}", time_ranges);
+        trace::trace!(
+            "Scan field: {}, Pushed time range filter: {:?}",
+            name,
+            time_ranges
+        );
 
         // get data from im_memcache and memcache
         let mut mem_data: Vec<DataType> = Vec::new();
@@ -382,6 +345,7 @@ impl FieldCursor {
                 .any(|time_range| time_range.is_boundless() || time_range.contains(ts))
         };
 
+        // TODO filter memcache by time_range
         super_version
             .caches
             .immut_cache
@@ -399,7 +363,7 @@ impl FieldCursor {
 
         mem_data.sort_by_key(|data| data.timestamp());
 
-        debug!(
+        trace::trace!(
             "build memcache data id: {:02X}, len: {}",
             field_id,
             mem_data.len()
@@ -518,73 +482,6 @@ impl Cursor for FieldCursor {
     }
 }
 
-pub fn filter_to_time_ranges(time_domain: &ColumnDomains<String>) -> Vec<TimeRange> {
-    if time_domain.is_none() {
-        // Does not contain any data, and returns an empty array directly
-        return vec![];
-    }
-
-    if time_domain.is_all() {
-        // Include all data
-        return vec![TimeRange::all()];
-    }
-
-    let mut time_ranges: Vec<TimeRange> = Vec::new();
-
-    if let Some(time_domain) = time_domain.domains() {
-        assert!(time_domain.contains_key(TIME_FIELD_NAME));
-
-        let domain = unsafe { time_domain.get(TIME_FIELD_NAME).unwrap_unchecked() };
-
-        // Convert ScalarValue value to nanosecond timestamp
-        let valid_and_generate_index_key = |v: &ScalarValue| {
-            // Time can only be of type Timestamp
-            assert!(matches!(v.get_datatype(), ArrowDataType::Timestamp(_, _)));
-            unsafe { i64::try_from(v.clone()).unwrap_unchecked() }
-        };
-
-        match domain {
-            Domain::Range(range_set) => {
-                for (_, range) in range_set.low_indexed_ranges().into_iter() {
-                    let range: &Range = range;
-
-                    let start_bound = range.start_bound();
-                    let end_bound = range.end_bound();
-
-                    // Convert the time value in Bound to timestamp
-                    let translate_bound = |bound: Bound<&ScalarValue>| match bound {
-                        Bound::Unbounded => Bound::Unbounded,
-                        Bound::Included(v) => Bound::Included(valid_and_generate_index_key(v)),
-                        Bound::Excluded(v) => Bound::Excluded(valid_and_generate_index_key(v)),
-                    };
-
-                    let range = (translate_bound(start_bound), translate_bound(end_bound));
-                    time_ranges.push(range.into());
-                }
-            }
-            Domain::Equtable(vals) => {
-                if !vals.is_white_list() {
-                    // eg. time != xxx
-                    time_ranges.push(TimeRange::all());
-                } else {
-                    // Contains the given value
-                    for entry in vals.entries().into_iter() {
-                        let entry: &ValueEntry = entry;
-
-                        let ts = valid_and_generate_index_key(entry.value());
-
-                        time_ranges.push(TimeRange::new(ts, ts));
-                    }
-                }
-            }
-            Domain::All => time_ranges.push(TimeRange::all()),
-            Domain::None => return vec![],
-        }
-    }
-
-    time_ranges
-}
-
 pub struct RowIterator {
     series_index: usize,
     series: Vec<u32>,
@@ -602,6 +499,9 @@ pub struct RowIterator {
 
 impl RowIterator {
     pub async fn new(engine: EngineRef, option: QueryOption, vnode_id: u32) -> Result<Self, Error> {
+        
+        trace::debug!("QueryOption: {:?}\nvnode_id: {}", option.split, vnode_id);
+
         let version = engine
             .get_db_version(&option.tenant, &option.table_schema.db, vnode_id)
             .await?;
@@ -612,12 +512,12 @@ impl RowIterator {
                 &option.tenant,
                 &option.table_schema.db,
                 &option.table_schema.name,
-                &option.tags_filter,
+                option.split.tags_filter(),
             )
             .await
             .context(error::IndexErrSnafu)?;
 
-        info!("vnode_id: {}, series number: {}", vnode_id, series.len());
+        debug!("vnode_id: {}, series number: {}", vnode_id, series.len());
 
         let metrics = option.metrics.clone();
         let batch_size = option.batch_size;
@@ -670,7 +570,7 @@ impl RowIterator {
             let fields = self.option.table_schema.columns().to_vec();
             for item in fields {
                 let field_name = item.name.clone();
-                debug!("build series columns id:{:02X}, {:?}", id, item);
+                trace::trace!("build series columns id:{:02X}, {:?}", id, item);
                 let column: CursorPtr = match item.column_type {
                     ColumnType::Time => Box::new(TimeCursor::new(0, field_name)),
 
@@ -728,7 +628,7 @@ impl RowIterator {
         &mut self,
         builder: &mut [ArrayBuilderPtr],
     ) -> Result<Option<()>, Error> {
-        debug!("======collect_row_data=========");
+        trace::trace!("======collect_row_data=========");
         let timer = self.metrics.elapsed_field_scan().timer();
 
         let mut min_time = i64::MAX;
@@ -744,7 +644,7 @@ impl RowIterator {
         }
 
         for (column, value) in self.columns.iter_mut().zip(values.iter_mut()) {
-            debug!("field: {} value {:?}", column.name(), value);
+            trace::trace!("field: {} value {:?}", column.name(), value);
             if !column.is_field() {
                 continue;
             }
@@ -761,7 +661,7 @@ impl RowIterator {
 
         timer.done();
 
-        debug!("min time {}", min_time);
+        trace::trace!("min time {}", min_time);
         if min_time == i64::MAX {
             self.columns.clear();
             return Ok(None);
@@ -867,7 +767,7 @@ impl RowIterator {
         let mut builders: Vec<ArrayBuilderPtr> =
             Vec::with_capacity(self.option.table_schema.columns().len());
         for item in self.option.table_schema.columns().iter() {
-            debug!("schema info {:02X} {}", item.id, item.name);
+            trace::trace!("schema info {:02X} {}", item.id, item.name);
 
             match item.column_type {
                 ColumnType::Tag => builders.push(Box::new(StringBuilder::with_capacity(

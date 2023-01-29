@@ -16,9 +16,8 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
 
-use trace::info;
+use trace::{debug, info, warn};
 use tskv::engine::{EngineRef, MockEngine};
-use tskv::TimeRange;
 
 use meta::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
 use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
@@ -389,10 +388,10 @@ impl CoordService {
         );
 
         if let Err(err) = executor.execute().await {
-            info!("select statement execute failed: {}", err.to_string());
+            warn!("select statement execute failed: {}", err.to_string());
             let _ = req.sender.send(Err(err)).await;
         } else {
-            info!("select statement execute success");
+            debug!("select statement execute success");
         }
     }
 

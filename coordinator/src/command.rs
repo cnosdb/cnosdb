@@ -310,7 +310,7 @@ impl QueryRecordBatchRequest {
             .map_err(|e| tskv::Error::Decode { source: (e) })?;
 
         let data_buf = read_data_len_val(conn).await?;
-        let expr = QueryExpr::decode(data_buf)?;
+        let expr = QueryExpr::decode(&data_buf)?;
 
         Ok(QueryRecordBatchRequest { args, expr })
     }

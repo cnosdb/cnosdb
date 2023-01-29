@@ -350,19 +350,13 @@ async fn query_record_batch(
     meta: MetaRef,
     sender: Sender<CoordinatorResult<RecordBatch>>,
 ) {
-    let filter = Arc::new(
-        Predicate::default()
-            .set_limit(cmd.args.limit)
-            .push_down_filter(&cmd.expr.filters, &cmd.expr.table_schema),
-    );
-
     let plan_metrics = ExecutionPlanMetricsSet::new();
     let scan_metrics = TableScanMetrics::new(&plan_metrics, 0);
     let option = QueryOption::new(
         cmd.args.batch_size,
         cmd.args.tenant.clone(),
-        filter,
-        cmd.expr.df_schema,
+        cmd.expr.split,
+        Arc::new(cmd.expr.df_schema),
         cmd.expr.table_schema,
         scan_metrics.tskv_metrics(),
     );

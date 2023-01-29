@@ -23,6 +23,7 @@ use spi::{
 
 use spi::Result;
 
+use crate::data_source::split::SplitManagerRef;
 use crate::extension::expr::load_all_functions;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::metadata::{ContextProviderExtension, MetadataProvider};
@@ -35,6 +36,7 @@ use super::query_tracker::QueryTracker;
 #[derive(Clone)]
 pub struct SimpleQueryDispatcher {
     coord: CoordinatorRef,
+    split_manager: SplitManagerRef,
     session_factory: Arc<IsiphoSessionCtxFactory>,
     // TODO resource manager
     // query tracker
@@ -77,6 +79,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         load_all_functions(&mut func_manager)?;
         let scheme_provider = MetadataProvider::new(
             self.coord.clone(),
+            self.split_manager.clone(),
             func_manager,
             self.query_tracker.clone(),
             session.clone(),
@@ -160,6 +163,7 @@ impl SimpleQueryDispatcher {
 #[derive(Default, Clone)]
 pub struct SimpleQueryDispatcherBuilder {
     coord: Option<CoordinatorRef>,
+    split_manager: Option<SplitManagerRef>,
     session_factory: Option<Arc<IsiphoSessionCtxFactory>>,
     parser: Option<Arc<dyn Parser + Send + Sync>>,
     // cnosdb optimizer
@@ -172,6 +176,11 @@ pub struct SimpleQueryDispatcherBuilder {
 impl SimpleQueryDispatcherBuilder {
     pub fn with_coord(mut self, coord: CoordinatorRef) -> Self {
         self.coord = Some(coord);
+        self
+    }
+
+    pub fn with_split_manager(mut self, split_manager: SplitManagerRef) -> Self {
+        self.split_manager = Some(split_manager);
         self
     }
 
@@ -204,6 +213,13 @@ impl SimpleQueryDispatcherBuilder {
         let coord = self.coord.ok_or_else(|| QueryError::BuildQueryDispatcher {
             err: "lost of coord".to_string(),
         })?;
+
+        let split_manager = self
+            .split_manager
+            .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                err: "lost of split manager".to_string(),
+            })?;
+
         let session_factory =
             self.session_factory
                 .ok_or_else(|| QueryError::BuildQueryDispatcher {
@@ -238,6 +254,7 @@ impl SimpleQueryDispatcherBuilder {
 
         Ok(SimpleQueryDispatcher {
             coord,
+            split_manager,
             session_factory,
             parser,
             query_execution_factory,

@@ -7,7 +7,9 @@ use std::{
 
 use blake3::Hasher;
 use chrono::{Duration, DurationRound, NaiveDateTime};
-use models::{schema::ColumnType, utils, ColumnId, FieldId, Timestamp};
+use models::{
+    predicate::domain::TimeRange, schema::ColumnType, utils, ColumnId, FieldId, Timestamp,
+};
 use snafu::ResultExt;
 use trace::warn;
 
@@ -18,7 +20,7 @@ use crate::{
     schema::schemas::DBschemas,
     tseries_family::{ColumnFile, TseriesFamily},
     tsm::{DataBlock, TsmReader},
-    TimeRange, TseriesFamilyId,
+    TseriesFamilyId,
 };
 
 pub type Hash = [u8; 32];
@@ -443,6 +445,7 @@ mod test {
     use minivec::MiniVec;
     use models::{
         codec::Encoding,
+        predicate::domain::TimeRange,
         schema::{
             ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
             TskvTableSchema,
@@ -467,7 +470,7 @@ mod test {
         engine::Engine,
         tsm::{codec::DataBlockEncoding, DataBlock},
         version_set::VersionSet,
-        Options, TimeRange, TsKv, TseriesFamilyId,
+        Options, TsKv, TseriesFamilyId,
     };
 
     use super::{

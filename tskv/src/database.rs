@@ -9,6 +9,7 @@ use datafusion::sql::sqlparser::test_utils::table;
 use lru_cache::ShardedCache;
 use meta::meta_client::MetaRef;
 use models::{
+    predicate::domain::TimeRange,
     schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema},
     utils::{split_id, unite_id},
     ColumnId, FieldInfo, InMemPoint, SchemaId, SeriesId, SeriesKey, Tag, Timestamp, ValueType,
@@ -35,7 +36,7 @@ use crate::{
     summary::{CompactMeta, SummaryTask, VersionEdit, WriteSummaryRequest},
     tseries_family::{TseriesFamily, Version},
     version_set::VersionSet,
-    Error, TimeRange, TseriesFamilyId,
+    Error, TseriesFamilyId,
 };
 
 pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>;

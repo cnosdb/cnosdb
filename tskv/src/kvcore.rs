@@ -12,7 +12,7 @@ use futures::stream::SelectNextSome;
 use futures::FutureExt;
 use libc::printf;
 use meta::meta_client::{MetaRef, RemoteMetaManager};
-use models::predicate::domain::{ColumnDomains, PredicateRef};
+use models::predicate::domain::{ColumnDomains, PredicateRef, TimeRange};
 use snafu::{OptionExt, ResultExt};
 use tokio::sync::watch;
 use tokio::sync::watch::{Receiver, Sender};
@@ -60,7 +60,7 @@ use crate::{
     memcache::{DataType, MemCache},
     record_file::Reader,
     summary::{self, Summary, SummaryProcessor, SummaryTask, VersionEdit, WriteSummaryRequest},
-    tseries_family::{SuperVersion, TimeRange, Version},
+    tseries_family::{SuperVersion, Version},
     tsm::{DataBlock, TsmTombstone, MAX_BLOCK_VALUES},
     version_set,
     version_set::VersionSet,
@@ -972,7 +972,7 @@ mod test {
     use std::sync::{atomic, Arc};
     use tokio::runtime::{self, Runtime};
 
-    use crate::{engine::Engine, error, tsm::DataBlock, Options, TimeRange, TsKv};
+    use crate::{engine::Engine, error, tsm::DataBlock, Options, TsKv};
     use std::sync::atomic::{AtomicI64, Ordering};
     use tokio::sync::watch;
 

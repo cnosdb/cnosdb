@@ -23,13 +23,13 @@ use spi::{
 use trace::{debug, info};
 use tskv::kv_option::Options;
 
-use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
 use crate::{
     auth::auth_control::{AccessControlImpl, AccessControlNoCheck},
     execution::scheduler::LocalScheduler,
 };
+use crate::{data_source::split::SplitManager, dispatcher::manager::SimpleQueryDispatcherBuilder};
 use meta::error::MetaError;
 use models::schema::{DatabaseSchema, DEFAULT_CATALOG, DEFAULT_DATABASE};
 use snafu::ResultExt;
@@ -100,6 +100,7 @@ pub fn make_cnosdbms(
     coord: CoordinatorRef,
     options: Options,
 ) -> Result<impl DatabaseManagerSystem> {
+    let split_manager = Arc::new(SplitManager::default());
     // TODO session config need load global system config
     let session_factory = Arc::new(IsiphoSessionCtxFactory::default());
     let parser = Arc::new(DefaultParser::default());
@@ -115,6 +116,7 @@ pub fn make_cnosdbms(
 
     let query_dispatcher = SimpleQueryDispatcherBuilder::default()
         .with_coord(coord)
+        .with_split_manager(split_manager)
         .with_session_factory(session_factory)
         .with_parser(parser)
         .with_optimizer(optimizer)

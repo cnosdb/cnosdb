@@ -15,6 +15,7 @@ use spi::Result;
 use trace::warn;
 
 pub mod sink;
+pub mod split;
 pub mod write_exec_ext;
 
 #[async_trait]
