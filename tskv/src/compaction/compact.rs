@@ -11,11 +11,11 @@ use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
 use trace::{debug, error, info, trace};
 
-use crate::file_system::file_manager::{self, get_file_manager};
 use crate::{
     compaction::CompactReq,
     context::GlobalContext,
     error::{self, Result},
+    file_system::file_manager::{self, get_file_manager},
     file_utils,
     kv_option::Options,
     memcache::DataType,
@@ -25,7 +25,7 @@ use crate::{
         self, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index, IndexIterator,
         IndexMeta, IndexReader, TsmReader, TsmWriter,
     },
-    Error, LevelId,
+    Error, LevelId, TseriesFamilyId,
 };
 
 /// Temporary compacting data block meta
@@ -542,7 +542,11 @@ pub async fn run_compaction_job(
                                 request.out_level,
                                 tsm_writer.size()
                             );
-                            let cm = new_compact_meta(&tsm_writer, request.out_level);
+                            let cm = new_compact_meta(
+                                &tsm_writer,
+                                request.ts_family_id,
+                                request.out_level,
+                            );
                             version_edit.add_file(cm, version.max_level_ts);
                             tsm_writer =
                                 tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)
@@ -569,7 +573,7 @@ pub async fn run_compaction_job(
         request.out_level,
         tsm_writer.size()
     );
-    let cm = new_compact_meta(&tsm_writer, request.out_level);
+    let cm = new_compact_meta(&tsm_writer, request.ts_family_id, request.out_level);
     version_edit.add_file(cm, version.max_level_ts);
     for file in request.files {
         version_edit.del_file(file.level(), file.file_id(), file.is_delta());
@@ -583,17 +587,21 @@ pub async fn run_compaction_job(
     Ok(Some(version_edit))
 }
 
-fn new_compact_meta(tsm_writer: &TsmWriter, level: LevelId) -> CompactMeta {
+fn new_compact_meta(
+    tsm_writer: &TsmWriter,
+    tsf_id: TseriesFamilyId,
+    level: LevelId,
+) -> CompactMeta {
     CompactMeta {
         file_id: tsm_writer.sequence(),
         file_size: tsm_writer.size(),
+        tsf_id,
         level,
         min_ts: tsm_writer.min_ts(),
         max_ts: tsm_writer.max_ts(),
         high_seq: 0,
         low_seq: 0,
         is_delta: false,
-        ..Default::default()
     }
 }
 
