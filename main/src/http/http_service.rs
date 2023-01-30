@@ -26,7 +26,7 @@ use coordinator::writer::{PointWriter, VnodeMapping};
 use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
-use line_protocol::{line_protocol_to_lines, Line};
+use line_protocol::{line_protocol_to_lines, parse_lines_to_points, Line};
 use meta::meta_client::MetaClientRef;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
 use models::consistency_level::ConsistencyLevel;
@@ -132,6 +132,7 @@ impl HttpService {
             .or(self.metrics())
             .or(self.print_meta())
             .or(self.prom_remote_read())
+            .or(self.prom_remote_write())
     }
 
     fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -195,14 +196,9 @@ impl HttpService {
             .and(warp::body::bytes())
             .and(self.handle_header())
             .and(warp::query::<WriteParam>())
-            .and(self.with_kv_inst())
             .and(self.with_coord())
             .and_then(
-                |req: Bytes,
-                 header: Header,
-                 param: WriteParam,
-                 kv_inst: EngineRef,
-                 coord: CoordinatorRef| async move {
+                |req: Bytes, header: Header, param: WriteParam, coord: CoordinatorRef| async move {
                     let start = Instant::now();
                     let user_info = match header.try_get_basic_auth() {
                         Ok(u) => u,
@@ -210,11 +206,11 @@ impl HttpService {
                     };
 
                     let lines = String::from_utf8_lossy(req.as_ref());
-                    let mut line_protocol_lines =
+                    let line_protocol_lines =
                         line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
                             .context(ParseLineProtocolSnafu)?;
 
-                    let points = parse_lines_to_points(&param.db, &mut line_protocol_lines)?;
+                    let points = parse_lines_to_points(&param.db, &line_protocol_lines);
 
                     let tenant = param.tenant.as_deref().unwrap_or(DEFAULT_CATALOG);
 
@@ -318,6 +314,7 @@ impl HttpService {
                     let result = prs
                         .remote_read(&context, coord.meta_manager(), req)
                         .await
+                        .map(|_| ResponseBuilder::ok())
                         .map_err(|e| {
                             trace::error!("Failed to handle prom remote read request, err: {}", e);
                             reject::custom(HttpError::from(e))
@@ -326,6 +323,54 @@ impl HttpService {
                     sample_query_read_duration(
                         context.tenant(),
                         context.database(),
+                        result.is_ok(),
+                        start.elapsed().as_millis() as f64,
+                    );
+                    result
+                },
+            )
+    }
+
+    fn prom_remote_write(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "prom" / "write")
+            .and(warp::post())
+            .and(warp::body::content_length_limit(self.query_body_limit))
+            .and(warp::body::bytes())
+            .and(self.handle_header())
+            .and(warp::query::<WriteParam>())
+            .and(self.with_coord())
+            .and(self.with_prom_remote_server())
+            .and_then(
+                |req: Bytes,
+                 header: Header,
+                 param: WriteParam,
+                 coord: CoordinatorRef,
+                 prs: PromRemoteServerRef| async move {
+                    let start = Instant::now();
+                    debug!(
+                        "Receive rest prom remote write request, header: {:?}, param: {:?}",
+                        header, param
+                    );
+
+                    // Parse req、header and param to construct query request
+                    let user_info = header.try_get_basic_auth().map_err(reject::custom)?;
+                    let tenant = param.tenant.as_deref().unwrap_or(DEFAULT_CATALOG);
+                    let db = &param.db;
+
+                    let result = prs
+                        .remote_write(tenant, db, &user_info, req, coord)
+                        .await
+                        .map(|_| ResponseBuilder::ok())
+                        .map_err(|e| {
+                            trace::error!("Failed to handle prom remote write request, err: {}", e);
+                            reject::custom(HttpError::from(e))
+                        });
+
+                    sample_point_write_duration(
+                        tenant,
+                        db,
                         result.is_ok(),
                         start.elapsed().as_millis() as f64,
                     );
@@ -376,77 +421,6 @@ impl Service for HttpService {
     }
 }
 
-fn parse_lines_to_points<'a>(db: &'a str, lines: &'a mut [Line]) -> Result<Vec<u8>, Error> {
-    let mut fbb = FlatBufferBuilder::new();
-    let mut point_offsets = Vec::with_capacity(lines.len());
-    for line in lines.iter_mut() {
-        let mut tags = Vec::with_capacity(line.tags.len());
-        for (k, v) in line.tags.iter() {
-            let fbk = fbb.create_vector(k.as_bytes());
-            let fbv = fbb.create_vector(v.as_bytes());
-            let mut tag_builder = TagBuilder::new(&mut fbb);
-            tag_builder.add_key(fbk);
-            tag_builder.add_value(fbv);
-            tags.push(tag_builder.finish());
-        }
-        let mut fields = Vec::with_capacity(line.fields.len());
-        for (k, v) in line.fields.iter() {
-            let fbk = fbb.create_vector(k.as_bytes());
-            let (fbv_type, fbv) = match v {
-                line_protocol::FieldValue::U64(field_val) => (
-                    fb_models::FieldType::Unsigned,
-                    fbb.create_vector(&field_val.to_be_bytes()),
-                ),
-                line_protocol::FieldValue::I64(field_val) => (
-                    fb_models::FieldType::Integer,
-                    fbb.create_vector(&field_val.to_be_bytes()),
-                ),
-                line_protocol::FieldValue::Str(field_val) => {
-                    (fb_models::FieldType::String, fbb.create_vector(field_val))
-                }
-                line_protocol::FieldValue::F64(field_val) => (
-                    fb_models::FieldType::Float,
-                    fbb.create_vector(&field_val.to_be_bytes()),
-                ),
-                line_protocol::FieldValue::Bool(field_val) => (
-                    fb_models::FieldType::Boolean,
-                    if *field_val {
-                        fbb.create_vector(&[1_u8][..])
-                    } else {
-                        fbb.create_vector(&[0_u8][..])
-                    },
-                ),
-            };
-            let mut field_builder = FieldBuilder::new(&mut fbb);
-            field_builder.add_name(fbk);
-            field_builder.add_type_(fbv_type);
-            field_builder.add_value(fbv);
-            fields.push(field_builder.finish());
-        }
-        let point_args = PointArgs {
-            db: Some(fbb.create_vector(db.as_bytes())),
-            tab: Some(fbb.create_vector(line.measurement.as_bytes())),
-            tags: Some(fbb.create_vector(&tags)),
-            fields: Some(fbb.create_vector(&fields)),
-            timestamp: line.timestamp,
-        };
-
-        point_offsets.push(Point::create(&mut fbb, &point_args));
-    }
-
-    let fbb_db = fbb.create_vector(db.as_bytes());
-    let points_raw = fbb.create_vector(&point_offsets);
-    let points = Points::create(
-        &mut fbb,
-        &PointsArgs {
-            db: Some(fbb_db),
-            points: Some(points_raw),
-        },
-    );
-    fbb.finish(points, None);
-    Ok(fbb.finished_data().to_vec())
-}
-
 fn construct_query(
     req: Bytes,
     header: &Header,
@@ -482,7 +456,7 @@ async fn sql_handle(query: &Query, header: Header, dbms: DBMSRef) -> Result<Resp
     let batches = fetch_record_batches(result)
         .await
         .map_err(|e| HttpError::FetchResult {
-            reason: format!("{}", e),
+            reason: format!("{e}"),
         })?;
 
     fmt.wrap_batches_to_response(&batches)
