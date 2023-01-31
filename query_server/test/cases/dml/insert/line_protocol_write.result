@@ -28,3 +28,5 @@
 
 -- EXECUTE SQL: alter tenant cnosdb add user writer as lp_writer; --
 200 OK
+
+
