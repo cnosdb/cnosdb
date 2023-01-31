@@ -22,6 +22,7 @@ async fn get_tskv() -> TsKv {
     );
 
     let meta_manager: MetaRef = RemoteMetaManager::new(global_config.cluster.clone()).await;
+    meta_manager.admin_meta().add_data_node().await.unwrap();
 
     TsKv::open(meta_manager, opt, runtime).await.unwrap()
 }

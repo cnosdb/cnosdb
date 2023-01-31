@@ -15,7 +15,7 @@ use std::{
     },
 };
 use tokio::sync::mpsc::{self, Receiver};
-use trace::{debug, info};
+use trace::info;
 
 use models::auth::role::TenantRoleIdentifier;
 use models::oid::Identifier;
@@ -90,16 +90,10 @@ impl RemoteMetaManager {
     }
 
     pub async fn watch_task_manager(mgr: Arc<RemoteMetaManager>, mut recver: Receiver<u64>) {
-        debug!(
-            "======start watch_task_manager: {}",
-            mgr.watch_version.load(Ordering::Relaxed)
-        );
-
         let mut base_ver = mgr.watch_version.load(Ordering::Relaxed);
         let mut task_handle: Option<tokio::task::JoinHandle<()>> = None;
         loop {
             if let Some(handle) = task_handle {
-                debug!("======restart watch_data_task: {}", base_ver);
                 handle.abort();
             }
 

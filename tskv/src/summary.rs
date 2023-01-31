@@ -828,6 +828,7 @@ mod test {
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+        meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
             .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
@@ -858,6 +859,7 @@ mod test {
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+        meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
             .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
@@ -904,6 +906,7 @@ mod test {
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+        meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
             .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
@@ -970,6 +973,7 @@ mod test {
         cluster_options: ClusterConfig,
     ) {
         let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+        meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
             .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())

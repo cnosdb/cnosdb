@@ -987,6 +987,7 @@ mod test {
         let config = get_config("/tmp/test/config/config.toml");
         let opt = Options::from(&config);
         let meta_manager: MetaRef = RemoteMetaManager::new(config.cluster.clone()).await;
+        meta_manager.admin_meta().add_data_node().await.unwrap();
         let tskv = TsKv::open(meta_manager, opt, Arc::new(Runtime::new().unwrap()))
             .await
             .unwrap();

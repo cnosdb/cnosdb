@@ -29,6 +29,8 @@ mod tests {
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let meta_manager: MetaRef = rt.block_on(RemoteMetaManager::new(global_config.cluster));
+        rt.block_on(meta_manager.admin_meta().add_data_node())
+            .unwrap();
         let _ = rt.block_on(
             meta_manager
                 .tenant_manager()

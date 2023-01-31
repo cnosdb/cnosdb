@@ -275,6 +275,7 @@ impl QueryExecutor {
             .meta_manager
             .tenant_manager()
             .tenant_meta(&self.option.tenant)
+            .await
             .ok_or(CoordinatorError::TenantNotFound {
                 name: self.option.tenant.clone(),
             })?;

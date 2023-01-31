@@ -844,6 +844,7 @@ mod test {
         config.log.path = log_dir;
         let opt = Options::from(&config);
         let meta: MetaRef = rt.block_on(RemoteMetaManager::new(config.cluster));
+        rt.block_on(meta.admin_meta().add_data_node()).unwrap();
         let _ = rt.block_on(
             meta.tenant_manager()
                 .create_tenant(tenant_name.clone(), TenantOptions::default()),
