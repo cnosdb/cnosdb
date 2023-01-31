@@ -153,6 +153,7 @@ impl TenantManager for RemoteTenantManager {
             return Some(client.clone());
         }
 
+        //TODO: Refactor this .ok().unwrap_or_default() , throw error
         self.tenant(tenant).ok().unwrap_or_default().map(|tenant| {
             RemoteMetaClient::new(
                 self.cluster_name.clone(),

@@ -1,5 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
+use std::borrow::Borrow;
+use std::ops::Not;
 use std::{collections::HashMap, convert::Infallible, net::SocketAddr, sync::Arc};
 
 use coordinator::service::CoordinatorRef;
@@ -27,18 +29,22 @@ use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
 use line_protocol::{line_protocol_to_lines, parse_lines_to_points, Line};
+use meta::error::MetaError;
 use meta::meta_client::MetaClientRef;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
+use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
 use models::consistency_level::ConsistencyLevel;
 use models::error_code::{ErrorCode, UnknownCode, UnknownCodeWithMessage};
+use models::oid::{Identifier, Oid};
 use models::schema::DEFAULT_CATALOG;
 use protos::kv_service::{Meta, WritePointsRpcRequest};
 use protos::models as fb_models;
 use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::ResultExt;
 use spi::server::dbms::DBMSRef;
-use spi::service::protocol::ContextBuilder;
 use spi::service::protocol::Query;
+use spi::service::protocol::{Context, ContextBuilder};
+use spi::QueryError;
 use std::time::Instant;
 use tokio::sync::oneshot;
 use trace::debug;
@@ -196,42 +202,28 @@ impl HttpService {
             .and(warp::body::bytes())
             .and(self.handle_header())
             .and(warp::query::<WriteParam>())
+            .and(self.with_dbms())
             .and(self.with_coord())
             .and_then(
-                |req: Bytes, header: Header, param: WriteParam, coord: CoordinatorRef| async move {
+                |req: Bytes,
+                 header: Header,
+                 param: WriteParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef| async move {
                     let start = Instant::now();
-                    let user_info = match header.try_get_basic_auth() {
-                        Ok(u) => u,
-                        Err(e) => return Err(reject::custom(e)),
-                    };
+                    let ctx = construct_write_context(header, param, dbms, coord.clone())
+                        .map_err(reject::custom)?;
 
-                    let lines = String::from_utf8_lossy(req.as_ref());
-                    let line_protocol_lines =
-                        line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
-                            .context(ParseLineProtocolSnafu)?;
-
-                    let points = parse_lines_to_points(&param.db, &line_protocol_lines);
-
-                    let tenant = param.tenant.as_deref().unwrap_or(DEFAULT_CATALOG);
-
-                    let req = WritePointsRpcRequest {
-                        version: 1,
-                        meta: Some(Meta {
-                            tenant: tenant.to_string(),
-                            user: Some(user_info.user.to_string()),
-                            password: Some(user_info.password.to_string()),
-                        }),
-                        points,
-                    };
+                    let req = construct_write_points_request(req, &ctx).map_err(reject::custom)?;
 
                     let resp: Result<(), HttpError> = coord
-                        .write_points(tenant.to_string(), ConsistencyLevel::Any, req)
+                        .write_points(ctx.tenant().to_string(), ConsistencyLevel::Any, req)
                         .await
                         .map_err(|e| e.into());
 
                     sample_point_write_duration(
-                        tenant,
-                        &param.db,
+                        ctx.tenant(),
+                        ctx.database(),
                         resp.is_ok(),
                         start.elapsed().as_millis() as f64,
                     );
@@ -259,7 +251,6 @@ impl HttpService {
                 };
                 let data = meta_client.print_data();
 
-                //Ok(warp::reply::json(&data))
                 Ok(data)
             })
     }
@@ -276,7 +267,6 @@ impl HttpService {
     fn prom_remote_read(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        // let dbms = self.dbms.clone();
         warp::path!("api" / "v1" / "prom" / "read")
             .and(warp::post())
             .and(warp::body::content_length_limit(self.query_body_limit))
@@ -341,26 +331,25 @@ impl HttpService {
             .and(self.handle_header())
             .and(warp::query::<WriteParam>())
             .and(self.with_coord())
+            .and(self.with_dbms())
             .and(self.with_prom_remote_server())
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: WriteParam,
                  coord: CoordinatorRef,
+                 dbms: DBMSRef,
                  prs: PromRemoteServerRef| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive rest prom remote write request, header: {:?}, param: {:?}",
                         header, param
                     );
-
-                    // Parse req、header and param to construct query request
-                    let user_info = header.try_get_basic_auth().map_err(reject::custom)?;
-                    let tenant = param.tenant.as_deref().unwrap_or(DEFAULT_CATALOG);
-                    let db = &param.db;
+                    let ctx = construct_write_context(header, param, dbms, coord.clone())
+                        .map_err(reject::custom)?;
 
                     let result = prs
-                        .remote_write(tenant, db, &user_info, req, coord)
+                        .remote_write(req, &ctx, coord)
                         .await
                         .map(|_| ResponseBuilder::ok())
                         .map_err(|e| {
@@ -369,8 +358,8 @@ impl HttpService {
                         });
 
                     sample_point_write_duration(
-                        tenant,
-                        db,
+                        ctx.tenant(),
+                        ctx.database(),
                         result.is_ok(),
                         start.elapsed().as_millis() as f64,
                     );
@@ -430,9 +419,7 @@ fn construct_query(
     let user_info = header.try_get_basic_auth()?;
 
     let tenant = param.tenant;
-    let user = dbms
-        .authenticate(&user_info, tenant.as_deref())
-        .context(QuerySnafu)?;
+    let user = dbms.authenticate(&user_info, tenant.as_deref())?;
 
     let context = ContextBuilder::new(user)
         .with_tenant(tenant)
@@ -444,6 +431,73 @@ fn construct_query(
         context,
         String::from_utf8_lossy(req.as_ref()).to_string(),
     ))
+}
+
+fn construct_write_db_privilege(tenant_id: Oid, database: &str) -> Privilege<Oid> {
+    Privilege::TenantObject(
+        TenantObjectPrivilege::Database(DatabasePrivilege::Write, Some(database.to_string())),
+        Some(tenant_id),
+    )
+}
+
+// construct context and check privilege
+fn construct_write_context(
+    header: Header,
+    param: WriteParam,
+    dbms: DBMSRef,
+    coord: CoordinatorRef,
+) -> Result<Context, HttpError> {
+    let user_info = header.try_get_basic_auth()?;
+    let tenant = param.tenant;
+
+    let user = dbms.authenticate(&user_info, tenant.as_deref())?;
+
+    let context = ContextBuilder::new(user)
+        .with_tenant(tenant)
+        .with_database(Some(param.db))
+        .build();
+
+    let tenant_id = *coord
+        .tenant_meta(context.tenant())
+        .ok_or_else(|| MetaError::TenantNotFound {
+            tenant: context.tenant().to_string(),
+        })?
+        .tenant()
+        .id();
+
+    let privilege = Privilege::TenantObject(
+        TenantObjectPrivilege::Database(
+            DatabasePrivilege::Write,
+            Some(context.database().to_string()),
+        ),
+        Some(tenant_id),
+    );
+    if !context.user_info().check_privilege(&privilege) {
+        return Err(HttpError::Query {
+            source: QueryError::InsufficientPrivileges {
+                privilege: format!("{privilege:?}"),
+            },
+        });
+    }
+    Ok(context)
+}
+
+fn construct_write_points_request(
+    req: Bytes,
+    ctx: &Context,
+) -> Result<WritePointsRpcRequest, HttpError> {
+    let lines = String::from_utf8_lossy(req.as_ref());
+    let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
+        .map_err(|e| HttpError::ParseLineProtocol { source: e })?;
+
+    let points = parse_lines_to_points(ctx.database(), &line_protocol_lines);
+
+    let req = WritePointsRpcRequest {
+        version: 1,
+        meta: None,
+        points,
+    };
+    Ok(req)
 }
 
 async fn sql_handle(query: &Query, header: Header, dbms: DBMSRef) -> Result<Response, HttpError> {

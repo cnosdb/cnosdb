@@ -1,0 +1,39 @@
+-- EXECUTE SQL: drop database if exists test_lp_writer; --
+200 OK
+
+
+-- EXECUTE SQL: create database test_lp_writer with TTL '10000d'; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists writer; --
+200 OK
+
+
+-- EXECUTE SQL: create user writer; --
+200 OK
+
+
+-- EXECUTE SQL: drop role if exists lp_writer; --
+200 OK
+
+
+-- EXECUTE SQL: create role lp_writer inherit member; --
+200 OK
+
+
+-- EXECUTE SQL: grant read on database lp_writer to role lp_writer; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant cnosdb add user writer as lp_writer; --
+200 OK
+
+
+-- WRITE LINE PROTOCOL --
+m,t0=t0,t1=t1 f0=1,f1=2I 1675153612615241000
+-- LINE PROTOCOL END --
+422 Unprocessable Entity
+{"error_code":"010004","error_message":"Insufficient privileges, expected [Write on database test_lp_writer of tenant 203080059214980022420939138235550797245]"}
+-- ERROR:  --
+

@@ -15,9 +15,8 @@ use protos::prompb::remote::{
 
 use coordinator::service::CoordinatorRef;
 use line_protocol::{line_to_point, FieldValue, Line};
-use models::auth::user::UserInfo;
 use models::consistency_level::ConsistencyLevel;
-use protos::kv_service::{Meta, WritePointsRpcRequest};
+use protos::kv_service::WritePointsRpcRequest;
 use protos::models::{Points, PointsArgs};
 use protos::prompb::types::label_matcher::Type;
 use protos::prompb::types::TimeSeries;
@@ -66,23 +65,16 @@ impl PromRemoteServer for PromRemoteSqlServer {
         self.serialize_read_response(read_response).await
     }
 
-    async fn remote_write(
-        &self,
-        tenant: &str,
-        db: &str,
-        user_info: &UserInfo,
-        req: Bytes,
-        coord: CoordinatorRef,
-    ) -> Result<()> {
+    async fn remote_write(&self, req: Bytes, ctx: &Context, coord: CoordinatorRef) -> Result<()> {
         let prom_write_request = self.deserialize_write_request(req).await?;
         let write_points_request = self
-            .prom_write_request_to_write_points_request(tenant, db, user_info, prom_write_request)
+            .prom_write_request_to_write_points_request(ctx, prom_write_request)
             .await?;
         debug!("Received remote write request: {:?}", write_points_request);
 
         coord
             .write_points(
-                tenant.to_string(),
+                ctx.tenant().to_string(),
                 ConsistencyLevel::Any,
                 write_points_request,
             )
@@ -132,9 +124,7 @@ impl PromRemoteSqlServer {
 
     async fn prom_write_request_to_write_points_request(
         &self,
-        tenant: &str,
-        db: &str,
-        user_info: &UserInfo,
+        ctx: &Context,
         req: WriteRequest,
     ) -> Result<WritePointsRpcRequest> {
         let mut fbb = FlatBufferBuilder::new();
@@ -158,11 +148,11 @@ impl PromRemoteSqlServer {
                 let fields = vec![(FIELD_NAME, FieldValue::F64(sample.value))];
                 let timestamp = sample.timestamp * 1000000;
                 let line = Line::new(&table_name, tags.clone(), fields, timestamp);
-                point_offsets.push(line_to_point(db, &line, &mut fbb))
+                point_offsets.push(line_to_point(ctx.database(), &line, &mut fbb))
             }
         }
 
-        let fbb_db = fbb.create_vector(db.as_bytes());
+        let fbb_db = fbb.create_vector(ctx.database().as_bytes());
         let points_raw = fbb.create_vector(&point_offsets);
         let points = Points::create(
             &mut fbb,
@@ -175,11 +165,7 @@ impl PromRemoteSqlServer {
         let points = fbb.finished_data().to_vec();
         let request = WritePointsRpcRequest {
             version: 0,
-            meta: Some(Meta {
-                tenant: tenant.to_string(),
-                user: Some(user_info.user.to_string()),
-                password: Some(user_info.password.to_string()),
-            }),
+            meta: None,
             points,
         };
 
