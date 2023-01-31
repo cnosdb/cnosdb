@@ -475,7 +475,7 @@ fn construct_write_context(
     if !context.user_info().check_privilege(&privilege) {
         return Err(HttpError::Query {
             source: QueryError::InsufficientPrivileges {
-                privilege: format!("{privilege:?}"),
+                privilege: format!("{privilege}"),
             },
         });
     }

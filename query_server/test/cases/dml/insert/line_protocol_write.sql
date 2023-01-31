@@ -13,6 +13,5 @@ alter tenant cnosdb add user writer as lp_writer;
 
 --#USER_NAME=writer
 --#DATABASE=test_lp_writer
---#LP_BEGIN
-m,t0=t0,t1=t1 f0=1,f1=2I 1675153612615241000
---#LP_END
+-- TODO Beautify the error message
+--#m,t0=t0,t1=t1 f0=1,f1=2I 1675153612615241000

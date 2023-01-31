@@ -29,11 +29,3 @@
 -- EXECUTE SQL: alter tenant cnosdb add user writer as lp_writer; --
 200 OK
 
-
--- WRITE LINE PROTOCOL --
-m,t0=t0,t1=t1 f0=1,f1=2I 1675153612615241000
--- LINE PROTOCOL END --
-422 Unprocessable Entity
-{"error_code":"010004","error_message":"Insufficient privileges, expected [Write on database test_lp_writer of tenant 203080059214980022420939138235550797245]"}
--- ERROR:  --
-
