@@ -710,7 +710,7 @@ impl StateMachine {
             .to_string();
         }
 
-        if let Some(res) = self.check_db_schema_valid(cluster, &schema) {
+        if let Some(res) = self.check_db_schema_valid(cluster, schema) {
             return res;
         }
 
@@ -746,7 +746,7 @@ impl StateMachine {
                 .to_string();
         }
 
-        if let Some(res) = self.check_db_schema_valid(cluster, &schema) {
+        if let Some(res) = self.check_db_schema_valid(cluster, schema) {
             return res;
         }
 
@@ -769,13 +769,11 @@ impl StateMachine {
         cluster: &str,
         db_schema: &DatabaseSchema,
     ) -> Option<CommandResp> {
-        let node_list: Vec<NodeInfo> =
-            children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone())
-                .into_values()
-                .collect();
-
         if db_schema.config.shard_num_or_default() == 0
-            || db_schema.config.replica_or_default() > node_list.len() as u64
+            || db_schema.config.replica_or_default()
+                > children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone())
+                    .into_values()
+                    .count() as u64
         {
             return Some(
                 TenaneMetaDataResp::new(
