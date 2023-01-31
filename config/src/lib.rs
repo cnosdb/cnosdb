@@ -26,26 +26,115 @@ impl Config {
     }
 }
 
+pub fn get_config(path: &str) -> Config {
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(err) => panic!("Failed to open configurtion file '{}': {}", path, err),
+    };
+    let mut content = String::new();
+    if let Err(err) = file.read_to_string(&mut content) {
+        panic!("Failed to read configurtion file '{}': {}", path, err);
+    }
+    let config: Config = match toml::from_str(&content) {
+        Ok(config) => config,
+        Err(err) => panic!("Failed to parse configurtion file '{}': {}", path, err),
+    };
+    info!("Start with configuration: {:#?}", config);
+    config
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryConfig {
+    #[serde(default = "QueryConfig::default_max_server_connections")]
     pub max_server_connections: u32,
+    #[serde(default = "QueryConfig::default_query_sql_limit")]
     pub query_sql_limit: u64,
+    #[serde(default = "QueryConfig::default_write_sql_limit")]
     pub write_sql_limit: u64,
+    #[serde(default = "QueryConfig::default_auth_enabled")]
     pub auth_enabled: bool,
+}
+
+impl QueryConfig {
+    fn default_max_server_connections() -> u32 {
+        10240
+    }
+
+    fn default_query_sql_limit() -> u64 {
+        16 * 1024 * 1024
+    }
+
+    fn default_write_sql_limit() -> u64 {
+        160 * 1024 * 1024
+    }
+
+    fn default_auth_enabled() -> bool {
+        false
+    }
+
+    pub fn override_by_env(&mut self) {
+        if let Ok(size) = std::env::var("MAX_SERVER_CONNECTIONS") {
+            self.max_server_connections = size.parse::<u32>().unwrap();
+        }
+        if let Ok(size) = std::env::var("QUERY_SQL_LIMIT") {
+            self.query_sql_limit = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("WRITE_SQL_LIMIT") {
+            self.write_sql_limit = size.parse::<u64>().unwrap();
+        }
+        if let Ok(val) = std::env::var("AUTH_ENABLED") {
+            self.auth_enabled = val.parse::<bool>().unwrap();
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
+    #[serde(default = "StorageConfig::default_path")]
     pub path: String,
+    #[serde(default = "StorageConfig::default_max_summary_size")]
     pub max_summary_size: u64,
+    #[serde(default = "StorageConfig::default_max_level")]
     pub max_level: u32,
+    #[serde(default = "StorageConfig::default_base_file_size")]
     pub base_file_size: u64,
+    #[serde(default = "StorageConfig::default_compact_trigger")]
     pub compact_trigger: u32,
+    #[serde(default = "StorageConfig::default_max_compact_size")]
     pub max_compact_size: u64,
+    #[serde(default = "StorageConfig::default_strict_write")]
     pub strict_write: bool,
 }
 
 impl StorageConfig {
+    fn default_path() -> String {
+        "data/db".to_string()
+    }
+
+    fn default_max_summary_size() -> u64 {
+        128 * 1024 * 1024
+    }
+
+    fn default_max_level() -> u32 {
+        4
+    }
+
+    fn default_base_file_size() -> u64 {
+        16 * 1024 * 1024
+    }
+
+    fn default_compact_trigger() -> u32 {
+        4
+    }
+
+    fn default_max_compact_size() -> u64 {
+        2 * 1024 * 1024 * 1024
+    }
+
+    fn default_strict_write() -> bool {
+        false
+    }
+
     pub fn override_by_env(&mut self) {
         if let Ok(path) = std::env::var("CNOSDB_APPLICATION_PATH") {
             self.path = path;
@@ -73,12 +162,33 @@ impl StorageConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalConfig {
+    #[serde(default = "WalConfig::default_enabled")]
     pub enabled: bool,
+    #[serde(default = "WalConfig::default_path")]
     pub path: String,
+    #[serde(default = "WalConfig::default_max_file_size")]
+    pub max_file_size: u64,
+    #[serde(default = "WalConfig::default_sync")]
     pub sync: bool,
 }
 
 impl WalConfig {
+    fn default_enabled() -> bool {
+        true
+    }
+
+    fn default_path() -> String {
+        "data/wal".to_string()
+    }
+
+    fn default_max_file_size() -> u64 {
+        1024 * 1024 * 1024
+    }
+
+    fn default_sync() -> bool {
+        false
+    }
+
     pub fn override_by_env(&mut self) {
         if let Ok(enabled) = std::env::var("CNOSDB_WAL_ENABLED") {
             self.enabled = enabled.as_str() == "true";
@@ -94,11 +204,21 @@ impl WalConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheConfig {
+    #[serde(default = "CacheConfig::default_max_buffer_size")]
     pub max_buffer_size: u64,
+    #[serde(default = "CacheConfig::default_max_immutable_number")]
     pub max_immutable_number: u16,
 }
 
 impl CacheConfig {
+    fn default_max_buffer_size() -> u64 {
+        128 * 1024 * 1024
+    }
+
+    fn default_max_immutable_number() -> u16 {
+        4
+    }
+
     pub fn override_by_env(&mut self) {
         if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_BUFFER_SIZE") {
             self.max_buffer_size = size.parse::<u64>().unwrap();
@@ -109,30 +229,23 @@ impl CacheConfig {
     }
 }
 
-impl QueryConfig {
-    pub fn override_by_env(&mut self) {
-        if let Ok(size) = std::env::var("MAX_SERVER_CONNECTIONS") {
-            self.max_server_connections = size.parse::<u32>().unwrap();
-        }
-        if let Ok(size) = std::env::var("QUERY_SQL_LIMIT") {
-            self.query_sql_limit = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("WRITE_SQL_LIMIT") {
-            self.write_sql_limit = size.parse::<u64>().unwrap();
-        }
-        if let Ok(val) = std::env::var("AUTH_ENABLED") {
-            self.auth_enabled = val.parse::<bool>().unwrap();
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogConfig {
+    #[serde(default = "LogConfig::default_level")]
     pub level: String,
+    #[serde(default = "LogConfig::default_path")]
     pub path: String,
 }
 
 impl LogConfig {
+    fn default_level() -> String {
+        "info".to_string()
+    }
+
+    fn default_path() -> String {
+        "data/log".to_string()
+    }
+
     pub fn override_by_env(&mut self) {
         if let Ok(level) = std::env::var("CNOSDB_LOG_LEVEL") {
             self.level = level;
@@ -150,41 +263,71 @@ pub struct SecurityConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TLSConfig {
+    #[serde(default = "TLSConfig::default_certificate")]
     pub certificate: String,
+    #[serde(default = "TLSConfig::default_private_key")]
     pub private_key: String,
 }
 
-pub fn get_config(path: &str) -> Config {
-    let mut file = match File::open(path) {
-        Ok(file) => file,
-        Err(err) => panic!("Failed to open configurtion file '{}': {}", path, err),
-    };
-    let mut content = String::new();
-    if let Err(err) = file.read_to_string(&mut content) {
-        panic!("Failed to read configurtion file '{}': {}", path, err);
+impl TLSConfig {
+    fn default_certificate() -> String {
+        "./config/tls/server.crt".to_string()
     }
-    let config: Config = match toml::from_str(&content) {
-        Ok(config) => config,
-        Err(err) => panic!("Failed to parse configurtion file '{}': {}", path, err),
-    };
-    info!("Start with configuration: {:#?}", config);
-    config
+
+    fn default_private_key() -> String {
+        "./config/tls/server.key".to_string()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Default, Deserialize)]
 pub struct ClusterConfig {
+    #[serde(default = "ClusterConfig::default_node_id")]
     pub node_id: u64,
+    #[serde(default = "ClusterConfig::default_name")]
     pub name: String,
+    #[serde(default = "ClusterConfig::default_meta")]
     pub meta: String,
     pub tenant: String,
 
+    #[serde(default = "ClusterConfig::default_http_server")]
     pub http_server: String,
+    #[serde(default = "ClusterConfig::default_grpc_server")]
     pub grpc_server: String,
+    #[serde(default = "ClusterConfig::default_tcp_server")]
     pub tcp_server: String,
+    #[serde(default = "ClusterConfig::default_flight_rpc_server")]
     pub flight_rpc_server: String,
 }
 
 impl ClusterConfig {
+    fn default_node_id() -> u64 {
+        100
+    }
+
+    fn default_name() -> String {
+        "cluster_xxx".to_string()
+    }
+
+    fn default_meta() -> String {
+        "127.0.0.1:21001".to_string()
+    }
+
+    fn default_http_server() -> String {
+        "127.0.0.1:31007".to_string()
+    }
+
+    fn default_grpc_server() -> String {
+        "127.0.0.1:31008".to_string()
+    }
+
+    fn default_tcp_server() -> String {
+        "127.0.0.1:31009".to_string()
+    }
+
+    fn default_flight_rpc_server() -> String {
+        "127.0.0.1:31006".to_string()
+    }
+
     pub fn override_by_env(&mut self) {
         if let Ok(name) = std::env::var("CNOSDB_CLUSTER_NAME") {
             self.name = name;
@@ -219,11 +362,21 @@ impl ClusterConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HintedOffConfig {
+    #[serde(default = "HintedOffConfig::default_enable")]
     pub enable: bool,
+    #[serde(default = "HintedOffConfig::default_path")]
     pub path: String,
 }
 
 impl HintedOffConfig {
+    fn default_enable() -> bool {
+        true
+    }
+
+    fn default_path() -> String {
+        "/tmp/cnosdb/hh".to_string()
+    }
+
     pub fn override_by_env(&mut self) {
         if let Ok(enable) = std::env::var("CNOSDB_HINTEDOFF_ENABLE") {
             self.enable = enable.parse::<bool>().unwrap();

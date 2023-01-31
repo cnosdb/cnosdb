@@ -51,7 +51,6 @@ pub struct TSIndex {
 
     binlog: IndexBinlog,
     storage: IndexEngine,
-
     forward_cache: RwLock<ForwardIndexCache>,
 }
 

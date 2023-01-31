@@ -1,0 +1,19 @@
+[package]
+name = "lru_cache"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bench]]
+name = "main"
+harness = false
+
+[dependencies]
+parking_lot = { workspace = true }
+utils = { path = "../utils" }
+
+[dev-dependencies]
+criterion = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true, features = ["full"] }

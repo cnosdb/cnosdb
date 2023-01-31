@@ -29,7 +29,7 @@
     •
     <a href="https://docs.cnosdb.com/">Documentation</a>
     •
-    <a href="https://docs.cnosdb.com/zh/guide/quick_start.html">Quick Start</a>
+    <a href="https://docs.cnosdb.com/en/quick_start.html">Quick Start</a>
 </h3>
 
 English | [简体中文](./README_CN.md)
@@ -269,3 +269,4 @@ Please refer to [Contribution Guide](./CONTRIBUTING_EN.md) to contribute to Cnos
 
 - CnosDB 2.0 uses [Apache Arrow](https://github.com/apache/arrow) as the memory model.
 - CnosDB 2.0's query engine is powered by [Apache Arrow DataFusion](https://github.com/apache/arrow-datafusion).
+- CnosDB 2.0's bug detection is powered by [SQLancer](https://github.com/sqlancer/sqlancer).

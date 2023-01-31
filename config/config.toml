@@ -23,6 +23,7 @@ strict_write = false
 [wal]
 enabled = true
 path = 'data/wal'
+max_file_size = 1073741824 # 1024 * 1024 * 1024
 sync = false
 
 [cache]

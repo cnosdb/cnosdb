@@ -518,7 +518,7 @@ mod test {
         let file = Arc::new(file_manager::open_file(&path).await.unwrap());
         let len = file.len();
 
-        let index = IndexReader::open(file.clone()).await.unwrap();
+        let index = IndexReader::open(0, file.clone()).await.unwrap();
         let mut data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx_meta in index.iter() {
             let mut cr = ColumnReader::new(file.clone(), idx_meta.block_iterator());

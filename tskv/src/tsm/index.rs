@@ -12,8 +12,9 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Index {
+    tsm_id: u64,
     /// In-memory index-block data
     ///
     /// ```text
@@ -33,8 +34,9 @@ pub struct Index {
 
 impl Index {
     #[inline(always)]
-    pub fn new(data: Vec<u8>, field_ids: Vec<FieldId>, offsets: Vec<u64>) -> Self {
+    pub fn new(tsm_id: u64, data: Vec<u8>, field_ids: Vec<FieldId>, offsets: Vec<u64>) -> Self {
         Self {
+            tsm_id,
             data,
             field_ids,
             offsets,
@@ -90,6 +92,10 @@ impl IndexMeta {
         );
         iter.filter_time_range(time_range);
         iter
+    }
+
+    pub fn offset(&self) -> u64 {
+        self.index_ref.offsets()[self.index_idx]
     }
 
     #[inline(always)]
