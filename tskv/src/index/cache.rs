@@ -1,4 +1,5 @@
 use lru::LruCache;
+use lru_cache::ShardedCache;
 use models::{SeriesId, SeriesKey};
 
 use std::{
@@ -13,33 +14,33 @@ pub struct SeriesKeyInfo {
     pub id: SeriesId,
 }
 pub struct ForwardIndexCache {
-    id_map: LruCache<SeriesId, Arc<SeriesKeyInfo>>,
-    hash_map: LruCache<u64, Arc<SeriesKeyInfo>>,
+    id_map: ShardedCache<SeriesId, Arc<SeriesKeyInfo>>,
+    hash_map: ShardedCache<u64, Arc<SeriesKeyInfo>>,
 }
 
 impl ForwardIndexCache {
     pub fn new(size: usize) -> Self {
         Self {
-            id_map: LruCache::new(NonZeroUsize::new(size).unwrap()),
-            hash_map: LruCache::new(NonZeroUsize::new(size).unwrap()),
+            id_map: ShardedCache::with_capacity(size),
+            hash_map: ShardedCache::with_capacity(size),
         }
     }
 
-    pub fn add(&mut self, info: SeriesKeyInfo) {
+    pub fn add(&self, info: SeriesKeyInfo) {
         let id = info.id;
         let hash = info.hash;
         let info_ref = Arc::new(info);
 
-        self.id_map.put(id, info_ref.clone());
-        self.hash_map.put(hash, info_ref);
+        self.id_map.insert(id, info_ref.clone());
+        self.hash_map.insert(hash, info_ref);
     }
 
-    pub fn del(&mut self, id: SeriesId, hash: u64) {
-        self.id_map.pop(&id);
-        self.hash_map.pop(&hash);
+    pub fn del(&self, id: SeriesId, hash: u64) {
+        self.id_map.remove(&id);
+        self.hash_map.remove(&hash);
     }
 
-    pub fn get_series_id_by_key(&mut self, key: &SeriesKey) -> Option<SeriesId> {
+    pub fn get_series_id_by_key(&self, key: &SeriesKey) -> Option<SeriesId> {
         let hash = key.hash();
 
         if let Some(info) = self.hash_map.get(&hash) {
@@ -51,7 +52,7 @@ impl ForwardIndexCache {
         None
     }
 
-    pub fn get_series_key_by_id(&mut self, id: SeriesId) -> Option<SeriesKey> {
+    pub fn get_series_key_by_id(&self, id: SeriesId) -> Option<SeriesKey> {
         self.id_map.get(&id).map(|info| info.key.clone())
     }
 }

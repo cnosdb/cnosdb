@@ -100,6 +100,12 @@ pub enum CoordinatorError {
     VnodeNotFound {
         id: u32,
     },
+
+    #[snafu(display("Node failover: {}", id))]
+    #[error_code(code = 16)]
+    FailoverNode {
+        id: u64,
+    },
 }
 
 impl From<meta::error::MetaError> for CoordinatorError {

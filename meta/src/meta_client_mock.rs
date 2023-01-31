@@ -235,6 +235,10 @@ impl MetaClient for MockMetaClient {
         None
     }
 
+    fn get_vnode_repl_set(&self, id: u32) -> Option<ReplicationSet> {
+        None
+    }
+
     fn limiter(&self) -> Arc<dyn Limiter> {
         todo!()
     }
