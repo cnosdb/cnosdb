@@ -10,7 +10,8 @@ use datafusion::{
     logical_expr::{AggregateUDF, ScalarUDF, TableSource},
     sql::{planner::ContextProvider, TableReference},
 };
-use futures::executor::block_on;
+
+use meta::MetaClientRef;
 use models::auth::user::UserDesc;
 use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
 
@@ -53,6 +54,7 @@ pub trait ContextProviderExtension: ContextProvider {
 pub struct MetadataProvider {
     session: IsiphoSessionCtx,
     coord: CoordinatorRef,
+    meta_client: MetaClientRef,
     func_manager: FuncMetaManagerRef,
     information_schema_provider: InformationSchemaProvider,
     cluster_schema_provider: ClusterSchemaProvider,
@@ -62,6 +64,7 @@ pub struct MetadataProvider {
 impl MetadataProvider {
     pub fn new(
         coord: CoordinatorRef,
+        meta_client: MetaClientRef,
         func_manager: SimpleFunctionMetadataManager,
         query_tracker: Arc<QueryTracker>,
         session: IsiphoSessionCtx,
@@ -69,6 +72,7 @@ impl MetadataProvider {
         Self {
             coord,
             session,
+            meta_client,
             func_manager: Arc::new(func_manager),
             information_schema_provider: InformationSchemaProvider::new(query_tracker),
             cluster_schema_provider: ClusterSchemaProvider::new(),
@@ -76,7 +80,7 @@ impl MetadataProvider {
         }
     }
 
-    async fn build_df_data_source(
+    fn build_df_data_source(
         &self,
         name: ResolvedTableReference<'_>,
     ) -> datafusion::common::Result<Arc<dyn TableSource>> {
@@ -84,25 +88,14 @@ impl MetadataProvider {
         let database_name = name.schema;
         let table_name = name.table;
 
-        let client = self
-            .coord
-            .meta_manager()
-            .tenant_manager()
-            .tenant_meta(name.catalog)
-            .await
-            .ok_or_else(|| {
-                DataFusionError::External(Box::new(MetaError::TenantNotFound {
-                    tenant: name.catalog.to_string(),
-                }))
-            })?;
-
         // process INFORMATION_SCHEMA
         if database_name.eq_ignore_ascii_case(self.information_schema_provider.name()) {
-            let mem_table = self
-                .information_schema_provider
-                .table(self.session.user(), table_name, client)
-                .await
-                .map_err(|e| DataFusionError::External(Box::new(e)))?;
+            let mem_table = futures::executor::block_on(self.information_schema_provider.table(
+                self.session.user(),
+                table_name,
+                self.meta_client.clone(),
+            ))
+            .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
             return Ok(provider_as_source(mem_table));
         }
@@ -111,16 +104,18 @@ impl MetadataProvider {
         if tenant_name.eq_ignore_ascii_case(DEFAULT_CATALOG)
             && database_name.eq_ignore_ascii_case(self.cluster_schema_provider.name())
         {
-            let mem_table = self
-                .cluster_schema_provider
-                .table(self.session.user(), table_name, self.coord.meta_manager())
-                .await
-                .map_err(|e| DataFusionError::External(Box::new(e)))?;
+            let mem_table = futures::executor::block_on(self.cluster_schema_provider.table(
+                self.session.user(),
+                table_name,
+                self.coord.meta_manager(),
+            ))
+            .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
             return Ok(provider_as_source(mem_table));
         }
 
-        let df_table_source = match client
+        let df_table_source = match self
+            .meta_client
             .get_table_schema(name.schema, name.table)
             .map_err(|e| DataFusionError::External(Box::new(e)))?
         {
@@ -204,7 +199,7 @@ impl ContextProviderExtension for MetadataProvider {
             .write()
             .push_table(database_name, table_name);
 
-        let df_table_source = block_on(self.build_df_data_source(name))?;
+        let df_table_source = self.build_df_data_source(name)?;
 
         Ok(TableSourceAdapter::new(
             df_table_source,

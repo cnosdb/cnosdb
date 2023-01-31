@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
+use meta::error::MetaError;
 use models::oid::Oid;
 
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
@@ -73,10 +74,21 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             .session_factory
             .create_isipho_session_ctx(query.context().clone(), tenant_id);
 
+        let meta_client = self
+            .coord
+            .meta_manager()
+            .tenant_manager()
+            .tenant_meta(query.context().tenant())
+            .await
+            .ok_or_else(|| MetaError::TenantNotFound {
+                tenant: query.context().tenant().to_string(),
+            })?;
+
         let mut func_manager = SimpleFunctionMetadataManager::default();
         load_all_functions(&mut func_manager)?;
         let scheme_provider = MetadataProvider::new(
             self.coord.clone(),
+            meta_client,
             func_manager,
             self.query_tracker.clone(),
             session.clone(),
