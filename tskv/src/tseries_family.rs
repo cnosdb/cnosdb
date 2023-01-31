@@ -910,7 +910,6 @@ mod test {
 
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
-    use config::{get_config, ClusterConfig};
     use lru_cache::ShardedCache;
     use models::{
         schema::{DatabaseSchema, TenantOptions},
