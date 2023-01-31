@@ -51,7 +51,7 @@ pub struct TSIndex {
 
     binlog: IndexBinlog,
     storage: IndexEngine,
-    forward_cache: RwLock<ForwardIndexCache>,
+    forward_cache: ForwardIndexCache,
 }
 
 impl TSIndex {
@@ -72,7 +72,7 @@ impl TSIndex {
             incr_id,
             write_count: 0,
             path: path.into(),
-            forward_cache: RwLock::new(ForwardIndexCache::new(1_000_000)),
+            forward_cache: ForwardIndexCache::new(1_000_000),
         };
 
         ts_index.recover().await?;
@@ -162,7 +162,7 @@ impl TSIndex {
     }
 
     pub fn get_series_id(&self, series_key: &SeriesKey) -> IndexResult<Option<u32>> {
-        if let Some(id) = self.forward_cache.write().get_series_id_by_key(series_key) {
+        if let Some(id) = self.forward_cache.get_series_id_by_key(series_key) {
             return Ok(Some(id));
         }
 
@@ -175,7 +175,7 @@ impl TSIndex {
                 key: series_key.clone(),
                 hash: series_key.hash(),
             };
-            self.forward_cache.write().add(info);
+            self.forward_cache.add(info);
 
             return Ok(Some(id));
         }
@@ -225,7 +225,7 @@ impl TSIndex {
     }
 
     pub fn get_series_key(&self, sid: u32) -> IndexResult<Option<SeriesKey>> {
-        if let Some(key) = self.forward_cache.write().get_series_key_by_id(sid) {
+        if let Some(key) = self.forward_cache.get_series_key_by_id(sid) {
             return Ok(Some(key));
         }
 
@@ -238,7 +238,7 @@ impl TSIndex {
                 key: key.clone(),
                 hash: key.hash(),
             };
-            self.forward_cache.write().add(info);
+            self.forward_cache.add(info);
 
             return Ok(Some(key));
         }
@@ -268,7 +268,7 @@ impl TSIndex {
         let series_key = self.get_series_key(sid)?;
         let _ = self.storage.delete(&encode_series_id_key(sid));
         if let Some(series_key) = series_key {
-            self.forward_cache.write().del(sid, series_key.hash());
+            self.forward_cache.del(sid, series_key.hash());
             let key_buf = encode_series_key(series_key.table(), series_key.tags());
             let _ = self.storage.delete(&key_buf);
             for tag in series_key.tags() {

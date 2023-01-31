@@ -700,6 +700,10 @@ impl StateMachine {
             .to_string();
         }
 
+        if let Some(res) = self.check_db_schema_valid(cluster, schema) {
+            return res;
+        }
+
         let value = serde_json::to_string(schema).unwrap();
         let _ = self.insert(&key, &value);
         info!("WRITE: {} :{}", key, value);
@@ -724,11 +728,38 @@ impl StateMachine {
                 .to_string();
         }
 
+        if let Some(res) = self.check_db_schema_valid(cluster, schema) {
+            return res;
+        }
+
         let value = serde_json::to_string(schema).unwrap();
         let _ = self.insert(&key, &value);
         info!("WRITE: {} :{}", key, value);
 
         StatusResponse::new(META_REQUEST_SUCCESS, "".to_string()).to_string()
+    }
+
+    fn check_db_schema_valid(
+        &self,
+        cluster: &str,
+        db_schema: &DatabaseSchema,
+    ) -> Option<CommandResp> {
+        if db_schema.config.shard_num_or_default() == 0
+            || db_schema.config.replica_or_default()
+                > children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone())
+                    .into_values()
+                    .count() as u64
+        {
+            return Some(
+                TenaneMetaDataResp::new(
+                    META_REQUEST_FAILED,
+                    format!("database {} attribute invalid!", db_schema.database_name()),
+                )
+                .to_string(),
+            );
+        }
+
+        None
     }
 
     fn process_create_table(

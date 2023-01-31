@@ -86,9 +86,28 @@ impl QueryExecutor {
 
     async fn node_executor(&self, node_id: u64, vnodes: Vec<VnodeInfo>) -> CoordinatorResult<()> {
         if node_id == self.meta_manager.node_id() {
-            self.local_node_executor(vnodes).await
+            self.local_node_executor(vnodes.clone()).await
         } else {
-            self.remote_node_executor(node_id, vnodes).await
+            let result = self.remote_node_executor(node_id, vnodes.clone()).await;
+            if let Err(CoordinatorError::FailoverNode { id }) = result {
+                let mut routines = vec![];
+                let mapping = self.try_map_vnode(&vnodes).await?;
+                for (tmp_id, tmp_vnodes) in mapping.iter() {
+                    info!(
+                        "try execute select on node {}, vnode list: {:?}",
+                        tmp_id, tmp_vnodes
+                    );
+
+                    let routine = self.remote_node_executor(*tmp_id, tmp_vnodes.clone());
+                    routines.push(routine);
+                }
+
+                futures::future::try_join_all(routines).await?;
+
+                Ok(())
+            } else {
+                result
+            }
         }
     }
 
@@ -101,7 +120,8 @@ impl QueryExecutor {
             .meta_manager
             .admin_meta()
             .get_node_conn(node_id)
-            .await?;
+            .await
+            .map_err(|e| CoordinatorError::FailoverNode { id: node_id })?;
 
         let mut vnode_ids = Vec::with_capacity(vnodes.len());
         for item in vnodes.iter() {
@@ -119,7 +139,9 @@ impl QueryExecutor {
             table_schema: self.option.table_schema.clone(),
         };
         let req_cmd = QueryRecordBatchRequest { args, expr };
-        send_command(&mut conn, &CoordinatorTcpCmd::QueryRecordBatchCmd(req_cmd)).await?;
+        send_command(&mut conn, &CoordinatorTcpCmd::QueryRecordBatchCmd(req_cmd))
+            .await
+            .map_err(|e| CoordinatorError::FailoverNode { id: node_id })?;
 
         loop {
             let rsp_cmd = recv_command(&mut conn).await?;
@@ -237,6 +259,42 @@ impl QueryExecutor {
                     list.push(vnode);
                 }
             }
+        }
+        for (_, list) in vnode_mapping.iter_mut() {
+            list.dedup_by(|a, b| a.id == b.id);
+        }
+
+        Ok(vnode_mapping)
+    }
+
+    async fn try_map_vnode(
+        &self,
+        vnodes: &[VnodeInfo],
+    ) -> CoordinatorResult<HashMap<u64, Vec<VnodeInfo>>> {
+        let meta = self
+            .meta_manager
+            .tenant_manager()
+            .tenant_meta(&self.option.tenant)
+            .ok_or(CoordinatorError::TenantNotFound {
+                name: self.option.tenant.clone(),
+            })?;
+
+        let mut vnode_mapping: HashMap<u64, Vec<VnodeInfo>> = HashMap::new();
+        for item in vnodes.iter() {
+            let mut repl = meta
+                .get_vnode_repl_set(item.id)
+                .ok_or(CoordinatorError::VnodeNotFound { id: item.id })?;
+
+            repl.vnodes.retain(|x| x.node_id != item.node_id);
+            if repl.vnodes.is_empty() {
+                return Err(CoordinatorError::VnodeNotFound { id: item.id });
+            }
+
+            let random = now_timestamp() as usize % repl.vnodes.len();
+            let vnode = repl.vnodes[random].clone();
+
+            let list = vnode_mapping.entry(vnode.node_id).or_default();
+            list.push(vnode);
         }
         for (_, list) in vnode_mapping.iter_mut() {
             list.dedup_by(|a, b| a.id == b.id);

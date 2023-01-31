@@ -115,6 +115,7 @@ pub trait MetaClient: Send + Sync + Debug {
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
 
     fn get_vnode_all_info(&self, id: u32) -> Option<VnodeAllInfo>;
+    fn get_vnode_repl_set(&self, id: u32) -> Option<ReplicationSet>;
 
     fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>>;
 
@@ -779,6 +780,23 @@ impl MetaClient for RemoteMetaClient {
                                 start_time: bucket.start_time,
                                 end_time: bucket.end_time,
                             });
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn get_vnode_repl_set(&self, id: u32) -> Option<ReplicationSet> {
+        let data = self.data.read();
+        for (db_name, db_info) in data.dbs.iter() {
+            for bucket in db_info.buckets.iter() {
+                for repl_set in bucket.shard_group.iter() {
+                    for vnode_info in repl_set.vnodes.iter() {
+                        if vnode_info.id == id {
+                            return Some(repl_set.clone());
                         }
                     }
                 }
