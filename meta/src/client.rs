@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use openraft::error::ClientWriteError;
 use openraft::error::ForwardToLeader;
+use openraft::AnyError;
 
 use openraft::error::NetworkError;
 use openraft::error::RPCError;
@@ -147,21 +148,38 @@ impl MetaHttpClient {
             (t.0, format!("http://{}/{}", target_addr, uri))
         };
 
-        let resp = if let Some(r) = req {
-            self.inner.post(url.clone()).json(r)
+        /*-------------------surf client--------------------------- */
+        let mut resp = if let Some(r) = req {
+            surf::post(url.clone()).body(surf::Body::from_json(r).unwrap())
         } else {
-            self.inner.get(url.clone())
+            surf::get(url.clone())
         }
-        .send()
         .await
-        .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+        .map_err(|e| RPCError::Network(NetworkError::new(&AnyError::error(e.to_string()))))?;
 
         let res: Result<Resp, Err> = resp
-            .json()
+            .body_json()
             .await
-            .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+            .map_err(|e| RPCError::Network(NetworkError::new(&AnyError::error(e.to_string()))))?;
 
         res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
+
+        /*-------------------reqwest client--------------------------- */
+        // let resp = if let Some(r) = req {
+        //     self.inner.post(url.clone()).json(r)
+        // } else {
+        //     self.inner.get(url.clone())
+        // }
+        // .send()
+        // .await
+        // .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+
+        // let res: Result<Resp, Err> = resp
+        //     .json()
+        //     .await
+        //     .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+
+        // res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
     }
 }
 
