@@ -71,7 +71,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
     ) -> Result<Output> {
         let session = self
             .session_factory
-            .create_isipho_session_ctx(query.context().clone(), tenant_id);
+            .create_isipho_session_ctx(query.context().clone(), tenant_id)?;
 
         let mut func_manager = SimpleFunctionMetadataManager::default();
         load_all_functions(&mut func_manager)?;
