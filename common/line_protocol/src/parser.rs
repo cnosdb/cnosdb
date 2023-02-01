@@ -104,7 +104,7 @@ pub struct Line<'a> {
     pub timestamp: i64,
 }
 
-impl Line<'_> {
+impl<'a> Line<'_> {
     pub fn hash_id(&mut self) -> u64 {
         if self.hash_id == 0 {
             self.tags
@@ -121,6 +121,23 @@ impl Line<'_> {
         }
 
         self.hash_id
+    }
+
+    pub fn new(
+        measurement: &'a str,
+        tags: Vec<(&'a str, &'a str)>,
+        fields: Vec<(&'a str, FieldValue)>,
+        timestamp: i64,
+    ) -> Line<'a> {
+        let mut res = Line {
+            hash_id: 0,
+            measurement,
+            tags,
+            fields,
+            timestamp,
+        };
+        res.hash_id = res.hash_id();
+        res
     }
 }
 

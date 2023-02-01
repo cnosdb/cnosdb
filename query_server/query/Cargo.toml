@@ -12,6 +12,7 @@ utils = { path = "../../common/utils" }
 config = { path = "../../config" }
 meta = { path = "../../meta" }
 coordinator = { path = "../../coordinator" }
+line_protocol = {path = "../../common/line_protocol"}
 spi = { path = "../spi" }
 
 async-trait = { workspace = true }

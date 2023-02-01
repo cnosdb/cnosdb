@@ -1,14 +1,23 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use datafusion::arrow::datatypes::ToByteSlice;
+use flatbuffers::FlatBufferBuilder;
 use meta::error::MetaError;
 use meta::meta_client::{MetaClientRef, MetaRef};
 use models::schema::{TskvTableSchema, TIME_FIELD_NAME};
 use protos::models_helper::{parse_proto_bytes, to_proto_bytes};
-use protos::prompb::remote::{Query as PromQuery, QueryResult, ReadRequest, ReadResponse};
+use protos::prompb::remote::{
+    Query as PromQuery, QueryResult, ReadRequest, ReadResponse, WriteRequest,
+};
 
+use coordinator::service::CoordinatorRef;
+use line_protocol::{line_to_point, FieldValue, Line};
+use models::consistency_level::ConsistencyLevel;
+use protos::kv_service::WritePointsRpcRequest;
+use protos::models::{Points, PointsArgs};
 use protos::prompb::types::label_matcher::Type;
 use protos::prompb::types::TimeSeries;
 use regex::Regex;
@@ -52,10 +61,22 @@ impl PromRemoteServer for PromRemoteSqlServer {
         self.serialize_read_response(read_response).await
     }
 
-    fn remote_write(&self, _ctx: &Context, _req: Bytes) -> Result<()> {
-        Err(QueryError::NotImplemented {
-            err: "prom remote write".to_string(),
-        })
+    async fn remote_write(&self, req: Bytes, ctx: &Context, coord: CoordinatorRef) -> Result<()> {
+        let prom_write_request = self.deserialize_write_request(req).await?;
+        let write_points_request = self
+            .prom_write_request_to_write_points_request(ctx, prom_write_request)
+            .await?;
+        debug!("Received remote write request: {:?}", write_points_request);
+
+        coord
+            .write_points(
+                ctx.tenant().to_string(),
+                ConsistencyLevel::Any,
+                write_points_request,
+            )
+            .await?;
+
+        Ok(())
     }
 }
 
@@ -81,6 +102,70 @@ impl PromRemoteSqlServer {
                 source: Box::new(source),
             }
         })
+    }
+
+    async fn deserialize_write_request(&self, req: Bytes) -> Result<WriteRequest> {
+        let mut decompressed = Vec::new();
+        let compressed = req.to_byte_slice();
+        self.codec
+            .lock()
+            .await
+            .decompress(compressed, &mut decompressed, None)?;
+        parse_proto_bytes::<WriteRequest>(&decompressed).map_err(|source| {
+            QueryError::InvalidRemoteWriteReq {
+                source: Box::new(source),
+            }
+        })
+    }
+
+    async fn prom_write_request_to_write_points_request(
+        &self,
+        ctx: &Context,
+        req: WriteRequest,
+    ) -> Result<WritePointsRpcRequest> {
+        let mut fbb = FlatBufferBuilder::new();
+        let mut point_offsets = Vec::new();
+
+        for ts in req.timeseries {
+            let mut table_name = METRIC_NAME_LABEL.to_string();
+
+            let tags = ts
+                .labels
+                .iter()
+                .map(|label| {
+                    if label.name.eq(METRIC_NAME_LABEL) {
+                        table_name = label.value.to_owned();
+                    }
+                    (label.name.deref(), label.value.deref())
+                })
+                .collect::<Vec<(&str, &str)>>();
+
+            for sample in ts.samples {
+                let fields = vec![(METRIC_SAMPLE_COLUMN_NAME, FieldValue::F64(sample.value))];
+                let timestamp = sample.timestamp * 1000000;
+                let line = Line::new(&table_name, tags.clone(), fields, timestamp);
+                point_offsets.push(line_to_point(ctx.database(), &line, &mut fbb))
+            }
+        }
+
+        let fbb_db = fbb.create_vector(ctx.database().as_bytes());
+        let points_raw = fbb.create_vector(&point_offsets);
+        let points = Points::create(
+            &mut fbb,
+            &PointsArgs {
+                db: Some(fbb_db),
+                points: Some(points_raw),
+            },
+        );
+        fbb.finish(points, None);
+        let points = fbb.finished_data().to_vec();
+        let request = WritePointsRpcRequest {
+            version: 0,
+            meta: None,
+            points,
+        };
+
+        Ok(request)
     }
 
     async fn process_read_request(
@@ -174,7 +259,7 @@ fn build_sql_with_table(
             .type_
             .enum_value()
             .map_err(|e| QueryError::InvalidRemoteReadReq {
-                source: format!("Unknown label matcher type: {}", e).into(),
+                source: format!("Unknown label matcher type: {e}").into(),
             })?;
 
         if METRIC_NAME_LABEL == m.name {
@@ -361,7 +446,7 @@ mod test {
         service::protocol::{ContextBuilder, Query, QueryHandle, QueryId},
     };
 
-    use crate::prom::remote_read::transform_time_series;
+    use crate::prom::remote_server::transform_time_series;
 
     #[test]
     fn test_transform_time_series() {

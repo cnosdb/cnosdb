@@ -1,0 +1,32 @@
+-- EXECUTE SQL: drop database if exists test_lp_writer; --
+200 OK
+
+
+-- EXECUTE SQL: create database test_lp_writer with TTL '10000d'; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists writer; --
+200 OK
+
+
+-- EXECUTE SQL: create user writer; --
+200 OK
+
+
+-- EXECUTE SQL: drop role if exists lp_writer; --
+200 OK
+
+
+-- EXECUTE SQL: create role lp_writer inherit member; --
+200 OK
+
+
+-- EXECUTE SQL: grant read on database lp_writer to role lp_writer; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant cnosdb add user writer as lp_writer; --
+200 OK
+
+
