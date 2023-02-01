@@ -8,7 +8,7 @@ use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
-use query::prom::remote_read::PromRemoteSqlServer;
+use query::prom::remote_server::PromRemoteSqlServer;
 use spi::server::prom::PromRemoteServerRef;
 
 use super::header::Header;

@@ -35,10 +35,6 @@ use trace::{debug, warn};
 use super::time_series::writer::WriterBuilder;
 use super::{METRIC_NAME_LABEL, METRIC_SAMPLE_COLUMN_NAME};
 
-const DEFAULT_PROM_TABLE_NAME: &str = "prom_metric_not_specified";
-const PROMETHEUS_NAME_TAG: &str = "__name__";
-const FIELD_NAME: &str = "value";
-
 pub struct PromRemoteSqlServer {
     db: DBMSRef,
     codec: Mutex<SnappyCodec>,
@@ -131,13 +127,13 @@ impl PromRemoteSqlServer {
         let mut point_offsets = Vec::new();
 
         for ts in req.timeseries {
-            let mut table_name = DEFAULT_PROM_TABLE_NAME.to_string();
+            let mut table_name = METRIC_NAME_LABEL.to_string();
 
             let tags = ts
                 .labels
                 .iter()
                 .map(|label| {
-                    if label.name.eq(PROMETHEUS_NAME_TAG) {
+                    if label.name.eq(METRIC_NAME_LABEL) {
                         table_name = label.value.to_owned();
                     }
                     (label.name.deref(), label.value.deref())
@@ -145,7 +141,7 @@ impl PromRemoteSqlServer {
                 .collect::<Vec<(&str, &str)>>();
 
             for sample in ts.samples {
-                let fields = vec![(FIELD_NAME, FieldValue::F64(sample.value))];
+                let fields = vec![(METRIC_SAMPLE_COLUMN_NAME, FieldValue::F64(sample.value))];
                 let timestamp = sample.timestamp * 1000000;
                 let line = Line::new(&table_name, tags.clone(), fields, timestamp);
                 point_offsets.push(line_to_point(ctx.database(), &line, &mut fbb))
@@ -450,7 +446,7 @@ mod test {
         service::protocol::{ContextBuilder, Query, QueryHandle, QueryId},
     };
 
-    use crate::prom::remote_read::transform_time_series;
+    use crate::prom::remote_server::transform_time_series;
 
     #[test]
     fn test_transform_time_series() {
