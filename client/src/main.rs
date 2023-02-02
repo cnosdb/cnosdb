@@ -26,7 +26,7 @@ struct Args {
         short = 'P',
         long,
         help = "CnosDB server http api port",
-        default_value = "31007",
+        default_value = "31001",
         validator(is_valid_port)
     )]
     port: usize,
