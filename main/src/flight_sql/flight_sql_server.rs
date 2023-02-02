@@ -60,6 +60,7 @@ pub struct FlightSqlServiceImpl<T> {
 impl<T> FlightSqlServiceImpl<T> {
     pub fn new(instance: DBMSRef, authenticator: T) -> Self {
         let result_cache = Cache::builder()
+            .thread_pool_enabled(false)
             // Time to live (TTL): 2 minutes
             // The query results are only cached for 2 minutes and expire after 2 minutes
             .time_to_live(Duration::from_secs(2 * 60))
@@ -839,7 +840,7 @@ mod test {
     use datafusion::arrow::{self, buffer::Buffer, datatypes::Schema, ipc};
     use futures::{StreamExt, TryStreamExt};
     use http_protocol::header::AUTHORIZATION;
-    use moka::sync::{Cache, CacheBuilder};
+    use moka::sync::Cache;
     use prost::Message;
     use spi::server::dbms::DatabaseManagerSystemMock;
     use tokio::time;
