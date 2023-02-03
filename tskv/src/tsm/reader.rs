@@ -211,6 +211,7 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
     }
 
     // Sort by field id
+    // NOTICE that there must be no two equal field_ids.
     field_id_offs.sort_unstable_by_key(|e| e.0);
 
     Ok(Index::new(tsm_id, data, field_id_offs))
