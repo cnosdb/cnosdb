@@ -104,7 +104,7 @@ pub struct Line<'a> {
     pub timestamp: i64,
 }
 
-impl Line<'_> {
+impl<'a> Line<'_> {
     pub fn hash_id(&mut self) -> u64 {
         if self.hash_id == 0 {
             self.tags
@@ -122,6 +122,23 @@ impl Line<'_> {
 
         self.hash_id
     }
+
+    pub fn new(
+        measurement: &'a str,
+        tags: Vec<(&'a str, &'a str)>,
+        fields: Vec<(&'a str, FieldValue)>,
+        timestamp: i64,
+    ) -> Line<'a> {
+        let mut res = Line {
+            hash_id: 0,
+            measurement,
+            tags,
+            fields,
+            timestamp,
+        };
+        res.hash_id = res.hash_id();
+        res
+    }
 }
 
 fn check_pos_valid(buf: &str, pos: usize) -> Result<()> {
@@ -138,7 +155,8 @@ fn next_measurement(buf: &str) -> Option<(&str, usize)> {
     let mut escaped = false;
     let mut exists_measurement = false;
     let (mut tok_begin, mut tok_end) = (0, buf.len());
-    for (i, c) in buf.chars().enumerate() {
+    let mut i = 0;
+    for (_, c) in buf.chars().enumerate() {
         // Measurement begin character
         if c == '\\' {
             escaped = true;
@@ -146,6 +164,7 @@ fn next_measurement(buf: &str) -> Option<(&str, usize)> {
                 exists_measurement = true;
                 tok_begin = i;
             }
+            i += c.len_utf8();
             continue;
         }
         if exists_measurement {
@@ -164,6 +183,8 @@ fn next_measurement(buf: &str) -> Option<(&str, usize)> {
         if escaped {
             escaped = false;
         }
+
+        i += c.len_utf8();
     }
     if exists_measurement {
         Some((&buf[tok_begin..tok_end], tok_end + 1))
@@ -183,7 +204,8 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
     let mut tok_end = 0_usize;
 
     let mut tag_set: Vec<(&str, &str)> = Vec::new();
-    for (i, c) in buf.chars().enumerate() {
+    let mut i = 0;
+    for (_, c) in buf.chars().enumerate() {
         // TagSet begin character
         if !escaped && c == '\\' {
             escaped = true;
@@ -191,6 +213,7 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
                 exists_tag_set = true;
                 tok_offsets[0] = i;
             }
+            i += c.len_utf8();
             continue;
         }
         if exists_tag_set {
@@ -227,6 +250,8 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
         if escaped {
             escaped = false;
         }
+
+        i += c.len_utf8();
     }
     if exists_tag_set {
         if tok_end == 0 {
@@ -252,7 +277,8 @@ fn next_field_set(buf: &str) -> Result<Option<(FieldSet, usize)>> {
     let mut tok_end = 0_usize;
 
     let mut field_set: FieldSet = Vec::new();
-    for (i, c) in buf.chars().enumerate() {
+    let mut i = 0;
+    for (_, c) in buf.chars().enumerate() {
         // TagSet begin character
         if c == '\\' {
             escaped = true;
@@ -260,11 +286,13 @@ fn next_field_set(buf: &str) -> Result<Option<(FieldSet, usize)>> {
                 exists_field_set = true;
                 tok_offsets[0] = i;
             }
+            i += c.len_utf8();
             continue;
         }
         if exists_field_set {
             if !escaped && c == '"' {
                 quoted = !quoted;
+                i += c.len_utf8();
                 continue;
             }
 
@@ -301,6 +329,8 @@ fn next_field_set(buf: &str) -> Result<Option<(FieldSet, usize)>> {
         if escaped {
             escaped = false;
         }
+
+        i += c.len_utf8();
     }
     if exists_field_set {
         if tok_end == 0 {
@@ -616,5 +646,22 @@ mod test {
         for l in lines {
             println!("{:?}", l);
         }
+    }
+
+    #[test]
+    fn test_unicode() {
+        let parser = Parser::new(-1);
+        let lp = parser.parse("m,t1=中,t2=发,t3=majh f=\"白\"").unwrap();
+        assert_eq!(lp.len(), 1);
+        assert_eq!(lp[0].measurement, "m");
+        assert_eq!(lp[0].tags.len(), 3);
+        assert_eq!(lp[0].tags[0], ("t1", "中"));
+        assert_eq!(lp[0].tags[1], ("t2", "发"));
+        assert_eq!(lp[0].tags[2], ("t3", "majh"));
+        assert_eq!(lp[0].fields.len(), 1);
+        assert_eq!(
+            lp[0].fields[0],
+            ("f", FieldValue::Str("白".to_string().into_bytes().to_vec()))
+        );
     }
 }

@@ -376,6 +376,12 @@ pub enum QueryError {
     InvalidRemoteReadReq {
         source: GenericError,
     },
+
+    #[error_code(code = 57)]
+    #[snafu(display("Invalid prom remote write requeset, error: {}", source))]
+    InvalidRemoteWriteReq {
+        source: GenericError,
+    },
 }
 
 impl From<ParserError> for QueryError {

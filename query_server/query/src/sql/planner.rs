@@ -47,6 +47,7 @@ use models::auth::privilege::{
     DatabasePrivilege, GlobalPrivilege, Privilege, TenantObjectPrivilege,
 };
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
+use models::auth::user::User;
 use models::object_reference::ObjectReference;
 use models::oid::{Identifier, Oid};
 use models::schema::{
@@ -1986,25 +1987,27 @@ impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlaner
     ) -> Result<Plan> {
         let PlanWithPrivileges { plan, privileges } =
             self.statement_to_plan(statement, session).await?;
-        // check privileges
-        let privileges_str = privileges
-            .iter()
-            .map(|e| format!("{:?}", e))
-            .collect::<Vec<String>>()
-            .join(",");
-        debug!("logical_plan's privileges: [{}]", privileges_str);
-
-        // check privilege
-        for p in privileges.iter() {
-            if !session.user().check_privilege(p) {
-                return Err(QueryError::InsufficientPrivileges {
-                    privilege: format!("{}", p),
-                });
-            }
-        }
-
+        check_privilege(session.user(), privileges)?;
         Ok(plan)
     }
+}
+
+fn check_privilege(user: &User, privileges: Vec<Privilege<Oid>>) -> Result<()> {
+    let privileges_str = privileges
+        .iter()
+        .map(|e| format!("{:?}", e))
+        .collect::<Vec<String>>()
+        .join(",");
+    debug!("logical_plan's privileges: [{}]", privileges_str);
+
+    for p in privileges.iter() {
+        if !user.check_privilege(p) {
+            return Err(QueryError::InsufficientPrivileges {
+                privilege: format!("{}", p),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn databases_privileges(

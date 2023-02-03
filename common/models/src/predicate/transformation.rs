@@ -155,13 +155,46 @@ impl ExpressionVisitor for RowExpressionToDomainsVisitor<'_> {
             // | Expr::Wildcard
             // | Expr::QualifiedWildcard { .. }
             // | Expr::GetIndexedField { .. } => {}
-            Expr::Column(_) | Expr::Literal(_) | Expr::BinaryExpr { .. } => {
-                Ok(Recursion::Continue(self))
+            Expr::Column(_) | Expr::Literal(_) => Ok(Recursion::Continue(self)),
+            Expr::BinaryExpr(BinaryExpr {
+                left: _,
+                op,
+                right: _,
+            }) => {
+                match op {
+                    Operator::Eq
+                    | Operator::NotEq
+                    | Operator::Lt
+                    | Operator::LtEq
+                    | Operator::Gt
+                    | Operator::GtEq
+                    | Operator::And
+                    | Operator::Or => {
+                        // support
+                        Ok(Recursion::Continue(self))
+                    }
+                    _ => {
+                        // not support
+                        self.ctx
+                            .current_domain_stack
+                            .push_back(ColumnDomains::all());
+                        Ok(Recursion::Stop(self))
+                    }
+                }
             }
             // TODO Currently not supported, follow-up support needs to implement the corresponding expression in post_visit
-            Expr::Not(_)
+            Expr::Like(_)
+            | Expr::ILike(_)
+            | Expr::SimilarTo(_)
+            | Expr::Not(_)
             | Expr::IsNotNull(_)
             | Expr::IsNull(_)
+            | Expr::IsTrue(_)
+            | Expr::IsFalse(_)
+            | Expr::IsUnknown(_)
+            | Expr::IsNotTrue(_)
+            | Expr::IsNotFalse(_)
+            | Expr::IsNotUnknown(_)
             | Expr::Between { .. }
             | Expr::InList { .. } => {
                 self.ctx
@@ -296,7 +329,7 @@ mod tests {
     use chrono::{Duration, NaiveDate};
 
     use datafusion::{
-        logical_expr::{binary_expr, expr_fn::col},
+        logical_expr::{binary_expr, expr_fn::col, Like},
         prelude::{and, in_list, lit, or, random},
     };
 
@@ -471,6 +504,53 @@ mod tests {
         except_column_domains.insert_or_intersect(Column::from_name("d3"), &d3_domain);
 
         (result_expr, except_column_domains.to_owned())
+    }
+
+    /// simple and test - 0
+    /// eg.
+    ///   s1 like '%上证180' and time >= '2022-10-10 00:00:00'
+    ///   ===>
+    ///   time: ['2022-10-10 00:00:00', _)
+    #[test]
+    fn test_simple_and_to_domain_0() {
+        let filter1 = Expr::Like(Like::new(
+            false,
+            Box::new(col("s1")),
+            Box::new(lit("%上证180")),
+            None,
+        ));
+        let filter2 = binary_expr(col("time"), Operator::GtEq, lit("2022-10-10 00:00:00"));
+
+        let and = and(filter1, filter2);
+
+        // build except result
+        //   time: ['2022-10-10 00:00:00', _)
+        let i1 = Range::gt(
+            &DataType::Utf8,
+            &ScalarValue::Utf8(Some("2022-10-10 00:00:00".to_string())),
+        );
+
+        let i1_domain = Domain::of_ranges(&[i1]).unwrap();
+
+        let except_column_domains = ColumnDomains::of(Column::from_name("time"), &i1_domain);
+
+        let result = get_domains(&and);
+
+        assert!(
+            result.is_ok(),
+            "convert expr {} to column domains err",
+            &and
+        );
+
+        let column_domain = result.as_ref().unwrap();
+
+        assert!(
+            except_column_domains.eq(column_domain),
+            "convert expr {} to column domains err, excepted {:?}, found {:?}",
+            &and,
+            except_column_domains,
+            column_domain,
+        );
     }
 
     /// simple and test - 1

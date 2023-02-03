@@ -287,6 +287,7 @@ pub struct ClusterConfig {
     pub name: String,
     #[serde(default = "ClusterConfig::default_meta")]
     pub meta: String,
+    #[serde(default = "ClusterConfig::default_tenant")]
     pub tenant: String,
 
     #[serde(default = "ClusterConfig::default_http_server")]
@@ -310,6 +311,10 @@ impl ClusterConfig {
 
     fn default_meta() -> String {
         "127.0.0.1:21001".to_string()
+    }
+
+    fn default_tenant() -> String {
+        "".to_string()
     }
 
     fn default_http_server() -> String {
@@ -435,7 +440,6 @@ path = 'data/log'
 node_id = 100
 name = 'cluster_xxx'
 meta = '127.0.0.1,22001'
-tenant = ''
 
 flight_rpc_server = '127.0.0.1:31006'
 http_server = '127.0.0.1:31007'
