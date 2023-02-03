@@ -2,6 +2,7 @@ use std::{
     borrow::Borrow,
     fmt::Debug,
     path::{Path, PathBuf},
+    ptr,
     sync::Arc,
 };
 
@@ -195,34 +196,24 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
         });
     }
     let data_len = (len - offset - FOOTER_SIZE as u64) as usize;
+    // TODO if data_len is too big, read data part in parts and do not store it.
     let mut data = vec![0_u8; data_len];
     // Read index data
     reader.read_at(offset, &mut data).await.context(IOSnafu)?;
 
     // Decode index data
-    let mut offsets = Vec::new();
-    let mut field_ids = Vec::new();
+    let assumed_field_count = (data_len / (INDEX_META_SIZE + BLOCK_META_SIZE)) + 1;
+    let mut field_id_offs: Vec<(FieldId, usize)> = Vec::with_capacity(assumed_field_count);
     let mut pos = 0_usize;
     while pos < data_len {
-        offsets.push(pos as u64);
-        field_ids.push(decode_be_u64(&data[pos..pos + 8]));
+        field_id_offs.push((decode_be_u64(&data[pos..pos + 8]), pos));
         pos += INDEX_META_SIZE + BLOCK_META_SIZE * decode_be_u16(&data[pos + 9..pos + 11]) as usize;
     }
 
     // Sort by field id
-    let len = field_ids.len();
-    for i in 0..len {
-        let mut j = i;
-        for k in (i + 1)..len {
-            if field_ids[j] > field_ids[k] {
-                j = k;
-            }
-        }
-        field_ids.swap(i, j);
-        offsets.swap(i, j);
-    }
+    field_id_offs.sort_unstable_by_key(|e| e.0);
 
-    Ok(Index::new(tsm_id, data, field_ids, offsets))
+    Ok(Index::new(tsm_id, data, field_id_offs))
 }
 
 /// Memory-based index reader
@@ -242,12 +233,20 @@ impl IndexReader {
     }
 
     pub fn iter(&self) -> IndexIterator {
-        IndexIterator::new(self.index_ref.clone(), self.index_ref.offsets().len(), 0)
+        IndexIterator::new(
+            self.index_ref.clone(),
+            self.index_ref.field_id_offs().len(),
+            0,
+        )
     }
 
     /// Create `IndexIterator` by filter options
     pub fn iter_opt(&self, field_id: FieldId) -> IndexIterator {
-        if let Ok(idx) = self.index_ref.field_ids().binary_search(&field_id) {
+        if let Ok(idx) = self
+            .index_ref
+            .field_id_offs()
+            .binary_search_by_key(&field_id, |f| f.0)
+        {
             IndexIterator::new(self.index_ref.clone(), 1, idx)
         } else {
             IndexIterator::new(self.index_ref.clone(), 0, 0)

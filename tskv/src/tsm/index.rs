@@ -26,36 +26,25 @@ pub struct Index {
     /// +-------------+---------+
     /// ```
     data: Vec<u8>,
-    /// Sorted FieldId
-    field_ids: Vec<FieldId>,
-    /// Sorted index-block offsets for each `FieldId` in `data`
-    offsets: Vec<u64>,
+    /// Sorted FieldId and it's offset if index-block
+    field_id_offs: Vec<(FieldId, usize)>,
 }
 
 impl Index {
-    #[inline(always)]
-    pub fn new(tsm_id: u64, data: Vec<u8>, field_ids: Vec<FieldId>, offsets: Vec<u64>) -> Self {
+    pub fn new(tsm_id: u64, data: Vec<u8>, field_id_offs: Vec<(FieldId, usize)>) -> Self {
         Self {
             tsm_id,
             data,
-            field_ids,
-            offsets,
+            field_id_offs,
         }
     }
 
-    #[inline(always)]
     pub fn data(&self) -> &[u8] {
         self.data.as_slice()
     }
 
-    #[inline(always)]
-    pub fn field_ids(&self) -> &[FieldId] {
-        self.field_ids.as_slice()
-    }
-
-    #[inline(always)]
-    pub fn offsets(&self) -> &[u64] {
-        self.offsets.as_slice()
+    pub fn field_id_offs(&self) -> &[(FieldId, usize)] {
+        self.field_id_offs.as_slice()
     }
 }
 
@@ -63,6 +52,7 @@ pub struct IndexMeta {
     index_ref: Arc<Index>,
     /// Array index in `Index::offsets`
     index_idx: usize,
+    offset: usize,
 
     field_id: FieldId,
     field_type: ValueType,
@@ -71,10 +61,9 @@ pub struct IndexMeta {
 
 impl IndexMeta {
     pub fn block_iterator(&self) -> BlockMetaIterator {
-        let index_offset = self.index_ref.offsets()[self.index_idx] as usize;
         BlockMetaIterator::new(
             self.index_ref.clone(),
-            index_offset,
+            self.offset,
             self.field_id,
             self.field_type,
             self.block_count,
@@ -82,10 +71,9 @@ impl IndexMeta {
     }
 
     pub fn block_iterator_opt(&self, time_range: &TimeRange) -> BlockMetaIterator {
-        let index_offset = self.index_ref.offsets()[self.index_idx] as usize;
         let mut iter = BlockMetaIterator::new(
             self.index_ref.clone(),
-            index_offset,
+            self.offset,
             self.field_id,
             self.field_type,
             self.block_count,
@@ -94,31 +82,28 @@ impl IndexMeta {
         iter
     }
 
-    pub fn offset(&self) -> u64 {
-        self.index_ref.offsets()[self.index_idx]
+    pub fn offset(&self) -> usize {
+        self.offset
     }
 
-    #[inline(always)]
     pub fn field_id(&self) -> FieldId {
         self.field_id
     }
 
-    #[inline(always)]
     pub fn field_type(&self) -> ValueType {
         self.field_type
     }
 
-    #[inline(always)]
     pub fn block_count(&self) -> u16 {
         self.block_count
     }
 
-    #[inline(always)]
     pub fn time_range(&self) -> (Timestamp, Timestamp) {
         if self.block_count == 0 {
             return (Timestamp::MIN, Timestamp::MIN);
         }
-        let first_blk_beg = self.index_ref.offsets()[self.index_idx] as usize + INDEX_META_SIZE;
+        let first_blk_beg =
+            self.index_ref.field_id_offs()[self.index_idx].1 as usize + INDEX_META_SIZE;
         let min_ts = decode_be_i64(&self.index_ref.data[first_blk_beg..first_blk_beg + 8]);
         let last_blk_beg = first_blk_beg + BLOCK_META_SIZE * (self.block_count as usize - 1);
         let max_ts = decode_be_i64(&self.index_ref.data[last_blk_beg + 8..last_blk_beg + 16]);
@@ -251,15 +236,14 @@ impl Display for BlockMeta {
 }
 
 pub(crate) fn get_index_meta_unchecked(index: Arc<Index>, idx: usize) -> IndexMeta {
-    let off = index.offsets()[idx] as usize;
-
-    let field_id = decode_be_u64(&index.data()[off..off + 8]);
+    let (field_id, off) = unsafe { *index.field_id_offs.get_unchecked(idx) };
     let block_type = ValueType::from(index.data()[off + 8]);
     let block_count = decode_be_u16(&index.data()[off + 9..off + 11]);
 
     IndexMeta {
         index_ref: index,
         index_idx: idx,
+        offset: off,
         field_id,
         field_type: block_type,
         block_count,

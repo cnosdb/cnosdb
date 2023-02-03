@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 set -o errexit
 
@@ -55,7 +55,6 @@ if [ ${ARG_SKIP_BUILD} -eq 0 ]; then
 fi
 if [ ${ARG_SKIP_CLEAN} -eq 0 ]; then
   rm -rf /tmp/cnosdb/meta
-  rm -rf /tmp/cnosdb/1001
 fi
 
 kill() {
