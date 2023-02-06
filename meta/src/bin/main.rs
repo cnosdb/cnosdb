@@ -1,4 +1,9 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(
+    dead_code,
+    unused_imports,
+    unused_variables,
+    clippy::field_reassign_with_default
+)]
 
 use actix_web::middleware::Logger;
 use actix_web::web::Data;

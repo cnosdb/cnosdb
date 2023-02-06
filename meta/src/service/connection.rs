@@ -38,6 +38,12 @@ pub struct Connections {
 //     }
 // }
 
+impl Default for Connections {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Connections {
     pub fn new() -> Self {
         Self {
