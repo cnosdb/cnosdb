@@ -30,7 +30,7 @@ use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
 use line_protocol::{line_protocol_to_lines, parse_lines_to_points, Line};
 use meta::error::MetaError;
-use meta::meta_client::MetaClientRef;
+use meta::MetaClientRef;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
 use models::consistency_level::ConsistencyLevel;
@@ -170,8 +170,9 @@ impl HttpService {
                     );
 
                     // Parse req、header and param to construct query request
-                    let query =
-                        construct_query(req, &header, param, dbms.clone()).map_err(|e| {
+                    let query = construct_query(req, &header, param, dbms.clone())
+                        .await
+                        .map_err(|e| {
                             sample_query_read_duration("", "", false, 0.0);
                             reject::custom(e)
                         })?;
@@ -212,6 +213,7 @@ impl HttpService {
                  coord: CoordinatorRef| async move {
                     let start = Instant::now();
                     let ctx = construct_write_context(header, param, dbms, coord.clone())
+                        .await
                         .map_err(reject::custom)?;
 
                     let req = construct_write_points_request(req, &ctx).map_err(reject::custom)?;
@@ -241,7 +243,7 @@ impl HttpService {
             .and_then(|header: Header, coord: CoordinatorRef| async move {
                 let tenant = DEFAULT_CATALOG.to_string();
 
-                let meta_client = match coord.tenant_meta(&tenant) {
+                let meta_client = match coord.tenant_meta(&tenant).await {
                     Some(client) => client,
                     None => {
                         return Err(reject::custom(HttpError::Meta {
@@ -294,6 +296,7 @@ impl HttpService {
                     let tenant = param.tenant;
                     let user = dbms
                         .authenticate(&user_info, tenant.as_deref())
+                        .await
                         .map_err(|e| reject::custom(HttpError::from(e)))?;
                     let context = ContextBuilder::new(user)
                         .with_tenant(tenant)
@@ -346,6 +349,7 @@ impl HttpService {
                         header, param
                     );
                     let ctx = construct_write_context(header, param, dbms, coord.clone())
+                        .await
                         .map_err(reject::custom)?;
 
                     let result = prs
@@ -410,7 +414,7 @@ impl Service for HttpService {
     }
 }
 
-fn construct_query(
+async fn construct_query(
     req: Bytes,
     header: &Header,
     param: SqlParam,
@@ -419,7 +423,10 @@ fn construct_query(
     let user_info = header.try_get_basic_auth()?;
 
     let tenant = param.tenant;
-    let user = dbms.authenticate(&user_info, tenant.as_deref())?;
+    let user = dbms
+        .authenticate(&user_info, tenant.as_deref())
+        .await
+        .context(QuerySnafu)?;
 
     let context = ContextBuilder::new(user)
         .with_tenant(tenant)
@@ -441,7 +448,7 @@ fn construct_write_db_privilege(tenant_id: Oid, database: &str) -> Privilege<Oid
 }
 
 // construct context and check privilege
-fn construct_write_context(
+async fn construct_write_context(
     header: Header,
     param: WriteParam,
     dbms: DBMSRef,
@@ -450,7 +457,7 @@ fn construct_write_context(
     let user_info = header.try_get_basic_auth()?;
     let tenant = param.tenant;
 
-    let user = dbms.authenticate(&user_info, tenant.as_deref())?;
+    let user = dbms.authenticate(&user_info, tenant.as_deref()).await?;
 
     let context = ContextBuilder::new(user)
         .with_tenant(tenant)
@@ -459,6 +466,7 @@ fn construct_write_context(
 
     let tenant_id = *coord
         .tenant_meta(context.tenant())
+        .await
         .ok_or_else(|| MetaError::TenantNotFound {
             tenant: context.tenant().to_string(),
         })?

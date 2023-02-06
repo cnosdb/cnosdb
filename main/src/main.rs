@@ -4,7 +4,8 @@ use clap::{Parser, Subcommand};
 use coordinator::hh_queue::HintedOffManager;
 use coordinator::service::CoordService;
 use coordinator::writer::PointWriter;
-use meta::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
+use meta::meta_manager::RemoteMetaManager;
+use meta::{MetaClientRef, MetaRef};
 use models::meta_data::NodeInfo;
 use once_cell::sync::Lazy;
 use query::instance::make_cnosdbms;
@@ -178,15 +179,20 @@ fn main() -> Result<(), std::io::Error> {
                 todo!()
             }
             SubCommand::Run {} => {
+                let meta_manager: MetaRef =
+                    RemoteMetaManager::new(global_config.cluster.clone()).await;
+                meta_manager.admin_meta().add_data_node().await.unwrap();
+
                 let tskv_options = tskv::Options::from(&global_config);
                 let query_options = tskv::Options::from(&global_config);
                 let kv_inst = Arc::new(
-                    TsKv::open(global_config.cluster.clone(), tskv_options, runtime)
+                    TsKv::open(meta_manager.clone(), tskv_options, runtime)
                         .await
                         .unwrap(),
                 );
                 let coord_service = CoordService::new(
                     kv_inst.clone(),
+                    meta_manager,
                     global_config.cluster.clone(),
                     global_config.hintedoff.clone(),
                 )
@@ -194,6 +200,7 @@ fn main() -> Result<(), std::io::Error> {
 
                 let dbms = Arc::new(
                     make_cnosdbms(kv_inst.clone(), coord_service.clone(), query_options)
+                        .await
                         .expect("make dbms"),
                 );
 

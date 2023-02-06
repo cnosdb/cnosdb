@@ -1,14 +1,46 @@
 use models::oid::Oid;
 
+// **    /cluster_name/users ->
+// **    /cluster_name/users/user ->
+// **    /cluster_name/tenants/tenant ->
+// **    /cluster_name/tenants/tenant/roles/roles ->
+// **    /cluster_name/tenants/tenant/members/user_id ->
 // **    /cluster_name/auto_incr_id -> id
 // **    /cluster_name/data_nodes/node_id -> [NodeInfo] 集群、数据节点等信息
+
 // **    /cluster_name/tenant_name/users/name -> [UserInfo] 租户下用户信息、访问权限等
 // **    /cluster_name/tenant_name/dbs/db_name -> [DatabaseInfo] db相关信息、保留策略等
 // **    /cluster_name/tenant_name/dbs/db_name/buckets/id -> [BucketInfo] bucket相关信息
 // **    /cluster_name/tenant_name/dbs/db_name/schemas/name -> [TskvTableSchema] schema相关信息
+
+pub const DBS: &str = "dbs";
+pub const USERS: &str = "users";
+pub const ROLES: &str = "roles";
+pub const BUCKETS: &str = "buckets";
+pub const SCHEMAS: &str = "schemas";
+pub const TENANTS: &str = "tenants";
+pub const MEMBERS: &str = "members";
+pub const DATA_NODES: &str = "data_nodes";
+pub const AUTO_INCR_ID: &str = "auto_incr_id";
+
 pub struct KeyPath {}
 
 impl KeyPath {
+    pub fn cluster_prefix(cluster: &str) -> String {
+        format!("/{}/", cluster)
+    }
+
+    pub fn tenant_prefix(cluster: &str, tenant: &str) -> String {
+        format!("/{}/{}/", cluster, tenant)
+    }
+
+    pub fn users(cluster: &str) -> String {
+        format!("/{}/users", cluster)
+    }
+
+    pub fn user(cluster: &str, user: &str) -> String {
+        format!("/{}/users/{}", cluster, user)
+    }
     pub fn incr_id(cluster: &str) -> String {
         format!("/{}/auto_incr_id", cluster)
     }
@@ -22,7 +54,7 @@ impl KeyPath {
     }
 
     pub fn tenant_users(cluster: &str, tenant: &str) -> String {
-        format!("/{}/{}/users", cluster, tenant)
+        format!("/{}/tenants/{}/users", cluster, tenant)
     }
 
     // pub fn tenant_user_name(cluster: &str, tenant: &str, name: &str) -> String {
@@ -30,7 +62,7 @@ impl KeyPath {
     // }
 
     pub fn tenant_dbs(cluster: &str, tenant: &str) -> String {
-        format!("/{}/{}/dbs", cluster, tenant)
+        format!("/{}/tenants/{}/dbs", cluster, tenant)
     }
 
     // pub fn tenant_version(cluster: &str, tenant: &str) -> String {
@@ -38,31 +70,26 @@ impl KeyPath {
     // }
 
     pub fn tenant_db_name(cluster: &str, tenant: &str, db: &str) -> String {
-        format!("/{}/{}/dbs/{}", cluster, tenant, db)
+        format!("/{}/tenants/{}/dbs/{}", cluster, tenant, db)
     }
 
     pub fn tenant_db_buckets(cluster: &str, tenant: &str, db: &str) -> String {
-        format!("/{}/{}/dbs/{}/buckets", cluster, tenant, db)
+        format!("/{}/tenants/{}/dbs/{}/buckets", cluster, tenant, db)
     }
 
     pub fn tenant_bucket_id(cluster: &str, tenant: &str, db: &str, id: u32) -> String {
-        format!("/{}/{}/dbs/{}/buckets/{}", cluster, tenant, db, id)
+        format!("/{}/tenants/{}/dbs/{}/buckets/{}", cluster, tenant, db, id)
     }
 
     pub fn tenant_schemas(cluster: &str, tenant: &str, db: &str) -> String {
-        format!("/{}/{}/dbs/{}/schemas", cluster, tenant, db)
+        format!("/{}/tenants/{}/dbs/{}/schemas", cluster, tenant, db)
     }
 
     pub fn tenant_schema_name(cluster: &str, tenant: &str, db: &str, name: &str) -> String {
-        format!("/{}/{}/dbs/{}/schemas/{}", cluster, tenant, db, name)
-    }
-
-    pub fn users(cluster: &str) -> String {
-        format!("/{}/users", cluster)
-    }
-
-    pub fn user(cluster: &str, user: &str) -> String {
-        format!("/{}/users/{}", cluster, user)
+        format!(
+            "/{}/tenants/{}/dbs/{}/schemas/{}",
+            cluster, tenant, db, name
+        )
     }
 
     pub fn tenants(cluster: &str) -> String {

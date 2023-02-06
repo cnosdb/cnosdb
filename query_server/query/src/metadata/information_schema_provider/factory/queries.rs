@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, meta_client::MetaClientRef};
+use meta::{error::MetaError, MetaClientRef};
 use models::{auth::user::User, oid::Identifier};
 
 use crate::{
@@ -20,12 +20,13 @@ const INFORMATION_SCHEMA_QUERIES: &str = "QUERIES";
 /// For non-Owner members, only the SQL submitted by the current member is displayed.
 pub struct QueriesFactory {}
 
+#[async_trait::async_trait]
 impl InformationSchemaTableFactory for QueriesFactory {
     fn table_name(&self) -> &'static str {
         INFORMATION_SCHEMA_QUERIES
     }
 
-    fn create(
+    async fn create(
         &self,
         user: &User,
         metadata: MetaClientRef,

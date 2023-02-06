@@ -37,6 +37,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
             .meta
             .tenant_manager()
             .tenant_meta(tenant_name)
+            .await
             .ok_or_else(|| QueryError::Meta {
                 source: MetaError::TenantNotFound {
                     tenant: tenant_name.to_string(),
@@ -54,7 +55,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 //     tenant_id: &Oid
                 // ) -> Result<bool>;
                 debug!("Drop role {} of tenant {}", name, tenant_name);
-                let success = meta.drop_custom_role(name)?;
+                let success = meta.drop_custom_role(name).await?;
 
                 if let (false, false) = (if_exist, success) {
                     return Err(QueryError::Meta {
@@ -83,7 +84,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                     .await?;
 
                 debug!("Drop database {} of tenant {}", name, tenant_name);
-                let success = meta.drop_db(name)?;
+                let success = meta.drop_db(name).await?;
 
                 if let (false, false) = (if_exist, success) {
                     return Err(QueryError::Meta {

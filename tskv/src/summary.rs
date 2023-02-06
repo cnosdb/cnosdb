@@ -9,7 +9,7 @@ use config::get_config;
 use futures::TryFutureExt;
 use libc::write;
 use lru_cache::ShardedCache;
-use meta::meta_client::MetaRef;
+use meta::MetaRef;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
@@ -694,13 +694,14 @@ mod test {
     use std::fs;
     use std::sync::Arc;
 
+    use meta::meta_manager::RemoteMetaManager;
+    use meta::MetaRef;
     use snafu::ResultExt;
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::UnboundedSender;
     use trace::debug;
 
     use config::{get_config, ClusterConfig, Config};
-    use meta::meta_client::{MetaRef, RemoteMetaManager};
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
 
     use crate::context::GlobalSequenceTask;
@@ -826,10 +827,12 @@ mod test {
         global_seq_task_sender: mpsc::UnboundedSender<GlobalSequenceTask>,
         cluster_options: ClusterConfig,
     ) {
-        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+        meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
             .tenant_manager()
-            .create_tenant("cnosdb".to_string(), TenantOptions::default());
+            .create_tenant("cnosdb".to_string(), TenantOptions::default())
+            .await;
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
@@ -855,10 +858,12 @@ mod test {
         global_seq_task_sender: mpsc::UnboundedSender<GlobalSequenceTask>,
         cluster_options: ClusterConfig,
     ) {
-        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+        meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
             .tenant_manager()
-            .create_tenant("cnosdb".to_string(), TenantOptions::default());
+            .create_tenant("cnosdb".to_string(), TenantOptions::default())
+            .await;
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
@@ -900,10 +905,12 @@ mod test {
         global_seq_task_sender: mpsc::UnboundedSender<GlobalSequenceTask>,
         cluster_options: ClusterConfig,
     ) {
-        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+        meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
             .tenant_manager()
-            .create_tenant("cnosdb".to_string(), TenantOptions::default());
+            .create_tenant("cnosdb".to_string(), TenantOptions::default())
+            .await;
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -922,6 +929,7 @@ mod test {
                 DatabaseSchema::new("cnosdb", &database),
                 meta_manager.clone(),
             )
+            .await
             .unwrap();
         for i in 0..40 {
             db.write().await.add_tsfamily(
@@ -964,10 +972,12 @@ mod test {
         global_seq_task_sender: mpsc::UnboundedSender<GlobalSequenceTask>,
         cluster_options: ClusterConfig,
     ) {
-        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+        meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
             .tenant_manager()
-            .create_tenant("cnosdb".to_string(), TenantOptions::default());
+            .create_tenant("cnosdb".to_string(), TenantOptions::default())
+            .await;
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -985,6 +995,7 @@ mod test {
                 DatabaseSchema::new("cnosdb", &database),
                 meta_manager.clone(),
             )
+            .await
             .unwrap();
         db.write().await.add_tsfamily(
             10,

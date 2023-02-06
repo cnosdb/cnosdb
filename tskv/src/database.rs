@@ -7,7 +7,7 @@ use std::{
 
 use datafusion::sql::sqlparser::test_utils::table;
 use lru_cache::ShardedCache;
-use meta::meta_client::MetaRef;
+use meta::MetaRef;
 use models::{
     schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema},
     utils::{split_id, unite_id},
@@ -52,11 +52,11 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(schema: DatabaseSchema, opt: Arc<Options>, meta: MetaRef) -> Result<Self> {
+    pub async fn new(schema: DatabaseSchema, opt: Arc<Options>, meta: MetaRef) -> Result<Self> {
         let db = Self {
             opt,
             owner: schema.owner(),
-            schemas: Arc::new(DBschemas::new(schema, meta)?),
+            schemas: Arc::new(DBschemas::new(schema, meta).await.context(SchemaSnafu)?),
             ts_indexes: HashMap::new(),
             ts_families: HashMap::new(),
         };
@@ -187,7 +187,7 @@ impl Database {
         for point in points {
             let sid = Self::build_index(&point, ts_index.clone()).await?;
             if self.schemas.check_field_type_from_cache(&point).is_err() {
-                self.schemas.check_field_type_or_else_add(&point)?;
+                self.schemas.check_field_type_or_else_add(&point).await?;
             }
 
             self.build_row_data(&mut map, point, sid)?
@@ -401,7 +401,7 @@ pub(crate) async fn delete_table_async(
     if let Some(db) = db_instance {
         let schemas = db.read().await.get_schemas();
         let field_infos = schemas.get_table_schema(&table)?;
-        schemas.del_table_schema(&table)?;
+        schemas.del_table_schema(&table).await?;
 
         let mut sids = vec![];
         for (id, index) in db.read().await.ts_indexes().iter() {

@@ -11,7 +11,8 @@ use flatbuffers::FlatBufferBuilder;
 use futures::stream::SelectNextSome;
 use futures::FutureExt;
 use libc::printf;
-use meta::meta_client::{MetaRef, RemoteMetaManager};
+use meta::meta_manager::RemoteMetaManager;
+use meta::MetaRef;
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use snafu::{OptionExt, ResultExt};
 use tokio::sync::watch;
@@ -86,12 +87,7 @@ pub struct TsKv {
 }
 
 impl TsKv {
-    pub async fn open(
-        cluster_options: ClusterConfig,
-        opt: Options,
-        runtime: Arc<Runtime>,
-    ) -> Result<TsKv> {
-        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+    pub async fn open(meta_manager: MetaRef, opt: Options, runtime: Arc<Runtime>) -> Result<TsKv> {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel::<FlushReq>();
         let (compact_task_sender, compact_task_receiver) =
@@ -389,7 +385,8 @@ impl TsKv {
             .version_set
             .write()
             .await
-            .create_db(schema.clone(), self.meta_manager.clone())?;
+            .create_db(schema.clone(), self.meta_manager.clone())
+            .await?;
         Ok(db)
     }
 
@@ -525,10 +522,15 @@ impl Engine for TsKv {
         let db_name = String::from_utf8(fb_points.db().unwrap().bytes().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
-        let db = self.version_set.write().await.create_db(
-            DatabaseSchema::new(&tenant_name, &db_name),
-            self.meta_manager.clone(),
-        )?;
+        let db = self
+            .version_set
+            .write()
+            .await
+            .create_db(
+                DatabaseSchema::new(&tenant_name, &db_name),
+                self.meta_manager.clone(),
+            )
+            .await?;
 
         let opt_index = db.read().await.get_ts_index(id);
         let ts_index = match opt_index {
@@ -965,6 +967,8 @@ impl TsKv {
 mod test {
     use config::get_config;
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
+    use meta::meta_manager::RemoteMetaManager;
+    use meta::MetaRef;
     use models::utils::now_timestamp;
     use models::{ColumnId, InMemPoint, SeriesId, SeriesKey, Timestamp};
     use protos::{models::Points, models_helper};
@@ -982,13 +986,11 @@ mod test {
         trace::init_default_global_tracing("tskv_log", "tskv.log", "info");
         let config = get_config("/tmp/test/config/config.toml");
         let opt = Options::from(&config);
-        let tskv = TsKv::open(
-            config.cluster.clone(),
-            opt,
-            Arc::new(Runtime::new().unwrap()),
-        )
-        .await
-        .unwrap();
+        let meta_manager: MetaRef = RemoteMetaManager::new(config.cluster.clone()).await;
+        meta_manager.admin_meta().add_data_node().await.unwrap();
+        let tskv = TsKv::open(meta_manager, opt, Arc::new(Runtime::new().unwrap()))
+            .await
+            .unwrap();
         tskv.compact("cnosdb", "public").await;
     }
 }

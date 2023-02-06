@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, meta_client::MetaRef};
+use meta::{error::MetaError, MetaRef};
 use models::{auth::user::User, oid::Identifier};
 
 use crate::metadata::cluster_schema_provider::{
@@ -12,12 +12,13 @@ const INFORMATION_SCHEMA_TENANTS: &str = "TENANTS";
 
 pub struct ClusterSchemaTenantsFactory {}
 
+#[async_trait::async_trait]
 impl ClusterSchemaTableFactory for ClusterSchemaTenantsFactory {
     fn table_name(&self) -> &str {
         INFORMATION_SCHEMA_TENANTS
     }
 
-    fn create(
+    async fn create(
         &self,
         user: &User,
         metadata: MetaRef,
@@ -26,7 +27,7 @@ impl ClusterSchemaTableFactory for ClusterSchemaTenantsFactory {
 
         // Only visible to admin
         if user.desc().is_admin() {
-            for tenant in metadata.tenant_manager().tenants()? {
+            for tenant in metadata.tenant_manager().tenants().await? {
                 let options_str = serde_json::to_string(tenant.options())
                     .map_err(|e| MetaError::CommonError { msg: e.to_string() })?;
 

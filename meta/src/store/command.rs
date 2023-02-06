@@ -9,11 +9,14 @@ use models::auth::user::UserOptions;
 use models::meta_data::*;
 use models::oid::Oid;
 use models::schema::TenantOptions;
-use models::schema::TskvTableSchema;
 use models::schema::{DatabaseSchema, TableSchema};
 
+use parking_lot::RwLock;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::sync::broadcast;
+
+use super::key_path::KeyPath;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UpdateVnodeReplSetArgs {
@@ -189,157 +192,6 @@ impl ToString for TenaneMetaDataResp {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct TenantMetaDataDelta {
-    pub full_load: bool,
-    pub status: StatusResponse,
-
-    pub ver_range: (u64, u64),
-    pub update: TenantMetaData,
-    pub delete: TenantMetaData,
-}
-
-impl TenantMetaDataDelta {
-    pub fn update_version(&mut self, ver: u64) {
-        if self.ver_range.0 == 0 {
-            self.ver_range.0 = ver;
-        }
-
-        if self.ver_range.1 < ver {
-            self.ver_range.1 = ver;
-        }
-    }
-
-    pub fn create_or_update_user(&mut self, ver: u64, user: &UserInfo) {
-        self.update_version(ver);
-
-        self.update.users.insert(user.name.clone(), user.clone());
-
-        self.delete.users.remove(&user.name);
-    }
-
-    pub fn delete_user(&mut self, ver: u64, user: &str) {
-        self.update_version(ver);
-
-        self.update.users.remove(user);
-
-        self.delete
-            .users
-            .insert(user.to_string(), UserInfo::default());
-    }
-
-    pub fn create_db(&mut self, ver: u64, schema: &DatabaseSchema) {
-        self.update_version(ver);
-
-        let db_info = self
-            .update
-            .dbs
-            .entry(schema.database_name().to_string())
-            .or_insert_with(DatabaseInfo::default);
-        db_info.schema = schema.clone();
-
-        self.delete.dbs.remove(&schema.database_name().to_string());
-    }
-
-    pub fn delete_db(&mut self, ver: u64, name: &str) {
-        self.update_version(ver);
-
-        self.update.dbs.remove(name);
-
-        self.delete
-            .dbs
-            .insert(name.to_string(), DatabaseInfo::default());
-    }
-
-    pub fn update_db_schema(&mut self, ver: u64, schema: &DatabaseSchema) {
-        self.update_version(ver);
-
-        let db_info = self
-            .update
-            .dbs
-            .entry(schema.database_name().to_string())
-            .or_insert_with(DatabaseInfo::default);
-        db_info.schema = schema.clone();
-    }
-
-    pub fn create_or_update_table(&mut self, ver: u64, schema: &TableSchema) {
-        self.update_version(ver);
-
-        let db_info = self
-            .update
-            .dbs
-            .entry(schema.db())
-            .or_insert_with(DatabaseInfo::default);
-
-        db_info.tables.insert(schema.name(), schema.clone());
-
-        if let Some(info) = self.delete.dbs.get_mut(&schema.db()) {
-            info.tables.remove(&schema.name());
-        }
-    }
-
-    pub fn delete_table(&mut self, ver: u64, db: &str, table: &str) {
-        self.update_version(ver);
-
-        if let Some(info) = self.update.dbs.get_mut(db) {
-            info.tables.remove(table);
-        }
-
-        let db_info = self
-            .delete
-            .dbs
-            .entry(db.to_string())
-            .or_insert_with(DatabaseInfo::default);
-
-        db_info.tables.insert(
-            table.to_string(),
-            TableSchema::TsKvTableSchema(TskvTableSchema::default()),
-        );
-    }
-
-    pub fn create_or_update_bucket(&mut self, ver: u64, db: &str, bucket: &BucketInfo) {
-        self.update_version(ver);
-
-        let db_info = self
-            .update
-            .dbs
-            .entry(db.to_string())
-            .or_insert_with(DatabaseInfo::default);
-        match db_info.buckets.binary_search_by(|v| v.id.cmp(&bucket.id)) {
-            Ok(index) => db_info.buckets[index] = bucket.clone(),
-            Err(index) => db_info.buckets.insert(index, bucket.clone()),
-        }
-
-        if let Some(info) = self.delete.dbs.get_mut(db) {
-            if let Ok(index) = info.buckets.binary_search_by(|v| v.id.cmp(&bucket.id)) {
-                info.buckets.remove(index);
-            }
-        }
-    }
-
-    pub fn delete_bucket(&mut self, ver: u64, db: &str, id: u32) {
-        self.update_version(ver);
-
-        if let Some(info) = self.update.dbs.get_mut(db) {
-            if let Ok(index) = info.buckets.binary_search_by(|v| v.id.cmp(&id)) {
-                info.buckets.remove(index);
-            }
-        }
-
-        let db_info = self
-            .delete
-            .dbs
-            .entry(db.to_string())
-            .or_insert_with(DatabaseInfo::default);
-        let mut bucket = BucketInfo::default();
-        bucket.id = id;
-        match db_info.buckets.binary_search_by(|v| v.id.cmp(&id)) {
-            Ok(index) => db_info.buckets[index] = bucket,
-            Err(index) => db_info.buckets.insert(index, bucket),
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum CommonResp<T> {
     Ok(T),
@@ -352,5 +204,287 @@ where
 {
     fn to_string(&self) -> String {
         serde_json::to_string(&self).unwrap()
+    }
+}
+
+pub const ENTRY_LOG_TYPE_SET: i32 = 1;
+pub const ENTRY_LOG_TYPE_DEL: i32 = 2;
+pub const ENTRY_LOG_TYPE_NOP: i32 = 10;
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct EntryLog {
+    pub tye: i32,
+    pub ver: u64,
+    pub key: String,
+    pub val: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct WatchData {
+    pub full_sync: bool,
+    pub min_ver: u64,
+    pub max_ver: u64,
+    pub entry_logs: Vec<EntryLog>,
+}
+
+impl WatchData {
+    pub fn need_return(&self, base_ver: u64) -> bool {
+        if self.full_sync {
+            return true;
+        }
+
+        if !self.entry_logs.is_empty() {
+            return true;
+        }
+
+        if base_ver + 100 < self.max_ver {
+            return true;
+        }
+
+        false
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct CircleBuf {
+    count: usize,
+    writer: usize,
+    capacity: usize,
+
+    buf: Vec<EntryLog>,
+}
+
+impl CircleBuf {
+    pub fn new(capacity: usize) -> Self {
+        let mut buf = Vec::new();
+        buf.resize(capacity, EntryLog::default());
+
+        Self {
+            buf,
+            count: 0,
+            writer: 0,
+            capacity,
+        }
+    }
+
+    pub fn append(&mut self, log: EntryLog) {
+        self.buf[self.writer] = log;
+
+        self.writer += 1;
+        if self.writer == self.capacity {
+            self.writer = 0;
+        }
+
+        if self.count < self.capacity {
+            self.count += 1;
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        if self.count == 0 {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn min_version(&self) -> Option<u64> {
+        if self.is_empty() {
+            return None;
+        }
+
+        let index = if self.count == self.capacity {
+            self.writer
+        } else {
+            0
+        };
+
+        Some(self.buf[index as usize].ver)
+    }
+
+    pub fn max_version(&self) -> Option<u64> {
+        if self.is_empty() {
+            return None;
+        }
+
+        let index = if self.writer == 0 {
+            self.capacity - 1
+        } else {
+            self.writer - 1
+        };
+
+        Some(self.buf[index as usize].ver)
+    }
+
+    // -1: the logs is empty
+    // -2: min version < ver
+    pub fn find_index(&self, ver: u64) -> i32 {
+        if self.is_empty() {
+            return -1;
+        }
+
+        let mut index = self.writer;
+        for _ in 0..self.count {
+            index = if index == 0 {
+                self.capacity - 1
+            } else {
+                index - 1
+            };
+
+            if self.buf[index].ver <= ver {
+                return index.try_into().unwrap();
+            }
+        }
+
+        -2
+    }
+
+    pub fn read_entrys<F>(&self, filter: F, index: usize) -> Vec<EntryLog>
+    where
+        F: Fn(&EntryLog) -> bool,
+    {
+        let mut entrys = vec![];
+
+        let mut index = (index + 1) % self.capacity;
+        while index != self.writer {
+            let entry = self.buf.get(index).unwrap();
+            if filter(entry) {
+                entrys.push(entry.clone());
+            }
+
+            index = (index + 1) % self.capacity;
+        }
+
+        entrys
+    }
+}
+
+pub struct Watch {
+    pub logs: RwLock<CircleBuf>,
+    pub sender: broadcast::Sender<()>,
+}
+
+impl Watch {
+    pub fn new() -> Self {
+        let (sender, _) = broadcast::channel(1);
+        Self {
+            sender,
+            logs: RwLock::new(CircleBuf::new(8 * 1024)),
+        }
+    }
+
+    pub fn writer_log(&self, log: EntryLog) {
+        self.logs.write().append(log);
+
+        let _ = self.sender.send(());
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<()> {
+        self.sender.subscribe()
+    }
+
+    pub fn min_version(&self) -> Option<u64> {
+        self.logs.read().min_version()
+    }
+    pub fn max_version(&self) -> Option<u64> {
+        self.logs.read().max_version()
+    }
+
+    // -1: the logs is empty
+    // -2: min version < ver
+    pub fn read_entry_logs(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        base_ver: u64,
+    ) -> (Vec<EntryLog>, i32) {
+        let filter = |entry: &EntryLog| -> bool {
+            if tenant.is_empty() {
+                if entry.key.starts_with(&KeyPath::cluster_prefix(cluster)) {
+                    return true;
+                }
+            } else {
+                let prefix = KeyPath::tenant_prefix(cluster, tenant);
+                if entry.key.starts_with(&prefix) {
+                    return true;
+                }
+
+                if entry.key.starts_with(&KeyPath::data_nodes(cluster)) {
+                    return true;
+                }
+            }
+
+            false
+        };
+
+        self.read_start_version(filter, base_ver)
+    }
+
+    fn read_start_version<F>(&self, filter: F, base_ver: u64) -> (Vec<EntryLog>, i32)
+    where
+        F: Fn(&EntryLog) -> bool,
+    {
+        let logs = self.logs.read();
+        let index = logs.find_index(base_ver);
+        if index < 0 {
+            return (vec![], index);
+        }
+
+        (logs.read_entrys(filter, index as usize), 0)
+    }
+}
+
+impl Default for Watch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+mod test {
+    use crate::store::command::Watch;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    async fn _watch_data_test(watch: Arc<RwLock<Watch>>, cluster: &str, ver: u64) {
+        println!("======== {}", cluster);
+
+        loop {
+            let mut chan = watch.read().await.subscribe();
+            let _ = chan.recv().await;
+
+            let logs = watch.read().await.read_entry_logs(cluster, "", ver);
+            println!("=== {}; {:?}", cluster, logs);
+        }
+    }
+
+    async fn _test_watch() {
+        use tokio::io::AsyncBufReadExt;
+
+        let watch = Arc::new(RwLock::new(Watch::new()));
+
+        let w_clone = watch.clone();
+        tokio::spawn(_watch_data_test(w_clone, "t1", 100));
+
+        let w_clone = watch.clone();
+        tokio::spawn(_watch_data_test(w_clone, "t2", 200));
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        loop {
+            let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
+            let mut line = String::new();
+            let _ = reader.read_line(&mut line).await;
+            let strs: Vec<&str> = line.split(' ').collect();
+
+            let entry = crate::store::command::EntryLog {
+                tye: 0,
+                key: strs[0].to_string(),
+                ver: serde_json::from_str::<u64>(strs[1]).unwrap(),
+                val: "".to_string(),
+            };
+
+            watch.write().await.writer_log(entry.clone());
+            println!("=== write {:?}", entry);
+        }
     }
 }

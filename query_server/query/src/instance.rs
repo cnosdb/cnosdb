@@ -49,9 +49,10 @@ impl<D> DatabaseManagerSystem for Cnosdbms<D>
 where
     D: QueryDispatcher,
 {
-    fn authenticate(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User> {
+    async fn authenticate(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User> {
         self.access_control
             .access_check(user_info, tenant_name)
+            .await
             .context(AuthSnafu)
     }
 
@@ -61,6 +62,7 @@ where
         let tenant_id = self
             .access_control
             .tenant_id(query.context().tenant())
+            .await
             .context(AuthSnafu)?;
 
         let result = self
@@ -95,7 +97,7 @@ where
     }
 }
 
-pub fn make_cnosdbms(
+pub async fn make_cnosdbms(
     _engine: EngineRef,
     coord: CoordinatorRef,
     options: Options,
@@ -109,7 +111,7 @@ pub fn make_cnosdbms(
 
     let queries_limit = options.query.max_server_connections;
 
-    init_metadata(coord.clone())?;
+    init_metadata(coord.clone()).await?;
 
     let meta_manager = coord.meta_manager();
 
@@ -141,11 +143,11 @@ pub fn make_cnosdbms(
     Ok(db_server)
 }
 
-fn init_metadata(coord: CoordinatorRef) -> Result<()> {
+async fn init_metadata(coord: CoordinatorRef) -> Result<()> {
     // init admin
     let user_manager = coord.meta_manager().user_manager();
     debug!("Check if system user {} exist", ROOT);
-    if user_manager.user(ROOT)?.is_none() {
+    if user_manager.user(ROOT).await?.is_none() {
         info!("Initialize the system user {}", ROOT);
 
         let options = UserOptionsBuilder::default()
@@ -153,7 +155,9 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
             .comment("system admin")
             .build()
             .expect("failed to init admin user.");
-        let res = user_manager.create_user(ROOT.to_string(), options, true);
+        let res = user_manager
+            .create_user(ROOT.to_string(), options, true)
+            .await;
         if let Err(err) = res {
             match err {
                 MetaError::UserAlreadyExists { .. } => {}
@@ -165,14 +169,16 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
     // init system tenant
     let tenant_manager = coord.meta_manager().tenant_manager();
     debug!("Check if system tenant {} exist", DEFAULT_CATALOG);
-    if tenant_manager.tenant(DEFAULT_CATALOG)?.is_none() {
+    if tenant_manager.tenant(DEFAULT_CATALOG).await?.is_none() {
         info!("Initialize the system tenant {}", DEFAULT_CATALOG);
 
         let options = TenantOptionsBuilder::default()
             .comment("system tenant")
             .build()
             .expect("failed to init admin user.");
-        let res = tenant_manager.create_tenant(DEFAULT_CATALOG.to_string(), options);
+        let res = tenant_manager
+            .create_tenant(DEFAULT_CATALOG.to_string(), options)
+            .await;
         if let Err(err) = res {
             match err {
                 MetaError::TenantAlreadyExists { .. } => {}
@@ -181,10 +187,10 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
         }
 
         debug!("Add root to the system tenant as owner");
-        if let Some(root) = user_manager.user(ROOT)? {
-            if let Some(client) = tenant_manager.tenant_meta(DEFAULT_CATALOG) {
+        if let Some(root) = user_manager.user(ROOT).await? {
+            if let Some(client) = tenant_manager.tenant_meta(DEFAULT_CATALOG).await {
                 let role = TenantRoleIdentifier::System(SystemTenantRole::Owner);
-                if let Err(err) = client.add_member_with_role(*root.id(), role) {
+                if let Err(err) = client.add_member_with_role(*root.id(), role).await {
                     match err {
                         MetaError::UserAlreadyExists { .. }
                         | MetaError::MemberAlreadyExists { .. } => {}
@@ -199,10 +205,13 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
         let client =
             tenant_manager
                 .tenant_meta(DEFAULT_CATALOG)
+                .await
                 .ok_or(MetaError::TenantNotFound {
                     tenant: DEFAULT_CATALOG.to_string(),
                 })?;
-        let res = client.create_db(DatabaseSchema::new(DEFAULT_CATALOG, DEFAULT_DATABASE));
+        let res = client
+            .create_db(DatabaseSchema::new(DEFAULT_CATALOG, DEFAULT_DATABASE))
+            .await;
         if let Err(err) = res {
             match err {
                 MetaError::DatabaseAlreadyExists { .. } => {}
@@ -255,6 +264,7 @@ mod tests {
 
         let user = db
             .authenticate(&user, Some(DEFAULT_CATALOG))
+            .await
             .expect("authenticate");
 
         let query = Query::new(ContextBuilder::new(user).build(), sql.to_string());
@@ -274,6 +284,7 @@ mod tests {
             Arc::new(MockCoordinator::default()),
             opt,
         )
+        .await
         .unwrap();
 
         let mut result = exec_sql(&db, "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS t (num,letter) order by num").await;
@@ -334,6 +345,7 @@ mod tests {
             Arc::new(MockCoordinator::default()),
             opt,
         )
+        .await
         .unwrap();
 
         let sql = format!(
@@ -374,6 +386,7 @@ mod tests {
             Arc::new(MockCoordinator::default()),
             opt,
         )
+        .await
         .unwrap();
 
         let mut result = exec_sql(
@@ -413,6 +426,7 @@ mod tests {
             Arc::new(MockCoordinator::default()),
             opt,
         )
+        .await
         .unwrap();
 
         assert_batches_eq!(
@@ -472,6 +486,7 @@ mod tests {
             Arc::new(MockCoordinator::default()),
             opt,
         )
+        .await
         .unwrap();
 
         assert_batches_eq!(
@@ -523,6 +538,7 @@ mod tests {
             Arc::new(MockCoordinator::default()),
             opt,
         )
+        .await
         .unwrap();
 
         assert_batches_eq!(

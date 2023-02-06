@@ -439,7 +439,8 @@ mod test {
 
     use blake3::Hasher;
     use chrono::{Duration, NaiveDateTime};
-    use meta::meta_client::{MetaRef, RemoteMetaManager};
+    use meta::meta_manager::RemoteMetaManager;
+    use meta::MetaRef;
     use minivec::MiniVec;
     use models::{
         codec::Encoding,
@@ -842,14 +843,16 @@ mod test {
         config.wal.sync = true;
         config.log.path = log_dir;
         let opt = Options::from(&config);
-        let meta: MetaRef = Arc::new(RemoteMetaManager::new(config.cluster.clone()));
-        let _ = meta
-            .tenant_manager()
-            .create_tenant(tenant_name.clone(), TenantOptions::default());
-        let meta_client = meta.tenant_manager().tenant_meta(&tenant_name).unwrap();
-        let engine = rt
-            .block_on(TsKv::open(config.cluster, opt, rt.clone()))
+        let meta: MetaRef = rt.block_on(RemoteMetaManager::new(config.cluster));
+        rt.block_on(meta.admin_meta().add_data_node()).unwrap();
+        let _ = rt.block_on(
+            meta.tenant_manager()
+                .create_tenant(tenant_name.clone(), TenantOptions::default()),
+        );
+        let meta_client = rt
+            .block_on(meta.tenant_manager().tenant_meta(&tenant_name))
             .unwrap();
+        let engine = rt.block_on(TsKv::open(meta, opt, rt.clone())).unwrap();
 
         // Create database and ts_family
         {
@@ -857,24 +860,26 @@ mod test {
             database_schema
                 .config
                 .with_ttl(DatabaseOptions::DEFAULT_TTL);
-            if let Err(e) = meta_client.drop_db(&database_name) {
+            if let Err(e) = rt.block_on(meta_client.drop_db(&database_name)) {
                 println!(
                     "Repair: failed to drop database '{}': {:?}",
                     &database_name, e
                 );
             }
-            meta_client.create_db(database_schema.clone()).unwrap();
-            meta_client
-                .create_table(&TableSchema::TsKvTableSchema(TskvTableSchema::new(
+            rt.block_on(meta_client.create_db(database_schema.clone()))
+                .unwrap();
+            rt.block_on(meta_client.create_table(&TableSchema::TsKvTableSchema(
+                TskvTableSchema::new(
                     tenant_name.clone(),
                     database_name.clone(),
                     table_name.clone(),
                     columns,
-                )))
-                .unwrap();
+                ),
+            )))
+            .unwrap();
 
-            meta_client.drop_db(&database_name).unwrap();
-            let _ = engine.drop_database(&tenant_name, &database_name);
+            //rt.block_on(meta_client.drop_db(&database_name)).unwrap();
+            let _ = rt.block_on(engine.drop_database(&tenant_name, &database_name));
             let database = rt
                 .block_on(engine.create_database(&database_schema))
                 .unwrap();

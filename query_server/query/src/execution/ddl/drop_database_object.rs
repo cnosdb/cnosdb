@@ -43,6 +43,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     .meta
                     .tenant_manager()
                     .tenant_meta(tenant)
+                    .await
                     .ok_or(MetaError::TenantNotFound {
                         tenant: tenant.to_string(),
                     })?;
@@ -64,7 +65,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     .exec_admin_stat_on_all_node(req)
                     .await?;
 
-                client.drop_table(table.schema, table.table)
+                client.drop_table(table.schema, table.table).await
             }
         };
 

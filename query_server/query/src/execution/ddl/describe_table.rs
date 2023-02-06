@@ -25,22 +25,22 @@ impl DescribeTableTask {
 #[async_trait]
 impl DDLDefinitionTask for DescribeTableTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        describe_table(self.stmt.table_name.as_str(), query_state_machine)
+        describe_table(self.stmt.table_name.as_str(), query_state_machine).await
     }
 }
 
-fn describe_table(table_name: &str, machine: QueryStateMachineRef) -> Result<Output> {
+async fn describe_table(table_name: &str, machine: QueryStateMachineRef) -> Result<Output> {
     let tenant = machine.session.tenant();
     let table_name =
         TableReference::from(table_name).resolve(tenant, machine.session.default_database());
-    let client =
-        machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .ok_or(MetaError::TenantNotFound {
-                tenant: tenant.to_string(),
-            })?;
+    let client = machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .await
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })?;
     let table_schema = client
         .get_table_schema(table_name.schema, table_name.table)?
         .ok_or(MetaError::TableNotFound {

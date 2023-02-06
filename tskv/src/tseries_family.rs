@@ -908,9 +908,9 @@ mod test {
     use std::mem::{size_of, size_of_val};
     use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-    use config::{get_config, ClusterConfig};
     use lru_cache::ShardedCache;
-    use meta::meta_client::{MetaRef, RemoteMetaManager};
+    use meta::meta_manager::RemoteMetaManager;
+    use meta::MetaRef;
     use models::{
         schema::{DatabaseSchema, TenantOptions},
         Timestamp, ValueType,
@@ -933,6 +933,7 @@ mod test {
         version_set::VersionSet,
         TseriesFamilyId,
     };
+    use config::{get_config, ClusterConfig};
 
     use super::{ColumnFile, LevelInfo};
 
@@ -1264,10 +1265,12 @@ mod test {
     #[tokio::test]
     pub async fn test_read_with_tomb() {
         let config = get_config("../config/config_31001.toml");
-        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(config.cluster));
+        let meta_manager: MetaRef = RemoteMetaManager::new(config.cluster).await;
+        meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
             .tenant_manager()
-            .create_tenant("cnosdb".to_string(), TenantOptions::default());
+            .create_tenant("cnosdb".to_string(), TenantOptions::default())
+            .await;
         let dir = PathBuf::from("db/tsm/test/0".to_string());
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -1330,6 +1333,7 @@ mod test {
                 DatabaseSchema::new("cnosdb", &database),
                 meta_manager.clone(),
             )
+            .await
             .unwrap();
         let db = version_set
             .write()

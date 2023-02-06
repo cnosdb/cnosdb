@@ -1,6 +1,5 @@
 #![allow(clippy::module_inception)]
 
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::ops::{Bound, RangeBounds};
@@ -34,12 +33,12 @@ use tracing::info;
 
 pub mod command;
 pub mod config;
-mod key_path;
+pub mod key_path;
 mod sled_store;
 pub mod state_machine;
 pub mod store;
 
-use self::state_machine::{StateMachine, WatchTenantMetaData};
+use self::state_machine::StateMachine;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 pub struct SnapshotInfo {
@@ -48,12 +47,10 @@ pub struct SnapshotInfo {
     pub data: Vec<u8>,
 }
 
-#[derive(Debug)]
 pub struct Store {
     db: Arc<sled::Db>,
     /// The Raft state machine.
     pub state_machine: RwLock<StateMachine>,
-    pub watch: RwLock<HashMap<String, WatchTenantMetaData>>,
 }
 
 fn store(db: &sled::Db) -> sled::Tree {
@@ -76,7 +73,6 @@ impl Store {
         Self {
             db,
             state_machine: RwLock::new(sm),
-            watch: RwLock::new(HashMap::new()),
         }
     }
     fn get_last_purged_(&self) -> StorageIOResult<Option<LogId<u64>>> {
@@ -419,9 +415,7 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
     ) -> Result<Vec<CommandResp>, StorageError<ClusterNodeId>> {
         let mut res = Vec::with_capacity(entries.len());
 
-        let mut watch = self.watch.write().await;
         let sm = self.state_machine.read().await;
-
         for entry in entries {
             sm.set_last_applied_log(entry.log_id).await?;
             match entry.payload {
@@ -435,9 +429,7 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
                     res.push(CommandResp::default())
                 }
 
-                EntryPayload::Normal(ref req) => {
-                    res.push(sm.process_write_command(req, &mut watch))
-                }
+                EntryPayload::Normal(ref req) => res.push(sm.process_write_command(req)),
             };
         }
         Ok(res)

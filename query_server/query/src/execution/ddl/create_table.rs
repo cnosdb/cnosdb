@@ -34,6 +34,7 @@ impl DDLDefinitionTask for CreateTableTask {
             .meta
             .tenant_manager()
             .tenant_meta(tenant)
+            .await
             .ok_or(MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
             })?;
@@ -50,28 +51,29 @@ impl DDLDefinitionTask for CreateTableTask {
             })?,
             // does not exist, create
             (_, None) => {
-                create_table(&self.stmt, query_state_machine)?;
+                create_table(&self.stmt, query_state_machine).await?;
                 Ok(Output::Nil(()))
             }
         }
     }
 }
 
-fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Result<()> {
+async fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Result<()> {
     let CreateTable { .. } = stmt;
     let table_schema = build_schema(stmt, &machine.session);
     let tenant = machine.session.tenant();
-    let client =
-        machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .ok_or(MetaError::TenantNotFound {
-                tenant: tenant.to_string(),
-            })?;
+    let client = machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .await
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })?;
     // .context(MetaSnafu)?;
     client
         .create_table(&TableSchema::TsKvTableSchema(table_schema))
+        .await
         .context(spi::MetaSnafu)
 }
 

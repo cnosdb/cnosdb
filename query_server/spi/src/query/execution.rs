@@ -9,7 +9,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 
 use crate::service::protocol::Query;
 use crate::service::protocol::QueryId;
-use meta::meta_client::MetaRef;
+use meta::MetaRef;
 
 use super::dispatcher::{QueryInfo, QueryStatus};
 use super::{logical_planner::Plan, session::IsiphoSessionCtx};

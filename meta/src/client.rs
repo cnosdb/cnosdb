@@ -3,17 +3,20 @@ use std::sync::Mutex;
 
 use openraft::error::ClientWriteError;
 use openraft::error::ForwardToLeader;
+use openraft::AnyError;
 
 use openraft::error::NetworkError;
 use openraft::error::RPCError;
 use openraft::error::RemoteError;
 use openraft::raft::ClientWriteResponse;
 
-use crate::error::{MetaError, MetaResult};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
+use reqwest::Client;
+
+use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
 use crate::store::state_machine::CommandResp;
 use crate::{ClusterNode, ClusterNodeId, TypeConfig};
@@ -23,21 +26,23 @@ pub type WriteError =
 
 #[derive(Debug)]
 pub struct MetaHttpClient {
+    pub inner: Client,
     pub leader: Arc<Mutex<(ClusterNodeId, String)>>,
 }
 
 impl MetaHttpClient {
     pub fn new(leader_id: ClusterNodeId, leader_addr: String) -> Self {
         Self {
+            inner: reqwest::Client::new(),
             leader: Arc::new(Mutex::new((leader_id, leader_addr))),
         }
     }
 
-    pub fn read<T>(&self, req: &ReadCommand) -> MetaResult<T>
+    pub async fn read<T>(&self, req: &ReadCommand) -> MetaResult<T>
     where
         T: for<'a> Deserialize<'a>,
     {
-        let rsp: CommandResp = self.send_rpc_to_leader("read", Some(req))?;
+        let rsp: CommandResp = self.send_rpc_to_leader("read", Some(req)).await?;
 
         let rsp = serde_json::from_str::<T>(&rsp).map_err(|err| MetaError::MetaClientErr {
             msg: err.to_string(),
@@ -46,11 +51,12 @@ impl MetaHttpClient {
         Ok(rsp)
     }
 
-    pub fn write<T>(&self, req: &WriteCommand) -> MetaResult<T>
+    pub async fn write<T>(&self, req: &WriteCommand) -> MetaResult<T>
     where
         T: for<'a> Deserialize<'a>,
     {
-        let rsp: ClientWriteResponse<TypeConfig> = self.send_rpc_to_leader("write", Some(req))?;
+        let rsp: ClientWriteResponse<TypeConfig> =
+            self.send_rpc_to_leader("write", Some(req)).await?;
 
         let rsp = serde_json::from_str::<T>(&rsp.data).map_err(|err| MetaError::MetaClientErr {
             msg: err.to_string(),
@@ -59,11 +65,11 @@ impl MetaHttpClient {
         Ok(rsp)
     }
 
-    pub fn watch_tenant<T>(&self, req: &(String, String, String, u64)) -> MetaResult<T>
+    pub async fn watch<T>(&self, req: &(String, String, String, u64)) -> MetaResult<T>
     where
         T: for<'a> Deserialize<'a>,
     {
-        let rsp: CommandResp = self.send_rpc_to_leader("watch_tenant", Some(req))?;
+        let rsp: CommandResp = self.send_rpc_to_leader("watch", Some(req)).await?;
 
         let rsp = serde_json::from_str::<T>(&rsp).map_err(|err| MetaError::MetaClientErr {
             msg: err.to_string(),
@@ -74,7 +80,7 @@ impl MetaHttpClient {
 
     //////////////////////////////////////////////////
 
-    fn send_rpc_to_leader<Req, Resp, Err>(
+    async fn send_rpc_to_leader<Req, Resp, Err>(
         &self,
         uri: &str,
         req: Option<&Req>,
@@ -92,7 +98,7 @@ impl MetaHttpClient {
 
         loop {
             let res: Result<Resp, RPCError<ClusterNodeId, ClusterNode, Err>> =
-                self.do_send_rpc_to_leader(uri, req);
+                self.do_send_rpc_to_leader(uri, req).await;
 
             let rpc_err = match res {
                 Ok(x) => return Ok(x),
@@ -126,7 +132,7 @@ impl MetaHttpClient {
         }
     }
 
-    fn do_send_rpc_to_leader<Req, Resp, Err>(
+    async fn do_send_rpc_to_leader<Req, Resp, Err>(
         &self,
         uri: &str,
         req: Option<&Req>,
@@ -142,18 +148,38 @@ impl MetaHttpClient {
             (t.0, format!("http://{}/{}", target_addr, uri))
         };
 
-        let resp = if let Some(r) = req {
-            ureq::post(&url).send_json(r)
+        /*-------------------surf client--------------------------- */
+        let mut resp = if let Some(r) = req {
+            surf::post(url.clone()).body(surf::Body::from_json(r).unwrap())
         } else {
-            ureq::get(&url).call()
+            surf::get(url.clone())
         }
-        .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+        .await
+        .map_err(|e| RPCError::Network(NetworkError::new(&AnyError::error(e.to_string()))))?;
 
         let res: Result<Resp, Err> = resp
-            .into_json()
-            .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+            .body_json()
+            .await
+            .map_err(|e| RPCError::Network(NetworkError::new(&AnyError::error(e.to_string()))))?;
 
         res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
+
+        /*-------------------reqwest client--------------------------- */
+        // let resp = if let Some(r) = req {
+        //     self.inner.post(url.clone()).json(r)
+        // } else {
+        //     self.inner.get(url.clone())
+        // }
+        // .send()
+        // .await
+        // .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+
+        // let res: Result<Resp, Err> = resp
+        //     .json()
+        //     .await
+        //     .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+
+        // res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
     }
 }
 
@@ -169,40 +195,6 @@ mod test {
         meta_data::{NodeInfo, VnodeInfo},
         schema::DatabaseSchema,
     };
-
-    pub async fn watch_tenant(cluster: &str, tenant: &str) {
-        println!("=== begin ================...");
-
-        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
-        let mut version = 0;
-        let mut cmd = (
-            "client_id".to_string(),
-            cluster.to_string(),
-            tenant.to_string(),
-            version,
-        );
-
-        loop {
-            cmd.3 = version;
-
-            println!("=== watch ...");
-            let result = client.watch_tenant::<command::TenantMetaDataDelta>(&cmd);
-            println!("=== watch: {:#?}", result);
-
-            if let Ok(val) = result {
-                version = val.ver_range.1;
-                if val.full_load {
-                    version = val.update.version;
-                }
-            }
-        }
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_watch_tenant() {
-        watch_tenant("cluster_xxx", "tenant_test").await;
-    }
 
     #[tokio::test]
     #[ignore]
@@ -222,7 +214,7 @@ mod test {
         };
 
         let req = command::WriteCommand::AddDataNode(cluster.clone(), node);
-        let rsp = client.write::<command::StatusResponse>(&req);
+        let rsp = client.write::<command::StatusResponse>(&req).await;
         println!("=== add data: {:?}", rsp);
         thread::sleep(time::Duration::from_secs(3));
 
@@ -231,7 +223,7 @@ mod test {
             tenant.clone(),
             DatabaseSchema::new(&tenant, "test_db"),
         );
-        let rsp = client.write::<command::TenaneMetaDataResp>(&req);
+        let rsp = client.write::<command::TenaneMetaDataResp>(&req).await;
         println!("=== create db: {:?}", rsp);
         thread::sleep(time::Duration::from_secs(3));
 
@@ -241,7 +233,7 @@ mod test {
             "test_db".to_string(),
             1667456711000000000,
         );
-        let rsp = client.write::<command::TenaneMetaDataResp>(&req);
+        let rsp = client.write::<command::TenaneMetaDataResp>(&req).await;
         println!("=== create bucket: {:?}", rsp);
         thread::sleep(time::Duration::from_secs(3));
 
@@ -250,7 +242,7 @@ mod test {
             tenant.clone(),
             DatabaseSchema::new(&tenant, "test_db2"),
         );
-        let rsp = client.write::<command::TenaneMetaDataResp>(&req);
+        let rsp = client.write::<command::TenaneMetaDataResp>(&req).await;
         println!("=== create db2: {:?}", rsp);
         thread::sleep(time::Duration::from_secs(3));
 
@@ -286,7 +278,46 @@ mod test {
         let req = command::WriteCommand::UpdateVnodeReplSet(args);
 
         let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
-        let rsp = client.write::<command::StatusResponse>(&req);
+        let rsp = client.write::<command::StatusResponse>(&req).await;
         println!("=========: {:?}", rsp);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_meta_watch() {
+        let mut request = (
+            "client_123".to_string(),
+            "cluster_xx".to_string(),
+            "tenant_xx".to_string(),
+            0,
+        );
+
+        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+        loop {
+            let watch_data = client.watch::<command::WatchData>(&request).await.unwrap();
+            println!("{:?}", watch_data);
+
+            if !watch_data.entry_logs.is_empty() {
+                println!("{}", watch_data.entry_logs[0].val)
+            }
+
+            request.3 = watch_data.max_ver;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_json_encode() {
+        let req = command::WriteCommand::CreateDB(
+            "clusterxx".to_string(),
+            "tenantxx".to_string(),
+            DatabaseSchema::new("tenantxx", "test_db2"),
+        );
+
+        let strs: Vec<&str> = "/cluster/tenane/db".split('/').collect();
+        let strs2 = &strs[1..];
+        println!("{:?}", strs2);
+
+        let data = serde_json::to_string(&req).unwrap();
+        println!("{}", data);
     }
 }

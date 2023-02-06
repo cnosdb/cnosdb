@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, meta_client::MetaClientRef};
+use meta::{error::MetaError, MetaClientRef};
 use models::{auth::user::User, oid::Identifier};
 
 use crate::{
@@ -16,12 +16,13 @@ const INFORMATION_SCHEMA_ENABLED_ROLES: &str = "ENABLED_ROLES";
 /// This view displays the role information of the current user under the current tenant.
 pub struct EnabledRolesFactory {}
 
+#[async_trait::async_trait]
 impl InformationSchemaTableFactory for EnabledRolesFactory {
     fn table_name(&self) -> &'static str {
         INFORMATION_SCHEMA_ENABLED_ROLES
     }
 
-    fn create(
+    async fn create(
         &self,
         user: &User,
         metadata: MetaClientRef,
@@ -29,7 +30,7 @@ impl InformationSchemaTableFactory for EnabledRolesFactory {
     ) -> std::result::Result<Arc<MemTable>, MetaError> {
         let mut builder = InformationSchemaEnabledRolesBuilder::default();
 
-        if let Some(role) = metadata.member_role(user.desc().id())? {
+        if let Some(role) = metadata.member_role(user.desc().id()).await? {
             builder.append_row(role.name());
         }
 

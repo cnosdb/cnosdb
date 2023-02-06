@@ -6,7 +6,7 @@ use bytes::Bytes;
 use datafusion::arrow::datatypes::ToByteSlice;
 use flatbuffers::FlatBufferBuilder;
 use meta::error::MetaError;
-use meta::meta_client::{MetaClientRef, MetaRef};
+use meta::{MetaClientRef, MetaRef};
 use models::schema::{TskvTableSchema, TIME_FIELD_NAME};
 use protos::models_helper::{parse_proto_bytes, to_proto_bytes};
 use protos::prompb::remote::{
@@ -46,6 +46,7 @@ impl PromRemoteServer for PromRemoteSqlServer {
         let meta = meta
             .tenant_manager()
             .tenant_meta(ctx.tenant())
+            .await
             .ok_or_else(|| MetaError::TenantNotFound {
                 tenant: ctx.tenant().to_string(),
             })?;

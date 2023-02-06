@@ -29,6 +29,7 @@ impl DDLDefinitionTask for AlterTableTask {
             .meta
             .tenant_manager()
             .tenant_meta(tenant)
+            .await
             .ok_or(MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
             })?;
@@ -83,7 +84,9 @@ impl DDLDefinitionTask for AlterTableTask {
         };
         schema.schema_id += 1;
 
-        client.update_table(&TableSchema::TsKvTableSchema(schema.to_owned()))?;
+        client
+            .update_table(&TableSchema::TsKvTableSchema(schema.to_owned()))
+            .await?;
         query_state_machine
             .coord
             .exec_admin_stat_on_all_node(req)

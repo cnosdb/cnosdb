@@ -11,7 +11,8 @@ use snafu::ResultExt;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 //use std::net::{TcpListener, TcpStream};
-use meta::meta_client::{MetaClientRef, MetaRef};
+use meta::meta_manager::RemoteMetaManager;
+use meta::{MetaClientRef, MetaRef};
 use models::auth::user::{ROOT, ROOT_PWD};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
@@ -116,7 +117,7 @@ impl<'a> VnodeMapping<'a> {
         }
     }
 
-    pub fn map_point(
+    pub async fn map_point(
         &mut self,
         meta_client: MetaClientRef,
         point: models::Point,
@@ -130,11 +131,9 @@ impl<'a> VnodeMapping<'a> {
         }
 
         //let full_name = format!("{}.{}", meta_client.tenant_name(), db);
-        let info = meta_client.locate_replcation_set_for_write(
-            &point.db,
-            point.hash_id,
-            point.timestamp,
-        )?;
+        let info = meta_client
+            .locate_replcation_set_for_write(&point.db, point.hash_id, point.timestamp)
+            .await?;
         self.sets.entry(info.id).or_insert_with(|| info.clone());
         let entry = self
             .points
@@ -181,6 +180,7 @@ impl PointWriter {
             .meta_manager
             .tenant_manager()
             .tenant_meta(&req.tenant)
+            .await
             .ok_or(CoordinatorError::TenantNotFound {
                 name: req.tenant.clone(),
             })?;
@@ -196,7 +196,7 @@ impl PointWriter {
                 }
             })?;
 
-            mapping.map_point(meta_client.clone(), point)?;
+            mapping.map_point(meta_client.clone(), point).await?;
         }
 
         let mut requests = vec![];

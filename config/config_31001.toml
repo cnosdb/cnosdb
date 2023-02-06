@@ -41,6 +41,7 @@ path = '/tmp/cnosdb/1001/log'
 
 [cluster]
 node_id = 1001
+tenant = ''
 name = 'cluster_xxx'
 meta = '127.0.0.1:21001'
 

@@ -552,13 +552,15 @@ mod test {
     use datafusion::parquet::data_type::AsBytes;
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
+    use meta::meta_manager::RemoteMetaManager;
+    use meta::MetaRef;
     use serial_test::serial;
     use tokio::runtime;
     use tokio::sync::RwLock;
     use tokio::time::sleep;
 
     use config::get_config;
-    use meta::meta_client::{MetaRef, RemoteMetaManager};
+
     use models::codec::Encoding;
     use models::schema::TenantOptions;
     use protos::{models as fb_models, models_helper};
@@ -799,12 +801,16 @@ mod test {
         rt.block_on(check_wal_files(dir, data_vec, true)).unwrap();
 
         let opt = kv_option::Options::from(&global_config);
-        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(global_config.cluster.clone()));
-        let _ = meta_manager
-            .tenant_manager()
-            .create_tenant("cnosdb".to_string(), TenantOptions::default());
+        let meta_manager: MetaRef = rt.block_on(RemoteMetaManager::new(global_config.cluster));
+        rt.block_on(meta_manager.admin_meta().add_data_node())
+            .unwrap();
+        let _ = rt.block_on(
+            meta_manager
+                .tenant_manager()
+                .create_tenant("cnosdb".to_string(), TenantOptions::default()),
+        );
         let tskv = rt
-            .block_on(TsKv::open(global_config.cluster, opt, rt.clone()))
+            .block_on(TsKv::open(meta_manager, opt, rt.clone()))
             .unwrap();
         let ver = rt
             .block_on(tskv.get_db_version("cnosdb", "db0", 10))

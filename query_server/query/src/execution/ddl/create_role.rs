@@ -43,13 +43,14 @@ impl DDLDefinitionTask for CreateRoleTask {
 
         let meta = tenant_manager
             .tenant_meta(tenant_name)
+            .await
             .ok_or_else(|| QueryError::Meta {
                 source: MetaError::TenantNotFound {
                     tenant: tenant_name.to_string(),
                 },
             })?;
 
-        let role = meta.custom_role(name)?;
+        let role = meta.custom_role(name).await?;
         // .context(MetaSnafu)?;
 
         match (if_not_exists, role) {
@@ -82,7 +83,8 @@ impl DDLDefinitionTask for CreateRoleTask {
                     name.to_string(),
                     inherit_tenant_role.clone(),
                     Default::default(),
-                )?;
+                )
+                .await?;
                 // .context(MetaSnafu)?;
 
                 Ok(Output::Nil(()))

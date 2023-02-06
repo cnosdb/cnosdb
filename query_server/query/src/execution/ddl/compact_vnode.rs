@@ -29,6 +29,7 @@ impl DDLDefinitionTask for CompactVnodeTask {
             .meta
             .tenant_manager()
             .tenant_meta(tenant)
+            .await
             .ok_or_else(|| QueryError::Meta {
                 source: MetaError::TenantNotFound {
                     tenant: tenant.to_string(),

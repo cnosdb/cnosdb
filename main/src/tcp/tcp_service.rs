@@ -5,7 +5,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::future::ok;
 use futures::{executor, Future};
-use meta::meta_client::MetaRef;
+use meta::MetaRef;
 use models::predicate::domain::Predicate;
 use snafu::ResultExt;
 use spi::server::dbms::DBMSRef;
@@ -62,6 +62,7 @@ impl TcpService {
 #[async_trait::async_trait]
 impl Service for TcpService {
     fn start(&mut self) -> Result<(), server::Error> {
+        info!("tcp server start: {}", self.addr.to_string());
         let (shutdown, rx) = oneshot::channel();
 
         let addr = self.addr;

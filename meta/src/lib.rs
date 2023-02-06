@@ -2,19 +2,32 @@ use crate::service::connection::Connections;
 use crate::store::command::WriteCommand;
 use crate::store::state_machine::CommandResp;
 use crate::store::Store;
+use meta_admin::AdminMeta;
+use meta_client::MetaClient;
+use meta_manager::MetaManager;
 use openraft::Config;
 use openraft::Raft;
 use std::fmt::Display;
 use std::sync::Arc;
+use tenant_manager::TenantManager;
+use user_manager::UserManager;
 pub mod client;
 pub mod error;
 pub mod limiter;
+pub mod meta_admin;
 pub mod meta_client;
 pub mod meta_client_mock;
+pub mod meta_manager;
 pub mod service;
 pub mod store;
 pub mod tenant_manager;
 pub mod user_manager;
+
+pub type UserManagerRef = Arc<dyn UserManager>;
+pub type TenantManagerRef = Arc<dyn TenantManager>;
+pub type MetaClientRef = Arc<dyn MetaClient>;
+pub type AdminMetaRef = Arc<dyn AdminMeta>;
+pub type MetaRef = Arc<dyn MetaManager>;
 
 pub type ClusterNodeId = u64;
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]

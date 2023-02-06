@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+use async_trait::async_trait;
 use dashmap::DashMap;
 use models::{
     auth::{
@@ -26,15 +27,21 @@ use crate::{
     },
 };
 
+#[async_trait]
 pub trait UserManager: Send + Sync + Debug {
     // user
-    fn create_user(&self, name: String, options: UserOptions, is_admin: bool) -> MetaResult<Oid>;
-    fn user(&self, name: &str) -> MetaResult<Option<UserDesc>>;
+    async fn create_user(
+        &self,
+        name: String,
+        options: UserOptions,
+        is_admin: bool,
+    ) -> MetaResult<Oid>;
+    async fn user(&self, name: &str) -> MetaResult<Option<UserDesc>>;
     // fn user_with_privileges(&self, name: &str) -> Result<Option<User>>;
-    fn users(&self) -> MetaResult<Vec<UserDesc>>;
-    fn alter_user(&self, name: &str, options: UserOptions) -> MetaResult<()>;
-    fn drop_user(&self, name: &str) -> MetaResult<bool>;
-    fn rename_user(&self, old_name: &str, new_name: String) -> MetaResult<()>;
+    async fn users(&self) -> MetaResult<Vec<UserDesc>>;
+    async fn alter_user(&self, name: &str, options: UserOptions) -> MetaResult<()>;
+    async fn drop_user(&self, name: &str) -> MetaResult<bool>;
+    async fn rename_user(&self, old_name: &str, new_name: String) -> MetaResult<()>;
 }
 
 #[derive(Debug)]
@@ -52,11 +59,17 @@ impl RemoteUserManager {
     }
 }
 
+#[async_trait::async_trait]
 impl UserManager for RemoteUserManager {
-    fn create_user(&self, name: String, options: UserOptions, is_admin: bool) -> MetaResult<Oid> {
+    async fn create_user(
+        &self,
+        name: String,
+        options: UserOptions,
+        is_admin: bool,
+    ) -> MetaResult<Oid> {
         let req = command::WriteCommand::CreateUser(self.cluster.clone(), name, options, is_admin);
 
-        match self.client.write::<command::CommonResp<Oid>>(&req)? {
+        match self.client.write::<command::CommonResp<Oid>>(&req).await? {
             command::CommonResp::Ok(data) => Ok(data),
             command::CommonResp::Err(status) => {
                 // TODO improve response
@@ -69,12 +82,13 @@ impl UserManager for RemoteUserManager {
         }
     }
 
-    fn user(&self, name: &str) -> MetaResult<Option<UserDesc>> {
+    async fn user(&self, name: &str) -> MetaResult<Option<UserDesc>> {
         let req = command::ReadCommand::User(self.cluster.clone(), name.to_string());
 
         match self
             .client
-            .read::<command::CommonResp<Option<UserDesc>>>(&req)?
+            .read::<command::CommonResp<Option<UserDesc>>>(&req)
+            .await?
         {
             command::CommonResp::Ok(data) => Ok(data),
             command::CommonResp::Err(status) => {
@@ -84,12 +98,13 @@ impl UserManager for RemoteUserManager {
         }
     }
 
-    fn users(&self) -> MetaResult<Vec<UserDesc>> {
+    async fn users(&self) -> MetaResult<Vec<UserDesc>> {
         let req = command::ReadCommand::Users(self.cluster.clone());
 
         match self
             .client
-            .read::<command::CommonResp<Vec<UserDesc>>>(&req)?
+            .read::<command::CommonResp<Vec<UserDesc>>>(&req)
+            .await?
         {
             command::CommonResp::Ok(data) => Ok(data),
             command::CommonResp::Err(status) => {
@@ -99,11 +114,15 @@ impl UserManager for RemoteUserManager {
         }
     }
 
-    fn alter_user(&self, name: &str, options: UserOptions) -> MetaResult<()> {
+    async fn alter_user(&self, name: &str, options: UserOptions) -> MetaResult<()> {
         let req = command::WriteCommand::AlterUser(self.cluster.clone(), name.to_string(), options);
 
-        match self.client.write::<command::CommonResp<()>>(&req)? {
-            command::CommonResp::Ok(_) => Ok(()),
+        match self
+            .client
+            .write::<command::CommonResp<UserDesc>>(&req)
+            .await?
+        {
+            command::CommonResp::Ok(data) => Ok(()),
             command::CommonResp::Err(status) => {
                 // TODO improve response
                 if status.code == META_REQUEST_USER_NOT_FOUND {
@@ -115,10 +134,10 @@ impl UserManager for RemoteUserManager {
         }
     }
 
-    fn drop_user(&self, name: &str) -> MetaResult<bool> {
+    async fn drop_user(&self, name: &str) -> MetaResult<bool> {
         let req = command::WriteCommand::DropUser(self.cluster.clone(), name.to_string());
 
-        match self.client.write::<command::CommonResp<bool>>(&req)? {
+        match self.client.write::<command::CommonResp<bool>>(&req).await? {
             command::CommonResp::Ok(e) => Ok(e),
             command::CommonResp::Err(status) => {
                 if status.code == META_REQUEST_USER_NOT_FOUND {
@@ -131,11 +150,11 @@ impl UserManager for RemoteUserManager {
         }
     }
 
-    fn rename_user(&self, old_name: &str, new_name: String) -> MetaResult<()> {
+    async fn rename_user(&self, old_name: &str, new_name: String) -> MetaResult<()> {
         let req =
             command::WriteCommand::RenameUser(self.cluster.clone(), old_name.to_string(), new_name);
 
-        match self.client.write::<command::CommonResp<()>>(&req)? {
+        match self.client.write::<command::CommonResp<()>>(&req).await? {
             command::CommonResp::Ok(_) => Ok(()),
             command::CommonResp::Err(status) => {
                 // TODO improve response
@@ -174,37 +193,43 @@ impl UserManagerMock {
     }
 }
 
+#[async_trait::async_trait]
 impl UserManager for UserManagerMock {
-    fn create_user(&self, name: String, options: UserOptions, is_admin: bool) -> MetaResult<Oid> {
+    async fn create_user(
+        &self,
+        name: String,
+        options: UserOptions,
+        is_admin: bool,
+    ) -> MetaResult<Oid> {
         debug!("AuthClientMock::create_user({}, {})", name, options);
         Ok(*self.mock_user.desc().id())
     }
 
-    fn user(&self, name: &str) -> MetaResult<Option<UserDesc>> {
+    async fn user(&self, name: &str) -> MetaResult<Option<UserDesc>> {
         debug!("AuthClientMock::user({})", name);
 
         Ok(Some(self.mock_user.desc().clone()))
     }
 
-    fn users(&self) -> MetaResult<Vec<UserDesc>> {
+    async fn users(&self) -> MetaResult<Vec<UserDesc>> {
         debug!("AuthClientMock::users()");
 
         Ok(vec![self.mock_user.desc().clone()])
     }
 
-    fn alter_user(&self, user_id: &str, options: UserOptions) -> MetaResult<()> {
+    async fn alter_user(&self, user_id: &str, options: UserOptions) -> MetaResult<()> {
         debug!("AuthClientMock::alter_user({}, {})", user_id, options);
 
         Ok(())
     }
 
-    fn drop_user(&self, name: &str) -> MetaResult<bool> {
+    async fn drop_user(&self, name: &str) -> MetaResult<bool> {
         debug!("AuthClientMock::drop_user({})", name);
 
         Ok(true)
     }
 
-    fn rename_user(&self, user_id: &str, new_name: String) -> MetaResult<()> {
+    async fn rename_user(&self, user_id: &str, new_name: String) -> MetaResult<()> {
         debug!("AuthClientMock::rename_user({}, {})", user_id, new_name);
 
         Ok(())
