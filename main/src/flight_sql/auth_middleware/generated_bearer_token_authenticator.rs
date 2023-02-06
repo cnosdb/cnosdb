@@ -33,6 +33,7 @@ where
 {
     pub fn new(initial_authenticator: T) -> Self {
         let bearer_to_identifier = Cache::builder()
+            .thread_pool_enabled(false)
             // Time to idle (TTL): 10 minutes
             // If bearer is not used within 10 minutes, it will expire
             .time_to_idle(Duration::from_secs(10 * 60))

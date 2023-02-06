@@ -19,8 +19,8 @@ use crate::http::result_format::ResultFormat;
 use crate::http::Error;
 use crate::http::ParseLineProtocolSnafu;
 use crate::http::QuerySnafu;
-use crate::server;
 use crate::server::{Service, ServiceHandle};
+use crate::{server, VERSION};
 use chrono::Local;
 use config::TLSConfig;
 use coordinator::hh_queue::HintedOffManager;
@@ -146,7 +146,7 @@ impl HttpService {
             .and(warp::get().or(warp::head()))
             .map(|_| {
                 let mut resp = HashMap::new();
-                resp.insert("version", "2.0.0");
+                resp.insert("version", VERSION.as_str());
                 resp.insert("status", "healthy");
                 warp::reply::json(&resp)
             })
