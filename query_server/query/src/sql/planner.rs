@@ -126,7 +126,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             ExtStatement::ShowDatabases() => self.database_to_show(session),
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt, session),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
-            ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(*stmt, session).await,
+            ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(*stmt, session),
             ExtStatement::Explain(stmt) => {
                 self.explain_statement_to_plan(
                     stmt.analyze,
@@ -136,8 +136,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 )
                 .await
             }
-            ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt, session).await,
-            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt, session).await,
+            ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt, session),
+            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt, session),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt).await,
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt).await,
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
@@ -575,13 +575,13 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    async fn table_to_alter(
+    fn table_to_alter(
         &self,
         statement: ASTAlterTable,
         session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let table_name = normalize_sql_object_name(&statement.table_name);
-        let table_schema = self.get_tskv_schema(&table_name).await?;
+        let table_schema = self.get_tskv_schema(&table_name)?;
 
         let alter_action = match statement.alter_action {
             ASTAlterTableAction::AddColumn { column } => {
@@ -699,7 +699,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    async fn show_tag_body(
+    fn show_tag_body(
         &self,
         session: &IsiphoSessionCtx,
         body: ShowTagBody,
@@ -722,7 +722,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
 
         let table_name = normalize_sql_object_name(&table);
         let table_source = self.get_table_source(&table_name)?;
-        let table_schema = self.get_tskv_schema(&table_name).await?;
+        let table_schema = self.get_tskv_schema(&table_name)?;
         let table_df_schema = table_source.schema().to_dfschema_ref()?;
 
         // build from
@@ -782,16 +782,15 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    async fn show_series_to_plan(
+    fn show_series_to_plan(
         &self,
         stmt: ASTShowSeries,
         session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
         self.show_tag_body(session, stmt.body, show_series_projection)
-            .await
     }
 
-    async fn show_tag_values(
+    fn show_tag_values(
         &self,
         stmt: ASTShowTagValues,
         session: &IsiphoSessionCtx,
@@ -804,7 +803,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 show_tag_value_projections(schema, plan_builder, where_contain_time, stmt.with)
             },
         )
-        .await
     }
 
     fn database_to_plan(
@@ -1034,7 +1032,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         Ok(self.schema_provider.get_table_source(table_ref)?.inner())
     }
 
-    async fn get_table_provider(&self, table_name: &str) -> Result<Arc<dyn TableProvider>> {
+    fn get_table_provider(&self, table_name: &str) -> Result<Arc<dyn TableProvider>> {
         let table_source = self.get_table_source(table_name)?;
         Ok(source_as_provider(&table_source)?)
     }
@@ -1375,10 +1373,9 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    async fn get_tskv_schema(&self, table_name: &str) -> Result<TskvTableSchemaRef> {
+    fn get_tskv_schema(&self, table_name: &str) -> Result<TskvTableSchemaRef> {
         Ok(self
-            .get_table_provider(table_name)
-            .await?
+            .get_table_provider(table_name)?
             .as_any()
             .downcast_ref::<ClusterTable>()
             .ok_or_else(|| MetaError::TableNotFound {
