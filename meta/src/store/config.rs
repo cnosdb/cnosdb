@@ -45,7 +45,7 @@ pub struct Opt {
     #[clap(long, env = "META_LOGS_PATH", default_value = "/tmp/cnosdb/logs")]
     pub logs_path: String,
 
-    #[clap(long, env = "META_LOGS_LEVEL", default_value = "info")]
+    #[clap(long, env = "META_LOGS_LEVEL", default_value = "warn")]
     pub logs_level: String,
 }
 
