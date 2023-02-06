@@ -299,7 +299,7 @@ impl CircleBuf {
             0
         };
 
-        Some(self.buf[index as usize].ver)
+        Some(self.buf[index].ver)
     }
 
     pub fn max_version(&self) -> Option<u64> {
@@ -313,7 +313,7 @@ impl CircleBuf {
             self.writer - 1
         };
 
-        Some(self.buf[index as usize].ver)
+        Some(self.buf[index].ver)
     }
 
     // -1: the logs is empty

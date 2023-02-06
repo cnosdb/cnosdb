@@ -15,7 +15,7 @@ use chrono::{
 use lazy_static::lazy_static;
 use models::Timestamp;
 use parking_lot::RwLock;
-use trace::{error, info};
+use trace::{debug, error, info};
 
 use crate::{
     compaction::CompactReq,
@@ -48,7 +48,7 @@ impl Picker for LevelCompactionPicker {
         //!    max_compact_size.
         //! 5. Build CompactReq using **version**, picked level and picked files.
 
-        info!(
+        debug!(
             "Picker: Version info: [ {} ]",
             version
                 .levels_info()
