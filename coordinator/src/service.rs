@@ -319,12 +319,23 @@ impl CoordService {
             }
         }
 
+        let now = tokio::time::Instant::now();
+        info!("select statement execute now: {:?}", now);
         let executor = QueryExecutor::new(option, kv_inst, meta, sender.clone());
         if let Err(err) = executor.execute().await {
-            info!("select statement execute failed: {}", err.to_string());
+            info!(
+                "select statement execute failed: {}, now: {:?} elapsed: {:?}",
+                err,
+                now,
+                now.elapsed(),
+            );
             let _ = sender.send(Err(err)).await;
         } else {
-            info!("select statement execute success");
+            info!(
+                "select statement execute success, start at: {:?} elapsed: {:?}",
+                now,
+                now.elapsed(),
+            );
         }
     }
 
@@ -386,7 +397,17 @@ impl Coordinator for CoordService {
             request,
         };
 
-        self.writer.write_points(&req).await
+        let now = tokio::time::Instant::now();
+        info!("write points, now: {:?}", now);
+        let res = self.writer.write_points(&req).await;
+        info!(
+            "write points result: {:?}, start at: {:?} elapsed: {:?}",
+            res,
+            now,
+            now.elapsed()
+        );
+
+        res
     }
 
     async fn exec_admin_stat_on_all_node(

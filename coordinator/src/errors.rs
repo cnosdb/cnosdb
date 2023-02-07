@@ -106,6 +106,13 @@ pub enum CoordinatorError {
     FailoverNode {
         id: u64,
     },
+
+    #[snafu(display("Request timeout: {}", id))]
+    #[error_code(code = 17)]
+    RequestTimeout {
+        id: u32,
+        elapsed: String,
+    },
 }
 
 impl From<meta::error::MetaError> for CoordinatorError {

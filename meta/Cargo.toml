@@ -40,7 +40,7 @@ tracing-futures = "0.2"
 ureq = { version = "2.5.0", features = ["json", "charset"] }
 backoff = "0.4"
 sys-info = "0.9.1"
-surf = "2.3.2"
+surf = { version = "2.3.2", features = ["curl-client", "encoding"], default-features=false }
 pprof = { version = "0.11.0", features = ["flamegraph", "protobuf-codec","frame-pointer"] }
 
 [dev-dependencies]

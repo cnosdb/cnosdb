@@ -70,6 +70,32 @@ impl CoordinatorTcpCmd {
 }
 
 pub async fn send_command(conn: &mut TcpStream, cmd: &CoordinatorTcpCmd) -> CoordinatorResult<()> {
+    let ttl = tokio::time::Duration::from_secs(5 * 60);
+
+    match tokio::time::timeout(ttl, warp_send_command(conn, cmd)).await {
+        Ok(res) => res,
+
+        Err(timeout) => Err(CoordinatorError::RequestTimeout {
+            id: cmd.command_type(),
+            elapsed: timeout.to_string(),
+        }),
+    }
+}
+
+pub async fn recv_command(conn: &mut TcpStream) -> CoordinatorResult<CoordinatorTcpCmd> {
+    let ttl = tokio::time::Duration::from_secs(5 * 60);
+
+    match tokio::time::timeout(ttl, warp_recv_command(conn)).await {
+        Ok(res) => res,
+
+        Err(timeout) => Err(CoordinatorError::RequestTimeout {
+            id: 0,
+            elapsed: timeout.to_string(),
+        }),
+    }
+}
+
+async fn warp_send_command(conn: &mut TcpStream, cmd: &CoordinatorTcpCmd) -> CoordinatorResult<()> {
     conn.write_all(&cmd.command_type().to_be_bytes()).await?;
     match cmd {
         CoordinatorTcpCmd::StatusResponseCmd(val) => val.send_cmd(conn).await,
@@ -90,7 +116,7 @@ pub async fn send_command(conn: &mut TcpStream, cmd: &CoordinatorTcpCmd) -> Coor
     }
 }
 
-pub async fn recv_command(conn: &mut TcpStream) -> CoordinatorResult<CoordinatorTcpCmd> {
+async fn warp_recv_command(conn: &mut TcpStream) -> CoordinatorResult<CoordinatorTcpCmd> {
     let mut tmp_buf: [u8; 4] = [0; 4];
     conn.read_exact(&mut tmp_buf).await?;
     let cmd_type = u32::from_be_bytes(tmp_buf);
