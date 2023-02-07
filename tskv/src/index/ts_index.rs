@@ -693,7 +693,7 @@ mod test {
             file_type: "1".to_string(),
             location: "2".to_string(),
             target_partitions: 3,
-            table_partition_cols: vec!["4".to_string()],
+            table_partition_cols: vec![("4".to_string(), DataType::UInt8)],
             has_header: true,
             delimiter: 5,
             schema,

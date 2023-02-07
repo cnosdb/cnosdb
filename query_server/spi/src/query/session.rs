@@ -1,5 +1,4 @@
 use datafusion::{
-    config::OPT_OPTIMIZER_SKIP_FAILED_RULES,
     execution::context,
     prelude::{SessionConfig, SessionContext},
 };
@@ -71,12 +70,8 @@ pub struct IsiphoSessionConfig {
 
 impl Default for IsiphoSessionConfig {
     fn default() -> Self {
-        let inner: SessionConfig = Default::default();
-
-        inner
-            .config_options
-            .write()
-            .set_bool(OPT_OPTIMIZER_SKIP_FAILED_RULES, false);
+        let inner =
+            SessionConfig::default().set_bool("datafusion.optimizer.skip_failed_rules", false);
 
         Self { inner }
     }

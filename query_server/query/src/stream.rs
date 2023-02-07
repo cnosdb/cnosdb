@@ -3,7 +3,8 @@ use coordinator::{reader::ReaderIterator, service::CoordinatorRef};
 use std::task::Poll;
 
 use datafusion::{
-    arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
+    arrow::{datatypes::SchemaRef, record_batch::RecordBatch},
+    error::DataFusionError,
     physical_plan::RecordBatchStream,
 };
 use futures::{executor::block_on, FutureExt, Stream};
@@ -95,7 +96,7 @@ impl TableScanStream {
 }
 
 impl Stream for TableScanStream {
-    type Item = std::result::Result<RecordBatch, ArrowError>;
+    type Item = std::result::Result<RecordBatch, DataFusionError>;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
@@ -108,7 +109,7 @@ impl Stream for TableScanStream {
         let result = match Box::pin(this.iterator.next()).poll_unpin(cx) {
             Poll::Ready(Some(Ok(record_batch))) => Poll::Ready(Some(Ok(record_batch))),
             Poll::Ready(Some(Err(e))) => {
-                Poll::Ready(Some(Err(ArrowError::ExternalError(Box::new(e)))))
+                Poll::Ready(Some(Err(DataFusionError::External(Box::new(e)))))
             }
             Poll::Ready(None) => {
                 this.metrics.done();

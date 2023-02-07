@@ -1,4 +1,3 @@
-use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -12,15 +11,14 @@ use datafusion::datasource::file_format::json::JsonFormat;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::{ListingOptions, ListingTableUrl};
-use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::CreateExternalTable;
+use lazy_static::__Deref;
 use meta::error::MetaError;
 use models::schema::{ExternalTableSchema, TableSchema};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::DatafusionSnafu;
-use spi::Result;
+use spi::{DatafusionSnafu, Result};
 
 use super::DDLDefinitionTask;
 
@@ -43,23 +41,22 @@ impl DDLDefinitionTask for CreateExternalTableTask {
             ref if_not_exists,
             ..
         } = self.stmt;
-
-        let table_ref: TableReference = name.as_str().into();
-        let table_name = table_ref.resolve(
+        let unresolved_name = name.to_string();
+        let table_name = TableReference::parse_str(&unresolved_name).resolve(
             query_state_machine.session.tenant(),
             query_state_machine.session.default_database(),
         );
         let client = query_state_machine
             .meta
             .tenant_manager()
-            .tenant_meta(table_name.catalog)
+            .tenant_meta(&table_name.catalog)
             .await
             .ok_or(MetaError::TenantNotFound {
                 tenant: table_name.catalog.to_string(),
             })?;
         // .context(spi::MetaSnafu)?;
 
-        let table = client.get_external_table_schema(table_name.schema, table_name.table)?;
+        let table = client.get_external_table_schema(&table_name.schema, &table_name.table)?;
         // .context(spi::MetaSnafu)?;
 
         match (if_not_exists, table) {
@@ -67,7 +64,7 @@ impl DDLDefinitionTask for CreateExternalTableTask {
             (true, Some(_)) => Ok(Output::Nil(())),
             // Report an error if it exists
             (false, Some(_)) => Err(MetaError::TableAlreadyExists {
-                table_name: name.clone(),
+                table_name: name.to_string(),
             })?,
             // .context(spi::MetaSnafu),
             // does not exist, create
@@ -117,25 +114,22 @@ async fn build_table_schema(
     db: String,
     state: &SessionState,
 ) -> Result<ExternalTableSchema> {
-    let options = build_external_table_config(stmt, state.config.target_partitions)?;
+    let options = build_external_table_config(stmt, state.config().target_partitions())?;
 
-    let schema = construct_listing_table_schema(stmt, state, &options)
-        .await?
-        .deref()
-        .clone();
+    let schema = construct_listing_table_schema(stmt, state, &options).await?;
 
     let schema = ExternalTableSchema {
         tenant,
         db,
-        name: stmt.name.clone(),
+        name: stmt.name.to_string(),
         location: stmt.location.clone(),
         file_type: stmt.file_type.clone(),
-        file_compression_type: stmt.file_compression_type.clone(),
-        target_partitions: state.config.target_partitions,
-        table_partition_cols: stmt.table_partition_cols.clone(),
+        file_compression_type: stmt.file_compression_type.to_string(),
+        target_partitions: state.config().target_partitions(),
+        table_partition_cols: Default::default(),
         has_header: stmt.has_header,
         delimiter: stmt.delimiter as u8,
-        schema,
+        schema: schema.deref().clone(),
     };
     Ok(schema)
 }
@@ -172,38 +166,26 @@ fn build_external_table_config(
     stmt: &CreateExternalTable,
     target_partitions: usize,
 ) -> Result<ListingOptions> {
-    let file_format: Arc<dyn FileFormat> = match FileType::from_str(&stmt.file_type)? {
+    let file_compression_type = FileCompressionType::from(stmt.file_compression_type);
+    let file_type = FileType::from_str(stmt.file_type.as_str())?;
+    let file_extension = file_type.get_ext_with_compression(file_compression_type.to_owned())?;
+    let file_format: Arc<dyn FileFormat> = match file_type {
         FileType::CSV => Arc::new(
             CsvFormat::default()
                 .with_has_header(stmt.has_header)
                 .with_delimiter(stmt.delimiter as u8)
-                .with_file_compression_type(
-                    FileCompressionType::from_str(&stmt.file_compression_type).map_err(|_| {
-                        DataFusionError::Execution(
-                            "Only known FileCompressionTypes can be ListingTables!".to_string(),
-                        )
-                    })?,
-                ),
+                .with_file_compression_type(file_compression_type),
         ),
         FileType::PARQUET => Arc::new(ParquetFormat::default()),
         FileType::AVRO => Arc::new(AvroFormat::default()),
-        FileType::JSON => Arc::new(JsonFormat::default().with_file_compression_type(
-            FileCompressionType::from_str(&stmt.file_compression_type)?,
-        )),
+        FileType::JSON => {
+            Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
+        }
     };
 
-    let file_type = match FileType::from_str(stmt.file_type.as_str()) {
-        Ok(t) => t,
-        Err(_) => Err(DataFusionError::Execution(
-            "Only known FileTypes can be ListingTables!".to_string(),
-        ))?,
-    };
-    Ok(ListingOptions {
-        format: file_format,
-        collect_stat: false,
-        file_extension: file_type
-            .get_ext_with_compression(stmt.file_compression_type.to_owned().parse()?)?,
-        target_partitions,
-        table_partition_cols: stmt.table_partition_cols.clone(),
-    })
+    let options = ListingOptions::new(file_format)
+        .with_file_extension(file_extension)
+        .with_target_partitions(target_partitions);
+
+    Ok(options)
 }

@@ -29,6 +29,7 @@ use models::{
     schema::{ColumnType, TskvTableSchemaRef},
     SeriesKey, TagValue,
 };
+use spi::QueryError;
 use trace::debug;
 
 #[derive(Debug, Clone)]
@@ -205,7 +206,11 @@ async fn do_tag_scan(
         }))
     })?;
 
-    todo!("meta need get_series_id_by_filter")
+    Err(DataFusionError::External(Box::new(
+        QueryError::NotImplemented {
+            err: "meta need get_series_id_by_filter".to_string(),
+        },
+    )))
     // let series_keys = coord
     //     .get_series_id_by_filter(tenant, db, &table_schema.name, &tags_filter)
     //     .map_err(|e| ArrowError::ExternalError(Box::new(e)))?
@@ -236,13 +241,13 @@ struct TagRecordBatchStream {
 }
 
 impl Stream for TagRecordBatchStream {
-    type Item = ArrowResult<RecordBatch>;
+    type Item = Result<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.columns
             .take()
             .map(|e| {
-                let batch = RecordBatch::try_new(self.schema.clone(), e);
+                let batch = RecordBatch::try_new(self.schema.clone(), e).map_err(Into::into);
                 Poll::Ready(Some(batch))
             })
             .unwrap_or_else(|| Poll::Ready(None))

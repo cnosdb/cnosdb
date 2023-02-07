@@ -50,7 +50,7 @@ column5,DOUBLE,FIELD,GORILLA
 
 -- EXECUTE SQL: DESCRIBE TABLE test2; --
 422 Unprocessable Entity
-{"error_code":"030019","error_message":"Table not found: \"test2\""}
+{"error_code":"030019","error_message":"Table not found: \"cnosdb.createtable.test2\""}
 -- ERROR:  --
 
 -- EXECUTE SQL: DROP TABLE IF EXISTS test0; --

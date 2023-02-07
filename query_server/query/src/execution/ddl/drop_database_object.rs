@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use coordinator::command;
-use datafusion::sql::TableReference;
 use snafu::ResultExt;
 use spi::query::{
     execution::{Output, QueryStateMachineRef},
@@ -38,7 +37,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
             DatabaseObjectType::Table => {
                 // TODO 删除指定租户下的表
                 info!("Drop table {}", object_name);
-                let tenant = query_state_machine.session.tenant();
+                let tenant = object_name.tenant();
                 let client = query_state_machine
                     .meta
                     .tenant_manager()
@@ -47,16 +46,12 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     .ok_or(MetaError::TenantNotFound {
                         tenant: tenant.to_string(),
                     })?;
-                let table = TableReference::from(object_name.as_str()).resolve(
-                    query_state_machine.session.tenant(),
-                    query_state_machine.session.default_database(),
-                );
 
                 let req = command::AdminStatementRequest {
                     tenant: tenant.to_string(),
                     stmt: command::AdminStatementType::DropTable {
-                        db: table.schema.to_string(),
-                        table: table.table.to_string(),
+                        db: object_name.database().to_string(),
+                        table: object_name.table().to_string(),
                     },
                 };
 
@@ -65,7 +60,9 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     .exec_admin_stat_on_all_node(req)
                     .await?;
 
-                client.drop_table(table.schema, table.table).await
+                client
+                    .drop_table(object_name.database(), object_name.table())
+                    .await
             }
         };
 
