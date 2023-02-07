@@ -324,7 +324,7 @@ impl CoordService {
         let executor = QueryExecutor::new(option, kv_inst, meta, sender.clone());
         if let Err(err) = executor.execute().await {
             info!(
-                "select statement execute failed: {}, now: {:?} elapsed: {:?}",
+                "select statement execute failed: {}, start at: {:?} elapsed: {:?}",
                 err,
                 now,
                 now.elapsed(),
@@ -340,6 +340,30 @@ impl CoordService {
     }
 
     async fn exec_on_node(&self, node_id: u64, cmd: CoordinatorTcpCmd) -> CoordinatorResult<()> {
+        let now = tokio::time::Instant::now();
+        info!(
+            "exec command on node: {} command: {:?} now: {:?}",
+            node_id, cmd, now
+        );
+
+        let res = self.warp_exec_on_node(node_id, cmd).await;
+
+        info!(
+            "exec command on node: {}  start at: {:?}, elapsed: {:?}, result: {:?}",
+            node_id,
+            now,
+            now.elapsed(),
+            res
+        );
+
+        res
+    }
+
+    async fn warp_exec_on_node(
+        &self,
+        node_id: u64,
+        cmd: CoordinatorTcpCmd,
+    ) -> CoordinatorResult<()> {
         let mut conn = self.meta.admin_meta().get_node_conn(node_id).await?;
 
         send_command(&mut conn, &cmd).await?;
@@ -417,17 +441,32 @@ impl Coordinator for CoordService {
         let meta = self.meta.admin_meta();
         let nodes = meta.data_nodes().await;
 
+        let now = tokio::time::Instant::now();
         let mut requests = vec![];
         for node in nodes.iter() {
+            info!(
+                "exec admin command: {:?}  node: {:?}, now: {:?}",
+                req, node, now
+            );
             let cmd = CoordinatorTcpCmd::AdminStatementCmd(req.clone());
             let request = self.exec_on_node(node.id, cmd.clone());
             requests.push(request);
         }
 
-        match futures::future::try_join_all(requests).await {
+        let res = match futures::future::try_join_all(requests).await {
             Ok(_) => Ok(()),
             Err(err) => Err(err),
-        }
+        };
+
+        info!(
+            "exec admin command: {:?} ,start at: {:?}, elapsed: {:?}, result: {:?}",
+            req,
+            now,
+            now.elapsed(),
+            res
+        );
+
+        res
     }
 
     async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
