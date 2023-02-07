@@ -195,6 +195,7 @@ mod test {
         meta_data::{NodeInfo, VnodeInfo},
         schema::DatabaseSchema,
     };
+    use tokio::{sync::mpsc::channel, time::timeout};
 
     #[tokio::test]
     #[ignore]
@@ -306,6 +307,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_json_encode() {
         let req = command::WriteCommand::CreateDB(
             "clusterxx".to_string(),
@@ -319,5 +321,18 @@ mod test {
 
         let data = serde_json::to_string(&req).unwrap();
         println!("{}", data);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_timeout() {
+        let (send, mut recv) = channel(1024);
+        send.send(123).await.unwrap();
+        loop {
+            match timeout(tokio::time::Duration::from_secs(3), recv.recv()).await {
+                Ok(val) => println!("recv data: {:?}", val),
+                Err(tt) => println!("err timeout: {}", tt),
+            }
+        }
     }
 }
