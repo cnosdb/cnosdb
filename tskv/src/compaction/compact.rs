@@ -10,6 +10,7 @@ use evmap::new;
 use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
 use trace::{debug, error, info, trace};
+use utils::BloomFilter;
 
 use crate::{
     compaction::CompactReq,
@@ -25,7 +26,7 @@ use crate::{
         self, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index, IndexIterator,
         IndexMeta, IndexReader, TsmReader, TsmWriter,
     },
-    Error, LevelId, TseriesFamilyId,
+    ColumnFileId, Error, LevelId, TseriesFamilyId,
 };
 
 /// Temporary compacting data block meta
@@ -456,7 +457,7 @@ fn overlaps_tuples(r1: (i64, i64), r2: (i64, i64)) -> bool {
 pub async fn run_compaction_job(
     request: CompactReq,
     kernel: Arc<GlobalContext>,
-) -> Result<Option<VersionEdit>> {
+) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
     info!(
         "Compaction: Running compaction job on ts_family: {} and files: [ {} ]",
         request.ts_family_id,
@@ -499,6 +500,7 @@ pub async fn run_compaction_job(
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
     info!("Compaction: File {} been created.", tsm_writer.sequence());
     let mut version_edit = VersionEdit::new(tsf_id);
+    let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
 
     loop {
         let block = iter.next().await;
@@ -575,6 +577,10 @@ pub async fn run_compaction_job(
     );
     let cm = new_compact_meta(&tsm_writer, request.ts_family_id, request.out_level);
     version_edit.add_file(cm, version.max_level_ts);
+    file_metas.insert(
+        tsm_writer.sequence(),
+        Arc::new(tsm_writer.bloom_filter_cloned()),
+    );
     for file in request.files {
         version_edit.del_file(file.level(), file.file_id(), file.is_delta());
     }
@@ -584,7 +590,7 @@ pub async fn run_compaction_job(
         version_edit
     );
 
-    Ok(Some(version_edit))
+    Ok(Some((version_edit, file_metas)))
 }
 
 fn new_compact_meta(
@@ -727,14 +733,14 @@ pub mod test {
     }
 
     fn prepare_compact_req_and_kernel(
-        database: String,
+        database: Arc<String>,
         opt: Arc<Options>,
         next_file_id: u64,
         files: Vec<Arc<ColumnFile>>,
     ) -> (CompactReq, Arc<GlobalContext>) {
         let version = Arc::new(Version::new(
             1,
-            "version_1".to_string(),
+            database.clone(),
             opt.storage.clone(),
             1,
             LevelInfo::init_levels(database.clone(), 0, opt.storage.clone()),
@@ -783,7 +789,7 @@ pub mod test {
         ]);
 
         let dir = "/tmp/test/compaction";
-        let database = "dba".to_string();
+        let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
 
@@ -791,7 +797,7 @@ pub mod test {
             write_data_blocks_to_column_file(&dir, data, 1, opt.clone()).await;
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, files);
-        let version_edit = run_compaction_job(compact_req, kernel)
+        let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
@@ -826,7 +832,7 @@ pub mod test {
         ]);
 
         let dir = "/tmp/test/compaction/1";
-        let database = "dba".to_string();
+        let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
 
@@ -834,7 +840,7 @@ pub mod test {
             write_data_blocks_to_column_file(&dir, data, 1, opt.clone()).await;
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, files);
-        let version_edit = run_compaction_job(compact_req, kernel)
+        let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
@@ -869,7 +875,7 @@ pub mod test {
         ]);
 
         let dir = "/tmp/test/compaction/2";
-        let database = "dba".to_string();
+        let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
 
@@ -877,7 +883,7 @@ pub mod test {
             write_data_blocks_to_column_file(&dir, data, 1, opt.clone()).await;
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, files);
-        let version_edit = run_compaction_job(compact_req, kernel)
+        let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
@@ -1064,7 +1070,7 @@ pub mod test {
         );
 
         let dir = "/tmp/test/compaction/3";
-        let database = "dba".to_string();
+        let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
         if !file_manager::try_exists(&dir) {
@@ -1099,7 +1105,7 @@ pub mod test {
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
 
-        let version_edit = run_compaction_job(compact_req, kernel)
+        let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
@@ -1211,7 +1217,7 @@ pub mod test {
         );
 
         let dir = "/tmp/test/compaction/4";
-        let database = "dba".to_string();
+        let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
         if !file_manager::try_exists(&dir) {
@@ -1255,7 +1261,7 @@ pub mod test {
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
 
-        let version_edit = run_compaction_job(compact_req, kernel)
+        let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();

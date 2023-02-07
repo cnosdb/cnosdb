@@ -412,6 +412,9 @@ impl FieldCursor {
                 if file.is_deleted() {
                     continue;
                 }
+                if !file.contains_field_id(field_id) {
+                    continue;
+                }
 
                 for time_range in time_ranges.iter() {
                     if !file.overlap(time_range) {

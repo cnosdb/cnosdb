@@ -27,6 +27,7 @@ use tokio::{
     },
 };
 use trace::{debug, error, info, log_error, warn};
+use utils::BloomFilter;
 
 use crate::{
     compaction::FlushReq,
@@ -40,7 +41,7 @@ use crate::{
     tseries_family::{LevelInfo, Version},
     tsm::{self, codec::DataBlockEncoding, DataBlock, TsmWriter},
     version_set::VersionSet,
-    TseriesFamilyId,
+    ColumnFileId, TseriesFamilyId,
 };
 
 struct FlushingBlock {
@@ -78,6 +79,7 @@ impl FlushTask {
         self,
         version: Arc<Version>,
         version_edits: &mut Vec<VersionEdit>,
+        file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     ) -> Result<()> {
         info!(
             "Flush: Running flush job on ts_family: {} with {} MemCaches, collecting informations.",
@@ -113,7 +115,7 @@ impl FlushTask {
         }
 
         let mut max_level_ts = version.max_level_ts;
-        let mut compact_metas = self
+        let mut column_file_metas = self
             .flush_mem_caches(
                 flushing_mems_data,
                 max_level_ts,
@@ -121,17 +123,20 @@ impl FlushTask {
             )
             .await?;
         let mut edit = VersionEdit::new(self.ts_family_id);
-        for cm in compact_metas.iter_mut() {
+        for (cm, _) in column_file_metas.iter_mut() {
             cm.low_seq = low_seq;
             cm.high_seq = high_seq;
             max_level_ts = max_level_ts.max(cm.max_ts);
         }
-        for cm in compact_metas {
+        for (cm, field_filter) in column_file_metas {
+            file_metas.insert(cm.file_id, field_filter);
             edit.add_file(cm, max_level_ts);
         }
         version_edits.push(edit);
 
         for mem in self.mem_caches.iter() {
+            // TODO Cache marked as flushed but there are no column files in current version.
+            //      May it turned to true after the new version inited?
             mem.write().flushed = true;
         }
 
@@ -145,7 +150,7 @@ impl FlushTask {
         mut caches_data: HashMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>>,
         max_level_ts: Timestamp,
         data_block_size: usize,
-    ) -> Result<Vec<CompactMeta>> {
+    ) -> Result<Vec<(CompactMeta, Arc<BloomFilter>)>> {
         let mut delta_writer: Option<TsmWriter> = None;
         let mut tsm_writer: Option<TsmWriter> = None;
 
@@ -302,12 +307,13 @@ impl FlushTask {
         tsm::new_tsm_writer(dir, self.global_context.file_id_next(), is_delta, 0).await
     }
 
-    /// Flush writers (if it exists) and then generate `CompactMeta`s.
+    /// Flush writers (if they exists) and then generate (`CompactMeta`, `Arc<BloomFilter>`)s
+    /// using writers (if they exists).
     async fn finish_flush_mem_caches(
         &self,
         mut delta_writer: Option<TsmWriter>,
         mut tsm_writer: Option<TsmWriter>,
-    ) -> Result<Vec<CompactMeta>> {
+    ) -> Result<Vec<(CompactMeta, Arc<BloomFilter>)>> {
         let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
         if let Some(writer) = tsm_writer.as_mut() {
             writer.write_index().await.context(error::WriteTsmSnafu)?;
@@ -328,30 +334,36 @@ impl FlushTask {
             );
         }
 
-        let mut compact_metas = vec![];
+        let mut column_file_metas = vec![];
         if let Some(writer) = tsm_writer {
-            compact_metas.push(compact_meta_builder.build_tsm(
-                writer.sequence(),
-                writer.size(),
-                1,
-                writer.min_ts(),
-                writer.max_ts(),
+            column_file_metas.push((
+                compact_meta_builder.build_tsm(
+                    writer.sequence(),
+                    writer.size(),
+                    1,
+                    writer.min_ts(),
+                    writer.max_ts(),
+                ),
+                Arc::new(writer.bloom_filter_cloned()),
             ));
         }
         if let Some(writer) = delta_writer {
-            compact_metas.push(compact_meta_builder.build_delta(
-                writer.sequence(),
-                writer.size(),
-                1,
-                writer.min_ts(),
-                writer.max_ts(),
+            column_file_metas.push((
+                compact_meta_builder.build_delta(
+                    writer.sequence(),
+                    writer.size(),
+                    1,
+                    writer.min_ts(),
+                    writer.max_ts(),
+                ),
+                Arc::new(writer.bloom_filter_cloned()),
             ));
         }
 
         // Sort by File id.
-        compact_metas.sort_by_key(|c| c.file_id);
+        column_file_metas.sort_by_key(|c| c.0.file_id);
 
-        Ok(compact_metas)
+        Ok(column_file_metas)
     }
 }
 
@@ -373,7 +385,8 @@ pub async fn run_flush_memtable_job(
         }
     }
 
-    let mut edits: Vec<VersionEdit> = vec![];
+    let mut version_edits: Vec<VersionEdit> = vec![];
+    let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
     for (tsf_id, caches) in tsf_caches.into_iter() {
         if caches.is_empty() {
             continue;
@@ -394,7 +407,7 @@ pub async fn run_flush_memtable_job(
             let path_delta = storage_opt.delta_dir(&database, tsf_id);
 
             FlushTask::new(caches, tsf_id, global_context.clone(), path_tsm, path_delta)
-                .run(version, &mut edits)
+                .run(version, &mut version_edits, &mut file_metas)
                 .await?;
 
             if let Err(e) = compact_task_sender.send(tsf_id) {
@@ -403,10 +416,10 @@ pub async fn run_flush_memtable_job(
         }
     }
 
-    info!("Flush: Flush finished, version edits: {:?}", edits);
+    info!("Flush: Flush finished, version edits: {:?}", version_edits);
 
     let (task_state_sender, task_state_receiver) = oneshot::channel();
-    let task = SummaryTask::new_append_task(edits, task_state_sender);
+    let task = SummaryTask::new_column_file_task(file_metas, version_edits, task_state_sender);
 
     if let Err(e) = summary_task_sender.send(task) {
         warn!("failed to send Summary task, {}", e);
@@ -570,7 +583,7 @@ pub mod flush_tests {
         ]);
 
         let ts_family_id = 1;
-        let database = "test_db".to_string();
+        let database = Arc::new("test_db".to_string());
 
         let caches = caches
             .into_iter()
@@ -587,7 +600,11 @@ pub mod flush_tests {
         });
         let flush_task = FlushTask::new(caches, 1, global_context, &tsm_dir, &delta_dir);
         let mut version_edits = vec![];
-        flush_task.run(version, &mut version_edits).await.unwrap();
+        let mut file_metas = HashMap::new();
+        flush_task
+            .run(version, &mut version_edits, &mut file_metas)
+            .await
+            .unwrap();
 
         assert_eq!(version_edits.len(), 1);
         let ve = version_edits.get(0).unwrap();

@@ -433,7 +433,7 @@ mod test {
     ///   - size
     ///   - being_compact
     fn create_tseries_family(
-        database: String,
+        database: Arc<String>,
         opt: Arc<Options>,
         levels_sketch: LevelsSketch,
     ) -> TseriesFamily {
@@ -475,7 +475,7 @@ mod test {
 
         let version = Arc::new(Version::new(
             1,
-            "version_1".to_string(),
+            Arc::new("version_1".to_string()),
             opt.storage.clone(),
             1,
             level_infos,
@@ -485,7 +485,7 @@ mod test {
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         TseriesFamily::new(
             1,
-            "ts_family_1".to_string(),
+            Arc::new("ts_family_1".to_string()),
             MemCache::new(1, 1000, 1),
             version,
             opt.cache.clone(),
@@ -529,7 +529,7 @@ mod test {
             ]), // 0.00001
         ];
 
-        let tsf = create_tseries_family("dba".to_string(), opt, levels_sketch);
+        let tsf = create_tseries_family(Arc::new("dba".to_string()), opt, levels_sketch);
         let compact_req = tsf.pick_compaction().unwrap();
         assert_eq!(compact_req.out_level, 2);
         assert_eq!(compact_req.files.len(), 2);

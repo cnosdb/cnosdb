@@ -11,6 +11,7 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use trace::error;
+use utils::BloomFilter;
 
 use crate::{
     compaction::FlushReq,
@@ -22,7 +23,7 @@ use crate::{
     memcache::MemCache,
     summary::{VersionEdit, WriteSummaryRequest},
     tseries_family::{LevelInfo, TseriesFamily, Version},
-    Options, TseriesFamilyId,
+    ColumnFileId, Options, TseriesFamilyId,
 };
 
 #[derive(Debug)]
@@ -177,13 +178,23 @@ impl VersionSet {
         None
     }
 
-    pub async fn get_version_edits(&self, last_seq: u64) -> Vec<VersionEdit> {
+    /// Snashots last version before `last_seq` of system state.
+    ///
+    /// Generated data is `VersionEdit`s for all vnodes and db-files,
+    /// and `HashMap<ColumnFileId, Arc<BloomFilter>>` for index data
+    /// (field-id filter) of db-files.
+    pub async fn snapshot(
+        &self,
+        last_seq: u64,
+    ) -> (Vec<VersionEdit>, HashMap<ColumnFileId, Arc<BloomFilter>>) {
         let mut version_edits = vec![];
+        let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
         for (name, db) in self.dbs.iter() {
-            let mut ves = db.read().await.get_version_edits(last_seq, None);
-            version_edits.append(&mut ves);
+            db.read()
+                .await
+                .snapshot(last_seq, None, &mut version_edits, &mut file_metas);
         }
-        version_edits
+        (version_edits, file_metas)
     }
 
     /// **Please call this function after system recovered.**

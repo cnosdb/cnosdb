@@ -1,6 +1,7 @@
 use std::{cmp, fmt::Display, io::SeekFrom, sync::Arc};
 
 use models::{FieldId, Timestamp, ValueType};
+use utils::BloomFilter;
 
 use crate::{
     byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
@@ -12,9 +13,11 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Index {
     tsm_id: u64,
+    bloom_filter: Arc<BloomFilter>,
+
     /// In-memory index-block data
     ///
     /// ```text
@@ -31,12 +34,23 @@ pub struct Index {
 }
 
 impl Index {
-    pub fn new(tsm_id: u64, data: Vec<u8>, field_id_offs: Vec<(FieldId, usize)>) -> Self {
+    #[inline(always)]
+    pub fn new(
+        tsm_id: u64,
+        bloom_filter: Arc<BloomFilter>,
+        data: Vec<u8>,
+        field_id_offs: Vec<(FieldId, usize)>,
+    ) -> Self {
         Self {
             tsm_id,
+            bloom_filter,
             data,
             field_id_offs,
         }
+    }
+
+    pub fn bloom_filter(&self) -> Arc<BloomFilter> {
+        self.bloom_filter.clone()
     }
 
     pub fn data(&self) -> &[u8] {
