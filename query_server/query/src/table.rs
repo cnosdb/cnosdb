@@ -28,9 +28,9 @@ pub struct ClusterTable {
 }
 
 impl ClusterTable {
-    pub(crate) async fn create_physical_plan(
+    async fn create_physical_plan(
         &self,
-        projection: &Option<Vec<usize>>,
+        projection: Option<&Vec<usize>>,
         predicate: PredicateRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let proj_schema = self.project_schema(projection)?;
@@ -76,10 +76,10 @@ impl ClusterTable {
     }
 
     // Check and return the projected schema
-    fn project_schema(&self, projection: &Option<Vec<usize>>) -> Result<SchemaRef> {
+    fn project_schema(&self, projection: Option<&Vec<usize>>) -> Result<SchemaRef> {
         valid_project(&self.schema, projection)
             .map_err(|err| DataFusionError::External(Box::new(err)))?;
-        project_schema(&self.schema.to_arrow_schema(), projection.as_ref())
+        project_schema(&self.schema.to_arrow_schema(), projection)
     }
 }
 
@@ -99,9 +99,13 @@ impl TableProvider for ClusterTable {
 
     async fn scan(
         &self,
-        _ctx: &SessionState,
-        projection: &Option<Vec<usize>>,
+        _state: &SessionState,
+        projection: Option<&Vec<usize>>,
         filters: &[Expr],
+        // limit can be used to reduce the amount scanned
+        // from the datasource as a performance optimization.
+        // If set, it contains the amount of rows needed by the `LogicalPlan`,
+        // The datasource should return *at least* this number of rows if available.
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let filter = Arc::new(
@@ -142,12 +146,12 @@ impl WriteExecExt for ClusterTable {
 /// 1. If the projection contains the time column, it must contain the field column, otherwise an error will be reported
 pub fn valid_project(
     schema: &TskvTableSchema,
-    projection: &Option<Vec<usize>>,
+    projection: Option<&Vec<usize>>,
 ) -> std::result::Result<(), MetaError> {
     let mut field_count = 0;
     let mut contains_time_column = false;
 
-    if let Some(e) = projection.as_ref() {
+    if let Some(e) = projection {
         e.iter().cloned().for_each(|idx| {
             if let Some(c) = schema.column_by_index(idx) {
                 if c.column_type.is_time() {

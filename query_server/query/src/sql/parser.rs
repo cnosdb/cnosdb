@@ -1,8 +1,10 @@
 use std::collections::VecDeque;
+use std::fmt::Display;
 use std::ops::Not;
 
 use std::str::FromStr;
 
+use datafusion::common::parsers::CompressionTypeVariant;
 use datafusion::sql::parser::CreateExternalTable;
 use datafusion::sql::sqlparser::ast::Expr;
 use datafusion::sql::sqlparser::ast::Ident;
@@ -10,6 +12,7 @@ use datafusion::sql::sqlparser::ast::SqlOption;
 use datafusion::sql::sqlparser::ast::TableFactor;
 use datafusion::sql::sqlparser::ast::{Offset, OrderByExpr};
 use datafusion::sql::sqlparser::parser::IsOptional;
+use datafusion::sql::sqlparser::tokenizer::TokenWithLocation;
 use datafusion::sql::sqlparser::{
     ast::{DataType, ObjectName},
     dialect::{keywords::Keyword, Dialect, GenericDialect},
@@ -178,9 +181,8 @@ impl<'a> ExtParser<'a> {
     fn new_with_dialect(sql: &str, dialect: &'a dyn Dialect) -> Result<Self> {
         let mut tokenizer = Tokenizer::new(dialect, sql);
         let tokens = tokenizer.tokenize()?;
-
         Ok(ExtParser {
-            parser: Parser::new(tokens, dialect),
+            parser: Parser::new(dialect).with_tokens(tokens),
         })
     }
 
@@ -223,7 +225,7 @@ impl<'a> ExtParser<'a> {
 
     /// Parse a new expression
     fn parse_statement(&mut self) -> Result<ExtStatement> {
-        match self.parser.peek_token() {
+        match self.parser.peek_token().token {
             Token::Word(w) => match w.keyword {
                 Keyword::COPY => {
                     self.parser.next_token();
@@ -292,7 +294,7 @@ impl<'a> ExtParser<'a> {
         }
     }
     // Report unexpected token
-    fn expected<T>(&self, expected: &str, found: Token) -> Result<T> {
+    fn expected<T>(&self, expected: &str, found: impl Display) -> Result<T> {
         parser_err!(format!("Expected {}, found: {}", expected, found))
     }
 
@@ -370,7 +372,7 @@ impl<'a> ExtParser<'a> {
         self.parser
             .expect_keywords(&[Keyword::WITH, Keyword::KEY])?;
 
-        match self.parser.next_token() {
+        match self.parser.next_token().token {
             Token::Eq => Ok(With::Equal(self.parser.parse_identifier()?)),
             Token::Neq => Ok(With::UnEqual(self.parser.parse_identifier()?)),
             Token::Word(word) => match &word.keyword {
@@ -655,10 +657,11 @@ impl<'a> ExtParser<'a> {
     }
 
     /// Parses the set of
-    fn parse_file_compression_type(&mut self) -> Result<String, ParserError> {
-        match self.parser.next_token() {
-            Token::Word(w) => parse_file_compression_type(&w.value),
-            unexpected => self.expected("one of GZIP, BZIP2", unexpected),
+    fn parse_file_compression_type(&mut self) -> Result<CompressionTypeVariant, ParserError> {
+        let token = self.parser.next_token();
+        match &token.token {
+            Token::Word(w) => CompressionTypeVariant::from_str(&w.value),
+            _ => self.expected("one of GZIP, BZIP2, XZ", token),
         }
     }
 
@@ -690,47 +693,14 @@ impl<'a> ExtParser<'a> {
         }
     }
 
-    /// This is a copy of the equivalent implementation in Datafusion.
-    fn parse_has_partition(&mut self) -> bool {
-        self.consume_token(&Token::make_keyword("PARTITIONED"))
-            & self.consume_token(&Token::make_keyword("BY"))
-    }
-
     /// Parses the set of valid formats
     /// This is a copy of the equivalent implementation in Datafusion.
     fn parse_file_format(&mut self) -> Result<String, ParserError> {
-        match self.parser.next_token() {
+        let TokenWithLocation { token, location: _ } = self.parser.next_token();
+        match token {
             Token::Word(w) => parse_file_type(&w.value),
             unexpected => self.expected("one of PARQUET, NDJSON, or CSV", unexpected),
         }
-    }
-
-    /// This is a copy of the equivalent implementation in Datafusion.
-    fn parse_partitions(&mut self) -> Result<Vec<String>, ParserError> {
-        let mut partitions: Vec<String> = vec![];
-        if !self.parser.consume_token(&Token::LParen) || self.parser.consume_token(&Token::RParen) {
-            return Ok(partitions);
-        }
-
-        loop {
-            if let Token::Word(_) = self.parser.peek_token() {
-                let identifier = self.parser.parse_identifier()?;
-                partitions.push(identifier.to_string());
-            } else {
-                return self.expected("partition name", self.parser.peek_token());
-            }
-            let comma = self.parser.consume_token(&Token::Comma);
-            if self.parser.consume_token(&Token::RParen) {
-                // allow a trailing comma, even though it's not in standard
-                break;
-            } else if !comma {
-                return self.expected(
-                    "',' or ')' after partition definition",
-                    self.parser.peek_token(),
-                );
-            }
-        }
-        Ok(partitions)
     }
 
     fn parse_create_external_table(&mut self) -> Result<ExtStatement> {
@@ -757,28 +727,23 @@ impl<'a> ExtParser<'a> {
         let file_compression_type = if self.parse_has_file_compression_type() {
             self.parse_file_compression_type()?
         } else {
-            "".to_string()
-        };
-
-        let table_partition_cols = if self.parse_has_partition() {
-            self.parse_partitions()?
-        } else {
-            vec![]
+            CompressionTypeVariant::UNCOMPRESSED
         };
 
         self.parser.expect_keyword(Keyword::LOCATION)?;
         let location = self.parser.parse_literal_string()?;
 
         let create = CreateExternalTable {
-            name: normalize_sql_object_name(&table_name),
+            name: table_name.to_string(),
             columns,
             file_type,
             has_header,
             delimiter,
             location,
-            table_partition_cols,
+            table_partition_cols: Default::default(),
             if_not_exists,
             file_compression_type,
+            options: Default::default(),
         };
         Ok(ExtStatement::CreateExternalTable(create))
     }
@@ -1020,7 +985,7 @@ impl<'a> ExtParser<'a> {
         // COPY INTO <table> [(columns,...)] FROM <location>
         let columns = self
             .parser
-            .parse_parenthesized_column_list(IsOptional::Optional)?;
+            .parse_parenthesized_column_list(IsOptional::Optional, false)?;
 
         self.parser.expect_keyword(Keyword::FROM)?;
 
@@ -1104,7 +1069,7 @@ impl<'a> ExtParser<'a> {
 
     /// Parse a copy into statement
     fn parse_copy_into(&mut self) -> Result<ExtStatement> {
-        let copy_target = match self.parser.peek_token() {
+        let copy_target = match self.parser.peek_token().token {
             Token::SingleQuotedString(path) => {
                 // COPY INTO <location> FROM <table>
                 let _ = self.parser.next_token();
@@ -1270,7 +1235,7 @@ impl<'a> ExtParser<'a> {
     }
 
     fn consume_token(&mut self, expected: &Token) -> bool {
-        if self.parser.peek_token() == *expected {
+        if self.parser.peek_token().token == *expected {
             self.parser.next_token();
             true
         } else {
@@ -1377,7 +1342,7 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_column_type(&mut self) -> Result<DataType> {
-        let token = self.parser.next_token();
+        let TokenWithLocation { token, location: _ } = self.parser.next_token();
         match token {
             Token::Word(w) => match w.keyword {
                 Keyword::TIMESTAMP => parser_err!(format!("already have timestamp column")),
@@ -1424,10 +1389,6 @@ impl<'a> ExtParser<'a> {
         self.parser.expect_token(&Token::RParen)?;
         Ok(encoding)
     }
-}
-
-fn parse_file_compression_type(s: &str) -> Result<String, ParserError> {
-    Ok(s.to_uppercase())
 }
 
 /// This is a copy of the equivalent implementation in Datafusion.

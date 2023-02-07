@@ -1,3 +1,7 @@
+use std::fmt::Display;
+
+use datafusion::sql::TableReference;
+
 #[derive(Debug, Clone, Copy)]
 pub struct ResolvedObjectReference<'a> {
     pub parent: &'a str,
@@ -57,6 +61,88 @@ impl<'a> From<ResolvedObjectReference<'a>> for ObjectReference<'a> {
         Self::Full {
             parent: resolved.parent,
             name: resolved.name,
+        }
+    }
+}
+
+pub trait Resolve {
+    fn resolve_object(self, default_catalog: &str, default_schema: &str) -> ResolvedTable;
+}
+
+impl Resolve for TableReference<'_> {
+    fn resolve_object(self, default_catalog: &str, default_schema: &str) -> ResolvedTable {
+        match self {
+            Self::Full {
+                catalog,
+                schema,
+                table,
+            } => ResolvedTable {
+                tenant: catalog.into(),
+                database: schema.into(),
+                table: table.into(),
+            },
+            Self::Partial { schema, table } => ResolvedTable {
+                tenant: default_catalog.into(),
+                database: schema.into(),
+                table: table.into(),
+            },
+            Self::Bare { table } => ResolvedTable {
+                tenant: default_catalog.into(),
+                database: default_schema.into(),
+                table: table.into(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedTable {
+    tenant: String,
+    database: String,
+    table: String,
+}
+
+impl ResolvedTable {
+    pub fn tenant(&self) -> &str {
+        &self.tenant
+    }
+
+    pub fn database(&self) -> &str {
+        &self.database
+    }
+
+    pub fn table(&self) -> &str {
+        &self.table
+    }
+}
+
+impl Display for ResolvedTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            tenant,
+            database,
+            table,
+        } = self;
+        write!(f, "{tenant}.{database}.{table}")
+    }
+}
+
+impl From<ResolvedTable> for TableReference<'_> {
+    fn from(val: ResolvedTable) -> Self {
+        TableReference::Full {
+            catalog: val.tenant.into(),
+            schema: val.database.into(),
+            table: val.table.into(),
+        }
+    }
+}
+
+impl<'a> From<&'a ResolvedTable> for TableReference<'a> {
+    fn from(val: &'a ResolvedTable) -> Self {
+        TableReference::Full {
+            catalog: val.tenant().into(),
+            schema: val.database().into(),
+            table: val.table().into(),
         }
     }
 }

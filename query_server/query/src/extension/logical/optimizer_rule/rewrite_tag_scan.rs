@@ -19,11 +19,11 @@ use datafusion::error::Result;
 pub struct RewriteTagScan {}
 
 impl OptimizerRule for RewriteTagScan {
-    fn optimize(
+    fn try_optimize(
         &self,
         plan: &LogicalPlan,
-        optimizer_config: &mut OptimizerConfig,
-    ) -> Result<LogicalPlan> {
+        optimizer_config: &dyn OptimizerConfig,
+    ) -> Result<Option<LogicalPlan>> {
         if let LogicalPlan::TableScan(TableScan {
             table_name,
             source,
@@ -89,7 +89,7 @@ impl OptimizerRule for RewriteTagScan {
                             filters: filters.clone(),
                             fetch: *fetch,
                         });
-                        return LogicalPlanBuilder::from(new_table_scan).build();
+                        return Ok(Some(LogicalPlanBuilder::from(new_table_scan).build()?));
                     }
 
                     if contain_tag && !contain_field && !contain_time {
@@ -105,7 +105,9 @@ impl OptimizerRule for RewriteTagScan {
                             }),
                         });
                         // The result of tag scan needs to be deduplicated
-                        return LogicalPlanBuilder::from(tag_plan).distinct()?.build();
+                        return Ok(Some(
+                            LogicalPlanBuilder::from(tag_plan).distinct()?.build()?,
+                        ));
                     }
                 }
             }

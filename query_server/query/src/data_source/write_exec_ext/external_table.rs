@@ -58,7 +58,7 @@ impl WriteExecExt for ListingTable {
         let location = Path::parse(url.path())?;
 
         debug!("Get object_store by url: {:?}", object_store_url);
-        let object_store = state.runtime_env.object_store(&object_store_url)?;
+        let object_store = state.runtime_env().object_store(&object_store_url)?;
         let serializer = get_record_batch_serializer(self.options().format.clone())?;
         let file_extension = self.options().file_extension.clone();
 

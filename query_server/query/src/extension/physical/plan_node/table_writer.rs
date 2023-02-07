@@ -9,8 +9,8 @@ use datafusion::{
     execution::context::TaskContext,
     physical_expr::PhysicalSortExpr,
     physical_plan::{
-        common::SizedRecordBatchStream,
-        metrics::{self, ExecutionPlanMetricsSet, MemTrackingMetrics, MetricBuilder, MetricsSet},
+        memory::MemoryStream,
+        metrics::{self, ExecutionPlanMetricsSet, MetricBuilder, MetricsSet},
         stream::RecordBatchStreamAdapter,
         DisplayFormatType, Distribution, ExecutionPlan, Partitioning, SendableRecordBatchStream,
         Statistics,
@@ -83,16 +83,12 @@ impl ExecutionPlan for TableWriterExec {
         None
     }
 
-    fn relies_on_input_order(&self) -> bool {
-        false
-    }
-
     fn benefits_from_input_partitioning(&self) -> bool {
         false
     }
 
-    fn required_child_distribution(&self) -> Distribution {
-        Distribution::UnspecifiedDistribution
+    fn required_input_distribution(&self) -> Vec<Distribution> {
+        vec![Distribution::UnspecifiedDistribution]
     }
 
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
@@ -188,15 +184,9 @@ fn aggregate_statistiction(
 
     let output_rows_col = Arc::new(UInt64Array::from(vec![rows_writed as u64]));
 
-    let batch = Arc::new(RecordBatch::try_new(schema.clone(), vec![output_rows_col])?);
+    let batch = RecordBatch::try_new(schema.clone(), vec![output_rows_col])?;
 
-    let metrics = MemTrackingMetrics::new(&ExecutionPlanMetricsSet::new(), 0);
-
-    Ok(Box::pin(SizedRecordBatchStream::new(
-        schema,
-        vec![batch],
-        metrics,
-    )))
+    Ok(Box::pin(MemoryStream::try_new(vec![batch], schema, None)?))
 }
 
 /// Stores metrics about the table writer execution.

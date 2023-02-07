@@ -5,7 +5,6 @@ use datafusion::{
     arrow::{
         array::{ArrayRef, Float32Array, Int32Array, StringArray},
         datatypes::{DataType, Field, Schema, SchemaRef},
-        error::ArrowError,
         record_batch::RecordBatch,
     },
     common::{DFSchemaRef, DataFusionError, ToDFSchema},
@@ -98,7 +97,7 @@ impl TableProvider for Table {
     async fn scan(
         &self,
         ctx: &SessionState,
-        _projection: &Option<Vec<usize>>,
+        _projection: Option<&Vec<usize>>,
         filters: &[Expr],
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
@@ -114,7 +113,7 @@ impl TableProvider for Table {
                 &filters[0],
                 df_schema.as_ref(),
                 schema.as_ref(),
-                &ctx.execution_props,
+                ctx.execution_props(),
             )?;
             let filter = FilterExec::try_new(predicate, Arc::new(table_scan_exec))?;
             Ok(Arc::new(filter))
@@ -140,10 +139,8 @@ impl TableScanStream {
     }
 }
 
-type ArrowResult<T> = result::Result<T, ArrowError>;
-
 impl Stream for TableScanStream {
-    type Item = ArrowResult<RecordBatch>;
+    type Item = Result<RecordBatch>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -371,7 +368,7 @@ async fn test_dataframe() {
     .build()
     .unwrap();
 
-    let dataframe = DataFrame::new(ctx.state, &logical_plan);
+    let dataframe = DataFrame::new(ctx.state(), logical_plan);
     // .select_columns(&["fa", "fb"])
     // .unwrap();
 

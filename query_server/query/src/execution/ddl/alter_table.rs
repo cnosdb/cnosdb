@@ -2,7 +2,6 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use coordinator::command;
-use datafusion::common::TableReference;
 use meta::error::MetaError;
 use models::schema::TableSchema;
 use spi::Result;
@@ -22,9 +21,8 @@ impl AlterTableTask {
 #[async_trait]
 impl DDLDefinitionTask for AlterTableTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        let tenant = query_state_machine.session.tenant();
-        let table_name = TableReference::from(self.stmt.table_name.as_str())
-            .resolve(tenant, query_state_machine.session.default_database());
+        let table_name = &self.stmt.table_name;
+        let tenant = table_name.tenant();
         let client = query_state_machine
             .meta
             .tenant_manager()
@@ -35,9 +33,9 @@ impl DDLDefinitionTask for AlterTableTask {
             })?;
 
         let mut schema = client
-            .get_tskv_table_schema(table_name.schema, table_name.table)?
+            .get_tskv_table_schema(table_name.database(), table_name.table())?
             .ok_or(MetaError::TableNotFound {
-                table: table_name.table.to_string(),
+                table: table_name.to_string(),
             })?;
 
         let req = match &self.stmt.alter_action {

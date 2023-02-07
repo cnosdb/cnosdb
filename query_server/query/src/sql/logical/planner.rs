@@ -65,6 +65,11 @@ impl TableWriteExt for LogicalPlanBuilder {
 
         let plan = table_write_plan_node(table_name, target_table, final_source_logical_plan)?;
 
+        debug!(
+            "Build writer plan: final plan:\n{}",
+            plan.display_indent_schema(),
+        );
+
         Ok(Self::from(plan))
     }
 }
@@ -182,7 +187,6 @@ fn add_projection_between_source_and_insert_node_if_necessary(
     Ok(LogicalPlan::Projection(Projection::try_new(
         assignments,
         Arc::new(source_plan),
-        None,
     )?))
 }
 
@@ -191,22 +195,13 @@ fn table_write_plan_node(
     target_table: Arc<dyn TableSource>,
     input: LogicalPlan,
 ) -> DFResult<LogicalPlan> {
-    // output variable for insert operation
-    let expr = input
+    let input_exprs = input
         .schema()
         .fields()
         .iter()
-        .last()
-        .map(|e| Expr::Column(e.qualified_column()));
-
-    debug_assert!(
-        expr.is_some(),
-        "invalid table write node's input logical plan"
-    );
-
-    let expr = unsafe { expr.unwrap_unchecked() };
-
-    let affected_row_expr = affected_row_expr(expr);
+        .map(|f| Expr::Column(f.qualified_column()))
+        .collect::<Vec<Expr>>();
+    let affected_row_expr = affected_row_expr(input_exprs);
 
     // construct table writer logical node
     let node = Arc::new(TableWriterPlanNode::try_new(

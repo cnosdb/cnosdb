@@ -275,7 +275,7 @@ rows
 -- EXECUTE SQL: INSERT m1(TIME, f0, t0, f2) VALUES(781110224327458166, 'H2', '8670501299282427160', 1319671597), (8229853073388016459, ',#', '>XT', CAST(CAST(CAST(NOT (TRUE) AS STRING) AS TIMESTAMP) AS BIGINT)); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Error parsing '0' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Error parsing '0' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0, t0) VALUES(1324315595308255006, 0.8266616373816801921492469773511402308940887451171875, '.'); -- 0ms; --
@@ -305,7 +305,7 @@ rows
 -- EXECUTE SQL: SELECT ALL nullif(MAX(nullif(to_timestamp(174906244), nullif(to_timestamp(5704606850934287052), to_timestamp(3294723711390345895)))), CAST(((5518954738899453223)+(948275388)) AS TIMESTAMP)), NTH_VALUE(CAST(0.67586811981509653524113900857628323137760162353515625 AS BIGINT), CAST(CAST(sha256(m4.t1, -470329022) AS DOUBLE) AS BIGINT)) OVER () FROM m4 GROUP BY NOT (((((initcap(m4.t1))||(4806347167177714688)))=(CAST(nullif(to_timestamp(107728388379031552), to_timestamp(3482166282762044550)) AS STRING)))), ((starts_with(CAST(m4.t1 AS STRING), ((m4.t1)||(m4.t1))))>(((m4.t0)LIKE(((rtrim(m4.t0))||(CAST(m4.t0 AS BOOLEAN))))))), length(((((m4.t1)||(m4.t0)))||(((2090966948559537515)/(-1719817956))))), ((((CAST(CAST(m4.f0 AS BIGINT) AS STRING))||(((upper(m4.t0))=(lower(m4.t1))))))||(to_timestamp(1613777282))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Coercion from [Timestamp(Nanosecond, None), Timestamp(Nanosecond, None)] to the signature Uniform(2, [Boolean, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64]) failed."}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Projection references non-aggregate values: Expression m4.t1 could not be resolved from available columns: NOT initcap(m4.t1) || Int64(4806347167177714688) = nullif(totimestamp(Int64(107728388379031552)),totimestamp(Int64(3482166282762044550))), startswith(m4.t1,m4.t1 || m4.t1) > m4.t0 LIKE rtrim(m4.t0) || CAST(m4.t0 AS Boolean) , characterlength(m4.t1 || m4.t0 || Int64(2090966948559537515) / Int64(-1719817956)), m4.f0 || upper(m4.t0) = lower(m4.t1) || totimestamp(Int64(1613777282)), MAX(nullif(totimestamp(Int64(174906244)),nullif(totimestamp(Int64(5704606850934287052)),totimestamp(Int64(3294723711390345895)))))"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(- (round(m0.f0))) FROM m0 ORDER BY m0.t0 DESC, m0.t0 ASC; --
@@ -348,7 +348,7 @@ SUM((- m3.f0))
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT SUM(+ (CAST(- (m3.f0) AS BIGINT)))  as agg0 FROM m3 WHERE CAST(CAST(CAST(to_timestamp(4684102303763482212) AS STRING) AS BIGINT) AS BOOLEAN) UNION ALL SELECT ALL SUM(+ (CAST(- (m3.f0) AS BIGINT)))  as agg0 FROM m3 WHERE NOT (CAST(CAST(CAST(to_timestamp(4684102303763482212) AS STRING) AS BIGINT) AS BOOLEAN)) UNION ALL SELECT ALL SUM(+ (CAST(- (m3.f0) AS BIGINT)))  as agg0 FROM m3 WHERE (CAST(CAST(CAST(to_timestamp(4684102303763482212) AS STRING) AS BIGINT) AS BOOLEAN)) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '2118-06-08 03:31:43.763482212' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '2118-06-08 03:31:43.763482212' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT SUM(0.225436451820135719259496909216977655887603759765625) FROM m4; --
@@ -474,20 +474,20 @@ s
 -- EXECUTE SQL: SELECT ALL + (STDDEV_SAMP(((ceil(CAST(to_timestamp(1320641161201321637) AS BIGINT)))*(CAST(lower(m0.t0) AS BIGINT))))), NTILE(CAST(((CAST((FALSE) IN (TRUE, TRUE) AS DOUBLE))+(((0.852307151245902172576052180374972522258758544921875)-(atan2(0.3335158584936499526207853705273009836673736572265625, m0.f0))))) AS BIGINT)) OVER () FROM m0 GROUP BY (to_timestamp(5459906083315282827)) IS NULL, 0.30663777479646736612295399027061648666858673095703125; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Coercion from [Int64] to the signature Exact([UInt64]) failed."}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Projection references non-aggregate values: Expression m0.f0 could not be resolved from available columns: totimestamp(Int64(5459906083315282827)) IS NULL, Float64(0.30663777479646737), STDDEV(ceil(totimestamp(Int64(1320641161201321637))) * lower(m0.t0))"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MIN(((m1.f0)||(nullif(NULL, to_timestamp(m1.f2))))) FROM m1; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Coercion from [Null, Timestamp(Nanosecond, None)] to the signature Uniform(2, [Boolean, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64]) failed."}
--- ERROR:  --
+200 OK
+"MIN(m1.f0 || nullif(NULL,totimestamp(m1.f2)))"
+""
 
 -- EXECUTE SQL: SELECT MIN(agg0) FROM (SELECT MIN(((m1.f0)||(nullif(NULL, to_timestamp(m1.f2)))))  as agg0 FROM m1 WHERE ((((CAST(lower(m1.f0) AS STRING))||(exp(m1.f2))))IS NOT DISTINCT FROM(CAST(CAST(nullif(m1.f2, 0.59078528022690213195033948068157769739627838134765625) AS BOOLEAN) AS STRING))) UNION ALL SELECT MIN(((m1.f0)||(nullif(NULL, to_timestamp(m1.f2)))))  as agg0 FROM m1 WHERE NOT (((((CAST(lower(m1.f0) AS STRING))||(exp(m1.f2))))IS NOT DISTINCT FROM(CAST(CAST(nullif(m1.f2, 0.59078528022690213195033948068157769739627838134765625) AS BOOLEAN) AS STRING)))) UNION ALL SELECT ALL MIN(((m1.f0)||(nullif(NULL, to_timestamp(m1.f2)))))  as agg0 FROM m1 WHERE (((((CAST(lower(m1.f0) AS STRING))||(exp(m1.f2))))IS NOT DISTINCT FROM(CAST(CAST(nullif(m1.f2, 0.59078528022690213195033948068157769739627838134765625) AS BOOLEAN) AS STRING)))) IS NULL) as asdf; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Coercion from [Null, Timestamp(Nanosecond, None)] to the signature Uniform(2, [Boolean, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64]) failed."}
--- ERROR:  --
+200 OK
+MIN(asdf.agg0)
+""
 
 -- EXECUTE SQL: SELECT ALL * FROM m2; --
 -- AFTER_SORT --
@@ -505,7 +505,7 @@ time,t0,t1,t2,f0,f1
 -- EXECUTE SQL: SELECT ALL * FROM m2 WHERE starts_with(sha384(upper(m2.t2), CAST(m2.f1 AS BIGINT)), ((((CAST(m2.f0 AS STRING))||(0.8832662158527682105813028101692907512187957763671875)))||(to_hex(m2.t1)))) UNION ALL SELECT * FROM m2 WHERE NOT (starts_with(sha384(upper(m2.t2), CAST(m2.f1 AS BIGINT)), ((((CAST(m2.f0 AS STRING))||(0.8832662158527682105813028101692907512187957763671875)))||(to_hex(m2.t1))))) UNION ALL SELECT * FROM m2 WHERE (starts_with(sha384(upper(m2.t2), CAST(m2.f1 AS BIGINT)), ((((CAST(m2.f0 AS STRING))||(0.8832662158527682105813028101692907512187957763671875)))||(to_hex(m2.t1))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m0 ORDER BY m0.f0 ASC; --
@@ -539,7 +539,7 @@ t2,f0,t0
 -- EXECUTE SQL: SELECT m2.t2, m2.f0, m2.t0 FROM m2 WHERE (((CAST(+ (m2.f1) AS STRING)) BETWEEN (chr(m2.f0)) AND (CAST(CAST(FALSE AS TIMESTAMP) AS STRING)))AND((CAST(m2.f0 AS BIGINT)) IN (1936408406, 765459938))) UNION ALL SELECT m2.t2, m2.f0, m2.t0 FROM m2 WHERE NOT ((((CAST(+ (m2.f1) AS STRING)) BETWEEN (chr(m2.f0)) AND (CAST(CAST(FALSE AS TIMESTAMP) AS STRING)))AND((CAST(m2.f0 AS BIGINT)) IN (1936408406, 765459938)))) UNION ALL SELECT ALL m2.t2, m2.f0, m2.t0 FROM m2 WHERE ((((CAST(+ (m2.f1) AS STRING)) BETWEEN (chr(m2.f0)) AND (CAST(CAST(FALSE AS TIMESTAMP) AS STRING)))AND((CAST(m2.f0 AS BIGINT)) IN (1936408406, 765459938)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Boolean to Timestamp(Nanosecond, None). This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Boolean to Timestamp(Nanosecond, None). This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MIN(to_timestamp(3261280258043984262)) FROM m2; --
@@ -637,21 +637,21 @@ f0,t0
 
 -- EXECUTE SQL: SELECT ALL MIN(to_timestamp(+ (nullif(-1663925346, 2112139127)))) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: nullif does not support a literal as first argument. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+"MIN(totimestamp(nullif(Int64(-1663925346),Int64(2112139127))))"
+1969-12-31T23:59:58.336074654
 
 -- EXECUTE SQL: SELECT MIN(agg0) FROM (SELECT ALL MIN(to_timestamp(+ (nullif(-1663925346, 2112139127))))  as agg0 FROM m4 WHERE ((CAST((((('')||(1971431738)))>=(((m4.t0)||(to_timestamp(5639148217950766739))))) AS STRING))LIKE(((((translate(m4.t0, m4.t0, m4.t0))||(CAST(0.97684269811624557799945023361942730844020843505859375 AS BIGINT))))||(ltrim(m4.t1))))) UNION ALL SELECT ALL MIN(to_timestamp(+ (nullif(-1663925346, 2112139127))))  as agg0 FROM m4 WHERE NOT (((CAST((((('')||(1971431738)))>=(((m4.t0)||(to_timestamp(5639148217950766739))))) AS STRING))LIKE(((((translate(m4.t0, m4.t0, m4.t0))||(CAST(0.97684269811624557799945023361942730844020843505859375 AS BIGINT))))||(ltrim(m4.t1)))))) UNION ALL SELECT ALL MIN(to_timestamp(+ (nullif(-1663925346, 2112139127))))  as agg0 FROM m4 WHERE (((CAST((((('')||(1971431738)))>=(((m4.t0)||(to_timestamp(5639148217950766739))))) AS STRING))LIKE(((((translate(m4.t0, m4.t0, m4.t0))||(CAST(0.97684269811624557799945023361942730844020843505859375 AS BIGINT))))||(ltrim(m4.t1)))))) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: nullif does not support a literal as first argument. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: External error: External error: External error: This feature is not implemented: meta need get_series_id_by_filter"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(((nullif(char_length(m4.t0), CAST(m4.f0 AS BIGINT)))%(((- (nullif(2939004359518327875, -1421620855)))*(ascii(m4.t1)))))) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: nullif does not support a literal as first argument. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+"SUM(nullif(characterlength(m4.t0),m4.f0) % (- nullif(Int64(2939004359518327875),Int64(-1421620855))) * ascii(m4.t1))"
+""
 
 -- EXECUTE SQL: SELECT ALL MIN(to_timestamp(8215830469954068344)), upper(((CAST(to_timestamp(173633157790148330) AS STRING))||(CAST(m1.t0 AS DOUBLE)))), 0.71849287129644701099806525235180743038654327392578125, CAST(PERCENT_RANK() OVER () AS BIGINT) FROM m1 WHERE ((char_length(CAST(m1.f1 AS STRING)))IS NOT DISTINCT FROM(- (((- (-2001444450))-(CAST(m1.f2 AS BIGINT)))))) GROUP BY to_timestamp(CAST(to_timestamp(4762738657699443295) AS BIGINT)), lower(CAST(- (m1.f2) AS STRING)); --
 -- AFTER_SORT --
@@ -675,7 +675,7 @@ time,t0,t1,t2,f0,f1
 -- EXECUTE SQL: SELECT ALL * FROM m2 WHERE ((CAST(replace(m2.t2, m2.t1) AS DOUBLE))!=(CAST(CAST(CAST(to_timestamp(7187937939800865567) AS TIMESTAMP) AS BOOLEAN) AS DOUBLE))) UNION ALL SELECT * FROM m2 WHERE NOT (((CAST(replace(m2.t2, m2.t1) AS DOUBLE))!=(CAST(CAST(CAST(to_timestamp(7187937939800865567) AS TIMESTAMP) AS BOOLEAN) AS DOUBLE)))) UNION ALL SELECT ALL * FROM m2 WHERE (((CAST(replace(m2.t2, m2.t1) AS DOUBLE))!=(CAST(CAST(CAST(to_timestamp(7187937939800865567) AS TIMESTAMP) AS BOOLEAN) AS DOUBLE)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Utf8] to the signature OneOf([Exact([Utf8, Utf8, Utf8])]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Utf8] to the signature OneOf([Exact([Utf8, Utf8, Utf8])]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(+ (CAST(CAST(CAST(m3.f0 AS STRING) AS DOUBLE) AS BIGINT))) FROM m3; --
@@ -705,13 +705,13 @@ SUM(characterlength(m1.f0) * abs(m1.f2))
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL SUM(((length(m1.f0))*(+ (abs(m1.f2)))))  as agg0 FROM m1 WHERE ((CAST(to_hex(m1.t0) AS BOOLEAN))IS DISTINCT FROM((((CAST(-783543705 AS BIGINT))+(+ (m1.f2)))) BETWEEN (((strpos(m1.t0, m1.f0))%(- (m1.f2)))) AND (length(m1.t0)))) UNION ALL SELECT ALL SUM(((length(m1.f0))*(+ (abs(m1.f2)))))  as agg0 FROM m1 WHERE NOT (((CAST(to_hex(m1.t0) AS BOOLEAN))IS DISTINCT FROM((((CAST(-783543705 AS BIGINT))+(+ (m1.f2)))) BETWEEN (((strpos(m1.t0, m1.f0))%(- (m1.f2)))) AND (length(m1.t0))))) UNION ALL SELECT SUM(((length(m1.f0))*(+ (abs(m1.f2)))))  as agg0 FROM m1 WHERE (((CAST(to_hex(m1.t0) AS BOOLEAN))IS DISTINCT FROM((((CAST(-783543705 AS BIGINT))+(+ (m1.f2)))) BETWEEN (((strpos(m1.t0, m1.f0))%(- (m1.f2)))) AND (length(m1.t0))))) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8] to the signature Uniform(1, [Int64]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8] to the signature Uniform(1, [Int64]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(CAST(CAST(sha256(m4.t0, 1624066570) AS BIGINT) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0; --
@@ -868,7 +868,7 @@ z,0.4506382526815239
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0 WHERE ((((((((concat(((m0.t0)||(to_timestamp(8045103356967544002))), upper(m0.t0)))LIKE(CAST(CAST(m0.t0 AS STRING) AS STRING))))AND((((CAST(-1320466659 AS BIGINT))!=(CAST(1599185161 AS DOUBLE)))) IS FALSE)))AND((to_hex(m0.t0)) BETWEEN (((to_hex(m0.t0))%(CAST(419303373304867652 AS BIGINT)))) AND (CAST(((m0.t0)||(m0.t0)) AS DOUBLE)))))AND(((((CAST(to_timestamp(4247525786209231690) AS STRING))||(- (-520455625))))LIKE(((CAST(-257581535 AS STRING))||(upper(m0.t0))))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8] to the signature Uniform(1, [Int64]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8] to the signature Uniform(1, [Int64]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT MIN(to_timestamp(1043735653746950409)), 0.50107962728563271159742953386739827692508697509765625, ((CAST(to_hex(m2.t2) AS STRING))LIKE(((CAST(concat(m2.t2, m2.t2) AS STRING))||(starts_with(m2.t0, m2.t2))))), ((CAST(CAST(ceil(m2.f0) AS TIMESTAMP) AS STRING))LIKE(((CAST(0.0049477715104695452197347549372352659702301025390625 AS STRING))||(0.9587377467691562404894511928432621061801910400390625)))), FIRST_VALUE(((CAST(to_timestamp(1680261172) AS STRING))||(+ (CAST(+ (m2.f0) AS BIGINT))))) OVER () FROM m2 GROUP BY 19144301; --
@@ -938,7 +938,7 @@ SUM(asdf.agg0)
 -- EXECUTE SQL: SELECT ALL MAX(CAST(((((m2.f0)*(floor(m2.f1))))-(to_hex(((m2.t0)||(m2.f0))))) AS TIMESTAMP)), CAST(PERCENT_RANK() OVER () AS STRING) FROM m2 GROUP BY ((((((CAST(m2.f1 AS STRING))||(0.39756258998699911533236672767088748514652252197265625)))||(nullif(m2.f0, m2.f0))))||(((CAST(lower(m2.t0) AS BIGINT))*(m2.f0)))), upper(CAST(upper('0.18376543680646096') AS STRING)), abs(+ (CAST(m2.f1 AS BIGINT))), upper(((upper(m2.t0))||(((m2.t2)>=(m2.t0))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8] to the signature Uniform(1, [Int64]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8] to the signature Uniform(1, [Int64]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT MIN(+ (CAST(((0.22481903897713806372848921455442905426025390625)+(746518992)) AS BIGINT))) FROM m3; --
@@ -968,19 +968,19 @@ time,t0,t1,f0
 -- EXECUTE SQL: SELECT ALL * FROM m4 WHERE (((((-1322939285) IN (791521572)) IS FALSE) IS FALSE)=(CAST(((CAST(to_timestamp(1335069212426862162) AS STRING))||(acos(-1825578999))) AS BOOLEAN))) UNION ALL SELECT ALL * FROM m4 WHERE NOT ((((((-1322939285) IN (791521572)) IS FALSE) IS FALSE)=(CAST(((CAST(to_timestamp(1335069212426862162) AS STRING))||(acos(-1825578999))) AS BOOLEAN)))) UNION ALL SELECT * FROM m4 WHERE ((((((-1322939285) IN (791521572)) IS FALSE) IS FALSE)=(CAST(((CAST(to_timestamp(1335069212426862162) AS STRING))||(acos(-1825578999))) AS BOOLEAN)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '2012-04-22 04:33:32.426862162nan' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '2012-04-22 04:33:32.426862162nan' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(((+ (date_part(to_timestamp(5506560410096687103), 646540991)))/(((ascii(m0.t0))/(CAST(((1083032359)-(2350431228203406322)) AS BIGINT)))))) FROM m0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Coercion from [Timestamp(Nanosecond, None), Int64] to the signature OneOf([Exact([Utf8, Date32]), Exact([Utf8, Date64]), Exact([Utf8, Timestamp(Second, None)]), Exact([Utf8, Timestamp(Microsecond, None)]), Exact([Utf8, Timestamp(Millisecond, None)]), Exact([Utf8, Timestamp(Nanosecond, None)])]) failed."}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Coercion from [Timestamp(Nanosecond, None), Int64] to the signature OneOf([Exact([Utf8, Date32]), Exact([Utf8, Date64]), Exact([Utf8, Timestamp(Second, None)]), Exact([Utf8, Timestamp(Microsecond, None)]), Exact([Utf8, Timestamp(Millisecond, None)]), Exact([Utf8, Timestamp(Nanosecond, None)]), Exact([Utf8, Timestamp(Nanosecond, Some(\"+00:00\"))])]) failed."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MIN(((CAST(((sha512(m4.t0, 5276657375400990514))||(0.64238298924366510345151937144692055881023406982421875)) AS STRING))||(((lower(m4.t0))||(CAST(nullif(to_timestamp(3545666633212459310), to_timestamp(4806347167177714527)) AS BOOLEAN)))))) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT to_timestamp(3639623551466415807), VAR(CAST(((((CAST(m2.t0 AS STRING))||(FALSE)))||(CAST(lower(m2.t0) AS BOOLEAN))) AS BIGINT)), ((((CAST(((TRUE)OR(TRUE)) AS DOUBLE))+(- (power(m2.f0, m2.f0)))))/(((((abs(m2.f0))/(((m2.f0)+(m2.f0)))))+(CAST(((-863538341)-(m2.f0)) AS DOUBLE))))), CAST(CAST(((m2.t1)LIKE(((m2.t0)||(m2.f0)))) AS DOUBLE) AS STRING), (FALSE) IS UNKNOWN FROM m2 GROUP BY CAST(((CAST(- (m2.f0) AS BIGINT))+(+ (+ (m2.f0)))) AS BOOLEAN); --
@@ -1090,19 +1090,19 @@ MIN(totimestamp(Int64(7882183390362573604)))
 -- EXECUTE SQL: SELECT APPROX_DISTINCT(((nullif(0.28749989613174353753066725403186865150928497314453125, CAST(m0.f0 AS DOUBLE)))/(CAST(to_timestamp(3343272712533009394) AS DOUBLE)))), to_timestamp(3388760805158141239) FROM m0 GROUP BY CAST(sha224(CAST(-797615534 AS STRING), ((297153453615660218)-(-1995025255))) AS DOUBLE), to_timestamp(5468993521555465265); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT -1628140570, APPROX_DISTINCT(nullif(((ceil(-330630430))+(CAST('MK-' AS BIGINT))), CAST(CAST(to_timestamp(5468993521555465265) AS BOOLEAN) AS BIGINT))), to_timestamp(5822706182570567155) FROM m4 GROUP BY ((+ (+ (nullif(-1896535425, NULL))))-(CAST(abs(CAST(to_timestamp(3736111119423100286) AS BIGINT)) AS BIGINT))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: nullif does not support a literal as first argument. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'MK-' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(CAST(sha224(m2.t0, m2.f0) AS BOOLEAN) AS BIGINT)) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT APPROX_DISTINCT(starts_with(CAST(nullif(m3.f0, m3.f0) AS STRING), ((split_part(m3.t1, m3.f0))||(CAST((TRUE) IS TRUE AS BIGINT))))), LAST_VALUE(CAST(to_timestamp(1986281025171801323) AS BIGINT)) OVER () FROM m3 GROUP BY CAST(to_timestamp(399147416573161272) AS BIGINT); --
@@ -1160,7 +1160,7 @@ m?gbg&),true
 -- EXECUTE SQL: SELECT ALL m4.t1, m4.f0 FROM m4 WHERE (((upper(m4.t1))||(((date_part(to_timestamp(5984014646628397753), 305913132851513758))%(CAST(0.96451449702410518849404752472764812409877777099609375 AS BIGINT)))))) BETWEEN (CAST(to_timestamp(3149809037486110809) AS STRING)) AND (((((CAST(to_timestamp(231137900224185803) AS STRING))||(CAST(578740877 AS BIGINT))))||(ascii(m4.t1)))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Timestamp(Nanosecond, None), Int64] to the signature OneOf([Exact([Utf8, Date32]), Exact([Utf8, Date64]), Exact([Utf8, Timestamp(Second, None)]), Exact([Utf8, Timestamp(Microsecond, None)]), Exact([Utf8, Timestamp(Millisecond, None)]), Exact([Utf8, Timestamp(Nanosecond, None)])]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Timestamp(Nanosecond, None), Int64] to the signature OneOf([Exact([Utf8, Date32]), Exact([Utf8, Date64]), Exact([Utf8, Timestamp(Second, None)]), Exact([Utf8, Timestamp(Microsecond, None)]), Exact([Utf8, Timestamp(Millisecond, None)]), Exact([Utf8, Timestamp(Nanosecond, None)]), Exact([Utf8, Timestamp(Nanosecond, Some(\"+00:00\"))])]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f2, m1.f0, m1.f1 FROM m1; --
@@ -1279,7 +1279,7 @@ MAX(totimestamp(Int64(8533946640730015167)))
 -- EXECUTE SQL: SELECT MAX(to_timestamp(6228398798481774743)), ((upper(CAST(to_timestamp(6334441178718470838) AS STRING)))LIKE(CAST(left(-1574710339, m4.t0) AS STRING))), NTH_VALUE(((CAST(CAST(char_length(m4.t0) AS TIMESTAMP) AS STRING))||(((lower(m4.t0))||(((+ (-1162562121))*(CAST('GLdTN|' AS BIGINT))))))), - (((((ceil(2711922066700874240))%(+ (-1713600363))))/(-772474719)))) OVER () FROM m4 GROUP BY date_trunc(lower(m4.t1), nullif(to_timestamp(1817508803306234552), to_timestamp(8274834987112747415))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Coercion from [Timestamp(Nanosecond, None), Timestamp(Nanosecond, None)] to the signature Uniform(2, [Boolean, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64]) failed."}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Projection references non-aggregate values: Expression m4.t0 could not be resolved from available columns: datetrunc(lower(m4.t1),nullif(totimestamp(Int64(1817508803306234552)),totimestamp(Int64(8274834987112747415)))), MAX(totimestamp(Int64(6228398798481774743)))"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f0 FROM m2; --
@@ -1344,7 +1344,7 @@ f0,t0
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.t0 FROM m0 WHERE CAST(((sha512(m0.t0, 342978812))LIKE(CAST(+ (m0.f0) AS STRING))) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: c쏴Qt', 'bf(h', 'a SELECT ALL MIN(CAST(CAST(CAST(- (1738394718) AS DOUBLE) AS STRING) AS STRING)) FROM m0; --
@@ -1389,7 +1389,7 @@ COUNT(abs(m3.f0 % m3.f0))
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT COUNT(+ (abs(((m3.f0)%(m3.f0)))))  as agg0 FROM m3 WHERE starts_with(replace(((m3.t0)||(0.9983656595303163072685492807067930698394775390625)), lower(m3.t1)), CAST(CAST(((m3.f0)%(m3.f0)) AS BIGINT) AS STRING)) UNION ALL SELECT COUNT(+ (abs(((m3.f0)%(m3.f0)))))  as agg0 FROM m3 WHERE NOT (starts_with(replace(((m3.t0)||(0.9983656595303163072685492807067930698394775390625)), lower(m3.t1)), CAST(CAST(((m3.f0)%(m3.f0)) AS BIGINT) AS STRING))) UNION ALL SELECT ALL COUNT(+ (abs(((m3.f0)%(m3.f0)))))  as agg0 FROM m3 WHERE (starts_with(replace(((m3.t0)||(0.9983656595303163072685492807067930698394775390625)), lower(m3.t1)), CAST(CAST(((m3.f0)%(m3.f0)) AS BIGINT) AS STRING))) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Utf8] to the signature OneOf([Exact([Utf8, Utf8, Utf8])]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Utf8] to the signature OneOf([Exact([Utf8, Utf8, Utf8])]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m3; --
@@ -1439,7 +1439,7 @@ time,t0,t1,f0
 -- EXECUTE SQL: SELECT ALL COUNT(((CAST(CAST(CAST(to_timestamp(2510537727003615738) AS STRING) AS BIGINT) AS BIGINT))+(length(((m3.t0)||(0.34254464117794747313183734149788506329059600830078125)))))) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '2049-07-22 03:35:27.003615738' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '2049-07-22 03:35:27.003615738' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE NOT (m4.f0) UNION ALL SELECT m4.t1 FROM m4 WHERE NOT (NOT (m4.f0)) UNION ALL SELECT ALL m4.t1 FROM m4 WHERE (NOT (m4.f0)) IS NULL; --
@@ -1635,7 +1635,6 @@ I,,0.545203526083238
 -- EXECUTE SQL: SELECT to_timestamp(7372512014914329287), to_timestamp(2411196111338391027), (TRUE) IS NOT UNKNOWN FROM m3 WHERE (CAST(to_timestamp(321422374792865636) AS TIMESTAMP)) IN (to_timestamp(4466359844654811223)) GROUP BY 0.95081936819142998107423636611201800405979156494140625, CAST(starts_with(CAST(m3.t1 AS STRING), ((m3.t0)||(TRUE))) AS BOOLEAN), + (abs(length(m3.t0))); --
 -- AFTER_SORT --
 200 OK
-totimestamp(Int64(7372512014914329287)),totimestamp(Int64(2411196111338391027)),Boolean(true) IS NOT UNKNOWN
 
 
 -- EXECUTE SQL: SELECT ALL MIN(2514633243509548544) FROM m3; --
@@ -1674,7 +1673,7 @@ z,0.4506382526815239
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0 WHERE CAST(((chr(-1451131455))||(((lower(m0.t0))||(bit_length(m0.t0))))) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Execution error: requested character too large for encoding.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Execution error: requested character too large for encoding.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT strpos(sha224(sha384(APPROX_DISTINCT(CAST(nullif(to_timestamp(4597366114630080360), to_timestamp(8215830469954068344)) AS STRING)), 6124233948067296018), strpos(m4.t0, m4.t1)), CAST(CAST((('Z?haC')LIKE(m4.t1)) AS BOOLEAN) AS STRING)), + (RANK() OVER ()) FROM m4 WHERE (((CAST(NOT (m4.f0) AS BIGINT)) IS NOT NULL)OR((to_timestamp(436219129519759)) NOT IN (to_timestamp(3940292523846949922), to_timestamp(5111777887945794255)))) GROUP BY ((CAST(to_timestamp(5196891407655727198) AS BIGINT))/(((((CAST(m4.f0 AS BIGINT))%(signum(0.03792520184773018332435867705498822033405303955078125))))+(- (CAST(m4.t0 AS BIGINT)))))), (- (CAST(5468993521555465265 AS BIGINT))) IN (0.84055022234616305620846787860500626266002655029296875, 0.7143613343209260779786973216687329113483428955078125, 0.32316577111565913948965089730336330831050872802734375); --
@@ -1699,7 +1698,7 @@ I,A,0.545203526083238,,
 -- EXECUTE SQL: SELECT m2.t1, m2.t2, m2.f1, m2.f0, m2.t0 FROM m2 WHERE (CAST(+ (CAST(TRUE AS DOUBLE)) AS STRING)) BETWEEN (((((sha384(m2.t0, m2.f0))||(m2.f0)))||(CAST(((m2.t2)!=(m2.t0)) AS TIMESTAMP)))) AND (((((((m2.t0)||(m2.t1)))||(upper(m2.t0))))||(((CAST(4683132071972081202 AS BIGINT))>(CAST(m2.f1 AS BIGINT)))))) UNION ALL SELECT ALL m2.t1, m2.t2, m2.f1, m2.f0, m2.t0 FROM m2 WHERE NOT ((CAST(+ (CAST(TRUE AS DOUBLE)) AS STRING)) BETWEEN (((((sha384(m2.t0, m2.f0))||(m2.f0)))||(CAST(((m2.t2)!=(m2.t0)) AS TIMESTAMP)))) AND (((((((m2.t0)||(m2.t1)))||(upper(m2.t0))))||(((CAST(4683132071972081202 AS BIGINT))>(CAST(m2.f1 AS BIGINT))))))) UNION ALL SELECT ALL m2.t1, m2.t2, m2.f1, m2.f0, m2.t0 FROM m2 WHERE ((CAST(+ (CAST(TRUE AS DOUBLE)) AS STRING)) BETWEEN (((((sha384(m2.t0, m2.f0))||(m2.f0)))||(CAST(((m2.t2)!=(m2.t0)) AS TIMESTAMP)))) AND (((((((m2.t0)||(m2.t1)))||(upper(m2.t0))))||(((CAST(4683132071972081202 AS BIGINT))>(CAST(m2.f1 AS BIGINT))))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT COUNT(((- (- (((-1485620479)/(-25284663)))))-(length(lower(''))))) FROM m0; --
@@ -1807,13 +1806,13 @@ time,t0,f0,f1,f2
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE CAST(lower(CAST(to_timestamp(7696460935177197468) AS STRING)) AS BOOLEAN) UNION ALL SELECT ALL * FROM m1 WHERE NOT (CAST(lower(CAST(to_timestamp(7696460935177197468) AS STRING)) AS BOOLEAN)) UNION ALL SELECT * FROM m1 WHERE (CAST(lower(CAST(to_timestamp(7696460935177197468) AS STRING)) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '2213-11-22 09:48:55.177197468' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '2213-11-22 09:48:55.177197468' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL CAST(0.777455235893071527897291161934845149517059326171875 AS TIMESTAMP), nullif(MIN(CAST(1714551991 AS DOUBLE)), abs(-1878108454)), to_timestamp(5337259097400348238) FROM m4 GROUP BY char_length(CAST(((-2100552938)/(253168118)) AS STRING)), ((0.84611214952917068732318739421316422522068023681640625)*(((+ (CAST(m4.t0 AS BIGINT)))/(0.85192987026783928428130820975638926029205322265625)))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Float64 to Timestamp(Nanosecond, None). This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Float64 to Timestamp(Nanosecond, None). This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ((ARRAY_AGG(upper(regex_replace(m3.t0, m3.t0))))||(CAST((to_timestamp(5929065320636968792)) IN (to_timestamp(871593834617987522), to_timestamp(2552336904341532176)) AS STRING))), + (CAST(FIRST_VALUE(to_timestamp(6687693621343321678)) OVER () AS BIGINT)) FROM m3 GROUP BY length(upper(m3.t0)); --
@@ -1892,7 +1891,7 @@ B,true,",p",-1628140570
 -- EXECUTE SQL: SELECT MIN(nullif(nullif(to_timestamp(5904274037108177722), to_timestamp(1437210047203483423)), CAST(cos(0.6504338529742061947303000124520622193813323974609375) AS TIMESTAMP))) FROM m4 ORDER BY m4.t1 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Coercion from [Timestamp(Nanosecond, None), Timestamp(Nanosecond, None)] to the signature Uniform(2, [Boolean, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64]) failed."}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Float64 to Timestamp(Nanosecond, None). This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT COUNT(CAST(CAST(((lower(m1.t0))LIKE(split_part(m1.f0, m1.f2))) AS BIGINT) AS BIGINT)) FROM m1; --
@@ -1966,14 +1965,14 @@ time,t0,f0,f1,f2
 -- EXECUTE SQL: SELECT m0.t0 FROM m0 WHERE (CAST(((NULL)/(m0.f0)) AS TIMESTAMP)) IN (to_timestamp(2898555648498030272), to_timestamp(5648678187321051704)) UNION ALL SELECT m0.t0 FROM m0 WHERE NOT ((CAST(((NULL)/(m0.f0)) AS TIMESTAMP)) IN (to_timestamp(2898555648498030272), to_timestamp(5648678187321051704))) UNION ALL SELECT m0.t0 FROM m0 WHERE ((CAST(((NULL)/(m0.f0)) AS TIMESTAMP)) IN (to_timestamp(2898555648498030272), to_timestamp(5648678187321051704))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Float64 to Timestamp(Nanosecond, None). This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Float64 to Timestamp(Nanosecond, None). This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT COUNT(((CAST(to_timestamp_seconds(m3.f0) AS BIGINT))*(((((CAST(m3.f0 AS BIGINT))/(nullif(-925290082, m3.f0))))*(+ (nullif(m3.f0, m3.f0))))))) FROM m3; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: nullif does not support a literal as first argument"}
--- ERROR:  --
+200 OK
+"COUNT(totimestampseconds(m3.f0) * m3.f0 / nullif(Int64(-925290082),m3.f0) * nullif(m3.f0,m3.f0))"
+0
 
 -- EXECUTE SQL: SELECT ALL ARRAY_AGG(CAST(lower(((m3.t0)||(TRUE))) AS STRING)), ((LEAD(nullif(nullif(m3.f0, m3.f0), m3.f0), - (m3.f0), atan2(- (((0.82516268991487529138595391486887820065021514892578125)/(0.2503907561107918677834049958619289100170135498046875))), CAST(CAST(3459226966385057792 AS DOUBLE) AS BIGINT))) OVER ())/(CAST(to_timestamp(3605305428072996707) AS BIGINT))) FROM m3 GROUP BY bit_length(CAST(CAST(0.5223801756078867430943546423804946243762969970703125 AS STRING) AS STRING)); --
 -- AFTER_SORT --
@@ -2018,7 +2017,7 @@ true,-1628140570
 -- EXECUTE SQL: SELECT m1.f1, m1.f2 FROM m1 WHERE NOT (((split_part(m1.t0, -728201134))<=(CAST(starts_with(m1.t0, m1.f0) AS STRING)))) UNION ALL SELECT ALL m1.f1, m1.f2 FROM m1 WHERE NOT (NOT (((split_part(m1.t0, -728201134))<=(CAST(starts_with(m1.t0, m1.f0) AS STRING))))) UNION ALL SELECT m1.f1, m1.f2 FROM m1 WHERE (NOT (((split_part(m1.t0, -728201134))<=(CAST(starts_with(m1.t0, m1.f0) AS STRING))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature OneOf([Exact([Utf8, Utf8, Int64]), Exact([LargeUtf8, Utf8, Int64]), Exact([Utf8, LargeUtf8, Int64]), Exact([LargeUtf8, LargeUtf8, Int64])]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature OneOf([Exact([Utf8, Utf8, Int64]), Exact([LargeUtf8, Utf8, Int64]), Exact([Utf8, LargeUtf8, Int64]), Exact([LargeUtf8, LargeUtf8, Int64])]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0; --
@@ -2039,7 +2038,7 @@ z,0.4506382526815239
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0 WHERE ((digest(((m0.t0)||(m0.f0)), CAST(to_timestamp(2939004359518327875) AS STRING)))IS NOT DISTINCT FROM(CAST(-1773226951 AS STRING))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: 'Binary IS NOT DISTINCT FROM Utf8' can't be evaluated because there isn't a common type to coerce the types to. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: 'Binary IS NOT DISTINCT FROM Utf8' can't be evaluated because there isn't a common type to coerce the types to. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT APPROX_DISTINCT(FALSE), FALSE, 0.16625150759358231500328884067130275070667266845703125 FROM m3 GROUP BY to_timestamp_seconds(length(((m3.t1)||(m3.f0)))), sha256(CAST(to_timestamp(1977423669276605809) AS STRING), length(m3.t0)); --
@@ -2074,7 +2073,7 @@ MAX(Boolean(true))
 -- EXECUTE SQL: SELECT nullif(to_timestamp(6687693621343321678), to_timestamp(4146908733966942974)), APPROX_DISTINCT(starts_with(CAST(((0.9003056296444931216882423541392199695110321044921875)/(-933855729)) AS STRING), CAST(lower(m1.t0) AS STRING))), length(m1.t0) FROM m1 GROUP BY 0.18552410489051951447692090368946082890033721923828125; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Coercion from [Timestamp(Nanosecond, None), Timestamp(Nanosecond, None)] to the signature Uniform(2, [Boolean, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64]) failed."}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Projection references non-aggregate values: Expression m1.t0 could not be resolved from available columns: Float64(0.18552410489051951), APPROXDISTINCT(startswith(Float64(0.9003056296444931) / Int64(-933855729),lower(m1.t0)))"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0; --
@@ -2171,7 +2170,7 @@ sW,,,4683132071972081202,0.5472766860985457
 -- EXECUTE SQL: SELECT m2.t2, m2.f0, m2.t1, m2.t0, m2.f1 FROM m2 WHERE CAST(sha256(CAST(sha512(m2.t0, m2.f0) AS STRING), - (octet_length(m2.t1))) AS BOOLEAN) UNION ALL SELECT ALL m2.t2, m2.f0, m2.t1, m2.t0, m2.f1 FROM m2 WHERE NOT (CAST(sha256(CAST(sha512(m2.t0, m2.f0) AS STRING), - (octet_length(m2.t1))) AS BOOLEAN)) UNION ALL SELECT m2.t2, m2.f0, m2.t1, m2.t0, m2.f1 FROM m2 WHERE (CAST(sha256(CAST(sha512(m2.t0, m2.f0) AS STRING), - (octet_length(m2.t1))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Utf8, Int64] to the signature Uniform(1, [Utf8, LargeUtf8, Binary, LargeBinary]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.f0, m1.t0, m1.f2 FROM m1; --
@@ -2369,7 +2368,7 @@ time,t0,f0,f1,f2
 -- EXECUTE SQL: SELECT COUNT(CAST(((CAST(to_timestamp(3570283675145888871) AS DOUBLE))*(nullif(-1035028880, 0.18948757514516534339321651714271865785121917724609375))) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Timestamp(Nanosecond, None) to Float64. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Timestamp(Nanosecond, None) to Float64. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f2, m1.f0, m1.t0, m1.f1 FROM m1; --
@@ -2427,7 +2426,7 @@ f2,f0,t0,f1
 -- EXECUTE SQL: SELECT APPROX_DISTINCT(((+ (sqrt(m1.f2))) IS NULL) IS UNKNOWN), to_timestamp(9071790872991556271), FIRST_VALUE(((CAST(CAST(length(m1.t0) AS BIGINT) AS DOUBLE))+(((CAST(CAST(to_timestamp(2549671370198843274) AS BIGINT) AS DOUBLE))/(abs(m1.f2)))))) OVER () FROM m1 WHERE m1.f1 GROUP BY nullif(to_timestamp(5932437593688946928), to_timestamp(- (m1.f2))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Coercion from [Timestamp(Nanosecond, None), Timestamp(Nanosecond, None)] to the signature Uniform(2, [Boolean, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64]) failed."}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Projection references non-aggregate values: Expression m1.t0 could not be resolved from available columns: nullif(totimestamp(Int64(5932437593688946928)),totimestamp((- m1.f2))), APPROXDISTINCT(sqrt(m1.f2) IS NULL IS UNKNOWN)"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MIN(CAST(abs(((m2.f0)-(m2.f0))) AS STRING)) FROM m2 ORDER BY m2.t1 DESC, m2.t0 ASC; --
@@ -2612,13 +2611,13 @@ os,2939042495407010978
 -- EXECUTE SQL: SELECT length(MAX(((((CAST(((917175707)*(1453426255)) AS STRING))||(m0.t0)))||(to_timestamp(5611604645754141134))))), to_timestamp(107728388379031552) FROM m0 GROUP BY + (+ (((- (1572395234274791430))+(CAST(m0.t0 AS BIGINT))))), CAST(m0.f0 AS BIGINT), CAST(- (nullif(91838392, 5506560410096687103)) AS BOOLEAN), ((((((((m0.t0)||(4212095614988948853)))||(CAST('1572395234274791430' AS BOOLEAN))))||(to_timestamp(2592513466743822582))))||(+ (((- (850888271))*(+ (3524885457107058563)))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: nullif does not support a literal as first argument. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '1572395234274791430' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT SUM(- (CAST(((chr(4134107298484193642))||(((m4.t0)LIKE(m4.t0)))) AS BIGINT))) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Execution error: requested character too large for encoding.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Execution error: requested character too large for encoding.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.f0, m3.t0 FROM m3; --
@@ -2729,7 +2728,7 @@ t2,f0,t0,t1
 -- EXECUTE SQL: SELECT m2.t2, m2.f0, m2.t0, m2.t1 FROM m2 WHERE CAST(to_timestamp(2670620145540024395) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Timestamp(Nanosecond, None) to Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Timestamp(Nanosecond, None) to Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.t0 FROM m0; --
@@ -2750,7 +2749,7 @@ f0,t0
 -- EXECUTE SQL: SELECT m0.f0, m0.t0 FROM m0 WHERE CAST(to_timestamp(5449799541880610810) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Timestamp(Nanosecond, None) to Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Timestamp(Nanosecond, None) to Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MAX(CAST(CAST(- (CAST(854828838 AS BIGINT)) AS STRING) AS TIMESTAMP)), - (- (ascii(m4.t0))), to_timestamp(3394220110539115675), LEAD(CAST(((((((m4.t0)||(-2077510876)))!=(((m4.t1)||(to_timestamp(297153453615660218))))))AND(((((((NOT (m4.f0))AND(NOT (m4.f0))))OR((0.8155676254239294653558545178384520113468170166015625) IS NULL)))OR((m4.t1) BETWEEN (m4.t1) AND (m4.t0))))) AS STRING), ((to_hex(((m4.t1)||(m4.f0))))*(((CAST(((m4.t1)||(m4.t1)) AS BIGINT))-(- (nullif(1941954349, 9195442692708162668)))))), ((m4.t1)||(+ (round(0.09722155698417711544578878601896576583385467529296875))))) OVER () FROM m4 GROUP BY NOT (((CAST(m4.f0 AS STRING)) BETWEEN (rtrim(m4.t0)) AND (lower(m4.t0))) IS NOT UNKNOWN); --
@@ -2796,13 +2795,13 @@ false,
 -- EXECUTE SQL: SELECT SUM(((((CAST(+ (m3.f0) AS DOUBLE))*(- (CAST(to_timestamp(1454992398022915607) AS DOUBLE)))))+(- (- (CAST(m3.t0 AS BIGINT)))))) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Timestamp(Nanosecond, None) to Float64. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: This feature is not implemented: Unsupported CAST from Timestamp(Nanosecond, None) to Float64. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(+ (CAST(nullif(to_timestamp(7940263614899532690), to_timestamp(4105208758202934869)) AS BIGINT))) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Coercion from [Timestamp(Nanosecond, None), Timestamp(Nanosecond, None)] to the signature Uniform(2, [Boolean, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64]) failed.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '2221-08-14 04:46:54.899532690' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT MAX(+ (length(((m3.t0)||(to_timestamp(2653083673479048093)))))) FROM m3 ORDER BY m3.f0 ASC, m3.t1 DESC; --
