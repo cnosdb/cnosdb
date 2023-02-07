@@ -11,6 +11,7 @@ use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
 
 use models::{utils as model_utils, FieldId, Timestamp, ValueType};
+use utils::BloomFilter;
 
 use crate::{
     byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
@@ -26,7 +27,7 @@ use crate::{
         get_data_block_meta_unchecked, get_index_meta_unchecked,
         tombstone::TsmTombstone,
         BlockEntry, BlockMeta, DataBlock, Index, IndexEntry, IndexMeta, BLOCK_META_SIZE,
-        FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
+        BLOOM_FILTER_SIZE, FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
     },
 };
 
@@ -56,6 +57,7 @@ impl From<ReadTsmError> for Error {
 /// Disk-based index reader
 pub struct IndexFile {
     reader: Arc<AsyncFile>,
+    bloom_filter: BloomFilter,
     idx_meta_buf: [u8; INDEX_META_SIZE],
     blk_meta_buf: [u8; BLOCK_META_SIZE],
 
@@ -69,14 +71,16 @@ pub struct IndexFile {
 impl IndexFile {
     pub(crate) async fn open(reader: Arc<AsyncFile>) -> ReadTsmResult<Self> {
         let file_len = reader.len();
-        let mut footer = [0_u8; 8];
+        let mut footer = [0_u8; FOOTER_SIZE];
         reader
-            .read_at(file_len - 8_u64, &mut footer)
+            .read_at(file_len - FOOTER_SIZE as u64, &mut footer)
             .await
             .context(IOSnafu)?;
-        let index_offset = u64::from_be_bytes(footer);
+        let bloom_filter = BloomFilter::with_data(&footer[..BLOOM_FILTER_SIZE]);
+        let index_offset = decode_be_u64(&footer[BLOOM_FILTER_SIZE..]);
         Ok(Self {
             reader,
+            bloom_filter,
             idx_meta_buf: [0_u8; INDEX_META_SIZE],
             blk_meta_buf: [0_u8; BLOCK_META_SIZE],
             index_offset,
@@ -185,11 +189,15 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
             reason: format!("TSM file size less than FOOTER_SIZE({})", FOOTER_SIZE),
         });
     }
-    let mut buf = [0u8; 8];
+    let mut buf = [0u8; FOOTER_SIZE];
 
     // Read index data offset
-    reader.read_at(len - 8, &mut buf).await.context(IOSnafu)?;
-    let offset = u64::from_be_bytes(buf);
+    reader
+        .read_at(len - FOOTER_SIZE as u64, &mut buf)
+        .await
+        .context(IOSnafu)?;
+    let bloom_filter = BloomFilter::with_data(&buf[..BLOOM_FILTER_SIZE]);
+    let offset = decode_be_u64(&buf[BLOOM_FILTER_SIZE..]);
     if offset > len - FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
             reason: format!("TSM file size less than index offset({})", offset),
@@ -214,7 +222,12 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
     // NOTICE that there must be no two equal field_ids.
     field_id_offs.sort_unstable_by_key(|e| e.0);
 
-    Ok(Index::new(tsm_id, data, field_id_offs))
+    Ok(Index::new(
+        tsm_id,
+        Arc::new(bloom_filter),
+        data,
+        field_id_offs,
+    ))
 }
 
 /// Memory-based index reader
@@ -496,6 +509,10 @@ impl TsmReader {
         field_id: FieldId,
     ) -> Option<Vec<TimeRange>> {
         self.tombstone.read().get_cloned_time_ranges(field_id)
+    }
+
+    pub(crate) fn bloom_filter(&self) -> Arc<BloomFilter> {
+        self.index_reader.index_ref.bloom_filter()
     }
 }
 

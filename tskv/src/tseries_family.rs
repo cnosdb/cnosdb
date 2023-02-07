@@ -27,7 +27,7 @@ use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     error::{Error, Result},
     file_system::file_manager,
-    file_utils::{make_delta_file_name, make_tsm_file_name},
+    file_utils::{self, make_delta_file_name, make_tsm_file_name},
     kv_option::{CacheOptions, Options, StorageOptions},
     memcache::{DataType, MemCache, RowGroup},
     summary::{CompactMeta, VersionEdit},
@@ -139,7 +139,7 @@ pub struct ColumnFile {
     is_delta: bool,
     time_range: TimeRange,
     size: u64,
-    field_id_bloom_filter: BloomFilter,
+    field_id_filter: Arc<BloomFilter>,
     deleted: AtomicBool,
     compacting: AtomicBool,
 
@@ -162,22 +162,29 @@ impl ColumnFile {
             is_delta,
             time_range,
             size,
-            field_id_bloom_filter: BloomFilter::new(512),
+            field_id_filter: Arc::new(BloomFilter::default()),
             deleted: AtomicBool::new(false),
             compacting: AtomicBool::new(false),
             path: path.as_ref().into(),
         }
     }
 
-    pub fn with_compact_data(meta: &CompactMeta, path: impl AsRef<Path>) -> Self {
-        Self::new(
-            meta.file_id,
-            meta.level,
-            TimeRange::new(meta.min_ts, meta.max_ts),
-            meta.file_size,
-            meta.is_delta,
-            path,
-        )
+    pub fn with_compact_data(
+        meta: &CompactMeta,
+        path: impl AsRef<Path>,
+        field_id_filter: Arc<BloomFilter>,
+    ) -> Self {
+        Self {
+            file_id: meta.file_id,
+            level: meta.level,
+            is_delta: meta.is_delta,
+            time_range: TimeRange::new(meta.min_ts, meta.max_ts),
+            size: meta.file_size,
+            field_id_filter,
+            deleted: AtomicBool::new(false),
+            compacting: AtomicBool::new(false),
+            path: path.as_ref().into(),
+        }
     }
 
     pub fn file_id(&self) -> ColumnFileId {
@@ -209,12 +216,12 @@ impl ColumnFile {
     }
 
     pub fn contains_field_id(&self, field_id: FieldId) -> bool {
-        self.field_id_bloom_filter.contains(&field_id.to_be_bytes())
+        self.field_id_filter.contains(&field_id.to_be_bytes())
     }
 
     pub fn contains_any_field_id(&self, field_ids: &[FieldId]) -> bool {
         for field_id in field_ids {
-            if self.field_id_bloom_filter.contains(&field_id.to_be_bytes()) {
+            if self.field_id_filter.contains(&field_id.to_be_bytes()) {
                 return true;
             }
         }
@@ -267,40 +274,10 @@ impl Drop for ColumnFile {
     }
 }
 
-pub struct FieldFileLocation {
-    field_id: u64,
-    file: Arc<ColumnFile>,
-    reader: TsmReader,
-    block_it: BlockMetaIterator,
-
-    read_index: usize,
-    data_block: DataBlock,
-}
-
-impl FieldFileLocation {
-    pub async fn peek(&mut self) -> Result<Option<DataType>, Error> {
-        if self.read_index >= self.data_block.len() {
-            if let Some(meta) = self.block_it.next() {
-                let blk = self.reader.get_data_block(&meta).await?;
-                self.read_index = 0;
-                self.data_block = blk;
-            } else {
-                return Ok(None);
-            }
-        }
-
-        Ok(self.data_block.get(self.read_index))
-    }
-
-    pub fn next(&mut self) {
-        self.read_index += 1;
-    }
-}
-
 #[derive(Debug)]
 pub struct LevelInfo {
     pub files: Vec<Arc<ColumnFile>>,
-    pub database: String,
+    pub database: Arc<String>,
     pub tsf_id: u32,
     pub storage_opt: Arc<StorageOptions>,
     pub level: u32,
@@ -311,7 +288,7 @@ pub struct LevelInfo {
 
 impl LevelInfo {
     pub fn init(
-        database: String,
+        database: Arc<String>,
         level: u32,
         tsf_id: u32,
         storage_opt: Arc<StorageOptions>,
@@ -333,7 +310,7 @@ impl LevelInfo {
     }
 
     pub fn init_levels(
-        database: String,
+        database: Arc<String>,
         tsf_id: u32,
         storage_opt: Arc<StorageOptions>,
     ) -> [LevelInfo; 5] {
@@ -346,22 +323,11 @@ impl LevelInfo {
         ]
     }
 
-    pub fn with_compact_metas(
-        database: String,
-        vnode_id: TseriesFamilyId,
-        storage_opt: Arc<StorageOptions>,
-        compact_metas: &[CompactMeta],
-    ) -> [LevelInfo; 5] {
-        let mut levels = Self::init_levels(database, vnode_id, storage_opt);
-        if !compact_metas.is_empty() {
-            for c in compact_metas {
-                levels[c.level as usize].push_compact_meta(c);
-            }
-        }
-        levels
-    }
-
-    pub fn push_compact_meta(&mut self, compact_meta: &CompactMeta) {
+    pub fn push_compact_meta(
+        &mut self,
+        compact_meta: &CompactMeta,
+        field_filter: Arc<BloomFilter>,
+    ) {
         let file_path = if compact_meta.is_delta {
             let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
             make_delta_file_name(base_dir, compact_meta.file_id)
@@ -372,6 +338,7 @@ impl LevelInfo {
         self.files.push(Arc::new(ColumnFile::with_compact_data(
             compact_meta,
             file_path,
+            field_filter,
         )));
         self.tsf_id = compact_meta.tsf_id;
         self.cur_size += compact_meta.file_size;
@@ -445,7 +412,7 @@ impl LevelInfo {
 #[derive(Debug)]
 pub struct Version {
     pub ts_family_id: TseriesFamilyId,
-    pub database: String,
+    pub database: Arc<String>,
     pub storage_opt: Arc<StorageOptions>,
     /// The max seq_no of write batch in wal flushed to column file.
     pub last_seq: u64,
@@ -459,7 +426,7 @@ impl Version {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         ts_family_id: TseriesFamilyId,
-        database: String,
+        database: Arc<String>,
         storage_opt: Arc<StorageOptions>,
         last_seq: u64,
         levels_info: [LevelInfo; 5],
@@ -481,22 +448,20 @@ impl Version {
     pub fn copy_apply_version_edits(
         &self,
         version_edits: Vec<VersionEdit>,
+        file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
         last_seq: Option<u64>,
     ) -> Version {
-        let mut added_files: HashMap<LevelId, Vec<CompactMeta>> = HashMap::new();
-        let mut deleted_files: HashMap<LevelId, HashSet<ColumnFileId>> = HashMap::new();
-        for ve in version_edits {
+        let mut added_files: Vec<Vec<CompactMeta>> = vec![vec![]; 5];
+        let mut deleted_files: Vec<HashSet<ColumnFileId>> = vec![HashSet::new(); 5];
+        for ve in version_edits.into_iter() {
             if !ve.add_files.is_empty() {
                 ve.add_files.into_iter().for_each(|f| {
-                    added_files.entry(f.level).or_default().push(f);
+                    added_files[f.level as usize].push(f);
                 });
             }
             if !ve.del_files.is_empty() {
                 ve.del_files.into_iter().for_each(|f| {
-                    deleted_files
-                        .entry(f.level)
-                        .or_insert_with(HashSet::new)
-                        .insert(f.file_id);
+                    deleted_files[f.level as usize].insert(f.file_id);
                 });
             }
         }
@@ -508,21 +473,16 @@ impl Version {
         );
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
-                if let Some(true) = deleted_files
-                    .get(&file.level)
-                    .map(|file_ids| file_ids.contains(&file.file_id))
-                {
+                if deleted_files[file.level as usize].contains(&file.file_id) {
                     file.mark_deleted();
                     continue;
                 }
                 new_levels[level.level as usize].push_column_file(file.clone());
             }
-            if let Some(files) = added_files.get(&level.level) {
-                for file in files.iter() {
-                    new_levels[level.level as usize].push_compact_meta(file);
-                }
+            for file in added_files[level.level as usize].iter() {
+                let field_filter = file_metas.remove(&file.file_id).unwrap_or_default();
+                new_levels[level.level as usize].push_compact_meta(file, field_filter);
             }
-            added_files.remove(&level.level);
             new_levels[level.level as usize].update_time_range();
         }
 
@@ -560,8 +520,8 @@ impl Version {
         self.ts_family_id
     }
 
-    pub fn database(&self) -> &str {
-        &self.database
+    pub fn database(&self) -> Arc<String> {
+        self.database.clone()
     }
 
     pub fn levels_info(&self) -> &[LevelInfo; 5] {
@@ -646,7 +606,7 @@ impl SuperVersion {
 #[derive(Debug)]
 pub struct TseriesFamily {
     tf_id: TseriesFamilyId,
-    database: String,
+    database: Arc<String>,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
     tsm_reader_cache: ShardedCache<String, TsmReader>,
@@ -666,7 +626,7 @@ impl TseriesFamily {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         tf_id: TseriesFamilyId,
-        database: String,
+        database: Arc<String>,
         cache: MemCache,
         version: Arc<Version>,
         cache_opt: Arc<CacheOptions>,
@@ -853,8 +813,16 @@ impl TseriesFamily {
         self.compact_picker.pick_compaction(self.version.clone())
     }
 
-    pub fn get_version_edit(&self, last_seq: u64, tsf_name: String) -> VersionEdit {
-        let mut version_edit = VersionEdit::new_add_vnode(self.tf_id, tsf_name);
+    /// Snashots last version before `last_seq` of this vnode.
+    ///
+    /// Db-files' index data (field-id filter) will be inserted into `file_metas`.
+    pub fn snapshot(
+        &self,
+        last_seq: u64,
+        owner: Arc<String>,
+        file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
+    ) -> VersionEdit {
+        let mut version_edit = VersionEdit::new_add_vnode(self.tf_id, owner.as_ref().clone());
         let version = self.version();
         let max_level_ts = version.max_level_ts;
         for files in version.levels_info.iter() {
@@ -863,6 +831,7 @@ impl TseriesFamily {
                 meta.tsf_id = files.tsf_id;
                 meta.high_seq = last_seq;
                 version_edit.add_file(meta, max_level_ts);
+                file_metas.insert(file.file_id, file.field_id_filter.clone());
             }
         }
 
@@ -873,7 +842,7 @@ impl TseriesFamily {
         self.tf_id
     }
 
-    pub fn database(&self) -> String {
+    pub fn database(&self) -> Arc<String> {
         self.database.clone()
     }
 
@@ -899,6 +868,14 @@ impl TseriesFamily {
 
     pub fn seq_no(&self) -> u64 {
         self.seq_no
+    }
+
+    pub fn get_delta_dir(&self) -> PathBuf {
+        self.storage_opt.delta_dir(&self.database, self.tf_id)
+    }
+
+    pub fn get_tsm_dir(&self) -> PathBuf {
+        self.storage_opt.tsm_dir(&self.database, self.tf_id)
     }
 }
 
@@ -937,8 +914,8 @@ mod test {
 
     use super::{ColumnFile, LevelInfo};
 
-    #[test]
-    fn test_version_apply_version_edits_1() {
+    #[tokio::test]
+    async fn test_version_apply_version_edits_1() {
         //! There is a Version with two levels:
         //! - Lv.0: [ ]
         //! - Lv.1: [ (3, 3001~3000) ]
@@ -961,7 +938,7 @@ mod test {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let database = "test".to_string();
+        let database = Arc::new("test".to_string());
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
@@ -1024,7 +1001,8 @@ mod test {
         let mut ve = VersionEdit::new(1);
         ve.del_file(1, 3, false);
         version_edits.push(ve);
-        let new_version = version.copy_apply_version_edits(version_edits, Some(3));
+        let new_version =
+            version.copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3));
 
         assert_eq!(new_version.last_seq, 3);
         assert_eq!(new_version.max_level_ts, 3150);
@@ -1036,8 +1014,8 @@ mod test {
         assert_eq!(col_file.time_range, TimeRange::new(3051, 3150));
     }
 
-    #[test]
-    fn test_version_apply_version_edits_2() {
+    #[tokio::test]
+    async fn test_version_apply_version_edits_2() {
         //! There is a Version with two levels:
         //! - Lv.0: [ ]
         //! - Lv.1: [ (3, 3001~3000), (4, 3051~3150) ]
@@ -1061,7 +1039,7 @@ mod test {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let database = "test".to_string();
+        let database = Arc::new("test".to_string());
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
@@ -1143,7 +1121,8 @@ mod test {
         ve.del_file(2, 1, false);
         ve.del_file(2, 2, false);
         version_edits.push(ve);
-        let new_version = version.copy_apply_version_edits(version_edits, Some(3));
+        let new_version =
+            version.copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3));
 
         assert_eq!(new_version.last_seq, 3);
         assert_eq!(new_version.max_level_ts, 3150);
@@ -1177,7 +1156,7 @@ mod test {
         let opt = Arc::new(Options::from(&global_config));
 
         let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let database = "db".to_string();
+        let database = Arc::new("db".to_string());
         let tsf = TseriesFamily::new(
             0,
             database.clone(),
@@ -1243,7 +1222,11 @@ mod test {
         let mut version_edits: Vec<VersionEdit> = Vec::new();
         let mut min_seq: u64 = 0;
         while let Some(summary_task) = summary_task_receiver.recv().await {
-            for edit in summary_task.write_summary_request().edits.into_iter() {
+            for edit in summary_task
+                .write_summary_request()
+                .version_edits
+                .into_iter()
+            {
                 if edit.tsf_id == ts_family_id {
                     version_edits.push(edit.clone());
                     if edit.has_seq_no {
@@ -1255,9 +1238,11 @@ mod test {
         let version_set = version_set.write().await;
         if let Some(ts_family) = version_set.get_tsfamily_by_tf_id(ts_family_id).await {
             let mut ts_family = ts_family.write();
-            let new_version = ts_family
-                .version()
-                .copy_apply_version_edits(version_edits, Some(min_seq));
+            let new_version = ts_family.version().copy_apply_version_edits(
+                version_edits,
+                &mut HashMap::new(),
+                Some(min_seq),
+            );
             ts_family.new_version(new_version);
         }
     }

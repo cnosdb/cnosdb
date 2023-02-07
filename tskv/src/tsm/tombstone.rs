@@ -34,7 +34,7 @@ use crate::{
     file_system::{file_manager, AsyncFile, FileCursor, IFile},
     file_utils,
     record_file::{self, RecordDataType, RecordDataVersion},
-    tseries_family::{ColumnFile, TimeRange},
+    tseries_family::TimeRange,
     Error, Result,
 };
 
