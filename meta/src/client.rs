@@ -94,9 +94,15 @@ impl MetaHttpClient {
     {
         let mut n_retry = 3;
 
+        let ttl = tokio::time::Duration::from_secs(60);
         loop {
             let res: Result<Resp, RPCError<ClusterNodeId, ClusterNode, Err>> =
-                self.do_send_rpc_to_leader(uri, req).await;
+                match tokio::time::timeout(ttl, self.do_send_rpc_to_leader(uri, req)).await {
+                    Ok(res) => res,
+                    Err(timeout) => Err(RPCError::Network(NetworkError::new(&AnyError::error(
+                        format!("http call meta: {} timeout, {}", uri, timeout),
+                    )))),
+                };
 
             let rpc_err = match res {
                 Ok(x) => return Ok(x),
