@@ -26,8 +26,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use trace::info;
 
-use crate::error::{l_r_err, s_w_err, sm_r_err, sm_w_err, StorageIOResult};
-use crate::store::data;
+use crate::error::{l_r_err, sm_r_err, sm_w_err, StorageIOResult};
 use crate::store::key_path::KeyPath;
 use models::{meta_data::*, utils};
 
@@ -115,7 +114,7 @@ pub struct StateMachineContent {
 impl From<&StateMachine> for StateMachineContent {
     fn from(state: &StateMachine) -> Self {
         let mut data_tree = BTreeMap::new();
-        for entry_res in state.data().iter() {
+        for entry_res in state.data_tree.iter() {
             let entry = entry_res.expect("read db failed");
 
             let key: &[u8] = &entry.0;
@@ -135,12 +134,19 @@ impl From<&StateMachine> for StateMachineContent {
 
 pub struct StateMachine {
     pub db: Arc<sled::Db>,
+    pub data_tree: sled::Tree,
+    pub state_machine: sled::Tree,
     pub watch: Arc<Watch>,
 }
 impl StateMachine {
     pub(crate) fn new(db: Arc<sled::Db>) -> StateMachine {
         let sm = Self {
-            db,
+            db: db.clone(),
+            data_tree: db.open_tree("data").expect("data open failed"),
+            state_machine: db
+                .open_tree("state_machine")
+                .expect("state_machine open failed"),
+
             watch: Arc::new(Watch::new()),
         };
 
@@ -149,21 +155,10 @@ impl StateMachine {
         sm
     }
 
-    fn data(&self) -> sled::Tree {
-        self.db.open_tree("data").expect("data open failed")
-    }
-
-    fn state_machine(&self) -> sled::Tree {
-        self.db
-            .open_tree("state_machine")
-            .expect("state_machine open failed")
-    }
-
     pub(crate) fn get_last_membership(
         &self,
     ) -> StorageIOResult<EffectiveMembership<ClusterNodeId, ClusterNode>> {
-        let state_machine = self.state_machine();
-        state_machine
+        self.state_machine
             .get(b"last_membership")
             .map_err(sm_r_err)
             .and_then(|value| {
@@ -177,16 +172,11 @@ impl StateMachine {
         membership: EffectiveMembership<ClusterNodeId, ClusterNode>,
     ) -> StorageIOResult<()> {
         let value = serde_json::to_vec(&membership).map_err(sm_w_err)?;
-        let state_machine = self.state_machine();
-        state_machine
+        self.state_machine
             .insert(b"last_membership", value)
             .map_err(sm_w_err)?;
 
-        state_machine
-            .flush_async()
-            .await
-            .map_err(sm_w_err)
-            .map(|_| ())
+        Ok(())
     }
     //todo:
     // fn set_last_membership_tx(
@@ -201,8 +191,7 @@ impl StateMachine {
     //     Ok(())
     // }
     pub(crate) fn get_last_applied_log(&self) -> StorageIOResult<Option<LogId<ClusterNodeId>>> {
-        let state_machine = self.state_machine();
-        state_machine
+        self.state_machine
             .get(b"last_applied_log")
             .map_err(l_r_err)
             .and_then(|value| {
@@ -216,16 +205,11 @@ impl StateMachine {
         log_id: LogId<ClusterNodeId>,
     ) -> StorageIOResult<()> {
         let value = serde_json::to_vec(&log_id).map_err(sm_w_err)?;
-        let state_machine = self.state_machine();
-        state_machine
+        self.state_machine
             .insert(b"last_applied_log", value)
             .map_err(l_r_err)?;
 
-        state_machine
-            .flush_async()
-            .await
-            .map_err(l_r_err)
-            .map(|_| ())
+        Ok(())
     }
     //todo:
     // fn set_last_applied_log_tx(
@@ -243,18 +227,14 @@ impl StateMachine {
         sm: StateMachineContent,
         db: Arc<sled::Db>,
     ) -> StorageIOResult<Self> {
-        let data_tree = data(&db);
+        let data_tree = db.open_tree("data").expect("store open failed");
         let mut batch = sled::Batch::default();
         for (key, value) in sm.data {
             batch.insert(key.as_bytes(), value.as_bytes())
         }
         data_tree.apply_batch(batch).map_err(sm_w_err)?;
-        data_tree.flush_async().await.map_err(s_w_err)?;
 
-        let r = Self {
-            db,
-            watch: Arc::new(Watch::new()),
-        };
+        let r = StateMachine::new(db);
         r.write_nop_log();
 
         if let Some(log_id) = sm.last_applied_log {

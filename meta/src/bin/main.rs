@@ -1,4 +1,9 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(
+    dead_code,
+    unused_imports,
+    unused_variables,
+    clippy::field_reassign_with_default
+)]
 
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
@@ -35,14 +40,22 @@ pub fn get_sled_db(config: &Opt) -> Db {
 }
 
 pub async fn start_service(opt: Opt) -> std::io::Result<()> {
-    let mut config = Config::default().validate().unwrap();
-    config.heartbeat_interval = 100;
+    let mut config = Config::default();
+    config.enable_tick = true;
+    config.enable_elect = true;
+    config.enable_heartbeat = true;
+    config.heartbeat_interval = 1000;
+    config.election_timeout_min = 3000;
+    config.election_timeout_max = 4000;
     config.install_snapshot_timeout = 100000;
+    config.cluster_name = "cnosdb".to_string();
+    let config = config.validate().unwrap();
+
     let config = Arc::new(config);
     let es = get_sled_db(&opt);
     let store = Arc::new(Store::new(es));
 
-    let network = Connections {};
+    let network = Connections::new();
     let raft = RaftStore::new(opt.id, config.clone(), network, store.clone());
     let app = Data::new(MetaApp {
         id: opt.id,
@@ -70,6 +83,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
             .service(api::read)
             .service(api::debug)
             .service(api::watch)
+            .service(api::pprof_test)
     })
     .keep_alive(Duration::from_secs(5));
 

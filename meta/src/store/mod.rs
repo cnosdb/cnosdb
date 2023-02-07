@@ -49,35 +49,26 @@ pub struct SnapshotInfo {
 
 pub struct Store {
     db: Arc<sled::Db>,
+    logs_tree: sled::Tree,
+    store_tree: sled::Tree,
     /// The Raft state machine.
     pub state_machine: RwLock<StateMachine>,
 }
 
-fn store(db: &sled::Db) -> sled::Tree {
-    db.open_tree("store").expect("store open failed")
-}
-fn logs(db: &sled::Db) -> sled::Tree {
-    db.open_tree("logs").expect("logs open failed")
-}
-fn data(db: &sled::Db) -> sled::Tree {
-    db.open_tree("data").expect("data open failed")
-}
-// fn state_machine(db: &sled::Db) -> sled::Tree {
-//     db.open_tree("state_machine")
-//         .expect("state_machine open failed")
-// }
 impl Store {
     pub fn new(db: sled::Db) -> Self {
         let db = Arc::new(db);
         let sm = StateMachine::new(db.clone());
         Self {
-            db,
+            db: db.clone(),
+            logs_tree: db.open_tree("logs").expect("store open failed"),
+            store_tree: db.open_tree("store").expect("store open failed"),
             state_machine: RwLock::new(sm),
         }
     }
     fn get_last_purged_(&self) -> StorageIOResult<Option<LogId<u64>>> {
-        let store_tree = store(&self.db);
-        let val = store_tree
+        let val = self
+            .store_tree
             .get(b"last_purged_log_id")
             .map_err(|e| {
                 StorageIOError::new(ErrorSubject::Store, ErrorVerb::Read, AnyError::new(&e))
@@ -88,18 +79,16 @@ impl Store {
     }
 
     async fn set_last_purged_(&self, log_id: LogId<u64>) -> StorageIOResult<()> {
-        let store_tree = store(&self.db);
         let val = serde_json::to_vec(&log_id).unwrap();
-        store_tree
+        self.store_tree
             .insert(b"last_purged_log_id", val.as_slice())
-            .map_err(s_w_err)?;
-
-        store_tree.flush_async().await.map_err(s_w_err).map(|_| ())
+            .map_err(s_w_err)
+            .map(|_| ())
     }
 
     fn get_snapshot_index_(&self) -> StorageIOResult<u64> {
-        let store_tree = store(&self.db);
-        let val = store_tree
+        let val = self
+            .store_tree
             .get(b"snapshot_index")
             .map_err(s_r_err)?
             .and_then(|v| serde_json::from_slice(&v).ok())
@@ -109,29 +98,25 @@ impl Store {
     }
 
     async fn set_snapshot_index_(&self, snapshot_index: u64) -> StorageIOResult<()> {
-        let store_tree = store(&self.db);
         let val = serde_json::to_vec(&snapshot_index).unwrap();
-        store_tree
+        self.store_tree
             .insert(b"snapshot_index", val.as_slice())
-            .map_err(s_w_err)?;
-
-        store_tree.flush_async().await.map_err(s_w_err).map(|_| ())
+            .map_err(s_w_err)
+            .map(|_| ())
     }
 
     async fn set_vote_(&self, vote: &Vote<ClusterNodeId>) -> StorageIOResult<()> {
-        let store_tree = store(&self.db);
         let val = serde_json::to_vec(vote).unwrap();
-        store_tree
+        self.store_tree
             .insert(b"vote", val)
             .map_err(v_w_err)
-            .map(|_| ())?;
-
-        store_tree.flush_async().await.map_err(v_w_err).map(|_| ())
+            .map(|_| ())
+            .map(|_| ())
     }
 
     fn get_vote_(&self) -> StorageIOResult<Option<Vote<ClusterNodeId>>> {
-        let store_tree = store(&self.db);
-        let val = store_tree
+        let val = self
+            .store_tree
             .get(b"vote")
             .map_err(v_r_err)?
             .and_then(|v| serde_json::from_slice(&v).ok());
@@ -140,8 +125,8 @@ impl Store {
     }
 
     fn get_current_snapshot_(&self) -> StorageIOResult<Option<SnapshotInfo>> {
-        let store_tree = store(&self.db);
-        let val = store_tree
+        let val = self
+            .store_tree
             .get(b"snapshot")
             .map_err(s_r_err)?
             .and_then(|v| serde_json::from_slice(&v).ok());
@@ -150,10 +135,8 @@ impl Store {
     }
 
     async fn set_current_snapshot_(&self, snap: SnapshotInfo) -> StorageResult<()> {
-        let store_tree = store(&self.db);
         let val = serde_json::to_vec(&snap).unwrap();
-        let meta = snap.meta.clone();
-        store_tree
+        self.store_tree
             .insert(b"snapshot", val.as_slice())
             .map_err(|e| StorageError::IO {
                 source: StorageIOError::new(
@@ -161,18 +144,6 @@ impl Store {
                     ErrorVerb::Write,
                     AnyError::new(&e),
                 ),
-            })?;
-
-        store_tree
-            .flush_async()
-            .await
-            .map_err(|e| {
-                StorageIOError::new(
-                    ErrorSubject::Snapshot(meta.signature()),
-                    ErrorVerb::Write,
-                    AnyError::new(&e),
-                )
-                .into()
             })
             .map(|_| ())
     }
@@ -244,8 +215,7 @@ impl RaftLogReader<TypeConfig> for Arc<Store> {
     async fn get_log_state(&mut self) -> StorageResult<LogState<TypeConfig>> {
         let last_purged_log_id = self.get_last_purged_()?;
 
-        let logs_tree = logs(&self.db);
-        let last_res = logs_tree.last();
+        let last_res = self.logs_tree.last();
         if last_res.is_err() {
             return Ok(LogState {
                 last_purged_log_id,
@@ -281,8 +251,9 @@ impl RaftLogReader<TypeConfig> for Arc<Store> {
             Bound::Excluded(x) => id_to_bin(*x + 1),
             Bound::Unbounded => id_to_bin(0),
         };
-        let logs_tree = logs(&self.db);
-        let logs = logs_tree
+
+        let logs = self
+            .logs_tree
             .range::<&[u8], _>(start.as_slice()..)
             .map(|el_res| {
                 let el = el_res.expect("Faile read log entry");
@@ -330,7 +301,6 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
 
     #[tracing::instrument(level = "trace", skip(self, entries))]
     async fn append_to_log(&mut self, entries: &[&Entry<TypeConfig>]) -> StorageResult<()> {
-        let logs_tree = logs(&self.db);
         let mut batch = sled::Batch::default();
         for entry in entries {
             let id = id_to_bin(entry.log_id.index);
@@ -339,14 +309,10 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
                 serde_json::to_vec(entry).map_err(|e| StorageError::IO { source: l_w_err(e) })?;
             batch.insert(id.as_slice(), value);
         }
-        logs_tree
+        self.logs_tree
             .apply_batch(batch)
             .map_err(|e| StorageError::IO { source: l_w_err(e) })?;
 
-        logs_tree
-            .flush_async()
-            .await
-            .map_err(|e| StorageError::IO { source: l_w_err(e) })?;
         Ok(())
     }
 
@@ -359,15 +325,16 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
 
         let from = id_to_bin(log_id.index);
         let to = id_to_bin(0xff_ff_ff_ff_ff_ff_ff_ff);
-        let logs_tree = logs(&self.db);
-        let entries = logs_tree.range::<&[u8], _>(from.as_slice()..to.as_slice());
+        let entries = self
+            .logs_tree
+            .range::<&[u8], _>(from.as_slice()..to.as_slice());
         let mut batch_del = sled::Batch::default();
         for entry_res in entries {
             let entry = entry_res.expect("Read db entry failed");
             batch_del.remove(entry.0);
         }
-        logs_tree.apply_batch(batch_del).map_err(l_w_err)?;
-        logs_tree.flush_async().await.map_err(l_w_err)?;
+        self.logs_tree.apply_batch(batch_del).map_err(l_w_err)?;
+
         Ok(())
     }
 
@@ -378,16 +345,16 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
         self.set_last_purged_(log_id).await?;
         let from = id_to_bin(0);
         let to = id_to_bin(log_id.index);
-        let logs_tree = logs(&self.db);
-        let entries = logs_tree.range::<&[u8], _>(from.as_slice()..=to.as_slice());
+        let entries = self
+            .logs_tree
+            .range::<&[u8], _>(from.as_slice()..=to.as_slice());
         let mut batch_del = sled::Batch::default();
         for entry_res in entries {
             let entry = entry_res.expect("Read db entry failed");
             batch_del.remove(entry.0);
         }
-        logs_tree.apply_batch(batch_del).map_err(l_w_err)?;
+        self.logs_tree.apply_batch(batch_del).map_err(l_w_err)?;
 
-        logs_tree.flush_async().await.map_err(l_w_err)?;
         Ok(())
     }
 

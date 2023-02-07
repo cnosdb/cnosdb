@@ -14,8 +14,6 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
-use reqwest::Client;
-
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
 use crate::store::state_machine::CommandResp;
@@ -26,14 +24,14 @@ pub type WriteError =
 
 #[derive(Debug)]
 pub struct MetaHttpClient {
-    pub inner: Client,
+    inner: surf::Client,
     pub leader: Arc<Mutex<(ClusterNodeId, String)>>,
 }
 
 impl MetaHttpClient {
     pub fn new(leader_id: ClusterNodeId, leader_addr: String) -> Self {
         Self {
-            inner: reqwest::Client::new(),
+            inner: surf::Client::new(),
             leader: Arc::new(Mutex::new((leader_id, leader_addr))),
         }
     }
@@ -150,9 +148,11 @@ impl MetaHttpClient {
 
         /*-------------------surf client--------------------------- */
         let mut resp = if let Some(r) = req {
-            surf::post(url.clone()).body(surf::Body::from_json(r).unwrap())
+            self.inner
+                .post(url.clone())
+                .body(surf::Body::from_json(r).unwrap())
         } else {
-            surf::get(url.clone())
+            self.inner.get(url.clone())
         }
         .await
         .map_err(|e| RPCError::Network(NetworkError::new(&AnyError::error(e.to_string()))))?;

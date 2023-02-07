@@ -41,6 +41,7 @@ ureq = { version = "2.5.0", features = ["json", "charset"] }
 backoff = "0.4"
 sys-info = "0.9.1"
 surf = "2.3.2"
+pprof = { version = "0.11.0", features = ["flamegraph", "protobuf-codec","frame-pointer"] }
 
 [dev-dependencies]
 anyhow = "1.0.32"
