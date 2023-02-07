@@ -16,7 +16,6 @@ use crate::{
     database::Database,
     error::{self, Error, Result},
     schema::schemas::DBschemas,
-    tseries_family::{ColumnFile, TseriesFamily},
     tsm::{DataBlock, TsmReader},
     TimeRange, TseriesFamilyId,
 };

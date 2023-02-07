@@ -172,9 +172,15 @@ impl TsKv {
         }
         let summary_file = file_utils::make_summary_file(&summary_dir, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(meta, opt.clone(), flush_task_sender, global_seq_task_sender)
-                .await
-                .unwrap()
+            Summary::recover(
+                meta,
+                opt.clone(),
+                flush_task_sender,
+                global_seq_task_sender,
+                true,
+            )
+            .await
+            .unwrap()
         } else {
             Summary::new(opt.clone(), global_seq_task_sender)
                 .await
@@ -290,13 +296,15 @@ impl TsKv {
                         let compact_ts_family = req.ts_family_id;
                         let out_level = req.out_level;
                         match compaction::run_compaction_job(req, ctx.clone()).await {
-                            Ok(Some(version_edit)) => {
+                            Ok(Some((version_edit, file_metas))) => {
                                 incr_compaction_success();
                                 let (summary_tx, summary_rx) = oneshot::channel();
-                                let ret = summary_task_sender.send(SummaryTask::new_append_task(
-                                    vec![version_edit],
-                                    summary_tx,
-                                ));
+                                let ret =
+                                    summary_task_sender.send(SummaryTask::new_column_file_task(
+                                        file_metas,
+                                        vec![version_edit],
+                                        summary_tx,
+                                    ));
                                 sample_tskv_compaction_duration(
                                     database.as_str(),
                                     compact_ts_family.to_string().as_str(),
@@ -772,10 +780,11 @@ impl Engine for TsKv {
         let version_set = self.version_set.read().await;
         if let Some(db) = version_set.get_db(tenant, database) {
             let db = db.read().await;
+            let mut file_metas = HashMap::new();
             if let Some(tsf) = db.get_tsfamily(vnode_id) {
-                let ve = tsf
-                    .read()
-                    .get_version_edit(self.global_ctx.last_seq(), db.owner());
+                let ve =
+                    tsf.read()
+                        .snapshot(self.global_ctx.last_seq(), db.owner(), &mut file_metas);
                 Ok(Some(ve))
             } else {
                 warn!(
@@ -931,11 +940,15 @@ impl Engine for TsKv {
                 let compact_req = ts_family.read().pick_compaction();
                 if let Some(req) = compact_req {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
-                        Ok(Some(version_edit)) => {
+                        Ok(Some((version_edit, file_metas))) => {
                             let (summary_tx, summary_rx) = oneshot::channel();
-                            let ret = self
-                                .summary_task_sender
-                                .send(SummaryTask::new_append_task(vec![version_edit], summary_tx));
+                            let ret =
+                                self.summary_task_sender
+                                    .send(SummaryTask::new_column_file_task(
+                                        file_metas,
+                                        vec![version_edit],
+                                        summary_tx,
+                                    ));
 
                             // let _ = summary_rx.await;
                         }

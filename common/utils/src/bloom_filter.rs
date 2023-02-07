@@ -73,6 +73,12 @@ impl BloomFilter {
     }
 }
 
+impl Default for BloomFilter {
+    fn default() -> Self {
+        Self::new(512)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::BloomFilter;
