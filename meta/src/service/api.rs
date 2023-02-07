@@ -7,6 +7,7 @@ use openraft::error::Infallible;
 use pprof::protos::Message;
 use std::fs::File;
 use std::io::Write;
+use std::time::Duration;
 use trace::info;
 use web::Json;
 
@@ -45,7 +46,7 @@ pub async fn watch(
     let base_ver = req.0 .3;
     let mut follow_ver = base_ver;
 
-    let mut chan = {
+    let mut notify = {
         let sm = app.store.state_machine.read().await;
         let watch_data = sm.read_change_logs(&cluster, &tenant, follow_ver);
         info!(
@@ -61,14 +62,17 @@ pub async fn watch(
         sm.watch.subscribe()
     };
 
-    while (chan.recv().await).is_ok() {
+    let now = std::time::Instant::now();
+    loop {
+        let _ = tokio::time::timeout(tokio::time::Duration::from_secs(20), notify.recv()).await;
+
         let sm = app.store.state_machine.read().await;
         let watch_data = sm.read_change_logs(&cluster, &tenant, follow_ver);
         info!(
             "{} {}.{}: change logs: {:?} ",
             client, base_ver, follow_ver, watch_data
         );
-        if watch_data.need_return(base_ver) {
+        if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(60) {
             let data = serde_json::to_string(&watch_data).unwrap();
             let response: Result<CommandResp, Infallible> = Ok(data);
             return Ok(Json(response));
@@ -78,9 +82,6 @@ pub async fn watch(
             follow_ver = watch_data.max_ver;
         }
     }
-
-    let response: Result<CommandResp, Infallible> = Ok("notify channel closed".to_string());
-    Ok(Json(response))
 }
 
 #[get("/debug")]
