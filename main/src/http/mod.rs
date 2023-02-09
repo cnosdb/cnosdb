@@ -71,6 +71,12 @@ pub enum Error {
     NotFoundTenant {
         name: String,
     },
+
+    #[snafu(display("gerante pprof files: {}", reason))]
+    #[error_code(code = 9)]
+    PProfError {
+        reason: String,
+    },
 }
 
 impl From<tskv::Error> for Error {

@@ -83,7 +83,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
             .service(api::read)
             .service(api::debug)
             .service(api::watch)
-            .service(api::pprof_test)
+            .service(api::pprof)
     })
     .keep_alive(Duration::from_secs(5));
 

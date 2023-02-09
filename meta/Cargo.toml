@@ -13,6 +13,7 @@ path = "src/bin/main.rs"
 config = { path = "../config" }
 trace = { path = "../common/trace" }
 models = { path = "../common/models" }
+utils = {path = "../common/utils"}
 error_code = {path = "../common/error_code"}
 
 async-trait = { workspace = true }
@@ -41,7 +42,6 @@ ureq = { version = "2.5.0", features = ["json", "charset"] }
 backoff = "0.4"
 sys-info = "0.9.1"
 surf = { version = "2.3.2", features = ["curl-client", "encoding"], default-features=false }
-pprof = { version = "0.11.0", features = ["flamegraph", "protobuf-codec","frame-pointer"] }
 
 [dev-dependencies]
 anyhow = "1.0.32"

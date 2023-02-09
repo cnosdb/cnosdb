@@ -136,6 +136,7 @@ impl HttpService {
             .or(self.query())
             .or(self.write_line_protocol())
             .or(self.metrics())
+            .or(self.pprof())
             .or(self.print_meta())
             .or(self.prom_remote_read())
             .or(self.prom_remote_write())
@@ -255,6 +256,15 @@ impl HttpService {
 
                 Ok(data)
             })
+    }
+
+    fn pprof(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("pprof").and_then(|| async move {
+            match utils::pprof_tools::gernate_pprof().await {
+                Ok(v) => Ok(v),
+                Err(e) => Err(reject::custom(HttpError::PProfError { reason: e })),
+            }
+        })
     }
 
     fn metrics(

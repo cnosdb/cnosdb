@@ -24,6 +24,7 @@ mem_allocator = { path = "../common/mem_allocator" }
 metrics = { path = "../common/metrics" }
 http_protocol = { path = "../common/http_protocol" }
 license = { path = "../common/license" }
+utils = { path = "../common/utils" }
 
 async-stream = { workspace = true }
 async-trait = { workspace = true }

@@ -4,9 +4,6 @@ use actix_web::web;
 use actix_web::web::Data;
 use actix_web::Responder;
 use openraft::error::Infallible;
-use pprof::protos::Message;
-use std::fs::File;
-use std::io::Write;
 use trace::info;
 use web::Json;
 
@@ -99,26 +96,9 @@ pub async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
 }
 
 #[get("/pprof")]
-pub async fn pprof_test(_app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
-    let guard = pprof::ProfilerGuardBuilder::default()
-        .frequency(1000)
-        .blocklist(&["libc", "libgcc", "pthread", "vdso"])
-        .build()
-        .unwrap();
-
-    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-
-    if let Ok(report) = guard.report().build() {
-        info!("====== write pprof file");
-        let mut file = File::create("/tmp/cnosdb/profile.pb").unwrap();
-        let profile = report.pprof().unwrap();
-        let mut content = Vec::new();
-        profile.write_to_vec(&mut content).unwrap();
-        file.write_all(&content).unwrap();
-
-        let file = File::create("/tmp/cnosdb/flamegraph.svg").unwrap();
-        report.flamegraph(file).unwrap();
-    };
-
-    Ok("".to_string())
+pub async fn pprof(_app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+    match utils::pprof_tools::gernate_pprof().await {
+        Ok(v) => Ok(v),
+        Err(v) => Ok(v),
+    }
 }
