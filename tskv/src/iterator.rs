@@ -3,43 +3,44 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::task::Poll;
 
-use datafusion::arrow::array::{ArrayBuilder, TimestampNanosecondBuilder};
-use datafusion::arrow::datatypes::DataType as ArrowDataType;
-use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::{
     array::{BooleanBuilder, Float64Builder, Int64Builder, StringBuilder, UInt64Builder},
     datatypes::SchemaRef,
     record_batch::RecordBatch,
 };
+use datafusion::arrow::array::{ArrayBuilder, TimestampNanosecondBuilder};
+use datafusion::arrow::datatypes::DataType as ArrowDataType;
+use datafusion::arrow::error::ArrowError;
 use datafusion::physical_plan::metrics::{
     self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
 };
 use datafusion::scalar::ScalarValue;
 use minivec::MiniVec;
-use models::predicate::utils::filter_to_time_ranges;
-use models::predicate::Split;
 use snafu::ResultExt;
 use tokio::time::Instant;
 
 use models::{
+    FieldId,
     predicate::domain::{ColumnDomains, Domain, PredicateRef, Range, ValueEntry},
-    schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME},
-    utils::{min_num, unite_id},
-    FieldId, SeriesId, ValueType,
+    schema::{ColumnType, TIME_FIELD, TIME_FIELD_NAME, TskvTableSchema},
+    SeriesId, utils::{min_num, unite_id}, ValueType,
 };
+use models::predicate::domain::TimeRange;
+use models::predicate::Split;
+use models::predicate::utils::filter_to_time_ranges;
 use trace::{debug, info};
 
 use crate::schema::error::SchemaError;
 use crate::tseries_family::Version;
 
 use super::{
+    ColumnFileId,
     engine::EngineRef,
     error,
+    Error,
     error::IndexErrSnafu,
     memcache::DataType,
-    tseries_family::{ColumnFile, SuperVersion},
-    tsm::{BlockMetaIterator, DataBlock, TsmReader},
-    ColumnFileId, Error,
+    tseries_family::{ColumnFile, SuperVersion}, tsm::{BlockMetaIterator, DataBlock, TsmReader},
 };
 
 pub type CursorPtr = Box<dyn Cursor>;
@@ -131,18 +132,18 @@ impl TskvSourceMetrics {
     }
 }
 
-// 1. Tsm文件遍历： KeyCursor
+// 1.Tsm文件遍历： KeyCursor
 //  功能：根据输入参数遍历Tsm文件
 //  输入参数： SeriesKey、FieldName、StartTime、EndTime、Ascending
 //  功能函数：调用Peek()—>(value, timestamp)得到一个值；调用Next()方法游标移到下一个值。
-// 2. Field遍历： FiledCursor
+// 2.Field遍历： FiledCursor
 //  功能：一个Field特定SeriesKey的遍历
 //  输入输出参数同KeyCursor，区别是需要读取缓存数据，并按照特定顺序返回
-// 3. Fields->行  转换器
+// 3.Fields->行转换器
 //  一行数据是由同一个时间点的多个Field得到。借助上面的FieldCursor按照时间点对齐多个Field-Value拼接成一行数据。其过程类似于多路归并排序。
-// 4. Iterator接口抽象层
+// 4.Iterator接口抽象层
 //  调用Next接口返回一行数据，并且屏蔽查询是本机节点数据还是其他节点数据
-// 5. 行数据到DataFusion的RecordBatch转换器
+// 5.行数据到DataFusion的RecordBatch转换器
 //  调用Iterator.Next得到行数据，然后转换行数据为RecordBatch结构
 
 #[derive(Debug, Clone)]
@@ -181,26 +182,44 @@ impl QueryOption {
 pub struct FieldFileLocation {
     reader: Arc<TsmReader>,
     block_it: BlockMetaIterator,
-
+    time_range: TimeRange,
     read_index: usize,
+    end_index: usize,
     data_block: DataBlock,
 }
 
 impl FieldFileLocation {
-    pub fn new(reader: Arc<TsmReader>, block_it: BlockMetaIterator, vtype: ValueType) -> Self {
+    pub fn new(
+        reader: Arc<TsmReader>,
+        time_range: TimeRange,
+        block_it: BlockMetaIterator,
+        vtype: ValueType,
+    ) -> Self {
         Self {
             reader,
             block_it,
-            read_index: 0,
+            time_range,
+            // make read_index > end_index,  when init
+            read_index: 1,
+            end_index: 0,
             data_block: DataBlock::new(0, vtype),
         }
     }
 
     pub async fn peek(&mut self) -> Result<Option<DataType>, Error> {
-        if self.read_index >= self.data_block.len() {
+        while self.read_index > self.end_index {
+            // let data = self.data_block.get(self.read_index);
             if let Some(meta) = self.block_it.next() {
-                self.read_index = 0;
                 self.data_block = self.reader.get_data_block(&meta).await?;
+                if let Some(time_range) = self.data_block.time_range() {
+                    let tr = TimeRange::from(time_range);
+                    let ts = self.time_range.intersect(&tr).unwrap();
+                    if let Some((min, max)) = self.data_block.index_range(&ts) {
+                        self.read_index = min;
+                        self.end_index = max;
+                        break;
+                    }
+                }
             } else {
                 return Ok(None);
             }
@@ -393,7 +412,12 @@ impl FieldCursor {
                         .await?;
                     for idx in tsm_reader.index_iterator_opt(field_id) {
                         let block_it = idx.block_iterator_opt(time_range);
-                        let location = FieldFileLocation::new(tsm_reader.clone(), block_it, vtype);
+                        let location = FieldFileLocation::new(
+                            tsm_reader.clone(),
+                            *time_range,
+                            block_it,
+                            vtype,
+                        );
                         locations.push(location);
                     }
                 }
@@ -499,7 +523,6 @@ pub struct RowIterator {
 
 impl RowIterator {
     pub async fn new(engine: EngineRef, option: QueryOption, vnode_id: u32) -> Result<Self, Error> {
-        
         trace::debug!("QueryOption: {:?}\nvnode_id: {}", option.split, vnode_id);
 
         let version = engine
