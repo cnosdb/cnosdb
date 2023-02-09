@@ -199,7 +199,7 @@ impl WalWriter {
         id: TseriesFamilyId,
         tenant: Arc<Vec<u8>>,
     ) -> Result<(u64, usize)> {
-        let mut seq = self.max_sequence;
+        let seq = self.max_sequence;
         let tenant_len = tenant.len() as u64;
 
         let written_size = self
@@ -218,7 +218,6 @@ impl WalWriter {
                 .as_slice(),
             )
             .await?;
-        seq += 1;
 
         if self.config.sync {
             self.inner.sync().await?;
@@ -230,6 +229,10 @@ impl WalWriter {
     }
 
     pub async fn close(mut self) -> Result<()> {
+        info!(
+            "Closing wal with sequence: [{}, {})",
+            self.min_sequence, self.max_sequence
+        );
         let footer = build_footer(self.min_sequence, self.max_sequence);
         self.inner.write_footer(footer).await?;
         self.inner.close().await
