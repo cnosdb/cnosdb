@@ -614,13 +614,11 @@ pub struct TseriesFamily {
     database: Arc<String>,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
-    tsm_reader_cache: ShardedCache<String, TsmReader>,
     super_version: Arc<SuperVersion>,
     super_version_id: AtomicU64,
     version: Arc<Version>,
     cache_opt: Arc<CacheOptions>,
     storage_opt: Arc<StorageOptions>,
-    compact_picker: Arc<dyn Picker>,
     seq_no: u64,
     immut_ts_min: AtomicI64,
     mut_ts_max: AtomicI64,
@@ -653,7 +651,6 @@ impl TseriesFamily {
             seq_no: seq,
             mut_cache: mm.clone(),
             immut_cache: Default::default(),
-            tsm_reader_cache: ShardedCache::with_capacity(16),
             super_version: Arc::new(SuperVersion::new(
                 tf_id,
                 storage_opt.clone(),
@@ -668,7 +665,6 @@ impl TseriesFamily {
             version,
             cache_opt,
             storage_opt,
-            compact_picker,
             immut_ts_min: AtomicI64::new(max_level_ts),
             mut_ts_max: AtomicI64::new(i64::MIN),
             last_modified: Arc::new(RwLock::new(None)),
@@ -825,10 +821,6 @@ impl TseriesFamily {
         for memcache in self.immut_cache.iter() {
             memcache.read().delete_series(sids, time_range);
         }
-    }
-
-    pub fn pick_compaction(&self) -> Option<CompactReq> {
-        self.compact_picker.pick_compaction(self.version.clone())
     }
 
     pub fn schedule_compaction(&self, runtime: Arc<Runtime>) {

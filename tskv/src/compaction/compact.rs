@@ -1,12 +1,12 @@
 use std::{
     collections::{BinaryHeap, HashMap, VecDeque},
-    iter::Peekable,
-    marker::PhantomData,
     path::PathBuf,
+    pin::Pin,
     sync::Arc,
 };
 
 use evmap::new;
+use lru_cache::ShardedCache;
 use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
 use trace::{debug, error, info, trace};
@@ -28,6 +28,8 @@ use crate::{
     },
     ColumnFileId, Error, LevelId, TseriesFamilyId,
 };
+
+use super::iterator::BufferedIterator;
 
 /// Temporary compacting data block meta
 struct CompactingBlockMeta {
@@ -115,25 +117,58 @@ impl CompactingBlock {
 }
 
 struct CompactingFile {
-    tsm_reader: TsmReader,
-    index_iter: Peekable<IndexIterator>,
-    first_field_id: Option<FieldId>,
+    i: usize,
+    tsm_reader: Arc<TsmReader>,
+    index_iter: BufferedIterator<IndexIterator>,
+    field_id: Option<FieldId>,
 }
 
 impl CompactingFile {
-    fn new(tsm_reader: TsmReader) -> Self {
-        let mut index_iter = tsm_reader.index_iterator().peekable();
+    fn new(i: usize, tsm_reader: Arc<TsmReader>) -> Self {
+        let mut index_iter = BufferedIterator::new(tsm_reader.index_iterator());
         let first_field_id = index_iter.peek().map(|i| i.field_id());
         Self {
+            i,
             tsm_reader,
             index_iter,
-            first_field_id,
+            field_id: first_field_id,
         }
+    }
+
+    fn next(&mut self) -> Option<&IndexMeta> {
+        let idx_meta = self.index_iter.next();
+        idx_meta.map(|i| self.field_id.replace(i.field_id()));
+        idx_meta
+    }
+
+    fn peek(&mut self) -> Option<&IndexMeta> {
+        self.index_iter.peek()
+    }
+}
+
+impl Eq for CompactingFile {}
+
+impl PartialEq for CompactingFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.tsm_reader.tsm_id() == other.tsm_reader.tsm_id() && self.field_id == other.field_id
+    }
+}
+
+impl Ord for CompactingFile {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl PartialOrd for CompactingFile {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.field_id.cmp(&other.field_id).reverse())
     }
 }
 
 pub(crate) struct CompactIterator {
-    compacting_files: Vec<CompactingFile>,
+    tsm_readers: Vec<Arc<TsmReader>>,
+    compacting_files: BinaryHeap<Pin<Box<CompactingFile>>>,
     /// Maximum values in generated CompactingBlock
     max_datablock_values: u32,
     /// Decode a data block even though it doesn't need to merge with others,
@@ -157,6 +192,7 @@ pub(crate) struct CompactIterator {
 impl Default for CompactIterator {
     fn default() -> Self {
         Self {
+            tsm_readers: Default::default(),
             compacting_files: Default::default(),
             max_datablock_values: 0,
             decode_non_overlap_blocks: false,
@@ -172,18 +208,19 @@ impl Default for CompactIterator {
 
 impl CompactIterator {
     pub(crate) fn new(
-        tsm_readers: Vec<TsmReader>,
+        tsm_readers: Vec<Arc<TsmReader>>,
         max_data_block_size: u32,
         decode_non_overlap_blocks: bool,
     ) -> Self {
-        let mut compacting_files: Vec<CompactingFile> = tsm_readers
-            .into_iter()
-            .map(|r| CompactingFile::new(r))
-            .filter(|f| f.first_field_id.is_some())
+        let compacting_files: BinaryHeap<Pin<Box<CompactingFile>>> = tsm_readers
+            .iter()
+            .enumerate()
+            .map(|(i, r)| Box::pin(CompactingFile::new(i, r.clone())))
             .collect();
-        compacting_files.sort_by_key(|f| f.first_field_id.unwrap_or(0));
         let compacting_files_cnt = compacting_files.len();
+
         Self {
+            tsm_readers,
             compacting_files,
             max_datablock_values: max_data_block_size,
             decode_non_overlap_blocks,
@@ -192,74 +229,49 @@ impl CompactIterator {
         }
     }
 
-    fn next_min_field_id(&mut self) -> Option<FieldId> {
-        let mut min_field_id: Option<FieldId> = None;
-        for (next_tsm_file_idx, (i, f)) in self.compacting_files.iter_mut().enumerate().enumerate()
-        {
-            if self.finished_readers[i] {
-                trace!("file no.{} has been finished, continue.", i);
-                continue;
-            }
-            if let Some(idx_meta) = f.index_iter.peek() {
-                if let Some(fid) = min_field_id {
-                    min_field_id.replace(fid.min(idx_meta.field_id()));
-                } else {
-                    min_field_id = Some(idx_meta.field_id());
-                }
-            } else {
-                // This tsm-file has been finished
-                trace!("file {} is finished.", i);
-                self.finished_readers[i] = true;
-                self.finished_reader_cnt += 1;
-            }
-        }
-        min_field_id
-    }
-
     /// Update tmp_tsm_blks and tmp_tsm_blk_tsm_reader_idx for field id in next iteration.
     fn next_field_id(&mut self) {
-        if let Some(next_min_fid) = self.next_min_field_id() {
-            self.curr_fid = Some(next_min_fid);
+        self.curr_fid = None;
 
-            self.tmp_tsm_blks = Vec::with_capacity(self.compacting_files.len());
-            self.tmp_tsm_blk_tsm_reader_idx = Vec::with_capacity(self.compacting_files.len());
-
-            for (next_tsm_file_idx, (i, f)) in
-                self.compacting_files.iter_mut().enumerate().enumerate()
-            {
-                if self.finished_readers[i] {
-                    trace!("file no.{} has been finished, continue.", i);
-                    continue;
-                }
-                if let Some(idx_meta) = f.index_iter.peek() {
-                    if idx_meta.field_id() != next_min_fid {
-                        continue;
-                    }
-                    let blk_cnt = idx_meta.block_count();
-
+        if let Some(f) = self.compacting_files.peek() {
+            if self.curr_fid.is_none() {
+                self.curr_fid = f.field_id
+            }
+        } else {
+            // TODO finished
+            self.finished_reader_cnt += 1;
+        }
+        while let Some(mut f) = self.compacting_files.pop() {
+            let loop_field_id = f.field_id;
+            let loop_file_i = f.i;
+            if self.curr_fid == loop_field_id {
+                if let Some(idx_meta) = f.peek() {
                     self.tmp_tsm_blks.push(idx_meta.block_iterator());
-                    self.tmp_tsm_blk_tsm_reader_idx.push(next_tsm_file_idx);
+                    self.tmp_tsm_blk_tsm_reader_idx.push(loop_file_i);
                     trace!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
-                      idx_meta.field_id(),
-                      idx_meta.field_type(),
-                      idx_meta.block_count(),
-                      idx_meta.time_range());
-                }
-
-                // To next field and check if finished
-                if f.index_iter.next().is_none() {
+                        idx_meta.field_id(),
+                        idx_meta.field_type(),
+                        idx_meta.block_count(),
+                        idx_meta.time_range()
+                    );
+                    f.next();
+                    self.compacting_files.push(f);
+                } else {
                     // This tsm-file has been finished
-                    trace!("file {} is finished.", i);
-                    self.finished_readers[i] = true;
+                    trace!("file {} is finished.", loop_file_i);
+                    self.finished_readers[loop_file_i] = true;
                     self.finished_reader_cnt += 1;
                 }
+            } else {
+                self.compacting_files.push(f);
+                break;
             }
         }
     }
 
     /// Collect merging `DataBlock`s.
     async fn next_merging_blocks(&mut self) -> Result<()> {
-        if self.tmp_tsm_blks.is_empty() {
+        if self.curr_fid.is_none() || self.tmp_tsm_blks.is_empty() {
             return Ok(());
         }
         let mut sorted_blk_metas: BinaryHeap<CompactingBlockMeta> =
@@ -268,9 +280,8 @@ impl CompactIterator {
         // Get all block_meta, and check if it's tsm file has a related tombstone file.
         for (i, blk_iter) in self.tmp_tsm_blks.iter_mut().enumerate() {
             for blk_meta in blk_iter.by_ref() {
-                let tsm_has_tombstone = self.compacting_files[self.tmp_tsm_blk_tsm_reader_idx[i]]
-                    .tsm_reader
-                    .has_tombstone();
+                let tsm_has_tombstone =
+                    self.tsm_readers[self.tmp_tsm_blk_tsm_reader_idx[i]].has_tombstone();
                 sorted_blk_metas.push(CompactingBlockMeta::new(
                     self.tmp_tsm_blk_tsm_reader_idx[i],
                     tsm_has_tombstone,
@@ -312,8 +323,7 @@ impl CompactIterator {
                     buf.resize(cbm.block_meta.size() as usize, 0);
                 }
                 if cbm.has_tombstone || self.decode_non_overlap_blocks {
-                    let data_block = self.compacting_files[cbm.readers_idx]
-                        .tsm_reader
+                    let data_block = self.tsm_readers[cbm.readers_idx]
                         .get_data_block(&cbm.block_meta)
                         .await
                         .context(error::ReadTsmSnafu)?;
@@ -323,8 +333,7 @@ impl CompactIterator {
                         data_block,
                     });
                 } else {
-                    let size = self.compacting_files[cbm.readers_idx]
-                        .tsm_reader
+                    let size = self.tsm_readers[cbm.readers_idx]
                         .get_raw_data(&cbm.block_meta, &mut buf)
                         .await
                         .context(error::ReadTsmSnafu)?;
@@ -339,8 +348,7 @@ impl CompactIterator {
                 (cbm.block_meta.min_ts(), cbm.block_meta.max_ts()),
             ) {
                 // 2.1
-                let data_block = self.compacting_files[cbm.readers_idx]
-                    .tsm_reader
+                let data_block = self.tsm_readers[cbm.readers_idx]
                     .get_data_block(&cbm.block_meta)
                     .await
                     .context(error::ReadTsmSnafu)?;
@@ -397,8 +405,7 @@ impl CompactIterator {
                         merged_blk_time_range.1 =
                             merged_blk_time_range.0.max(cbm.block_meta.max_ts());
                         if cbm.has_tombstone || self.decode_non_overlap_blocks {
-                            let data_block = self.compacting_files[cbm.readers_idx]
-                                .tsm_reader
+                            let data_block = self.tsm_readers[cbm.readers_idx]
                                 .get_data_block(&cbm.block_meta)
                                 .await
                                 .context(error::ReadTsmSnafu)?;
@@ -408,8 +415,7 @@ impl CompactIterator {
                                 data_block,
                             });
                         } else {
-                            let size = self.compacting_files[cbm.readers_idx]
-                                .tsm_reader
+                            let size = self.tsm_readers[cbm.readers_idx]
                                 .get_raw_data(&cbm.block_meta, &mut buf)
                                 .await
                                 .context(error::ReadTsmSnafu)?;
@@ -421,8 +427,7 @@ impl CompactIterator {
                         }
                     } else {
                         // cbm.block_meta.count is less than max_datablock_values
-                        let data_block = self.compacting_files[cbm.readers_idx]
-                            .tsm_reader
+                        let data_block = self.tsm_readers[cbm.readers_idx]
                             .get_data_block(&cbm.block_meta)
                             .await
                             .context(error::ReadTsmSnafu)?;
@@ -534,7 +539,8 @@ pub async fn run_compaction_job(
     let mut tsm_readers = Vec::new();
     for col_file in request.files.iter() {
         let tsm_file = col_file.file_path();
-        let tsm_reader = TsmReader::open(&tsm_file).await?;
+        // TODO Get tsm reader from lru cache.
+        let tsm_reader = version.get_tsm_reader(&tsm_file).await?;
         tsm_readers.push(tsm_reader);
     }
 

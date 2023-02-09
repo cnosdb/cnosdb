@@ -512,6 +512,10 @@ impl TsmReader {
         self.tombstone.read().get_cloned_time_ranges(field_id)
     }
 
+    pub(crate) fn tsm_id(&self) -> u64 {
+        self.tsm_id
+    }
+
     pub(crate) fn bloom_filter(&self) -> Arc<BloomFilter> {
         self.index_reader.index_ref.bloom_filter()
     }

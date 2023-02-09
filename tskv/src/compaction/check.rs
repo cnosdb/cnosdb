@@ -159,21 +159,17 @@ pub(crate) async fn get_ts_family_hash_tree(
     }
     let time_range_nanosec = get_default_time_range(schemas)?;
 
-    // let ts_family_rlock = ts_family.read();
-    // let version = ts_family_rlock.version();
-    // let ts_family_id = ts_family_rlock.tf_id();
-    // drop(ts_family_rlock);
     let (version, ts_family_id) = {
         let ts_family_rlock = ts_family.read();
         (ts_family_rlock.version(), ts_family_rlock.tf_id())
     };
-    let mut readers: Vec<TsmReader> = Vec::new();
+    let mut readers: Vec<Arc<TsmReader>> = Vec::new();
     for path in version
         .levels_info()
         .iter()
         .flat_map(|l| l.files.iter().map(|f| f.file_path()))
     {
-        let r = TsmReader::open(path).await?;
+        let r = version.get_tsm_reader(path).await?;
         readers.push(r);
     }
 

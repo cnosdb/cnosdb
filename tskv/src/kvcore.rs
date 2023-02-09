@@ -1,6 +1,7 @@
 use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
+use crate::compaction::{LevelCompactionPicker, Picker};
 use crate::context::{self, GlobalSequenceContext, GlobalSequenceTask};
 use crate::error::MetaSnafu;
 use crate::kv_option::StorageOptions;
@@ -892,8 +893,9 @@ impl Engine for TsKv {
         if let Some(db) = database {
             // TODO: stop current and prevent next flush and compaction.
             for (ts_family_id, ts_family) in db.read().await.ts_families() {
-                let compact_req = ts_family.read().pick_compaction();
-                if let Some(req) = compact_req {
+                let picker = LevelCompactionPicker::new(self.options.storage.clone());
+                let version = ts_family.read().version();
+                if let Some(req) = picker.pick_compaction(version) {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some((version_edit, file_metas))) => {
                             let (summary_tx, summary_rx) = oneshot::channel();
