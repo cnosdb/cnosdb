@@ -16,6 +16,5 @@ clap = { workspace = true, features = ["derive", "cargo"] }
 datafusion = { workspace = true }
 dirs = { workspace = true }
 env_logger = { workspace = true }
-mimalloc = { workspace = true, default-features = false }
 rustyline = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "parking_lot"] }

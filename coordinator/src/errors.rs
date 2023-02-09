@@ -1,5 +1,6 @@
 use datafusion::arrow::error::ArrowError;
 use datafusion::error::DataFusionError;
+use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
 use snafu::Snafu;
@@ -196,6 +197,12 @@ impl CoordinatorError {
             CoordinatorError::TskvError { source } => source.error_code(),
             _ => self,
         }
+    }
+}
+
+impl From<flatbuffers::InvalidFlatbuffer> for CoordinatorError {
+    fn from(value: InvalidFlatbuffer) -> Self {
+        Self::InvalidFlatbuffer { source: value }
     }
 }
 
