@@ -212,7 +212,7 @@ sub = {:?}"#,
                     .add_service(grpc_service)
                     .add_service(tcp_service);
 
-                if !global_config.reporting_disabled.unwrap_or(false) {
+                if !global_config.reporting_disabled {
                     server_builder = server_builder.add_service(report_service);
                 }
 
@@ -259,7 +259,7 @@ sub = {:?}"#,
                     .add_service(http_service)
                     .add_service(flight_sql_service);
 
-                if !global_config.reporting_disabled.unwrap_or(false) {
+                if !global_config.reporting_disabled {
                     server_builder = server_builder.add_service(report_service);
                 }
 

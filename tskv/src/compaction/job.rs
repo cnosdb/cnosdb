@@ -5,7 +5,7 @@ use tokio::{
     runtime::Runtime,
     sync::{
         broadcast,
-        mpsc::{UnboundedReceiver, UnboundedSender},
+        mpsc::{Receiver, Sender},
         oneshot, RwLock, Semaphore,
     },
     task::JoinHandle,
@@ -26,10 +26,10 @@ use crate::{
 pub fn run(
     storage_opt: Arc<StorageOptions>,
     runtime: Arc<Runtime>,
-    mut receiver: UnboundedReceiver<TseriesFamilyId>,
+    mut receiver: Receiver<TseriesFamilyId>,
     ctx: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
-    summary_task_sender: UnboundedSender<SummaryTask>,
+    summary_task_sender: Sender<SummaryTask>,
 ) -> JoinHandle<()> {
     let runtime_inner = runtime.clone();
 
@@ -50,7 +50,7 @@ pub fn run(
                 let start = Instant::now();
 
                 let picker = LevelCompactionPicker::new(storage_opt.clone());
-                let version = tsf.read().version();
+                let version = tsf.read().await.version();
                 let compact_req = picker.pick_compaction(version);
                 if let Some(req) = compact_req {
                     let database = req.database.clone();

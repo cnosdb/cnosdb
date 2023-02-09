@@ -293,7 +293,7 @@ mod test {
             let (res, buf) = file.write_at(&b"hello"[..], 0).await;
             let fd = file.as_raw_fd();
             println!("main thread: file: {:?}, {:?}", file, fd);
-            let (sender, mut receiver) = mpsc::unbounded_channel();
+            let (sender, mut receiver) = mpsc::channel();
             drop(file);
             let thread = std::thread::spawn(move || {
                 let fd = receiver.blocking_recv().unwrap();

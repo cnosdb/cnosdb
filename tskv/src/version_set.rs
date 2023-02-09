@@ -9,7 +9,7 @@ use parking_lot::RwLock as SyncRwLock;
 use snafu::ResultExt;
 use tokio::{
     runtime::Runtime,
-    sync::{mpsc::UnboundedSender, oneshot, watch::Receiver, RwLock},
+    sync::{mpsc::Sender, oneshot, watch::Receiver, RwLock},
 };
 
 use trace::error;
@@ -50,8 +50,8 @@ impl VersionSet {
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
-        flush_task_sender: UnboundedSender<FlushReq>,
-        compact_task_sender: UnboundedSender<TseriesFamilyId>,
+        flush_task_sender: Sender<FlushReq>,
+        compact_task_sender: Sender<TseriesFamilyId>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
         for (id, ver) in ver_set {
@@ -145,10 +145,7 @@ impl VersionSet {
         size
     }
 
-    pub async fn get_tsfamily_by_tf_id(
-        &self,
-        tf_id: u32,
-    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
+    pub async fn get_tsfamily_by_tf_id(&self, tf_id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
         for db in self.dbs.values() {
             if let Some(v) = db.read().await.get_tsfamily(tf_id) {
                 return Some(v);
@@ -163,7 +160,7 @@ impl VersionSet {
         tenant: &str,
         database: &str,
         tf_id: u32,
-    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
+    ) -> Option<Arc<RwLock<TseriesFamily>>> {
         let owner = make_owner(tenant, database);
         if let Some(db) = self.dbs.get(&owner) {
             return db.read().await.get_tsfamily(tf_id);
@@ -177,7 +174,7 @@ impl VersionSet {
         &self,
         tenant: &str,
         database: &str,
-    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
+    ) -> Option<Arc<RwLock<TseriesFamily>>> {
         let owner = make_owner(tenant, database);
         if let Some(db) = self.dbs.get(&owner) {
             return db.read().await.get_tsfamily_random();
@@ -200,7 +197,8 @@ impl VersionSet {
         for (name, db) in self.dbs.iter() {
             db.read()
                 .await
-                .snapshot(last_seq, None, &mut version_edits, &mut file_metas);
+                .snapshot(last_seq, None, &mut version_edits, &mut file_metas)
+                .await;
         }
         (version_edits, file_metas)
     }
@@ -214,7 +212,7 @@ impl VersionSet {
         let mut tsf_seq_map: HashMap<TseriesFamilyId, u64> = HashMap::new();
         for (_, database) in self.dbs.iter() {
             for (tsf_id, tsf) in database.read().await.ts_families().iter() {
-                let tsf = tsf.read();
+                let tsf = tsf.read().await;
                 min_seq = min_seq.min(tsf.seq_no());
                 tsf_seq_map.insert(*tsf_id, tsf.seq_no());
             }

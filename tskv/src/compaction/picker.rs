@@ -422,6 +422,7 @@ mod test {
 
     use crate::compaction::test::create_options;
     use crate::compaction::{LevelCompactionPicker, Picker};
+    use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
     use crate::{
         file_utils::make_tsm_file_name,
         kv_option::{Options, StorageOptions},
@@ -496,8 +497,8 @@ mod test {
             1000,
             Arc::new(ShardedCache::with_capacity(1)),
         ));
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let (compactt_task_sender, _) = mpsc::unbounded_channel();
+        let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
+        let (compactt_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         TseriesFamily::new(
             1,
             Arc::new("ts_family_1".to_string()),
