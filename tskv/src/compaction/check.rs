@@ -700,8 +700,8 @@ mod test {
         for (timestamp, v) in timestamps.into_iter().zip(rows_ref.into_iter()) {
             let db = fbb.create_vector(database.as_bytes());
             let table = fbb.create_vector(table.as_bytes());
-            let tags = models_helper::create_tags(&mut fbb, vec![("ta", "a1"), ("tb", "b1")]);
-            let fields = models_helper::create_fields(&mut fbb, v);
+            let tags = models_helper::create_tags(&mut fbb, &[("ta", "a1"), ("tb", "b1")]);
+            let fields = models_helper::create_fields(&mut fbb, &v);
             let point = models_helper::create_point(&mut fbb, timestamp, db, table, tags, fields);
             points.push(point);
         }

@@ -119,7 +119,7 @@ mod test {
 
     pub fn create_tags<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        tags: Vec<(&str, &str)>,
+        tags: &[(&str, &str)],
     ) -> WIPOffset<Vector<'a, ForwardsUOffset<Tag<'a>>>> {
         let mut vec = vec![];
         for (k, v) in tags.iter() {
@@ -135,7 +135,7 @@ mod test {
 
     pub fn create_fields<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        fields: Vec<(&str, FieldType, &[u8])>,
+        fields: &[(&str, FieldType, &[u8])],
     ) -> WIPOffset<Vector<'a, ForwardsUOffset<Field<'a>>>> {
         let mut vec = vec![];
         for (name, ft, val) in fields.iter() {
@@ -167,30 +167,31 @@ mod test {
         point_builder.finish()
     }
 
+    /// Generate `num` points, tags and fields are always the same value.
+    ///
+    /// - Database: "db0"
+    /// - table,ta=a,tb=b fa=100i,fb=1000 1
+    /// - table,ta=a,tb=b fa=100i,fb=1000 2
+    /// - ...
+    /// - table,ta=a,tb=b fa=100i,fb=1000 num-1
+    #[allow(clippy::too_many_arguments)]
     pub fn create_const_points<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        database: &str,
+        table: &str,
+        tags: Vec<(&str, &str)>,
+        fields: Vec<(&str, FieldType, &[u8])>,
+        start_timestamp: i64,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
-        let db = fbb.create_vector("db0".as_bytes());
+        let db = fbb.create_vector(database.as_bytes());
         let mut points = vec![];
-        for _ in 0..num {
-            let timestamp = 1;
-            let tags = create_tags(
-                fbb,
-                vec![("ta", &("a".to_string())), ("tb", &("b".to_string()))],
-            );
+        for timestamp in start_timestamp..start_timestamp + num as i64 {
+            let tags = create_tags(fbb, &tags);
 
-            let fav = 100_i64.to_be_bytes();
-            let fbv = 1000_i64.to_be_bytes();
-            let fields = create_fields(
-                fbb,
-                vec![
-                    ("fa", FieldType::Integer, fav.as_slice()),
-                    ("fb", FieldType::Float, fbv.as_slice()),
-                ],
-            );
+            let fields = create_fields(fbb, &fields);
 
-            let table = fbb.create_vector("table".as_bytes());
+            let table = fbb.create_vector(table.as_bytes());
             points.push(create_point(
                 fbb,
                 timestamp,
@@ -228,9 +229,10 @@ mod test {
             let tags = create_tags(
                 fbb,
                 vec![
-                    ("ta", &("a".to_string() + &tav)),
-                    ("tb", &("b".to_string() + &tbv)),
-                ],
+                    ("ta", ("a".to_string() + &tav).as_str()),
+                    ("tb", ("b".to_string() + &tbv).as_str()),
+                ]
+                .as_slice(),
             );
 
             let fav = rand::random::<i64>().to_be_bytes();
@@ -240,7 +242,8 @@ mod test {
                 vec![
                     ("fa", FieldType::Integer, fav.as_slice()),
                     ("fb", FieldType::Float, fbv.as_slice()),
-                ],
+                ]
+                .as_slice(),
             );
 
             let table = fbb.create_vector("table".as_bytes());
@@ -283,18 +286,20 @@ mod test {
                 create_tags(
                     fbb,
                     vec![
-                        ("ta", &("a".to_string() + &tav)),
-                        ("tb", &("b".to_string() + &tbv)),
-                    ],
+                        ("ta", ("a".to_string() + &tav).as_str()),
+                        ("tb", ("b".to_string() + &tbv).as_str()),
+                    ]
+                    .as_slice(),
                 )
             } else {
                 create_tags(
                     fbb,
                     vec![
-                        ("ta", &("a".to_string() + &tav)),
-                        ("tb", &("b".to_string() + &tbv)),
-                        ("tc", &("c".to_string() + &tbv)),
-                    ],
+                        ("ta", ("a".to_string() + &tav).as_str()),
+                        ("tb", ("b".to_string() + &tbv).as_str()),
+                        ("tc", ("c".to_string() + &tbv).as_str()),
+                    ]
+                    .as_slice(),
                 )
             };
 
@@ -306,7 +311,8 @@ mod test {
                     vec![
                         ("fa", FieldType::Integer, fav.as_slice()),
                         ("fb", FieldType::Float, fbv.as_slice()),
-                    ],
+                    ]
+                    .as_slice(),
                 )
             } else {
                 create_fields(
@@ -315,7 +321,8 @@ mod test {
                         ("fa", FieldType::Integer, fav.as_slice()),
                         ("fb", FieldType::Float, fbv.as_slice()),
                         ("fc", FieldType::Float, fbv.as_slice()),
-                    ],
+                    ]
+                    .as_slice(),
                 )
             };
 
@@ -352,7 +359,7 @@ mod test {
             for _ in 0..19999 {
                 tags.push(("tag", tav.as_str()));
             }
-            let tags = create_tags(fbb, tags);
+            let tags = create_tags(fbb, &tags);
 
             let mut fields = vec![];
             let fav = rand::random::<i64>().to_be_bytes();
@@ -361,7 +368,7 @@ mod test {
                 fields.push(("field_integer", FieldType::Integer, fav.as_slice()));
                 fields.push(("field_float", FieldType::Float, fbv.as_slice()));
             }
-            let fields = create_fields(fbb, fields);
+            let fields = create_fields(fbb, &fields);
 
             let table = fbb.create_vector("table".as_bytes());
             points.push(create_point(
@@ -407,14 +414,14 @@ mod test {
             let tags = create_tags(fbb, vec![
                 (tag_key_values[0].0, tag_key_values[0].1[i as usize / tag_key_values[0].1.len() % tag_key_values[0].1.len()]),
                 (tag_key_values[1].0, tag_key_values[1].1[i as usize % tag_key_values[1].1.len()]),
-            ]);
+            ].as_slice());
 
             let mut fields = vec![];
             let fv = rand::random::<f64>().to_be_bytes();
             for fk in field_keys {
                 fields.push((fk, FieldType::Float, fv.as_slice()));
             }
-            let fields = create_fields(fbb, fields);
+            let fields = create_fields(fbb, &fields);
 
             points.push(create_point(
                 fbb,
