@@ -6,5 +6,8 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+libc = "0.2.133"
 tokio = { workspace = true, features = ["full"] }
+tikv-jemalloc-sys = "0.5.2"
+tikv-jemalloc-ctl = { version = "0.5.0", features = ["use_std"] }
 pprof = { version = "0.11.0", features = ["flamegraph", "protobuf-codec","frame-pointer"] }
