@@ -109,6 +109,8 @@ prost-types = { version = "0.11.2" }
 object_store = { version = "0.5.2", features = ["aws", "gcp", "azure"] }
 url = "2.2"
 protobuf = "3.2.0"
+tikv-jemalloc-ctl = "0.5"
+tikv-jemalloc-sys = "0.5"
 
 [workspace.package]
 version = "2.1.0"

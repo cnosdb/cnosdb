@@ -42,6 +42,8 @@ pub async fn gernate_pprof() -> Result<String, String> {
 const PROF_DUMP: &[u8] = b"prof.dump\0";
 const OPT_PROF: &[u8] = b"opt.prof\0";
 
+// MALLOC_CONF=prof:true
+// CARGO_FEATURE_PROFILING=true
 pub fn gernate_jeprof() -> Result<String, String> {
     // precheck
     if !is_prof_enabled()? {
@@ -54,18 +56,13 @@ pub fn gernate_jeprof() -> Result<String, String> {
         .as_millis();
     let profile_name = format!("/tmp/mem_profile_{}.prof", now_time);
     let mut name_bytes = std::ffi::CString::new(profile_name.clone())
-        .map_err(|e| format!("filename to std::ffi::CString failed {}", e.to_string()))?
+        .map_err(|e| format!("filename to std::ffi::CString failed {}", e))?
         .into_bytes_with_nul();
     let name_ptr = name_bytes.as_mut_ptr() as *mut c_char;
 
     unsafe {
-        tikv_jemalloc_ctl::raw::write(PROF_DUMP, name_ptr).map_err(|e| {
-            format!(
-                "dump Jemalloc prof to path {}: failed: {}",
-                profile_name,
-                e.to_string()
-            )
-        })?;
+        tikv_jemalloc_ctl::raw::write(PROF_DUMP, name_ptr)
+            .map_err(|e| format!("dump Jemalloc prof to path {}: failed: {}", profile_name, e))?;
     }
 
     Ok(format!("gernate memory profile in {}", profile_name))

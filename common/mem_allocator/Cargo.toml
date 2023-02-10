@@ -7,8 +7,7 @@ edition.workspace = true
 
 [dependencies]
 libc = { workspace = true, default-features = false }
-tikv-jemalloc-ctl = { version = "0.5", optional = true }
-tikv-jemalloc-sys = "0.5"
+tikv-jemalloc-sys = { workspace = true }
 
 [dev-dependencies]
-chrono = { workspace = true}
+chrono = { workspace = true }
