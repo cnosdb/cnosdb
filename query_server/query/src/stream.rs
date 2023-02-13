@@ -7,7 +7,7 @@ use datafusion::{
     error::DataFusionError,
     physical_plan::RecordBatchStream,
 };
-use futures::{executor::block_on, FutureExt, Stream};
+use futures::{FutureExt, Stream};
 use models::codec::Encoding;
 use models::schema::TskvTableSchemaRef;
 use models::{
@@ -83,7 +83,7 @@ impl TableScanStream {
             metrics.tskv_metrics(),
         );
 
-        let iterator = block_on(coord.read_record(option))?;
+        let iterator = coord.read_record(option)?;
 
         Ok(Self {
             proj_schema,
