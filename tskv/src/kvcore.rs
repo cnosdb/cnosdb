@@ -641,19 +641,6 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    async fn get_table_schema(
-        &self,
-        tenant: &str,
-        database: &str,
-        tab: &str,
-    ) -> Result<Option<TskvTableSchema>> {
-        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            let val = db.read().await.get_table_schema(tab)?;
-            return Ok(val);
-        }
-        Ok(None)
-    }
-
     async fn get_series_id_by_filter(
         &self,
         id: u32,

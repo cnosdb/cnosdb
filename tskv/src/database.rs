@@ -230,7 +230,7 @@ impl Database {
         let schema_size = table_schema.size();
         let schema_id = table_schema.schema_id;
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
-            schema: TskvTableSchema::default(),
+            schema: Arc::new(TskvTableSchema::default()),
             rows: vec![],
             range: TimeRange {
                 min_ts: i64::MAX,
@@ -315,7 +315,7 @@ impl Database {
         Ok(None)
     }
 
-    pub fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchema>> {
+    pub fn get_table_schema(&self, table_name: &str) -> Result<Option<Arc<TskvTableSchema>>> {
         Ok(self.schemas.get_table_schema(table_name)?)
     }
 

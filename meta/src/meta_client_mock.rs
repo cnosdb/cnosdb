@@ -122,15 +122,19 @@ impl MetaClient for MockMetaClient {
         Ok(None)
     }
 
-    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
-        Ok(Some(TskvTableSchema::default()))
+    fn get_tskv_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
+        Ok(Some(Arc::new(TskvTableSchema::default())))
     }
 
     fn get_external_table_schema(
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<ExternalTableSchema>> {
+    ) -> MetaResult<Option<Arc<ExternalTableSchema>>> {
         Ok(None)
     }
 

@@ -1232,7 +1232,7 @@ mod test {
         );
 
         let row_group = RowGroup {
-            schema: default_with_field_id(vec![0, 1, 2]),
+            schema: default_with_field_id(vec![0, 1, 2]).into(),
             range: TimeRange {
                 min_ts: 1,
                 max_ts: 100,
@@ -1335,7 +1335,7 @@ mod test {
 
         let mem = MemCache::new(0, 1000, 0);
         let row_group = RowGroup {
-            schema: default_with_field_id(vec![0, 1, 2]),
+            schema: default_with_field_id(vec![0, 1, 2]).into(),
             range: TimeRange {
                 min_ts: 1,
                 max_ts: 100,

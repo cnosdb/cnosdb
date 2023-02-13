@@ -52,10 +52,10 @@ impl InformationSchemaTableFactory for ColumnsFactory {
                 if let Some(table) = metadata.get_table_schema(&db, &table)? {
                     match table {
                         TableSchema::TsKvTableSchema(t) => {
-                            append_tskv_table(tenant_name, &db, t, &mut builder);
+                            append_tskv_table(tenant_name, &db, t.clone(), &mut builder);
                         }
                         TableSchema::ExternalTableSchema(t) => {
-                            append_external_table(tenant_name, &db, t, &mut builder);
+                            append_external_table(tenant_name, &db, t.clone(), &mut builder);
                         }
                     }
                 }
@@ -71,7 +71,7 @@ impl InformationSchemaTableFactory for ColumnsFactory {
 fn append_tskv_table(
     tenant_name: &str,
     database_name: &str,
-    table: TskvTableSchema,
+    table: Arc<TskvTableSchema>,
     builder: &mut InformationSchemaColumnsBuilder,
 ) {
     for (idx, col) in table.columns().iter().enumerate() {
@@ -93,7 +93,7 @@ fn append_tskv_table(
 fn append_external_table(
     tenant_name: &str,
     database_name: &str,
-    table: ExternalTableSchema,
+    table: Arc<ExternalTableSchema>,
     builder: &mut InformationSchemaColumnsBuilder,
 ) {
     for (idx, col) in table.schema.all_fields().iter().enumerate() {

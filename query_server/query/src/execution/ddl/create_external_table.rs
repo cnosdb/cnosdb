@@ -103,7 +103,7 @@ async fn create_exernal_table(
     // .context(MetaSnafu)?;
 
     Ok(client
-        .create_table(&TableSchema::ExternalTableSchema(schema))
+        .create_table(&TableSchema::ExternalTableSchema(Arc::new(schema)))
         .await?)
     // .context(MetaSnafu)
 }

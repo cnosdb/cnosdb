@@ -512,8 +512,8 @@ pub mod tsm_writer_tests {
         let tsm_seq = file_utils::get_tsm_file_id_by_path(&path)?;
         let path = path.as_ref();
         let dir = path.parent().unwrap();
-        if !file_manager::try_exists(&dir) {
-            std::fs::create_dir_all(&dir).context(super::IOSnafu)?;
+        if !file_manager::try_exists(dir) {
+            std::fs::create_dir_all(dir).context(super::IOSnafu)?;
         }
         let mut writer = TsmWriter::open(path, tsm_seq, false, 0).await?;
         for (fid, blks) in data.iter() {

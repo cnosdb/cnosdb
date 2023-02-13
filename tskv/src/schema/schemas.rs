@@ -11,6 +11,7 @@ use parking_lot::RwLock;
 use protos::models::Point;
 use snafu::ResultExt;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::Error;
 use trace::{error, info, warn};
@@ -113,7 +114,7 @@ impl DBschemas {
                 schema.db = db_name;
                 schema.name = table_name;
                 new_schema = true;
-                schema
+                Arc::new(schema)
             }
             Some(schema) => schema,
         };
@@ -143,7 +144,9 @@ impl DBschemas {
                 None => {
                     schema_change = true;
                     field.id = schema.columns().len() as ColumnId;
-                    schema.add_column(field.clone());
+                    let mut schema_t = schema.as_ref().clone();
+                    schema_t.add_column(field.clone());
+                    schema = Arc::new(schema_t)
                 }
             }
             Ok(())
@@ -173,20 +176,22 @@ impl DBschemas {
 
         //schema changed store it
         if new_schema {
+            let mut schema = schema.as_ref().clone();
             schema.schema_id = 0;
             self.client
-                .create_table(&TableSchema::TsKvTableSchema(schema.clone()))
+                .create_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
                 .await?;
         } else if schema_change {
+            let mut schema = schema.as_ref().clone();
             schema.schema_id += 1;
             self.client
-                .update_table(&TableSchema::TsKvTableSchema(schema.clone()))
+                .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
                 .await?;
         }
         Ok(())
     }
 
-    pub fn get_table_schema(&self, tab: &str) -> Result<Option<TskvTableSchema>> {
+    pub fn get_table_schema(&self, tab: &str) -> Result<Option<Arc<TskvTableSchema>>> {
         let schema = self
             .client
             .get_tskv_table_schema(&self.database_name, tab)?;
