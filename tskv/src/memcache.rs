@@ -542,8 +542,11 @@ impl Display for DataType {
 pub(crate) mod test {
     use bytes::buf;
     use models::schema::TskvTableSchema;
-    use models::{SchemaId, SeriesId, Timestamp};
+    use models::{FieldId, SchemaId, SeriesId, Timestamp};
+    use parking_lot::RwLock;
+    use std::collections::HashMap;
     use std::mem::{size_of, size_of_val};
+    use std::sync::Arc;
 
     use crate::{tsm::DataBlock, TimeRange};
 
@@ -582,5 +585,35 @@ pub(crate) mod test {
             size: size_of::<RowGroup>() + size,
         };
         cache.write_group(series_id, 1, row_group);
+    }
+
+    pub(crate) fn get_one_series_cache_data(
+        cache: Arc<RwLock<MemCache>>,
+    ) -> HashMap<String, Vec<(Timestamp, FieldVal)>> {
+        let mut fname_vals_map: HashMap<String, Vec<(Timestamp, FieldVal)>> = HashMap::new();
+        let series_data = cache.read().read_series_data();
+        for (sid, sdata) in series_data {
+            let sdata_rlock = sdata.read();
+            let schema_groups = sdata_rlock.flat_groups();
+            for (sch_id, sch, row) in schema_groups {
+                let fields = sch.fields();
+                for r in row {
+                    for (i, f) in r.fields.iter().enumerate() {
+                        if let Some(fv) = f {
+                            if let Some(c) = fields.get(i) {
+                                if &c.name != "time" {
+                                    fname_vals_map
+                                        .entry(c.name.clone())
+                                        .or_default()
+                                        .push((r.ts, fv.clone()))
+                                }
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        fname_vals_map
     }
 }

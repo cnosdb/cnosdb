@@ -707,7 +707,7 @@ impl MetaClient for RemoteMetaClient {
         }
 
         Err(MetaError::CommonError {
-            msg: "create bucket unknown error".to_string(),
+            msg: format!("create bucket unknown error db:{} {}", db, ts),
         })
     }
 

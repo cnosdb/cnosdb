@@ -14,8 +14,13 @@ use tokio::{
 use trace::{error, info, warn};
 
 use crate::{
-    context::GlobalContext, error::Result, kv_option::StorageOptions, summary::SummaryTask,
-    version_set::VersionSet, TseriesFamilyId,
+    compaction::{LevelCompactionPicker, Picker},
+    context::GlobalContext,
+    error::Result,
+    kv_option::StorageOptions,
+    summary::SummaryTask,
+    version_set::VersionSet,
+    TseriesFamilyId,
 };
 
 pub fn run(
@@ -44,7 +49,9 @@ pub fn run(
                 info!("Starting compaction on ts_family {}", ts_family_id);
                 let start = Instant::now();
 
-                let compact_req = tsf.read().pick_compaction();
+                let picker = LevelCompactionPicker::new(storage_opt.clone());
+                let version = tsf.read().version();
+                let compact_req = picker.pick_compaction(version);
                 if let Some(req) = compact_req {
                     let database = req.database.clone();
                     let compact_ts_family = req.ts_family_id;

@@ -106,7 +106,10 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             });
         }
 
-        let stmt = statements[0].clone();
+        let stmt = match statements.front() {
+            Some(stmt) => stmt.clone(),
+            None => return Ok(Output::Nil(())),
+        };
 
         let query_state_machine = Arc::new(QueryStateMachine::begin(
             query_id,
@@ -153,7 +156,7 @@ impl SimpleQueryDispatcher {
         // begin analyze
         query_state_machine.begin_analyze();
         let logical_plan = logical_planner
-            .create_logical_plan(stmt.clone(), &query_state_machine.session)
+            .create_logical_plan(stmt, &query_state_machine.session)
             .await?;
         query_state_machine.end_analyze();
 

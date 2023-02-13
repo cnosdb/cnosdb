@@ -31,8 +31,9 @@ pub const STRING_CODEC: [Encoding; 7] = [
 
 pub const BOOLEAN_CODEC: [Encoding; 3] = [Encoding::Default, Encoding::Null, Encoding::BitPack];
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Hash, Default)]
 pub enum Encoding {
+    #[default]
     Default = 0,
     Null = 1,
     Delta = 2,
@@ -87,12 +88,6 @@ impl Encoding {
             Encoding::BitPack => "BITPACK",
             Encoding::Unknown => "UNKNOWN",
         }
-    }
-}
-
-impl Default for Encoding {
-    fn default() -> Self {
-        Encoding::Default
     }
 }
 

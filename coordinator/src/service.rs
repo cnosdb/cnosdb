@@ -52,7 +52,7 @@ pub trait Coordinator: Send + Sync + Debug {
         req: AdminStatementRequest,
     ) -> CoordinatorResult<()>;
 
-    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
+    fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
 
     async fn vnode_manager(
         &self,
@@ -99,7 +99,7 @@ impl Coordinator for MockCoordinator {
         Ok(())
     }
 
-    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
+    fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
         let (it, _) = ReaderIterator::new();
         Ok(it)
     }
@@ -466,7 +466,7 @@ impl Coordinator for CoordService {
         res
     }
 
-    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
+    fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
         let (iterator, sender) = ReaderIterator::new();
 
         tokio::spawn(CoordService::select_statement_request(

@@ -1,11 +1,10 @@
-use std::{fmt::Debug, io};
-
 use datafusion::arrow::error::ArrowError;
 use datafusion::error::DataFusionError;
-use snafu::Snafu;
-
+use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
+use snafu::Snafu;
+use std::{fmt::Debug, io};
 
 #[derive(Snafu, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]
@@ -205,6 +204,12 @@ impl CoordinatorError {
             CoordinatorError::TskvError { source } => source.error_code(),
             _ => self,
         }
+    }
+}
+
+impl From<flatbuffers::InvalidFlatbuffer> for CoordinatorError {
+    fn from(value: InvalidFlatbuffer) -> Self {
+        Self::InvalidFlatbuffer { source: value }
     }
 }
 

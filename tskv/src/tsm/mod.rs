@@ -22,9 +22,6 @@ const BLOOM_FILTER_SIZE: usize = 64;
 const BLOOM_FILTER_BITS: u64 = 512; // 64 * 8
 const FOOTER_SIZE: usize = BLOOM_FILTER_SIZE + 8; // 72
 
-#[derive(Debug, Snafu)]
-pub enum TsmError {}
-
 pub trait BlockReader {
     fn decode(&mut self, block: &BlockMeta) -> crate::error::Result<DataBlock>;
 }
