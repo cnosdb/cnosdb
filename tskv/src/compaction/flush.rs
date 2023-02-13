@@ -632,7 +632,11 @@ pub mod flush_tests {
             }
         }
 
-        read_and_check(tsm_reader.as_ref().unwrap(), expected_tsm_data).await;
-        read_and_check(dlt_reader.as_ref().unwrap(), expected_delta_data).await;
+        read_and_check(tsm_reader.as_ref().unwrap(), expected_tsm_data)
+            .await
+            .unwrap();
+        read_and_check(dlt_reader.as_ref().unwrap(), expected_delta_data)
+            .await
+            .unwrap();
     }
 }

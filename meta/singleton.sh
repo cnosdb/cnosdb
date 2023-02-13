@@ -8,6 +8,7 @@ PROJ_DIR=$(
   cd ..
   pwd
 )
+ARG_RUN_RELEASE=0
 ARG_SKIP_BUILD=0
 ARG_SKIP_CLEAN=0
 
@@ -18,6 +19,7 @@ function usage() {
   echo "    ${0} [OPTIONS]"
   echo
   echo "OPTIONS:"
+  echo "    --release            Run release version of CnosDB Metadata Server"
   echo "    -sb, --skip-build    Skip building before running CnosdDB Metadata Server"
   echo "    -sc, --skip-clean    Clean data directory before running CnosdDB Metadata Server"
   echo
@@ -26,6 +28,10 @@ function usage() {
 while [[ $# -gt 0 ]]; do
   key=${1}
   case ${key} in
+  --release)
+    ARG_RUN_RELEASE=1
+    shift 1
+    ;;
   -sb | --skip-build)
     ARG_SKIP_BUILD=1
     shift 1
@@ -46,12 +52,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "=== CnosDB Metadata Server (singleton) ==="
-echo "ARG_SKIP_BUILD = ${ARG_SKIP_BUILD}"
-echo "ARG_SKIP_CLEAN = ${ARG_SKIP_CLEAN}"
+echo "ARG_RUN_RELEASE = ${ARG_RUN_RELEASE}"
+echo "ARG_SKIP_BUILD  = ${ARG_SKIP_BUILD}"
+echo "ARG_SKIP_CLEAN  = ${ARG_SKIP_CLEAN}"
 echo "----------------------------------------"
 
 if [ ${ARG_SKIP_BUILD} -eq 0 ]; then
-  cargo build --package meta --bin cnosdb-meta
+  if [ ${ARG_RUN_RELEASE} -eq 0 ]; then
+    cargo build --package meta --bin cnosdb-meta
+  else
+    cargo build --package meta --bin cnosdb-meta --release
+  fi
 fi
 if [ ${ARG_SKIP_CLEAN} -eq 0 ]; then
   rm -rf /tmp/cnosdb/meta
@@ -103,7 +114,12 @@ echo "Start 1 uninitialized cnosdb-meta servers..."
 
 mkdir -p /tmp/cnosdb/logs
 
-nohup ${PROJ_DIR}/target/debug/cnosdb-meta --id 1 --http-addr 127.0.0.1:21001 >/tmp/cnosdb/logs/meta_node.1.log &
+if [ ${ARG_RUN_RELEASE} -eq 0 ]; then
+  nohup ${PROJ_DIR}/target/debug/cnosdb-meta --id 1 --http-addr 127.0.0.1:21001 >/tmp/cnosdb/logs/meta_node.1.log &
+else
+  nohup ${PROJ_DIR}/target/release/cnosdb-meta --id 1 --http-addr 127.0.0.1:21001 >/tmp/cnosdb/logs/meta_node.1.log &
+fi
+
 echo "Server 1 started"
 sleep 1
 

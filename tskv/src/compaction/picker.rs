@@ -421,6 +421,7 @@ mod test {
     use tokio::sync::mpsc;
 
     use crate::compaction::test::create_options;
+    use crate::compaction::{LevelCompactionPicker, Picker};
     use crate::{
         file_utils::make_tsm_file_name,
         kv_option::{Options, StorageOptions},
@@ -544,8 +545,10 @@ mod test {
             ]), // 0.00001
         ];
 
+        let storage_opt = opt.storage.clone();
         let tsf = create_tseries_family(Arc::new("dba".to_string()), opt, levels_sketch);
-        let compact_req = tsf.pick_compaction().unwrap();
+        let picker = LevelCompactionPicker::new(storage_opt);
+        let compact_req = picker.pick_compaction(tsf.version()).unwrap();
         assert_eq!(compact_req.out_level, 2);
         assert_eq!(compact_req.files.len(), 2);
     }
