@@ -1,3 +1,4 @@
+mod bytes_num;
 mod duration;
 
 use std::{fs::File, io::prelude::Read, time::Duration};
@@ -94,9 +95,12 @@ impl QueryConfig {
 pub struct StorageConfig {
     #[serde(default = "StorageConfig::default_path")]
     pub path: String,
-    #[serde(default = "StorageConfig::default_max_summary_size")]
+    #[serde(
+        with = "bytes_num",
+        default = "StorageConfig::default_max_summary_size"
+    )]
     pub max_summary_size: u64,
-    #[serde(default = "StorageConfig::default_base_file_size")]
+    #[serde(with = "bytes_num", default = "StorageConfig::default_base_file_size")]
     pub base_file_size: u64,
     #[serde(default = "StorageConfig::default_max_level")]
     pub max_level: u16,
@@ -107,7 +111,10 @@ pub struct StorageConfig {
         default = "StorageConfig::default_compact_trigger_cold_duration"
     )]
     pub compact_trigger_cold_duration: Duration,
-    #[serde(default = "StorageConfig::default_max_compact_size")]
+    #[serde(
+        with = "bytes_num",
+        default = "StorageConfig::default_max_compact_size"
+    )]
     pub max_compact_size: u64,
     #[serde(default = "StorageConfig::default_max_concurrent_compaction")]
     pub max_concurrent_compaction: u16,
@@ -197,7 +204,7 @@ pub struct WalConfig {
     pub enabled: bool,
     #[serde(default = "WalConfig::default_path")]
     pub path: String,
-    #[serde(default = "WalConfig::default_max_file_size")]
+    #[serde(with = "bytes_num", default = "WalConfig::default_max_file_size")]
     pub max_file_size: u64,
     #[serde(default = "WalConfig::default_sync")]
     pub sync: bool,
@@ -235,7 +242,7 @@ impl WalConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheConfig {
-    #[serde(default = "CacheConfig::default_max_buffer_size")]
+    #[serde(with = "bytes_num", default = "CacheConfig::default_max_buffer_size")]
     pub max_buffer_size: u64,
     #[serde(default = "CacheConfig::default_max_immutable_number")]
     pub max_immutable_number: u16,
@@ -426,38 +433,65 @@ impl HintedOffConfig {
 #[test]
 fn test() {
     let config_str = r#"
-
-
 #reporting_disabled = false
 
 [query]
 max_server_connections = 10240
-query_sql_limit = 16777216
-write_sql_limit = 167772160
+query_sql_limit = 16777216   # 16 * 1024 * 1024
+write_sql_limit = 167772160  # 160 * 1024 * 1024
 auth_enabled = false
 
 [storage]
-# Directory for summary: $path/summary/
-# Directory for index: $path/index/$database/
-# Directory for tsm: $path/data/$database/tsm/
-# Directory for delta: $path/data/$database/delta/
+
+# The directory where database files stored.
+# Directory for summary:    $path/summary
+# Directory for index:      $path/$database/data/id/index
+# Directory for tsm:        $path/$database/data/id/tsm
+# Directory for delta:      $path/$database/data/id/delta
 path = 'data/db'
-max_summary_size = 134217728 # 128 * 1024 * 1024
-base_file_size = 16777216 # 16 * 1024 * 1024
+
+# The maximum file size of summary file.
+max_summary_size = "128M" # 134217728
+
+# The maximum file size of a level is:
+# $base_file_size * level * $compact_trigger_file_num
+base_file_size = "16M" # 16777216
+
+# The maxmimum data file level (from 0 to 4).
 max_level = 4
+
+# Trigger of compaction using the number of level 0 files.
 compact_trigger_file_num = 4
+
+# Duration since last write to trigger compaction.
 compact_trigger_cold_duration = "1h"
-max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
+
+# The maximum size of all files in a compaction.
+max_compact_size = "2G" # 2147483648
+
+# The maximum concurrent compactions.
 max_concurrent_compaction = 4
+
+# If true, write request will not be checked in detail.
 strict_write = false
 
 [wal]
+
+# If true, write requets on disk before writing to memory.
 enabled = true
+
+# The directory where write ahead logs stored.
 path = 'data/wal'
+
+# The maximum size of a wal file.
+max_file_size = "1G" # 1073741824
+
+# If true, fsync will be called after every wal writes.
 sync = false
+sync_interval = "0" # h, m, s
 
 [cache]
-max_buffer_size = 134217728 # 128 * 1024 * 1024
+max_buffer_size = "128M" # 134217728
 max_immutable_number = 4
 
 [log]
@@ -472,7 +506,8 @@ path = 'data/log'
 [cluster]
 node_id = 100
 name = 'cluster_xxx'
-meta = '127.0.0.1,22001'
+meta = '127.0.0.1:21001'
+tenant = ''
 
 flight_rpc_server = '127.0.0.1:31006'
 http_server = '127.0.0.1:31007'
@@ -482,6 +517,7 @@ tcp_server = '127.0.0.1:31009'
 [hintedoff]
 enable = true
 path = '/tmp/cnosdb/hh'
+
 
 "#;
 

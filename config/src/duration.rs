@@ -53,7 +53,7 @@ pub(crate) fn parse_duration(duration_str: &str) -> Result<Duration, Box<dyn Err
         return Ok(Duration::from_nanos(0));
     }
     if duration_str.is_empty() {
-        return Err(From::from(format!("invalid duration '{}'", duration_str)));
+        return Err(From::from(format!("Invalid duration '{}'", duration_str)));
     }
 
     let chars: Vec<char> = duration_str.chars().collect();
