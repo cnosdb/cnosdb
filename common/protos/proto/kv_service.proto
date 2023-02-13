@@ -30,67 +30,24 @@ message FieldInfo {
   uint64 id = 3;
 }
 
-message AddSeriesRpcRequest {
-  uint64 version = 1;
-  uint64 series_id = 2;
-  repeated Tag tags = 3;
-  repeated FieldInfo fields = 4;
-}
-
-message AddSeriesRpcResponse {
-  uint64 version = 1;
-  uint64 series_id = 2;
-  repeated Tag tags = 3;
-  repeated FieldInfo fields = 4;
-}
-
-message GetSeriesInfoRpcRequest {
-  uint64 protocol_version = 1;
-  uint64 series_id = 2;
-}
-
-message GetSeriesInfoRpcResponse {
-  uint64 version = 1;
-  uint64 series_id = 2;
-  repeated Tag tags = 3;
-  repeated FieldInfo fields = 4;
-}
-
-message WriteRowsRpcRequest {
-  uint64 version = 1;
-  bytes rows = 2; // flatbuffers bytes ( models::Rows )
-}
-
-message WriteRowsRpcResponse {
-  uint64 version = 1;
-  bytes rows = 2; // flatbuffers bytes ( models::Rows )
-}
-
 message Meta {
   string tenant = 1;
   optional string user = 2;
   optional string password = 3;
 }
 
-message WritePointsRpcRequest {
+message WritePointsRequest {
   uint64 version = 1;
   Meta meta = 2;
   bytes points = 3; // flatbuffers bytes ( models::Points )
 }
 
-message WritePointsRpcResponse {
-  uint64 version = 1;
-  bytes points = 2; // flatbuffers bytes ( models::Points )
+message WritePointsResponse {
+  uint64 size = 1;
 }
 
 service TSKVService {
   rpc Ping(PingRequest) returns (PingResponse);
 
-  rpc AddSeries(AddSeriesRpcRequest) returns (AddSeriesRpcResponse) {};
-
-  rpc GetSeriesInfo(GetSeriesInfoRpcRequest) returns (GetSeriesInfoRpcResponse) {};
-
-  rpc WriteRows(stream WriteRowsRpcRequest) returns (stream WriteRowsRpcResponse) {};
-
-  rpc WritePoints(stream WritePointsRpcRequest) returns (stream WritePointsRpcResponse) {};
+  rpc WritePoints(stream WritePointsRequest) returns (stream WritePointsResponse) {};
 }

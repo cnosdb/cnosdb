@@ -1,55 +1,19 @@
 #![allow(clippy::too_many_arguments)]
 
 use std::borrow::Borrow;
+use std::fmt::Display;
 use std::ops::Not;
-use std::{collections::HashMap, convert::Infallible, net::SocketAddr, sync::Arc};
+use std::time::Instant;
+use std::{collections::HashMap, convert::Infallible, fmt, net::SocketAddr, sync::Arc};
 
-use coordinator::service::CoordinatorRef;
-use http_protocol::header::{ACCEPT, AUTHORIZATION};
-use http_protocol::parameter::{SqlParam, WriteParam};
-use http_protocol::response::ErrorResponse;
-use query::prom::remote_server::PromRemoteSqlServer;
-use spi::server::prom::PromRemoteServerRef;
-
-use super::header::Header;
-use super::Error as HttpError;
-use crate::http::response::ResponseBuilder;
-use crate::http::result_format::fetch_record_batches;
-use crate::http::result_format::ResultFormat;
-use crate::http::Error;
-use crate::http::ParseLineProtocolSnafu;
-use crate::http::QuerySnafu;
-use crate::server::{Service, ServiceHandle};
-use crate::{server, VERSION};
 use chrono::Local;
-use config::TLSConfig;
-use coordinator::hh_queue::HintedOffManager;
-use coordinator::writer::{PointWriter, VnodeMapping};
 use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
-use line_protocol::{line_protocol_to_lines, parse_lines_to_points, Line};
-use meta::error::MetaError;
-use meta::MetaClientRef;
-use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
-use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
-use models::consistency_level::ConsistencyLevel;
-use models::error_code::{ErrorCode, UnknownCode, UnknownCodeWithMessage};
-use models::oid::{Identifier, Oid};
-use models::schema::DEFAULT_CATALOG;
-use protos::kv_service::{Meta, WritePointsRpcRequest};
-use protos::models as fb_models;
-use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
+use libc::sleep;
 use snafu::ResultExt;
-use spi::server::dbms::DBMSRef;
-use spi::service::protocol::Query;
-use spi::service::protocol::{Context, ContextBuilder};
-use spi::QueryError;
-use std::time::Instant;
 use tokio::sync::oneshot;
-use trace::debug;
-use trace::info;
-use tskv::engine::EngineRef;
+use tokio::time::Sleep;
 use warp::hyper::body::Bytes;
 use warp::hyper::Body;
 use warp::reject::MethodNotAllowed;
@@ -60,27 +24,90 @@ use warp::Rejection;
 use warp::Reply;
 use warp::{header, reject, Filter};
 
+use config::TLSConfig;
+use coordinator::hh_queue::HintedOffManager;
+use coordinator::service::CoordinatorRef;
+use coordinator::writer::{PointWriter, VnodeMapping};
+use http_protocol::header::{ACCEPT, AUTHORIZATION};
+use http_protocol::parameter::{SqlParam, WriteParam};
+use http_protocol::response::ErrorResponse;
+use line_protocol::{line_protocol_to_lines, parse_lines_to_points, Line};
+use meta::error::MetaError;
+use meta::MetaClientRef;
+use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
+use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
+use models::consistency_level::ConsistencyLevel;
+use models::error_code::{ErrorCode, UnknownCode, UnknownCodeWithMessage};
+use models::oid::{Identifier, Oid};
+use models::schema::DEFAULT_CATALOG;
+use protos::kv_service::{Meta, WritePointsRequest};
+use protos::models as fb_models;
+use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
+use query::prom::remote_server::PromRemoteSqlServer;
+use spi::server::dbms::DBMSRef;
+use spi::server::prom::PromRemoteServerRef;
+use spi::service::protocol::Query;
+use spi::service::protocol::{Context, ContextBuilder};
+use spi::QueryError;
+use trace::debug;
+use trace::info;
+use tskv::engine::EngineRef;
+
+use crate::http::response::ResponseBuilder;
+use crate::http::result_format::fetch_record_batches;
+use crate::http::result_format::ResultFormat;
+use crate::http::Error;
+use crate::http::ParseLineProtocolSnafu;
+use crate::http::QuerySnafu;
+use crate::server::{Service, ServiceHandle};
+use crate::{server, VERSION};
+
+use super::header::Header;
+use super::Error as HttpError;
+
+pub enum ServerMode {
+    Store,
+    Query,
+    Bundle,
+}
+
+impl Display for ServerMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ServerMode::Store => {
+                write!(f, "store mode")
+            }
+            ServerMode::Query => {
+                write!(f, "query mode")
+            }
+            ServerMode::Bundle => {
+                write!(f, "bundle mode")
+            }
+        }
+    }
+}
+
 pub struct HttpService {
     tls_config: Option<TLSConfig>,
     addr: SocketAddr,
     dbms: DBMSRef,
-    kv_inst: EngineRef,
     coord: CoordinatorRef,
     prs: PromRemoteServerRef,
     handle: Option<ServiceHandle<()>>,
     query_body_limit: u64,
     write_body_limit: u64,
+    mode: ServerMode,
 }
 
 impl HttpService {
     pub fn new(
         dbms: DBMSRef,
-        kv_inst: EngineRef,
         coord: CoordinatorRef,
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
         query_body_limit: u64,
         write_body_limit: u64,
+        mode: ServerMode,
     ) -> Self {
         let prs = Arc::new(PromRemoteSqlServer::new(dbms.clone()));
 
@@ -88,12 +115,12 @@ impl HttpService {
             tls_config,
             addr,
             dbms,
-            kv_inst,
             coord,
             prs,
             handle: None,
             query_body_limit,
             write_body_limit,
+            mode,
         }
     }
 
@@ -114,10 +141,7 @@ impl HttpService {
         let dbms = self.dbms.clone();
         warp::any().map(move || dbms.clone())
     }
-    fn with_kv_inst(&self) -> impl Filter<Extract = (EngineRef,), Error = Infallible> + Clone {
-        let kv_inst = self.kv_inst.clone();
-        warp::any().map(move || kv_inst.clone())
-    }
+
     fn with_coord(&self) -> impl Filter<Extract = (CoordinatorRef,), Error = Infallible> + Clone {
         let coord = self.coord.clone();
         warp::any().map(move || coord.clone())
@@ -129,7 +153,7 @@ impl HttpService {
         warp::any().map(move || prs.clone())
     }
 
-    fn routes(
+    fn routes_bundle(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         self.ping()
@@ -138,6 +162,26 @@ impl HttpService {
             .or(self.metrics())
             .or(self.print_meta())
             .or(self.prom_remote_read())
+            .or(self.prom_remote_write())
+    }
+
+    fn routes_query(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        self.ping()
+            .or(self.query())
+            .or(self.metrics())
+            .or(self.print_meta())
+            .or(self.prom_remote_read())
+    }
+
+    fn routes_store(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        self.ping()
+            .or(self.write_line_protocol())
+            .or(self.metrics())
+            .or(self.print_meta())
             .or(self.prom_remote_write())
     }
 
@@ -376,7 +420,6 @@ impl HttpService {
 #[async_trait::async_trait]
 impl Service for HttpService {
     fn start(&mut self) -> Result<(), server::Error> {
-        let routes = self.routes().recover(handle_rejection);
         let (shutdown, rx) = oneshot::channel();
         let signal = async {
             rx.await.ok();
@@ -387,17 +430,62 @@ impl Service for HttpService {
             private_key,
         }) = &self.tls_config
         {
-            let (addr, server) = warp::serve(routes)
-                .tls()
-                .cert_path(certificate)
-                .key_path(private_key)
-                .bind_with_graceful_shutdown(self.addr, signal);
-            info!("http server start addr: {}", addr);
-            tokio::spawn(server)
+            match self.mode {
+                ServerMode::Store => {
+                    let routes = self.routes_store().recover(handle_rejection);
+                    let (addr, server) = warp::serve(routes)
+                        .tls()
+                        .cert_path(certificate)
+                        .key_path(private_key)
+                        .bind_with_graceful_shutdown(self.addr, signal);
+                    info!("http server start addr: {}, {}", addr, self.mode);
+                    tokio::spawn(server)
+                }
+                ServerMode::Query => {
+                    let routes = self.routes_query().recover(handle_rejection);
+                    let (addr, server) = warp::serve(routes)
+                        .tls()
+                        .cert_path(certificate)
+                        .key_path(private_key)
+                        .bind_with_graceful_shutdown(self.addr, signal);
+                    info!("http server start addr: {}, {}", addr, self.mode);
+                    tokio::spawn(server)
+                }
+                ServerMode::Bundle => {
+                    let routes = self.routes_query().recover(handle_rejection);
+                    let (addr, server) = warp::serve(routes)
+                        .tls()
+                        .cert_path(certificate)
+                        .key_path(private_key)
+                        .bind_with_graceful_shutdown(self.addr, signal);
+                    info!("http server start addr: {}, {}", addr, self.mode);
+                    tokio::spawn(server)
+                }
+            }
         } else {
-            let (addr, server) = warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
-            info!("http server start addr: {}", addr);
-            tokio::spawn(server)
+            match self.mode {
+                ServerMode::Store => {
+                    let routes = self.routes_store().recover(handle_rejection);
+                    let (addr, server) =
+                        warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
+                    info!("http server start addr: {}, {}", addr, self.mode);
+                    tokio::spawn(server)
+                }
+                ServerMode::Query => {
+                    let routes = self.routes_query().recover(handle_rejection);
+                    let (addr, server) =
+                        warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
+                    info!("http server start addr: {}, {}", addr, self.mode);
+                    tokio::spawn(server)
+                }
+                ServerMode::Bundle => {
+                    let routes = self.routes_bundle().recover(handle_rejection);
+                    let (addr, server) =
+                        warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
+                    info!("http server start addr: {}, {}", addr, self.mode);
+                    tokio::spawn(server)
+                }
+            }
         };
         self.handle = Some(ServiceHandle::new(
             "http service".to_string(),
@@ -493,14 +581,14 @@ async fn construct_write_context(
 fn construct_write_points_request(
     req: Bytes,
     ctx: &Context,
-) -> Result<WritePointsRpcRequest, HttpError> {
+) -> Result<WritePointsRequest, HttpError> {
     let lines = String::from_utf8_lossy(req.as_ref());
     let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
         .map_err(|e| HttpError::ParseLineProtocol { source: e })?;
 
     let points = parse_lines_to_points(ctx.database(), &line_protocol_lines);
 
-    let req = WritePointsRpcRequest {
+    let req = WritePointsRequest {
         version: 1,
         meta: None,
         points,

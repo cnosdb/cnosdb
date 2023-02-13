@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use coordinator::service::CoordinatorRef;
 use derive_builder::Builder;
+use snafu::ResultExt;
+
+use coordinator::service::CoordinatorRef;
+use meta::error::MetaError;
+use models::schema::{DatabaseSchema, DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::{
     auth::{
         role::{SystemTenantRole, TenantRoleIdentifier},
@@ -12,6 +16,7 @@ use models::{
     schema::TenantOptionsBuilder,
 };
 use spi::AuthSnafu;
+use spi::Result;
 use spi::{
     query::{
         auth::AccessControlRef, dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory,
@@ -30,11 +35,6 @@ use crate::{
     auth::auth_control::{AccessControlImpl, AccessControlNoCheck},
     execution::scheduler::LocalScheduler,
 };
-use meta::error::MetaError;
-use models::schema::{DatabaseSchema, DEFAULT_CATALOG, DEFAULT_DATABASE};
-use snafu::ResultExt;
-use spi::Result;
-use tskv::engine::EngineRef;
 
 #[derive(Builder)]
 pub struct Cnosdbms<D> {
@@ -98,7 +98,6 @@ where
 }
 
 pub async fn make_cnosdbms(
-    _engine: EngineRef,
     coord: CoordinatorRef,
     options: Options,
 ) -> Result<impl DatabaseManagerSystem> {
@@ -225,18 +224,19 @@ async fn init_metadata(coord: CoordinatorRef) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::DerefMut;
+
     use chrono::Utc;
+    use datafusion::arrow::{record_batch::RecordBatch, util::pretty::pretty_format_batches};
+
     use config::get_config;
     use coordinator::service::MockCoordinator;
     use models::auth::user::UserInfo;
-    use std::ops::DerefMut;
+    use models::schema::DEFAULT_CATALOG;
+    use spi::service::protocol::ContextBuilder;
     use trace::debug;
 
     use super::*;
-    use datafusion::arrow::{record_batch::RecordBatch, util::pretty::pretty_format_batches};
-    use models::schema::DEFAULT_CATALOG;
-    use spi::service::protocol::ContextBuilder;
-    use tskv::engine::MockEngine;
 
     #[macro_export]
     macro_rules! assert_batches_eq {
@@ -279,13 +279,9 @@ mod tests {
     async fn test_simple_sql() {
         let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(
-            Arc::new(MockEngine::default()),
-            Arc::new(MockCoordinator::default()),
-            opt,
-        )
-        .await
-        .unwrap();
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+            .await
+            .unwrap();
 
         let mut result = exec_sql(&db, "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS t (num,letter) order by num").await;
 
@@ -340,13 +336,9 @@ mod tests {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
         let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(
-            Arc::new(MockEngine::default()),
-            Arc::new(MockCoordinator::default()),
-            opt,
-        )
-        .await
-        .unwrap();
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+            .await
+            .unwrap();
 
         let sql = format!(
             "SELECT * FROM
@@ -381,13 +373,9 @@ mod tests {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
         let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(
-            Arc::new(MockEngine::default()),
-            Arc::new(MockCoordinator::default()),
-            opt,
-        )
-        .await
-        .unwrap();
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+            .await
+            .unwrap();
 
         let mut result = exec_sql(
             &db,
@@ -421,13 +409,9 @@ mod tests {
     async fn test_create_external_csv_table() {
         let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(
-            Arc::new(MockEngine::default()),
-            Arc::new(MockCoordinator::default()),
-            opt,
-        )
-        .await
-        .unwrap();
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+            .await
+            .unwrap();
 
         assert_batches_eq!(
             vec!["++", "++", "++",],
@@ -481,13 +465,9 @@ mod tests {
     async fn test_create_external_parquet_table() {
         let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(
-            Arc::new(MockEngine::default()),
-            Arc::new(MockCoordinator::default()),
-            opt,
-        )
-        .await
-        .unwrap();
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+            .await
+            .unwrap();
 
         assert_batches_eq!(
             vec!["++", "++", "++",],
@@ -533,13 +513,9 @@ mod tests {
     async fn test_create_external_json_table() {
         let config = get_config("../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(
-            Arc::new(MockEngine::default()),
-            Arc::new(MockCoordinator::default()),
-            opt,
-        )
-        .await
-        .unwrap();
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+            .await
+            .unwrap();
 
         assert_batches_eq!(
             vec!["++", "++", "++",],

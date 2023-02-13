@@ -1,3 +1,19 @@
+use std::collections::{BTreeMap, HashMap};
+use std::fmt::Debug;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use datafusion::prelude::Column;
+use parking_lot::RwLock;
+
+use models::codec::Encoding;
+use models::predicate::domain::{ColumnDomains, PredicateRef};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
+use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
+use protos::kv_service::WritePointsResponse;
+use protos::{kv_service::WritePointsRequest, models as fb_models};
+use trace::{debug, info};
+
 use crate::database::Database;
 use crate::error::Result;
 use crate::index::IndexResult;
@@ -6,38 +22,19 @@ use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
-use async_trait::async_trait;
-use datafusion::prelude::Column;
-use models::codec::Encoding;
-use models::predicate::domain::{ColumnDomains, PredicateRef};
-use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
-use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
-use parking_lot::RwLock;
-use protos::{
-    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
-    models as fb_models,
-};
-use std::collections::{BTreeMap, HashMap};
-use std::fmt::Debug;
-use std::sync::Arc;
-use trace::{debug, info};
 
 pub type EngineRef = Arc<dyn Engine>;
 
 #[async_trait]
 pub trait Engine: Send + Sync + Debug {
-    async fn write(
-        &self,
-        id: u32,
-        write_batch: WritePointsRpcRequest,
-    ) -> Result<WritePointsRpcResponse>;
+    async fn write(&self, id: u32, write_batch: WritePointsRequest) -> Result<WritePointsResponse>;
 
     async fn write_from_wal(
         &self,
         id: u32,
-        write_batch: WritePointsRpcRequest,
+        write_batch: WritePointsRequest,
         seq: u64,
-    ) -> Result<WritePointsRpcResponse>;
+    ) -> Result<()>;
 
     async fn drop_database(&self, tenant: &str, database: &str) -> Result<()>;
 
@@ -138,34 +135,24 @@ pub struct MockEngine {}
 
 #[async_trait]
 impl Engine for MockEngine {
-    async fn write(
-        &self,
-        id: u32,
-        write_batch: WritePointsRpcRequest,
-    ) -> Result<WritePointsRpcResponse> {
+    async fn write(&self, id: u32, write_batch: WritePointsRequest) -> Result<WritePointsResponse> {
         debug!("writing point");
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points).unwrap();
 
         debug!("writed point: {:?}", fb_points);
 
-        Ok(WritePointsRpcResponse {
-            version: write_batch.version,
-            points: vec![],
-        })
+        Ok(WritePointsResponse { size: 0 })
     }
 
     async fn write_from_wal(
         &self,
         id: u32,
-        write_batch: WritePointsRpcRequest,
+        write_batch: WritePointsRequest,
         seq: u64,
-    ) -> Result<WritePointsRpcResponse> {
+    ) -> Result<()> {
         debug!("write point");
-        Ok(WritePointsRpcResponse {
-            version: write_batch.version,
-            points: vec![],
-        })
+        Ok(())
     }
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {

@@ -76,7 +76,7 @@ mod test {
                 let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
                 fbb.finish(points, None);
                 let points = fbb.finished_data().to_vec();
-                tx.send(WritePointsRpcRequest {
+                tx.send(WritePointsRequest {
                     version: 1,
                     meta: Some(Meta {
                         tenant: "cnosdb".to_string(),
