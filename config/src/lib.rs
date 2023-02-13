@@ -1,25 +1,29 @@
 mod bytes_num;
 mod duration;
 
-use std::{fs::File, io::prelude::Read, time::Duration};
+use std::{fs::File, io::prelude::Read, path::Path, time::Duration};
 
 use serde::{Deserialize, Serialize};
-use trace::info;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Config {
-    pub cluster: ClusterConfig,
+    #[serde(default = "Config::default_reporting_disabled")]
+    pub reporting_disabled: bool,
     pub query: QueryConfig,
     pub storage: StorageConfig,
     pub wal: WalConfig,
     pub cache: CacheConfig,
     pub log: LogConfig,
     pub security: SecurityConfig,
+    pub cluster: ClusterConfig,
     pub hintedoff: HintedOffConfig,
-    pub reporting_disabled: Option<bool>,
 }
 
 impl Config {
+    fn default_reporting_disabled() -> bool {
+        false
+    }
+
     pub fn override_by_env(&mut self) {
         self.cluster.override_by_env();
         self.storage.override_by_env();
@@ -27,26 +31,59 @@ impl Config {
         self.cache.override_by_env();
         self.query.override_by_env();
     }
+
+    pub fn to_string_pretty(&self) -> String {
+        toml::to_string_pretty(self).unwrap_or_else(|_| "Failed to stringfy Config".to_string())
+    }
 }
 
-pub fn get_config(path: &str) -> Config {
+pub fn get_config(path: impl AsRef<Path>) -> Config {
+    let path = path.as_ref();
     let mut file = match File::open(path) {
         Ok(file) => file,
-        Err(err) => panic!("Failed to open configurtion file '{}': {}", path, err),
+        Err(err) => panic!(
+            "Failed to open configurtion file '{}': {}",
+            path.display(),
+            err
+        ),
     };
     let mut content = String::new();
     if let Err(err) = file.read_to_string(&mut content) {
-        panic!("Failed to read configurtion file '{}': {}", path, err);
+        panic!(
+            "Failed to read configurtion file '{}': {}",
+            path.display(),
+            err
+        );
     }
     let config: Config = match toml::from_str(&content) {
         Ok(config) => config,
-        Err(err) => panic!("Failed to parse configurtion file '{}': {}", path, err),
+        Err(err) => panic!(
+            "Failed to parse configurtion file '{}': {}",
+            path.display(),
+            err
+        ),
     };
-    info!("Start with configuration: {:#?}", config);
     config
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+pub fn default_config() -> Config {
+    const DEFAULT_CONFIG: &str = r#"
+    [query]
+    [storage]
+    [wal]
+    [cache]
+    [log]
+    [security]
+    [cluster]
+    [hintedoff]"#;
+
+    match toml::from_str(DEFAULT_CONFIG) {
+        Ok(config) => config,
+        Err(err) => panic!("Failed to get default configurtion : {}", err),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QueryConfig {
     #[serde(default = "QueryConfig::default_max_server_connections")]
     pub max_server_connections: u32,
@@ -91,7 +128,7 @@ impl QueryConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StorageConfig {
     #[serde(default = "StorageConfig::default_path")]
     pub path: String,
@@ -198,7 +235,7 @@ impl StorageConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WalConfig {
     #[serde(default = "WalConfig::default_enabled")]
     pub enabled: bool,
@@ -240,7 +277,7 @@ impl WalConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CacheConfig {
     #[serde(with = "bytes_num", default = "CacheConfig::default_max_buffer_size")]
     pub max_buffer_size: u64,
@@ -267,7 +304,7 @@ impl CacheConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LogConfig {
     #[serde(default = "LogConfig::default_level")]
     pub level: String,
@@ -294,12 +331,12 @@ impl LogConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SecurityConfig {
     pub tls_config: Option<TLSConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TLSConfig {
     #[serde(default = "TLSConfig::default_certificate")]
     pub certificate: String,
@@ -317,25 +354,25 @@ impl TLSConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Default, Deserialize)]
+#[derive(Debug, Clone, Serialize, Default, Deserialize, PartialEq, Eq)]
 pub struct ClusterConfig {
     #[serde(default = "ClusterConfig::default_node_id")]
     pub node_id: u64,
     #[serde(default = "ClusterConfig::default_name")]
     pub name: String,
-    #[serde(default = "ClusterConfig::default_meta")]
-    pub meta: String,
+    #[serde(default = "ClusterConfig::default_meta_service_addr")]
+    pub meta_service_addr: String,
     #[serde(default = "ClusterConfig::default_tenant")]
     pub tenant: String,
 
-    #[serde(default = "ClusterConfig::default_http_server")]
-    pub http_server: String,
-    #[serde(default = "ClusterConfig::default_grpc_server")]
-    pub grpc_server: String,
-    #[serde(default = "ClusterConfig::default_tcp_server")]
-    pub tcp_server: String,
-    #[serde(default = "ClusterConfig::default_flight_rpc_server")]
-    pub flight_rpc_server: String,
+    #[serde(default = "ClusterConfig::default_http_listen_addr")]
+    pub http_listen_addr: String,
+    #[serde(default = "ClusterConfig::default_grpc_listen_addr")]
+    pub grpc_listen_addr: String,
+    #[serde(default = "ClusterConfig::default_tcp_listen_addr")]
+    pub tcp_listen_addr: String,
+    #[serde(default = "ClusterConfig::default_flight_rpc_listen_addr")]
+    pub flight_rpc_listen_addr: String,
 }
 
 impl ClusterConfig {
@@ -347,7 +384,7 @@ impl ClusterConfig {
         "cluster_xxx".to_string()
     }
 
-    fn default_meta() -> String {
+    fn default_meta_service_addr() -> String {
         "127.0.0.1:21001".to_string()
     }
 
@@ -355,19 +392,19 @@ impl ClusterConfig {
         "".to_string()
     }
 
-    fn default_http_server() -> String {
+    fn default_http_listen_addr() -> String {
         "127.0.0.1:31007".to_string()
     }
 
-    fn default_grpc_server() -> String {
+    fn default_grpc_listen_addr() -> String {
         "127.0.0.1:31008".to_string()
     }
 
-    fn default_tcp_server() -> String {
+    fn default_tcp_listen_addr() -> String {
         "127.0.0.1:31009".to_string()
     }
 
-    fn default_flight_rpc_server() -> String {
+    fn default_flight_rpc_listen_addr() -> String {
         "127.0.0.1:31006".to_string()
     }
 
@@ -376,7 +413,7 @@ impl ClusterConfig {
             self.name = name;
         }
         if let Ok(meta) = std::env::var("CNOSDB_CLUSTER_META") {
-            self.meta = meta;
+            self.meta_service_addr = meta;
         }
         if let Ok(tenant) = std::env::var("CNOSDB_TENANT_NAME") {
             self.tenant = tenant;
@@ -385,25 +422,25 @@ impl ClusterConfig {
             self.node_id = id.parse::<u64>().unwrap();
         }
 
-        if let Ok(val) = std::env::var("CNOSDB_HTTP_SERVER") {
-            self.http_server = val;
+        if let Ok(val) = std::env::var("CNOSDB_http_listen_addr") {
+            self.http_listen_addr = val;
         }
 
-        if let Ok(val) = std::env::var("CNOSDB_GRPC_SERVER") {
-            self.grpc_server = val;
+        if let Ok(val) = std::env::var("CNOSDB_grpc_listen_addr") {
+            self.grpc_listen_addr = val;
         }
 
-        if let Ok(val) = std::env::var("CNOSDB_TCP_SERVER") {
-            self.tcp_server = val;
+        if let Ok(val) = std::env::var("CNOSDB_tcp_listen_addr") {
+            self.tcp_listen_addr = val;
         }
 
-        if let Ok(val) = std::env::var("CNOSDB_FLIGHT_RPC_SERVER") {
-            self.flight_rpc_server = val;
+        if let Ok(val) = std::env::var("CNOSDB_flight_rpc_listen_addr") {
+            self.flight_rpc_listen_addr = val;
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HintedOffConfig {
     #[serde(default = "HintedOffConfig::default_enable")]
     pub enable: bool,
@@ -430,9 +467,31 @@ impl HintedOffConfig {
     }
 }
 
-#[test]
-fn test() {
-    let config_str = r#"
+#[cfg(test)]
+mod test {
+    use std::io::Write;
+
+    use crate::Config;
+
+    #[test]
+    fn test_functions() {
+        let cfg = crate::default_config();
+        std::fs::create_dir_all("/tmp/test/config/1/").unwrap();
+        let cfg_path = "/tmp/test/config/1/config.toml";
+        let mut cfg_file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&cfg_path)
+            .unwrap();
+        let _ = cfg_file.write(cfg.to_string_pretty().as_bytes()).unwrap();
+        let cfg_2 = crate::get_config(&cfg_path);
+
+        assert_eq!(cfg, cfg_2);
+    }
+
+    #[test]
+    fn test() {
+        let config_str = r#"
 #reporting_disabled = false
 
 [query]
@@ -506,13 +565,13 @@ path = 'data/log'
 [cluster]
 node_id = 100
 name = 'cluster_xxx'
-meta = '127.0.0.1:21001'
+meta_service_addr = '127.0.0.1:21001'
 tenant = ''
 
-flight_rpc_server = '127.0.0.1:31006'
-http_server = '127.0.0.1:31007'
-grpc_server = '127.0.0.1:31008'
-tcp_server = '127.0.0.1:31009'
+flight_rpc_listen_addr = '127.0.0.1:31006'
+http_listen_addr = '127.0.0.1:31007'
+grpc_listen_addr = '127.0.0.1:31008'
+tcp_listen_addr = '127.0.0.1:31009'
 
 [hintedoff]
 enable = true
@@ -521,6 +580,8 @@ path = '/tmp/cnosdb/hh'
 
 "#;
 
-    let config: Config = toml::from_str(config_str).unwrap();
-    dbg!(config);
+        let config: Config = toml::from_str(config_str).unwrap();
+        assert!(toml::to_string_pretty(&config).is_ok());
+        dbg!(config);
+    }
 }

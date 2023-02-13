@@ -45,12 +45,12 @@ path = '/tmp/cnosdb/2001/log'
 node_id = 2001
 tenant = ''
 name = 'cluster_xxx'
-meta = '127.0.0.1:21001'
+meta_service_addr = '127.0.0.1:21001'
 
-http_server = '127.0.0.1:32001'
-grpc_server = '127.0.0.1:32002'
-tcp_server = '127.0.0.1:32003'
-flight_rpc_server = '127.0.0.1:32004'
+http_listen_addr = '127.0.0.1:32001'
+grpc_listen_addr = '127.0.0.1:32002'
+tcp_listen_addr = '127.0.0.1:32003'
+flight_rpc_listen_addr = '127.0.0.1:32004'
 
 [hintedoff]
 enable = true

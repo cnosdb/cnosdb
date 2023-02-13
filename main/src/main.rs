@@ -42,34 +42,16 @@ long_about = r#"cnosdb and command line tools
                         "#
 )]
 struct Cli {
-    #[clap(
-        short,
-        long,
-        global = true,
-        env = "server_tcp_addr",
-        default_value = "0.0.0.0:31005"
-    )]
-    tcp_host: String,
+    #[clap(short, long, global = true)]
+    tcp_host: Option<String>,
 
     /// gRPC address
-    #[clap(
-        short,
-        long,
-        global = true,
-        env = "server_addr",
-        default_value = "0.0.0.0:31006"
-    )]
-    grpc_host: String,
+    #[clap(short, long, global = true)]
+    grpc_host: Option<String>,
 
     /// http address
-    #[clap(
-        short,
-        long,
-        global = true,
-        env = "server_http_addr",
-        default_value = "0.0.0.0:31007"
-    )]
-    http_host: String,
+    #[clap(short, long, global = true)]
+    http_host: Option<String>,
 
     #[clap(short, long, global = true, default_value_t = 4)]
     /// the number of cores on the system
@@ -80,8 +62,8 @@ struct Cli {
     memory: usize,
 
     /// configuration path
-    #[clap(long, global = true, default_value = "./config/config.toml")]
-    config: String,
+    #[clap(long, global = true)]
+    config: Option<String>,
 
     #[clap(subcommand)]
     subcmd: SubCommand,
@@ -124,52 +106,62 @@ fn main() -> Result<(), std::io::Error> {
     let cli = Cli::parse();
     let runtime = init_runtime(Some(cli.cpu))?;
     let runtime = Arc::new(runtime);
+    let void_arg = "".to_string();
     println!(
-        "params: host:{}, http_host: {}, cpu:{:?}, memory:{:?}, config: {:?}, sub:{:?}",
-        cli.grpc_host, cli.http_host, cli.cpu, cli.memory, cli.config, cli.subcmd
+        r#"----------
+Start with cli arguments:
+grpc_host = '{}'
+http_host = '{}'
+cpu = {}
+memory = {}
+config = '{}'
+sub = {:?}"#,
+        cli.grpc_host.as_ref().unwrap_or(&void_arg),
+        cli.http_host.as_ref().unwrap_or(&void_arg),
+        cli.cpu,
+        cli.memory,
+        cli.config.as_ref().unwrap_or(&void_arg),
+        cli.subcmd
     );
-    let global_config = config::get_config(cli.config.as_str());
+    let global_config = if let Some(cfg_path) = cli.config {
+        println!("----------\nStart with configuration:");
+        config::get_config(cfg_path)
+    } else {
+        println!("----------\nStart with default configuration:");
+        config::default_config()
+    };
+    println!("{}----------", global_config.to_string_pretty());
+
     let mut _trace_guard = init_global_tracing(
         &global_config.log.path,
         "tsdb.log",
         &global_config.log.level,
     );
 
-    // let grpc_host = cli
-    //     .grpc_host
-    //     .parse::<SocketAddr>()
-    //     .expect("Invalid grpc_host");
-    // let http_host = cli
-    //     .http_host
-    //     .parse::<SocketAddr>()
-    //     .expect("Invalid http_host");
-
-    // let tcp_host = cli
-    //     .tcp_host
-    //     .parse::<SocketAddr>()
-    //     .expect("Invalid http_host");
-
-    let grpc_host = global_config
-        .cluster
-        .grpc_server
+    let http_host = cli
+        .http_host
+        .as_ref()
+        .unwrap_or(&global_config.cluster.http_listen_addr)
+        .parse::<SocketAddr>()
+        .expect("Invalid http_host");
+    let grpc_host = cli
+        .grpc_host
+        .as_ref()
+        .unwrap_or(&global_config.cluster.grpc_listen_addr)
         .parse::<SocketAddr>()
         .expect("Invalid grpc_host");
-    let flight_rpc_host = global_config
-        .cluster
-        .flight_rpc_server
-        .parse::<SocketAddr>()
-        .expect("Invalid flight_rpc_host");
-    let http_host = global_config
-        .cluster
-        .http_server
+    let tcp_host = cli
+        .tcp_host
+        .as_ref()
+        .unwrap_or(&global_config.cluster.tcp_listen_addr)
         .parse::<SocketAddr>()
         .expect("Invalid http_host");
 
-    let tcp_host = global_config
+    let flight_rpc_host = global_config
         .cluster
-        .tcp_server
+        .flight_rpc_listen_addr
         .parse::<SocketAddr>()
-        .expect("Invalid http_host");
+        .expect("Invalid flight_rpc_host");
 
     init_tskv_metrics_recorder();
 
@@ -240,7 +232,7 @@ fn main() -> Result<(), std::io::Error> {
                     .add_service(tcp_service)
                     .add_service(flight_sql_service);
 
-                if !global_config.reporting_disabled.unwrap_or(false) {
+                if !global_config.reporting_disabled {
                     server_builder = server_builder.add_service(report_service);
                 }
 

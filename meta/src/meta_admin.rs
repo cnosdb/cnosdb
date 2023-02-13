@@ -48,7 +48,7 @@ pub struct RemoteAdminMeta {
 
 impl RemoteAdminMeta {
     pub async fn new(config: ClusterConfig) -> MetaResult<(Self, u64)> {
-        let meta_url = config.meta.clone();
+        let meta_url = config.meta_service_addr.clone();
         let admin = Self {
             config,
             conn_map: RwLock::new(HashMap::new()),
@@ -103,8 +103,8 @@ impl AdminMeta for RemoteAdminMeta {
         let node = NodeInfo {
             status: 0,
             id: self.config.node_id,
-            tcp_addr: self.config.tcp_server.clone(),
-            http_addr: self.config.http_server.clone(),
+            tcp_addr: self.config.tcp_listen_addr.clone(),
+            http_addr: self.config.http_listen_addr.clone(),
         };
 
         let req = command::WriteCommand::AddDataNode(self.config.name.clone(), node.clone());

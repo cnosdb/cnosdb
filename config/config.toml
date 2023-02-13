@@ -72,13 +72,13 @@ path = 'data/log'
 [cluster]
 node_id = 100
 name = 'cluster_xxx'
-meta = '127.0.0.1:21001'
+meta_service_addr = '127.0.0.1:21001'
 tenant = ''
 
-flight_rpc_server = '127.0.0.1:31006'
-http_server = '127.0.0.1:31007'
-grpc_server = '127.0.0.1:31008'
-tcp_server = '127.0.0.1:31009'
+http_listen_addr = '127.0.0.1:31007'
+grpc_listen_addr = '127.0.0.1:31008'
+tcp_listen_addr = '127.0.0.1:31009'
+flight_rpc_listen_addr = '127.0.0.1:31006'
 
 [hintedoff]
 enable = true
