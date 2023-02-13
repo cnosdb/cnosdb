@@ -337,6 +337,11 @@ impl TsmWriter {
         self.finished = true;
         Ok(())
     }
+
+    /// Get a cloned `BloomFilter` from currently buffered index data.
+    pub fn bloom_filter_cloned(&self) -> BloomFilter {
+        self.index_buf.bloom_filter.clone()
+    }
 }
 
 pub async fn new_tsm_writer(
@@ -474,19 +479,24 @@ async fn write_footer_to(
 }
 
 #[cfg(test)]
-mod test {
+pub mod tsm_writer_tests {
     use std::{
         collections::HashMap,
+        io::{Error as IoError, ErrorKind as IoErrorKind},
         path::{Path, PathBuf},
         sync::Arc,
     };
 
     use models::{FieldId, ValueType};
+    use snafu::ResultExt;
 
-    use crate::file_system::file_manager::{self, get_file_manager, FileManager};
-    use crate::file_system::IFile;
     use crate::{
+        error::{self, Error, Result},
+        file_system::file_manager::{self, get_file_manager, FileManager},
+        file_system::IFile,
+        file_utils::{self, make_tsm_file_name},
         memcache::FieldVal,
+        tsm::tsm_reader_tests::read_and_check,
         tsm::{
             codec::DataBlockEncoding, new_tsm_writer, ColumnReader, DataBlock, IndexReader,
             TsmReader, TsmWriter,
@@ -495,67 +505,42 @@ mod test {
 
     const TEST_PATH: &str = "/tmp/test/tsm_writer";
 
-    async fn write_to_tsm(
-        dir: impl AsRef<Path>,
-        file_name: &str,
+    pub async fn write_to_tsm(
+        path: impl AsRef<Path>,
         data: &HashMap<FieldId, Vec<DataBlock>>,
-    ) {
+    ) -> Result<()> {
+        let tsm_seq = file_utils::get_tsm_file_id_by_path(&path)?;
+        let path = path.as_ref();
+        let dir = path.parent().unwrap();
         if !file_manager::try_exists(&dir) {
-            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::create_dir_all(&dir).context(super::IOSnafu)?;
         }
-        let tsm_path = dir.as_ref().join(file_name);
-        let mut writer = TsmWriter::open(tsm_path, 0, false, 0).await.unwrap();
+        let mut writer = TsmWriter::open(path, tsm_seq, false, 0).await?;
         for (fid, blks) in data.iter() {
             for blk in blks.iter() {
-                writer.write_block(*fid, blk).await.unwrap();
+                writer
+                    .write_block(*fid, blk)
+                    .await
+                    .context(error::WriteTsmSnafu)?;
             }
         }
-        writer.write_index().await.unwrap();
-        writer.finish().await.unwrap();
-    }
-
-    async fn read_from_tsm(path: impl AsRef<Path>) -> HashMap<FieldId, Vec<DataBlock>> {
-        let file = Arc::new(file_manager::open_file(&path).await.unwrap());
-        let len = file.len();
-
-        let index = IndexReader::open(0, file.clone()).await.unwrap();
-        let mut data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
-        for idx_meta in index.iter() {
-            let mut cr = ColumnReader::new(file.clone(), idx_meta.block_iterator());
-            loop {
-                match cr.next().await {
-                    None => break,
-                    Some(blk_ret) => {
-                        let blk = blk_ret.unwrap();
-                        data.entry(idx_meta.field_id())
-                            .or_insert_with(Vec::new)
-                            .push(blk);
-                    }
-                }
-            }
-        }
-        data
-    }
-
-    async fn check_tsm(path: impl AsRef<Path>, data: &HashMap<FieldId, Vec<DataBlock>>) {
-        let tsm_data = read_from_tsm(path).await;
-        for (k, v) in tsm_data.iter() {
-            assert_eq!(v, data.get(k).unwrap());
-        }
+        writer.write_index().await.context(error::WriteTsmSnafu)?;
+        writer.finish().await.context(error::WriteTsmSnafu)
     }
 
     #[tokio::test]
     async fn test_tsm_write_fast() {
-        let dir = Path::new(TEST_PATH);
         #[rustfmt::skip]
         let data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (1, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() }]),
             (2, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103], enc: DataBlockEncoding::default() }]),
         ]);
 
-        let file_name = "_000001.tsm";
-        write_to_tsm(dir, file_name, &data).await;
-        check_tsm(dir.join(file_name), &data).await;
+        let tsm_file = make_tsm_file_name(TEST_PATH, 0);
+        write_to_tsm(&tsm_file, &data).await.unwrap();
+
+        let reader = TsmReader::open(tsm_file).await.unwrap();
+        read_and_check(&reader, data).await.unwrap();
     }
 
     #[tokio::test]
@@ -581,9 +566,10 @@ mod test {
             ]),
         ]);
 
-        let dir = Path::new(TEST_PATH).join("1");
-        let file_name = "_000001.tsm";
-        write_to_tsm(&dir, file_name, &data).await;
-        check_tsm(dir.join(file_name), &data).await;
+        let tsm_file = make_tsm_file_name(TEST_PATH, 1);
+        write_to_tsm(&tsm_file, &data).await.unwrap();
+
+        let reader = TsmReader::open(tsm_file).await.unwrap();
+        read_and_check(&reader, data).await.unwrap();
     }
 }

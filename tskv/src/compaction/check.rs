@@ -16,7 +16,6 @@ use crate::{
     database::Database,
     error::{self, Error, Result},
     schema::schemas::DBschemas,
-    tseries_family::{ColumnFile, TseriesFamily},
     tsm::{DataBlock, TsmReader},
     TimeRange, TseriesFamilyId,
 };
@@ -160,21 +159,17 @@ pub(crate) async fn get_ts_family_hash_tree(
     }
     let time_range_nanosec = get_default_time_range(schemas)?;
 
-    // let ts_family_rlock = ts_family.read();
-    // let version = ts_family_rlock.version();
-    // let ts_family_id = ts_family_rlock.tf_id();
-    // drop(ts_family_rlock);
     let (version, ts_family_id) = {
         let ts_family_rlock = ts_family.read();
         (ts_family_rlock.version(), ts_family_rlock.tf_id())
     };
-    let mut readers: Vec<TsmReader> = Vec::new();
+    let mut readers: Vec<Arc<TsmReader>> = Vec::new();
     for path in version
         .levels_info()
         .iter()
         .flat_map(|l| l.files.iter().map(|f| f.file_path()))
     {
-        let r = TsmReader::open(path).await?;
+        let r = version.get_tsm_reader(path).await?;
         readers.push(r);
     }
 
@@ -705,8 +700,8 @@ mod test {
         for (timestamp, v) in timestamps.into_iter().zip(rows_ref.into_iter()) {
             let db = fbb.create_vector(database.as_bytes());
             let table = fbb.create_vector(table.as_bytes());
-            let tags = models_helper::create_tags(&mut fbb, vec![("ta", "a1"), ("tb", "b1")]);
-            let fields = models_helper::create_fields(&mut fbb, v);
+            let tags = models_helper::create_tags(&mut fbb, &[("ta", "a1"), ("tb", "b1")]);
+            let fields = models_helper::create_fields(&mut fbb, &v);
             let point = models_helper::create_point(&mut fbb, timestamp, db, table, tags, fields);
             points.push(point);
         }
@@ -889,6 +884,7 @@ mod test {
                 None,
                 engine.summary_task_sender(),
                 engine.flush_task_sender(),
+                engine.compact_task_sender(),
             );
             assert_eq!(1, ts_family.read().tf_id());
         }

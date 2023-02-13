@@ -66,7 +66,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         }
         let result = HandshakeResponse {
             protocol_version: 0,
-            payload: "random_uuid_token".as_bytes().to_vec(),
+            payload: "random_uuid_token".as_bytes().into(),
         };
         let result = Ok(result);
         let output = futures::stream::iter(vec![result]);

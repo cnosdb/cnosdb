@@ -26,7 +26,6 @@ default-members = ["main"]
 
 [workspace.dependencies]
 actix-rt = "2.7.0"
-arrow-schema = { version = "26.0.0", features = ["serde"] }
 async-recursion = "1.0.0"
 async-stream = "0.3"
 async-trait = "0.1"
@@ -46,9 +45,10 @@ crossbeam = "0.8"
 crossbeam-channel = "0.5"
 ctrlc = "3"
 dashmap = "5.2"
-arrow-flight = { version = "26.0.0" }
-datafusion-proto = { version = "14.0.0" }
-datafusion = { version = "14.0.0", features = ["scheduler"] }
+arrow-schema = { version = "32.0.0", features = ["serde"] }
+arrow-flight = { version = "32.0.0" }
+datafusion-proto = { git = "https://github.com/apache/arrow-datafusion.git", rev = "e16650073320dec3b0517aba12c6ce738eb4a503" }
+datafusion = { git = "https://github.com/apache/arrow-datafusion.git", rev = "e16650073320dec3b0517aba12c6ce738eb4a503" }
 diff = "0.1.13"
 dirs = "4.0.0"
 env_logger = "0.9"

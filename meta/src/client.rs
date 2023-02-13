@@ -94,9 +94,15 @@ impl MetaHttpClient {
     {
         let mut n_retry = 3;
 
+        let ttl = tokio::time::Duration::from_secs(60);
         loop {
             let res: Result<Resp, RPCError<ClusterNodeId, ClusterNode, Err>> =
-                self.do_send_rpc_to_leader(uri, req).await;
+                match tokio::time::timeout(ttl, self.do_send_rpc_to_leader(uri, req)).await {
+                    Ok(res) => res,
+                    Err(timeout) => Err(RPCError::Network(NetworkError::new(&AnyError::error(
+                        format!("http call meta: {} timeout, {}", uri, timeout),
+                    )))),
+                };
 
             let rpc_err = match res {
                 Ok(x) => return Ok(x),
@@ -195,6 +201,7 @@ mod test {
         meta_data::{NodeInfo, VnodeInfo},
         schema::DatabaseSchema,
     };
+    use tokio::{sync::mpsc::channel, time::timeout};
 
     #[tokio::test]
     #[ignore]
@@ -306,6 +313,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_json_encode() {
         let req = command::WriteCommand::CreateDB(
             "clusterxx".to_string(),
@@ -319,5 +327,18 @@ mod test {
 
         let data = serde_json::to_string(&req).unwrap();
         println!("{}", data);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_timeout() {
+        let (send, mut recv) = channel(1024);
+        send.send(123).await.unwrap();
+        loop {
+            match timeout(tokio::time::Duration::from_secs(3), recv.recv()).await {
+                Ok(val) => println!("recv data: {:?}", val),
+                Err(tt) => println!("err timeout: {}", tt),
+            }
+        }
     }
 }

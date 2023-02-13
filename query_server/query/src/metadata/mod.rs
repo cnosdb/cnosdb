@@ -4,6 +4,7 @@ mod information_schema_provider;
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::DataType;
+use datafusion::config::ConfigOptions;
 use datafusion::sql::ResolvedTableReference;
 use datafusion::{
     error::DataFusionError,
@@ -53,6 +54,7 @@ pub trait ContextProviderExtension: ContextProvider {
 
 pub struct MetadataProvider {
     session: IsiphoSessionCtx,
+    config_options: ConfigOptions,
     coord: CoordinatorRef,
     meta_client: MetaClientRef,
     func_manager: FuncMetaManagerRef,
@@ -71,6 +73,8 @@ impl MetadataProvider {
     ) -> Self {
         Self {
             coord,
+            // TODO refactor
+            config_options: session.inner().state().config_options().clone(),
             session,
             meta_client,
             func_manager: Arc::new(func_manager),
@@ -82,11 +86,11 @@ impl MetadataProvider {
 
     fn build_df_data_source(
         &self,
-        name: ResolvedTableReference<'_>,
+        name: &ResolvedTableReference<'_>,
     ) -> datafusion::common::Result<Arc<dyn TableSource>> {
-        let tenant_name = name.catalog;
-        let database_name = name.schema;
-        let table_name = name.table;
+        let tenant_name = name.catalog.as_ref();
+        let database_name = name.schema.as_ref();
+        let table_name = name.table.as_ref();
 
         // process INFORMATION_SCHEMA
         if database_name.eq_ignore_ascii_case(self.information_schema_provider.name()) {
@@ -116,7 +120,7 @@ impl MetadataProvider {
 
         let df_table_source = match self
             .meta_client
-            .get_table_schema(name.schema, name.table)
+            .get_table_schema(database_name, table_name)
             .map_err(|e| DataFusionError::External(Box::new(e)))?
         {
             Some(table) => match table {
@@ -181,9 +185,9 @@ impl ContextProviderExtension for MetadataProvider {
     ) -> datafusion::common::Result<TableSourceAdapter> {
         let name = name.resolve(self.session.tenant(), self.session.default_database());
 
-        let table_name = name.table;
-        let database_name = name.schema;
-        let tenant_name = name.catalog;
+        let table_name = name.table.as_ref();
+        let database_name = name.schema.as_ref();
+        let tenant_name = name.catalog.as_ref();
         let tenant_id = *self.session.tenant_id();
 
         // Cannot query across tenants
@@ -199,7 +203,7 @@ impl ContextProviderExtension for MetadataProvider {
             .write()
             .push_table(database_name, table_name);
 
-        let df_table_source = self.build_df_data_source(name)?;
+        let df_table_source = self.build_df_data_source(&name)?;
 
         Ok(TableSourceAdapter::new(
             df_table_source,
@@ -230,6 +234,11 @@ impl ContextProvider for MetadataProvider {
     fn get_variable_type(&self, _variable_names: &[String]) -> Option<DataType> {
         // TODO
         None
+    }
+
+    fn options(&self) -> &ConfigOptions {
+        // TODO refactor
+        &self.config_options
     }
 }
 

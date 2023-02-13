@@ -166,7 +166,7 @@ pub fn get_time_range(ts: i64, duration: i64) -> (i64, i64) {
     } else {
         (
             (ts / duration) * duration,
-            (ts / duration) * duration + duration,
+            ((ts / duration) * duration).saturating_add(duration),
         )
     }
 }

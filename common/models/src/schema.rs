@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Display};
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use std::mem::size_of_val;
 use std::str::FromStr;
@@ -18,6 +18,7 @@ use datafusion::logical_expr::TableSource;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
+use arrow_schema::DataType;
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
 };
@@ -28,7 +29,7 @@ use datafusion::datasource::file_format::json::JsonFormat;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::ListingOptions;
-use datafusion::error::{DataFusionError, Result as DataFusionResult};
+use datafusion::error::Result as DataFusionResult;
 
 use crate::codec::Encoding;
 pub use crate::limiter::LimiterConfig;
@@ -84,7 +85,7 @@ pub struct ExternalTableSchema {
     pub file_type: String,
     pub location: String,
     pub target_partitions: usize,
-    pub table_partition_cols: Vec<String>,
+    pub table_partition_cols: Vec<(String, DataType)>,
     pub has_header: bool,
     pub delimiter: u8,
     pub schema: Schema,
@@ -92,37 +93,29 @@ pub struct ExternalTableSchema {
 
 impl ExternalTableSchema {
     pub fn table_options(&self) -> DataFusionResult<ListingOptions> {
-        let file_format: Arc<dyn FileFormat> = match FileType::from_str(&self.file_type)? {
+        let file_compression_type = FileCompressionType::from_str(&self.file_compression_type)?;
+        let file_type = FileType::from_str(&self.file_type)?;
+        let file_extension =
+            file_type.get_ext_with_compression(self.file_compression_type.to_owned().parse()?)?;
+        let file_format: Arc<dyn FileFormat> = match file_type {
             FileType::CSV => Arc::new(
                 CsvFormat::default()
                     .with_has_header(self.has_header)
-                    .with_delimiter(self.delimiter)
-                    .with_file_compression_type(
-                        FileCompressionType::from_str(&self.file_compression_type).map_err(
-                            |_| {
-                                DataFusionError::Execution(
-                                    "Only known FileCompressionTypes can be ListingTables!"
-                                        .to_string(),
-                                )
-                            },
-                        )?,
-                    ),
+                    .with_delimiter(self.delimiter as u8)
+                    .with_file_compression_type(file_compression_type),
             ),
             FileType::PARQUET => Arc::new(ParquetFormat::default()),
             FileType::AVRO => Arc::new(AvroFormat::default()),
-            FileType::JSON => Arc::new(JsonFormat::default().with_file_compression_type(
-                FileCompressionType::from_str(&self.file_compression_type)?,
-            )),
+            FileType::JSON => {
+                Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
+            }
         };
 
-        Ok(ListingOptions {
-            format: file_format,
-            collect_stat: false,
-            file_extension: FileType::from_str(&self.file_type)?
-                .get_ext_with_compression(self.file_compression_type.to_owned().parse()?)?,
-            target_partitions: self.target_partitions,
-            table_partition_cols: self.table_partition_cols.clone(),
-        })
+        let options = ListingOptions::new(file_format)
+            .with_file_extension(file_extension)
+            .with_target_partitions(self.target_partitions);
+
+        Ok(options)
     }
 }
 
@@ -323,10 +316,10 @@ pub struct TableColumn {
 impl From<&TableColumn> for ArrowField {
     fn from(column: &TableColumn) -> Self {
         let mut f = ArrowField::new(&column.name, column.column_type.into(), column.nullable());
-        let mut map = BTreeMap::new();
+        let mut map = HashMap::new();
         map.insert(FIELD_ID.to_string(), column.id.to_string());
         map.insert(TAG.to_string(), column.column_type.is_tag().to_string());
-        f.set_metadata(Some(map));
+        f.set_metadata(map);
         f
     }
 }
@@ -747,9 +740,9 @@ impl Duration {
 
     pub fn to_nanoseconds(&self) -> i64 {
         match self.unit {
-            DurationUnit::Minutes => self.time_num as i64 * 60 * 1000000000,
-            DurationUnit::Hour => self.time_num as i64 * 3600 * 1000000000,
-            DurationUnit::Day => self.time_num as i64 * 24 * 3600 * 1000000000,
+            DurationUnit::Minutes => (self.time_num as i64).saturating_mul(60 * 1000000000),
+            DurationUnit::Hour => (self.time_num as i64).saturating_mul(3600 * 1000000000),
+            DurationUnit::Day => (self.time_num as i64).saturating_mul(24 * 3600 * 1000000000),
         }
     }
 }

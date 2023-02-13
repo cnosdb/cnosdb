@@ -168,7 +168,7 @@ time,column6,column7,column1,column3,column4,column5,column8
 
 -- EXECUTE SQL: CREATE TABLE test0( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
-{"error_code":"030020","error_message":"Table test0 already exists."}
+{"error_code":"030020","error_message":"Table cnosdb.createtable.test0 already exists."}
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test0( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
 
@@ -14,5 +14,5 @@ pub trait FunctionMetadataManager {
 
     fn udaf(&self, name: &str) -> Result<Arc<AggregateUDF>>;
 
-    fn udfs(&self) -> Vec<Arc<ScalarUDF>>;
+    fn udfs(&self) -> HashSet<String>;
 }

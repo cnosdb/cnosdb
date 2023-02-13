@@ -2,19 +2,18 @@
 200 OK
 plan_type,plan
 logical_plan,"Limit: skip=0, fetch=2
-  Sort: t.num DESC NULLS FIRST, fetch=2
-    Projection: t.num, t.letter
-      Projection: t.column1 AS num, t.column2 AS letter, alias=t
-        Projection: column1, column2, alias=t
+  Sort: num DESC NULLS FIRST, fetch=2
+    Projection: num, letter
+      Projection: t.column1 AS num, t.column2 AS letter
+        SubqueryAlias: t
           Values: (Int64(9), Utf8(""nine"")), (Int64(2), Utf8(""two"")), (Int64(1), Utf8(""one"")), (Int64(3), Utf8(""three""))"
 physical_plan,"GlobalLimitExec: skip=0, fetch=2
   SortPreservingMergeExec: [num@0 DESC]
     SortExec: [num@0 DESC]
       ProjectionExec: expr=[num@0 as num, letter@1 as letter]
         ProjectionExec: expr=[column1@0 as num, column2@1 as letter]
-          ProjectionExec: expr=[column1@0 as column1, column2@1 as column2]
-            RepartitionExec: partitioning=RoundRobinBatch(8)
-              ValuesExec
+          RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+            ValuesExec
 "
 
 
@@ -22,19 +21,18 @@ physical_plan,"GlobalLimitExec: skip=0, fetch=2
 200 OK
 plan_type,plan
 logical_plan,"Limit: skip=0, fetch=3
-  Sort: t.num DESC NULLS FIRST, t.letter ASC NULLS LAST, fetch=3
-    Projection: t.num, t.letter
-      Projection: t.column1 AS num, t.column2 AS letter, alias=t
-        Projection: column1, column2, alias=t
+  Sort: num DESC NULLS FIRST, letter ASC NULLS LAST, fetch=3
+    Projection: num, letter
+      Projection: t.column1 AS num, t.column2 AS letter
+        SubqueryAlias: t
           Values: (Int64(9), Utf8(""nine"")), (Int64(2), Utf8(""two"")), (Int64(1), Utf8(""one"")), (Int64(3), Utf8(""three""))"
 physical_plan,"GlobalLimitExec: skip=0, fetch=3
   SortPreservingMergeExec: [num@0 DESC,letter@1 ASC NULLS LAST]
     SortExec: [num@0 DESC,letter@1 ASC NULLS LAST]
       ProjectionExec: expr=[num@0 as num, letter@1 as letter]
         ProjectionExec: expr=[column1@0 as num, column2@1 as letter]
-          ProjectionExec: expr=[column1@0 as column1, column2@1 as column2]
-            RepartitionExec: partitioning=RoundRobinBatch(8)
-              ValuesExec
+          RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+            ValuesExec
 "
 
 

@@ -4,7 +4,7 @@ use std::{
 };
 
 use arrow_flight::{
-    sql::{ProstAnyExt, ProstMessageExt},
+    sql::{Any, ProstMessageExt},
     FlightDescriptor, FlightEndpoint, Location, Ticket,
 };
 use datafusion::arrow::{
@@ -20,7 +20,6 @@ use http_protocol::{
 };
 use models::auth::user::UserInfo;
 use prost::Message;
-use prost_types::Any;
 use spi::service::protocol::QueryId;
 use tonic::{
     metadata::{AsciiMetadataValue, MetadataMap},
@@ -132,7 +131,7 @@ pub fn endpoint(
 
     Ok(FlightEndpoint {
         ticket: Some(Ticket {
-            ticket: any_tkt.encode_to_vec(),
+            ticket: any_tkt.encode_to_vec().into(),
         }),
         location,
     })

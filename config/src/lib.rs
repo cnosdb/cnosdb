@@ -1,4 +1,6 @@
-use std::{fs::File, io::prelude::Read};
+mod duration;
+
+use std::{fs::File, io::prelude::Read, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use trace::info;
@@ -94,14 +96,21 @@ pub struct StorageConfig {
     pub path: String,
     #[serde(default = "StorageConfig::default_max_summary_size")]
     pub max_summary_size: u64,
-    #[serde(default = "StorageConfig::default_max_level")]
-    pub max_level: u32,
     #[serde(default = "StorageConfig::default_base_file_size")]
     pub base_file_size: u64,
-    #[serde(default = "StorageConfig::default_compact_trigger")]
-    pub compact_trigger: u32,
+    #[serde(default = "StorageConfig::default_max_level")]
+    pub max_level: u16,
+    #[serde(default = "StorageConfig::default_compact_trigger_file_num")]
+    pub compact_trigger_file_num: u32,
+    #[serde(
+        with = "duration",
+        default = "StorageConfig::default_compact_trigger_cold_duration"
+    )]
+    pub compact_trigger_cold_duration: Duration,
     #[serde(default = "StorageConfig::default_max_compact_size")]
     pub max_compact_size: u64,
+    #[serde(default = "StorageConfig::default_max_concurrent_compaction")]
+    pub max_concurrent_compaction: u16,
     #[serde(default = "StorageConfig::default_strict_write")]
     pub strict_write: bool,
 }
@@ -115,20 +124,28 @@ impl StorageConfig {
         128 * 1024 * 1024
     }
 
-    fn default_max_level() -> u32 {
-        4
-    }
-
     fn default_base_file_size() -> u64 {
         16 * 1024 * 1024
     }
 
-    fn default_compact_trigger() -> u32 {
+    fn default_max_level() -> u16 {
         4
+    }
+
+    fn default_compact_trigger_file_num() -> u32 {
+        4
+    }
+
+    fn default_compact_trigger_cold_duration() -> Duration {
+        Duration::from_secs(0)
     }
 
     fn default_max_compact_size() -> u64 {
         2 * 1024 * 1024 * 1024
+    }
+
+    fn default_max_concurrent_compaction() -> u16 {
+        4
     }
 
     fn default_strict_write() -> bool {
@@ -142,21 +159,35 @@ impl StorageConfig {
         if let Ok(size) = std::env::var("CNOSDB_SUMMARY_MAX_SUMMARY_SIZE") {
             self.max_summary_size = size.parse::<u64>().unwrap();
         }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_LEVEL") {
-            self.max_level = size.parse::<u32>().unwrap();
-        }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_BASE_FILE_SIZE") {
             self.base_file_size = size.parse::<u64>().unwrap();
         }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_COMPACT_TRIGGER") {
-            self.compact_trigger = size.parse::<u32>().unwrap();
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_LEVEL") {
+            self.max_level = size.parse::<u16>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_COMPACT_TRIGGER_FILE_NUM") {
+            self.compact_trigger_file_num = size.parse::<u32>().unwrap();
+        }
+        if let Ok(dur) = std::env::var("CNOSDB_STORAGE_compact_trigger_cold_duration") {
+            self.compact_trigger_cold_duration = duration::parse_duration(&dur).unwrap();
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_COMPACT_SIZE") {
             self.max_compact_size = size.parse::<u64>().unwrap();
         }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_CONCURRENT_COMPACTION") {
+            self.max_concurrent_compaction = size.parse::<u16>().unwrap();
+        }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_STRICT_WRITE") {
             self.strict_write = size.parse::<bool>().unwrap();
         }
+
+        self.introspect();
+    }
+
+    pub fn introspect(&mut self) {
+        // Unit of storage.compact_trigger_cold_duration is seconds
+        self.compact_trigger_cold_duration =
+            Duration::from_secs(self.compact_trigger_cold_duration.as_secs());
     }
 }
 
@@ -401,8 +432,8 @@ fn test() {
 
 [query]
 max_server_connections = 10240
-query_sql_limit = 16777216   # 16 * 1024 * 1024
-write_sql_limit = 167772160   # 160 * 1024 * 1024
+query_sql_limit = 16777216
+write_sql_limit = 167772160
 auth_enabled = false
 
 [storage]
@@ -412,10 +443,12 @@ auth_enabled = false
 # Directory for delta: $path/data/$database/delta/
 path = 'data/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024
-max_level = 4
 base_file_size = 16777216 # 16 * 1024 * 1024
-compact_trigger = 4
+max_level = 4
+compact_trigger_file_num = 4
+compact_trigger_cold_duration = "1h"
 max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
+max_concurrent_compaction = 4
 strict_write = false
 
 [wal]

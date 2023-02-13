@@ -11,6 +11,7 @@ use datafusion::arrow::{
     datatypes::SchemaRef,
     record_batch::RecordBatch,
 };
+use datafusion::error::DataFusionError;
 use datafusion::physical_plan::metrics::{
     self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
 };
@@ -77,8 +78,8 @@ impl TableScanMetrics {
     /// returning the same poll result
     pub fn record_poll(
         &self,
-        poll: Poll<Option<std::result::Result<RecordBatch, ArrowError>>>,
-    ) -> Poll<Option<std::result::Result<RecordBatch, ArrowError>>> {
+        poll: Poll<Option<std::result::Result<RecordBatch, DataFusionError>>>,
+    ) -> Poll<Option<std::result::Result<RecordBatch, DataFusionError>>> {
         self.baseline_metrics.record_poll(poll)
     }
 
@@ -410,6 +411,9 @@ impl FieldCursor {
         for level in super_version.version.levels_info.iter().rev() {
             for file in level.files.iter() {
                 if file.is_deleted() {
+                    continue;
+                }
+                if !file.contains_field_id(field_id) {
                     continue;
                 }
 

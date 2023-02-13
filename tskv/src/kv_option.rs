@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use config::Config;
 use serde::{Deserialize, Serialize};
@@ -36,10 +36,12 @@ impl From<&Config> for Options {
 pub struct StorageOptions {
     pub path: PathBuf,
     pub max_summary_size: u64,
-    pub max_level: u32,
     pub base_file_size: u64,
-    pub compact_trigger: u32,
+    pub max_level: u16,
+    pub compact_trigger_file_num: u32,
+    pub compact_trigger_cold_duration: Duration,
     pub max_compact_size: u64,
+    pub max_concurrent_compaction: u16,
     pub strict_write: bool,
 }
 
@@ -48,7 +50,7 @@ pub struct StorageOptions {
 // database/data/ts_family_id/index
 impl StorageOptions {
     pub fn level_file_size(&self, lvl: u32) -> u64 {
-        self.base_file_size * lvl as u64 * self.compact_trigger as u64
+        self.base_file_size * lvl as u64 * self.compact_trigger_file_num as u64
     }
 
     pub fn summary_dir(&self) -> PathBuf {
@@ -91,10 +93,12 @@ impl From<&Config> for StorageOptions {
         Self {
             path: PathBuf::from(config.storage.path.clone()),
             max_summary_size: config.storage.max_summary_size,
-            max_level: config.storage.max_level,
             base_file_size: config.storage.base_file_size,
-            compact_trigger: config.storage.compact_trigger,
+            max_level: config.storage.max_level,
+            compact_trigger_file_num: config.storage.compact_trigger_file_num,
+            compact_trigger_cold_duration: config.storage.compact_trigger_cold_duration,
             max_compact_size: config.storage.max_compact_size,
+            max_concurrent_compaction: config.storage.max_concurrent_compaction,
             strict_write: config.storage.strict_write,
         }
     }

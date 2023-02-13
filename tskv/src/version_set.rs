@@ -7,10 +7,13 @@ use meta::MetaRef;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use parking_lot::RwLock as SyncRwLock;
 use snafu::ResultExt;
-use tokio::sync::watch::Receiver;
-use tokio::sync::RwLock;
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tokio::{
+    runtime::Runtime,
+    sync::{mpsc::UnboundedSender, oneshot, watch::Receiver, RwLock},
+};
+
 use trace::error;
+use utils::BloomFilter;
 
 use crate::{
     compaction::FlushReq,
@@ -22,7 +25,7 @@ use crate::{
     memcache::MemCache,
     summary::{VersionEdit, WriteSummaryRequest},
     tseries_family::{LevelInfo, TseriesFamily, Version},
-    Options, TseriesFamilyId,
+    ColumnFileId, Options, TseriesFamilyId,
 };
 
 #[derive(Debug)]
@@ -30,21 +33,25 @@ pub struct VersionSet {
     opt: Arc<Options>,
     /// Maps DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
+    runtime: Arc<Runtime>,
 }
 
 impl VersionSet {
-    pub fn empty(opt: Arc<Options>) -> Self {
+    pub fn empty(opt: Arc<Options>, runtime: Arc<Runtime>) -> Self {
         Self {
             opt,
             dbs: HashMap::new(),
+            runtime,
         }
     }
 
     pub async fn new(
         meta: MetaRef,
         opt: Arc<Options>,
+        runtime: Arc<Runtime>,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
         flush_task_sender: UnboundedSender<FlushReq>,
+        compact_task_sender: UnboundedSender<TseriesFamilyId>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
         for (id, ver) in ver_set {
@@ -59,17 +66,19 @@ impl VersionSet {
                 },
             };
             let db: &mut Arc<RwLock<Database>> = dbs.entry(owner).or_insert(Arc::new(RwLock::new(
-                Database::new(schema, opt.clone(), meta.clone()).await?,
+                Database::new(schema, opt.clone(), runtime.clone(), meta.clone()).await?,
             )));
 
             let tf_id = ver.tf_id();
-            db.write()
-                .await
-                .open_tsfamily(ver, flush_task_sender.clone());
+            db.write().await.open_tsfamily(
+                ver,
+                flush_task_sender.clone(),
+                compact_task_sender.clone(),
+            );
             db.write().await.get_ts_index_or_add(tf_id).await?;
         }
 
-        Ok(Self { dbs, opt })
+        Ok(Self { dbs, opt, runtime })
     }
 
     pub fn options(&self) -> Arc<Options> {
@@ -85,7 +94,7 @@ impl VersionSet {
             .dbs
             .entry(schema.owner())
             .or_insert(Arc::new(RwLock::new(
-                Database::new(schema, self.opt.clone(), meta.clone()).await?,
+                Database::new(schema, self.opt.clone(), self.runtime.clone(), meta.clone()).await?,
             )))
             .clone();
         Ok(db)
@@ -177,13 +186,23 @@ impl VersionSet {
         None
     }
 
-    pub async fn get_version_edits(&self, last_seq: u64) -> Vec<VersionEdit> {
+    /// Snashots last version before `last_seq` of system state.
+    ///
+    /// Generated data is `VersionEdit`s for all vnodes and db-files,
+    /// and `HashMap<ColumnFileId, Arc<BloomFilter>>` for index data
+    /// (field-id filter) of db-files.
+    pub async fn snapshot(
+        &self,
+        last_seq: u64,
+    ) -> (Vec<VersionEdit>, HashMap<ColumnFileId, Arc<BloomFilter>>) {
         let mut version_edits = vec![];
+        let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
         for (name, db) in self.dbs.iter() {
-            let mut ves = db.read().await.get_version_edits(last_seq, None);
-            version_edits.append(&mut ves);
+            db.read()
+                .await
+                .snapshot(last_seq, None, &mut version_edits, &mut file_metas);
         }
-        version_edits
+        (version_edits, file_metas)
     }
 
     /// **Please call this function after system recovered.**

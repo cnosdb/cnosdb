@@ -1,6 +1,6 @@
 pub mod implicit_type_conversion;
 pub mod merge_limit_with_sort;
-pub mod projection_push_down;
+pub mod push_down_projection;
 pub mod reject_cross_join;
 pub mod rewrite_tag_scan;
 pub mod transform_bottom_func_to_topk_node;

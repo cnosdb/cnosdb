@@ -35,20 +35,27 @@ use trace::debug;
 pub struct ImplicitTypeConversion;
 
 impl OptimizerRule for ImplicitTypeConversion {
-    fn optimize(
+    fn try_optimize(
         &self,
         plan: &LogicalPlan,
-        _optimizer_config: &mut OptimizerConfig,
-    ) -> Result<LogicalPlan> {
+        optimizer_config: &dyn OptimizerConfig,
+    ) -> Result<Option<LogicalPlan>> {
         let mut rewriter = DataTypeRewriter {
             schemas: plan.all_schemas(),
         };
 
         match plan {
-            LogicalPlan::Filter(filter) => Ok(LogicalPlan::Filter(Filter::try_new(
-                filter.predicate().clone().rewrite(&mut rewriter)?,
-                Arc::new(self.optimize(filter.input().as_ref(), _optimizer_config)?),
-            )?)),
+            LogicalPlan::Filter(filter) => {
+                let input = self
+                    .try_optimize(filter.input.as_ref(), optimizer_config)?
+                    .map(Arc::new)
+                    .unwrap_or_else(|| filter.input.clone());
+
+                Ok(Some(LogicalPlan::Filter(Filter::try_new(
+                    filter.predicate.clone().rewrite(&mut rewriter)?,
+                    input,
+                )?)))
+            }
             LogicalPlan::TableScan(TableScan {
                 table_name,
                 source,
@@ -62,14 +69,14 @@ impl OptimizerRule for ImplicitTypeConversion {
                     .into_iter()
                     .map(|e| e.rewrite(&mut rewriter))
                     .collect::<Result<Vec<_>>>()?;
-                Ok(LogicalPlan::TableScan(TableScan {
+                Ok(Some(LogicalPlan::TableScan(TableScan {
                     table_name: table_name.clone(),
                     source: source.clone(),
                     projection: projection.clone(),
                     projected_schema: projected_schema.clone(),
                     filters: rewrite_filters,
                     fetch: *fetch,
-                }))
+                })))
             }
             LogicalPlan::Projection { .. }
             | LogicalPlan::Window { .. }
@@ -89,11 +96,17 @@ impl OptimizerRule for ImplicitTypeConversion {
             | LogicalPlan::Values { .. }
             | LogicalPlan::Distinct { .. }
             | LogicalPlan::SetVariable { .. }
+            | LogicalPlan::Prepare { .. }
+            | LogicalPlan::Unnest { .. }
             | LogicalPlan::Analyze { .. } => {
                 let inputs = plan.inputs();
                 let new_inputs = inputs
                     .iter()
-                    .map(|plan| self.optimize(plan, _optimizer_config))
+                    .map(|plan| {
+                        self.try_optimize(plan, optimizer_config)
+                            .transpose()
+                            .unwrap_or_else(|| Ok((*plan).clone()))
+                    })
                     .collect::<Result<Vec<_>>>()?;
 
                 let expr = plan
@@ -102,7 +115,7 @@ impl OptimizerRule for ImplicitTypeConversion {
                     .map(|e| e.rewrite(&mut rewriter))
                     .collect::<Result<Vec<_>>>()?;
 
-                utils::from_plan(plan, &expr, &new_inputs)
+                Ok(Some(utils::from_plan(plan, &expr, &new_inputs)?))
             }
 
             LogicalPlan::Subquery(_)
@@ -110,7 +123,9 @@ impl OptimizerRule for ImplicitTypeConversion {
             | LogicalPlan::CreateView(_)
             | LogicalPlan::CreateCatalogSchema(_)
             | LogicalPlan::CreateCatalog(_)
-            | LogicalPlan::EmptyRelation { .. } => Ok(plan.clone()),
+            | LogicalPlan::DescribeTable(_)
+            | LogicalPlan::Dml(_)
+            | LogicalPlan::EmptyRelation { .. } => Ok(None),
         }
     }
 
@@ -161,7 +176,7 @@ impl<'a> DataTypeRewriter<'a> {
         // Only processing of column op literal
         let (left, right) = match (left.as_ref(), right.as_ref()) {
             // Convert the data on the right of op to the data type corresponding to the left column
-            (Expr::Column(col), Expr::Literal(value)) => {
+            (Expr::Column(col), Expr::Literal(value)) if !value.is_null() => {
                 let casted_right = Self::cast_scalar_value(value, left_type)?;
                 debug!(
                     "DataTypeRewriter convert type, origin_left:{:?}, type:{}, right:{:?}, casted_right:{:?}",

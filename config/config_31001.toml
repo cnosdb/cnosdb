@@ -1,5 +1,5 @@
 [query]
-max_server_connections = 10240 
+max_server_connections = 10240
 query_sql_limit = 16777216   # 16 * 1024 * 1024
 write_sql_limit = 167772160   # 160 * 1024 * 1024
 auth_enabled = false
@@ -11,10 +11,12 @@ auth_enabled = false
 # Directory for delta: $path/data/$database/delta/
 path = '/tmp/cnosdb/1001/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024
-max_level = 4
 base_file_size = 16777216 # 16 * 1024 * 1024
-compact_trigger = 4
+max_level = 4
+compact_trigger_file_num = 4
+compact_trigger_cold_duration = "1h"
 max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
+max_concurrent_compaction = 4
 dio_max_resident = 1024
 dio_max_non_resident = 1024
 dio_page_len_scale = 1

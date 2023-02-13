@@ -1,6 +1,8 @@
 pub mod check;
 mod compact;
 mod flush;
+mod iterator;
+pub mod job;
 mod picker;
 
 pub use compact::*;
@@ -21,7 +23,7 @@ use crate::{
 
 pub struct CompactReq {
     pub ts_family_id: TseriesFamilyId,
-    pub database: String,
+    pub database: Arc<String>,
     storage_opt: Arc<StorageOptions>,
 
     files: Vec<Arc<ColumnFile>>,
