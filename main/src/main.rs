@@ -230,8 +230,6 @@ fn main() -> Result<(), std::io::Error> {
                 )
             }
             SubCommand::Query {} => {
-                let meta_manager: MetaRef =
-                    RemoteMetaManager::new(global_config.cluster.clone()).await;
                 let options = tskv::Options::from(&global_config);
                 let coord_service = CoordService::new(
                     None,
@@ -277,7 +275,6 @@ fn main() -> Result<(), std::io::Error> {
             }
             SubCommand::Run {} => {
                 meta_manager.admin_meta().add_data_node().await.unwrap();
-                let options = tskv::Options::from(&global_config);
                 let kv_inst = Arc::new(
                     TsKv::open(meta_manager.clone(), options.clone(), runtime)
                         .await
