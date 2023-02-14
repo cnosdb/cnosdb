@@ -64,11 +64,11 @@ impl RemoteMetaManager {
 
         let user_manager = Arc::new(RemoteUserManager::new(
             config.name.clone(),
-            config.meta.clone(),
+            config.meta_service_addr.clone(),
         ));
         let tenant_manager = Arc::new(RemoteTenantManager::new(
             config.name.clone(),
-            config.meta.clone(),
+            config.meta_service_addr.clone(),
             config.node_id,
             ver_change_sender,
         ));
@@ -132,7 +132,7 @@ impl RemoteMetaManager {
             base_ver,
         );
 
-        let client = MetaHttpClient::new(1, mgr.config.meta.clone());
+        let client = MetaHttpClient::new(1, mgr.config.meta_service_addr.clone());
         loop {
             if let Ok(watch_data) = client.watch::<command::WatchData>(&request).await {
                 if watch_data.full_sync {

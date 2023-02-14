@@ -4,7 +4,5 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-trace = { path = "../common/trace" }
-
 serde = { workspace = true }
 toml = { workspace = true }
