@@ -576,8 +576,6 @@ tcp_listen_addr = '127.0.0.1:31009'
 [hintedoff]
 enable = true
 path = '/tmp/cnosdb/hh'
-
-
 "#;
 
         let config: Config = toml::from_str(config_str).unwrap();

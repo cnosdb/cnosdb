@@ -32,27 +32,18 @@ where
     parse_number(&s).map_err(serde::de::Error::custom)
 }
 
-const BYTE_CHARS: &[char] = &['b'];
-
-const KILOBYTES_CHARS: &[char] = &['k', 'b'];
-const KIBIBYTES_CHARS: &[char] = &['k', 'i', 'b'];
-const KIBIBYTES_SHORT: &[char] = &['k'];
-
-const MEGABYTES_CHARS: &[char] = &['m', 'b'];
-const MEBIBYTES_CHARS: &[char] = &['m', 'i', 'b'];
-const MEBIBYTES_SHORT: &[char] = &['m'];
-
-const GIGABYTES_CHARS: &[char] = &['g', 'b'];
-const GIBIBYTES_CHARS: &[char] = &['g', 'i', 'b'];
-const GIBIBYTES_SHORT: &[char] = &['g'];
-
-const BYTES: u64 = 1;
-const KILOBYTES: u64 = BYTES * 1000;
-const KIBIBYTES: u64 = BYTES * 1024;
-const MEGABYTES: u64 = KILOBYTES * 1000;
-const MEBIBYTES: u64 = KIBIBYTES * 1024;
-const GIGABYTES: u64 = MEGABYTES * 1000;
-const GIBIBYTES: u64 = MEBIBYTES * 1024;
+const UNITS_LIST: [&[char]; 10] = [
+    &['b'],
+    &['k', 'b'],
+    &['k', 'i', 'b'],
+    &['k'],
+    &['m', 'b'],
+    &['m', 'i', 'b'],
+    &['m'],
+    &['g', 'b'],
+    &['g', 'i', 'b'],
+    &['g'],
+];
 // terabytes
 // tebibytes
 // petabytes
@@ -61,6 +52,18 @@ const GIBIBYTES: u64 = MEBIBYTES * 1024;
 // exbibytes
 // zettabyte
 // zebibyte
+const SCALES_LIST: [u64; 10] = [
+    1,
+    1_000,
+    1024,
+    1024,
+    1_000_000,
+    1024 * 1024,
+    1024 * 1024,
+    1_000_000_000,
+    1024 * 1024 * 1024,
+    1024 * 1024 * 1024,
+];
 
 /// Parse ([0-9]+[a-z]+) to u64 bytes.
 pub(crate) fn parse_number(num_str: &str) -> Result<u64, Box<dyn Error>> {
@@ -94,24 +97,23 @@ pub(crate) fn parse_number(num_str: &str) -> Result<u64, Box<dyn Error>> {
         }
         i += 1;
     }
-    let mut unit = BYTES;
+    let mut unit = 0;
     if i > 0 {
         let u = &s[..i];
-        unit = match u {
-            BYTE_CHARS => BYTES,
-            KILOBYTES_CHARS => KILOBYTES,
-            KIBIBYTES_CHARS | KIBIBYTES_SHORT => KIBIBYTES,
-            MEGABYTES_CHARS => MEGABYTES,
-            MEBIBYTES_CHARS | MEBIBYTES_SHORT => MEBIBYTES,
-            GIGABYTES_CHARS => GIGABYTES,
-            GIBIBYTES_CHARS | GIBIBYTES_SHORT => GIBIBYTES,
-            _ => {
-                return Err(From::from(format!(
-                    "Unknown unit '{:?}' in bytes number '{}'",
-                    u, num_str
-                )))
+        for (ui, cu) in UNITS_LIST.into_iter().enumerate() {
+            if cu == u {
+                unit = SCALES_LIST[ui];
             }
         }
+        if unit == 0 {
+            return Err(From::from(format!(
+                "Unknown unit '{:?}' in bytes number '{}'",
+                u, num_str
+            )));
+        }
+    } else {
+        // No unit means unit is byte.
+        unit = 1;
     }
 
     if v > u64::MAX / unit {
