@@ -72,7 +72,7 @@ pub async fn watch(
             "{} {}.{}: change logs: {:?} ",
             client, base_ver, follow_ver, watch_data
         );
-        if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(60) {
+        if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
             let data = serde_json::to_string(&watch_data).unwrap();
             let response: Result<CommandResp, Infallible> = Ok(data);
             return Ok(Json(response));

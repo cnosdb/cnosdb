@@ -285,6 +285,10 @@ impl MetaManager for MockMetaManager {
         0
     }
 
+    async fn use_tenant(&self, val: Option<String>) -> MetaResult<()> {
+        Ok(())
+    }
+
     async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         vec![]
     }

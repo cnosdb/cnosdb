@@ -318,9 +318,6 @@ pub struct ClusterConfig {
     pub name: String,
     #[serde(default = "ClusterConfig::default_meta")]
     pub meta: String,
-    #[serde(default = "ClusterConfig::default_tenant")]
-    pub tenant: String,
-
     #[serde(default = "ClusterConfig::default_http_server")]
     pub http_server: String,
     #[serde(default = "ClusterConfig::default_grpc_server")]
@@ -342,10 +339,6 @@ impl ClusterConfig {
 
     fn default_meta() -> String {
         "127.0.0.1:21001".to_string()
-    }
-
-    fn default_tenant() -> String {
-        "".to_string()
     }
 
     fn default_http_server() -> String {
@@ -370,9 +363,6 @@ impl ClusterConfig {
         }
         if let Ok(meta) = std::env::var("CNOSDB_CLUSTER_META") {
             self.meta = meta;
-        }
-        if let Ok(tenant) = std::env::var("CNOSDB_TENANT_NAME") {
-            self.tenant = tenant;
         }
         if let Ok(id) = std::env::var("CNOSDB_NODE_ID") {
             self.node_id = id.parse::<u64>().unwrap();

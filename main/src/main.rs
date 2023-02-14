@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use coordinator::hh_queue::HintedOffManager;
 use coordinator::service::CoordService;
 use coordinator::writer::PointWriter;
+use futures::TryFutureExt;
 use meta::meta_manager::RemoteMetaManager;
 use meta::{MetaClientRef, MetaRef};
 use models::meta_data::NodeInfo;
@@ -182,6 +183,7 @@ fn main() -> Result<(), std::io::Error> {
                 let meta_manager: MetaRef =
                     RemoteMetaManager::new(global_config.cluster.clone()).await;
                 meta_manager.admin_meta().add_data_node().await.unwrap();
+                meta_manager.use_tenant(Some("".to_string())).await.unwrap();
 
                 let tskv_options = tskv::Options::from(&global_config);
                 let query_options = tskv::Options::from(&global_config);
