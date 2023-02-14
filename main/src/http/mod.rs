@@ -1,19 +1,17 @@
 use std::net::AddrParseError;
 
-use models::error_code::{ErrorCode, ErrorCoder, UnknownCode};
-use snafu::Snafu;
-use tokio::sync::mpsc::error::SendError;
-use tokio::sync::oneshot::error::RecvError;
-
 use coordinator::errors::CoordinatorError;
-use warp::reject;
-use warp::reply::Response;
-
 use http_protocol::response::ErrorResponse;
 use http_protocol::status_code::UNPROCESSABLE_ENTITY;
 use meta::error::MetaError;
+use models::error_code::{ErrorCode, ErrorCoder, UnknownCode};
+use snafu::Snafu;
 use spi::QueryError;
+use tokio::sync::mpsc::error::SendError;
+use tokio::sync::oneshot::error::RecvError;
 use tskv::TsKv;
+use warp::reject;
+use warp::reply::Response;
 
 use self::response::ResponseBuilder;
 
@@ -140,10 +138,10 @@ impl From<Error> for Response {
 
 #[cfg(test)]
 mod tests {
+    use http_protocol::header::APPLICATION_JSON;
+    use http_protocol::status_code::BAD_REQUEST;
     use spi::QueryError;
     use warp::http::header::{HeaderValue, CONTENT_TYPE};
-
-    use http_protocol::{header::APPLICATION_JSON, status_code::BAD_REQUEST};
 
     use super::*;
 

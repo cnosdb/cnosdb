@@ -1,30 +1,24 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::ok;
-use tokio::sync::mpsc::{self, Receiver, Sender};
-
 use meta::MetaRef;
-use models::{
-    meta_data::VnodeInfo,
-    predicate::domain::{PredicateRef, QueryArgs, QueryExpr},
-    schema::TskvTableSchema,
-    utils::now_timestamp,
-};
+use models::meta_data::VnodeInfo;
+use models::predicate::domain::{PredicateRef, QueryArgs, QueryExpr};
+use models::schema::TskvTableSchema;
+use models::utils::now_timestamp;
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use trace::info;
-use tskv::{
-    engine::EngineRef,
-    iterator::{filter_to_time_ranges, QueryOption, RowIterator, TableScanMetrics},
-    TimeRange,
-};
+use tskv::engine::EngineRef;
+use tskv::iterator::{filter_to_time_ranges, QueryOption, RowIterator, TableScanMetrics};
+use tskv::TimeRange;
 
-use crate::{
-    command::{
-        recv_command, send_command, CoordinatorTcpCmd, QueryRecordBatchRequest,
-        FAILED_RESPONSE_CODE,
-    },
-    errors::{CoordinatorError, CoordinatorResult},
+use crate::command::{
+    recv_command, send_command, CoordinatorTcpCmd, QueryRecordBatchRequest, FAILED_RESPONSE_CODE,
 };
+use crate::errors::{CoordinatorError, CoordinatorResult};
 
 #[derive(Debug)]
 pub struct ReaderIterator {

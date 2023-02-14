@@ -1,6 +1,8 @@
-use crate::{Error, Result};
 use std::cmp::Ordering;
+
 use utils::BkdrHasher;
+
+use crate::{Error, Result};
 
 pub struct Parser {
     default_time: i64,
@@ -492,7 +494,8 @@ fn next_timestamp(buf: &str) -> Option<(&str, usize)> {
 
 #[cfg(test)]
 mod test {
-    use std::{fs::File, io::Read};
+    use std::fs::File;
+    use std::io::Read;
 
     use crate::parser::{
         next_field_set, next_measurement, next_tag_set, next_timestamp, FieldValue, Line, Parser,

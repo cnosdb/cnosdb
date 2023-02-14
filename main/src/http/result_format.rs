@@ -1,21 +1,21 @@
-use super::Error as HttpError;
+use std::str::FromStr;
+
 use datafusion::arrow::csv::writer::WriterBuilder;
 use datafusion::arrow::error::Result as ArrowResult;
 use datafusion::arrow::json::{ArrayWriter, LineDelimitedWriter};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::util::pretty::pretty_format_batches;
-use spi::query::execution::Output;
-use spi::service::protocol::QueryHandle;
-use std::str::FromStr;
-use warp::reply::Response;
-
-use crate::http::response::ResponseBuilder;
-
 use http_protocol::header::{
     APPLICATION_CSV, APPLICATION_JSON, APPLICATION_NDJSON, APPLICATION_PREFIX, APPLICATION_STAR,
     APPLICATION_TABLE, APPLICATION_TSV, CONTENT_TYPE, STAR_STAR,
 };
 use http_protocol::status_code::OK;
+use spi::query::execution::Output;
+use spi::service::protocol::QueryHandle;
+use warp::reply::Response;
+
+use super::Error as HttpError;
+use crate::http::response::ResponseBuilder;
 
 macro_rules! batches_to_json {
     ($WRITER: ident, $batches: expr) => {{
@@ -137,11 +137,13 @@ pub async fn fetch_record_batches(res: QueryHandle) -> ArrowResult<Vec<RecordBat
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::Arc;
+
     use datafusion::arrow::array::Int32Array;
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
     use datafusion::from_slice::FromSlice;
-    use std::sync::Arc;
+
+    use super::*;
 
     #[test]
     fn test_format_batches_with_sep() {

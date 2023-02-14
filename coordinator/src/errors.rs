@@ -1,10 +1,12 @@
+use std::fmt::Debug;
+use std::io;
+
 use datafusion::arrow::error::ArrowError;
 use datafusion::error::DataFusionError;
 use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
 use snafu::Snafu;
-use std::{fmt::Debug, io};
 
 #[derive(Snafu, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]

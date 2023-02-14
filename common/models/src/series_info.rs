@@ -1,11 +1,10 @@
-use crate::Error::InvalidFlatbufferMessage;
-use crate::{
-    errors::{Error, Result},
-    tag, SeriesId, Tag, TagValue,
-};
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
 use utils::BkdrHasher;
+
+use crate::errors::{Error, Result};
+use crate::Error::InvalidFlatbufferMessage;
+use crate::{tag, SeriesId, Tag, TagValue};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SeriesKey {

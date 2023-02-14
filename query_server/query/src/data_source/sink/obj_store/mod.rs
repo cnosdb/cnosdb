@@ -2,21 +2,18 @@ pub mod serializer;
 
 use std::sync::Arc;
 
-use crate::data_source::SinkMetadata;
-use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider};
 use async_trait::async_trait;
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::SendableRecordBatchStream;
-use datafusion::{
-    arrow::record_batch::RecordBatch, physical_plan::metrics::ExecutionPlanMetricsSet,
-};
 use object_store::path::Path;
 use object_store::DynObjectStore;
 use spi::query::datasource::WriteContext;
-use spi::QueryError;
-use spi::Result;
+use spi::{QueryError, Result};
 use trace::debug;
 
 use super::DynRecordBatchSerializer;
+use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata};
 
 pub struct ObjectStoreSink {
     ctx: WriteContext,

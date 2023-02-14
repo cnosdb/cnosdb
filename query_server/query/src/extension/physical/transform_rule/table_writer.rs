@@ -1,21 +1,18 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{
-    datasource::source_as_provider,
-    execution::context::SessionState,
-    logical_expr::{LogicalPlan, UserDefinedLogicalNode},
-    physical_plan::{displayable, planner::ExtensionPlanner, ExecutionPlan, PhysicalPlanner},
-};
-use trace::debug;
-use trace::trace;
-
-use crate::{
-    data_source::WriteExecExt,
-    extension::logical::plan_node::table_writer::{as_table_writer_plan_node, TableWriterPlanNode},
-};
-
+use datafusion::datasource::source_as_provider;
 use datafusion::error::Result;
+use datafusion::execution::context::SessionState;
+use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
+use datafusion::physical_plan::planner::ExtensionPlanner;
+use datafusion::physical_plan::{displayable, ExecutionPlan, PhysicalPlanner};
+use trace::{debug, trace};
+
+use crate::data_source::WriteExecExt;
+use crate::extension::logical::plan_node::table_writer::{
+    as_table_writer_plan_node, TableWriterPlanNode,
+};
 
 /// Physical planner for TableWriter nodes
 pub struct TableWriterPlanner {}

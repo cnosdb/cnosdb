@@ -1,10 +1,11 @@
 use datafusion::arrow::record_batch::RecordBatch;
-
 use http_protocol::header::ACCEPT;
+use http_protocol::http_client::HttpClient;
 use http_protocol::parameter::{SqlParam, WriteParam};
-use http_protocol::{http_client::HttpClient, status_code::OK};
+use http_protocol::status_code::OK;
 
-use crate::{config::ConfigOptions, print_format::PrintFormat};
+use crate::config::ConfigOptions;
+use crate::print_format::PrintFormat;
 
 pub const DEFAULT_USER: &str = "cnosdb";
 pub const DEFAULT_PASSWORD: &str = "";

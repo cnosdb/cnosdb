@@ -1,8 +1,6 @@
-use snafu::Backtrace;
+use snafu::{Backtrace, Snafu};
 use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
-
-use snafu::Snafu;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Snafu)]

@@ -1,12 +1,10 @@
-use std::{
-    cmp::max,
-    collections::HashMap,
-    iter::Peekable,
-    path::{Path, PathBuf},
-    rc::Rc,
-    slice,
-    sync::Arc,
-};
+use std::cmp::max;
+use std::collections::HashMap;
+use std::iter::Peekable;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::slice;
+use std::sync::Arc;
 
 use models::codec::Encoding;
 use models::schema::TskvTableSchema;
@@ -18,31 +16,28 @@ use models::{
 use parking_lot::{Mutex, RwLock};
 use regex::internal::Input;
 use snafu::{NoneError, OptionExt, ResultExt};
-use tokio::{
-    select,
-    sync::{
-        mpsc::{self, Sender},
-        oneshot,
-        oneshot::Sender as OneShotSender,
-    },
-};
+use tokio::select;
+use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::oneshot;
+use tokio::sync::oneshot::Sender as OneShotSender;
 use trace::{debug, error, info, log_error, warn};
 use utils::BloomFilter;
 
-use crate::{
-    compaction::FlushReq,
-    context::GlobalContext,
-    database::Database,
-    error::{self, Error, Result},
-    index::IndexResult,
-    kv_option::Options,
-    memcache::{DataType, FieldVal, MemCache, SeriesData},
-    summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit, WriteSummaryRequest},
-    tseries_family::{LevelInfo, Version},
-    tsm::{self, codec::DataBlockEncoding, DataBlock, TsmWriter},
-    version_set::VersionSet,
-    ColumnFileId, TseriesFamilyId,
+use crate::compaction::FlushReq;
+use crate::context::GlobalContext;
+use crate::database::Database;
+use crate::error::{self, Error, Result};
+use crate::index::IndexResult;
+use crate::kv_option::Options;
+use crate::memcache::{DataType, FieldVal, MemCache, SeriesData};
+use crate::summary::{
+    CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit, WriteSummaryRequest,
 };
+use crate::tseries_family::{LevelInfo, Version};
+use crate::tsm::codec::DataBlockEncoding;
+use crate::tsm::{self, DataBlock, TsmWriter};
+use crate::version_set::VersionSet;
+use crate::{ColumnFileId, TseriesFamilyId};
 
 struct FlushingBlock {
     pub field_id: FieldId,
@@ -444,24 +439,20 @@ pub mod flush_tests {
     use parking_lot::RwLock;
     use utils::dedup_front_by_key;
 
-    use crate::file_system::file_manager;
-    use crate::memcache::test::put_rows_to_cache;
-    use crate::summary::{CompactMeta, VersionEdit};
-    use crate::tseries_family::{LevelInfo, Version};
-    use crate::tsm::tsm_reader_tests::read_and_check;
-    use crate::tsm::{codec::DataBlockEncoding, DataBlock, TsmReader};
-    use crate::{
-        compaction::FlushReq,
-        context::GlobalContext,
-        file_utils,
-        kv_option::Options,
-        memcache::{DataType, FieldVal, MemCache},
-        tseries_family,
-        tseries_family::FLUSH_REQ,
-        version_set::VersionSet,
-    };
-
     use super::FlushTask;
+    use crate::compaction::FlushReq;
+    use crate::context::GlobalContext;
+    use crate::file_system::file_manager;
+    use crate::kv_option::Options;
+    use crate::memcache::test::put_rows_to_cache;
+    use crate::memcache::{DataType, FieldVal, MemCache};
+    use crate::summary::{CompactMeta, VersionEdit};
+    use crate::tseries_family::{LevelInfo, Version, FLUSH_REQ};
+    use crate::tsm::codec::DataBlockEncoding;
+    use crate::tsm::tsm_reader_tests::read_and_check;
+    use crate::tsm::{DataBlock, TsmReader};
+    use crate::version_set::VersionSet;
+    use crate::{file_utils, tseries_family};
 
     pub fn default_with_field_id(ids: Vec<ColumnId>) -> TskvTableSchema {
         let fields = ids

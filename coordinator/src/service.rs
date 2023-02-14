@@ -2,15 +2,9 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use config::{ClusterConfig, HintedOffConfig};
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
-use snafu::ResultExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::oneshot;
-
-use config::{ClusterConfig, HintedOffConfig};
 use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
 use meta::meta_manager::RemoteMetaManager;
 use meta::{MetaClientRef, MetaRef};
@@ -20,6 +14,11 @@ use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
 use models::*;
 use protos::kv_service::WritePointsRequest;
+use snafu::ResultExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::oneshot;
 use trace::info;
 use tskv::engine::{EngineRef, MockEngine};
 use tskv::iterator::QueryOption;

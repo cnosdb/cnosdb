@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{
-    logical_expr::LogicalPlan,
-    physical_plan::{planner::ExtensionPlanner, ExecutionPlan},
-};
+use datafusion::logical_expr::LogicalPlan;
+use datafusion::physical_plan::planner::ExtensionPlanner;
+use datafusion::physical_plan::ExecutionPlan;
 
 use super::session::IsiphoSessionCtx;
 use crate::Result;

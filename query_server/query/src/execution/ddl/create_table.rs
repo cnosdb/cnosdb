@@ -1,13 +1,14 @@
-use crate::execution::ddl::DDLDefinitionTask;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use meta::error::MetaError;
 use models::schema::{TableSchema, TskvTableSchema};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::Result;
-use std::sync::Arc;
-
 use spi::query::logical_planner::CreateTable;
+use spi::Result;
+
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct CreateTableTask {
     stmt: CreateTable,

@@ -1,8 +1,8 @@
-use super::Error as HttpError;
+use http_protocol::header::{APPLICATION_CSV, BASIC_PREFIX};
 use models::auth::user::UserInfo;
 use warp::http::header::{HeaderName, HeaderValue};
 
-use http_protocol::header::{APPLICATION_CSV, BASIC_PREFIX};
+use super::Error as HttpError;
 
 #[derive(Debug, Clone)]
 pub struct Header {

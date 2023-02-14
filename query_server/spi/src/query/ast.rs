@@ -1,11 +1,11 @@
 use std::fmt;
 
+use datafusion::sql::parser::CreateExternalTable;
 use datafusion::sql::sqlparser::ast::{
-    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, Value,
+    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, SqlOption, Statement,
+    TableFactor, Value,
 };
-use datafusion::sql::sqlparser::ast::{SqlOption, TableFactor};
 use datafusion::sql::sqlparser::parser::ParserError;
-use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 

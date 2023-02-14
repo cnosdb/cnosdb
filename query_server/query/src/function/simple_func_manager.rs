@@ -1,10 +1,9 @@
-use std::collections::HashSet;
-use std::{collections::HashMap, sync::Arc};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
 use spi::query::function::*;
-use spi::QueryError;
-use spi::Result;
+use spi::{QueryError, Result};
 
 #[derive(Debug, Default)]
 pub struct SimpleFunctionMetadataManager {

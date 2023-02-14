@@ -1,11 +1,9 @@
-use std::{
-    borrow::Borrow,
-    cmp::Ordering,
-    fmt::format,
-    fs,
-    io::{Error as IoError, Read},
-    path::{Path, PathBuf},
-};
+use std::borrow::Borrow;
+use std::cmp::Ordering;
+use std::fmt::format;
+use std::fs;
+use std::io::{Error as IoError, Read};
+use std::path::{Path, PathBuf};
 
 use async_recursion::async_recursion;
 use bytes::{Buf, BufMut};
@@ -15,18 +13,15 @@ use parking_lot::Mutex;
 use snafu::ResultExt;
 use trace::{error, info};
 
-use crate::{
-    byte_utils::decode_be_u32,
-    error::{self, Error, Result},
-    file_system::{file_manager, AsyncFile, FileCursor, IFile},
-};
-
 use super::{
     file_crc_source_len, Record, FILE_FOOTER_CRC32_NUMBER_LEN, FILE_FOOTER_LEN,
     FILE_FOOTER_MAGIC_NUMBER_LEN, FILE_MAGIC_NUMBER_LEN, READER_BUF_SIZE, RECORD_CRC32_NUMBER_LEN,
     RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN, RECORD_DATA_VERSION_LEN, RECORD_HEADER_LEN,
     RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
 };
+use crate::byte_utils::decode_be_u32;
+use crate::error::{self, Error, Result};
+use crate::file_system::{file_manager, AsyncFile, FileCursor, IFile};
 
 pub struct Reader {
     path: PathBuf,
@@ -258,18 +253,14 @@ pub(crate) mod test {
 
     use snafu::ResultExt;
 
-    use crate::{
-        byte_utils::decode_be_u32,
-        error::{self, Error, Result},
-        file_system::{file_manager, AsyncFile, FileCursor, IFile},
-        record_file::{
-            Record, RECORD_CRC32_NUMBER_LEN, RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN,
-            RECORD_DATA_VERSION_LEN, RECORD_HEADER_LEN, RECORD_MAGIC_NUMBER,
-            RECORD_MAGIC_NUMBER_LEN,
-        },
-    };
-
     use super::Reader;
+    use crate::byte_utils::decode_be_u32;
+    use crate::error::{self, Error, Result};
+    use crate::file_system::{file_manager, AsyncFile, FileCursor, IFile};
+    use crate::record_file::{
+        Record, RECORD_CRC32_NUMBER_LEN, RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN,
+        RECORD_DATA_VERSION_LEN, RECORD_HEADER_LEN, RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
+    };
 
     impl Reader {
         pub(crate) async fn read_at(&mut self, pos: usize) -> Result<Record> {

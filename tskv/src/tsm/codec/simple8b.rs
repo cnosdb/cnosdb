@@ -214,7 +214,8 @@ fn decode_value(v: u64, dst: &mut [u64]) -> usize {
 #[cfg(test)]
 #[allow(clippy::unreadable_literal)]
 mod tests {
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
 
     use super::*;
 

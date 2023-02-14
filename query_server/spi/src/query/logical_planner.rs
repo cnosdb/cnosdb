@@ -1,61 +1,44 @@
 use std::io::Write;
 use std::sync::Arc;
 
-use crate::service::protocol::QueryId;
-use crate::ParserSnafu;
-use crate::QueryError;
-use crate::Result;
-
-use super::{
-    ast::{parse_bool_value, parse_char_value, parse_string_value, ExtStatement},
-    datasource::{
-        azure::{AzblobStorageConfig, AzblobStorageConfigBuilder},
-        gcs::{GcsStorageConfig, ServiceAccountCredentials, ServiceAccountCredentialsBuilder},
-        s3::{S3StorageConfig, S3StorageConfigBuilder},
-        UriSchema,
-    },
-    session::IsiphoSessionCtx,
-    AFFECTED_ROWS,
-};
-
 use async_trait::async_trait;
 use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::DataType;
-use datafusion::logical_expr::type_coercion::aggregates::DATES;
-use datafusion::logical_expr::type_coercion::aggregates::NUMERICS;
-use datafusion::logical_expr::type_coercion::aggregates::STRINGS;
-use datafusion::logical_expr::type_coercion::aggregates::TIMES;
-use datafusion::logical_expr::type_coercion::aggregates::TIMESTAMPS;
-use datafusion::logical_expr::ReturnTypeFunction;
-use datafusion::logical_expr::ScalarUDF;
-use datafusion::logical_expr::Signature;
-use datafusion::logical_expr::Volatility;
-use datafusion::physical_plan::functions::make_scalar_function;
-use datafusion::prelude::col;
-use datafusion::sql::sqlparser::parser::ParserError;
-use datafusion::{
-    datasource::file_format::file_type::{FileCompressionType, FileType},
-    logical_expr::expr::AggregateFunction as AggregateFunctionExpr,
-    logical_expr::{AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan},
-    prelude::Expr,
-    sql::sqlparser::ast::{Ident, ObjectName, SqlOption},
+use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
+use datafusion::logical_expr::expr::AggregateFunction as AggregateFunctionExpr;
+use datafusion::logical_expr::type_coercion::aggregates::{
+    DATES, NUMERICS, STRINGS, TIMES, TIMESTAMPS,
 };
-
+use datafusion::logical_expr::{
+    AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan, ReturnTypeFunction, ScalarUDF,
+    Signature, Volatility,
+};
+use datafusion::physical_plan::functions::make_scalar_function;
+use datafusion::prelude::{col, Expr};
+use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SqlOption};
+use datafusion::sql::sqlparser::parser::ParserError;
 use lazy_static::lazy_static;
+use models::auth::privilege::{DatabasePrivilege, Privilege};
+use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
+use models::auth::user::{UserOptions, UserOptionsBuilder};
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use models::object_reference::ResolvedTable;
-use models::schema::TableColumn;
-use models::{
-    auth::{
-        privilege::{DatabasePrivilege, Privilege},
-        role::{SystemTenantRole, TenantRoleIdentifier},
-        user::{UserOptions, UserOptionsBuilder},
-    },
-    oid::Oid,
-    schema::{DatabaseOptions, TenantOptions, TenantOptionsBuilder},
-};
+use models::oid::Oid;
+use models::schema::{DatabaseOptions, TableColumn, TenantOptions, TenantOptionsBuilder};
 use snafu::ResultExt;
 use tempfile::NamedTempFile;
+
+use super::ast::{parse_bool_value, parse_char_value, parse_string_value, ExtStatement};
+use super::datasource::azure::{AzblobStorageConfig, AzblobStorageConfigBuilder};
+use super::datasource::gcs::{
+    GcsStorageConfig, ServiceAccountCredentials, ServiceAccountCredentialsBuilder,
+};
+use super::datasource::s3::{S3StorageConfig, S3StorageConfigBuilder};
+use super::datasource::UriSchema;
+use super::session::IsiphoSessionCtx;
+use super::AFFECTED_ROWS;
+use crate::service::protocol::QueryId;
+use crate::{ParserSnafu, QueryError, Result};
 
 lazy_static! {
     static ref TABLE_WRITE_UDF: Arc<ScalarUDF> = Arc::new(ScalarUDF::new(

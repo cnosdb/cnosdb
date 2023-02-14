@@ -1,11 +1,12 @@
 use http_protocol::header;
 use spi::server::dbms::DBMSRef;
-use tonic::{metadata::MetadataMap, Status};
+use tonic::metadata::MetadataMap;
+use tonic::Status;
 use trace::debug;
 
-use crate::{flight_sql::utils, http::header::Header};
-
 use super::{CallHeaderAuthenticator, CommonAuthResult};
+use crate::flight_sql::utils;
+use crate::http::header::Header;
 
 #[derive(Clone)]
 pub struct BasicCallHeaderAuthenticator {
@@ -54,9 +55,8 @@ mod test {
     use spi::server::dbms::DatabaseManagerSystemMock;
     use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 
-    use crate::flight_sql::auth_middleware::{AuthResult, CallHeaderAuthenticator};
-
     use super::BasicCallHeaderAuthenticator;
+    use crate::flight_sql::auth_middleware::{AuthResult, CallHeaderAuthenticator};
 
     #[tokio::test]
     async fn test() {

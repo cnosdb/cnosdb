@@ -3,17 +3,13 @@
 use std::collections::HashMap;
 
 use models::auth::privilege::DatabasePrivilege;
-use models::auth::role::SystemTenantRole;
-use models::auth::role::TenantRoleIdentifier;
+use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::UserOptions;
 use models::meta_data::*;
 use models::oid::Oid;
-use models::schema::TenantOptions;
-use models::schema::{DatabaseSchema, TableSchema};
-
+use models::schema::{DatabaseSchema, TableSchema, TenantOptions};
 use parking_lot::RwLock;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use super::key_path::KeyPath;
@@ -441,9 +437,11 @@ impl Default for Watch {
 }
 
 mod test {
-    use crate::store::command::Watch;
     use std::sync::Arc;
+
     use tokio::sync::RwLock;
+
+    use crate::store::command::Watch;
 
     async fn _watch_data_test(watch: Arc<RwLock<Watch>>, cluster: &str, ver: u64) {
         println!("======== {}", cluster);

@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use crate::{dispatcher::query_tracker::QueryTracker, execution::ddl::DDLExecution};
-use spi::query::{
-    execution::{QueryExecution, QueryExecutionFactory, QueryStateMachineRef},
-    logical_planner::Plan,
-    optimizer::Optimizer,
-    scheduler::SchedulerRef,
-};
+use spi::query::execution::{QueryExecution, QueryExecutionFactory, QueryStateMachineRef};
+use spi::query::logical_planner::Plan;
+use spi::query::optimizer::Optimizer;
+use spi::query::scheduler::SchedulerRef;
 
-use super::{query::SqlQueryExecution, sys::SystemExecution};
+use super::query::SqlQueryExecution;
+use super::sys::SystemExecution;
+use crate::dispatcher::query_tracker::QueryTracker;
+use crate::execution::ddl::DDLExecution;
 
 pub struct SqlQueryExecutionFactory {
     optimizer: Arc<dyn Optimizer + Send + Sync>,

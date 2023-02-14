@@ -1,6 +1,6 @@
-use reqwest::{Method, Request};
-use reqwest::{Response, Url};
 use std::time::Duration;
+
+use reqwest::{Method, Request, Response, Url};
 use tokio::time::timeout;
 
 use crate::db_request::{DBRequest, Instruction, LineProtocol, Query};

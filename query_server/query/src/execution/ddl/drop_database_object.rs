@@ -1,17 +1,13 @@
 use async_trait::async_trait;
 use coordinator::command;
+use meta::error::MetaError;
 use snafu::ResultExt;
-use spi::query::{
-    execution::{Output, QueryStateMachineRef},
-    logical_planner::{DatabaseObjectType, DropDatabaseObject},
-};
-use spi::MetaSnafu;
-use spi::Result;
-
+use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::query::logical_planner::{DatabaseObjectType, DropDatabaseObject};
+use spi::{MetaSnafu, Result};
 use trace::info;
 
 use super::DDLDefinitionTask;
-use meta::error::MetaError;
 
 pub struct DropDatabaseObjectTask {
     stmt: DropDatabaseObject,

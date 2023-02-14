@@ -94,10 +94,9 @@ fn u64_to_i64_vector(src: &[u64]) -> Vec<i64> {
 #[cfg(test)]
 #[allow(clippy::unreadable_literal)]
 mod tests {
-    use super::{
-        super::{integer::DeltaEncoding, simple8b},
-        *,
-    };
+    use super::super::integer::DeltaEncoding;
+    use super::super::simple8b;
+    use super::*;
     use crate::tsm::codec::{get_encoding, Encoding};
 
     #[test]

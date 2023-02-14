@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, MetaClientRef};
+use meta::error::MetaError;
+use meta::MetaClientRef;
 use models::auth::user::User;
 
-use crate::{
-    dispatcher::query_tracker::QueryTracker,
-    metadata::information_schema_provider::{
-        builder::members::InformationSchemaMembersBuilder, InformationSchemaTableFactory,
-    },
-};
+use crate::dispatcher::query_tracker::QueryTracker;
+use crate::metadata::information_schema_provider::builder::members::InformationSchemaMembersBuilder;
+use crate::metadata::information_schema_provider::InformationSchemaTableFactory;
 
 const INFORMATION_SCHEMA_MEMBERS: &str = "MEMBERS";
 

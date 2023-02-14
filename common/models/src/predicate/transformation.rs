@@ -1,15 +1,12 @@
-use std::{collections::VecDeque, result};
+use std::collections::VecDeque;
+use std::result;
 
-use datafusion::{
-    arrow::datatypes::DataType,
-    error::DataFusionError,
-    logical_expr::{
-        expr_visitor::{ExprVisitable, ExpressionVisitor, Recursion},
-        BinaryExpr, Operator,
-    },
-    prelude::{Column, Expr},
-    scalar::ScalarValue,
-};
+use datafusion::arrow::datatypes::DataType;
+use datafusion::error::DataFusionError;
+use datafusion::logical_expr::expr_visitor::{ExprVisitable, ExpressionVisitor, Recursion};
+use datafusion::logical_expr::{BinaryExpr, Operator};
+use datafusion::prelude::{Column, Expr};
+use datafusion::scalar::ScalarValue;
 
 use super::domain::{ColumnDomains, Domain, Range};
 
@@ -328,13 +325,12 @@ impl RowExpressionToDomainsVisitor<'_> {
 mod tests {
     use std::ops::Add;
 
-    use super::*;
     use chrono::{Duration, NaiveDate};
+    use datafusion::logical_expr::expr_fn::col;
+    use datafusion::logical_expr::{binary_expr, Like};
+    use datafusion::prelude::{and, in_list, lit, or, random};
 
-    use datafusion::{
-        logical_expr::{binary_expr, expr_fn::col, Like},
-        prelude::{and, in_list, lit, or, random},
-    };
+    use super::*;
 
     /// resolves the domain of the specified expression
     fn get_domains(expr: &Expr) -> Result<ColumnDomains<Column>> {

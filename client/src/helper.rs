@@ -2,18 +2,12 @@
 //! and auto-completion for file name during creating external table.
 
 use datafusion::sql::parser::{DFParser, Statement};
-use rustyline::completion::Completer;
-use rustyline::completion::FilenameCompleter;
-use rustyline::completion::Pair;
+use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
-use rustyline::validate::ValidationContext;
-use rustyline::validate::ValidationResult;
-use rustyline::validate::Validator;
-use rustyline::Context;
-use rustyline::Helper;
-use rustyline::Result;
+use rustyline::validate::{ValidationContext, ValidationResult, Validator};
+use rustyline::{Context, Helper, Result};
 
 #[derive(Default)]
 pub struct CliHelper {

@@ -1,14 +1,15 @@
 use std::sync::Arc;
-// use crate::execution::ddl::query::spi::MetaSnafu;
-use crate::execution::ddl::DDLDefinitionTask;
+
 use async_trait::async_trait;
 use coordinator::command;
 use meta::error::MetaError;
 use models::schema::TableSchema;
-use spi::Result;
-
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{AlterTable, AlterTableAction};
+use spi::Result;
+
+// use crate::execution::ddl::query::spi::MetaSnafu;
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct AlterTableTask {
     stmt: AlterTable,

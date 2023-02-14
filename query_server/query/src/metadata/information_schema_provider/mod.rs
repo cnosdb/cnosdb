@@ -1,22 +1,25 @@
 mod builder;
 mod factory;
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, MetaClientRef};
+use meta::error::MetaError;
+use meta::MetaClientRef;
 use models::auth::user::User;
 
-use crate::dispatcher::query_tracker::QueryTracker;
-
-use self::factory::{
-    columns::ColumnsFactory, database_privileges::DatabasePrivilegesFactory,
-    databases::DatabasesFactory, enabled_roles::EnabledRolesFactory, members::MembersFactory,
-    queries::QueriesFactory, roles::RolesFactory, tables::TablesFactory,
-};
-
+use self::factory::columns::ColumnsFactory;
+use self::factory::database_privileges::DatabasePrivilegesFactory;
+use self::factory::databases::DatabasesFactory;
+use self::factory::enabled_roles::EnabledRolesFactory;
+use self::factory::members::MembersFactory;
+use self::factory::queries::QueriesFactory;
+use self::factory::roles::RolesFactory;
+use self::factory::tables::TablesFactory;
 use super::INFORMATION_SCHEMA;
+use crate::dispatcher::query_tracker::QueryTracker;
 
 pub struct InformationSchemaProvider {
     query_tracker: Arc<QueryTracker>,

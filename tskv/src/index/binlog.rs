@@ -1,19 +1,16 @@
-use std::{
-    collections::HashMap,
-    io::SeekFrom,
-    marker::PhantomData,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::collections::HashMap;
+use std::io::SeekFrom;
+use std::marker::PhantomData;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use crate::file_system::{file_manager, AsyncFile, FileCursor, IFile};
-use crate::{byte_utils, file_utils};
 use parking_lot::RwLock;
 use snafu::prelude::*;
-
 use trace::{debug, error, info, warn};
 
 use super::{IndexEngine, IndexError, IndexResult};
+use crate::file_system::{file_manager, AsyncFile, FileCursor, IFile};
+use crate::{byte_utils, file_utils};
 
 const SEGMENT_FILE_HEADER_SIZE: usize = 8;
 const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x02];

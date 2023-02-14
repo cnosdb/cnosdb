@@ -1,14 +1,12 @@
-use std::{collections::HashSet, fmt::Display};
+use std::collections::HashSet;
+use std::fmt::Display;
 
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
+use super::privilege::{DatabasePrivilege, Privilege, PrivilegeChecker, TenantObjectPrivilege};
+use super::{rsa_utils, AuthError, Result};
 use crate::oid::{Identifier, Oid};
-
-use super::{
-    privilege::{DatabasePrivilege, Privilege, PrivilegeChecker, TenantObjectPrivilege},
-    rsa_utils, AuthError, Result,
-};
 
 pub const ROOT: &str = "root";
 pub const ROOT_PWD: &str = "";

@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use meta::{meta_manager::RemoteMetaManager, MetaRef};
+use meta::meta_manager::RemoteMetaManager;
+use meta::MetaRef;
 use parking_lot::Mutex;
-
+use protos::kv_service::WritePointsRequest;
+use protos::models_helper;
 use tokio::runtime::{self, Runtime};
-
-use protos::{kv_service::WritePointsRequest, models_helper};
-use tskv::{engine::Engine, TsKv};
+use tskv::engine::Engine;
+use tskv::TsKv;
 
 async fn get_tskv() -> TsKv {
     let mut global_config = config::get_config("../config/config.toml");

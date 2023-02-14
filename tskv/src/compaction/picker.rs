@@ -1,13 +1,9 @@
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fmt::Debug;
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-    ops::{Add, Div},
-    sync::{
-        atomic::{self, AtomicBool},
-        Arc,
-    },
-};
+use std::ops::{Add, Div};
+use std::sync::atomic::{self, AtomicBool};
+use std::sync::Arc;
 
 use chrono::{
     DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc,
@@ -17,13 +13,11 @@ use models::Timestamp;
 use parking_lot::RwLock;
 use trace::{debug, error, info};
 
-use crate::{
-    compaction::CompactReq,
-    error::Result,
-    kv_option::{Options, StorageOptions},
-    tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
-    LevelId, TimeRange, TseriesFamilyId,
-};
+use crate::compaction::CompactReq;
+use crate::error::Result;
+use crate::kv_option::{Options, StorageOptions};
+use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
+use crate::{LevelId, TimeRange, TseriesFamilyId};
 
 pub trait Picker: Send + Sync + Debug {
     fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq>;
@@ -415,21 +409,20 @@ impl LevelCompatContext {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use lru_cache::ShardedCache;
     use parking_lot::RwLock;
-    use std::sync::Arc;
     use tokio::sync::mpsc;
 
     use crate::compaction::test::create_options;
     use crate::compaction::{LevelCompactionPicker, Picker};
+    use crate::file_utils::make_tsm_file_name;
+    use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
-    use crate::{
-        file_utils::make_tsm_file_name,
-        kv_option::{Options, StorageOptions},
-        memcache::MemCache,
-        tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
-        TimeRange,
-    };
+    use crate::memcache::MemCache;
+    use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
+    use crate::TimeRange;
 
     type ColumnFilesSketch = (u64, i64, i64, u64, bool);
     type LevelsSketch = Vec<(u32, i64, i64, Vec<ColumnFilesSketch>)>;

@@ -1,22 +1,17 @@
 use std::sync::Arc;
-
-use async_trait::async_trait;
-use datafusion::arrow::{
-    array::{StringBuilder, UInt64Builder},
-    datatypes::{DataType, Field, Schema, SchemaRef},
-    error::ArrowError,
-    record_batch::RecordBatch,
-};
-use spi::Result;
-use spi::{
-    query::execution::{Output, QueryState, QueryStateMachineRef},
-    service::protocol::QueryId,
-};
 use std::time::Duration;
 
-use crate::dispatcher::query_tracker::QueryTracker;
+use async_trait::async_trait;
+use datafusion::arrow::array::{StringBuilder, UInt64Builder};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use datafusion::arrow::error::ArrowError;
+use datafusion::arrow::record_batch::RecordBatch;
+use spi::query::execution::{Output, QueryState, QueryStateMachineRef};
+use spi::service::protocol::QueryId;
+use spi::Result;
 
 use super::SystemTask;
+use crate::dispatcher::query_tracker::QueryTracker;
 
 pub struct ShowQueriesTask {
     query_tracker: Arc<QueryTracker>,

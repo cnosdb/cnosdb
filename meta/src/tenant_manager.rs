@@ -1,30 +1,24 @@
 #![allow(dead_code, unused_imports, unused_variables, clippy::collapsible_match)]
+use std::collections::HashMap;
 use std::fmt::Debug;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use models::schema::LimiterConfig;
-use models::{
-    meta_data::ExpiredBucketInfo,
-    oid::{Identifier, Oid},
-    schema::{Tenant, TenantOptions},
-};
-
+use models::meta_data::ExpiredBucketInfo;
+use models::oid::{Identifier, Oid};
+use models::schema::{LimiterConfig, Tenant, TenantOptions};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 use trace::info;
 
+use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::{Limiter, LimiterImpl, NoneLimiter};
-use crate::meta_client::MetaClient;
-use crate::MetaClientRef;
-use crate::{
-    client::MetaHttpClient,
-    meta_client::RemoteMetaClient,
-    store::command::{
-        self, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND,
-    },
+use crate::meta_client::{MetaClient, RemoteMetaClient};
+use crate::store::command::{
+    self, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND,
 };
+use crate::MetaClientRef;
 
 #[async_trait]
 pub trait TenantManager: Send + Sync + Debug {

@@ -5,14 +5,10 @@ use futures::stream::AbortHandle;
 use futures::TryStreamExt;
 use parking_lot::Mutex;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
-use spi::query::execution::Output;
+use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
+use spi::query::logical_planner::QueryPlan;
+use spi::query::optimizer::Optimizer;
 use spi::query::scheduler::SchedulerRef;
-use spi::query::{
-    execution::{QueryExecution, QueryStateMachineRef},
-    logical_planner::QueryPlan,
-    optimizer::Optimizer,
-};
-
 use spi::{QueryError, Result};
 use trace::debug;
 

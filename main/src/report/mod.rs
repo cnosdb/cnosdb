@@ -1,11 +1,13 @@
-use crate::server::Service;
-use crate::{server, VERSION};
-use lazy_static::lazy_static;
-use serde::Serialize;
 use std::fmt::Debug;
 use std::ops::Add;
+
+use lazy_static::lazy_static;
+use serde::Serialize;
 use tokio::task::JoinHandle;
 use trace::debug;
+
+use crate::server::Service;
+use crate::{server, VERSION};
 
 async fn get_country_code_and_regin_name() -> (String, String) {
     let client = reqwest::Client::new();

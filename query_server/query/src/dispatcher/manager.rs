@@ -4,34 +4,23 @@ use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use meta::error::MetaError;
 use models::oid::Oid;
-
-use spi::query::dispatcher::{QueryInfo, QueryStatus};
-use spi::query::execution::Output;
+use spi::query::ast::ExtStatement;
+use spi::query::dispatcher::{QueryDispatcher, QueryInfo, QueryStatus};
+use spi::query::execution::{Output, QueryExecutionFactory, QueryStateMachine};
+use spi::query::logical_planner::LogicalPlanner;
+use spi::query::optimizer::Optimizer;
+use spi::query::parser::Parser;
 use spi::query::scheduler::SchedulerRef;
-use spi::{
-    query::{
-        ast::ExtStatement,
-        dispatcher::QueryDispatcher,
-        execution::{QueryExecutionFactory, QueryStateMachine},
-        logical_planner::LogicalPlanner,
-        optimizer::Optimizer,
-        parser::Parser,
-        session::IsiphoSessionCtxFactory,
-    },
-    service::protocol::{Query, QueryId},
-    QueryError,
-};
+use spi::query::session::IsiphoSessionCtxFactory;
+use spi::service::protocol::{Query, QueryId};
+use spi::{QueryError, Result};
 
-use spi::Result;
-
+use super::query_tracker::QueryTracker;
+use crate::execution::factory::SqlQueryExecutionFactory;
 use crate::extension::expr::load_all_functions;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::metadata::{ContextProviderExtension, MetadataProvider};
-use crate::{
-    execution::factory::SqlQueryExecutionFactory, sql::logical::planner::DefaultLogicalPlanner,
-};
-
-use super::query_tracker::QueryTracker;
+use crate::sql::logical::planner::DefaultLogicalPlanner;
 
 #[derive(Clone)]
 pub struct SimpleQueryDispatcher {

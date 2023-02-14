@@ -1,9 +1,10 @@
+use std::borrow::Borrow;
 use std::cmp::max;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::fs::{remove_file, rename};
 use std::path::{Path, PathBuf};
-use std::{borrow::Borrow, collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use config::get_config;
 use futures::TryFutureExt;
@@ -13,27 +14,24 @@ use meta::MetaRef;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
-use tokio::{
-    runtime::Runtime,
-    sync::{mpsc::Sender, oneshot::Sender as OneShotSender, watch::Receiver, RwLock},
-};
+use tokio::runtime::Runtime;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::oneshot::Sender as OneShotSender;
+use tokio::sync::watch::Receiver;
+use tokio::sync::RwLock;
 use trace::{debug, error, info};
 use utils::BloomFilter;
 
-use crate::{
-    byte_utils,
-    compaction::FlushReq,
-    context::{GlobalContext, GlobalSequenceTask},
-    error::{Error, Result},
-    file_system::file_manager::try_exists,
-    file_utils,
-    kv_option::{Options, StorageOptions},
-    record_file::{Reader, RecordDataType, RecordDataVersion, Writer},
-    tseries_family::{ColumnFile, LevelInfo, Version},
-    tsm::TsmReader,
-    version_set::VersionSet,
-    ColumnFileId, LevelId, TseriesFamilyId,
-};
+use crate::compaction::FlushReq;
+use crate::context::{GlobalContext, GlobalSequenceTask};
+use crate::error::{Error, Result};
+use crate::file_system::file_manager::try_exists;
+use crate::kv_option::{Options, StorageOptions};
+use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
+use crate::tseries_family::{ColumnFile, LevelInfo, Version};
+use crate::tsm::TsmReader;
+use crate::version_set::VersionSet;
+use crate::{byte_utils, file_utils, ColumnFileId, LevelId, TseriesFamilyId};
 
 const MAX_BATCH_SIZE: usize = 64;
 
@@ -828,31 +826,27 @@ mod test {
     use std::fs;
     use std::sync::Arc;
 
+    use config::{get_config, ClusterConfig, Config};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
+    use models::schema::{make_owner, DatabaseSchema, TenantOptions};
     use snafu::ResultExt;
     use tokio::runtime::Runtime;
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::Sender;
     use trace::debug;
-
-    use config::{get_config, ClusterConfig, Config};
-    use models::schema::{make_owner, DatabaseSchema, TenantOptions};
     use utils::BloomFilter;
 
+    use crate::compaction::FlushReq;
+    use crate::context::GlobalSequenceTask;
+    use crate::file_system::file_manager;
+    use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::{
         COMPACT_REQ_CHANNEL_CAP, GLOBAL_TASK_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP,
     };
-    use crate::{
-        compaction::FlushReq,
-        context::GlobalSequenceTask,
-        error,
-        file_system::file_manager,
-        kv_option::{Options, StorageOptions},
-        summary::{CompactMeta, Summary, SummaryTask, VersionEdit, WriteSummaryRequest},
-        tseries_family::LevelInfo,
-        TseriesFamilyId,
-    };
+    use crate::summary::{CompactMeta, Summary, SummaryTask, VersionEdit, WriteSummaryRequest};
+    use crate::tseries_family::LevelInfo;
+    use crate::{error, TseriesFamilyId};
 
     #[test]
     fn test_version_edit() {

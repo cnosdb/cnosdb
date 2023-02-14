@@ -1,12 +1,10 @@
-use std::{
-    borrow::Borrow,
-    collections::HashMap,
-    fmt::{Debug, Display},
-    hash::{Hash, Hasher},
-    mem::{self, MaybeUninit},
-    ptr::{self, NonNull},
-    sync::Arc,
-};
+use std::borrow::Borrow;
+use std::collections::HashMap;
+use std::fmt::{Debug, Display};
+use std::hash::{Hash, Hasher};
+use std::mem::{self, MaybeUninit};
+use std::ptr::{self, NonNull};
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 use utils::BkdrHasher;
