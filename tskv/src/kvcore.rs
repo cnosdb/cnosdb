@@ -2,19 +2,11 @@ use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
 use crate::compaction::{LevelCompactionPicker, Picker};
-use crate::context::{self, GlobalSequenceContext, GlobalSequenceTask};
-use crate::error::MetaSnafu;
-use crate::kv_option::StorageOptions;
-use crate::tsm::codec::get_str_codec;
-use config::ClusterConfig;
 use datafusion::prelude::Column;
 use flatbuffers::FlatBufferBuilder;
 use futures::stream::SelectNextSome;
 use futures::FutureExt;
 use libc::printf;
-use meta::meta_manager::RemoteMetaManager;
-use meta::MetaRef;
-use models::predicate::domain::{ColumnDomains, PredicateRef};
 use snafu::{OptionExt, ResultExt};
 use tokio::sync::watch;
 use tokio::sync::watch::{Receiver, Sender};
@@ -29,9 +21,12 @@ use tokio::{
     time::Instant,
 };
 
-use crate::error::SendSnafu;
+use config::ClusterConfig;
+use meta::meta_manager::RemoteMetaManager;
+use meta::MetaRef;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::codec::Encoding;
+use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{
     make_owner, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema, DEFAULT_CATALOG,
 };
@@ -39,17 +34,20 @@ use models::{
     utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
     ValueType,
 };
-use protos::{
-    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
-    models as fb_models,
-};
+use protos::kv_service::WritePointsResponse;
+use protos::{kv_service::WritePointsRequest, models as fb_models};
 use trace::{debug, error, info, trace, warn};
 
+use crate::context::{self, GlobalSequenceContext, GlobalSequenceTask};
 use crate::database::Database;
+use crate::error::MetaSnafu;
 use crate::error::SchemaSnafu;
+use crate::error::SendSnafu;
 use crate::file_system::file_manager::{self, FileManager};
+use crate::kv_option::StorageOptions;
 use crate::schema::error::SchemaError;
 use crate::tseries_family::TseriesFamily;
+use crate::tsm::codec::get_str_codec;
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
@@ -67,7 +65,7 @@ use crate::{
     version_set,
     version_set::VersionSet,
     wal::{self, WalEntryType, WalManager, WalTask},
-    Error, Task, TseriesFamilyId,
+    Error, TseriesFamilyId,
 };
 
 #[derive(Debug)]
@@ -392,8 +390,8 @@ impl Engine for TsKv {
     async fn write(
         &self,
         id: TseriesFamilyId,
-        write_batch: WritePointsRpcRequest,
-    ) -> Result<WritePointsRpcResponse> {
+        write_batch: WritePointsRequest,
+    ) -> Result<WritePointsResponse> {
         let tenant_name = write_batch
             .meta
             .map(|meta| meta.tenant)
@@ -459,20 +457,17 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().put_points(seq, write_group);
+        let size = tsf.read().put_points(seq, write_group);
         tsf.write().check_to_flush();
-        Ok(WritePointsRpcResponse {
-            version: 1,
-            points: vec![],
-        })
+        Ok(WritePointsResponse { size })
     }
 
     async fn write_from_wal(
         &self,
         id: TseriesFamilyId,
-        write_batch: WritePointsRpcRequest,
+        write_batch: WritePointsRequest,
         seq: u64,
-    ) -> Result<WritePointsRpcResponse> {
+    ) -> Result<()> {
         let tenant_name = write_batch
             .meta
             .map(|meta| meta.tenant)
@@ -519,12 +514,44 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().put_points(seq, write_group);
+        let _ = tsf.read().put_points(seq, write_group);
 
-        return Ok(WritePointsRpcResponse {
-            version: 1,
-            points: vec![],
-        });
+        return Ok(());
+    }
+
+    async fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
+        if let Some(db) = self.version_set.write().await.delete_db(tenant, database) {
+            let mut db_wlock = db.write().await;
+            let ts_family_ids: Vec<TseriesFamilyId> = db_wlock
+                .ts_families()
+                .iter()
+                .map(|(tsf_id, tsf)| *tsf_id)
+                .collect();
+            for ts_family_id in ts_family_ids {
+                db_wlock.del_ts_index(ts_family_id);
+                db_wlock.del_tsfamily(ts_family_id, self.summary_task_sender.clone());
+            }
+        }
+
+        let db_dir = self
+            .options
+            .storage
+            .database_dir(&make_owner(tenant, database));
+        if let Err(e) = std::fs::remove_dir_all(&db_dir) {
+            error!("Failed to remove dir '{}', e: {}", db_dir.display(), e);
+        }
+
+        Ok(())
+    }
+
+    async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
+        // TODO Create global DropTable flag for droping the same table at the same time.
+        let version_set = self.version_set.clone();
+        let database = database.to_string();
+        let table = table.to_string();
+        let tenant = tenant.to_string();
+
+        database::delete_table_async(tenant, database, table, version_set).await
     }
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
@@ -574,39 +601,66 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    async fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
-        if let Some(db) = self.version_set.write().await.delete_db(tenant, database) {
-            let mut db_wlock = db.write().await;
-            let ts_family_ids: Vec<TseriesFamilyId> = db_wlock
-                .ts_families()
-                .iter()
-                .map(|(tsf_id, tsf)| *tsf_id)
-                .collect();
-            for ts_family_id in ts_family_ids {
-                db_wlock.del_ts_index(ts_family_id);
-                db_wlock.del_tsfamily(ts_family_id, self.summary_task_sender.clone());
-            }
+    async fn add_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        new_column: TableColumn,
+    ) -> Result<()> {
+        let db = self.get_db(tenant, database).await?;
+        let db = db.read().await;
+        let sids = db.get_table_sids(table).await?;
+        for (ts_family_id, ts_family) in db.ts_families().iter() {
+            ts_family.read().add_column(&sids, &new_column);
         }
-
-        let db_dir = self
-            .options
-            .storage
-            .database_dir(&make_owner(tenant, database));
-        if let Err(e) = std::fs::remove_dir_all(&db_dir) {
-            error!("Failed to remove dir '{}', e: {}", db_dir.display(), e);
-        }
-
         Ok(())
     }
 
-    async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
-        // TODO Create global DropTable flag for droping the same table at the same time.
-        let version_set = self.version_set.clone();
-        let database = database.to_string();
-        let table = table.to_string();
-        let tenant = tenant.to_string();
+    async fn drop_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        column_name: &str,
+    ) -> Result<()> {
+        let db = self.get_db(tenant, database).await?;
+        let schema =
+            db.read()
+                .await
+                .get_table_schema(table)?
+                .ok_or(SchemaError::TableNotFound {
+                    table: table.to_string(),
+                })?;
+        let column_id = schema
+            .column(column_name)
+            .ok_or(SchemaError::NotFoundField {
+                field: column_name.to_string(),
+            })?
+            .id;
+        self.delete_columns(tenant, database, table, &[column_id])
+            .await?;
+        Ok(())
+    }
 
-        database::delete_table_async(tenant, database, table, version_set).await
+    async fn change_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        column_name: &str,
+        new_column: TableColumn,
+    ) -> Result<()> {
+        let db = self.get_db(tenant, database).await?;
+        let db = db.read().await;
+        let sids = db.get_table_sids(table).await?;
+
+        for (ts_family_id, ts_family) in db.ts_families().iter() {
+            ts_family
+                .read()
+                .change_column(&sids, column_name, &new_column);
+        }
+        Ok(())
     }
 
     async fn delete_series(
@@ -726,6 +780,10 @@ impl Engine for TsKv {
         }
     }
 
+    fn get_storage_options(&self) -> Arc<StorageOptions> {
+        self.options.storage.clone()
+    }
+
     async fn get_vnode_summary(
         &self,
         tenant: &str,
@@ -795,72 +853,6 @@ impl Engine for TsKv {
             }
             .into());
         }
-    }
-
-    async fn add_table_column(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        new_column: TableColumn,
-    ) -> Result<()> {
-        let db = self.get_db(tenant, database).await?;
-        let db = db.read().await;
-        let sids = db.get_table_sids(table).await?;
-        for (ts_family_id, ts_family) in db.ts_families().iter() {
-            ts_family.read().add_column(&sids, &new_column);
-        }
-        Ok(())
-    }
-
-    async fn drop_table_column(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        column_name: &str,
-    ) -> Result<()> {
-        let db = self.get_db(tenant, database).await?;
-        let schema =
-            db.read()
-                .await
-                .get_table_schema(table)?
-                .ok_or(SchemaError::TableNotFound {
-                    table: table.to_string(),
-                })?;
-        let column_id = schema
-            .column(column_name)
-            .ok_or(SchemaError::NotFoundField {
-                field: column_name.to_string(),
-            })?
-            .id;
-        self.delete_columns(tenant, database, table, &[column_id])
-            .await?;
-        Ok(())
-    }
-
-    async fn change_table_column(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        column_name: &str,
-        new_column: TableColumn,
-    ) -> Result<()> {
-        let db = self.get_db(tenant, database).await?;
-        let db = db.read().await;
-        let sids = db.get_table_sids(table).await?;
-
-        for (ts_family_id, ts_family) in db.ts_families().iter() {
-            ts_family
-                .read()
-                .change_column(&sids, column_name, &new_column);
-        }
-        Ok(())
-    }
-
-    fn get_storage_options(&self) -> Arc<StorageOptions> {
-        self.options.storage.clone()
     }
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
@@ -939,20 +931,22 @@ impl TsKv {
 
 #[cfg(test)]
 mod test {
-    use config::get_config;
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicI64, Ordering};
+    use std::sync::{atomic, Arc};
+
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
+    use tokio::runtime::{self, Runtime};
+    use tokio::sync::watch;
+
+    use config::get_config;
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
     use models::utils::now_timestamp;
     use models::{ColumnId, InMemPoint, SeriesId, SeriesKey, Timestamp};
     use protos::{models::Points, models_helper};
-    use std::collections::HashMap;
-    use std::sync::{atomic, Arc};
-    use tokio::runtime::{self, Runtime};
 
     use crate::{engine::Engine, error, tsm::DataBlock, Options, TimeRange, TsKv};
-    use std::sync::atomic::{AtomicI64, Ordering};
-    use tokio::sync::watch;
 
     #[tokio::test]
     #[ignore]

@@ -32,7 +32,7 @@ use models::{
     auth::user::{ROOT, ROOT_PWD},
     codec::Encoding,
 };
-use protos::kv_service::{Meta, WritePointsRpcRequest};
+use protos::kv_service::{Meta, WritePointsRequest};
 use snafu::ResultExt;
 use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn};
@@ -428,7 +428,7 @@ impl WalManager {
                             let id = e.vnode_id();
                             let tenant =
                                 unsafe { String::from_utf8_unchecked(e.tenant().to_vec()) };
-                            let req = WritePointsRpcRequest {
+                            let req = WritePointsRequest {
                                 version: 1,
                                 meta: Some(Meta {
                                     tenant,

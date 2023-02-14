@@ -114,6 +114,13 @@ pub enum CoordinatorError {
         id: u32,
         elapsed: String,
     },
+
+    #[snafu(display("kv instance not found: node_id:{}, vnode_id:{}", node_id, vnode_id))]
+    #[error_code(code = 18)]
+    KvInstanceNotFound {
+        vnode_id: u32,
+        node_id: u64,
+    },
 }
 
 impl From<meta::error::MetaError> for CoordinatorError {

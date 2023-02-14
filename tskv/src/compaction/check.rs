@@ -447,7 +447,7 @@ mod test {
     };
     use protos::kv_service::Meta;
     use protos::{
-        kv_service::WritePointsRpcRequest,
+        kv_service::WritePointsRequest,
         models::{self as fb_models, FieldType},
         models_helper,
     };
@@ -685,7 +685,7 @@ mod test {
         database: &str,
         table: &str,
         rows: Vec<Vec<(&str, FieldType, Vec<u8>)>>,
-    ) -> WritePointsRpcRequest {
+    ) -> WritePointsRequest {
         let mut rows_ref = Vec::with_capacity(rows.len());
         for cols in rows.iter() {
             let mut cols_ref = Vec::with_capacity(cols.len());
@@ -716,7 +716,7 @@ mod test {
         );
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        WritePointsRpcRequest {
+        WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: tenant.to_string(),

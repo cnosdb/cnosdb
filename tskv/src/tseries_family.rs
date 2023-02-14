@@ -12,12 +12,7 @@ use std::{
     time::Duration,
 };
 
-use config::get_config;
 use lazy_static::lazy_static;
-use lru_cache::ShardedCache;
-use models::{
-    schema::TableColumn, ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType,
-};
 use parking_lot::{Mutex, RwLock};
 use tokio::{
     runtime::Runtime,
@@ -25,6 +20,12 @@ use tokio::{
     time::Instant,
 };
 use tokio_util::sync::CancellationToken;
+
+use config::get_config;
+use lru_cache::ShardedCache;
+use models::{
+    schema::TableColumn, ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType,
+};
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
@@ -763,11 +764,14 @@ impl TseriesFamily {
         }
     }
 
-    pub fn put_points(&self, seq: u64, points: HashMap<(SeriesId, SchemaId), RowGroup>) {
+    pub fn put_points(&self, seq: u64, points: HashMap<(SeriesId, SchemaId), RowGroup>) -> u64 {
+        let mut res = 0;
         for ((sid, schema_id), group) in points {
             let mem = self.super_version.caches.mut_cache.read();
+            res += group.rows.len();
             mem.write_group(sid, seq, group);
         }
+        res as u64
     }
 
     // pub async fn touch_flush(tsf: &mut TseriesFamily) {
@@ -937,17 +941,19 @@ mod test {
     use std::mem::{size_of, size_of_val};
     use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
+    use parking_lot::{Mutex, RwLock};
+    use tokio::sync::{
+        mpsc::{self, UnboundedReceiver},
+        RwLock as AsyncRwLock,
+    };
+
+    use config::{get_config, ClusterConfig};
     use lru_cache::ShardedCache;
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
     use models::{
         schema::{DatabaseSchema, TenantOptions},
         Timestamp, ValueType,
-    };
-    use parking_lot::{Mutex, RwLock};
-    use tokio::sync::{
-        mpsc::{self, UnboundedReceiver},
-        RwLock as AsyncRwLock,
     };
     use trace::info;
 
@@ -964,7 +970,6 @@ mod test {
         version_set::VersionSet,
         TseriesFamilyId,
     };
-    use config::{get_config, ClusterConfig};
 
     use super::{ColumnFile, LevelInfo};
 

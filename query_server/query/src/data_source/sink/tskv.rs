@@ -9,7 +9,7 @@ use models::consistency_level::ConsistencyLevel;
 use spi::Result;
 
 use models::schema::TskvTableSchemaRef;
-use protos::kv_service::WritePointsRpcRequest;
+use protos::kv_service::WritePointsRequest;
 
 use crate::utils::point_util::record_batch_to_points_flat_buffer;
 
@@ -44,7 +44,7 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         // points write request
         let timer = self.metrics.elapsed_point_write().timer();
-        let req = WritePointsRpcRequest {
+        let req = WritePointsRequest {
             version: 0,
             meta: None,
             points,

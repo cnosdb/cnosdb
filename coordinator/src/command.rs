@@ -3,7 +3,7 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::ipc::{reader::StreamReader, writer::StreamWriter};
 use models::predicate::domain::{PredicateRef, QueryArgs, QueryExpr};
 use models::schema::{TableColumn, TskvTableSchema};
-use protos::kv_service::WritePointsRpcRequest;
+use protos::kv_service::WritePointsRequest;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::Sender as MpscSender;
@@ -499,10 +499,10 @@ impl FetchVnodeSummaryResponse {
 /* ********************************************************************************************** */
 
 #[derive(Debug)]
-pub struct WritePointsRequest {
+pub struct WriteRequest {
     pub tenant: String,
     pub level: models::consistency_level::ConsistencyLevel,
-    pub request: WritePointsRpcRequest,
+    pub request: WritePointsRequest,
 }
 
 #[derive(Debug, Clone)]
