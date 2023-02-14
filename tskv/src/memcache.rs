@@ -192,7 +192,7 @@ impl From<fb_models::Point<'_>> for RowData {
 
 #[derive(Debug)]
 pub struct RowGroup {
-    pub schema: TskvTableSchema,
+    pub schema: Arc<TskvTableSchema>,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
     /// total size in stack and heap
@@ -234,22 +234,28 @@ impl SeriesData {
             for row in item.rows.iter_mut() {
                 row.fields.remove(index);
             }
-            item.schema.drop_column(&name);
-            item.schema.schema_id += 1;
+            let mut schema_t = item.schema.as_ref().clone();
+            schema_t.drop_column(&name);
+            schema_t.schema_id += 1;
+            item.schema = Arc::new(schema_t)
         }
     }
 
     pub fn change_column(&mut self, column_name: &str, new_column: &TableColumn) {
         for item in self.groups.iter_mut() {
-            item.schema.change_column(column_name, new_column.clone());
-            item.schema.schema_id += 1;
+            let mut schema_t = item.schema.as_ref().clone();
+            schema_t.change_column(column_name, new_column.clone());
+            schema_t.schema_id += 1;
+            item.schema = Arc::new(schema_t)
         }
     }
 
     pub fn add_column(&mut self, new_column: &TableColumn) {
         for item in self.groups.iter_mut() {
-            item.schema.add_column(new_column.clone());
-            item.schema.schema_id += 1;
+            let mut schema_t = item.schema.as_ref().clone();
+            schema_t.add_column(new_column.clone());
+            schema_t.schema_id += 1;
+            item.schema = Arc::new(schema_t)
         }
     }
 
@@ -292,10 +298,10 @@ impl SeriesData {
         res
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, &TskvTableSchema, &Vec<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(SchemaId, Arc<TskvTableSchema>, &Vec<RowData>)> {
         self.groups
             .iter()
-            .map(|g| (g.schema.schema_id, &g.schema, &g.rows))
+            .map(|g| (g.schema.schema_id, g.schema.clone(), &g.rows))
             .collect()
     }
 }
@@ -579,7 +585,7 @@ pub(crate) mod test {
 
         schema.schema_id = schema_id;
         let row_group = RowGroup {
-            schema,
+            schema: schema.into(),
             range: TimeRange::from(time_range),
             rows,
             size: size_of::<RowGroup>() + size,

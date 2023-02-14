@@ -132,7 +132,7 @@ impl MetadataProvider {
                     let options = schema.table_options()?;
                     let config = ListingTableConfig::new(table_path)
                         .with_listing_options(options)
-                        .with_schema(Arc::new(schema.schema));
+                        .with_schema(Arc::new(schema.schema.clone()));
                     provider_as_source(Arc::new(ListingTable::try_new(config)?))
                 }
             },

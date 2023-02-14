@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Deref;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -360,7 +361,7 @@ fn transform_time_series(
 #[derive(Debug)]
 struct SqlWithTable {
     pub sql: String,
-    pub table: TskvTableSchema,
+    pub table: Arc<TskvTableSchema>,
 }
 
 #[derive(Default)]

@@ -164,7 +164,7 @@ impl FlushTask {
             for series_data in series_datas.iter_mut() {
                 // Iterates SeriesData -> [ RowGroups{ schema_id, schema, [ RowData ] } ]
                 for (sch_id, sch_cols, rows) in series_data.read().flat_groups() {
-                    self.build_codec_map(sch_cols, &mut field_id_code_type_map);
+                    self.build_codec_map(sch_cols.clone(), &mut field_id_code_type_map);
                     // Iterates [ RowData ]
                     for row in rows.iter() {
                         // Iterates RowData -> [ Option<FieldVal>, column_id ]
@@ -240,7 +240,7 @@ impl FlushTask {
         self.finish_flush_mem_caches(delta_writer, tsm_writer).await
     }
 
-    fn build_codec_map(&self, schema: &TskvTableSchema, map: &mut HashMap<ColumnId, Encoding>) {
+    fn build_codec_map(&self, schema: Arc<TskvTableSchema>, map: &mut HashMap<ColumnId, Encoding>) {
         for i in schema.columns().iter() {
             map.insert(i.id, i.encoding);
         }

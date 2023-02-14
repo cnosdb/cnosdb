@@ -38,7 +38,7 @@ impl OptimizerRule for ImplicitTypeConversion {
     fn try_optimize(
         &self,
         plan: &LogicalPlan,
-        optimizer_config: &dyn OptimizerConfig,
+        _optimizer_config: &dyn OptimizerConfig,
     ) -> Result<Option<LogicalPlan>> {
         let mut rewriter = DataTypeRewriter {
             schemas: plan.all_schemas(),
@@ -47,7 +47,7 @@ impl OptimizerRule for ImplicitTypeConversion {
         match plan {
             LogicalPlan::Filter(filter) => {
                 let input = self
-                    .try_optimize(filter.input.as_ref(), optimizer_config)?
+                    .try_optimize(filter.input.as_ref(), _optimizer_config)?
                     .map(Arc::new)
                     .unwrap_or_else(|| filter.input.clone());
 
@@ -103,7 +103,7 @@ impl OptimizerRule for ImplicitTypeConversion {
                 let new_inputs = inputs
                     .iter()
                     .map(|plan| {
-                        self.try_optimize(plan, optimizer_config)
+                        self.try_optimize(plan, _optimizer_config)
                             .transpose()
                             .unwrap_or_else(|| Ok((*plan).clone()))
                     })

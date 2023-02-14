@@ -5,6 +5,7 @@ use models::schema::{TableSchema, TskvTableSchema};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::Result;
+use std::sync::Arc;
 
 use spi::query::logical_planner::CreateTable;
 
@@ -68,7 +69,7 @@ async fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Resu
         })?;
     // .context(MetaSnafu)?;
     client
-        .create_table(&TableSchema::TsKvTableSchema(table_schema))
+        .create_table(&TableSchema::TsKvTableSchema(Arc::new(table_schema)))
         .await
         .context(spi::MetaSnafu)
 }

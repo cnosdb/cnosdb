@@ -863,14 +863,17 @@ mod test {
             }
             rt.block_on(meta_client.create_db(database_schema.clone()))
                 .unwrap();
-            rt.block_on(meta_client.create_table(&TableSchema::TsKvTableSchema(
-                TskvTableSchema::new(
-                    tenant_name.clone(),
-                    database_name.clone(),
-                    table_name.clone(),
-                    columns,
-                ),
-            )))
+            rt.block_on(
+                meta_client.create_table(&TableSchema::TsKvTableSchema(
+                    TskvTableSchema::new(
+                        tenant_name.clone(),
+                        database_name.clone(),
+                        table_name.clone(),
+                        columns,
+                    )
+                    .into(),
+                )),
+            )
             .unwrap();
 
             //rt.block_on(meta_client.drop_db(&database_name)).unwrap();

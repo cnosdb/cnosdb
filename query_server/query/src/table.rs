@@ -43,11 +43,8 @@ impl ClusterTable {
         )))
     }
 
-    pub fn new(coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
-        ClusterTable {
-            coord,
-            schema: Arc::new(schema),
-        }
+    pub fn new(coord: CoordinatorRef, schema: TskvTableSchemaRef) -> Self {
+        ClusterTable { coord, schema }
     }
 
     pub async fn tag_scan(

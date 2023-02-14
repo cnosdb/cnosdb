@@ -99,12 +99,16 @@ pub trait MetaClient: Send + Sync + Debug {
     async fn create_table(&self, schema: &TableSchema) -> MetaResult<()>;
     async fn update_table(&self, schema: &TableSchema) -> MetaResult<()>;
     fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>>;
-    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>>;
+    fn get_tskv_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<Arc<TskvTableSchema>>>;
     fn get_external_table_schema(
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<ExternalTableSchema>>;
+    ) -> MetaResult<Option<Arc<ExternalTableSchema>>>;
     fn list_tables(&self, db: &str) -> MetaResult<Vec<String>>;
     async fn drop_table(&self, db: &str, table: &str) -> MetaResult<()>;
 
@@ -605,7 +609,11 @@ impl MetaClient for RemoteMetaClient {
         return Ok(self.data.read().table_schema(db, table));
     }
 
-    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
+    fn get_tskv_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
         if let Some(TableSchema::TsKvTableSchema(val)) = self.data.read().table_schema(db, table) {
             return Ok(Some(val));
         }
@@ -616,7 +624,7 @@ impl MetaClient for RemoteMetaClient {
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<ExternalTableSchema>> {
+    ) -> MetaResult<Option<Arc<ExternalTableSchema>>> {
         if let Some(TableSchema::ExternalTableSchema(val)) =
             self.data.read().table_schema(db, table)
         {
