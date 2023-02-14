@@ -160,7 +160,7 @@ pub(crate) async fn get_ts_family_hash_tree(
     let time_range_nanosec = get_default_time_range(schemas)?;
 
     let (version, ts_family_id) = {
-        let ts_family_rlock = ts_family.read();
+        let ts_family_rlock = ts_family.read().await;
         (ts_family_rlock.version(), ts_family_rlock.tf_id())
     };
     let mut readers: Vec<Arc<TsmReader>> = Vec::new();
@@ -881,15 +881,17 @@ mod test {
             let database = rt
                 .block_on(engine.create_database(&database_schema))
                 .unwrap();
-            let ts_family = rt.block_on(database.write()).add_tsfamily(
+            let mut db = rt.block_on(database.write());
+            let ts_family = rt.block_on(db.add_tsfamily(
                 ts_family_id,
                 1,
                 None,
                 engine.summary_task_sender(),
                 engine.flush_task_sender(),
                 engine.compact_task_sender(),
-            );
-            assert_eq!(1, ts_family.read().tf_id());
+            ));
+            let tsf_r = rt.block_on(ts_family.read());
+            assert_eq!(1, tsf_r.tf_id());
         }
 
         // Get created database and ts_family
@@ -922,7 +924,7 @@ mod test {
             rt.block_on(engine.write(ts_family_id, write_batch))
                 .unwrap();
 
-            let mut ts_family_wlock = ts_family_ref.write();
+            let mut ts_family_wlock = rt.block_on(ts_family_ref.write());
             ts_family_wlock.switch_to_immutable();
             let immut_cache_ref = ts_family_wlock
                 .super_version()
@@ -931,7 +933,7 @@ mod test {
                 .first()
                 .expect("translated immutable memory cache exist")
                 .clone();
-            ts_family_wlock.wrap_flush_req(true);
+            rt.block_on(ts_family_wlock.wrap_flush_req(true));
             drop(ts_family_wlock);
 
             let mut check_num = 0;

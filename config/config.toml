@@ -23,6 +23,9 @@ max_summary_size = "128M" # 134217728
 # $base_file_size * level * $compact_trigger_file_num
 base_file_size = "16M" # 16777216
 
+# The maxmimum flush request in memory
+flush_req_channel_cap = 16
+
 # The maxmimum data file level (from 0 to 4).
 max_level = 4
 
@@ -42,6 +45,8 @@ max_concurrent_compaction = 4
 strict_write = false
 
 [wal]
+# The maxmimum wal request in memory
+wal_req_channel_cap = 64
 
 # If true, write requets on disk before writing to memory.
 enabled = true

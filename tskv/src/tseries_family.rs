@@ -16,7 +16,7 @@ use lazy_static::lazy_static;
 use parking_lot::{Mutex, RwLock};
 use tokio::{
     runtime::Runtime,
-    sync::{mpsc::UnboundedSender, watch::Receiver},
+    sync::{mpsc::Sender, watch::Receiver},
     time::Instant,
 };
 use tokio_util::sync::CancellationToken;
@@ -623,9 +623,9 @@ pub struct TseriesFamily {
     seq_no: u64,
     immut_ts_min: AtomicI64,
     mut_ts_max: AtomicI64,
-    last_modified: Arc<RwLock<Option<Instant>>>,
-    flush_task_sender: UnboundedSender<FlushReq>,
-    compact_task_sender: UnboundedSender<TseriesFamilyId>,
+    last_modified: Arc<tokio::sync::RwLock<Option<Instant>>>,
+    flush_task_sender: Sender<FlushReq>,
+    compact_task_sender: Sender<TseriesFamilyId>,
     cancellation_token: CancellationToken,
 }
 
@@ -638,8 +638,8 @@ impl TseriesFamily {
         version: Arc<Version>,
         cache_opt: Arc<CacheOptions>,
         storage_opt: Arc<StorageOptions>,
-        flush_task_sender: UnboundedSender<FlushReq>,
-        compact_task_sender: UnboundedSender<TseriesFamilyId>,
+        flush_task_sender: Sender<FlushReq>,
+        compact_task_sender: Sender<TseriesFamilyId>,
     ) -> Self {
         let mm = Arc::new(RwLock::new(cache));
         let seq = version.last_seq;
@@ -668,7 +668,7 @@ impl TseriesFamily {
             storage_opt,
             immut_ts_min: AtomicI64::new(max_level_ts),
             mut_ts_max: AtomicI64::new(i64::MIN),
-            last_modified: Arc::new(RwLock::new(None)),
+            last_modified: Arc::new(tokio::sync::RwLock::new(None)),
             flush_task_sender,
             compact_task_sender,
             cancellation_token: CancellationToken::new(),
@@ -756,10 +756,11 @@ impl TseriesFamily {
         Some(FlushReq { mems: req_mems })
     }
 
-    pub(crate) fn wrap_flush_req(&mut self, force: bool) {
+    pub(crate) async fn wrap_flush_req(&mut self, force: bool) {
         if let Some(req) = self.flush_req(force) {
             self.flush_task_sender
                 .send(req)
+                .await
                 .expect("error send flush req to kvcore");
         }
     }
@@ -783,18 +784,18 @@ impl TseriesFamily {
     //     );
     // }
 
-    pub fn check_to_flush(&mut self) {
+    pub async fn check_to_flush(&mut self) {
         if self.super_version.caches.mut_cache.read().is_full() {
             info!("mut_cache full,switch to immutable");
             self.switch_to_immutable();
             if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
-                self.wrap_flush_req(false);
+                self.wrap_flush_req(false).await;
             }
         }
     }
 
-    pub fn update_last_modfied(&self) {
-        *self.last_modified.write() = Some(Instant::now());
+    pub async fn update_last_modfied(&self) {
+        *self.last_modified.write().await = Some(Instant::now());
     }
 
     pub fn delete_columns(&self, field_ids: &[FieldId]) {
@@ -841,10 +842,10 @@ impl TseriesFamily {
                 loop {
                     tokio::select! {
                         _ = code_check_interval.tick() => {
-                            let last_modified = last_modified.read();
+                            let last_modified = last_modified.read().await;
                             if let Some(t) = *last_modified {
                                 if t.elapsed() >= compact_trigger_cold_duration {
-                                    if let Err(e) = compact_task_sender.send(tsf_id) {
+                                    if let Err(e) = compact_task_sender.send(tsf_id).await {
                                         warn!("failed to send compact task({}), {}", tsf_id, e);
                                     }
                                 }
@@ -942,10 +943,6 @@ mod test {
     use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
     use parking_lot::{Mutex, RwLock};
-    use tokio::sync::{
-        mpsc::{self, UnboundedReceiver},
-        RwLock as AsyncRwLock,
-    };
 
     use config::{get_config, ClusterConfig};
     use lru_cache::ShardedCache;
@@ -955,8 +952,13 @@ mod test {
         schema::{DatabaseSchema, TenantOptions},
         Timestamp, ValueType,
     };
+    use tokio::sync::{
+        mpsc::{self, Receiver},
+        RwLock as AsyncRwLock,
+    };
     use trace::info;
 
+    use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
     use crate::{
         compaction::{flush_tests::default_with_field_id, run_flush_memtable_job, FlushReq},
         context::GlobalContext,
@@ -1214,8 +1216,8 @@ mod test {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let (compact_task_sender, _) = mpsc::unbounded_channel();
+        let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
+        let (compact_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let database = Arc::new("db".to_string());
         let tsf = TseriesFamily::new(
             0,
@@ -1278,7 +1280,7 @@ mod test {
     async fn update_ts_family_version(
         version_set: Arc<tokio::sync::RwLock<VersionSet>>,
         ts_family_id: TseriesFamilyId,
-        mut summary_task_receiver: UnboundedReceiver<SummaryTask>,
+        mut summary_task_receiver: Receiver<SummaryTask>,
     ) {
         let mut version_edits: Vec<VersionEdit> = Vec::new();
         let mut min_seq: u64 = 0;
@@ -1298,7 +1300,7 @@ mod test {
         }
         let version_set = version_set.write().await;
         if let Some(ts_family) = version_set.get_tsfamily_by_tf_id(ts_family_id).await {
-            let mut ts_family = ts_family.write();
+            let mut ts_family = ts_family.write().await;
             let new_version = ts_family.version().copy_apply_version_edits(
                 version_edits,
                 &mut HashMap::new(),
@@ -1371,9 +1373,9 @@ mod test {
         let tenant = "cnosdb".to_string();
         let database = "test_db".to_string();
         let kernel = Arc::new(GlobalContext::new());
-        let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
-        let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
+        let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
+        let (compact_task_sender, compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
+        let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
 
         let runtime_ref = runtime.clone();
         runtime.block_on(async move {
@@ -1415,7 +1417,9 @@ mod test {
                     flush_task_sender.clone(),
                     compact_task_sender.clone(),
                 )
+                .await
                 .read()
+                .await
                 .tf_id();
 
             run_flush_memtable_job(
@@ -1436,7 +1440,7 @@ mod test {
                 .get_tsfamily_by_name(&tenant, &database)
                 .await
                 .unwrap();
-            let version = tsf.write().version();
+            let version = tsf.write().await.version();
             version.levels_info[1]
                 .read_column_file(
                     ts_family_id,

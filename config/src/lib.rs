@@ -139,6 +139,8 @@ pub struct StorageConfig {
     pub max_summary_size: u64,
     #[serde(with = "bytes_num", default = "StorageConfig::default_base_file_size")]
     pub base_file_size: u64,
+    #[serde(default = "StorageConfig::default_flush_req_channel_cap")]
+    pub flush_req_channel_cap: usize,
     #[serde(default = "StorageConfig::default_max_level")]
     pub max_level: u16,
     #[serde(default = "StorageConfig::default_compact_trigger_file_num")]
@@ -170,6 +172,10 @@ impl StorageConfig {
 
     fn default_base_file_size() -> u64 {
         16 * 1024 * 1024
+    }
+
+    fn default_flush_req_channel_cap() -> usize {
+        16
     }
 
     fn default_max_level() -> u16 {
@@ -206,6 +212,9 @@ impl StorageConfig {
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_BASE_FILE_SIZE") {
             self.base_file_size = size.parse::<u64>().unwrap();
         }
+        if let Ok(size) = std::env::var("CNOSDB_FLUSH_REQ_CHANNEL_CAP") {
+            self.flush_req_channel_cap = size.parse::<usize>().unwrap();
+        }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_LEVEL") {
             self.max_level = size.parse::<u16>().unwrap();
         }
@@ -237,6 +246,8 @@ impl StorageConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WalConfig {
+    #[serde(default = "WalConfig::default_wal_req_channel_cap")]
+    pub wal_req_channel_cap: usize,
     #[serde(default = "WalConfig::default_enabled")]
     pub enabled: bool,
     #[serde(default = "WalConfig::default_path")]
@@ -248,6 +259,10 @@ pub struct WalConfig {
 }
 
 impl WalConfig {
+    fn default_wal_req_channel_cap() -> usize {
+        64
+    }
+
     fn default_enabled() -> bool {
         true
     }
@@ -265,6 +280,9 @@ impl WalConfig {
     }
 
     pub fn override_by_env(&mut self) {
+        if let Ok(cap) = std::env::var("CNOSDB_WAL_REQ_CHANNEL_CAP") {
+            self.wal_req_channel_cap = cap.parse::<usize>().unwrap();
+        }
         if let Ok(enabled) = std::env::var("CNOSDB_WAL_ENABLED") {
             self.enabled = enabled.as_str() == "true";
         }
@@ -481,10 +499,10 @@ mod test {
         let mut cfg_file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
-            .open(&cfg_path)
+            .open(cfg_path)
             .unwrap();
         let _ = cfg_file.write(cfg.to_string_pretty().as_bytes()).unwrap();
-        let cfg_2 = crate::get_config(&cfg_path);
+        let cfg_2 = crate::get_config(cfg_path);
 
         assert_eq!(cfg, cfg_2);
     }

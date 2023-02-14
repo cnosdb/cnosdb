@@ -21,9 +21,9 @@ use snafu::{NoneError, OptionExt, ResultExt};
 use tokio::{
     select,
     sync::{
-        mpsc::{self, UnboundedSender},
+        mpsc::{self, Sender},
         oneshot,
-        oneshot::Sender,
+        oneshot::Sender as OneShotSender,
     },
 };
 use trace::{debug, error, info, log_error, warn};
@@ -371,8 +371,8 @@ pub async fn run_flush_memtable_job(
     req: FlushReq,
     global_context: Arc<GlobalContext>,
     version_set: Arc<tokio::sync::RwLock<VersionSet>>,
-    summary_task_sender: UnboundedSender<SummaryTask>,
-    compact_task_sender: UnboundedSender<TseriesFamilyId>,
+    summary_task_sender: Sender<SummaryTask>,
+    compact_task_sender: Sender<TseriesFamilyId>,
 ) -> Result<()> {
     let mut tsf_caches: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> = HashMap::new();
     {
@@ -395,8 +395,8 @@ pub async fn run_flush_memtable_job(
         if let Some(tsf) = tsf_warp {
             // todo: build path by vnode data
             let (storage_opt, version, database) = {
-                let tsf_rlock = tsf.read();
-                tsf_rlock.update_last_modfied();
+                let tsf_rlock = tsf.read().await;
+                tsf_rlock.update_last_modfied().await;
                 (
                     tsf_rlock.storage_opt(),
                     tsf_rlock.version(),
@@ -411,9 +411,9 @@ pub async fn run_flush_memtable_job(
                 .run(version, &mut version_edits, &mut file_metas)
                 .await?;
 
-            tsf.read().update_last_modfied();
+            tsf.read().await.update_last_modfied().await;
 
-            if let Err(e) = compact_task_sender.send(tsf_id) {
+            if let Err(e) = compact_task_sender.send(tsf_id).await {
                 warn!("failed to send compact task({}), {}", tsf_id, e);
             }
         }
@@ -424,7 +424,7 @@ pub async fn run_flush_memtable_job(
     let (task_state_sender, task_state_receiver) = oneshot::channel();
     let task = SummaryTask::new_column_file_task(file_metas, version_edits, task_state_sender);
 
-    if let Err(e) = summary_task_sender.send(task) {
+    if let Err(e) = summary_task_sender.send(task).await {
         warn!("failed to send Summary task, {}", e);
     }
     Ok(())
