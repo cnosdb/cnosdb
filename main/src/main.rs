@@ -338,7 +338,7 @@ fn main() -> Result<(), std::io::Error> {
                 )
             }
         };
-        server.start().expect("CnosDB server tskv mode start.");
+        server.start().expect("CnosDB server start.");
         signal::block_waiting_ctrl_c();
         server.stop(true).await;
         if let Some(kv_inst) = tskv {
