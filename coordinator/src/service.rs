@@ -5,6 +5,8 @@ use std::sync::Arc;
 use config::{ClusterConfig, HintedOffConfig};
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use futures::TryFutureExt;
+use meta::error::MetaError;
 use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
 use meta::meta_manager::RemoteMetaManager;
 use meta::{MetaClientRef, MetaRef};
@@ -302,17 +304,16 @@ impl CoordService {
     ) {
         let tenant = option.tenant.as_str();
 
-        if let Some(meta_client) = meta.tenant_manager().tenant_meta(tenant).await {
-            if let Err(e) =
-                meta_client
-                    .limiter()
-                    .check_query()
-                    .map_err(|e| CoordinatorError::MetaRequest {
-                        msg: format!("{}", e),
-                    })
-            {
-                let _ = sender.send(Err(e)).await;
-            }
+        if let Err(e) = meta
+            .tenant_manager()
+            .limiter(tenant)
+            .await
+            .check_query()
+            .await
+            .map_err(|e| CoordinatorError::Meta { source: e })
+        {
+            let _ = sender.send(Err(e)).await;
+            return;
         }
 
         let now = tokio::time::Instant::now();
@@ -404,12 +405,10 @@ impl Coordinator for CoordService {
         level: ConsistencyLevel,
         request: WritePointsRequest,
     ) -> CoordinatorResult<()> {
-        if let Some(meta_client) = self.meta.tenant_manager().tenant_meta(&tenant).await {
-            meta_client.limiter().check_write()?;
-
-            let data_len = request.points.len();
-            meta_client.limiter().check_data_in(data_len)?;
-        }
+        let limiter = self.meta.tenant_manager().limiter(&tenant).await;
+        limiter.check_write().await?;
+        let data_len = request.points.len();
+        limiter.check_data_in(data_len).await?;
 
         let req = WriteRequest {
             tenant: tenant.clone(),

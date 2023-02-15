@@ -13,7 +13,6 @@ pub mod utils;
 // pub mod error_code;
 pub mod arrow_array;
 pub mod auth;
-pub mod limiter;
 pub mod object_reference;
 pub mod oid;
 pub mod predicate;

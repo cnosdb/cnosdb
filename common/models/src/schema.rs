@@ -14,6 +14,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use arrow_schema::DataType;
+use config::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
 };
@@ -30,7 +31,6 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use crate::codec::Encoding;
-pub use crate::limiter::LimiterConfig;
 use crate::oid::{Identifier, Oid};
 use crate::{ColumnId, SchemaId, ValueType};
 
@@ -776,12 +776,26 @@ impl Tenant {
 #[builder(setter(into, strip_option), default)]
 pub struct TenantOptions {
     pub comment: Option<String>,
-    pub limiter_config: Option<LimiterConfig>,
+    pub limiter_config: Option<TenantLimiterConfig>,
 }
 
 impl TenantOptions {
-    pub fn set_limiter(&mut self, limiter_config: Option<LimiterConfig>) {
+    pub fn set_limiter(&mut self, limiter_config: Option<TenantLimiterConfig>) {
         self.limiter_config = limiter_config;
+    }
+
+    pub fn object_config(&self) -> Option<&TenantObjectLimiterConfig> {
+        match self.limiter_config {
+            Some(ref limit_config) => limit_config.object_config.as_ref(),
+            None => None,
+        }
+    }
+
+    pub fn request_config(&self) -> Option<&RequestLimiterConfig> {
+        match self.limiter_config {
+            Some(ref limit_config) => limit_config.request_config.as_ref(),
+            None => None,
+        }
     }
 }
 
@@ -791,13 +805,18 @@ impl Display for TenantOptions {
             write!(f, "comment={},", e)?;
         }
 
+        if let Some(ref e) = self.limiter_config {
+            write!(f, "limiter={e:?},")?;
+        } else {
+            write!(f, "limiter=None,")?;
+        }
+
         Ok(())
     }
 }
 
 pub struct TableSourceAdapter {
     source: Arc<dyn TableSource>,
-
     tenant_id: Oid,
     tenant_name: String,
     database_name: String,

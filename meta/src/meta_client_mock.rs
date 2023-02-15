@@ -6,7 +6,6 @@ use std::sync::Arc;
 use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier};
 use models::auth::user::UserDesc;
-use models::limiter::LimiterConfig;
 use models::meta_data::{
     BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
 };
@@ -17,7 +16,8 @@ use models::schema::{
 use tokio::net::TcpStream;
 
 use crate::error::{MetaError, MetaResult};
-use crate::limiter::{Limiter, LimiterImpl};
+use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
+use crate::limiter::RequestLimiter;
 use crate::meta_admin::AdminMeta;
 use crate::meta_client::MetaClient;
 use crate::meta_manager::MetaManager;
@@ -262,10 +262,6 @@ impl MetaClient for MockMetaClient {
         None
     }
 
-    fn limiter(&self) -> Arc<dyn Limiter> {
-        todo!()
-    }
-
     fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
         todo!()
     }
@@ -347,11 +343,7 @@ impl TenantManager for TenantManagerMock {
         todo!()
     }
 
-    async fn tenant_set_limiter(
-        &self,
-        tenant_name: &str,
-        limiter_config: Option<LimiterConfig>,
-    ) -> MetaResult<()> {
+    async fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter> {
         todo!()
     }
 }
