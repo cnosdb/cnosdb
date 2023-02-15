@@ -1,11 +1,9 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use once_cell::sync::Lazy;
-use tokio::runtime::Runtime;
-
 use coordinator::hh_queue::HintedOffManager;
 use coordinator::service::CoordService;
 use coordinator::writer::PointWriter;
@@ -14,7 +12,9 @@ use meta::meta_manager::RemoteMetaManager;
 use meta::{MetaClientRef, MetaRef};
 use metrics::init_tskv_metrics_recorder;
 use models::meta_data::NodeInfo;
+use once_cell::sync::Lazy;
 use query::instance::make_cnosdbms;
+use tokio::runtime::Runtime;
 use trace::{info, init_global_tracing};
 use tskv::TsKv;
 

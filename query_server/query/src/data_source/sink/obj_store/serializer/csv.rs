@@ -3,10 +3,12 @@ use bytes::Bytes;
 use datafusion::arrow::csv::WriterBuilder;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{pin_mut, TryStreamExt};
-use spi::{query::datasource::WriteContext, SerializeCsvSnafu};
-
-use crate::data_source::{sink::RecordBatchSerializer, Result};
 use snafu::ResultExt;
+use spi::query::datasource::WriteContext;
+use spi::SerializeCsvSnafu;
+
+use crate::data_source::sink::RecordBatchSerializer;
+use crate::data_source::Result;
 
 pub struct CsvRecordBatchSerializer {
     with_header: bool,

@@ -1,4 +1,5 @@
-use std::{fmt::Debug, mem, ptr};
+use std::fmt::Debug;
+use std::{mem, ptr};
 
 /// Removes all but the last of consecutive elements in the vector that resolve to the same
 /// key.

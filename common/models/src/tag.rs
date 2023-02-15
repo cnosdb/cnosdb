@@ -1,13 +1,12 @@
-use std::{cmp::Ordering, hash::Hash};
+use std::cmp::Ordering;
+use std::hash::Hash;
 
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
 use utils::BkdrHasher;
 
-use crate::{
-    errors::{Error, Result},
-    TagKey, TagValue,
-};
+use crate::errors::{Error, Result};
+use crate::{TagKey, TagValue};
 
 const TAG_KEY_MAX_LEN: usize = 512;
 const TAG_VALUE_MAX_LEN: usize = 4096;

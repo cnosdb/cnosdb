@@ -1,15 +1,10 @@
 use std::sync::Arc;
 
-use datafusion::{
-    logical_expr::{
-        Limit, LogicalPlan, {Extension, Sort},
-    },
-    optimizer::{OptimizerConfig, OptimizerRule},
-};
+use datafusion::error::Result;
+use datafusion::logical_expr::{Extension, Limit, LogicalPlan, Sort};
+use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 
 use super::super::plan_node::topk::TopKPlanNode;
-
-use datafusion::error::Result;
 
 pub struct MergeLimitWithSortRule {}
 

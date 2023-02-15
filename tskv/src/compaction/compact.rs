@@ -1,9 +1,7 @@
-use std::{
-    collections::{BinaryHeap, HashMap, VecDeque},
-    path::PathBuf,
-    pin::Pin,
-    sync::Arc,
-};
+use std::collections::{BinaryHeap, HashMap, VecDeque};
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use evmap::new;
 use lru_cache::ShardedCache;
@@ -12,24 +10,20 @@ use snafu::ResultExt;
 use trace::{debug, error, info, trace};
 use utils::BloomFilter;
 
-use crate::{
-    compaction::CompactReq,
-    context::GlobalContext,
-    error::{self, Result},
-    file_system::file_manager::{self, get_file_manager},
-    file_utils,
-    kv_option::Options,
-    memcache::DataType,
-    summary::{CompactMeta, VersionEdit},
-    tseries_family::{ColumnFile, TimeRange},
-    tsm::{
-        self, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index, IndexIterator,
-        IndexMeta, IndexReader, TsmReader, TsmWriter,
-    },
-    ColumnFileId, Error, LevelId, TseriesFamilyId,
-};
-
 use super::iterator::BufferedIterator;
+use crate::compaction::CompactReq;
+use crate::context::GlobalContext;
+use crate::error::{self, Result};
+use crate::file_system::file_manager::{self, get_file_manager};
+use crate::kv_option::Options;
+use crate::memcache::DataType;
+use crate::summary::{CompactMeta, VersionEdit};
+use crate::tseries_family::{ColumnFile, TimeRange};
+use crate::tsm::{
+    self, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index, IndexIterator, IndexMeta,
+    IndexReader, TsmReader, TsmWriter,
+};
+use crate::{file_utils, ColumnFileId, Error, LevelId, TseriesFamilyId};
 
 /// Temporary compacting data block meta
 struct CompactingBlockMeta {
@@ -663,33 +657,27 @@ fn new_compact_meta(
 #[cfg(test)]
 pub mod test {
     use core::panic;
+    use std::collections::HashMap;
+    use std::default;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
+    use std::sync::Arc;
+
     use lru_cache::ShardedCache;
     use minivec::MiniVec;
-    use parking_lot::RwLock;
-    use std::{
-        collections::HashMap,
-        default,
-        path::{Path, PathBuf},
-        sync::{
-            atomic::{AtomicBool, AtomicU32, AtomicU64},
-            Arc,
-        },
-    };
-
     use models::{FieldId, Timestamp, ValueType};
+    use parking_lot::RwLock;
     use utils::BloomFilter;
 
-    use crate::{
-        compaction::{run_compaction_job, CompactReq},
-        context::GlobalContext,
-        file_system::file_manager,
-        file_utils,
-        kv_option::Options,
-        summary::VersionEdit,
-        tseries_family::{ColumnFile, LevelInfo, TimeRange, Version},
-        tsm::{self, codec::DataBlockEncoding, DataBlock, Tombstone, TsmReader, TsmTombstone},
-        TseriesFamilyId,
-    };
+    use crate::compaction::{run_compaction_job, CompactReq};
+    use crate::context::GlobalContext;
+    use crate::file_system::file_manager;
+    use crate::kv_option::Options;
+    use crate::summary::VersionEdit;
+    use crate::tseries_family::{ColumnFile, LevelInfo, TimeRange, Version};
+    use crate::tsm::codec::DataBlockEncoding;
+    use crate::tsm::{self, DataBlock, Tombstone, TsmReader, TsmTombstone};
+    use crate::{file_utils, TseriesFamilyId};
 
     async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,

@@ -1,15 +1,17 @@
 mod builder;
 mod factory;
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, MetaRef};
+use meta::error::MetaError;
+use meta::MetaRef;
 use models::auth::user::User;
 
-use self::factory::{tenants::ClusterSchemaTenantsFactory, users::ClusterSchemaUsersFactory};
-
+use self::factory::tenants::ClusterSchemaTenantsFactory;
+use self::factory::users::ClusterSchemaUsersFactory;
 use super::CLUSTER_SCHEMA;
 
 pub struct ClusterSchemaProvider {

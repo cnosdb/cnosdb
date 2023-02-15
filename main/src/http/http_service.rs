@@ -1,36 +1,27 @@
 #![allow(clippy::too_many_arguments)]
 
 use std::borrow::Borrow;
+use std::collections::HashMap;
+use std::convert::Infallible;
+use std::fmt;
 use std::fmt::Display;
+use std::net::SocketAddr;
 use std::ops::Not;
+use std::sync::Arc;
 use std::time::Instant;
-use std::{collections::HashMap, convert::Infallible, fmt, net::SocketAddr, sync::Arc};
 
 use chrono::Local;
-use datafusion::arrow::util::pretty::pretty_format_batches;
-use datafusion::parquet::data_type::AsBytes;
-use flatbuffers::FlatBufferBuilder;
-use libc::sleep;
-use snafu::ResultExt;
-use tokio::sync::oneshot;
-use tokio::time::Sleep;
-use warp::hyper::body::Bytes;
-use warp::hyper::Body;
-use warp::reject::MethodNotAllowed;
-use warp::reject::MissingHeader;
-use warp::reject::PayloadTooLarge;
-use warp::reply::Response;
-use warp::Rejection;
-use warp::Reply;
-use warp::{header, reject, Filter};
-
 use config::TLSConfig;
 use coordinator::hh_queue::HintedOffManager;
 use coordinator::service::CoordinatorRef;
 use coordinator::writer::{PointWriter, VnodeMapping};
+use datafusion::arrow::util::pretty::pretty_format_batches;
+use datafusion::parquet::data_type::AsBytes;
+use flatbuffers::FlatBufferBuilder;
 use http_protocol::header::{ACCEPT, AUTHORIZATION};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
+use libc::sleep;
 use line_protocol::{line_protocol_to_lines, parse_lines_to_points, Line};
 use meta::error::MetaError;
 use meta::MetaClientRef;
@@ -44,26 +35,28 @@ use protos::kv_service::{Meta, WritePointsRequest};
 use protos::models as fb_models;
 use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
 use query::prom::remote_server::PromRemoteSqlServer;
+use snafu::ResultExt;
 use spi::server::dbms::DBMSRef;
 use spi::server::prom::PromRemoteServerRef;
-use spi::service::protocol::Query;
-use spi::service::protocol::{Context, ContextBuilder};
+use spi::service::protocol::{Context, ContextBuilder, Query};
 use spi::QueryError;
-use trace::debug;
-use trace::info;
+use tokio::sync::oneshot;
+use tokio::time::Sleep;
+use trace::{debug, info};
 use tskv::engine::EngineRef;
-
-use crate::http::response::ResponseBuilder;
-use crate::http::result_format::fetch_record_batches;
-use crate::http::result_format::ResultFormat;
-use crate::http::Error;
-use crate::http::ParseLineProtocolSnafu;
-use crate::http::QuerySnafu;
-use crate::server::{Service, ServiceHandle};
-use crate::{server, VERSION};
+use warp::hyper::body::Bytes;
+use warp::hyper::Body;
+use warp::reject::{MethodNotAllowed, MissingHeader, PayloadTooLarge};
+use warp::reply::Response;
+use warp::{header, reject, Filter, Rejection, Reply};
 
 use super::header::Header;
 use super::Error as HttpError;
+use crate::http::response::ResponseBuilder;
+use crate::http::result_format::{fetch_record_batches, ResultFormat};
+use crate::http::{Error, ParseLineProtocolSnafu, QuerySnafu};
+use crate::server::{Service, ServiceHandle};
+use crate::{server, VERSION};
 
 pub enum ServerMode {
     Store,
@@ -639,9 +632,9 @@ mod test {
 
     #[tokio::test]
     async fn test1() {
-        use warp::Filter;
         // use futures_util::future::TryFutureExt;
         use tokio::sync::oneshot;
+        use warp::Filter;
 
         let routes = warp::any().map(|| "Hello, World!");
 

@@ -1,6 +1,7 @@
+use std::time::Instant;
+
 use crate::ctx::ResultSet;
 use crate::print_format::PrintFormat;
-use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct PrintOptions {

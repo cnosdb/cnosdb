@@ -1,18 +1,20 @@
 //! Command within CLI
 
-use crate::ctx::{ResultSet, SessionContext};
-use crate::exec::connect_database;
-use crate::functions::{display_all_functions, Function};
-use crate::print_format::PrintFormat;
-use crate::print_options::PrintOptions;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::time::Instant;
+
 use clap::ArgEnum;
 use datafusion::arrow::array::{ArrayRef, StringArray};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Instant;
+
+use crate::ctx::{ResultSet, SessionContext};
+use crate::exec::connect_database;
+use crate::functions::{display_all_functions, Function};
+use crate::print_format::PrintFormat;
+use crate::print_options::PrintOptions;
 
 /// Command
 #[derive(Debug)]

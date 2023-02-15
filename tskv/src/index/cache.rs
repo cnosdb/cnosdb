@@ -1,12 +1,10 @@
+use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
 use lru::LruCache;
 use lru_cache::ShardedCache;
 use models::{SeriesId, SeriesKey};
-
-use std::{
-    num::NonZeroUsize,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
 
 pub struct SeriesKeyInfo {
     pub key: SeriesKey,

@@ -1,19 +1,15 @@
 use std::cmp::Ordering;
-use std::default;
-use std::fs;
-use std::io;
-use std::ops::Range;
-use std::ops::RangeBounds;
+use std::ops::{Range, RangeBounds};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{default, fs, io};
 
 use radixdb;
 use radixdb::store;
 use radixdb::store::BlobStore;
 use trace::debug;
 
-use super::IndexError;
-use super::IndexResult;
+use super::{IndexError, IndexResult};
 
 #[derive(Debug)]
 pub struct IndexEngine {
@@ -274,9 +270,11 @@ impl Iterator for RangeKeyValIter {
 }
 
 mod test {
+    use std::sync::atomic::AtomicU64;
+    use std::sync::{self, Arc};
+
     use models::utils::now_timestamp;
     use parking_lot::RwLock;
-    use std::sync::{self, atomic::AtomicU64, Arc};
     use tokio::time::{self, Duration};
 
     use super::IndexEngine;

@@ -1,29 +1,28 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{
-    logical_expr::LogicalPlan,
-    physical_optimizer::{
-        aggregate_statistics::AggregateStatistics, coalesce_batches::CoalesceBatches,
-        dist_enforcement::EnforceDistribution, global_sort_selection::GlobalSortSelection,
-        join_selection::JoinSelection, pipeline_checker::PipelineChecker,
-        pipeline_fixer::PipelineFixer, repartition::Repartition, sort_enforcement::EnforceSorting,
-        PhysicalOptimizerRule,
-    },
-    physical_plan::{
-        planner::{DefaultPhysicalPlanner as DFDefaultPhysicalPlanner, ExtensionPlanner},
-        ExecutionPlan, PhysicalPlanner as DFPhysicalPlanner,
-    },
+use datafusion::logical_expr::LogicalPlan;
+use datafusion::physical_optimizer::aggregate_statistics::AggregateStatistics;
+use datafusion::physical_optimizer::coalesce_batches::CoalesceBatches;
+use datafusion::physical_optimizer::dist_enforcement::EnforceDistribution;
+use datafusion::physical_optimizer::global_sort_selection::GlobalSortSelection;
+use datafusion::physical_optimizer::join_selection::JoinSelection;
+use datafusion::physical_optimizer::pipeline_checker::PipelineChecker;
+use datafusion::physical_optimizer::pipeline_fixer::PipelineFixer;
+use datafusion::physical_optimizer::repartition::Repartition;
+use datafusion::physical_optimizer::sort_enforcement::EnforceSorting;
+use datafusion::physical_optimizer::PhysicalOptimizerRule;
+use datafusion::physical_plan::planner::{
+    DefaultPhysicalPlanner as DFDefaultPhysicalPlanner, ExtensionPlanner,
 };
+use datafusion::physical_plan::{ExecutionPlan, PhysicalPlanner as DFPhysicalPlanner};
 use spi::query::physical_planner::PhysicalPlanner;
 use spi::query::session::IsiphoSessionCtx;
 use spi::Result;
 
-use crate::extension::physical::transform_rule::{
-    table_writer::TableWriterPlanner, tag_scan::TagScanPlanner,
-};
-
 use super::optimizer::PhysicalOptimizer;
+use crate::extension::physical::transform_rule::table_writer::TableWriterPlanner;
+use crate::extension::physical::transform_rule::tag_scan::TagScanPlanner;
 
 pub struct DefaultPhysicalPlanner {
     ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,

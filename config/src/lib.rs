@@ -1,7 +1,10 @@
 mod bytes_num;
 mod duration;
 
-use std::{fs::File, io::prelude::Read, path::Path, time::Duration};
+use std::fs::File;
+use std::io::prelude::Read;
+use std::path::Path;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 

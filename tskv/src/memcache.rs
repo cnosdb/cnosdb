@@ -1,33 +1,33 @@
+use std::borrow::BorrowMut;
+use std::cmp::Ordering as CmpOrdering;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
+use std::iter::{FromIterator, Peekable};
+use std::mem::{size_of, size_of_val};
+use std::ops::Index;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+
 use flatbuffers::{ForwardsUOffset, Push, Vector};
 use futures::future::ok;
-
+use libc::time;
+use minivec::{mini_vec, MiniVec};
+use models::schema::{TableColumn, TskvTableSchema};
+use models::utils::{split_id, unite_id};
 use models::{
     utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TableId, Timestamp, ValueType,
 };
+use parking_lot::{RwLock, RwLockReadGuard};
+use protos::models as fb_models;
 use protos::models::{Field, FieldType, Point};
-
-use libc::time;
-use std::cmp::Ordering as CmpOrdering;
-use std::collections::HashSet;
-use std::fmt::Display;
-use std::iter::{FromIterator, Peekable};
-use std::mem::size_of;
-use std::ops::Index;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
-use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
-
-use minivec::{mini_vec, MiniVec};
+use snafu::OptionExt;
 use trace::{error, info, warn};
 
+use crate::error::Result;
+use crate::tseries_family::TimeRange;
 use crate::tsm::DataBlock;
-use crate::{byte_utils, error::Result, tseries_family::TimeRange, TseriesFamilyId};
-use models::schema::{TableColumn, TskvTableSchema};
-use models::utils::{split_id, unite_id};
-use parking_lot::{RwLock, RwLockReadGuard};
-use snafu::OptionExt;
-
-use protos::models as fb_models;
+use crate::{byte_utils, TseriesFamilyId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldVal {
@@ -546,17 +546,18 @@ impl Display for DataType {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use bytes::buf;
-    use models::schema::TskvTableSchema;
-    use models::{FieldId, SchemaId, SeriesId, Timestamp};
-    use parking_lot::RwLock;
     use std::collections::HashMap;
     use std::mem::{size_of, size_of_val};
     use std::sync::Arc;
 
-    use crate::{tsm::DataBlock, TimeRange};
+    use bytes::buf;
+    use models::schema::TskvTableSchema;
+    use models::{FieldId, SchemaId, SeriesId, Timestamp};
+    use parking_lot::RwLock;
 
     use super::{DataType, FieldVal, MemCache, RowData, RowGroup};
+    use crate::tsm::DataBlock;
+    use crate::TimeRange;
 
     pub(crate) fn put_rows_to_cache(
         cache: &mut MemCache,

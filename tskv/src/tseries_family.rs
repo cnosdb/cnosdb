@@ -1,47 +1,38 @@
-use std::{
-    borrow::{Borrow, BorrowMut},
-    cmp::{self, max, min},
-    collections::{HashMap, HashSet},
-    ops::{Bound, Deref, DerefMut},
-    path::{Path, PathBuf},
-    rc::Rc,
-    sync::{
-        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
-
-use lazy_static::lazy_static;
-use parking_lot::{Mutex, RwLock};
-use tokio::{
-    runtime::Runtime,
-    sync::{mpsc::Sender, watch::Receiver},
-    time::Instant,
-};
-use tokio_util::sync::CancellationToken;
+use std::borrow::{Borrow, BorrowMut};
+use std::cmp::{self, max, min};
+use std::collections::{HashMap, HashSet};
+use std::ops::{Bound, Deref, DerefMut};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 use config::get_config;
+use lazy_static::lazy_static;
 use lru_cache::ShardedCache;
-use models::{
-    schema::TableColumn, ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType,
-};
+use models::schema::TableColumn;
+use models::{ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
+use parking_lot::{Mutex, RwLock};
+use tokio::runtime::Runtime;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::watch::Receiver;
+use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
-use crate::{
-    compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
-    error::{Error, Result},
-    file_system::file_manager,
-    file_utils::{self, make_delta_file_name, make_tsm_file_name},
-    kv_option::{CacheOptions, Options, StorageOptions},
-    memcache::{DataType, MemCache, RowGroup},
-    summary::{CompactMeta, VersionEdit},
-    tsm::{
-        BlockMetaIterator, ColumnReader, DataBlock, Index, IndexReader, TsmReader, TsmTombstone,
-    },
-    ColumnFileId, LevelId, TseriesFamilyId,
+use crate::compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker};
+use crate::error::{Error, Result};
+use crate::file_system::file_manager;
+use crate::file_utils::{self, make_delta_file_name, make_tsm_file_name};
+use crate::kv_option::{CacheOptions, Options, StorageOptions};
+use crate::memcache::{DataType, MemCache, RowGroup};
+use crate::summary::{CompactMeta, VersionEdit};
+use crate::tsm::{
+    BlockMetaIterator, ColumnReader, DataBlock, Index, IndexReader, TsmReader, TsmTombstone,
 };
+use crate::{ColumnFileId, LevelId, TseriesFamilyId};
 
 lazy_static! {
     pub static ref FLUSH_REQ: Arc<Mutex<Vec<FlushReq>>> = Arc::new(Mutex::new(vec![]));
@@ -938,42 +929,36 @@ impl Drop for TseriesFamily {
 
 #[cfg(test)]
 mod test {
-    use std::collections::hash_map;
+    use std::collections::{hash_map, HashMap};
     use std::mem::{size_of, size_of_val};
-    use std::{collections::HashMap, path::PathBuf, sync::Arc};
-
-    use parking_lot::{Mutex, RwLock};
+    use std::path::PathBuf;
+    use std::sync::Arc;
 
     use config::{get_config, ClusterConfig};
     use lru_cache::ShardedCache;
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
-    use models::{
-        schema::{DatabaseSchema, TenantOptions},
-        Timestamp, ValueType,
-    };
-    use tokio::sync::{
-        mpsc::{self, Receiver},
-        RwLock as AsyncRwLock,
-    };
+    use models::schema::{DatabaseSchema, TenantOptions};
+    use models::{Timestamp, ValueType};
+    use parking_lot::{Mutex, RwLock};
+    use tokio::sync::mpsc::{self, Receiver};
+    use tokio::sync::RwLock as AsyncRwLock;
     use trace::info;
 
-    use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
-    use crate::{
-        compaction::{flush_tests::default_with_field_id, run_flush_memtable_job, FlushReq},
-        context::GlobalContext,
-        file_system::file_manager,
-        file_utils::{self, make_tsm_file_name},
-        kv_option::Options,
-        memcache::{FieldVal, MemCache, RowData, RowGroup},
-        summary::{CompactMeta, SummaryTask, VersionEdit},
-        tseries_family::{TimeRange, TseriesFamily, Version},
-        tsm::TsmTombstone,
-        version_set::VersionSet,
-        TseriesFamilyId,
-    };
-
     use super::{ColumnFile, LevelInfo};
+    use crate::compaction::flush_tests::default_with_field_id;
+    use crate::compaction::{run_flush_memtable_job, FlushReq};
+    use crate::context::GlobalContext;
+    use crate::file_system::file_manager;
+    use crate::file_utils::{self, make_tsm_file_name};
+    use crate::kv_option::Options;
+    use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
+    use crate::memcache::{FieldVal, MemCache, RowData, RowGroup};
+    use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
+    use crate::tseries_family::{TimeRange, TseriesFamily, Version};
+    use crate::tsm::TsmTombstone;
+    use crate::version_set::VersionSet;
+    use crate::TseriesFamilyId;
 
     #[tokio::test]
     async fn test_version_apply_version_edits_1() {

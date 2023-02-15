@@ -1,12 +1,12 @@
 // extern crate serde_derive;
 
-use crate::error::{MetaError, MetaResult};
 use std::fmt::{Debug, Formatter};
 
 use models::limiter::{CountLimiter, RateLimiter};
 use models::schema::{DatabaseSchema, LimiterConfig};
-
 use serde::{Deserialize, Serialize};
+
+use crate::error::{MetaError, MetaResult};
 
 pub trait Limiter: Send + Sync + Debug {
     fn check_create_db(&self, db_number: usize, db_schema: &mut DatabaseSchema) -> MetaResult<()>;

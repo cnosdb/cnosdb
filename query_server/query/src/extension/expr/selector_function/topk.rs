@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
-use datafusion::{
-    arrow::{array::ArrayRef, datatypes::DataType},
-    error::DataFusionError,
-    logical_expr::{
-        type_coercion::aggregates::{DATES, NUMERICS, STRINGS, TIMESTAMPS},
-        ReturnTypeFunction, ScalarUDF, Signature, TypeSignature, Volatility,
-    },
-    physical_expr::functions::make_scalar_function,
+use datafusion::arrow::array::ArrayRef;
+use datafusion::arrow::datatypes::DataType;
+use datafusion::error::DataFusionError;
+use datafusion::logical_expr::type_coercion::aggregates::{DATES, NUMERICS, STRINGS, TIMESTAMPS};
+use datafusion::logical_expr::{
+    ReturnTypeFunction, ScalarUDF, Signature, TypeSignature, Volatility,
 };
-
+use datafusion::physical_expr::functions::make_scalar_function;
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 

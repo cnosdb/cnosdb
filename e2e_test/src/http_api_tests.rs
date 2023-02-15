@@ -1,11 +1,9 @@
 #[cfg(test)]
 mod test {
-    use http_protocol::{
-        header::{HeaderValue, ACCEPT, CONTENT_TYPE},
-        http_client::HttpClient,
-        response::Response,
-        status_code,
-    };
+    use http_protocol::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
+    use http_protocol::http_client::HttpClient;
+    use http_protocol::response::Response;
+    use http_protocol::status_code;
 
     fn client() -> HttpClient {
         HttpClient::from_addr("127.0.0.1".to_string(), 31001)

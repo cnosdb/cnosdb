@@ -1,22 +1,21 @@
 #[cfg(test)]
 mod tests {
 
-    use meta::meta_manager::RemoteMetaManager;
-    use meta::MetaRef;
-    use serial_test::serial;
     use std::path::Path;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
-    use tokio::runtime;
-    use tokio::runtime::Runtime;
-    use tskv::engine::Engine;
 
     use config::get_config;
+    use meta::meta_manager::RemoteMetaManager;
+    use meta::MetaRef;
     use models::schema::TenantOptions;
-
     use protos::kv_service::Meta;
     use protos::{kv_service, models_helper};
+    use serial_test::serial;
+    use tokio::runtime;
+    use tokio::runtime::Runtime;
     use trace::{debug, error, info, init_default_global_tracing, warn};
+    use tskv::engine::Engine;
     use tskv::file_system::file_manager;
     use tskv::{kv_option, TsKv};
 

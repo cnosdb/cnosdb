@@ -1,40 +1,28 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use derive_builder::Builder;
-use snafu::ResultExt;
-
 use coordinator::service::CoordinatorRef;
+use derive_builder::Builder;
 use meta::error::MetaError;
-use models::schema::{DatabaseSchema, DEFAULT_CATALOG, DEFAULT_DATABASE};
-use models::{
-    auth::{
-        role::{SystemTenantRole, TenantRoleIdentifier},
-        user::{User, UserInfo, UserOptionsBuilder, ROOT},
-    },
-    oid::Identifier,
-    schema::TenantOptionsBuilder,
-};
-use spi::AuthSnafu;
-use spi::Result;
-use spi::{
-    query::{
-        auth::AccessControlRef, dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory,
-    },
-    server::dbms::DatabaseManagerSystem,
-    service::protocol::{Query, QueryHandle, QueryId},
-    QueryError,
-};
+use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
+use models::auth::user::{User, UserInfo, UserOptionsBuilder, ROOT};
+use models::oid::Identifier;
+use models::schema::{DatabaseSchema, TenantOptionsBuilder, DEFAULT_CATALOG, DEFAULT_DATABASE};
+use snafu::ResultExt;
+use spi::query::auth::AccessControlRef;
+use spi::query::dispatcher::QueryDispatcher;
+use spi::query::session::IsiphoSessionCtxFactory;
+use spi::server::dbms::DatabaseManagerSystem;
+use spi::service::protocol::{Query, QueryHandle, QueryId};
+use spi::{AuthSnafu, QueryError, Result};
 use trace::{debug, info};
 use tskv::kv_option::Options;
 
+use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
+use crate::execution::scheduler::LocalScheduler;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
-use crate::{
-    auth::auth_control::{AccessControlImpl, AccessControlNoCheck},
-    execution::scheduler::LocalScheduler,
-};
 
 #[derive(Builder)]
 pub struct Cnosdbms<D> {
@@ -227,10 +215,10 @@ mod tests {
     use std::ops::DerefMut;
 
     use chrono::Utc;
-    use datafusion::arrow::{record_batch::RecordBatch, util::pretty::pretty_format_batches};
-
     use config::get_config;
     use coordinator::service::MockCoordinator;
+    use datafusion::arrow::record_batch::RecordBatch;
+    use datafusion::arrow::util::pretty::pretty_format_batches;
     use models::auth::user::UserInfo;
     use models::schema::DEFAULT_CATALOG;
     use spi::service::protocol::ContextBuilder;

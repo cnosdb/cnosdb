@@ -1,7 +1,7 @@
-use crate::auth::privilege::DatabasePrivilege;
 use openssl::error::ErrorStack;
 use snafu::Snafu;
 
+use crate::auth::privilege::DatabasePrivilege;
 use crate::define_result;
 
 pub mod privilege;

@@ -1,14 +1,10 @@
-use std::{
-    any::Any,
-    fmt::{self, Debug},
-    sync::Arc,
-};
+use std::any::Any;
+use std::fmt::{self, Debug};
+use std::sync::Arc;
 
-use datafusion::{
-    common::DFSchemaRef,
-    logical_expr::{LogicalPlan, UserDefinedLogicalNode},
-    prelude::Expr,
-};
+use datafusion::common::DFSchemaRef;
+use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
+use datafusion::prelude::Expr;
 
 use crate::table::ClusterTable;
 

@@ -1,17 +1,13 @@
 use std::pin::Pin;
 
 use futures::Stream;
+use protos::kv_service::tskv_service_server::TskvService;
+use protos::kv_service::{PingRequest, PingResponse, WritePointsRequest, WritePointsResponse};
+use protos::models::{PingBody, PingBodyBuilder};
 use tokio::sync::mpsc::{self};
-use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status, Streaming};
-
-use protos::{
-    kv_service::{
-        tskv_service_server::TskvService, PingRequest, PingResponse, WritePointsRequest,
-        WritePointsResponse,
-    },
-    models::{PingBody, PingBodyBuilder},
-};
 use trace::debug;
 use tskv::engine::EngineRef;
 

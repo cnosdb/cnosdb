@@ -1,5 +1,7 @@
+use std::fmt::Debug;
+use std::io;
+
 use snafu::Snafu;
-use std::{fmt::Debug, io};
 
 #[macro_export]
 macro_rules! define_result {

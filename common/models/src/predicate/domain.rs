@@ -1,24 +1,22 @@
-use std::{
-    cmp::{self, Ordering},
-    collections::{BTreeMap, HashMap, HashSet},
-    hash::Hash,
-    io::{BufReader, Read},
-    ops::RangeBounds,
-    sync::Arc,
-};
+use std::cmp::{self, Ordering};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash::Hash;
+use std::io::{BufReader, Read};
+use std::ops::RangeBounds;
+use std::sync::Arc;
 
-use crate::schema::TskvTableSchema;
-use crate::{Error, Result};
 use arrow_schema::{Schema, SchemaRef};
-use datafusion::{
-    arrow::datatypes::DataType, logical_expr::Expr, optimizer::utils::conjunction, prelude::Column,
-    scalar::ScalarValue,
-};
-
+use datafusion::arrow::datatypes::DataType;
+use datafusion::logical_expr::Expr;
+use datafusion::optimizer::utils::conjunction;
+use datafusion::prelude::Column;
+use datafusion::scalar::ScalarValue;
 use datafusion_proto::bytes::Serializeable;
 use serde::{Deserialize, Serialize};
 
 use super::transformation::RowExpressionToDomainsVisitor;
+use crate::schema::TskvTableSchema;
+use crate::{Error, Result};
 
 pub type PredicateRef = Arc<Predicate>;
 
@@ -1082,8 +1080,9 @@ mod tests {
 
     #[test]
     fn test_shchema_encode_decode() {
-        use arrow_schema::*;
         use std::collections::HashMap;
+
+        use arrow_schema::*;
 
         let field_a = Field::new("a", DataType::Int64, false);
         let field_b = Field::new("b", DataType::Boolean, false);
