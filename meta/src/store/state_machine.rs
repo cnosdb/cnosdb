@@ -17,6 +17,8 @@ use trace::{debug, info};
 use super::command::*;
 use super::key_path;
 use crate::error::{l_r_err, sm_r_err, sm_w_err, StorageIOResult};
+use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
+use crate::limiter::remote_request_limiter::RemoteRequestLimiter;
 use crate::store::key_path::KeyPath;
 use crate::{ClusterNode, ClusterNodeId};
 
@@ -125,6 +127,7 @@ pub struct StateMachine {
     pub state_machine: sled::Tree,
     pub watch: Arc<Watch>,
 }
+
 impl StateMachine {
     pub(crate) fn new(db: Arc<sled::Db>) -> StateMachine {
         let sm = Self {
@@ -562,6 +565,11 @@ impl StateMachine {
             }
             WriteCommand::RetainID(cluster, count) => self.process_retain_id(cluster, *count),
             WriteCommand::UpdateVnodeReplSet(args) => self.process_update_vnode_repl_set(args),
+            WriteCommand::LimiterRequest {
+                cluster,
+                tenant,
+                request,
+            } => self.process_limiter_request(cluster, tenant, request),
         }
     }
 
@@ -996,6 +1004,27 @@ impl StateMachine {
         CommonResp::Ok(success).to_string()
     }
 
+    fn set_tenant_limiter(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        limiter: Option<RemoteRequestLimiter>,
+    ) {
+        let key = KeyPath::limiter(cluster, tenant);
+
+        let limiter = match limiter {
+            Some(limiter) => limiter,
+            None => {
+                let _ = self.remove(&key);
+                return;
+            }
+        };
+
+        if let Ok(value) = serde_json::to_string(&limiter) {
+            let _ = self.insert(&key, &value);
+        }
+    }
+
     fn process_create_tenant(
         &self,
         cluster: &str,
@@ -1011,6 +1040,10 @@ impl StateMachine {
 
         let oid = UuidGenerator::default().next_id();
         let tenant = Tenant::new(oid, name.to_string(), options.clone());
+
+        let limiter = options.request_config().map(RemoteRequestLimiter::new);
+
+        self.set_tenant_limiter(cluster, name, limiter);
 
         match serde_json::to_string(&tenant) {
             Ok(value) => {
@@ -1041,6 +1074,10 @@ impl StateMachine {
                     let value = serde_json::to_string(&new_tenant).unwrap();
                     let _ = self.insert(&key, &value);
 
+                    let limiter = options.request_config().map(RemoteRequestLimiter::new);
+
+                    self.set_tenant_limiter(cluster, name, limiter);
+
                     CommonResp::Ok(new_tenant)
                 }
                 Err(err) => {
@@ -1069,8 +1106,9 @@ impl StateMachine {
 
     fn process_drop_tenant(&self, cluster: &str, name: &str) -> CommandResp {
         let key = KeyPath::tenant(cluster, name);
+        let limiter_key = KeyPath::limiter(cluster, name);
 
-        let success = self.remove(&key).is_ok();
+        let success = self.remove(&key).is_ok() && self.remove(&limiter_key).is_ok();
 
         CommonResp::Ok(success).to_string()
     }
@@ -1253,6 +1291,39 @@ impl StateMachine {
         let _ = self.insert(&key, &val.unwrap());
 
         CommonResp::Ok(()).to_string()
+    }
+
+    fn process_limiter_request(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        requests: &LocalBucketRequest,
+    ) -> CommandResp {
+        let mut rsp = LocalBucketResponse {
+            kind: requests.kind,
+            alloc: requests.expected.max,
+        };
+        let key = KeyPath::limiter(cluster, tenant);
+
+        let limiter = match get_struct::<RemoteRequestLimiter>(&key, self.db.clone()) {
+            Some(b) => b,
+            None => {
+                return CommonResp::Ok(rsp).to_string();
+            }
+        };
+
+        let bucket = match limiter.buckets.get(&requests.kind) {
+            Some(bucket) => bucket,
+            None => {
+                return CommonResp::Ok(rsp).to_string();
+            }
+        };
+        let alloc = bucket.acquire_closed(requests.expected.max as usize);
+
+        self.set_tenant_limiter(cluster, tenant, Some(limiter));
+        rsp.alloc = alloc as i64;
+
+        CommonResp::Ok(rsp).to_string()
     }
 }
 

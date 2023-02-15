@@ -1,0 +1,14 @@
+[package]
+name = "limiter_bucket"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+config = { path = "../../config" }
+
+bincode = { workspace = true }
+chrono = { workspace = true, features = ["serde"]}
+serde = { workspace = true, features = ["serde_derive"]}
+parking_lot = {workspace = true}

@@ -14,16 +14,16 @@ use crate::{ClusterNode, ClusterNodeId, TypeConfig};
 pub type WriteError =
     RPCError<ClusterNodeId, ClusterNode, ClientWriteError<ClusterNodeId, ClusterNode>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MetaHttpClient {
-    inner: surf::Client,
+    inner: Arc<surf::Client>,
     pub leader: Arc<Mutex<(ClusterNodeId, String)>>,
 }
 
 impl MetaHttpClient {
     pub fn new(leader_id: ClusterNodeId, leader_addr: String) -> Self {
         Self {
-            inner: surf::Client::new(),
+            inner: Arc::new(surf::Client::new()),
             leader: Arc::new(Mutex::new((leader_id, leader_addr))),
         }
     }

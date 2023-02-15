@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use config::TenantLimiterConfig;
 use models::meta_data::ExpiredBucketInfo;
 use models::oid::{Identifier, Oid};
 use models::schema::{LimiterConfig, Tenant, TenantOptions};
@@ -13,10 +14,14 @@ use trace::info;
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
-use crate::limiter::{Limiter, LimiterImpl, NoneLimiter};
+use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
+use crate::limiter::{
+    Limiter, LimiterImpl, LocalRequestLimiter, NoneLimiter, NoneLimiter, RequestLimiter,
+};
 use crate::meta_client::{MetaClient, RemoteMetaClient};
 use crate::store::command::{
-    self, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND,
+    self, WriteCommand, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST,
+    META_REQUEST_TENANT_NOT_FOUND,
 };
 use crate::MetaClientRef;
 
@@ -35,27 +40,30 @@ pub trait TenantManager: Send + Sync + Debug {
     async fn drop_tenant(&self, name: &str) -> MetaResult<bool>;
     // tenant object meta manager
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
-    async fn tenant_set_limiter(
-        &self,
-        tenant_name: &str,
-        limiter_config: Option<LimiterConfig>,
-    ) -> MetaResult<()>;
 
     async fn get_tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
 
     async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
+
+    async fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter>;
+    async fn limiter_request(
+        &self,
+        tenant: &str,
+        request: LocalBucketRequest,
+    ) -> MetaResult<LocalBucketResponse>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RemoteTenantManager {
     client: MetaHttpClient,
 
     cluster_name: String,
     cluster_meta: String,
     node_id: u64,
-    ver_sender: Sender<u64>,
+    ver_sender: Arc<Sender<u64>>,
 
-    tenants: RwLock<HashMap<String, MetaClientRef>>,
+    tenants: Arc<RwLock<HashMap<String, MetaClientRef>>>,
+    limiters: Arc<RwLock<HashMap<String, Arc<dyn RequestLimiter>>>>,
 }
 
 impl RemoteTenantManager {
@@ -66,12 +74,28 @@ impl RemoteTenantManager {
         ver_sender: Sender<u64>,
     ) -> Self {
         Self {
-            ver_sender,
+            ver_sender: Arc::new(ver_sender),
             client: MetaHttpClient::new(1, cluster_meta.clone()),
             cluster_name,
             cluster_meta,
             node_id: id,
+            limiters: Default::default(),
             tenants: Default::default(),
+        }
+    }
+
+    pub fn new_limiter(
+        &self,
+        options: &TenantOptions,
+        tenant_name: &str,
+    ) -> Arc<dyn RequestLimiter> {
+        match options.request_config() {
+            Some(config) => Arc::new(LocalRequestLimiter::new(
+                config,
+                Arc::new(self.clone()),
+                tenant_name,
+            )),
+            None => Arc::new(NoneLimiter {}),
         }
     }
 }
@@ -87,6 +111,7 @@ impl TenantManager for RemoteTenantManager {
         name: String,
         options: TenantOptions,
     ) -> MetaResult<MetaClientRef> {
+        let limiter = self.new_limiter(&options, &name);
         let req = command::WriteCommand::CreateTenant(self.cluster_name.clone(), name, options);
 
         match self
@@ -107,6 +132,10 @@ impl TenantManager for RemoteTenantManager {
                     .write()
                     .await
                     .insert(client.tenant().name().to_string(), client.clone());
+                self.limiters
+                    .write()
+                    .await
+                    .insert(client.tenant().name().to_string(), limiter);
 
                 Ok(client)
             }
@@ -154,6 +183,8 @@ impl TenantManager for RemoteTenantManager {
     }
 
     async fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
+        let limiter = self.new_limiter(&options, name);
+
         let req = command::WriteCommand::AlterTenant(
             self.cluster_name.clone(),
             name.to_string(),
@@ -178,6 +209,10 @@ impl TenantManager for RemoteTenantManager {
                     .await
                     .insert(client.tenant().name().to_string(), client);
 
+                self.limiters
+                    .write()
+                    .await
+                    .insert(name.to_string(), limiter);
                 Ok(())
             }
             command::CommonResp::Err(status) => {
@@ -197,7 +232,10 @@ impl TenantManager for RemoteTenantManager {
                 command::WriteCommand::DropTenant(self.cluster_name.clone(), name.to_string());
 
             return match self.client.write::<command::CommonResp<bool>>(&req).await? {
-                command::CommonResp::Ok(e) => Ok(e),
+                command::CommonResp::Ok(e) => {
+                    self.limiters.write().await.remove(name);
+                    Ok(e)
+                }
                 command::CommonResp::Err(status) => {
                     // TODO improve response
                     Err(MetaError::CommonError { msg: status.msg })
@@ -249,64 +287,31 @@ impl TenantManager for RemoteTenantManager {
         None
     }
 
-    async fn tenant_set_limiter(
-        &self,
-        tenant_name: &str,
-        limiter_config: Option<LimiterConfig>,
-    ) -> MetaResult<()> {
-        let mut tenants = self.tenants.write().await;
-        let old_client = match tenants.remove(tenant_name) {
-            Some(client) => client,
-            None => {
-                return Err(MetaError::TenantNotFound {
-                    tenant: tenant_name.to_string(),
-                })
-            }
-        };
-
-        let mut options = old_client.tenant().options().to_owned();
-        options.set_limiter(limiter_config);
-
-        let req = command::WriteCommand::AlterTenant(
-            self.cluster_name.to_owned(),
-            tenant_name.to_string(),
-            options,
-        );
-
-        match self
-            .client
-            .write::<command::CommonResp<Tenant>>(&req)
-            .await?
-        {
-            command::CommonResp::Ok(tenant) => {
-                let client = RemoteMetaClient::new(
-                    self.cluster_name.to_owned(),
-                    tenant,
-                    self.cluster_meta.to_owned(),
-                    self.node_id,
-                )
-                .await?;
-                tenants.insert(tenant_name.to_string(), client);
-
-                Ok(())
-            }
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                if status.code == META_REQUEST_TENANT_NOT_FOUND {
-                    Err(MetaError::TenantNotFound { tenant: status.msg })
-                } else {
-                    Err(MetaError::CommonError { msg: status.msg })
-                }
-            }
-        }
-    }
-
     async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         let mut list = vec![];
         for (key, val) in self.tenants.write().await.iter() {
             list.append(&mut val.expired_bucket());
         }
-
         list
+    }
+
+    async fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter> {
+        match self.limiters.read().await.get(tenant) {
+            Some(limiter) => limiter.clone(),
+            None => Arc::new(NoneLimiter),
+        }
+    }
+
+    async fn limiter_request(
+        &self,
+        tenant: &str,
+        request: LocalBucketRequest,
+    ) -> MetaResult<LocalBucketResponse> {
+        let req = WriteCommand::LimiterRequest {
+            cluster: self.cluster_name.to_string(),
+            tenant: tenant.to_string(),
+            request,
+        };
+        self.client.write::<LocalBucketResponse>(&req).await
     }
 }

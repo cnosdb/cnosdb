@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use client::MetaHttpClient;
-use config::ClusterConfig;
+use config::{ClusterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
 use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{
     CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier, UserRole,
@@ -20,8 +20,8 @@ use models::auth::user::{User, UserDesc};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
 use models::schema::{
-    DatabaseSchema, ExternalTableSchema, LimiterConfig, TableColumn, TableSchema, Tenant,
-    TenantOptions, TskvTableSchema,
+    DatabaseSchema, ExternalTableSchema, TableColumn, TableSchema, Tenant, TenantOptions,
+    TskvTableSchema,
 };
 use models::utils::min_num;
 use parking_lot::RwLock;
@@ -33,7 +33,9 @@ use tokio::sync::mpsc::{self, Receiver};
 use trace::{debug, error, info, warn};
 
 use crate::error::{MetaError, MetaResult};
-use crate::limiter::{Limiter, LimiterImpl, NoneLimiter};
+use crate::limiter::{
+    Limiter, LimiterImpl, LocalRequestLimiter, NoneLimiter, NoneLimiter, RequestLimiter,
+};
 use crate::store::command::{
     EntryLog, META_REQUEST_FAILED, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
     META_REQUEST_ROLE_EXIST, META_REQUEST_ROLE_NOT_FOUND, META_REQUEST_SUCCESS,
@@ -143,8 +145,6 @@ pub trait MetaClient: Send + Sync + Debug {
     async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()>;
 
     fn print_data(&self) -> String;
-
-    fn limiter(&self) -> Arc<dyn Limiter>;
 }
 
 #[derive(Debug)]
@@ -152,7 +152,6 @@ pub struct RemoteMetaClient {
     cluster: String,
     tenant: Tenant,
     meta_url: String,
-    limiter: Arc<dyn Limiter>,
 
     data: RwLock<TenantMetaData>,
     client: MetaHttpClient,
@@ -165,15 +164,9 @@ impl RemoteMetaClient {
         meta_url: String,
         node_id: u64,
     ) -> MetaResult<Arc<Self>> {
-        let limiter: Arc<dyn Limiter> = match &tenant.options().limiter_config {
-            Some(config) => Arc::new(LimiterImpl::from(config)),
-            None => Arc::new(NoneLimiter),
-        };
-
         let client = Arc::new(Self {
             cluster,
             tenant,
-            limiter,
             meta_url: meta_url.clone(),
             data: RwLock::new(TenantMetaData::new()),
             client: MetaHttpClient::new(1, meta_url),
@@ -203,6 +196,97 @@ impl RemoteMetaClient {
 
         Ok(())
     }
+
+    fn check_create_db(&self, db_schema: &mut DatabaseSchema) -> MetaResult<()> {
+        let limiter_config = match self.tenant.options().object_config() {
+            Some(config) => config,
+            None => return Ok(()),
+        };
+
+        let TenantObjectLimiterConfig {
+            max_databases,
+            max_replicate_number,
+            max_retention_time,
+            max_shard_number,
+            ..
+        } = limiter_config;
+
+        let db_num = self.data.read().dbs.len();
+        if let Some(max) = max_databases {
+            if db_num >= *max {
+                return Err(MetaError::ObjectLimit {
+                    msg: format!(
+                        "Create database failed, the maximum number of database is {}",
+                        max
+                    ),
+                });
+            }
+        }
+
+        let replica = db_schema.config.replica_or_default();
+        if let Some(max) = max_replicate_number {
+            if replica as usize > *max {
+                return Err(MetaError::ObjectLimit {
+                    msg: format!(
+                        "Create database failed, the maximum number of database's replica is {}",
+                        max
+                    ),
+                });
+            }
+        }
+
+        let shard = db_schema.config.shard_num_or_default();
+        if let Some(max) = max_shard_number {
+            if shard as usize > *max {
+                return Err(MetaError::ObjectLimit {
+                    msg: format!(
+                        "Create database failed, the maximum number of database's shards is {}",
+                        max
+                    ),
+                });
+            }
+        }
+
+        match (db_schema.config.ttl(), max_retention_time) {
+            (Some(ttl), Some(day)) => {
+                let ttl = ttl.to_nanoseconds();
+                let max = models::schema::Duration::new_with_day(*day as u64);
+                if ttl > max.to_nanoseconds() {
+                    return Err(MetaError::ObjectLimit {
+                        msg: format!("TTL reached limit, max is {} days", day),
+                    });
+                }
+            }
+            (None, Some(day)) => db_schema
+                .config
+                .with_ttl(models::schema::Duration::new_with_day(*day as u64)),
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn check_add_user(&self) -> MetaResult<()> {
+        let limiter_config = match self.tenant.options().object_config() {
+            Some(config) => config,
+            None => return Ok(()),
+        };
+
+        let TenantObjectLimiterConfig {
+            max_users_number, ..
+        } = limiter_config;
+
+        let user_number = self.data.read().users.len();
+
+        if let Some(max) = max_users_number {
+            if user_number >= *max {
+                return Err(MetaError::ObjectLimit {
+                    msg: format!("users reached limit, max is {}", max),
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -222,11 +306,7 @@ impl MetaClient for RemoteMetaClient {
         user_id: Oid,
         role: TenantRoleIdentifier,
     ) -> MetaResult<()> {
-        {
-            let user_number = self.data.read().users.len();
-            self.limiter().check_add_user(user_number)?;
-        }
-
+        self.check_add_user()?;
         let req = command::WriteCommand::AddMemberToTenant(
             self.cluster.clone(),
             user_id,
@@ -478,8 +558,8 @@ impl MetaClient for RemoteMetaClient {
     // tenant role end
 
     async fn create_db(&self, mut schema: DatabaseSchema) -> MetaResult<()> {
-        let db_number = self.data.read().dbs.len();
-        self.limiter().check_create_db(db_number, &mut schema)?;
+        self.check_create_db(&mut schema)?;
+
         let req = command::WriteCommand::CreateDB(
             self.cluster.clone(),
             self.tenant_name(),
@@ -934,10 +1014,6 @@ impl MetaClient for RemoteMetaClient {
         info!("****** Meta Data: {:#?}", self.data);
 
         format!("{:#?}", self.data.read())
-    }
-
-    fn limiter(&self) -> Arc<dyn Limiter> {
-        self.limiter.clone()
     }
 }
 

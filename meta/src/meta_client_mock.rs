@@ -262,10 +262,6 @@ impl MetaClient for MockMetaClient {
         None
     }
 
-    fn limiter(&self) -> Arc<dyn Limiter> {
-        todo!()
-    }
-
     fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
         todo!()
     }
@@ -347,11 +343,15 @@ impl TenantManager for TenantManagerMock {
         todo!()
     }
 
-    async fn tenant_set_limiter(
+    async fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter> {
+        todo!()
+    }
+
+    async fn limiter_request(
         &self,
-        tenant_name: &str,
-        limiter_config: Option<LimiterConfig>,
-    ) -> MetaResult<()> {
+        tenant: &str,
+        request: LocalBucketRequest,
+    ) -> MetaResult<LocalBucketResponse> {
         todo!()
     }
 }
