@@ -1,27 +1,21 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 use datafusion::arrow::compute::kernels::limit;
-use tokio::{
-    runtime::Runtime,
-    sync::{
-        broadcast,
-        mpsc::{Receiver, Sender},
-        oneshot, RwLock, Semaphore,
-    },
-    task::JoinHandle,
-    time::Instant,
-};
+use tokio::runtime::Runtime;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{broadcast, oneshot, RwLock, Semaphore};
+use tokio::task::JoinHandle;
+use tokio::time::Instant;
 use trace::{error, info, warn};
 
-use crate::{
-    compaction::{LevelCompactionPicker, Picker},
-    context::GlobalContext,
-    error::Result,
-    kv_option::StorageOptions,
-    summary::SummaryTask,
-    version_set::VersionSet,
-    TseriesFamilyId,
-};
+use crate::compaction::{LevelCompactionPicker, Picker};
+use crate::context::GlobalContext;
+use crate::error::Result;
+use crate::kv_option::StorageOptions;
+use crate::summary::SummaryTask;
+use crate::version_set::VersionSet;
+use crate::TseriesFamilyId;
 
 pub fn run(
     storage_opt: Arc<StorageOptions>,

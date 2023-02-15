@@ -1,32 +1,27 @@
-use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
-};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 
 use meta::MetaRef;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use parking_lot::RwLock as SyncRwLock;
 use snafu::ResultExt;
-use tokio::{
-    runtime::Runtime,
-    sync::{mpsc::Sender, oneshot, watch::Receiver, RwLock},
-};
-
+use tokio::runtime::Runtime;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::watch::Receiver;
+use tokio::sync::{oneshot, RwLock};
 use trace::error;
 use utils::BloomFilter;
 
-use crate::{
-    compaction::FlushReq,
-    context::GlobalSequenceContext,
-    database::Database,
-    error::MetaSnafu,
-    error::Result,
-    kv_option::StorageOptions,
-    memcache::MemCache,
-    summary::{VersionEdit, WriteSummaryRequest},
-    tseries_family::{LevelInfo, TseriesFamily, Version},
-    ColumnFileId, Options, TseriesFamilyId,
-};
+use crate::compaction::FlushReq;
+use crate::context::GlobalSequenceContext;
+use crate::database::Database;
+use crate::error::{MetaSnafu, Result};
+use crate::kv_option::StorageOptions;
+use crate::memcache::MemCache;
+use crate::summary::{VersionEdit, WriteSummaryRequest};
+use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
+use crate::{ColumnFileId, Options, TseriesFamilyId};
 
 #[derive(Debug)]
 pub struct VersionSet {

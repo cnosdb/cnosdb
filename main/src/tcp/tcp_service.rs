@@ -1,13 +1,25 @@
+use std::collections::HashMap;
 use std::fmt::format;
 use std::net::{self, SocketAddr};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use clap::ErrorKind::NoEquals;
+use coordinator::command::*;
+use coordinator::errors::*;
+use coordinator::file_info::get_files_meta;
+use coordinator::reader::{QueryExecutor, ReaderIterator};
+use coordinator::service::CoordinatorRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::future::ok;
 use futures::{executor, Future};
+use meta::MetaRef;
+use models::auth::user::{ROOT, ROOT_PWD};
+use models::meta_data::{self, VnodeInfo};
+use models::predicate::domain::Predicate;
+use protos::kv_service::{Meta, WritePointsRequest};
 use snafu::ResultExt;
+use spi::server::dbms::DBMSRef;
 use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -16,26 +28,14 @@ use tokio::sync::oneshot;
 // use std::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot::Receiver;
 use tokio::time::{self, Duration};
-
-use coordinator::command::*;
-use coordinator::errors::*;
-use coordinator::file_info::get_files_meta;
-use coordinator::reader::{QueryExecutor, ReaderIterator};
-use coordinator::service::CoordinatorRef;
-use meta::MetaRef;
-use models::auth::user::{ROOT, ROOT_PWD};
-use models::meta_data::{self, VnodeInfo};
-use models::predicate::domain::Predicate;
-use protos::kv_service::{Meta, WritePointsRequest};
-use spi::server::dbms::DBMSRef;
 use trace::{debug, error, info};
+use tskv::engine::EngineRef;
 use tskv::iterator::{QueryOption, TableScanMetrics};
-use tskv::{engine::EngineRef, VersionEdit};
-
-use crate::server;
-use crate::server::{Service, ServiceHandle};
+use tskv::VersionEdit;
 
 use super::vnode_manager::VnodeManager;
+use crate::server;
+use crate::server::{Service, ServiceHandle};
 
 pub struct TcpService {
     addr: SocketAddr,

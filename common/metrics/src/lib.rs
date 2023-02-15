@@ -1,9 +1,10 @@
+use std::ops::Not;
+
 use once_cell::sync::Lazy;
 use prometheus::{
-    default_registry, gather, register_histogram_vec, register_int_counter_vec, IntCounterVec,
+    default_registry, gather, linear_buckets, register_histogram_vec, register_int_counter_vec,
+    HistogramOpts, HistogramVec, IntCounter, IntCounterVec, Opts,
 };
-use prometheus::{linear_buckets, HistogramOpts, HistogramVec, IntCounter, Opts};
-use std::ops::Not;
 use trace::error;
 
 pub const NAMESPACE: &str = "cnosdb";

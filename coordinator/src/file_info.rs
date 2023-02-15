@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
-use crypto::{digest::Digest, md5::Md5};
+use crypto::digest::Digest;
+use crypto::md5::Md5;
 use serde::{Deserialize, Serialize};
-use tokio::{fs::File, io::AsyncReadExt};
+use tokio::fs::File;
+use tokio::io::AsyncReadExt;
 
 use crate::errors::CoordinatorResult;
 

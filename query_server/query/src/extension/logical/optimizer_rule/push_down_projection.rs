@@ -1,6 +1,9 @@
 //! Projection Push Down optimizer rule ensures that only referenced columns are
 //! loaded into memory
 
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
+
 use datafusion::arrow::datatypes::Field;
 use datafusion::arrow::error::Result as ArrowResult;
 use datafusion::common::{
@@ -17,12 +20,6 @@ use datafusion::logical_expr::{
 };
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::prelude::Expr;
-
-use std::collections::HashMap;
-use std::{
-    collections::{BTreeSet, HashSet},
-    sync::Arc,
-};
 
 use crate::table::ClusterTable;
 

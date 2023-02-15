@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, MetaClientRef};
-use models::{auth::user::User, oid::Identifier};
+use meta::error::MetaError;
+use meta::MetaClientRef;
+use models::auth::user::User;
+use models::oid::Identifier;
 
-use crate::{
-    dispatcher::query_tracker::QueryTracker,
-    metadata::information_schema_provider::{
-        builder::queries::InformationSchemaQueriesBuilder, InformationSchemaTableFactory,
-    },
-};
+use crate::dispatcher::query_tracker::QueryTracker;
+use crate::metadata::information_schema_provider::builder::queries::InformationSchemaQueriesBuilder;
+use crate::metadata::information_schema_provider::InformationSchemaTableFactory;
 
 const INFORMATION_SCHEMA_QUERIES: &str = "QUERIES";
 

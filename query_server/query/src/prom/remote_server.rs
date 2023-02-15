@@ -4,13 +4,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
 use flatbuffers::FlatBufferBuilder;
-use regex::Regex;
-use snap::raw::{decompress_len, max_compress_len, Decoder, Encoder};
-use snap::Result as SnapResult;
-
-use coordinator::service::CoordinatorRef;
 use line_protocol::{line_to_point, FieldValue, Line};
 use meta::error::MetaError;
 use meta::{MetaClientRef, MetaRef};
@@ -24,12 +20,13 @@ use protos::prompb::remote::{
 };
 use protos::prompb::types::label_matcher::Type;
 use protos::prompb::types::TimeSeries;
-use spi::service::protocol::{Query, QueryHandle};
-use spi::{
-    server::{dbms::DBMSRef, prom::PromRemoteServer},
-    service::protocol::Context,
-    QueryError, Result,
-};
+use regex::Regex;
+use snap::raw::{decompress_len, max_compress_len, Decoder, Encoder};
+use snap::Result as SnapResult;
+use spi::server::dbms::DBMSRef;
+use spi::server::prom::PromRemoteServer;
+use spi::service::protocol::{Context, Query, QueryHandle};
+use spi::{QueryError, Result};
 use trace::{debug, warn};
 
 use super::time_series::writer::WriterBuilder;
@@ -409,23 +406,17 @@ impl SnappyCodec {
 
 #[cfg(test)]
 mod test {
-    use std::{sync::Arc, vec};
+    use std::sync::Arc;
+    use std::vec;
 
-    use datafusion::{
-        arrow::{
-            array::{Float64Array, StringArray, TimestampNanosecondArray},
-            datatypes::{DataType, Field, Schema, TimeUnit},
-            record_batch::RecordBatch,
-        },
-        from_slice::FromSlice,
-    };
-
+    use datafusion::arrow::array::{Float64Array, StringArray, TimestampNanosecondArray};
+    use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+    use datafusion::arrow::record_batch::RecordBatch;
+    use datafusion::from_slice::FromSlice;
     use models::auth::user::{User, UserDesc, UserOptions};
     use protos::prompb::types::{Label, Sample, TimeSeries};
-    use spi::{
-        query::execution::Output,
-        service::protocol::{ContextBuilder, Query, QueryHandle, QueryId},
-    };
+    use spi::query::execution::Output;
+    use spi::service::protocol::{ContextBuilder, Query, QueryHandle, QueryId};
 
     use crate::prom::remote_server::transform_time_series;
 

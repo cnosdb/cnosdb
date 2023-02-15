@@ -1,11 +1,10 @@
-use protos::models as fb_models;
-use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
-use crate::{
-    errors::{Error, Result},
-    FieldId, FieldName, Tag,
-};
+use protos::models as fb_models;
+use serde::{Deserialize, Serialize};
+
+use crate::errors::{Error, Result};
+use crate::{FieldId, FieldName, Tag};
 
 const FIELD_NAME_MAX_LEN: usize = 512;
 

@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use crate::query::execution::Output;
-use crate::service::protocol::{Query, QueryId};
 use async_trait::async_trait;
 use models::auth::user::UserDesc;
 use models::oid::{Identifier, Oid};
 
 use super::execution::QueryState;
+use crate::query::execution::Output;
+use crate::service::protocol::{Query, QueryId};
 use crate::Result;
 
 #[async_trait]

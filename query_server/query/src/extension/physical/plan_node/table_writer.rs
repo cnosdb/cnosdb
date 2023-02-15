@@ -1,26 +1,25 @@
+use std::any::Any;
+use std::fmt::Debug;
+use std::sync::Arc;
+
 use async_trait::async_trait;
-use datafusion::{
-    arrow::{
-        array::UInt64Array,
-        datatypes::{Field, Schema, SchemaRef},
-        record_batch::RecordBatch,
-    },
-    error::DataFusionError,
-    execution::context::TaskContext,
-    physical_expr::PhysicalSortExpr,
-    physical_plan::{
-        memory::MemoryStream,
-        metrics::{self, ExecutionPlanMetricsSet, MetricBuilder, MetricsSet},
-        stream::RecordBatchStreamAdapter,
-        DisplayFormatType, Distribution, ExecutionPlan, Partitioning, SendableRecordBatchStream,
-        Statistics,
-    },
+use datafusion::arrow::array::UInt64Array;
+use datafusion::arrow::datatypes::{Field, Schema, SchemaRef};
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::error::{DataFusionError, Result};
+use datafusion::execution::context::TaskContext;
+use datafusion::physical_expr::PhysicalSortExpr;
+use datafusion::physical_plan::memory::MemoryStream;
+use datafusion::physical_plan::metrics::{
+    self, ExecutionPlanMetricsSet, MetricBuilder, MetricsSet,
+};
+use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
+use datafusion::physical_plan::{
+    DisplayFormatType, Distribution, ExecutionPlan, Partitioning, SendableRecordBatchStream,
+    Statistics,
 };
 use futures::TryStreamExt;
 use spi::query::AFFECTED_ROWS;
-use std::{any::Any, fmt::Debug, sync::Arc};
-
-use datafusion::error::Result;
 use trace::debug;
 
 use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata};

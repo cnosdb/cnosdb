@@ -1,24 +1,21 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fmt::{Display, Write},
-    rc::Rc,
-    sync::Arc,
-};
+use std::collections::{BTreeMap, HashMap};
+use std::fmt::{Display, Write};
+use std::rc::Rc;
+use std::sync::Arc;
 
 use blake3::Hasher;
 use chrono::{Duration, DurationRound, NaiveDateTime};
-use models::{schema::ColumnType, utils, ColumnId, FieldId, Timestamp};
+use models::schema::ColumnType;
+use models::{utils, ColumnId, FieldId, Timestamp};
 use snafu::ResultExt;
 use trace::warn;
 
-use crate::{
-    compaction::{CompactIterator, CompactingBlock},
-    database::Database,
-    error::{self, Error, Result},
-    schema::schemas::DBschemas,
-    tsm::{DataBlock, TsmReader},
-    TimeRange, TseriesFamilyId,
-};
+use crate::compaction::{CompactIterator, CompactingBlock};
+use crate::database::Database;
+use crate::error::{self, Error, Result};
+use crate::schema::schemas::DBschemas;
+use crate::tsm::{DataBlock, TsmReader};
+use crate::{TimeRange, TseriesFamilyId};
 
 pub type Hash = [u8; 32];
 
@@ -425,51 +422,41 @@ async fn read_from_compact_iterator(
 
 #[cfg(test)]
 mod test {
-    use std::{
-        collections::{BTreeMap, HashMap},
-        default,
-        rc::Rc,
-        sync::Arc,
-    };
+    use std::collections::{BTreeMap, HashMap};
+    use std::default;
+    use std::rc::Rc;
+    use std::sync::Arc;
 
     use blake3::Hasher;
     use chrono::{Duration, NaiveDateTime};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
     use minivec::MiniVec;
-    use models::{
-        codec::Encoding,
-        schema::{
-            ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
-            TskvTableSchema,
-        },
-        Timestamp, ValueType,
+    use models::codec::Encoding;
+    use models::schema::{
+        ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
+        TskvTableSchema,
     };
-    use protos::kv_service::Meta;
-    use protos::{
-        kv_service::WritePointsRequest,
-        models::{self as fb_models, FieldType},
-        models_helper,
-    };
-    use tokio::{runtime, sync::mpsc};
-
-    use crate::{
-        compaction::{
-            check::{
-                get_default_time_range, hash_to_string, ColumnHashTreeNode, TimeRangeHashTreeNode,
-            },
-            FlushReq,
-        },
-        engine::Engine,
-        tsm::{codec::DataBlockEncoding, DataBlock},
-        version_set::VersionSet,
-        Options, TimeRange, TsKv, TseriesFamilyId,
-    };
+    use models::{Timestamp, ValueType};
+    use protos::kv_service::{Meta, WritePointsRequest};
+    use protos::models::{self as fb_models, FieldType};
+    use protos::models_helper;
+    use tokio::runtime;
+    use tokio::sync::mpsc;
 
     use super::{
         calc_block_partial_time_range, find_timestamp, hash_partial_datablock, Hash,
         TableHashTreeNode,
     };
+    use crate::compaction::check::{
+        get_default_time_range, hash_to_string, ColumnHashTreeNode, TimeRangeHashTreeNode,
+    };
+    use crate::compaction::FlushReq;
+    use crate::engine::Engine;
+    use crate::tsm::codec::DataBlockEncoding;
+    use crate::tsm::DataBlock;
+    use crate::version_set::VersionSet;
+    use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
 
     fn parse_nanos(datetime: &str) -> Timestamp {
         NaiveDateTime::parse_from_str(datetime, "%Y-%m-%d %H:%M:%S")

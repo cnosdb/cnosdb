@@ -1,4 +1,5 @@
-use std::{error::Error, time::Duration};
+use std::error::Error;
+use std::time::Duration;
 
 use serde::{Deserialize, Deserializer, Serializer};
 

@@ -1,34 +1,29 @@
-use std::{
-    any::Any,
-    fmt::{Display, Formatter},
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::any::Any;
+use std::fmt::{Display, Formatter};
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use coordinator::service::CoordinatorRef;
-use datafusion::error::DataFusionError;
-use datafusion::{
-    arrow::{array::ArrayBuilder, datatypes::SchemaRef, record_batch::RecordBatch},
-    arrow::{array::ArrayRef, error::Result as ArrowResult},
-    error::Result,
-    execution::context::TaskContext,
-    physical_expr::PhysicalSortExpr,
-    physical_plan::{
-        metrics::{BaselineMetrics, ExecutionPlanMetricsSet},
-        DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream,
-        SendableRecordBatchStream, Statistics,
-    },
+use datafusion::arrow::array::{ArrayBuilder, ArrayRef};
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::error::Result as ArrowResult;
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::error::{DataFusionError, Result};
+use datafusion::execution::context::TaskContext;
+use datafusion::physical_expr::PhysicalSortExpr;
+use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet};
+use datafusion::physical_plan::{
+    DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream,
+    Statistics,
 };
-use futures::{executor::block_on, Stream};
+use futures::executor::block_on;
+use futures::Stream;
 use meta::error::MetaError;
-use models::arrow_array::WriteArrow;
-use models::{
-    arrow_array::build_arrow_array_builders,
-    predicate::domain::{ColumnDomains, PredicateRef},
-    schema::{ColumnType, TskvTableSchemaRef},
-    SeriesKey, TagValue,
-};
+use models::arrow_array::{build_arrow_array_builders, WriteArrow};
+use models::predicate::domain::{ColumnDomains, PredicateRef};
+use models::schema::{ColumnType, TskvTableSchemaRef};
+use models::{SeriesKey, TagValue};
 use spi::QueryError;
 use trace::debug;
 

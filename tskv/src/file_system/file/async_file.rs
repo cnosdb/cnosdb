@@ -14,16 +14,14 @@ use std::{io, slice, thread};
 
 use async_trait::async_trait;
 use futures::{AsyncSeekExt, AsyncWriteExt};
+use libc::{send, time};
 #[cfg(feature = "io_uring")]
 use rio::Rio;
-
-use libc::{send, time};
 #[cfg(feature = "io_uring")]
 use snafu::ResultExt;
 use tokio::fs::File;
 use tokio::spawn;
 use tokio::task::spawn_blocking;
-
 use trace::{error, info};
 
 use crate::file_system::file::os::{check_err, open, pread, pwrite, FileId};

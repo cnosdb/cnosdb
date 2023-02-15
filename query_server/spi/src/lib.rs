@@ -1,6 +1,5 @@
 use std::error;
 
-use crate::service::protocol::QueryId;
 use coordinator::errors::CoordinatorError;
 use datafusion::arrow::error::ArrowError;
 use datafusion::common::DataFusionError;
@@ -14,6 +13,8 @@ use models::define_result;
 use models::error_code::ErrorCode;
 use models::schema::TIME_FIELD_NAME;
 use snafu::Snafu;
+
+use crate::service::protocol::QueryId;
 
 pub mod query;
 pub mod server;

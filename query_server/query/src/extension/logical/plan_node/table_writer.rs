@@ -1,16 +1,12 @@
-use std::{
-    any::Any,
-    fmt::{self, Debug},
-    sync::Arc,
-};
+use std::any::Any;
+use std::fmt::{self, Debug};
+use std::sync::Arc;
 
-use datafusion::{
-    common::{DFSchema, DFSchemaRef},
-    error::DataFusionError,
-    logical_expr::TableSource,
-    logical_expr::{utils::exprlist_to_fields, LogicalPlan, UserDefinedLogicalNode},
-    prelude::Expr,
-};
+use datafusion::common::{DFSchema, DFSchemaRef};
+use datafusion::error::DataFusionError;
+use datafusion::logical_expr::utils::exprlist_to_fields;
+use datafusion::logical_expr::{LogicalPlan, TableSource, UserDefinedLogicalNode};
+use datafusion::prelude::Expr;
 
 #[derive(Clone)]
 pub struct TableWriterPlanNode {

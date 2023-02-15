@@ -9,14 +9,9 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Display};
-use std::sync::Arc;
-
 use std::mem::size_of_val;
 use std::str::FromStr;
-
-use datafusion::logical_expr::TableSource;
-use derive_builder::Builder;
-use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use arrow_schema::DataType;
 use datafusion::arrow::datatypes::{
@@ -30,6 +25,9 @@ use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::ListingOptions;
 use datafusion::error::Result as DataFusionResult;
+use datafusion::logical_expr::TableSource;
+use derive_builder::Builder;
+use serde::{Deserialize, Serialize};
 
 use crate::codec::Encoding;
 pub use crate::limiter::LimiterConfig;

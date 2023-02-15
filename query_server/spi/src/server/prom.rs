@@ -5,7 +5,8 @@ use bytes::Bytes;
 use coordinator::service::CoordinatorRef;
 use meta::MetaRef;
 
-use crate::{service::protocol::Context, Result};
+use crate::service::protocol::Context;
+use crate::Result;
 
 pub type PromRemoteServerRef = Arc<dyn PromRemoteServer + Send + Sync>;
 

@@ -1,11 +1,11 @@
-use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::error::MetaError;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::GrantRevoke;
-use spi::QueryError;
-use spi::Result;
+use spi::{QueryError, Result};
 use trace::debug;
+
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct GrantRevokeTask {
     stmt: GrantRevoke,

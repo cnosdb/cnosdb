@@ -1,30 +1,24 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use dashmap::DashMap;
-use models::{
-    auth::{
-        privilege::DatabasePrivilege,
-        role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier, UserRole},
-        user::{User, UserDesc, UserOptions, UserOptionsBuilder},
-        AuthError,
-    },
-    oid::{Identifier, Oid},
+use models::auth::privilege::DatabasePrivilege;
+use models::auth::role::{
+    CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier, UserRole,
 };
+use models::auth::user::{User, UserDesc, UserOptions, UserOptionsBuilder};
+use models::auth::AuthError;
+use models::oid::{Identifier, Oid};
 use trace::debug;
 
+use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
-use crate::{
-    client::MetaHttpClient,
-    store::command::{
-        self, META_REQUEST_FAILED, META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND,
-    },
+use crate::store::command::{
+    self, META_REQUEST_FAILED, META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND,
 };
 
 #[async_trait]

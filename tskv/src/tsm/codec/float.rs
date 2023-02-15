@@ -1,7 +1,9 @@
+use std::error::Error;
+
+use q_compress::{auto_compress, auto_decompress, DEFAULT_COMPRESSION_LEVEL};
+
 use crate::byte_utils::decode_be_f64;
 use crate::tsm::codec::Encoding;
-use q_compress::{auto_compress, auto_decompress, DEFAULT_COMPRESSION_LEVEL};
-use std::error::Error;
 
 // note: encode/decode adapted from influxdb_iox
 // https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders

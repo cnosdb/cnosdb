@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
-
 use models::error_code::ErrorCode;
 pub use reqwest::Response;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
 pub struct EmptyResponse {}

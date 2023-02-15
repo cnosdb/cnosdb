@@ -1,15 +1,10 @@
 use std::sync::Arc;
 
-use datafusion::{
-    arrow::{
-        array::{BooleanBuilder, StringBuilder, UInt64Builder},
-        datatypes::{DataType, Field, Schema, SchemaRef},
-        record_batch::RecordBatch,
-    },
-    datasource::MemTable,
-    error::DataFusionError,
-};
-
+use datafusion::arrow::array::{BooleanBuilder, StringBuilder, UInt64Builder};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::datasource::MemTable;
+use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
 lazy_static! {

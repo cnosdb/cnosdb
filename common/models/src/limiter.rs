@@ -1,11 +1,12 @@
+use std::fmt::Formatter;
+use std::ops::Deref;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use serde::de::{SeqAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt::Formatter;
-use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug)]
 pub struct RateLimiter {

@@ -1,10 +1,9 @@
-use crate::execution::ddl::DDLDefinitionTask;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use datafusion::arrow::array::StringArray;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
-use spi::Result;
-
 use meta::error::MetaError;
 // use spi::query::execution::spi::DatafusionSnafu;
 // use spi::query::spi::MetaSnafu;
@@ -13,7 +12,9 @@ use spi::query::execution::{
     Output,
     QueryStateMachineRef,
 };
-use std::sync::Arc;
+use spi::Result;
+
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct ShowTablesTask {
     database_name: Option<String>,

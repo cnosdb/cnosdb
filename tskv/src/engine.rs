@@ -4,14 +4,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::prelude::Column;
-use parking_lot::RwLock;
-
 use models::codec::Encoding;
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
-use protos::kv_service::WritePointsResponse;
-use protos::{kv_service::WritePointsRequest, models as fb_models};
+use parking_lot::RwLock;
+use protos::kv_service::{WritePointsRequest, WritePointsResponse};
+use protos::models as fb_models;
 use trace::{debug, info};
 
 use crate::database::Database;

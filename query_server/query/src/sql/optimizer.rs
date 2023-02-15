@@ -1,18 +1,17 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::physical_plan::displayable;
-use datafusion::{logical_expr::LogicalPlan, physical_plan::ExecutionPlan};
+use datafusion::logical_expr::LogicalPlan;
+use datafusion::physical_plan::{displayable, ExecutionPlan};
+use spi::query::optimizer::Optimizer;
+use spi::query::physical_planner::PhysicalPlanner;
 use spi::query::session::IsiphoSessionCtx;
-use spi::query::{optimizer::Optimizer, physical_planner::PhysicalPlanner};
-
 use spi::Result;
 use trace::debug;
 
-use super::{
-    logical::optimizer::{DefaultLogicalOptimizer, LogicalOptimizer},
-    physical::{optimizer::PhysicalOptimizer, planner::DefaultPhysicalPlanner},
-};
+use super::logical::optimizer::{DefaultLogicalOptimizer, LogicalOptimizer};
+use super::physical::optimizer::PhysicalOptimizer;
+use super::physical::planner::DefaultPhysicalPlanner;
 
 pub struct CascadeOptimizer {
     logical_optimizer: Arc<dyn LogicalOptimizer + Send + Sync>,

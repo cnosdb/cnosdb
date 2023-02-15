@@ -1,18 +1,10 @@
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use openraft::error::ClientWriteError;
-use openraft::error::ForwardToLeader;
-use openraft::AnyError;
-
-use openraft::error::NetworkError;
-use openraft::error::RPCError;
-use openraft::error::RemoteError;
+use openraft::error::{ClientWriteError, ForwardToLeader, NetworkError, RPCError, RemoteError};
 use openraft::raft::ClientWriteResponse;
-
+use openraft::AnyError;
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
@@ -191,17 +183,15 @@ impl MetaHttpClient {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        client::MetaHttpClient,
-        store::command::{self, UpdateVnodeReplSetArgs},
-    };
     use std::{thread, time};
 
-    use models::{
-        meta_data::{NodeInfo, VnodeInfo},
-        schema::DatabaseSchema,
-    };
-    use tokio::{sync::mpsc::channel, time::timeout};
+    use models::meta_data::{NodeInfo, VnodeInfo};
+    use models::schema::DatabaseSchema;
+    use tokio::sync::mpsc::channel;
+    use tokio::time::timeout;
+
+    use crate::client::MetaHttpClient;
+    use crate::store::command::{self, UpdateVnodeReplSetArgs};
 
     #[tokio::test]
     #[ignore]

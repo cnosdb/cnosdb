@@ -1,37 +1,24 @@
-use models::auth::privilege::DatabasePrivilege;
-use models::auth::role::CustomTenantRole;
-use models::auth::role::SystemTenantRole;
-use models::auth::role::TenantRoleIdentifier;
-use models::auth::user::UserDesc;
-use models::auth::user::UserOptions;
-use models::oid::Identifier;
-use models::oid::Oid;
-use models::oid::UuidGenerator;
-use models::schema::DatabaseSchema;
-use models::schema::TableSchema;
-use models::schema::Tenant;
-use models::schema::TenantOptions;
-
-use crate::{ClusterNode, ClusterNodeId};
-use openraft::EffectiveMembership;
-use openraft::LogId;
-use serde::Deserialize;
-use serde::Serialize;
-use serde_json::{from_slice, from_str};
-use trace::debug;
-
-use sled::Db;
-use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
-use trace::info;
 
-use crate::error::{l_r_err, sm_r_err, sm_w_err, StorageIOResult};
-use crate::store::key_path::KeyPath;
-use models::{meta_data::*, utils};
+use models::auth::privilege::DatabasePrivilege;
+use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
+use models::auth::user::{UserDesc, UserOptions};
+use models::meta_data::*;
+use models::oid::{Identifier, Oid, UuidGenerator};
+use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
+use models::utils;
+use openraft::{EffectiveMembership, LogId};
+use serde::{Deserialize, Serialize};
+use serde_json::{from_slice, from_str};
+use sled::Db;
+use trace::{debug, info};
 
 use super::command::*;
 use super::key_path;
+use crate::error::{l_r_err, sm_r_err, sm_w_err, StorageIOResult};
+use crate::store::key_path::KeyPath;
+use crate::{ClusterNode, ClusterNodeId};
 
 pub type CommandResp = String;
 
@@ -1271,9 +1258,10 @@ impl StateMachine {
 
 #[cfg(test)]
 mod test {
-    use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
     use std::println;
+
+    use serde::{Deserialize, Serialize};
 
     #[tokio::test]
     async fn test_btree_map() {

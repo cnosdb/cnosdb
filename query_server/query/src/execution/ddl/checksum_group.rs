@@ -1,15 +1,10 @@
 use async_trait::async_trait;
-
-use spi::query::{
-    execution::{Output, QueryStateMachineRef},
-    logical_planner::ChecksumGroup,
-};
+use meta::error::MetaError;
+use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::query::logical_planner::ChecksumGroup;
+use spi::{QueryError, Result};
 
 use super::DDLDefinitionTask;
-use meta::error::MetaError;
-
-use spi::QueryError;
-use spi::Result;
 
 pub struct ChecksumGroupTask {
     stmt: ChecksumGroup,

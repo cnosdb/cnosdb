@@ -1,19 +1,14 @@
+use http_protocol::header::{APPLICATION_JSON, CONTENT_TYPE};
+use http_protocol::status_code::{
+    BAD_REQUEST, INTERNAL_SERVER_ERROR, METHOD_NOT_ALLOWED, NOT_FOUND, OK, PAYLOAD_TOO_LARGE,
+};
 use serde::Serialize;
 use warp::http::header::HeaderMap;
-use warp::http::HeaderValue;
-use warp::http::StatusCode;
+use warp::http::{HeaderValue, StatusCode};
 use warp::reply::Response;
 use warp::Reply;
 
 use super::header::IntoHeaderPair;
-use http_protocol::header::APPLICATION_JSON;
-use http_protocol::header::CONTENT_TYPE;
-use http_protocol::status_code::BAD_REQUEST;
-use http_protocol::status_code::INTERNAL_SERVER_ERROR;
-use http_protocol::status_code::METHOD_NOT_ALLOWED;
-use http_protocol::status_code::NOT_FOUND;
-use http_protocol::status_code::OK;
-use http_protocol::status_code::PAYLOAD_TOO_LARGE;
 
 #[derive(Default)]
 pub struct ResponseBuilder {
@@ -94,9 +89,10 @@ impl ResponseBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use http_protocol::response::ErrorResponse;
     use models::error_code::{ErrorCode, UnknownCode};
+
+    use super::*;
 
     #[test]
     fn test_simple_response() {

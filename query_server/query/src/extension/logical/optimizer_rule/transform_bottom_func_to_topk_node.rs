@@ -1,18 +1,13 @@
 use std::sync::Arc;
 
-use datafusion::{
-    error::DataFusionError,
-    logical_expr::{
-        expr, LogicalPlan, {Projection, Sort},
-    },
-    optimizer::{OptimizerConfig, OptimizerRule},
-    prelude::Expr,
-    scalar::ScalarValue,
-};
+use datafusion::error::{DataFusionError, Result};
+use datafusion::logical_expr::{expr, LogicalPlan, Projection, Sort};
+use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
+use datafusion::prelude::Expr;
+use datafusion::scalar::ScalarValue;
 
-use crate::extension::expr::{expr_utils, selector_function::BOTTOM};
-
-use datafusion::error::Result;
+use crate::extension::expr::expr_utils;
+use crate::extension::expr::selector_function::BOTTOM;
 
 const INVALID_EXPRS: &str = "1. There cannot be nested selection functions. 2. There cannot be multiple selection functions.";
 const INVALID_ARGUMENTS: &str =

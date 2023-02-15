@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
-use datafusion::{
-    common::Result,
-    execution::context::TaskContext,
-    physical_plan::{ExecutionPlan, SendableRecordBatchStream},
-};
+use datafusion::common::Result;
+use datafusion::execution::context::TaskContext;
+use datafusion::physical_plan::{ExecutionPlan, SendableRecordBatchStream};
 
 pub type SchedulerRef = Arc<dyn Scheduler + Send + Sync>;
 

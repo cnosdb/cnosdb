@@ -1,11 +1,7 @@
 use meta::MetaRef;
-use models::{
-    auth::{
-        user::{AuthType, User, UserInfo},
-        AuthError,
-    },
-    oid::{Identifier, Oid},
-};
+use models::auth::user::{AuthType, User, UserInfo};
+use models::auth::AuthError;
+use models::oid::{Identifier, Oid};
 use spi::query::auth::AccessControl;
 use trace::warn;
 

@@ -1,26 +1,22 @@
-use std::{
-    any::Any,
-    fmt::{Display, Formatter},
-    sync::Arc,
-};
+use std::any::Any;
+use std::fmt::{Display, Formatter};
+use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
-use datafusion::{
-    arrow::datatypes::SchemaRef,
-    error::{DataFusionError, Result},
-    execution::context::TaskContext,
-    physical_expr::PhysicalSortExpr,
-    physical_plan::{
-        metrics::ExecutionPlanMetricsSet, DisplayFormatType, ExecutionPlan, Partitioning,
-        SendableRecordBatchStream, Statistics,
-    },
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::error::{DataFusionError, Result};
+use datafusion::execution::context::TaskContext;
+use datafusion::physical_expr::PhysicalSortExpr;
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
+use datafusion::physical_plan::{
+    DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics,
 };
 use models::predicate::domain::PredicateRef;
 use models::schema::TskvTableSchemaRef;
 use trace::debug;
+use tskv::iterator::TableScanMetrics;
 
 use crate::stream::TableScanStream;
-use tskv::iterator::TableScanMetrics;
 
 #[derive(Debug, Clone)]
 pub struct TskvExec {

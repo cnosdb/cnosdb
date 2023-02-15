@@ -3,14 +3,12 @@
 #![allow(unreachable_patterns)]
 #![allow(unused_imports, unused_variables)]
 
-use tokio::sync::oneshot;
-
 pub use error::{Error, Result};
 pub use kv_option::Options;
 pub use kvcore::TsKv;
 use protos::kv_service::WritePointsResponse;
-pub use summary::print_summary_statistics;
-pub use summary::{Summary, VersionEdit};
+pub use summary::{print_summary_statistics, Summary, VersionEdit};
+use tokio::sync::oneshot;
 pub use tseries_family::TimeRange;
 pub use tsm::print_tsm_statistics;
 use utils::BloomFilter;
