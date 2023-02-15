@@ -21,9 +21,17 @@ use openraft::{Config, Raft};
 use sled::Db;
 use trace::init_global_tracing;
 
+#[derive(Debug, clap::Parser)]
+struct Cli {
+    /// configuration path
+    #[clap(short, long, default_value = "./config.toml")]
+    config: String,
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let options = Opt::parse();
+    let cli = Cli::parse();
+    let options = store::config::get_opt(cli.config);
     let logs_path = format!("{}/{}", options.logs_path, options.id);
     let _ = init_global_tracing(&logs_path, "meta_server.log", &options.logs_level);
 
@@ -31,10 +39,7 @@ async fn main() -> std::io::Result<()> {
 }
 
 pub fn get_sled_db(config: &Opt) -> Db {
-    let db_path = format!(
-        "{}/{}-{}.binlog",
-        config.journal_path, config.instance_prefix, config.id
-    );
+    let db_path = format!("{}/{}.binlog", config.journal_path, config.id);
     let db = sled::open(db_path.clone()).unwrap();
     tracing::info!("get_sled_db: created log at: {:?}", db_path);
     db
@@ -61,7 +66,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
     let app = Data::new(MetaApp {
         id: opt.id,
         http_addr: opt.http_addr.clone(),
-        rpc_addr: opt.rpc_addr.clone(),
+        rpc_addr: opt.http_addr.clone(),
         raft,
         store,
         config,

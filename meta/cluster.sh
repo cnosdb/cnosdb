@@ -55,15 +55,15 @@ echo "Start 3 uninitialized cnosdb-meta servers..."
 
 mkdir -p /tmp/cnosdb/logs
 
-nohup ${PROJ_DIR}/target/debug/cnosdb-meta  --id 1 --http-addr 127.0.0.1:21001 > /tmp/cnosdb/logs/meta_node.1.log &
+nohup ${PROJ_DIR}/target/debug/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_21001.toml > /tmp/cnosdb/logs/meta_node.1.log &
 echo "Server 1 started"
 sleep 1
 
-nohup ${PROJ_DIR}/target/debug/cnosdb-meta  --id 2 --http-addr 127.0.0.1:21002 > /tmp/cnosdb/logs/meta_node.2.log &
+nohup ${PROJ_DIR}/target/debug/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_21002.toml > /tmp/cnosdb/logs/meta_node.2.log &
 echo "Server 2 started"
 sleep 1
 
-nohup ${PROJ_DIR}/target/debug/cnosdb-meta  --id 3 --http-addr 127.0.0.1:21003 > /tmp/cnosdb/logs/meta_node.3.log &
+nohup ${PROJ_DIR}/target/debug/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_21003.toml > /tmp/cnosdb/logs/meta_node.3.log &
 echo "Server 3 started"
 sleep 1
 
@@ -71,17 +71,17 @@ echo "Initialize server 1 as a single-node cluster"
 rpc 21001/init '{}'
 
 echo "Server 1 is a leader now"
-sleep 3
+sleep 1
 
 echo "Adding node 2 and node 3 as learners, to receive log from leader node 1"
 
 rpc 21001/add-learner       '[2, "127.0.0.1:21002"]'
 echo "Node 2 added as leaner"
-sleep 3
+sleep 1
 
 rpc 21001/add-learner       '[3, "127.0.0.1:21003"]'
 echo "Node 3 added as leaner"
-sleep 3
+sleep 1
 
 echo "Changing membership from [1] to 3 nodes cluster: [1, 2, 3]"
 echo

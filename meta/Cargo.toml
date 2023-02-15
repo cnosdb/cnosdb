@@ -16,6 +16,7 @@ models = { path = "../common/models" }
 error_code = {path = "../common/error_code"}
 limiter_bucket = {path = "../common/limiter_bucket"}
 
+toml = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
 reqwest = { workspace = true }
