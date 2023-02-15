@@ -713,13 +713,8 @@ impl TseriesFamily {
     /// If argument force is set to true, then do not check immutable caches number.
     pub(crate) fn flush_req(&mut self, force: bool) -> Option<FlushReq> {
         let len = self.immut_cache.len();
-        let mut imut = vec![];
-        for mem in self.immut_cache.iter() {
-            if !mem.read().flushed {
-                imut.push(mem.clone());
-            }
-        }
-        self.immut_cache = imut;
+
+        self.immut_cache.retain(|mem| !mem.read().flushed);
 
         if len != self.immut_cache.len() {
             self.new_super_version(self.version.clone());
@@ -727,13 +722,14 @@ impl TseriesFamily {
 
         self.immut_ts_min
             .store(self.mut_ts_max.load(Ordering::Relaxed), Ordering::Relaxed);
-        let mut req_mems: Vec<(u32, Arc<RwLock<MemCache>>)> = vec![];
-        for mem in self.immut_cache.iter() {
-            if mem.read().flushing {
-                continue;
-            }
-            req_mems.push((self.tf_id, mem.clone()));
-        }
+
+        let req_mems = self
+            .immut_cache
+            .iter()
+            .filter(|mem| !mem.read().flushing)
+            .cloned()
+            .map(|mem| (self.tf_id, mem))
+            .collect::<Vec<_>>();
 
         if !force && req_mems.len() < self.cache_opt.max_immutable_number as usize {
             return None;
@@ -933,6 +929,7 @@ mod test {
     use std::mem::{size_of, size_of_val};
     use std::path::PathBuf;
     use std::sync::Arc;
+    use std::time::Duration;
 
     use config::{get_config, ClusterConfig};
     use lru_cache::ShardedCache;
@@ -943,7 +940,7 @@ mod test {
     use parking_lot::{Mutex, RwLock};
     use tokio::sync::mpsc::{self, Receiver};
     use tokio::sync::RwLock as AsyncRwLock;
-    use trace::info;
+    use trace::{error, info};
 
     use super::{ColumnFile, LevelInfo};
     use crate::compaction::flush_tests::default_with_field_id;
