@@ -1,11 +1,13 @@
 mod bytes_num;
 mod duration;
+pub mod limiter_config;
 
 use std::fs::File;
 use std::io::prelude::Read;
 use std::path::Path;
 use std::time::Duration;
 
+pub use limiter_config::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
