@@ -686,7 +686,7 @@ impl SummaryProcessor {
         }
     }
 
-    pub fn batch(&mut self, task: SummaryTask) -> bool {
+    pub fn batch(&mut self, task: SummaryTask) {
         let mut req = match task {
             SummaryTask::ColumnFile {
                 file_metas,
@@ -701,18 +701,11 @@ impl SummaryProcessor {
                 request,
             } => {
                 // TODO append ts_family into this current vnode
-                return false;
+                return;
             }
         };
-        let mut need_apply = self.edits.len() > MAX_BATCH_SIZE;
-        if req.version_edits.len() == 1
-            && (req.version_edits[0].del_tsf || req.version_edits[0].add_tsf)
-        {
-            need_apply = true;
-        }
         self.edits.append(&mut req.version_edits);
         self.cbs.push(req.call_back);
-        need_apply
     }
 
     pub async fn apply(&mut self) {
