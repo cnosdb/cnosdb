@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{
-    execution::context::SessionState,
-    logical_expr::{LogicalPlan, UserDefinedLogicalNode},
-    physical_plan::{planner::ExtensionPlanner, ExecutionPlan, PhysicalPlanner},
-};
+use datafusion::error::Result;
+use datafusion::execution::context::SessionState;
+use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
+use datafusion::physical_plan::planner::ExtensionPlanner;
+use datafusion::physical_plan::{ExecutionPlan, PhysicalPlanner};
 
 use crate::extension::logical::plan_node::tag_scan::TagScanPlanNode;
-
-use datafusion::error::Result;
 
 /// Physical planner for TopK nodes
 pub struct TagScanPlanner {}

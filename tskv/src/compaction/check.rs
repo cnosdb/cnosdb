@@ -1,24 +1,21 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fmt::{Display, Write},
-    rc::Rc,
-    sync::Arc,
-};
+use std::collections::{BTreeMap, HashMap};
+use std::fmt::{Display, Write};
+use std::rc::Rc;
+use std::sync::Arc;
 
 use blake3::Hasher;
 use chrono::{Duration, DurationRound, NaiveDateTime};
-use models::{schema::ColumnType, utils, ColumnId, FieldId, Timestamp};
+use models::schema::ColumnType;
+use models::{utils, ColumnId, FieldId, Timestamp};
 use snafu::ResultExt;
 use trace::warn;
 
-use crate::{
-    compaction::{CompactIterator, CompactingBlock},
-    database::Database,
-    error::{self, Error, Result},
-    schema::schemas::DBschemas,
-    tsm::{DataBlock, TsmReader},
-    TimeRange, TseriesFamilyId,
-};
+use crate::compaction::{CompactIterator, CompactingBlock};
+use crate::database::Database;
+use crate::error::{self, Error, Result};
+use crate::schema::schemas::DBschemas;
+use crate::tsm::{DataBlock, TsmReader};
+use crate::{TimeRange, TseriesFamilyId};
 
 pub type Hash = [u8; 32];
 
@@ -160,7 +157,7 @@ pub(crate) async fn get_ts_family_hash_tree(
     let time_range_nanosec = get_default_time_range(schemas)?;
 
     let (version, ts_family_id) = {
-        let ts_family_rlock = ts_family.read();
+        let ts_family_rlock = ts_family.read().await;
         (ts_family_rlock.version(), ts_family_rlock.tf_id())
     };
     let mut readers: Vec<Arc<TsmReader>> = Vec::new();
@@ -425,51 +422,41 @@ async fn read_from_compact_iterator(
 
 #[cfg(test)]
 mod test {
-    use std::{
-        collections::{BTreeMap, HashMap},
-        default,
-        rc::Rc,
-        sync::Arc,
-    };
+    use std::collections::{BTreeMap, HashMap};
+    use std::default;
+    use std::rc::Rc;
+    use std::sync::Arc;
 
     use blake3::Hasher;
     use chrono::{Duration, NaiveDateTime};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
     use minivec::MiniVec;
-    use models::{
-        codec::Encoding,
-        schema::{
-            ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
-            TskvTableSchema,
-        },
-        Timestamp, ValueType,
+    use models::codec::Encoding;
+    use models::schema::{
+        ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
+        TskvTableSchema,
     };
-    use protos::kv_service::Meta;
-    use protos::{
-        kv_service::WritePointsRpcRequest,
-        models::{self as fb_models, FieldType},
-        models_helper,
-    };
-    use tokio::{runtime, sync::mpsc};
-
-    use crate::{
-        compaction::{
-            check::{
-                get_default_time_range, hash_to_string, ColumnHashTreeNode, TimeRangeHashTreeNode,
-            },
-            FlushReq,
-        },
-        engine::Engine,
-        tsm::{codec::DataBlockEncoding, DataBlock},
-        version_set::VersionSet,
-        Options, TimeRange, TsKv, TseriesFamilyId,
-    };
+    use models::{Timestamp, ValueType};
+    use protos::kv_service::{Meta, WritePointsRequest};
+    use protos::models::{self as fb_models, FieldType};
+    use protos::models_helper;
+    use tokio::runtime;
+    use tokio::sync::mpsc;
 
     use super::{
         calc_block_partial_time_range, find_timestamp, hash_partial_datablock, Hash,
         TableHashTreeNode,
     };
+    use crate::compaction::check::{
+        get_default_time_range, hash_to_string, ColumnHashTreeNode, TimeRangeHashTreeNode,
+    };
+    use crate::compaction::FlushReq;
+    use crate::engine::Engine;
+    use crate::tsm::codec::DataBlockEncoding;
+    use crate::tsm::DataBlock;
+    use crate::version_set::VersionSet;
+    use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
 
     fn parse_nanos(datetime: &str) -> Timestamp {
         NaiveDateTime::parse_from_str(datetime, "%Y-%m-%d %H:%M:%S")
@@ -685,7 +672,7 @@ mod test {
         database: &str,
         table: &str,
         rows: Vec<Vec<(&str, FieldType, Vec<u8>)>>,
-    ) -> WritePointsRpcRequest {
+    ) -> WritePointsRequest {
         let mut rows_ref = Vec::with_capacity(rows.len());
         for cols in rows.iter() {
             let mut cols_ref = Vec::with_capacity(cols.len());
@@ -716,7 +703,7 @@ mod test {
         );
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        WritePointsRpcRequest {
+        WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: tenant.to_string(),
@@ -863,14 +850,17 @@ mod test {
             }
             rt.block_on(meta_client.create_db(database_schema.clone()))
                 .unwrap();
-            rt.block_on(meta_client.create_table(&TableSchema::TsKvTableSchema(
-                TskvTableSchema::new(
-                    tenant_name.clone(),
-                    database_name.clone(),
-                    table_name.clone(),
-                    columns,
-                ),
-            )))
+            rt.block_on(
+                meta_client.create_table(&TableSchema::TsKvTableSchema(
+                    TskvTableSchema::new(
+                        tenant_name.clone(),
+                        database_name.clone(),
+                        table_name.clone(),
+                        columns,
+                    )
+                    .into(),
+                )),
+            )
             .unwrap();
 
             //rt.block_on(meta_client.drop_db(&database_name)).unwrap();
@@ -878,15 +868,17 @@ mod test {
             let database = rt
                 .block_on(engine.create_database(&database_schema))
                 .unwrap();
-            let ts_family = rt.block_on(database.write()).add_tsfamily(
+            let mut db = rt.block_on(database.write());
+            let ts_family = rt.block_on(db.add_tsfamily(
                 ts_family_id,
                 1,
                 None,
                 engine.summary_task_sender(),
                 engine.flush_task_sender(),
                 engine.compact_task_sender(),
-            );
-            assert_eq!(1, ts_family.read().tf_id());
+            ));
+            let tsf_r = rt.block_on(ts_family.read());
+            assert_eq!(1, tsf_r.tf_id());
         }
 
         // Get created database and ts_family
@@ -919,7 +911,7 @@ mod test {
             rt.block_on(engine.write(ts_family_id, write_batch))
                 .unwrap();
 
-            let mut ts_family_wlock = ts_family_ref.write();
+            let mut ts_family_wlock = rt.block_on(ts_family_ref.write());
             ts_family_wlock.switch_to_immutable();
             let immut_cache_ref = ts_family_wlock
                 .super_version()
@@ -928,7 +920,7 @@ mod test {
                 .first()
                 .expect("translated immutable memory cache exist")
                 .clone();
-            ts_family_wlock.wrap_flush_req(true);
+            rt.block_on(ts_family_wlock.wrap_flush_req(true));
             drop(ts_family_wlock);
 
             let mut check_num = 0;

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use datafusion::{physical_optimizer::PhysicalOptimizerRule, physical_plan::ExecutionPlan};
+use datafusion::physical_optimizer::PhysicalOptimizerRule;
+use datafusion::physical_plan::ExecutionPlan;
 use spi::query::session::IsiphoSessionCtx;
 use spi::Result;
 

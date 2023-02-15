@@ -1,20 +1,16 @@
 use std::collections::{HashMap, VecDeque};
+use std::fmt::Debug;
 
 use async_trait::async_trait;
 use config::ClusterConfig;
 use models::meta_data::*;
 use parking_lot::RwLock;
-use std::fmt::Debug;
 use tokio::net::TcpStream;
 
-use crate::{
-    client::MetaHttpClient,
-    error::{MetaError, MetaResult},
-    store::{
-        command::{self, EntryLog},
-        key_path,
-    },
-};
+use crate::client::MetaHttpClient;
+use crate::error::{MetaError, MetaResult};
+use crate::store::command::{self, EntryLog};
+use crate::store::key_path;
 
 #[async_trait]
 pub trait AdminMeta: Send + Sync + Debug {
@@ -48,7 +44,7 @@ pub struct RemoteAdminMeta {
 
 impl RemoteAdminMeta {
     pub fn new(config: ClusterConfig) -> Self {
-        let meta_url = config.meta.clone();
+        let meta_url = config.meta_service_addr.clone();
 
         Self {
             config,
@@ -100,8 +96,8 @@ impl AdminMeta for RemoteAdminMeta {
         let node = NodeInfo {
             status: 0,
             id: self.config.node_id,
-            tcp_addr: self.config.tcp_server.clone(),
-            http_addr: self.config.http_server.clone(),
+            tcp_addr: self.config.tcp_listen_addr.clone(),
+            http_addr: self.config.http_listen_addr.clone(),
         };
 
         let req = command::WriteCommand::AddDataNode(self.config.name.clone(), node.clone());

@@ -3,6 +3,16 @@
 #![allow(unreachable_patterns)]
 #![allow(unused_imports, unused_variables)]
 
+pub use error::{Error, Result};
+pub use kv_option::Options;
+pub use kvcore::TsKv;
+use protos::kv_service::WritePointsResponse;
+pub use summary::{print_summary_statistics, Summary, VersionEdit};
+use tokio::sync::oneshot;
+pub use tseries_family::TimeRange;
+pub use tsm::print_tsm_statistics;
+use utils::BloomFilter;
+
 pub mod byte_utils;
 mod compaction;
 mod context;
@@ -16,7 +26,6 @@ pub mod iterator;
 pub mod kv_option;
 mod kvcore;
 mod memcache;
-mod reader;
 mod record_file;
 mod schema;
 mod summary;
@@ -25,33 +34,6 @@ mod tsm;
 mod version_set;
 mod wal;
 
-pub use error::{Error, Result};
-pub use kv_option::Options;
-pub use kvcore::TsKv;
-use protos::kv_service::WritePointsRpcResponse;
-pub use summary::print_summary_statistics;
-pub use summary::{Summary, VersionEdit};
-use tokio::sync::oneshot;
-pub use tseries_family::TimeRange;
-pub use tsm::print_tsm_statistics;
-use utils::BloomFilter;
-
 pub type ColumnFileId = u64;
 type TseriesFamilyId = u32;
 type LevelId = u32;
-
-#[derive(Debug)]
-pub enum Task {
-    AddSeries {
-        req: protos::kv_service::AddSeriesRpcRequest,
-        tx: oneshot::Sender<Result<()>>,
-    },
-    GetSeriesInfo {
-        req: protos::kv_service::GetSeriesInfoRpcRequest,
-        tx: oneshot::Sender<Result<()>>,
-    },
-    WritePoints {
-        req: protos::kv_service::WritePointsRpcRequest,
-        tx: oneshot::Sender<std::result::Result<WritePointsRpcResponse, Error>>,
-    },
-}

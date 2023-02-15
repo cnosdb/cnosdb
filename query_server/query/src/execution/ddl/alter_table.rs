@@ -1,13 +1,15 @@
-// use crate::execution::ddl::query::spi::MetaSnafu;
-use crate::execution::ddl::DDLDefinitionTask;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use coordinator::command;
 use meta::error::MetaError;
 use models::schema::TableSchema;
-use spi::Result;
-
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{AlterTable, AlterTableAction};
+use spi::Result;
+
+// use crate::execution::ddl::query::spi::MetaSnafu;
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct AlterTableTask {
     stmt: AlterTable,
@@ -36,7 +38,9 @@ impl DDLDefinitionTask for AlterTableTask {
             .get_tskv_table_schema(table_name.database(), table_name.table())?
             .ok_or(MetaError::TableNotFound {
                 table: table_name.to_string(),
-            })?;
+            })?
+            .as_ref()
+            .clone();
 
         let req = match &self.stmt.alter_action {
             AlterTableAction::AddColumn { table_column } => {
@@ -83,7 +87,7 @@ impl DDLDefinitionTask for AlterTableTask {
         schema.schema_id += 1;
 
         client
-            .update_table(&TableSchema::TsKvTableSchema(schema.to_owned()))
+            .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
             .await?;
         query_state_machine
             .coord

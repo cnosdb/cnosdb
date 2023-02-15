@@ -1,35 +1,32 @@
 use std::collections::HashMap;
 use std::ops::Deref;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
 use flatbuffers::FlatBufferBuilder;
+use line_protocol::{line_to_point, FieldValue, Line};
 use meta::error::MetaError;
 use meta::{MetaClientRef, MetaRef};
+use models::consistency_level::ConsistencyLevel;
 use models::schema::{TskvTableSchema, TIME_FIELD_NAME};
+use protos::kv_service::WritePointsRequest;
+use protos::models::{Points, PointsArgs};
 use protos::models_helper::{parse_proto_bytes, to_proto_bytes};
 use protos::prompb::remote::{
     Query as PromQuery, QueryResult, ReadRequest, ReadResponse, WriteRequest,
 };
-
-use coordinator::service::CoordinatorRef;
-use line_protocol::{line_to_point, FieldValue, Line};
-use models::consistency_level::ConsistencyLevel;
-use protos::kv_service::WritePointsRpcRequest;
-use protos::models::{Points, PointsArgs};
 use protos::prompb::types::label_matcher::Type;
 use protos::prompb::types::TimeSeries;
 use regex::Regex;
 use snap::raw::{decompress_len, max_compress_len, Decoder, Encoder};
 use snap::Result as SnapResult;
-use spi::service::protocol::{Query, QueryHandle};
-use spi::{
-    server::{dbms::DBMSRef, prom::PromRemoteServer},
-    service::protocol::Context,
-    QueryError, Result,
-};
-use tokio::sync::Mutex;
+use spi::server::dbms::DBMSRef;
+use spi::server::prom::PromRemoteServer;
+use spi::service::protocol::{Context, Query, QueryHandle};
+use spi::{QueryError, Result};
 use trace::{debug, warn};
 
 use super::time_series::writer::WriterBuilder;
@@ -37,7 +34,7 @@ use super::{METRIC_NAME_LABEL, METRIC_SAMPLE_COLUMN_NAME};
 
 pub struct PromRemoteSqlServer {
     db: DBMSRef,
-    codec: Mutex<SnappyCodec>,
+    codec: SnappyCodec,
 }
 
 #[async_trait]
@@ -85,7 +82,7 @@ impl PromRemoteSqlServer {
     pub fn new(db: DBMSRef) -> Self {
         Self {
             db,
-            codec: Mutex::new(SnappyCodec::default()),
+            codec: SnappyCodec::default(),
         }
     }
 
@@ -93,10 +90,7 @@ impl PromRemoteSqlServer {
         let mut decompressed = Vec::new();
         let compressed = req.to_byte_slice();
 
-        self.codec
-            .lock()
-            .await
-            .decompress(compressed, &mut decompressed, None)?;
+        self.codec.decompress(compressed, &mut decompressed, None)?;
 
         parse_proto_bytes::<ReadRequest>(&decompressed).map_err(|source| {
             QueryError::InvalidRemoteReadReq {
@@ -108,10 +102,7 @@ impl PromRemoteSqlServer {
     async fn deserialize_write_request(&self, req: Bytes) -> Result<WriteRequest> {
         let mut decompressed = Vec::new();
         let compressed = req.to_byte_slice();
-        self.codec
-            .lock()
-            .await
-            .decompress(compressed, &mut decompressed, None)?;
+        self.codec.decompress(compressed, &mut decompressed, None)?;
         parse_proto_bytes::<WriteRequest>(&decompressed).map_err(|source| {
             QueryError::InvalidRemoteWriteReq {
                 source: Box::new(source),
@@ -123,7 +114,7 @@ impl PromRemoteSqlServer {
         &self,
         ctx: &Context,
         req: WriteRequest,
-    ) -> Result<WritePointsRpcRequest> {
+    ) -> Result<WritePointsRequest> {
         let mut fbb = FlatBufferBuilder::new();
         let mut point_offsets = Vec::new();
 
@@ -160,7 +151,7 @@ impl PromRemoteSqlServer {
         );
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = WritePointsRpcRequest {
+        let request = WritePointsRequest {
             version: 0,
             meta: None,
             points,
@@ -230,10 +221,7 @@ impl PromRemoteSqlServer {
             to_proto_bytes(read_response).map_err(|source| QueryError::CommonError {
                 msg: source.to_string(),
             })?;
-        self.codec
-            .lock()
-            .await
-            .compress(&input_buf, &mut compressed)?;
+        self.codec.compress(&input_buf, &mut compressed)?;
 
         Ok(compressed)
     }
@@ -370,22 +358,11 @@ fn transform_time_series(
 #[derive(Debug)]
 struct SqlWithTable {
     pub sql: String,
-    pub table: TskvTableSchema,
+    pub table: Arc<TskvTableSchema>,
 }
 
-pub struct SnappyCodec {
-    decoder: Decoder,
-    encoder: Encoder,
-}
-
-impl Default for SnappyCodec {
-    fn default() -> Self {
-        Self {
-            decoder: Decoder::new(),
-            encoder: Encoder::new(),
-        }
-    }
-}
+#[derive(Default)]
+pub struct SnappyCodec {}
 
 impl SnappyCodec {
     /// Decompresses data stored in slice `input_buf` and appends output to `output_buf`.
@@ -396,7 +373,7 @@ impl SnappyCodec {
     ///
     /// Returns the total number of bytes written.
     fn decompress(
-        &mut self,
+        &self,
         input_buf: &[u8],
         output_buf: &mut Vec<u8>,
         uncompress_size: Option<usize>,
@@ -407,8 +384,8 @@ impl SnappyCodec {
         };
         let offset = output_buf.len();
         output_buf.resize(offset + len, 0);
-        self.decoder
-            .decompress(input_buf, &mut output_buf[offset..])
+        let mut decoder = Decoder::new();
+        decoder.decompress(input_buf, &mut output_buf[offset..])
     }
 
     /// Compresses data stored in slice `input_buf` and appends the compressed result
@@ -416,13 +393,12 @@ impl SnappyCodec {
     ///
     /// Note that you'll need to call `clear()` before reusing the same `output_buf`
     /// across different `compress` calls.
-    fn compress(&mut self, input_buf: &[u8], output_buf: &mut Vec<u8>) -> SnapResult<()> {
+    fn compress(&self, input_buf: &[u8], output_buf: &mut Vec<u8>) -> SnapResult<()> {
         let output_buf_len = output_buf.len();
         let required_len = max_compress_len(input_buf.len());
         output_buf.resize(output_buf_len + required_len, 0);
-        let n = self
-            .encoder
-            .compress(input_buf, &mut output_buf[output_buf_len..])?;
+        let mut encoder = Encoder::new();
+        let n = encoder.compress(input_buf, &mut output_buf[output_buf_len..])?;
         output_buf.truncate(output_buf_len + n);
         Ok(())
     }
@@ -430,22 +406,17 @@ impl SnappyCodec {
 
 #[cfg(test)]
 mod test {
-    use std::{sync::Arc, vec};
+    use std::sync::Arc;
+    use std::vec;
 
-    use datafusion::{
-        arrow::{
-            array::{Float64Array, StringArray, TimestampNanosecondArray},
-            datatypes::{DataType, Field, Schema, TimeUnit},
-            record_batch::RecordBatch,
-        },
-        from_slice::FromSlice,
-    };
+    use datafusion::arrow::array::{Float64Array, StringArray, TimestampNanosecondArray};
+    use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+    use datafusion::arrow::record_batch::RecordBatch;
+    use datafusion::from_slice::FromSlice;
     use models::auth::user::{User, UserDesc, UserOptions};
     use protos::prompb::types::{Label, Sample, TimeSeries};
-    use spi::{
-        query::execution::Output,
-        service::protocol::{ContextBuilder, Query, QueryHandle, QueryId},
-    };
+    use spi::query::execution::Output;
+    use spi::service::protocol::{ContextBuilder, Query, QueryHandle, QueryId};
 
     use crate::prom::remote_server::transform_time_series;
 

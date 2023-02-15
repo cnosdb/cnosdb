@@ -1,22 +1,18 @@
-use datafusion::arrow::{
-    array::{
-        Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray,
-        TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
-        TimestampSecondArray, UInt64Array,
-    },
-    datatypes::{DataType as ArrowDataType, Field, TimeUnit},
-    record_batch::RecordBatch,
+use datafusion::arrow::array::{
+    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray,
+    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+    TimestampSecondArray, UInt64Array,
 };
+use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, TimeUnit};
+use datafusion::arrow::record_batch::RecordBatch;
 use flatbuffers::{self, FlatBufferBuilder, Vector, WIPOffset};
 use models::schema::{
     is_time_column, ColumnType, TableColumn, TskvTableSchemaRef, TIME_FIELD_NAME,
 };
 use models::ValueType;
 use paste::paste;
-use protos::models::Point;
-use protos::models::{FieldBuilder, FieldType, PointArgs, Points, PointsArgs, TagBuilder};
-use spi::QueryError;
-use spi::Result;
+use protos::models::{FieldBuilder, FieldType, Point, PointArgs, Points, PointsArgs, TagBuilder};
+use spi::{QueryError, Result};
 
 type Datum<'fbb> = WIPOffset<Vector<'fbb, u8>>;
 

@@ -1,7 +1,11 @@
-use std::{collections::HashMap, ops::Deref, sync::Arc};
+use std::collections::HashMap;
+use std::ops::Deref;
+use std::sync::Arc;
 
 use parking_lot::RwLock;
-use spi::{query::execution::QueryExecution, service::protocol::QueryId, QueryError};
+use spi::query::execution::QueryExecution;
+use spi::service::protocol::QueryId;
+use spi::QueryError;
 use tokio::sync::{Semaphore, SemaphorePermit, TryAcquireError};
 use trace::{debug, warn};
 
@@ -110,18 +114,14 @@ impl Drop for TrackedQuery<'_> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
 
     use async_trait::async_trait;
     use models::auth::user::{UserDesc, UserOptions};
-    use spi::{
-        query::{
-            dispatcher::{QueryInfo, QueryStatus},
-            execution::{Output, QueryExecution, QueryState, RUNNING},
-        },
-        service::protocol::QueryId,
-        QueryError,
-    };
-    use std::time::Duration;
+    use spi::query::dispatcher::{QueryInfo, QueryStatus};
+    use spi::query::execution::{Output, QueryExecution, QueryState, RUNNING};
+    use spi::service::protocol::QueryId;
+    use spi::QueryError;
 
     use super::QueryTracker;
 

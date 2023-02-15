@@ -1,9 +1,7 @@
-use std::{
-    fs::{File, OpenOptions},
-    io::Result,
-    os::unix::io::AsRawFd,
-    path::Path,
-};
+use std::fs::{File, OpenOptions};
+use std::io::Result;
+use std::os::unix::io::AsRawFd;
+use std::path::Path;
 
 use super::unix::check_err;
 

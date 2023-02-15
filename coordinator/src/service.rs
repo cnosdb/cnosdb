@@ -3,30 +3,26 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use config::{ClusterConfig, HintedOffConfig};
+use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
+use meta::meta_manager::RemoteMetaManager;
+use meta::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo, VnodeAllInfo};
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
 use models::*;
-
-use protos::kv_service::WritePointsRpcRequest;
+use protos::kv_service::WritePointsRequest;
 use snafu::ResultExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
-
 use trace::info;
 use tskv::engine::{EngineRef, MockEngine};
-use tskv::TimeRange;
-
-use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
-use meta::meta_manager::RemoteMetaManager;
-use meta::{MetaClientRef, MetaRef};
-
-use datafusion::arrow::datatypes::SchemaRef;
 use tskv::iterator::QueryOption;
+use tskv::TimeRange;
 
 use crate::command::*;
 use crate::errors::*;
@@ -41,13 +37,13 @@ pub type CoordinatorRef = Arc<dyn Coordinator>;
 pub trait Coordinator: Send + Sync + Debug {
     fn node_id(&self) -> u64;
     fn meta_manager(&self) -> MetaRef;
-    fn store_engine(&self) -> EngineRef;
+    fn store_engine(&self) -> Option<EngineRef>;
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
     async fn write_points(
         &self,
         tenant: String,
         level: ConsistencyLevel,
-        request: WritePointsRpcRequest,
+        request: WritePointsRequest,
     ) -> CoordinatorResult<()>;
 
     async fn exec_admin_stat_on_all_node(
@@ -78,8 +74,8 @@ impl Coordinator for MockCoordinator {
         Arc::new(MockMetaManager::default())
     }
 
-    fn store_engine(&self) -> EngineRef {
-        Arc::new(MockEngine::default())
+    fn store_engine(&self) -> Option<EngineRef> {
+        Some(Arc::new(MockEngine::default()))
     }
 
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
@@ -90,7 +86,7 @@ impl Coordinator for MockCoordinator {
         &self,
         tenant: String,
         level: ConsistencyLevel,
-        req: WritePointsRpcRequest,
+        req: WritePointsRequest,
     ) -> CoordinatorResult<()> {
         Ok(())
     }
@@ -121,14 +117,14 @@ impl Coordinator for MockCoordinator {
 pub struct CoordService {
     node_id: u64,
     meta: MetaRef,
-    kv_inst: EngineRef,
+    kv_inst: Option<EngineRef>,
     writer: Arc<PointWriter>,
     handoff: Arc<HintedOffManager>,
 }
 
 impl CoordService {
     pub async fn new(
-        kv_inst: EngineRef,
+        kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
         cluster: ClusterConfig,
         handoff_cfg: HintedOffConfig,
@@ -299,7 +295,7 @@ impl CoordService {
     }
 
     async fn select_statement_request(
-        kv_inst: EngineRef,
+        kv_inst: Option<EngineRef>,
         meta: MetaRef,
         option: QueryOption,
         sender: Sender<CoordinatorResult<RecordBatch>>,
@@ -321,7 +317,7 @@ impl CoordService {
 
         let now = tokio::time::Instant::now();
         info!("select statement execute now: {:?}", now);
-        let executor = QueryExecutor::new(option, kv_inst, meta, sender.clone());
+        let executor = QueryExecutor::new(option, kv_inst.clone(), meta, sender.clone());
         if let Err(err) = executor.execute().await {
             info!(
                 "select statement execute failed: {}, start at: {:?} elapsed: {:?}",
@@ -394,7 +390,7 @@ impl Coordinator for CoordService {
         self.meta.clone()
     }
 
-    fn store_engine(&self) -> EngineRef {
+    fn store_engine(&self) -> Option<EngineRef> {
         self.kv_inst.clone()
     }
 
@@ -406,7 +402,7 @@ impl Coordinator for CoordService {
         &self,
         tenant: String,
         level: ConsistencyLevel,
-        request: WritePointsRpcRequest,
+        request: WritePointsRequest,
     ) -> CoordinatorResult<()> {
         if let Some(meta_client) = self.meta.tenant_manager().tenant_meta(&tenant).await {
             meta_client.limiter().check_write()?;
@@ -415,7 +411,7 @@ impl Coordinator for CoordService {
             meta_client.limiter().check_data_in(data_len)?;
         }
 
-        let req = WritePointsRequest {
+        let req = WriteRequest {
             tenant: tenant.clone(),
             level,
             request,

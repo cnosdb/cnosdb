@@ -1,18 +1,20 @@
 use std::sync::Arc;
 
-use crate::{extension::physical::plan_node::table_writer::TableWriterExec, table::ClusterTable};
 use async_trait::async_trait;
-use datafusion::{
-    arrow::record_batch::RecordBatch,
-    common::Result as DFResult,
-    datasource::{listing::ListingTable, TableProvider},
-    error::DataFusionError,
-    execution::context::SessionState,
-    physical_plan::{metrics::ExecutionPlanMetricsSet, ExecutionPlan, SendableRecordBatchStream},
-};
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::common::Result as DFResult;
+use datafusion::datasource::listing::ListingTable;
+use datafusion::datasource::TableProvider;
+use datafusion::error::DataFusionError;
+use datafusion::execution::context::SessionState;
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
+use datafusion::physical_plan::{ExecutionPlan, SendableRecordBatchStream};
 use futures::StreamExt;
 use spi::Result;
 use trace::warn;
+
+use crate::extension::physical::plan_node::table_writer::TableWriterExec;
+use crate::table::ClusterTable;
 
 pub mod sink;
 pub mod write_exec_ext;

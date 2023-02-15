@@ -1,34 +1,29 @@
-use crate::rpc::tskv::TskvServiceImpl;
-use crate::server::{Service, ServiceHandle};
-use crate::{info, server};
+use std::net::SocketAddr;
+
 use config::TLSConfig;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use spi::server::dbms::DBMSRef;
-use std::net::SocketAddr;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tskv::engine::EngineRef;
+
+use crate::rpc::tskv::TskvServiceImpl;
+use crate::server::{Service, ServiceHandle};
+use crate::{info, server};
 
 pub struct GrpcService {
     tls_config: Option<TLSConfig>,
     addr: SocketAddr,
     //todo grpc support sql query
-    _dbms: DBMSRef,
     kv_inst: EngineRef,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
 }
 
 impl GrpcService {
-    pub fn new(
-        dbms: DBMSRef,
-        kv_inst: EngineRef,
-        addr: SocketAddr,
-        tls_config: Option<TLSConfig>,
-    ) -> Self {
+    pub fn new(kv_inst: EngineRef, addr: SocketAddr, tls_config: Option<TLSConfig>) -> Self {
         Self {
             tls_config,
             addr,
-            _dbms: dbms,
             kv_inst,
             handle: None,
         }

@@ -1,34 +1,30 @@
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+
 use async_channel as channel;
 use flatbuffers::FlatBufferBuilder;
 use futures::future::ok;
-use models::meta_data::*;
-use models::utils::now_timestamp;
-use models::RwLockRef;
-use parking_lot::{RwLock, RwLockReadGuard};
-use protos::kv_service::{Meta, WritePointsRpcRequest, WritePointsRpcResponse};
-use protos::models::{FieldBuilder, PointArgs, Points, PointsArgs, TagBuilder};
-use snafu::ResultExt;
-use std::collections::HashMap;
-use std::collections::VecDeque;
 //use std::net::{TcpListener, TcpStream};
 use meta::meta_manager::RemoteMetaManager;
 use meta::{MetaClientRef, MetaRef};
 use models::auth::user::{ROOT, ROOT_PWD};
-use std::sync::Arc;
+use models::meta_data::*;
+use models::utils::now_timestamp;
+use models::RwLockRef;
+use parking_lot::{RwLock, RwLockReadGuard};
+use protos::kv_service::{Meta, WritePointsRequest, WritePointsResponse};
+use protos::models as fb_models;
+use protos::models::{FieldBuilder, PointArgs, Points, PointsArgs, TagBuilder};
+use snafu::ResultExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
+use trace::{debug, info};
 use tskv::engine::EngineRef;
-
-use protos::models as fb_models;
 
 use crate::command::*;
 use crate::errors::*;
-use crate::hh_queue::HintedOffManager;
-use crate::hh_queue::{HintedOffBlock, HintedOffWriteReq};
-
-use trace::debug;
-use trace::info;
+use crate::hh_queue::{HintedOffBlock, HintedOffManager, HintedOffWriteReq};
 
 pub struct VnodePoints<'a> {
     db: String,
@@ -155,7 +151,7 @@ impl<'a> Default for VnodeMapping<'a> {
 #[derive(Debug)]
 pub struct PointWriter {
     node_id: u64,
-    kv_inst: EngineRef,
+    kv_inst: Option<EngineRef>,
     meta_manager: MetaRef,
     hh_sender: Sender<HintedOffWriteReq>,
 }
@@ -163,7 +159,7 @@ pub struct PointWriter {
 impl PointWriter {
     pub fn new(
         node_id: u64,
-        kv_inst: EngineRef,
+        kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
         hh_sender: Sender<HintedOffWriteReq>,
     ) -> Self {
@@ -175,7 +171,7 @@ impl PointWriter {
         }
     }
 
-    pub async fn write_points(&self, req: &WritePointsRequest) -> CoordinatorResult<()> {
+    pub async fn write_points(&self, req: &WriteRequest) -> CoordinatorResult<()> {
         let meta_client = self
             .meta_manager
             .tenant_manager()
@@ -232,7 +228,7 @@ impl PointWriter {
         node_id: u64,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
-        if node_id == self.node_id {
+        if node_id == self.node_id && self.kv_inst.is_some() {
             let result = self.write_to_local_node(vnode_id, tenant, data).await;
             debug!("write data to local {}({}) {:?}", node_id, vnode_id, result);
 
@@ -253,7 +249,12 @@ impl PointWriter {
             return self.write_to_handoff(vnode_id, node_id, tenant, data).await;
         }
 
-        debug!("write data to remote {}({}) success!", node_id, vnode_id);
+        debug!(
+            "write data to remote {}({}) , inst exist: {}, success!",
+            node_id,
+            vnode_id,
+            self.kv_inst.is_some()
+        );
         Ok(())
     }
 
@@ -318,7 +319,7 @@ impl PointWriter {
         tenant: &str,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
-        let req = WritePointsRpcRequest {
+        let req = WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: tenant.to_string(),
@@ -328,10 +329,14 @@ impl PointWriter {
             points: data.clone(),
         };
 
-        if let Err(err) = self.kv_inst.write(vnode_id, req).await {
-            Err(err.into())
-        } else {
+        if let Some(kv_inst) = self.kv_inst.clone() {
+            let _ = kv_inst.write(vnode_id, req).await?;
             Ok(())
+        } else {
+            Err(CoordinatorError::KvInstanceNotFound {
+                vnode_id,
+                node_id: 0,
+            })
         }
     }
 }

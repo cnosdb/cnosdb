@@ -1,33 +1,33 @@
+use std::borrow::BorrowMut;
+use std::cmp::Ordering as CmpOrdering;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
+use std::iter::{FromIterator, Peekable};
+use std::mem::{size_of, size_of_val};
+use std::ops::Index;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+
 use flatbuffers::{ForwardsUOffset, Push, Vector};
 use futures::future::ok;
-
+use libc::time;
+use minivec::{mini_vec, MiniVec};
+use models::schema::{TableColumn, TskvTableSchema};
+use models::utils::{split_id, unite_id};
 use models::{
     utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TableId, Timestamp, ValueType,
 };
+use parking_lot::{RwLock, RwLockReadGuard};
+use protos::models as fb_models;
 use protos::models::{Field, FieldType, Point};
-
-use libc::time;
-use std::cmp::Ordering as CmpOrdering;
-use std::collections::HashSet;
-use std::fmt::Display;
-use std::iter::{FromIterator, Peekable};
-use std::mem::size_of;
-use std::ops::Index;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
-use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
-
-use minivec::{mini_vec, MiniVec};
+use snafu::OptionExt;
 use trace::{error, info, warn};
 
+use crate::error::Result;
+use crate::tseries_family::TimeRange;
 use crate::tsm::DataBlock;
-use crate::{byte_utils, error::Result, tseries_family::TimeRange, TseriesFamilyId};
-use models::schema::{TableColumn, TskvTableSchema};
-use models::utils::{split_id, unite_id};
-use parking_lot::{RwLock, RwLockReadGuard};
-use snafu::OptionExt;
-
-use protos::models as fb_models;
+use crate::{byte_utils, TseriesFamilyId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldVal {
@@ -192,7 +192,7 @@ impl From<fb_models::Point<'_>> for RowData {
 
 #[derive(Debug)]
 pub struct RowGroup {
-    pub schema: TskvTableSchema,
+    pub schema: Arc<TskvTableSchema>,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
     /// total size in stack and heap
@@ -234,22 +234,28 @@ impl SeriesData {
             for row in item.rows.iter_mut() {
                 row.fields.remove(index);
             }
-            item.schema.drop_column(&name);
-            item.schema.schema_id += 1;
+            let mut schema_t = item.schema.as_ref().clone();
+            schema_t.drop_column(&name);
+            schema_t.schema_id += 1;
+            item.schema = Arc::new(schema_t)
         }
     }
 
     pub fn change_column(&mut self, column_name: &str, new_column: &TableColumn) {
         for item in self.groups.iter_mut() {
-            item.schema.change_column(column_name, new_column.clone());
-            item.schema.schema_id += 1;
+            let mut schema_t = item.schema.as_ref().clone();
+            schema_t.change_column(column_name, new_column.clone());
+            schema_t.schema_id += 1;
+            item.schema = Arc::new(schema_t)
         }
     }
 
     pub fn add_column(&mut self, new_column: &TableColumn) {
         for item in self.groups.iter_mut() {
-            item.schema.add_column(new_column.clone());
-            item.schema.schema_id += 1;
+            let mut schema_t = item.schema.as_ref().clone();
+            schema_t.add_column(new_column.clone());
+            schema_t.schema_id += 1;
+            item.schema = Arc::new(schema_t)
         }
     }
 
@@ -292,10 +298,10 @@ impl SeriesData {
         res
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, &TskvTableSchema, &Vec<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(SchemaId, Arc<TskvTableSchema>, &Vec<RowData>)> {
         self.groups
             .iter()
-            .map(|g| (g.schema.schema_id, &g.schema, &g.rows))
+            .map(|g| (g.schema.schema_id, g.schema.clone(), &g.rows))
             .collect()
     }
 }
@@ -540,17 +546,18 @@ impl Display for DataType {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use bytes::buf;
-    use models::schema::TskvTableSchema;
-    use models::{FieldId, SchemaId, SeriesId, Timestamp};
-    use parking_lot::RwLock;
     use std::collections::HashMap;
     use std::mem::{size_of, size_of_val};
     use std::sync::Arc;
 
-    use crate::{tsm::DataBlock, TimeRange};
+    use bytes::buf;
+    use models::schema::TskvTableSchema;
+    use models::{FieldId, SchemaId, SeriesId, Timestamp};
+    use parking_lot::RwLock;
 
     use super::{DataType, FieldVal, MemCache, RowData, RowGroup};
+    use crate::tsm::DataBlock;
+    use crate::TimeRange;
 
     pub(crate) fn put_rows_to_cache(
         cache: &mut MemCache,
@@ -579,7 +586,7 @@ pub(crate) mod test {
 
         schema.schema_id = schema_id;
         let row_group = RowGroup {
-            schema,
+            schema: schema.into(),
             range: TimeRange::from(time_range),
             rows,
             size: size_of::<RowGroup>() + size,

@@ -1,30 +1,24 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::ok;
-use models::{
-    meta_data::VnodeInfo,
-    predicate::domain::{PredicateRef, QueryArgs, QueryExpr},
-    schema::TskvTableSchema,
-    utils::now_timestamp,
-};
+use meta::MetaRef;
+use models::meta_data::VnodeInfo;
+use models::predicate::domain::{PredicateRef, QueryArgs, QueryExpr};
+use models::schema::TskvTableSchema;
+use models::utils::now_timestamp;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use trace::info;
-use tskv::{
-    engine::EngineRef,
-    iterator::{filter_to_time_ranges, QueryOption, RowIterator, TableScanMetrics},
-    TimeRange,
-};
+use tskv::engine::EngineRef;
+use tskv::iterator::{filter_to_time_ranges, QueryOption, RowIterator, TableScanMetrics};
+use tskv::TimeRange;
 
-use crate::{
-    command::{
-        recv_command, send_command, CoordinatorTcpCmd, QueryRecordBatchRequest,
-        FAILED_RESPONSE_CODE,
-    },
-    errors::{CoordinatorError, CoordinatorResult},
+use crate::command::{
+    recv_command, send_command, CoordinatorTcpCmd, QueryRecordBatchRequest, FAILED_RESPONSE_CODE,
 };
-
-use meta::MetaRef;
+use crate::errors::{CoordinatorError, CoordinatorResult};
 
 #[derive(Debug)]
 pub struct ReaderIterator {
@@ -46,7 +40,7 @@ impl ReaderIterator {
 pub struct QueryExecutor {
     option: QueryOption,
 
-    kv_inst: EngineRef,
+    kv_inst: Option<EngineRef>,
     meta_manager: MetaRef,
 
     sender: Sender<CoordinatorResult<RecordBatch>>,
@@ -55,7 +49,7 @@ pub struct QueryExecutor {
 impl QueryExecutor {
     pub fn new(
         option: QueryOption,
-        kv_inst: EngineRef,
+        kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
         sender: Sender<CoordinatorResult<RecordBatch>>,
     ) -> Self {
@@ -236,35 +230,41 @@ impl QueryExecutor {
     }
 
     async fn local_vnode_executor(&self, vnode: VnodeInfo) -> CoordinatorResult<()> {
-        let tenant = self.option.tenant.clone();
-        let mut iterator =
-            RowIterator::new(self.kv_inst.clone(), self.option.clone(), vnode.id).await?;
+        if let Some(kv_inst) = self.kv_inst.clone() {
+            let tenant = self.option.tenant.clone();
+            let mut iterator =
+                RowIterator::new(kv_inst.clone(), self.option.clone(), vnode.id).await?;
 
-        while let Some(data) = iterator.next().await {
-            match data {
-                Ok(val) => {
-                    if let Some(meta_client) = self
-                        .meta_manager
-                        .tenant_manager()
-                        .tenant_meta(tenant.as_str())
-                        .await
-                    {
-                        meta_client
-                            .limiter()
-                            .check_data_out(get_record_batch_memory_size(&val))
-                            .map_err(|e| CoordinatorError::MetaRequest {
-                                msg: format!("{}", e),
-                            })?;
+            while let Some(data) = iterator.next().await {
+                match data {
+                    Ok(val) => {
+                        if let Some(meta_client) = self
+                            .meta_manager
+                            .tenant_manager()
+                            .tenant_meta(tenant.as_str())
+                            .await
+                        {
+                            meta_client
+                                .limiter()
+                                .check_data_out(get_record_batch_memory_size(&val))
+                                .map_err(|e| CoordinatorError::MetaRequest {
+                                    msg: format!("{}", e),
+                                })?;
+                        }
+                        self.sender.send(Ok(val)).await?;
                     }
-                    self.sender.send(Ok(val)).await?;
-                }
-                Err(err) => {
-                    return Err(CoordinatorError::from(err));
-                }
-            };
-        }
+                    Err(err) => {
+                        return Err(CoordinatorError::from(err));
+                    }
+                };
+            }
 
-        Ok(())
+            return Ok(());
+        }
+        Err(CoordinatorError::KvInstanceNotFound {
+            vnode_id: vnode.id,
+            node_id: vnode.node_id,
+        })
     }
 
     async fn map_vnode(&self) -> CoordinatorResult<HashMap<u64, Vec<VnodeInfo>>> {

@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, MetaRef};
-use models::{auth::user::User, oid::Identifier};
+use meta::error::MetaError;
+use meta::MetaRef;
+use models::auth::user::User;
+use models::oid::Identifier;
 
-use crate::metadata::cluster_schema_provider::{
-    builder::users::ClusterSchemaUsersBuilder, ClusterSchemaTableFactory,
-};
+use crate::metadata::cluster_schema_provider::builder::users::ClusterSchemaUsersBuilder;
+use crate::metadata::cluster_schema_provider::ClusterSchemaTableFactory;
 
 const INFORMATION_SCHEMA_USERS: &str = "USERS";
 

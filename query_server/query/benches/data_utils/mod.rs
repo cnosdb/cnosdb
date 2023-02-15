@@ -1,25 +1,21 @@
-use arrow::{
-    array::Float32Array,
-    array::Float64Array,
-    array::StringArray,
-    array::UInt64Array,
-    datatypes::{DataType, Field, Schema, SchemaRef},
-    record_batch::RecordBatch,
-};
-use datafusion::error::Result;
-use datafusion::from_slice::FromSlice;
-use datafusion::{arrow, datasource::MemTable};
-use rand::rngs::StdRng;
-use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
 use std::sync::Arc;
-use tokio::runtime::Runtime;
-use trace::warn;
 
+use arrow::array::{Float32Array, Float64Array, StringArray, UInt64Array};
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use arrow::record_batch::RecordBatch;
+use datafusion::arrow;
+use datafusion::datasource::MemTable;
+use datafusion::error::Result;
 use datafusion::execution::context::SessionContext;
+use datafusion::from_slice::FromSlice;
 use parking_lot::Mutex;
 use query::extension::expr::func_manager::DFSessionContextFuncAdapter;
 use query::extension::expr::load_all_functions;
+use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
+use rand::{Rng, SeedableRng};
+use tokio::runtime::Runtime;
+use trace::warn;
 
 pub fn query(ctx: Arc<Mutex<SessionContext>>, sql: &str) {
     let rt = Runtime::new().unwrap();

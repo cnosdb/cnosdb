@@ -4,17 +4,14 @@ mod show_queries;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use spi::query::{
-    dispatcher::{QueryInfo, QueryStatus},
-    execution::{Output, QueryExecution, QueryStateMachineRef},
-    logical_planner::SYSPlan,
-};
+use spi::query::dispatcher::{QueryInfo, QueryStatus};
+use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
+use spi::query::logical_planner::SYSPlan;
 use spi::Result;
-
-use crate::dispatcher::query_tracker::QueryTracker;
 
 use self::kill_query::KillQueryTask;
 use self::show_queries::ShowQueriesTask;
+use crate::dispatcher::query_tracker::QueryTracker;
 
 pub struct SystemExecution {
     task_factory: SystemTaskFactory,

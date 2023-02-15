@@ -1,25 +1,24 @@
-use std::{result, sync::Arc, time::Duration};
+use std::result;
+use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
-use datafusion::{
-    arrow::{
-        array::{ArrayRef, Float32Array, Int32Array, StringArray},
-        datatypes::{DataType, Field, Schema, SchemaRef},
-        record_batch::RecordBatch,
-    },
-    common::{DFSchemaRef, DataFusionError, ToDFSchema},
-    datasource::{self, TableProvider},
-    execution::context::{SessionState, TaskContext},
-    logical_expr::TableType,
-    logical_expr::{LogicalPlan, LogicalPlanBuilder, UserDefinedLogicalNode},
-    physical_expr::{planner, PhysicalSortExpr},
-    physical_plan::{
-        filter::FilterExec, ExecutionPlan, Partitioning, RecordBatchStream,
-        SendableRecordBatchStream, Statistics,
-    },
-    prelude::*,
-    scalar::ScalarValue,
+use datafusion::arrow::array::{ArrayRef, Float32Array, Int32Array, StringArray};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::common::{DFSchemaRef, DataFusionError, ToDFSchema};
+use datafusion::datasource::{self, TableProvider};
+use datafusion::execution::context::{SessionState, TaskContext};
+use datafusion::logical_expr::{
+    LogicalPlan, LogicalPlanBuilder, TableType, UserDefinedLogicalNode,
 };
+use datafusion::physical_expr::{planner, PhysicalSortExpr};
+use datafusion::physical_plan::filter::FilterExec;
+use datafusion::physical_plan::{
+    ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream, Statistics,
+};
+use datafusion::prelude::*;
+use datafusion::scalar::ScalarValue;
 use futures::Stream;
 use tokio::time;
 

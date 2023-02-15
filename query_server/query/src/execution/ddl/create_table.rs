@@ -1,12 +1,14 @@
-use crate::execution::ddl::DDLDefinitionTask;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use meta::error::MetaError;
 use models::schema::{TableSchema, TskvTableSchema};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::query::logical_planner::CreateTable;
 use spi::Result;
 
-use spi::query::logical_planner::CreateTable;
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct CreateTableTask {
     stmt: CreateTable,
@@ -68,7 +70,7 @@ async fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Resu
         })?;
     // .context(MetaSnafu)?;
     client
-        .create_table(&TableSchema::TsKvTableSchema(table_schema))
+        .create_table(&TableSchema::TsKvTableSchema(Arc::new(table_schema)))
         .await
         .context(spi::MetaSnafu)
 }

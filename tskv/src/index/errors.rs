@@ -1,8 +1,10 @@
+use std::fmt::Debug;
+use std::io;
+
+use sled;
 use snafu::Snafu;
-use std::{fmt::Debug, io};
 
 use crate::record_file;
-use sled;
 
 #[derive(Snafu, Debug)]
 pub enum IndexError {

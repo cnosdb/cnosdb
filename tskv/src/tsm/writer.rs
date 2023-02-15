@@ -1,22 +1,18 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    io::IoSlice,
-    path::{Path, PathBuf},
-};
+use std::collections::{BTreeMap, HashMap};
+use std::io::IoSlice;
+use std::path::{Path, PathBuf};
 
 use models::{FieldId, Timestamp, ValueType};
 use protos::kv_service::FieldType;
 use snafu::{ResultExt, Snafu};
 use utils::{BkdrHasher, BloomFilter};
 
-use crate::{
-    error::{self, Error, Result},
-    file_system::{file_manager, FileCursor, IFile},
-    file_utils,
-    tsm::{
-        BlockEntry, BlockMeta, BlockMetaIterator, DataBlock, Index, IndexEntry, IndexMeta,
-        BLOCK_META_SIZE, BLOOM_FILTER_BITS, INDEX_META_SIZE, MAX_BLOCK_VALUES,
-    },
+use crate::error::{self, Error, Result};
+use crate::file_system::{file_manager, FileCursor, IFile};
+use crate::file_utils;
+use crate::tsm::{
+    BlockEntry, BlockMeta, BlockMetaIterator, DataBlock, Index, IndexEntry, IndexMeta,
+    BLOCK_META_SIZE, BLOOM_FILTER_BITS, INDEX_META_SIZE, MAX_BLOCK_VALUES,
 };
 
 // A TSM file is composed for four sections: header, blocks, index and the footer.
@@ -480,28 +476,22 @@ async fn write_footer_to(
 
 #[cfg(test)]
 pub mod tsm_writer_tests {
-    use std::{
-        collections::HashMap,
-        io::{Error as IoError, ErrorKind as IoErrorKind},
-        path::{Path, PathBuf},
-        sync::Arc,
-    };
+    use std::collections::HashMap;
+    use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
 
     use models::{FieldId, ValueType};
     use snafu::ResultExt;
 
-    use crate::{
-        error::{self, Error, Result},
-        file_system::file_manager::{self, get_file_manager, FileManager},
-        file_system::IFile,
-        file_utils::{self, make_tsm_file_name},
-        memcache::FieldVal,
-        tsm::tsm_reader_tests::read_and_check,
-        tsm::{
-            codec::DataBlockEncoding, new_tsm_writer, ColumnReader, DataBlock, IndexReader,
-            TsmReader, TsmWriter,
-        },
-    };
+    use crate::error::{self, Error, Result};
+    use crate::file_system::file_manager::{self, get_file_manager, FileManager};
+    use crate::file_system::IFile;
+    use crate::file_utils::{self, make_tsm_file_name};
+    use crate::memcache::FieldVal;
+    use crate::tsm::codec::DataBlockEncoding;
+    use crate::tsm::tsm_reader_tests::read_and_check;
+    use crate::tsm::{new_tsm_writer, ColumnReader, DataBlock, IndexReader, TsmReader, TsmWriter};
 
     const TEST_PATH: &str = "/tmp/test/tsm_writer";
 
@@ -512,8 +502,8 @@ pub mod tsm_writer_tests {
         let tsm_seq = file_utils::get_tsm_file_id_by_path(&path)?;
         let path = path.as_ref();
         let dir = path.parent().unwrap();
-        if !file_manager::try_exists(&dir) {
-            std::fs::create_dir_all(&dir).context(super::IOSnafu)?;
+        if !file_manager::try_exists(dir) {
+            std::fs::create_dir_all(dir).context(super::IOSnafu)?;
         }
         let mut writer = TsmWriter::open(path, tsm_seq, false, 0).await?;
         for (fid, blks) in data.iter() {

@@ -1,16 +1,17 @@
-use crate::execution::ddl::DDLDefinitionTask;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use datafusion::arrow::array::StringBuilder;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
+use meta::error::MetaError;
 use models::object_reference::ResolvedTable;
 use models::schema::TableSchema;
-use spi::Result;
-
-use meta::error::MetaError;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeTable;
-use std::sync::Arc;
+use spi::Result;
+
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct DescribeTableTask {
     stmt: DescribeTable,

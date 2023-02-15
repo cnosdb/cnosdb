@@ -1,23 +1,21 @@
-use arrow_flight::sql::{ActionCreatePreparedStatementResult, SqlInfo};
-use arrow_flight::{Action, FlightData, HandshakeRequest, HandshakeResponse, Ticket};
-use futures::Stream;
 use std::pin::Pin;
+
+use arrow_flight::flight_service_server::{FlightService, FlightServiceServer};
+use arrow_flight::sql::server::FlightSqlService;
+use arrow_flight::sql::{
+    ActionClosePreparedStatementRequest, ActionCreatePreparedStatementRequest,
+    ActionCreatePreparedStatementResult, CommandGetCatalogs, CommandGetCrossReference,
+    CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys, CommandGetPrimaryKeys,
+    CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables, CommandPreparedStatementQuery,
+    CommandPreparedStatementUpdate, CommandStatementQuery, CommandStatementUpdate, SqlInfo,
+    TicketStatementQuery,
+};
+use arrow_flight::{
+    Action, FlightData, FlightDescriptor, FlightInfo, HandshakeRequest, HandshakeResponse, Ticket,
+};
+use futures::Stream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
-
-use arrow_flight::{
-    flight_service_server::FlightService,
-    flight_service_server::FlightServiceServer,
-    sql::{
-        server::FlightSqlService, ActionClosePreparedStatementRequest,
-        ActionCreatePreparedStatementRequest, CommandGetCatalogs, CommandGetCrossReference,
-        CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys, CommandGetPrimaryKeys,
-        CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables, CommandPreparedStatementQuery,
-        CommandPreparedStatementUpdate, CommandStatementQuery, CommandStatementUpdate,
-        TicketStatementQuery,
-    },
-    FlightDescriptor, FlightInfo,
-};
 
 #[derive(Clone)]
 pub struct FlightSqlServiceImpl {}

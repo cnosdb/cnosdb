@@ -21,11 +21,8 @@ mod flatbuffers_generated;
 
     // build .proto files
     {
-        let proto_file_paths = &[
-            proto_files_dir.join("kv_service.proto"),
-            proto_files_dir.join("schema_service.proto"),
-        ];
-        let rust_mod_names = &["kv_service".to_string(), "schema_service".to_string()];
+        let proto_file_paths = &[proto_files_dir.join("kv_service.proto")];
+        let rust_mod_names = &["kv_service".to_string()];
 
         // src/generated/protobuf_generated/
         let output_dir_final = env::current_dir()

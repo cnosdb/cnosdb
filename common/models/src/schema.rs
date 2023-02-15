@@ -9,14 +9,9 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Display};
-use std::sync::Arc;
-
 use std::mem::size_of_val;
 use std::str::FromStr;
-
-use datafusion::logical_expr::TableSource;
-use derive_builder::Builder;
-use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use arrow_schema::DataType;
 use datafusion::arrow::datatypes::{
@@ -30,6 +25,9 @@ use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::ListingOptions;
 use datafusion::error::Result as DataFusionResult;
+use datafusion::logical_expr::TableSource;
+use derive_builder::Builder;
+use serde::{Deserialize, Serialize};
 
 use crate::codec::Encoding;
 pub use crate::limiter::LimiterConfig;
@@ -49,8 +47,8 @@ pub const DEFAULT_CATALOG: &str = "cnosdb";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TableSchema {
-    TsKvTableSchema(TskvTableSchema),
-    ExternalTableSchema(ExternalTableSchema),
+    TsKvTableSchema(Arc<TskvTableSchema>),
+    ExternalTableSchema(Arc<ExternalTableSchema>),
 }
 
 impl TableSchema {
@@ -101,7 +99,7 @@ impl ExternalTableSchema {
             FileType::CSV => Arc::new(
                 CsvFormat::default()
                     .with_has_header(self.has_header)
-                    .with_delimiter(self.delimiter as u8)
+                    .with_delimiter(self.delimiter)
                     .with_file_compression_type(file_compression_type),
             ),
             FileType::PARQUET => Arc::new(ParquetFormat::default()),

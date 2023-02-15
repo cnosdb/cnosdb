@@ -1,18 +1,19 @@
-use std::{mem, sync::Arc};
+use std::mem;
+use std::sync::Arc;
 
+use datafusion::arrow::compute;
+use datafusion::arrow::compute::kernels::cast_utils::string_to_timestamp_nanos;
 use datafusion::arrow::compute::CastOptions;
-use datafusion::arrow::datatypes::TimeUnit;
-use datafusion::arrow::{compute, compute::kernels::cast_utils::string_to_timestamp_nanos};
+use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::common::DFSchemaRef;
+use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::expr_rewriter::{ExprRewritable, ExprRewriter};
-use datafusion::logical_expr::{utils, Between, BinaryExpr, ExprSchemable};
-use datafusion::{
-    arrow::datatypes::DataType,
-    error::{DataFusionError, Result},
-    logical_expr::{Expr, Filter, LogicalPlan, Operator, TableScan},
-    optimizer::{optimizer::OptimizerRule, OptimizerConfig},
-    scalar::ScalarValue,
+use datafusion::logical_expr::{
+    utils, Between, BinaryExpr, Expr, ExprSchemable, Filter, LogicalPlan, Operator, TableScan,
 };
+use datafusion::optimizer::optimizer::OptimizerRule;
+use datafusion::optimizer::OptimizerConfig;
+use datafusion::scalar::ScalarValue;
 use trace::debug;
 
 /// Optimizer that cast literal value to target column's type
@@ -38,7 +39,7 @@ impl OptimizerRule for ImplicitTypeConversion {
     fn try_optimize(
         &self,
         plan: &LogicalPlan,
-        optimizer_config: &dyn OptimizerConfig,
+        _optimizer_config: &dyn OptimizerConfig,
     ) -> Result<Option<LogicalPlan>> {
         let mut rewriter = DataTypeRewriter {
             schemas: plan.all_schemas(),
@@ -47,7 +48,7 @@ impl OptimizerRule for ImplicitTypeConversion {
         match plan {
             LogicalPlan::Filter(filter) => {
                 let input = self
-                    .try_optimize(filter.input.as_ref(), optimizer_config)?
+                    .try_optimize(filter.input.as_ref(), _optimizer_config)?
                     .map(Arc::new)
                     .unwrap_or_else(|| filter.input.clone());
 
@@ -103,7 +104,7 @@ impl OptimizerRule for ImplicitTypeConversion {
                 let new_inputs = inputs
                     .iter()
                     .map(|plan| {
-                        self.try_optimize(plan, optimizer_config)
+                        self.try_optimize(plan, _optimizer_config)
                             .transpose()
                             .unwrap_or_else(|| Ok((*plan).clone()))
                     })
@@ -326,7 +327,6 @@ mod tests {
     use std::collections::HashMap;
 
     use datafusion::arrow::datatypes::TimeUnit;
-
     use datafusion::common::{DFField, DFSchema};
     use datafusion::logical_expr::expr_rewriter::ExprRewritable;
     use datafusion::prelude::col;

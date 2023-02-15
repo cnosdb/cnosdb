@@ -1,7 +1,5 @@
-use std::{
-    sync::atomic::AtomicU64,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::sync::atomic::AtomicU64;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const LOW_32BIT_MASK: u64 = (0x01 << 32) - 1;
 const HIGH_32BIT_MASK: u64 = ((0x01 << 32) - 1) << 32;

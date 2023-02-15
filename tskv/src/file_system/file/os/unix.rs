@@ -1,17 +1,16 @@
-use std::os::unix::io::RawFd;
-use std::{
-    fs::File,
-    io::{Error, Result},
-    mem::MaybeUninit,
-    os::unix::io::AsRawFd,
-};
+use std::fs::File;
+use std::io::{Error, Result};
+use std::mem::MaybeUninit;
+use std::os::unix::io::{AsRawFd, RawFd};
 
 #[cfg(not(target_os = "macos"))]
 pub use not_macos::*;
 
 #[cfg(not(target_os = "macos"))]
 mod not_macos {
-    use std::{fs::OpenOptions, os::unix::fs::OpenOptionsExt, path::Path};
+    use std::fs::OpenOptions;
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::path::Path;
 
     use super::*;
 

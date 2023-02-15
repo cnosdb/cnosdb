@@ -1,5 +1,14 @@
 #![allow(dead_code, unused_imports, unused_variables, clippy::if_same_then_else)]
 
+use std::borrow::BorrowMut;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Debug;
+use std::io;
+use std::ops::DerefMut;
+use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use client::MetaHttpClient;
 use config::ClusterConfig;
@@ -10,37 +19,27 @@ use models::auth::role::{
 use models::auth::user::{User, UserDesc};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
-use models::utils::min_num;
-use parking_lot::RwLock;
-use rand::distributions::{Alphanumeric, DistString};
-use snafu::Snafu;
-use tokio::sync::mpsc::{self, Receiver};
-
-use std::borrow::BorrowMut;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::ops::DerefMut;
-use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
-use std::{fmt::Debug, io};
-use store::command;
-use tokio::net::TcpStream;
-
-use trace::{debug, error, info, warn};
-
-use crate::error::{MetaError, MetaResult};
-use crate::store::key_path;
 use models::schema::{
     DatabaseSchema, ExternalTableSchema, LimiterConfig, TableColumn, TableSchema, Tenant,
     TenantOptions, TskvTableSchema,
 };
+use models::utils::min_num;
+use parking_lot::RwLock;
+use rand::distributions::{Alphanumeric, DistString};
+use snafu::Snafu;
+use store::command;
+use tokio::net::TcpStream;
+use tokio::sync::mpsc::{self, Receiver};
+use trace::{debug, error, info, warn};
 
+use crate::error::{MetaError, MetaResult};
 use crate::limiter::{Limiter, LimiterImpl, NoneLimiter};
 use crate::store::command::{
     EntryLog, META_REQUEST_FAILED, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
     META_REQUEST_ROLE_EXIST, META_REQUEST_ROLE_NOT_FOUND, META_REQUEST_SUCCESS,
     META_REQUEST_TENANT_NOT_FOUND, META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND,
 };
+use crate::store::key_path;
 use crate::tenant_manager::RemoteTenantManager;
 use crate::user_manager::{RemoteUserManager, UserManager, UserManagerMock};
 use crate::{client, store};
@@ -99,12 +98,16 @@ pub trait MetaClient: Send + Sync + Debug {
     async fn create_table(&self, schema: &TableSchema) -> MetaResult<()>;
     async fn update_table(&self, schema: &TableSchema) -> MetaResult<()>;
     fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>>;
-    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>>;
+    fn get_tskv_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<Arc<TskvTableSchema>>>;
     fn get_external_table_schema(
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<ExternalTableSchema>>;
+    ) -> MetaResult<Option<Arc<ExternalTableSchema>>>;
     fn list_tables(&self, db: &str) -> MetaResult<Vec<String>>;
     async fn drop_table(&self, db: &str, table: &str) -> MetaResult<()>;
 
@@ -605,7 +608,11 @@ impl MetaClient for RemoteMetaClient {
         return Ok(self.data.read().table_schema(db, table));
     }
 
-    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
+    fn get_tskv_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
         if let Some(TableSchema::TsKvTableSchema(val)) = self.data.read().table_schema(db, table) {
             return Ok(Some(val));
         }
@@ -616,7 +623,7 @@ impl MetaClient for RemoteMetaClient {
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<ExternalTableSchema>> {
+    ) -> MetaResult<Option<Arc<ExternalTableSchema>>> {
         if let Some(TableSchema::ExternalTableSchema(val)) =
             self.data.read().table_schema(db, table)
         {

@@ -1,20 +1,16 @@
-use std::{
-    collections::HashMap,
-    io::SeekFrom,
-    marker::PhantomData,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::collections::HashMap;
+use std::io::SeekFrom;
+use std::marker::PhantomData;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use config::HintedOffConfig;
 use protos::models as fb_models;
 use snafu::prelude::*;
+use tokio::sync::mpsc::Receiver;
+use tokio::sync::oneshot::{self, Sender};
 use tokio::sync::RwLock;
-use tokio::{
-    sync::mpsc::Receiver,
-    sync::oneshot::{self, Sender},
-    time::{self, Duration},
-};
+use tokio::time::{self, Duration};
 use trace::{debug, error, info, warn};
 use tskv::file_system::file_manager::{self, list_dir_names, FileManager};
 use tskv::file_system::{AsyncFile, FileCursor, IFile};
@@ -486,11 +482,11 @@ impl HintedOffReader {
 mod test {
     use std::sync::Arc;
 
-    use super::*;
-    use tokio::time::{self, Duration};
-
     use tokio::sync::RwLock;
+    use tokio::time::{self, Duration};
     use trace::init_default_global_tracing;
+
+    use super::*;
 
     async fn test_hinted_off_file() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");

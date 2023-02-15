@@ -17,11 +17,14 @@ auth_enabled = false
 path = 'data/db'
 
 # The maximum file size of summary file.
-max_summary_size = 134217728 # 128M (128 * 1024 * 1024)
+max_summary_size = "128M" # 134217728
 
 # The maximum file size of a level is:
 # $base_file_size * level * $compact_trigger_file_num
-base_file_size = 16777216 # 16M (16 * 1024 * 1024)
+base_file_size = "16M" # 16777216
+
+# The maxmimum flush request in memory
+flush_req_channel_cap = 16
 
 # The maxmimum data file level (from 0 to 4).
 max_level = 4
@@ -33,7 +36,7 @@ compact_trigger_file_num = 4
 compact_trigger_cold_duration = "1h"
 
 # The maximum size of all files in a compaction.
-max_compact_size = 2147483648 # 2G (2 * 1024 * 1024 * 1024)
+max_compact_size = "2G" # 2147483648
 
 # The maximum concurrent compactions.
 max_concurrent_compaction = 4
@@ -42,6 +45,8 @@ max_concurrent_compaction = 4
 strict_write = false
 
 [wal]
+# The maxmimum wal request in memory
+wal_req_channel_cap = 64
 
 # If true, write requets on disk before writing to memory.
 enabled = true
@@ -50,14 +55,14 @@ enabled = true
 path = 'data/wal'
 
 # The maximum size of a wal file.
-max_file_size = 1073741824 # 1024 * 1024 * 1024
+max_file_size = "1G" # 1073741824
 
 # If true, fsync will be called after every wal writes.
 sync = false
 sync_interval = "0" # h, m, s
 
 [cache]
-max_buffer_size = 134217728 # 128M (128 * 1024 * 1024)
+max_buffer_size = "128M" # 134217728
 max_immutable_number = 4
 
 [log]
@@ -72,12 +77,12 @@ path = 'data/log'
 [cluster]
 node_id = 100
 name = 'cluster_xxx'
-meta = '127.0.0.1:21001'
+meta_service_addr = '127.0.0.1:21001'
 
-flight_rpc_server = '127.0.0.1:31006'
-http_server = '127.0.0.1:31007'
-grpc_server = '127.0.0.1:31008'
-tcp_server = '127.0.0.1:31009'
+http_listen_addr = '127.0.0.1:31007'
+grpc_listen_addr = '127.0.0.1:31008'
+tcp_listen_addr = '127.0.0.1:31009'
+flight_rpc_listen_addr = '127.0.0.1:31006'
 
 [hintedoff]
 enable = true

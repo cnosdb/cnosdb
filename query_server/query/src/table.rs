@@ -1,25 +1,24 @@
-use std::{any::Any, sync::Arc};
+use std::any::Any;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
-use datafusion::{
-    arrow::datatypes::SchemaRef,
-    common::DFSchemaRef,
-    datasource::{TableProvider, TableType},
-    error::{DataFusionError, Result},
-    execution::context::SessionState,
-    logical_expr::{Expr, TableProviderFilterPushDown},
-    physical_plan::{project_schema, ExecutionPlan},
-};
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::common::DFSchemaRef;
+use datafusion::datasource::{TableProvider, TableType};
+use datafusion::error::{DataFusionError, Result};
+use datafusion::execution::context::SessionState;
+use datafusion::logical_expr::{Expr, TableProviderFilterPushDown};
+use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use meta::error::MetaError;
 use models::predicate::domain::{Predicate, PredicateRef};
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 
-use crate::{
-    data_source::{sink::tskv::TskvRecordBatchSinkProvider, WriteExecExt},
-    extension::physical::plan_node::{table_writer::TableWriterExec, tag_scan::TagScanExec},
-    tskv_exec::TskvExec,
-};
+use crate::data_source::sink::tskv::TskvRecordBatchSinkProvider;
+use crate::data_source::WriteExecExt;
+use crate::extension::physical::plan_node::table_writer::TableWriterExec;
+use crate::extension::physical::plan_node::tag_scan::TagScanExec;
+use crate::tskv_exec::TskvExec;
 
 #[derive(Clone)]
 pub struct ClusterTable {
@@ -43,11 +42,8 @@ impl ClusterTable {
         )))
     }
 
-    pub fn new(coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
-        ClusterTable {
-            coord,
-            schema: Arc::new(schema),
-        }
+    pub fn new(coord: CoordinatorRef, schema: TskvTableSchemaRef) -> Self {
+        ClusterTable { coord, schema }
     }
 
     pub async fn tag_scan(

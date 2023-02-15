@@ -1,16 +1,14 @@
-use error_code::ErrorCode;
-use error_code::ErrorCoder;
+use std::path::{Path, PathBuf};
+
+use error_code::{ErrorCode, ErrorCoder};
 use meta::error::MetaError;
 use models::SeriesId;
 use snafu::Snafu;
-use std::path::{Path, PathBuf};
 
 use crate::index::IndexError;
 use crate::schema::error::SchemaError;
-use crate::{
-    tsm::{ReadTsmError, WriteTsmError},
-    wal,
-};
+use crate::tsm::{ReadTsmError, WriteTsmError};
+use crate::wal;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 

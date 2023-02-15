@@ -1,16 +1,12 @@
 use async_trait::async_trait;
 use coordinator::command;
-use spi::query::{
-    execution::{Output, QueryStateMachineRef},
-    logical_planner::{DropTenantObject, TenantObjectType},
-};
-
+use meta::error::MetaError;
+use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::query::logical_planner::{DropTenantObject, TenantObjectType};
+use spi::{QueryError, Result};
 use trace::debug;
 
 use super::DDLDefinitionTask;
-use meta::error::MetaError;
-use spi::QueryError;
-use spi::Result;
 
 pub struct DropTenantObjectTask {
     stmt: DropTenantObject,

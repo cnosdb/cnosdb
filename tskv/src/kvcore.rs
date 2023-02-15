@@ -1,11 +1,8 @@
+use std::collections::HashMap;
+use std::panic;
+use std::sync::Arc;
 use std::time::Duration;
-use std::{collections::HashMap, panic, sync::Arc};
 
-use crate::compaction::{LevelCompactionPicker, Picker};
-use crate::context::{self, GlobalSequenceContext, GlobalSequenceTask};
-use crate::error::MetaSnafu;
-use crate::kv_option::StorageOptions;
-use crate::tsm::codec::get_str_codec;
 use config::ClusterConfig;
 use datafusion::prelude::Column;
 use flatbuffers::FlatBufferBuilder;
@@ -14,61 +11,52 @@ use futures::FutureExt;
 use libc::printf;
 use meta::meta_manager::RemoteMetaManager;
 use meta::MetaRef;
-use models::predicate::domain::{ColumnDomains, PredicateRef};
-use snafu::{OptionExt, ResultExt};
-use tokio::sync::watch;
-use tokio::sync::watch::{Receiver, Sender};
-use tokio::sync::RwLock;
-use tokio::{
-    runtime::Runtime,
-    sync::{
-        broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender},
-        mpsc::{self, UnboundedReceiver, UnboundedSender},
-        oneshot,
-    },
-    time::Instant,
-};
-
-use crate::error::SendSnafu;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::codec::Encoding;
+use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{
     make_owner, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema, DEFAULT_CATALOG,
 };
+use models::utils::unite_id;
 use models::{
-    utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
-    ValueType,
+    ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp, ValueType,
 };
-use protos::{
-    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
-    models as fb_models,
-};
+use protos::kv_service::{WritePointsRequest, WritePointsResponse};
+use protos::models as fb_models;
+use snafu::{OptionExt, ResultExt};
+use tokio::runtime::Runtime;
+use tokio::sync::broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender};
+use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::{oneshot, watch, RwLock};
+use tokio::time::Instant;
 use trace::{debug, error, info, trace, warn};
 
-use crate::database::Database;
-use crate::error::SchemaSnafu;
-use crate::file_system::file_manager::{self, FileManager};
-use crate::schema::error::SchemaError;
-use crate::tseries_family::TseriesFamily;
-use crate::{
-    compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
-    context::GlobalContext,
-    database,
-    engine::Engine,
-    error::{self, IndexErrSnafu, Result},
-    file_utils,
-    index::IndexResult,
-    kv_option::Options,
-    memcache::{DataType, MemCache},
-    record_file::Reader,
-    summary::{self, Summary, SummaryProcessor, SummaryTask, VersionEdit, WriteSummaryRequest},
-    tseries_family::{SuperVersion, TimeRange, Version},
-    tsm::{DataBlock, TsmTombstone, MAX_BLOCK_VALUES},
-    version_set,
-    version_set::VersionSet,
-    wal::{self, WalEntryType, WalManager, WalTask},
-    Error, Task, TseriesFamilyId,
+use crate::compaction::{
+    self, run_flush_memtable_job, CompactReq, FlushReq, LevelCompactionPicker, Picker,
 };
+use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
+use crate::database::Database;
+use crate::engine::Engine;
+use crate::error::{self, IndexErrSnafu, MetaSnafu, Result, SchemaSnafu, SendSnafu};
+use crate::file_system::file_manager::{self, FileManager};
+use crate::index::IndexResult;
+use crate::kv_option::{Options, StorageOptions};
+use crate::memcache::{DataType, MemCache};
+use crate::record_file::Reader;
+use crate::schema::error::SchemaError;
+use crate::summary::{
+    self, Summary, SummaryProcessor, SummaryTask, VersionEdit, WriteSummaryRequest,
+};
+use crate::tseries_family::{SuperVersion, TimeRange, TseriesFamily, Version};
+use crate::tsm::codec::get_str_codec;
+use crate::tsm::{DataBlock, TsmTombstone, MAX_BLOCK_VALUES};
+use crate::version_set::VersionSet;
+use crate::wal::{self, WalEntryType, WalManager, WalTask};
+use crate::{database, file_utils, version_set, Error, TseriesFamilyId};
+
+pub const COMPACT_REQ_CHANNEL_CAP: usize = 16;
+pub const SUMMARY_REQ_CHANNEL_CAP: usize = 16;
+pub const GLOBAL_TASK_REQ_CHANNEL_CAP: usize = 16;
 
 #[derive(Debug)]
 pub struct TsKv {
@@ -79,24 +67,27 @@ pub struct TsKv {
     meta_manager: MetaRef,
 
     runtime: Arc<Runtime>,
-    wal_sender: UnboundedSender<WalTask>,
-    flush_task_sender: UnboundedSender<FlushReq>,
-    compact_task_sender: UnboundedSender<TseriesFamilyId>,
-    summary_task_sender: UnboundedSender<SummaryTask>,
-    global_seq_task_sender: UnboundedSender<GlobalSequenceTask>,
-    close_sender: BroadcastSender<UnboundedSender<()>>,
+    wal_sender: Sender<WalTask>,
+    flush_task_sender: Sender<FlushReq>,
+    compact_task_sender: Sender<TseriesFamilyId>,
+    summary_task_sender: Sender<SummaryTask>,
+    global_seq_task_sender: Sender<GlobalSequenceTask>,
+    close_sender: BroadcastSender<Sender<()>>,
 }
 
 impl TsKv {
     pub async fn open(meta_manager: MetaRef, opt: Options, runtime: Arc<Runtime>) -> Result<TsKv> {
         let shared_options = Arc::new(opt);
-        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel::<FlushReq>();
+        let (flush_task_sender, flush_task_receiver) =
+            mpsc::channel::<FlushReq>(shared_options.storage.flush_req_channel_cap);
         let (compact_task_sender, compact_task_receiver) =
-            mpsc::unbounded_channel::<TseriesFamilyId>();
-        let (wal_sender, wal_receiver) = mpsc::unbounded_channel::<WalTask>();
-        let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel::<SummaryTask>();
+            mpsc::channel::<TseriesFamilyId>(COMPACT_REQ_CHANNEL_CAP);
+        let (wal_sender, wal_receiver) =
+            mpsc::channel::<WalTask>(shared_options.wal.wal_req_channel_cap);
+        let (summary_task_sender, summary_task_receiver) =
+            mpsc::channel::<SummaryTask>(SUMMARY_REQ_CHANNEL_CAP);
         let (global_seq_task_sender, global_seq_task_receiver) =
-            mpsc::unbounded_channel::<GlobalSequenceTask>();
+            mpsc::channel::<GlobalSequenceTask>(GLOBAL_TASK_REQ_CHANNEL_CAP);
         let (close_sender, _close_receiver) = broadcast::channel(1);
         let (version_set, summary) = Self::recover_summary(
             runtime.clone(),
@@ -152,7 +143,7 @@ impl TsKv {
     }
 
     pub async fn close(&self) {
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(1);
         if let Err(e) = self.close_sender.send(tx) {
             error!("Failed to broadcast close signal: {:?}", e);
         }
@@ -166,9 +157,9 @@ impl TsKv {
         runtime: Arc<Runtime>,
         meta: MetaRef,
         opt: Arc<Options>,
-        flush_task_sender: UnboundedSender<FlushReq>,
-        global_seq_task_sender: UnboundedSender<GlobalSequenceTask>,
-        compact_task_sender: UnboundedSender<TseriesFamilyId>,
+        flush_task_sender: Sender<FlushReq>,
+        global_seq_task_sender: Sender<GlobalSequenceTask>,
+        compact_task_sender: Sender<TseriesFamilyId>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -212,7 +203,7 @@ impl TsKv {
         wal_manager
     }
 
-    fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: UnboundedReceiver<WalTask>) {
+    fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: Receiver<WalTask>) {
         warn!("job 'WAL' starting.");
         let mut close_receiver = self.close_sender.subscribe();
         let f = async move {
@@ -243,7 +234,7 @@ impl TsKv {
                         }
                         info!("job 'WAL' closed.");
                         if let Ok(tx) = close_task {
-                            if let Err(e) = tx.send(()) {
+                            if let Err(e) = tx.send(()).await {
                                 error!("Failed to send wal closed signal: {:?}", e);
                             }
                         }
@@ -258,11 +249,11 @@ impl TsKv {
 
     fn run_flush_job(
         &self,
-        mut receiver: UnboundedReceiver<FlushReq>,
+        mut receiver: Receiver<FlushReq>,
         ctx: Arc<GlobalContext>,
         version_set: Arc<RwLock<VersionSet>>,
-        summary_task_sender: UnboundedSender<SummaryTask>,
-        compact_task_sender: UnboundedSender<TseriesFamilyId>,
+        summary_task_sender: Sender<SummaryTask>,
+        compact_task_sender: Sender<TseriesFamilyId>,
     ) {
         let runtime = self.runtime.clone();
         let f = async move {
@@ -280,11 +271,7 @@ impl TsKv {
         info!("Flush task handler started");
     }
 
-    fn run_summary_job(
-        &self,
-        summary: Summary,
-        mut summary_task_receiver: UnboundedReceiver<SummaryTask>,
-    ) {
+    fn run_summary_job(&self, summary: Summary, mut summary_task_receiver: Receiver<SummaryTask>) {
         let f = async move {
             let mut summary_processor = SummaryProcessor::new(Box::new(summary));
             while let Some(x) = summary_task_receiver.recv().await {
@@ -369,9 +356,9 @@ impl TsKv {
 
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             for (ts_family_id, ts_family) in db.read().await.ts_families().iter() {
-                ts_family.read().delete_columns(&storage_field_ids);
+                ts_family.read().await.delete_columns(&storage_field_ids);
 
-                let version = ts_family.read().super_version();
+                let version = ts_family.read().await.super_version();
                 for column_file in version
                     .version
                     .column_files(&storage_field_ids, &TimeRange::all())
@@ -392,8 +379,8 @@ impl Engine for TsKv {
     async fn write(
         &self,
         id: TseriesFamilyId,
-        write_batch: WritePointsRpcRequest,
-    ) -> Result<WritePointsRpcResponse> {
+        write_batch: WritePointsRequest,
+    ) -> Result<WritePointsResponse> {
         let tenant_name = write_batch
             .meta
             .map(|meta| meta.tenant)
@@ -442,6 +429,7 @@ impl Engine for TsKv {
                     points: Arc::new(enc_points),
                     tenant: Arc::new(tenant_name.as_bytes().to_vec()),
                 })
+                .await
                 .map_err(|err| Error::Send)?;
             seq = rx.await.context(error::ReceiveSnafu)??.0;
         }
@@ -449,30 +437,32 @@ impl Engine for TsKv {
         let opt_tsf = db.read().await.get_tsfamily(id);
         let tsf = match opt_tsf {
             Some(v) => v,
-            None => db.write().await.add_tsfamily(
-                id,
-                seq,
-                None,
-                self.summary_task_sender.clone(),
-                self.flush_task_sender.clone(),
-                self.compact_task_sender.clone(),
-            ),
+            None => {
+                db.write()
+                    .await
+                    .add_tsfamily(
+                        id,
+                        seq,
+                        None,
+                        self.summary_task_sender.clone(),
+                        self.flush_task_sender.clone(),
+                        self.compact_task_sender.clone(),
+                    )
+                    .await
+            }
         };
 
-        tsf.read().put_points(seq, write_group);
-        tsf.write().check_to_flush();
-        Ok(WritePointsRpcResponse {
-            version: 1,
-            points: vec![],
-        })
+        let size = tsf.read().await.put_points(seq, write_group);
+        tsf.write().await.check_to_flush().await;
+        Ok(WritePointsResponse { size })
     }
 
     async fn write_from_wal(
         &self,
         id: TseriesFamilyId,
-        write_batch: WritePointsRpcRequest,
+        write_batch: WritePointsRequest,
         seq: u64,
-    ) -> Result<WritePointsRpcResponse> {
+    ) -> Result<()> {
         let tenant_name = write_batch
             .meta
             .map(|meta| meta.tenant)
@@ -509,69 +499,24 @@ impl Engine for TsKv {
         let opt_tsf = db.read().await.get_tsfamily(id);
         let tsf = match opt_tsf {
             Some(v) => v,
-            None => db.write().await.add_tsfamily(
-                id,
-                seq,
-                None,
-                self.summary_task_sender.clone(),
-                self.flush_task_sender.clone(),
-                self.compact_task_sender.clone(),
-            ),
-        };
-
-        tsf.read().put_points(seq, write_group);
-
-        return Ok(WritePointsRpcResponse {
-            version: 1,
-            points: vec![],
-        });
-    }
-
-    async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
-        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            let mut db_wlock = db.write().await;
-
-            db_wlock.del_tsfamily(id, self.summary_task_sender.clone());
-
-            let ts_dir = self
-                .options
-                .storage
-                .ts_family_dir(&make_owner(tenant, database), id);
-            let result = std::fs::remove_dir_all(&ts_dir);
-            info!(
-                "Remove TsFamily data '{}', result: {:?}",
-                ts_dir.display(),
-                result
-            );
-        }
-
-        Ok(())
-    }
-
-    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
-        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            if let Some(tsfamily) = db.read().await.get_tsfamily(id) {
-                let request = {
-                    let mut tsfamily = tsfamily.write();
-                    tsfamily.switch_to_immutable();
-                    tsfamily.flush_req(true)
-                };
-
-                if let Some(req) = request {
-                    run_flush_memtable_job(
-                        req,
-                        self.global_ctx.clone(),
-                        self.version_set.clone(),
+            None => {
+                db.write()
+                    .await
+                    .add_tsfamily(
+                        id,
+                        seq,
+                        None,
                         self.summary_task_sender.clone(),
+                        self.flush_task_sender.clone(),
                         self.compact_task_sender.clone(),
                     )
                     .await
-                    .unwrap()
-                }
             }
-        }
+        };
 
-        Ok(())
+        tsf.read().await.put_points(seq, write_group);
+
+        return Ok(());
     }
 
     async fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
@@ -584,7 +529,9 @@ impl Engine for TsKv {
                 .collect();
             for ts_family_id in ts_family_ids {
                 db_wlock.del_ts_index(ts_family_id);
-                db_wlock.del_tsfamily(ts_family_id, self.summary_task_sender.clone());
+                db_wlock
+                    .del_tsfamily(ts_family_id, self.summary_task_sender.clone())
+                    .await;
             }
         }
 
@@ -607,6 +554,118 @@ impl Engine for TsKv {
         let tenant = tenant.to_string();
 
         database::delete_table_async(tenant, database, table, version_set).await
+    }
+
+    async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            let mut db_wlock = db.write().await;
+
+            db_wlock
+                .del_tsfamily(id, self.summary_task_sender.clone())
+                .await;
+
+            let ts_dir = self
+                .options
+                .storage
+                .ts_family_dir(&make_owner(tenant, database), id);
+            let result = std::fs::remove_dir_all(&ts_dir);
+            info!(
+                "Remove TsFamily data '{}', result: {:?}",
+                ts_dir.display(),
+                result
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            if let Some(tsfamily) = db.read().await.get_tsfamily(id) {
+                let request = {
+                    let mut tsfamily = tsfamily.write().await;
+                    tsfamily.switch_to_immutable();
+                    tsfamily.flush_req(true)
+                };
+
+                if let Some(req) = request {
+                    run_flush_memtable_job(
+                        req,
+                        self.global_ctx.clone(),
+                        self.version_set.clone(),
+                        self.summary_task_sender.clone(),
+                        self.compact_task_sender.clone(),
+                    )
+                    .await
+                    .unwrap()
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn add_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        new_column: TableColumn,
+    ) -> Result<()> {
+        let db = self.get_db(tenant, database).await?;
+        let db = db.read().await;
+        let sids = db.get_table_sids(table).await?;
+        for (ts_family_id, ts_family) in db.ts_families().iter() {
+            ts_family.read().await.add_column(&sids, &new_column);
+        }
+        Ok(())
+    }
+
+    async fn drop_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        column_name: &str,
+    ) -> Result<()> {
+        let db = self.get_db(tenant, database).await?;
+        let schema =
+            db.read()
+                .await
+                .get_table_schema(table)?
+                .ok_or(SchemaError::TableNotFound {
+                    table: table.to_string(),
+                })?;
+        let column_id = schema
+            .column(column_name)
+            .ok_or(SchemaError::NotFoundField {
+                field: column_name.to_string(),
+            })?
+            .id;
+        self.delete_columns(tenant, database, table, &[column_id])
+            .await?;
+        Ok(())
+    }
+
+    async fn change_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        column_name: &str,
+        new_column: TableColumn,
+    ) -> Result<()> {
+        let db = self.get_db(tenant, database).await?;
+        let db = db.read().await;
+        let sids = db.get_table_sids(table).await?;
+
+        for (ts_family_id, ts_family) in db.ts_families().iter() {
+            ts_family
+                .read()
+                .await
+                .change_column(&sids, column_name, &new_column);
+        }
+        Ok(())
     }
 
     async fn delete_series(
@@ -639,19 +698,6 @@ impl Engine for TsKv {
         //     }
         // }
         Ok(())
-    }
-
-    async fn get_table_schema(
-        &self,
-        tenant: &str,
-        database: &str,
-        tab: &str,
-    ) -> Result<Option<TskvTableSchema>> {
-        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            let val = db.read().await.get_table_schema(tab)?;
-            return Ok(val);
-        }
-        Ok(None)
     }
 
     async fn get_series_id_by_filter(
@@ -719,11 +765,15 @@ impl Engine for TsKv {
             .get_tsfamily_by_name_id(tenant, database, vnode_id)
             .await
         {
-            Ok(Some(tsf.read().super_version()))
+            Ok(Some(tsf.read().await.super_version()))
         } else {
             warn!("ts_family with db name '{}' not found.", database);
             Ok(None)
         }
+    }
+
+    fn get_storage_options(&self) -> Arc<StorageOptions> {
+        self.options.storage.clone()
     }
 
     async fn get_vnode_summary(
@@ -737,9 +787,11 @@ impl Engine for TsKv {
             let db = db.read().await;
             let mut file_metas = HashMap::new();
             if let Some(tsf) = db.get_tsfamily(vnode_id) {
-                let ve =
-                    tsf.read()
-                        .snapshot(self.global_ctx.last_seq(), db.owner(), &mut file_metas);
+                let ve = tsf.read().await.snapshot(
+                    self.global_ctx.last_seq(),
+                    db.owner(),
+                    &mut file_metas,
+                );
                 Ok(Some(ve))
             } else {
                 warn!(
@@ -775,19 +827,23 @@ impl Engine for TsKv {
             let mut db_wlock = db.write().await;
             // If there is a ts_family here, delete and re-build it.
             if let Some(tsf) = db_wlock.get_tsfamily(vnode_id) {
-                db_wlock.del_tsfamily(vnode_id, self.summary_task_sender.clone());
+                db_wlock
+                    .del_tsfamily(vnode_id, self.summary_task_sender.clone())
+                    .await;
             }
 
             db_wlock.get_ts_index_or_add(vnode_id).await?;
 
-            db_wlock.add_tsfamily(
-                vnode_id,
-                0,
-                Some(summary),
-                self.summary_task_sender.clone(),
-                self.flush_task_sender.clone(),
-                self.compact_task_sender.clone(),
-            );
+            db_wlock
+                .add_tsfamily(
+                    vnode_id,
+                    0,
+                    Some(summary),
+                    self.summary_task_sender.clone(),
+                    self.flush_task_sender.clone(),
+                    self.compact_task_sender.clone(),
+                )
+                .await;
             Ok(())
         } else {
             return Err(SchemaError::DatabaseNotFound {
@@ -795,72 +851,6 @@ impl Engine for TsKv {
             }
             .into());
         }
-    }
-
-    async fn add_table_column(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        new_column: TableColumn,
-    ) -> Result<()> {
-        let db = self.get_db(tenant, database).await?;
-        let db = db.read().await;
-        let sids = db.get_table_sids(table).await?;
-        for (ts_family_id, ts_family) in db.ts_families().iter() {
-            ts_family.read().add_column(&sids, &new_column);
-        }
-        Ok(())
-    }
-
-    async fn drop_table_column(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        column_name: &str,
-    ) -> Result<()> {
-        let db = self.get_db(tenant, database).await?;
-        let schema =
-            db.read()
-                .await
-                .get_table_schema(table)?
-                .ok_or(SchemaError::TableNotFound {
-                    table: table.to_string(),
-                })?;
-        let column_id = schema
-            .column(column_name)
-            .ok_or(SchemaError::NotFoundField {
-                field: column_name.to_string(),
-            })?
-            .id;
-        self.delete_columns(tenant, database, table, &[column_id])
-            .await?;
-        Ok(())
-    }
-
-    async fn change_table_column(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        column_name: &str,
-        new_column: TableColumn,
-    ) -> Result<()> {
-        let db = self.get_db(tenant, database).await?;
-        let db = db.read().await;
-        let sids = db.get_table_sids(table).await?;
-
-        for (ts_family_id, ts_family) in db.ts_families().iter() {
-            ts_family
-                .read()
-                .change_column(&sids, column_name, &new_column);
-        }
-        Ok(())
-    }
-
-    fn get_storage_options(&self) -> Arc<StorageOptions> {
-        self.options.storage.clone()
     }
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
@@ -873,7 +863,9 @@ impl Engine for TsKv {
             {
                 let mut db_wlock = db.write().await;
                 db_wlock.del_ts_index(id);
-                db_wlock.del_tsfamily(id, self.summary_task_sender.clone());
+                db_wlock
+                    .del_tsfamily(id, self.summary_task_sender.clone())
+                    .await;
             }
             let tsf_dir = self.options.storage.tsfamily_dir(db_name, id);
             if let Err(e) = std::fs::remove_dir_all(&tsf_dir) {
@@ -894,7 +886,7 @@ impl Engine for TsKv {
             // TODO: stop current and prevent next flush and compaction.
             for (ts_family_id, ts_family) in db.read().await.ts_families() {
                 let picker = LevelCompactionPicker::new(self.options.storage.clone());
-                let version = ts_family.read().version();
+                let version = ts_family.read().await.version();
                 if let Some(req) = picker.pick_compaction(version) {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some((version_edit, file_metas))) => {
@@ -924,35 +916,39 @@ impl Engine for TsKv {
 
 #[cfg(test)]
 impl TsKv {
-    pub(crate) fn summary_task_sender(&self) -> UnboundedSender<SummaryTask> {
+    pub(crate) fn summary_task_sender(&self) -> Sender<SummaryTask> {
         self.summary_task_sender.clone()
     }
 
-    pub(crate) fn flush_task_sender(&self) -> UnboundedSender<FlushReq> {
+    pub(crate) fn flush_task_sender(&self) -> Sender<FlushReq> {
         self.flush_task_sender.clone()
     }
 
-    pub(crate) fn compact_task_sender(&self) -> UnboundedSender<TseriesFamilyId> {
+    pub(crate) fn compact_task_sender(&self) -> Sender<TseriesFamilyId> {
         self.compact_task_sender.clone()
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicI64, Ordering};
+    use std::sync::{atomic, Arc};
+
     use config::get_config;
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
     use models::utils::now_timestamp;
     use models::{ColumnId, InMemPoint, SeriesId, SeriesKey, Timestamp};
-    use protos::{models::Points, models_helper};
-    use std::collections::HashMap;
-    use std::sync::{atomic, Arc};
+    use protos::models::Points;
+    use protos::models_helper;
     use tokio::runtime::{self, Runtime};
-
-    use crate::{engine::Engine, error, tsm::DataBlock, Options, TimeRange, TsKv};
-    use std::sync::atomic::{AtomicI64, Ordering};
     use tokio::sync::watch;
+
+    use crate::engine::Engine;
+    use crate::tsm::DataBlock;
+    use crate::{error, Options, TimeRange, TsKv};
 
     #[tokio::test]
     #[ignore]

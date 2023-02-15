@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
-use datafusion::{datasource::MemTable, logical_expr::TableType};
-use meta::{error::MetaError, MetaClientRef};
-use models::{auth::user::User, oid::Identifier};
+use datafusion::datasource::MemTable;
+use datafusion::logical_expr::TableType;
+use meta::error::MetaError;
+use meta::MetaClientRef;
+use models::auth::user::User;
+use models::oid::Identifier;
 
-use crate::{
-    dispatcher::query_tracker::QueryTracker,
-    metadata::information_schema_provider::{
-        builder::tables::InformationSchemaTablesBuilder, InformationSchemaTableFactory,
-    },
-};
+use crate::dispatcher::query_tracker::QueryTracker;
+use crate::metadata::information_schema_provider::builder::tables::InformationSchemaTablesBuilder;
+use crate::metadata::information_schema_provider::InformationSchemaTableFactory;
 
 const INFORMATION_SCHEMA_TABLES: &str = "TABLES";
 

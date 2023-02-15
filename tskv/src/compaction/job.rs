@@ -1,35 +1,29 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 use datafusion::arrow::compute::kernels::limit;
-use tokio::{
-    runtime::Runtime,
-    sync::{
-        broadcast,
-        mpsc::{UnboundedReceiver, UnboundedSender},
-        oneshot, RwLock, Semaphore,
-    },
-    task::JoinHandle,
-    time::Instant,
-};
+use tokio::runtime::Runtime;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{broadcast, oneshot, RwLock, Semaphore};
+use tokio::task::JoinHandle;
+use tokio::time::Instant;
 use trace::{error, info, warn};
 
-use crate::{
-    compaction::{LevelCompactionPicker, Picker},
-    context::GlobalContext,
-    error::Result,
-    kv_option::StorageOptions,
-    summary::SummaryTask,
-    version_set::VersionSet,
-    TseriesFamilyId,
-};
+use crate::compaction::{LevelCompactionPicker, Picker};
+use crate::context::GlobalContext;
+use crate::error::Result;
+use crate::kv_option::StorageOptions;
+use crate::summary::SummaryTask;
+use crate::version_set::VersionSet;
+use crate::TseriesFamilyId;
 
 pub fn run(
     storage_opt: Arc<StorageOptions>,
     runtime: Arc<Runtime>,
-    mut receiver: UnboundedReceiver<TseriesFamilyId>,
+    mut receiver: Receiver<TseriesFamilyId>,
     ctx: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
-    summary_task_sender: UnboundedSender<SummaryTask>,
+    summary_task_sender: Sender<SummaryTask>,
 ) -> JoinHandle<()> {
     let runtime_inner = runtime.clone();
 
@@ -50,7 +44,7 @@ pub fn run(
                 let start = Instant::now();
 
                 let picker = LevelCompactionPicker::new(storage_opt.clone());
-                let version = tsf.read().version();
+                let version = tsf.read().await.version();
                 let compact_req = picker.pick_compaction(version);
                 if let Some(req) = compact_req {
                     let database = req.database.clone();

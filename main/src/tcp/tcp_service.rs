@@ -1,3 +1,11 @@
+use std::collections::HashMap;
+use std::fmt::format;
+use std::net::{self, SocketAddr};
+use std::sync::Arc;
+
+use clap::ErrorKind::NoEquals;
+use coordinator::command::*;
+use coordinator::errors::*;
 use coordinator::file_info::get_files_meta;
 use coordinator::reader::{QueryExecutor, ReaderIterator};
 use coordinator::service::CoordinatorRef;
@@ -6,53 +14,39 @@ use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::future::ok;
 use futures::{executor, Future};
 use meta::MetaRef;
+use models::auth::user::{ROOT, ROOT_PWD};
+use models::meta_data::{self, VnodeInfo};
 use models::predicate::domain::Predicate;
+use protos::kv_service::{Meta, WritePointsRequest};
 use snafu::ResultExt;
 use spi::server::dbms::DBMSRef;
-use std::fmt::format;
-use std::net::{self, SocketAddr};
 use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufReader};
-use tokio::sync::mpsc::Sender;
-use tskv::iterator::{QueryOption, TableScanMetrics};
-
-use clap::ErrorKind::NoEquals;
-use std::{collections::HashMap, sync::Arc};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc::Sender;
+use tokio::sync::oneshot;
 // use std::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot::Receiver;
-
-use tokio::sync::oneshot;
 use tokio::time::{self, Duration};
-use tskv::{engine::EngineRef, VersionEdit};
-
-use coordinator::command::*;
-use coordinator::errors::*;
-use models::auth::user::{ROOT, ROOT_PWD};
-use protos::kv_service::{Meta, WritePointsRpcRequest};
-
-use models::meta_data::{self, VnodeInfo};
-
-use crate::server;
-
-use crate::server::{Service, ServiceHandle};
-
 use trace::{debug, error, info};
+use tskv::engine::EngineRef;
+use tskv::iterator::{QueryOption, TableScanMetrics};
+use tskv::VersionEdit;
 
 use super::vnode_manager::VnodeManager;
+use crate::server;
+use crate::server::{Service, ServiceHandle};
 
 pub struct TcpService {
     addr: SocketAddr,
-    dbms: DBMSRef,
     coord: CoordinatorRef,
     handle: Option<ServiceHandle<()>>,
 }
 
 impl TcpService {
-    pub fn new(dbms: DBMSRef, coord: CoordinatorRef, addr: SocketAddr) -> Self {
+    pub fn new(coord: CoordinatorRef, addr: SocketAddr) -> Self {
         Self {
             addr,
-            dbms,
             coord,
             handle: None,
         }
@@ -66,10 +60,9 @@ impl Service for TcpService {
         let (shutdown, rx) = oneshot::channel();
 
         let addr = self.addr;
-        let dbms = self.dbms.clone();
         let coord = self.coord.clone();
 
-        let join_handle = tokio::spawn(service_run(addr, dbms, coord));
+        let join_handle = tokio::spawn(service_run(addr, coord));
         self.handle = Some(ServiceHandle::new(
             "tcp service".to_string(),
             join_handle,
@@ -86,7 +79,7 @@ impl Service for TcpService {
     }
 }
 
-async fn service_run(addr: SocketAddr, dbms: DBMSRef, coord: CoordinatorRef) {
+async fn service_run(addr: SocketAddr, coord: CoordinatorRef) {
     let listener = TcpListener::bind(addr.to_string()).await.unwrap();
     info!("tcp server start addr: {}", addr);
 
@@ -95,10 +88,9 @@ async fn service_run(addr: SocketAddr, dbms: DBMSRef, coord: CoordinatorRef) {
             Ok((client, address)) => {
                 debug!("tcp client address: {}", address);
 
-                let dbms = dbms.clone();
                 let coord = coord.clone();
                 let processor_fn = async move {
-                    let result = process_client(client, dbms, coord).await;
+                    let result = process_client(client, coord).await;
                     info!("process client {} result: {:#?}", address, result);
                 };
 
@@ -113,55 +105,57 @@ async fn service_run(addr: SocketAddr, dbms: DBMSRef, coord: CoordinatorRef) {
     }
 }
 
-async fn process_client(
-    mut client: TcpStream,
-    dbms: DBMSRef,
-    coord: CoordinatorRef,
-) -> CoordinatorResult<()> {
-    loop {
-        let recv_cmd = recv_command(&mut client).await?;
+async fn process_client(mut client: TcpStream, coord: CoordinatorRef) -> CoordinatorResult<()> {
+    if let Some(kv_inst) = coord.store_engine() {
+        loop {
+            let recv_cmd = recv_command(&mut client).await?;
+            match recv_cmd {
+                CoordinatorTcpCmd::WriteVnodePointCmd(cmd) => {
+                    process_vnode_write_command(&mut client, cmd, kv_inst.clone()).await?;
+                }
 
-        match recv_cmd {
-            CoordinatorTcpCmd::WriteVnodePointCmd(cmd) => {
-                process_vnode_write_command(&mut client, cmd, coord.store_engine()).await?;
+                CoordinatorTcpCmd::AdminStatementCmd(cmd) => {
+                    process_admin_statement_command(&mut client, cmd, coord.clone()).await?;
+                }
+
+                CoordinatorTcpCmd::QueryRecordBatchCmd(cmd) => {
+                    process_query_record_batch_command(
+                        &mut client,
+                        cmd,
+                        kv_inst.clone(),
+                        coord.meta_manager(),
+                    )
+                    .await?;
+                }
+
+                CoordinatorTcpCmd::FetchVnodeSummaryCmd(cmd) => {
+                    process_fetch_vnode_summary_command(
+                        &mut client,
+                        cmd,
+                        kv_inst.clone(),
+                        coord.meta_manager(),
+                    )
+                    .await?;
+                }
+
+                CoordinatorTcpCmd::ApplyVnodeSummaryCmd(cmd) => {
+                    process_apply_vnode_summary_command(
+                        &mut client,
+                        cmd,
+                        kv_inst.clone(),
+                        coord.meta_manager(),
+                    )
+                    .await?
+                }
+
+                _ => {}
             }
-
-            CoordinatorTcpCmd::AdminStatementCmd(cmd) => {
-                process_admin_statement_command(&mut client, cmd, coord.clone()).await?;
-            }
-
-            CoordinatorTcpCmd::QueryRecordBatchCmd(cmd) => {
-                process_query_record_batch_command(
-                    &mut client,
-                    cmd,
-                    coord.store_engine(),
-                    coord.meta_manager(),
-                )
-                .await?;
-            }
-
-            CoordinatorTcpCmd::FetchVnodeSummaryCmd(cmd) => {
-                process_fetch_vnode_summary_command(
-                    &mut client,
-                    cmd,
-                    coord.store_engine(),
-                    coord.meta_manager(),
-                )
-                .await?;
-            }
-
-            CoordinatorTcpCmd::ApplyVnodeSummaryCmd(cmd) => {
-                process_apply_vnode_summary_command(
-                    &mut client,
-                    cmd,
-                    coord.store_engine(),
-                    coord.meta_manager(),
-                )
-                .await?
-            }
-
-            _ => {}
         }
+    } else {
+        Err(CoordinatorError::KvInstanceNotFound {
+            vnode_id: 0,
+            node_id: coord.node_id(),
+        })
     }
 }
 
@@ -170,7 +164,7 @@ async fn process_vnode_write_command(
     cmd: WriteVnodeRequest,
     kv_inst: EngineRef,
 ) -> CoordinatorResult<()> {
-    let req = WritePointsRpcRequest {
+    let req = WritePointsRequest {
         version: 1,
         meta: Some(Meta {
             tenant: cmd.tenant.clone(),
@@ -205,7 +199,8 @@ async fn process_admin_statement_command(
     let mut rsp_code = SUCCESS_RESPONSE_CODE;
 
     let meta = coord.meta_manager();
-    let engine = coord.store_engine();
+    // coord.store_engine() is not none
+    let engine = coord.store_engine().unwrap();
     match cmd.stmt {
         AdminStatementType::DropDB { db } => {
             let _ = engine.drop_database(&cmd.tenant, &db).await;
@@ -374,7 +369,7 @@ async fn query_record_batch(
         vnodes.push(VnodeInfo { id: *id, node_id })
     }
 
-    let executor = QueryExecutor::new(option, kv_inst, meta, sender.clone());
+    let executor = QueryExecutor::new(option, Some(kv_inst), meta, sender.clone());
     if let Err(err) = executor.local_node_executor(vnodes).await {
         info!("select statement execute failed: {}", err.to_string());
         let _ = sender.send(Err(err)).await;

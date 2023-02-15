@@ -1,19 +1,14 @@
-use std::{
-    collections::{HashMap, HashSet},
-    hash::Hash,
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+use std::sync::Arc;
 
-use crate::auth::AuthError;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
+use super::privilege::{DatabasePrivilege, GlobalPrivilege, Privilege, TenantObjectPrivilege};
+use super::Result;
+use crate::auth::AuthError;
 use crate::oid::{Id, Identifier};
-
-use super::{
-    privilege::{DatabasePrivilege, GlobalPrivilege, Privilege, TenantObjectPrivilege},
-    Result,
-};
 
 pub enum UserRole<T> {
     // 拥有对整个数据库实例的最高级权限

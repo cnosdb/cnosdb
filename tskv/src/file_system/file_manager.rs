@@ -1,19 +1,14 @@
+use std::borrow::BorrowMut;
+use std::fs;
 use std::fs::OpenOptions;
-use std::{
-    borrow::BorrowMut,
-    fs,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use once_cell::sync::OnceCell;
 use snafu::{ResultExt, Snafu};
 
-use crate::{
-    error,
-    file_system::file::async_file::{AsyncFile, FsRuntime},
-    Error, Result,
-};
+use crate::file_system::file::async_file::{AsyncFile, FsRuntime};
+use crate::{error, Error, Result};
 
 #[derive(Snafu, Debug)]
 pub enum FileError {
@@ -173,17 +168,17 @@ pub async fn open_create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
 
 #[cfg(test)]
 mod test {
+    use std::os::unix::io::FromRawFd;
     use std::os::unix::prelude::AsRawFd;
+    use std::path::Path;
     use std::sync::Arc;
-    use std::{os::unix::io::FromRawFd, path::Path};
 
     use libc::send;
     use tokio::sync::{mpsc, oneshot};
     use trace::info;
 
-    use crate::file_system::{file_manager, FileCursor, IFile};
-
     use super::FileManager;
+    use crate::file_system::{file_manager, FileCursor, IFile};
 
     #[tokio::test]
     async fn test_get_instance() {
@@ -293,7 +288,7 @@ mod test {
             let (res, buf) = file.write_at(&b"hello"[..], 0).await;
             let fd = file.as_raw_fd();
             println!("main thread: file: {:?}, {:?}", file, fd);
-            let (sender, mut receiver) = mpsc::unbounded_channel();
+            let (sender, mut receiver) = mpsc::channel();
             drop(file);
             let thread = std::thread::spawn(move || {
                 let fd = receiver.blocking_recv().unwrap();

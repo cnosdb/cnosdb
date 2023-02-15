@@ -1,13 +1,11 @@
-use actix_web::get;
-use actix_web::post;
-use actix_web::web;
-use actix_web::web::Data;
-use actix_web::Responder;
-use openraft::error::Infallible;
-use pprof::protos::Message;
 use std::fs::File;
 use std::io::Write;
 use std::time::Duration;
+
+use actix_web::web::Data;
+use actix_web::{get, post, web, Responder};
+use openraft::error::Infallible;
+use pprof::protos::Message;
 use trace::info;
 use web::Json;
 

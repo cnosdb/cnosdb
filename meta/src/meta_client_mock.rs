@@ -1,39 +1,30 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use models::{
-    auth::{
-        privilege::DatabasePrivilege,
-        role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier},
-        user::UserDesc,
-    },
-    meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet},
-    oid::Oid,
-    schema::{
-        DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
-    },
+use models::auth::privilege::DatabasePrivilege;
+use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier};
+use models::auth::user::UserDesc;
+use models::limiter::LimiterConfig;
+use models::meta_data::{
+    BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
 };
-use models::{limiter::LimiterConfig, meta_data::VnodeInfo};
-use models::{meta_data::VnodeAllInfo, oid::Identifier};
+use models::oid::{Identifier, Oid};
+use models::schema::{
+    DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
+};
 use tokio::net::TcpStream;
 
-use crate::{
-    error::{MetaError, MetaResult},
-    meta_admin::AdminMeta,
-    meta_manager::MetaManager,
-    store::command::EntryLog,
-    tenant_manager::TenantManager,
-    MetaClientRef, TenantManagerRef, UserManagerRef,
-};
-use crate::{
-    limiter::{Limiter, LimiterImpl},
-    AdminMetaRef,
-};
-use crate::{meta_client::MetaClient, user_manager::UserManagerMock};
+use crate::error::{MetaError, MetaResult};
+use crate::limiter::{Limiter, LimiterImpl};
+use crate::meta_admin::AdminMeta;
+use crate::meta_client::MetaClient;
+use crate::meta_manager::MetaManager;
+use crate::store::command::EntryLog;
+use crate::tenant_manager::TenantManager;
+use crate::user_manager::UserManagerMock;
+use crate::{AdminMetaRef, MetaClientRef, TenantManagerRef, UserManagerRef};
 
 #[derive(Default, Debug)]
 pub struct MockAdminMeta {}
@@ -122,15 +113,19 @@ impl MetaClient for MockMetaClient {
         Ok(None)
     }
 
-    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
-        Ok(Some(TskvTableSchema::default()))
+    fn get_tskv_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
+        Ok(Some(Arc::new(TskvTableSchema::default())))
     }
 
     fn get_external_table_schema(
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<ExternalTableSchema>> {
+    ) -> MetaResult<Option<Arc<ExternalTableSchema>>> {
         Ok(None)
     }
 

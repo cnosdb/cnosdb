@@ -1,4 +1,3 @@
-use crate::data_source::sink::RecordBatchSerializer;
 use async_trait::async_trait;
 use bytes::Bytes;
 use datafusion::arrow::json::LineDelimitedWriter;
@@ -7,6 +6,8 @@ use futures::{pin_mut, TryStreamExt};
 use snafu::ResultExt;
 use spi::query::datasource::WriteContext;
 use spi::{Result, SerializeJsonSnafu};
+
+use crate::data_source::sink::RecordBatchSerializer;
 
 pub struct NdJsonRecordBatchSerializer {}
 

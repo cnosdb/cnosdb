@@ -1,35 +1,27 @@
 #![allow(clippy::if_same_then_else)]
 
+use std::fmt::Debug;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use config::ClusterConfig;
-use models::{
-    auth::{role::UserRole, user::User},
-    meta_data::*,
-    utils::min_num,
-};
+use models::auth::role::{TenantRoleIdentifier, UserRole};
+use models::auth::user::User;
+use models::meta_data::*;
+use models::oid::Identifier;
+use models::utils::min_num;
 use parking_lot::RwLock;
-use std::{
-    fmt::Debug,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use trace::info;
 
-use models::auth::role::TenantRoleIdentifier;
-use models::oid::Identifier;
-
-use crate::{
-    client::MetaHttpClient,
-    error::{MetaError, MetaResult},
-    meta_admin::RemoteAdminMeta,
-    store::{command, key_path},
-    tenant_manager::RemoteTenantManager,
-    user_manager::RemoteUserManager,
-    AdminMetaRef, TenantManagerRef, UserManagerRef,
-};
+use crate::client::MetaHttpClient;
+use crate::error::{MetaError, MetaResult};
+use crate::meta_admin::RemoteAdminMeta;
+use crate::store::{command, key_path};
+use crate::tenant_manager::RemoteTenantManager;
+use crate::user_manager::RemoteUserManager;
+use crate::{AdminMetaRef, TenantManagerRef, UserManagerRef};
 
 #[async_trait]
 pub trait MetaManager: Send + Sync + Debug {
@@ -68,11 +60,11 @@ impl RemoteMetaManager {
         let admin: AdminMetaRef = Arc::new(RemoteAdminMeta::new(config.clone()));
         let user_manager = Arc::new(RemoteUserManager::new(
             config.name.clone(),
-            config.meta.clone(),
+            config.meta_service_addr.clone(),
         ));
         let tenant_manager = Arc::new(RemoteTenantManager::new(
             config.name.clone(),
-            config.meta.clone(),
+            config.meta_service_addr.clone(),
             config.node_id,
             ver_change_sender,
         ));
@@ -169,7 +161,7 @@ impl RemoteMetaManager {
         let client_id = format!("{}.{}", tenant_name, mgr.config.node_id);
         let mut request = (client_id, mgr.config.name.clone(), tenant_name, base_ver);
 
-        let client = MetaHttpClient::new(1, mgr.config.meta.clone());
+        let client = MetaHttpClient::new(1, mgr.config.meta_service_addr.clone());
         loop {
             if let Ok(watch_data) = client.watch::<command::WatchData>(&request).await {
                 if watch_data.full_sync {

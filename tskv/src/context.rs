@@ -1,14 +1,10 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::{
-        atomic::{AtomicU32, AtomicU64, Ordering},
-        Arc,
-    },
-};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
 
 use parking_lot::RwLock;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 
 use crate::TseriesFamilyId;
 
@@ -17,7 +13,6 @@ pub struct GlobalContext {
     file_id: AtomicU64,
     mem_seq: AtomicU64,
     last_seq: AtomicU64,
-    tsfamily_id: AtomicU32,
 }
 
 impl GlobalContext {
@@ -26,7 +21,6 @@ impl GlobalContext {
             file_id: AtomicU64::new(0),
             mem_seq: AtomicU64::new(0),
             last_seq: AtomicU64::new(0),
-            tsfamily_id: AtomicU32::new(0),
         }
     }
 }
@@ -53,18 +47,6 @@ impl GlobalContext {
         self.last_seq.load(Ordering::Acquire)
     }
 
-    pub fn tsfamily_id(&self) -> TseriesFamilyId {
-        self.tsfamily_id.load(Ordering::Acquire)
-    }
-
-    /// # Examples
-    ///  ```ignore
-    ///  assert_eq!(foo.tsfamily_id_next(), 0);
-    ///  assert_eq!(foo.tsfamily_id(), 1);
-    /// ```
-    pub fn tsfamily_id_next(&self) -> TseriesFamilyId {
-        self.tsfamily_id.fetch_add(1, Ordering::SeqCst)
-    }
     pub fn fetch_add_log_seq(&self, n: u64) -> u64 {
         self.file_id.fetch_add(n, Ordering::SeqCst)
     }
@@ -74,9 +56,6 @@ impl GlobalContext {
     }
     pub fn set_file_id(&self, v: u64) {
         self.file_id.store(v, Ordering::Release);
-    }
-    pub fn set_tsfamily_id(&self, v: TseriesFamilyId) {
-        self.tsfamily_id.store(v, Ordering::Release);
     }
 
     pub fn mark_log_number_used(&self, v: u64) {
@@ -196,7 +175,7 @@ pub struct GlobalSequenceTask {
 /// Start a async job to maintain GlobalSequenceCOntext.
 pub(crate) fn run_global_context_job(
     runtime: Arc<Runtime>,
-    mut receiver: UnboundedReceiver<GlobalSequenceTask>,
+    mut receiver: Receiver<GlobalSequenceTask>,
     global_sequence_context: Arc<GlobalSequenceContext>,
 ) {
     runtime.spawn(async move {

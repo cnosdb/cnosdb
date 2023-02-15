@@ -1,34 +1,29 @@
-use std::{
-    borrow::Borrow,
-    fmt::Debug,
-    path::{Path, PathBuf},
-    ptr,
-    sync::Arc,
-};
+use std::borrow::Borrow;
+use std::fmt::Debug;
+use std::path::{Path, PathBuf};
+use std::ptr;
+use std::sync::Arc;
 
 use minivec::MiniVec;
+use models::{utils as model_utils, FieldId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
-
-use models::{utils as model_utils, FieldId, Timestamp, ValueType};
 use utils::BloomFilter;
 
-use crate::{
-    byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
-    error::{self, Error, Result},
-    file_system::{file_manager, AsyncFile, IFile},
-    file_utils,
-    tseries_family::TimeRange,
-    tsm::{
-        codec::{
-            get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec,
-            get_ts_codec, get_u64_codec, DataBlockEncoding,
-        },
-        get_data_block_meta_unchecked, get_index_meta_unchecked,
-        tombstone::TsmTombstone,
-        BlockEntry, BlockMeta, DataBlock, Index, IndexEntry, IndexMeta, BLOCK_META_SIZE,
-        BLOOM_FILTER_SIZE, FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
-    },
+use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64};
+use crate::error::{self, Error, Result};
+use crate::file_system::{file_manager, AsyncFile, IFile};
+use crate::file_utils;
+use crate::tseries_family::TimeRange;
+use crate::tsm::codec::{
+    get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
+    get_u64_codec, DataBlockEncoding,
+};
+use crate::tsm::tombstone::TsmTombstone;
+use crate::tsm::{
+    get_data_block_meta_unchecked, get_index_meta_unchecked, BlockEntry, BlockMeta, DataBlock,
+    Index, IndexEntry, IndexMeta, BLOCK_META_SIZE, BLOOM_FILTER_SIZE, FOOTER_SIZE, INDEX_META_SIZE,
+    MAX_BLOCK_VALUES,
 };
 
 pub type ReadTsmResult<T, E = ReadTsmError> = std::result::Result<T, E>;
@@ -672,27 +667,22 @@ pub fn decode_data_block(
 #[cfg(test)]
 pub mod tsm_reader_tests {
     use core::panic;
-    use std::{
-        collections::HashMap,
-        path::{Path, PathBuf},
-        sync::Arc,
-    };
-
-    use parking_lot::Mutex;
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
 
     use models::{FieldId, Timestamp};
+    use parking_lot::Mutex;
     use snafu::ResultExt;
 
+    use crate::error::{self, Error, Result};
+    use crate::file_system::file_manager::{self, get_file_manager};
+    use crate::file_utils;
+    use crate::tseries_family::TimeRange;
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::{
-        error::{self, Error, Result},
-        file_utils,
-        tseries_family::TimeRange,
-        tsm::{BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone, TsmWriter},
-    };
-    use crate::{
-        file_system::file_manager::{self, get_file_manager},
-        tsm::tsm_writer_tests::write_to_tsm,
+    use crate::tsm::tsm_writer_tests::write_to_tsm;
+    use crate::tsm::{
+        BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone, TsmWriter,
     };
 
     async fn prepare(dir: impl AsRef<Path>) -> Result<(PathBuf, PathBuf)> {

@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
 use config::Config;
 use serde::{Deserialize, Serialize};
@@ -37,6 +39,7 @@ pub struct StorageOptions {
     pub path: PathBuf,
     pub max_summary_size: u64,
     pub base_file_size: u64,
+    pub flush_req_channel_cap: usize,
     pub max_level: u16,
     pub compact_trigger_file_num: u32,
     pub compact_trigger_cold_duration: Duration,
@@ -94,6 +97,7 @@ impl From<&Config> for StorageOptions {
             path: PathBuf::from(config.storage.path.clone()),
             max_summary_size: config.storage.max_summary_size,
             base_file_size: config.storage.base_file_size,
+            flush_req_channel_cap: config.storage.flush_req_channel_cap,
             max_level: config.storage.max_level,
             compact_trigger_file_num: config.storage.compact_trigger_file_num,
             compact_trigger_cold_duration: config.storage.compact_trigger_cold_duration,
@@ -121,6 +125,7 @@ impl From<&Config> for QueryOptions {
 
 #[derive(Debug, Clone)]
 pub struct WalOptions {
+    pub wal_req_channel_cap: usize,
     pub enabled: bool,
     pub path: PathBuf,
     pub max_file_size: u64,
@@ -130,6 +135,7 @@ pub struct WalOptions {
 impl From<&Config> for WalOptions {
     fn from(config: &Config) -> Self {
         Self {
+            wal_req_channel_cap: config.wal.wal_req_channel_cap,
             enabled: config.wal.enabled,
             path: PathBuf::from(config.wal.path.clone()),
             max_file_size: config.wal.max_file_size,

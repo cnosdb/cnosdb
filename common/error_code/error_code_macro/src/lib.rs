@@ -3,12 +3,10 @@ mod parse;
 extern crate core;
 
 use proc_macro2::{Span, TokenStream};
+use quote::{quote, ToTokens};
+use syn::{Data, Fields, LitStr};
 
 use crate::parse::{parse_error_code_enum, EnumInfo, FieldContainer};
-use quote::quote;
-use quote::ToTokens;
-use syn::Fields;
-use syn::{Data, LitStr};
 
 type MultiSynResult<T> = std::result::Result<T, Vec<syn::Error>>;
 
