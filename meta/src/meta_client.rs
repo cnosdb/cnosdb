@@ -33,9 +33,7 @@ use tokio::sync::mpsc::{self, Receiver};
 use trace::{debug, error, info, warn};
 
 use crate::error::{MetaError, MetaResult};
-use crate::limiter::{
-    Limiter, LimiterImpl, LocalRequestLimiter, NoneLimiter, NoneLimiter, RequestLimiter,
-};
+use crate::limiter::{LocalRequestLimiter, NoneLimiter, RequestLimiter};
 use crate::store::command::{
     EntryLog, META_REQUEST_FAILED, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
     META_REQUEST_ROLE_EXIST, META_REQUEST_ROLE_NOT_FOUND, META_REQUEST_SUCCESS,

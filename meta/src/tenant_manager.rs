@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use config::TenantLimiterConfig;
 use models::meta_data::ExpiredBucketInfo;
 use models::oid::{Identifier, Oid};
-use models::schema::{LimiterConfig, Tenant, TenantOptions};
+use models::schema::{Tenant, TenantOptions};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 use trace::info;
@@ -15,9 +15,7 @@ use trace::info;
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
-use crate::limiter::{
-    Limiter, LimiterImpl, LocalRequestLimiter, NoneLimiter, NoneLimiter, RequestLimiter,
-};
+use crate::limiter::{LocalRequestLimiter, NoneLimiter, RequestLimiter};
 use crate::meta_client::{MetaClient, RemoteMetaClient};
 use crate::store::command::{
     self, WriteCommand, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST,
@@ -46,24 +44,19 @@ pub trait TenantManager: Send + Sync + Debug {
     async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
 
     async fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter>;
-    async fn limiter_request(
-        &self,
-        tenant: &str,
-        request: LocalBucketRequest,
-    ) -> MetaResult<LocalBucketResponse>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RemoteTenantManager {
     client: MetaHttpClient,
 
     cluster_name: String,
     cluster_meta: String,
     node_id: u64,
-    ver_sender: Arc<Sender<u64>>,
+    ver_sender: Sender<u64>,
 
-    tenants: Arc<RwLock<HashMap<String, MetaClientRef>>>,
-    limiters: Arc<RwLock<HashMap<String, Arc<dyn RequestLimiter>>>>,
+    tenants: RwLock<HashMap<String, MetaClientRef>>,
+    limiters: RwLock<HashMap<String, Arc<dyn RequestLimiter>>>,
 }
 
 impl RemoteTenantManager {
@@ -74,7 +67,7 @@ impl RemoteTenantManager {
         ver_sender: Sender<u64>,
     ) -> Self {
         Self {
-            ver_sender: Arc::new(ver_sender),
+            ver_sender,
             client: MetaHttpClient::new(1, cluster_meta.clone()),
             cluster_name,
             cluster_meta,
@@ -86,14 +79,16 @@ impl RemoteTenantManager {
 
     pub fn new_limiter(
         &self,
-        options: &TenantOptions,
+        cluster_name: &str,
         tenant_name: &str,
+        options: &TenantOptions,
     ) -> Arc<dyn RequestLimiter> {
         match options.request_config() {
             Some(config) => Arc::new(LocalRequestLimiter::new(
-                config,
-                Arc::new(self.clone()),
+                self.cluster_name.as_str(),
                 tenant_name,
+                config,
+                self.client.clone(),
             )),
             None => Arc::new(NoneLimiter {}),
         }
@@ -111,7 +106,7 @@ impl TenantManager for RemoteTenantManager {
         name: String,
         options: TenantOptions,
     ) -> MetaResult<MetaClientRef> {
-        let limiter = self.new_limiter(&options, &name);
+        let limiter = self.new_limiter(&self.cluster_name, &name, &options);
         let req = command::WriteCommand::CreateTenant(self.cluster_name.clone(), name, options);
 
         match self
@@ -183,7 +178,7 @@ impl TenantManager for RemoteTenantManager {
     }
 
     async fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
-        let limiter = self.new_limiter(&options, name);
+        let limiter = self.new_limiter(&self.cluster_name, name, &options);
 
         let req = command::WriteCommand::AlterTenant(
             self.cluster_name.clone(),
@@ -300,18 +295,5 @@ impl TenantManager for RemoteTenantManager {
             Some(limiter) => limiter.clone(),
             None => Arc::new(NoneLimiter),
         }
-    }
-
-    async fn limiter_request(
-        &self,
-        tenant: &str,
-        request: LocalBucketRequest,
-    ) -> MetaResult<LocalBucketResponse> {
-        let req = WriteCommand::LimiterRequest {
-            cluster: self.cluster_name.to_string(),
-            tenant: tenant.to_string(),
-            request,
-        };
-        self.client.write::<LocalBucketResponse>(&req).await
     }
 }

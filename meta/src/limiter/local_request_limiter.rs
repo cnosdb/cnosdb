@@ -7,10 +7,10 @@ use limiter_bucket::CountBucket;
 use serde::Deserialize;
 use surf::http::convert::Serialize;
 
+use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::limiter_kind::RequestLimiterKind;
 use crate::limiter::RequestLimiter;
-use crate::TenantManagerRef;
 
 pub enum RequreResult {
     Fail,
@@ -38,16 +38,18 @@ pub struct LocalBucketResponse {
 
 #[derive(Debug)]
 pub struct LocalRequestLimiter {
-    pub tenant_manager: TenantManagerRef,
-    pub tenant: String,
+    cluster: String,
+    tenant: String,
+    meta_http_client: MetaHttpClient,
     pub(crate) buckets: HashMap<RequestLimiterKind, Arc<tokio::sync::Mutex<CountBucket>>>,
 }
 
 impl LocalRequestLimiter {
     pub fn new(
-        value: &RequestLimiterConfig,
-        tenant_manager: TenantManagerRef,
+        cluster: &str,
         tenant: &str,
+        value: &RequestLimiterConfig,
+        meta_http_client: MetaHttpClient,
     ) -> Self {
         let mut buckets = HashMap::new();
 
@@ -88,9 +90,10 @@ impl LocalRequestLimiter {
         }
 
         Self {
-            buckets,
-            tenant_manager,
+            cluster: cluster.to_string(),
             tenant: tenant.to_string(),
+            buckets,
+            meta_http_client,
         }
     }
 
@@ -148,8 +151,8 @@ impl LocalRequestLimiter {
             expected: ExpectedRequest { min, max },
         };
         let LocalBucketResponse { alloc, .. } = self
-            .tenant_manager
-            .limiter_request(&self.tenant, request)
+            .meta_http_client
+            .limiter_request(&self.cluster, &self.tenant, request)
             .await?;
         bucket_guard.inc(alloc);
         if bucket_guard.fetch() > data_len {

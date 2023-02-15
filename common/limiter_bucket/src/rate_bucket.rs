@@ -1,6 +1,5 @@
 use std::fmt::Formatter;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, Utc};
 use config::RateBucketConfig;

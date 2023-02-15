@@ -7,6 +7,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{MetaError, MetaResult};
+use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
 use crate::store::command::*;
 use crate::store::state_machine::CommandResp;
 use crate::{ClusterNode, ClusterNodeId, TypeConfig};
@@ -178,6 +179,20 @@ impl MetaHttpClient {
         //     .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
 
         // res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
+    }
+
+    pub async fn limiter_request(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        request: LocalBucketRequest,
+    ) -> MetaResult<LocalBucketResponse> {
+        let req = WriteCommand::LimiterRequest {
+            cluster: cluster.to_string(),
+            tenant: tenant.to_string(),
+            request,
+        };
+        self.write::<LocalBucketResponse>(&req).await
     }
 }
 
