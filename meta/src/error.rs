@@ -5,6 +5,7 @@ use error_code::{ErrorCode, ErrorCoder};
 use openraft::{AnyError, ErrorSubject, ErrorVerb, StorageError, StorageIOError};
 use snafu::Snafu;
 
+use crate::limiter::limiter_kind::RequestLimiterKind;
 use crate::{client, ClusterNodeId};
 
 pub type StorageIOResult<T> = Result<T, StorageIOError<ClusterNodeId>>;
@@ -116,13 +117,12 @@ pub enum MetaError {
     #[error_code(code = 23)]
     RaftConnect { source: tonic::transport::Error },
 
-    #[snafu(display("{} fail: {} reached limit, the maximum is {}", action, name, max))]
+    #[snafu(display("{} reached limit", kind))]
     #[error_code(code = 24)]
-    Limit {
-        action: String,
-        name: String,
-        max: String,
-    },
+    RequestLimit { kind: RequestLimiterKind },
+
+    #[snafu(display("{}", msg))]
+    ObjectLimit { msg: String },
     // RaftRPC{
     //     source: RPCError<ClusterNodeId, ClusterNode, Err>
     // }

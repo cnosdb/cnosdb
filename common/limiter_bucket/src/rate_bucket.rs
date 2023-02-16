@@ -1,15 +1,15 @@
 use std::fmt::Formatter;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, Utc};
-use parking_lot::Mutex;
+use config::RateBucketConfig;
+use parking_lot::{Mutex, MutexGuard};
 use serde::de::{SeqAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug)]
-pub struct RateLimiter {
+pub struct RateBucket {
     /// Tokens to add every `per` duration.
     refill: usize,
     /// Interval in milliseconds to add tokens.
@@ -20,7 +20,7 @@ pub struct RateLimiter {
     critical: Mutex<Critical>,
 }
 
-impl PartialEq for RateLimiter {
+impl PartialEq for RateBucket {
     fn eq(&self, other: &Self) -> bool {
         if self.refill == other.refill && self.interval == other.interval && self.max == other.max {
             let a = *self.critical.lock();
@@ -31,18 +31,25 @@ impl PartialEq for RateLimiter {
         }
     }
 }
-impl From<&RateLimiterBuilder> for RateLimiter {
-    fn from(value: &RateLimiterBuilder) -> Self {
+impl From<&RateBucketBuilder> for RateBucket {
+    fn from(value: &RateBucketBuilder) -> Self {
         value.build()
     }
 }
 
-impl Serialize for RateLimiter {
+impl From<&RateBucketConfig> for RateBucket {
+    fn from(value: &RateBucketConfig) -> Self {
+        let builder = RateBucketBuilder::from(value);
+        builder.build()
+    }
+}
+
+impl Serialize for RateBucket {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("RateLimiter", 5)?;
+        let mut state = serializer.serialize_struct("RateBucket", 5)?;
         state.serialize_field("refill", &self.refill)?;
         state.serialize_field("interval", &self.interval.num_milliseconds())?;
         state.serialize_field("max", &self.max)?;
@@ -52,7 +59,7 @@ impl Serialize for RateLimiter {
     }
 }
 
-impl<'de> Deserialize<'de> for RateLimiter {
+impl<'de> Deserialize<'de> for RateBucket {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -96,9 +103,9 @@ impl<'de> Deserialize<'de> for RateLimiter {
 
         struct RateLimiterVisitor;
         impl<'de> Visitor<'de> for RateLimiterVisitor {
-            type Value = RateLimiter;
+            type Value = RateBucket;
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("struct RateLimiter")
+                formatter.write_str("struct RateBucket")
             }
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where
@@ -117,7 +124,7 @@ impl<'de> Deserialize<'de> for RateLimiter {
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(3, &self))?;
 
-                Ok(RateLimiter {
+                Ok(RateBucket {
                     refill,
                     interval: chrono::Duration::milliseconds(interval),
                     max,
@@ -126,12 +133,12 @@ impl<'de> Deserialize<'de> for RateLimiter {
             }
         }
 
-        deserializer.deserialize_struct("RateLimiter", FIELDS, RateLimiterVisitor)
+        deserializer.deserialize_struct("RateBucket", FIELDS, RateLimiterVisitor)
     }
 }
 
-unsafe impl Send for RateLimiter {}
-unsafe impl Sync for RateLimiter {}
+unsafe impl Send for RateBucket {}
+unsafe impl Sync for RateBucket {}
 
 #[derive(Copy, Clone, Serialize, Deserialize, Debug, PartialEq)]
 struct Critical {
@@ -141,12 +148,12 @@ struct Critical {
     deadline: chrono::DateTime<Utc>,
 }
 
-impl RateLimiter {
+impl RateBucket {
     pub const DEFAULT_REFILL_MAX_FACTOR: usize = 10;
 
     #[allow(dead_code)]
-    pub fn builder() -> RateLimiterBuilder {
-        RateLimiterBuilder::default()
+    pub fn builder() -> RateBucketBuilder {
+        RateBucketBuilder::default()
     }
 
     #[allow(dead_code)]
@@ -172,13 +179,7 @@ impl RateLimiter {
     pub fn acquire_one(&self) -> Result<(), String> {
         self.acquire(1)
     }
-
-    pub fn acquire(&self, permits: usize) -> Result<(), String> {
-        if permits == 0 {
-            return Ok(());
-        }
-
-        let mut critical = self.critical.lock();
+    fn update_critical(&self, critical: &mut MutexGuard<Critical>) {
         if let Some((tokens, deadline)) = calculate_drain(critical.deadline, self.interval) {
             critical.deadline = deadline;
             critical.balance = critical.balance.saturating_add(tokens);
@@ -187,6 +188,34 @@ impl RateLimiter {
                 critical.balance = self.max;
             }
         }
+    }
+
+    pub fn acquire_closed(&self, permits: usize) -> usize {
+        if permits == 0 {
+            return 0;
+        }
+
+        let mut critical = self.critical.lock();
+        self.update_critical(&mut critical);
+
+        if critical.balance >= permits {
+            critical.balance -= permits;
+            permits
+        } else {
+            let res = critical.balance;
+            critical.balance = 0;
+            res
+        }
+    }
+
+    pub fn acquire(&self, permits: usize) -> Result<(), String> {
+        if permits == 0 {
+            return Ok(());
+        }
+
+        let mut critical = self.critical.lock();
+
+        self.update_critical(&mut critical);
 
         if let Some(balance) = critical.balance.checked_sub(permits) {
             critical.balance = balance;
@@ -201,93 +230,32 @@ impl RateLimiter {
     }
 }
 
-#[derive(Default, Copy, Clone, Deserialize, Serialize, Debug)]
-pub struct CountLimiterBuilder {
-    count: usize,
-    max_count: Option<usize>,
-}
-
-impl CountLimiterBuilder {
-    pub fn initial(&mut self, initial: usize) {
-        self.count = initial;
-    }
-    pub fn max(&mut self, max: usize) {
-        self.max_count = Some(max)
-    }
-    pub fn build(&self) -> CountLimiter {
-        CountLimiter {
-            count: AtomicUsize::from(self.count),
-            max_count: self.max_count,
-        }
-    }
-}
-
-#[derive(Default, Debug, Serialize, Deserialize)]
-pub struct CountLimiter {
-    count: AtomicUsize,
-    max_count: Option<usize>,
-}
-
-impl CountLimiter {
-    pub fn new(max_count: Option<usize>) -> Self {
-        Self {
-            count: AtomicUsize::new(0),
-            max_count,
-        }
-    }
-
-    pub fn new_with_init(init: usize, max_count: Option<usize>) -> Self {
-        Self {
-            count: AtomicUsize::new(init),
-            max_count,
-        }
-    }
-
-    // pub fn inc(&self, val: usize) {
-    //     let val = self.count.fetch_add(val, Ordering::SeqCst);
-    //     self.count.store(val, Ordering::SeqCst);
-    // }
-    //
-    // pub fn dec(&self, val: usize) {
-    //     let val = self.count.fetch_sub(val, Ordering::SeqCst);
-    //     self.count.store(val, Ordering::SeqCst);
-    // }
-
-    #[allow(dead_code)]
-    pub fn fetch(&self) -> usize {
-        self.count.load(Ordering::Relaxed)
-    }
-
-    #[allow(dead_code)]
-    pub fn max(&self) -> Option<usize> {
-        self.max_count
-    }
-
-    pub fn try_inc_one(&self) -> Result<(), usize> {
-        self.try_inc(1)
-    }
-
-    pub fn try_inc(&self, val: usize) -> Result<(), usize> {
-        let val = self.count.fetch_add(val, Ordering::SeqCst);
-        if let Some(ref max) = self.max_count {
-            if val.gt(max) {
-                return Err(*max);
-            }
-        }
-        self.count.store(val, Ordering::SeqCst);
-        Ok(())
-    }
-}
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct RateLimiterBuilder {
+pub struct RateBucketBuilder {
     max: Option<usize>,
     initial: usize,
     refill: usize,
     // ms
     interval: i64,
 }
+impl From<&RateBucketConfig> for RateBucketBuilder {
+    fn from(value: &RateBucketConfig) -> Self {
+        let RateBucketConfig {
+            max,
+            initial,
+            refill,
+            interval,
+        } = *value;
+        Self {
+            max,
+            initial,
+            refill,
+            interval,
+        }
+    }
+}
 
-impl RateLimiterBuilder {
+impl RateBucketBuilder {
     #[allow(dead_code)]
     pub fn max(&mut self, max: usize) -> &mut Self {
         self.max = Some(max);
@@ -323,19 +291,19 @@ impl RateLimiterBuilder {
     }
 
     #[allow(dead_code)]
-    pub fn build(&self) -> RateLimiter {
+    pub fn build(&self) -> RateBucket {
         let interval = chrono::Duration::milliseconds(self.interval);
         let deadline = Utc::now() + interval;
 
         let max = match self.max {
             Some(max) => max,
             None => usize::max(self.refill, self.initial)
-                .saturating_mul(RateLimiter::DEFAULT_REFILL_MAX_FACTOR),
+                .saturating_mul(RateBucket::DEFAULT_REFILL_MAX_FACTOR),
         };
 
         let initial = usize::min(self.initial, max);
 
-        RateLimiter {
+        RateBucket {
             refill: self.refill,
             interval,
             max,
@@ -347,7 +315,7 @@ impl RateLimiterBuilder {
     }
 }
 
-impl Default for RateLimiterBuilder {
+impl Default for RateBucketBuilder {
     fn default() -> Self {
         Self {
             max: None,
@@ -356,31 +324,6 @@ impl Default for RateLimiterBuilder {
             interval: 100,
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LimiterConfig {
-    // add user limit
-    pub max_users_number: Option<usize>,
-    /// create database limit
-    pub max_databases: Option<usize>,
-    pub max_shard_number: Option<usize>,
-    pub max_replicate_number: Option<usize>,
-    pub max_retention_time: Option<usize>,
-
-    pub data_in_rate: RateLimiterBuilder,
-    pub data_out_rate: RateLimiterBuilder,
-    //
-    pub data_in_size: CountLimiterBuilder,
-    pub data_out_size: CountLimiterBuilder,
-    //
-    // storage_size: CountLimiter,
-    //
-    pub queries_rate: RateLimiterBuilder,
-    pub queries: CountLimiterBuilder,
-    //
-    pub writes_rate: RateLimiterBuilder,
-    pub writes: CountLimiterBuilder,
 }
 
 fn calculate_drain(
@@ -407,7 +350,7 @@ fn calculate_drain(
 
 #[test]
 fn test_serialize_rate_limiter() {
-    let limiter1 = RateLimiter::builder()
+    let limiter1 = RateBucket::builder()
         .max(5)
         .interval(chrono::Duration::milliseconds(10))
         .initial(5)

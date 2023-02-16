@@ -115,4 +115,8 @@ impl KeyPath {
     pub fn members(cluster: &str, tenant_name: &str) -> String {
         format!("/{}/tenants/{}/members", cluster, tenant_name)
     }
+
+    pub fn limiter(cluster: &str, tenant_name: &str) -> String {
+        format!("/{cluster}/tenants/{tenant_name}/limiter")
+    }
 }

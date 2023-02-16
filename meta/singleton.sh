@@ -115,9 +115,9 @@ echo "Start 1 uninitialized cnosdb-meta servers..."
 mkdir -p /tmp/cnosdb/logs
 
 if [ ${ARG_RUN_RELEASE} -eq 0 ]; then
-  nohup ${PROJ_DIR}/target/debug/cnosdb-meta --id 1 --http-addr 127.0.0.1:21001 >/tmp/cnosdb/logs/meta_node.1.log &
+  nohup ${PROJ_DIR}/target/debug/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_21001.toml >/tmp/cnosdb/logs/meta_node.1.log &
 else
-  nohup ${PROJ_DIR}/target/release/cnosdb-meta --id 1 --http-addr 127.0.0.1:21001 >/tmp/cnosdb/logs/meta_node.1.log &
+  nohup ${PROJ_DIR}/target/release/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_21001.toml >/tmp/cnosdb/logs/meta_node.1.log &
 fi
 
 echo "Server 1 started"
@@ -126,7 +126,7 @@ sleep 1
 echo "Initialize server 1 as a single-node cluster"
 rpc 21001/init '{}'
 
-sleep 3
+sleep 1
 
 echo "Get metrics from the leader"
 rpc 21001/metrics

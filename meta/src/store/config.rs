@@ -1,56 +1,68 @@
-use clap::Parser;
+use std::fs::File;
+use std::io::prelude::Read;
+use std::path::Path;
 
-#[derive(Clone, Debug, Parser)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Opt {
-    #[clap(long, long, default_value = "0")]
     pub id: u64,
-
-    #[clap(
-        long,
-        global = true,
-        env = "http_addr",
-        default_value = "0.0.0.0:31005"
-    )]
     pub http_addr: String,
-
-    #[clap(
-        long,
-        global = true,
-        env = "http_addr",
-        default_value = "0.0.0.0:31005"
-    )]
-    pub rpc_addr: String,
-
-    /// The application specific name of this Raft cluster
-    #[clap(
-        long,
-        env = "RAFT_SNAPSHOT_PATH",
-        default_value = "/tmp/cnosdb/meta/snapshot"
-    )]
     pub snapshot_path: String,
-
-    #[clap(long, env = "RAFT_INSTANCE_PREFIX", default_value = "meta_node")]
-    pub instance_prefix: String,
-
-    #[clap(
-        long,
-        env = "RAFT_JOURNAL_PATH",
-        default_value = "/tmp/cnosdb/meta/journal"
-    )]
     pub journal_path: String,
-
-    #[clap(long, env = "RAFT_SNAPSHOT_PER_EVENTS", default_value = "500")]
     pub snapshot_per_events: u32,
-
-    #[clap(long, env = "META_LOGS_PATH", default_value = "/tmp/cnosdb/logs")]
     pub logs_path: String,
-
-    #[clap(long, env = "META_LOGS_LEVEL", default_value = "warn")]
     pub logs_level: String,
 }
 
-impl Default for Opt {
-    fn default() -> Self {
-        <Self as Parser>::parse_from(Vec::<&'static str>::new())
+pub fn get_opt(path: impl AsRef<Path>) -> Opt {
+    let path = path.as_ref();
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(err) => panic!(
+            "Failed to open configurtion file '{}': {}",
+            path.display(),
+            err
+        ),
+    };
+    let mut content = String::new();
+    if let Err(err) = file.read_to_string(&mut content) {
+        panic!(
+            "Failed to read configurtion file '{}': {}",
+            path.display(),
+            err
+        );
+    }
+    let config: Opt = match toml::from_str(&content) {
+        Ok(config) => config,
+        Err(err) => panic!(
+            "Failed to parse configurtion file '{}': {}",
+            path.display(),
+            err
+        ),
+    };
+    config
+}
+
+#[cfg(test)]
+mod test {
+    use crate::store::config::Opt;
+
+    #[test]
+    fn test() {
+        let config_str = r#"
+id = 1
+http_addr = "127.0.0.1:21001"
+
+logs_level = "warn"
+logs_path = "/tmp/cnosdb/logs"
+snapshot_path = "/tmp/cnosdb/meta/snapshot"
+journal_path = "/tmp/cnosdb/meta/journal"
+snapshot_per_events = 500
+"#;
+
+        let config: Opt = toml::from_str(config_str).unwrap();
+        assert!(toml::to_string_pretty(&config).is_ok());
+        dbg!(config);
     }
 }

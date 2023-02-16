@@ -8,6 +8,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{MetaError, MetaResult};
+use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
 use crate::store::command::*;
 use crate::store::state_machine::CommandResp;
 use crate::{ClusterNode, ClusterNodeId, TypeConfig};
@@ -15,16 +16,16 @@ use crate::{ClusterNode, ClusterNodeId, TypeConfig};
 pub type WriteError =
     RPCError<ClusterNodeId, ClusterNode, ClientWriteError<ClusterNodeId, ClusterNode>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MetaHttpClient {
-    inner: surf::Client,
+    inner: Arc<surf::Client>,
     pub leader: Arc<Mutex<(ClusterNodeId, String)>>,
 }
 
 impl MetaHttpClient {
     pub fn new(leader_id: ClusterNodeId, leader_addr: String) -> Self {
         Self {
-            inner: surf::Client::new(),
+            inner: Arc::new(surf::Client::new()),
             leader: Arc::new(Mutex::new((leader_id, leader_addr))),
         }
     }
@@ -179,6 +180,20 @@ impl MetaHttpClient {
         //     .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
 
         // res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
+    }
+
+    pub async fn limiter_request(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        request: LocalBucketRequest,
+    ) -> MetaResult<LocalBucketResponse> {
+        let req = WriteCommand::LimiterRequest {
+            cluster: cluster.to_string(),
+            tenant: tenant.to_string(),
+            request,
+        };
+        self.write::<LocalBucketResponse>(&req).await
     }
 }
 

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use super::key_path::KeyPath;
+use crate::limiter::local_request_limiter::LocalBucketRequest;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UpdateVnodeReplSetArgs {
@@ -100,6 +101,12 @@ pub enum WriteCommand {
     Set {
         key: String,
         value: String,
+    },
+    // cluster, tenant, requests
+    LimiterRequest {
+        cluster: String,
+        tenant: String,
+        request: LocalBucketRequest,
     },
 }
 

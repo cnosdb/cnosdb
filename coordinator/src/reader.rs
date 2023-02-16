@@ -183,19 +183,13 @@ impl QueryExecutor {
 
                 CoordinatorTcpCmd::RecordBatchResponseCmd(rsp) => {
                     let tenant = self.option.tenant.clone();
-                    if let Some(meta_client) = self
-                        .meta_manager
+
+                    self.meta_manager
                         .tenant_manager()
-                        .tenant_meta(&tenant)
+                        .limiter(self.option.tenant.as_str())
                         .await
-                    {
-                        meta_client
-                            .limiter()
-                            .check_data_out(get_record_batch_memory_size(&rsp.record))
-                            .map_err(|e| CoordinatorError::MetaRequest {
-                                msg: format!("{}", e),
-                            })?;
-                    }
+                        .check_data_out(rsp.record.get_array_memory_size())
+                        .await?;
 
                     self.sender.send(Ok(rsp.record)).await?;
                 }
@@ -238,19 +232,6 @@ impl QueryExecutor {
             while let Some(data) = iterator.next().await {
                 match data {
                     Ok(val) => {
-                        if let Some(meta_client) = self
-                            .meta_manager
-                            .tenant_manager()
-                            .tenant_meta(tenant.as_str())
-                            .await
-                        {
-                            meta_client
-                                .limiter()
-                                .check_data_out(get_record_batch_memory_size(&val))
-                                .map_err(|e| CoordinatorError::MetaRequest {
-                                    msg: format!("{}", e),
-                                })?;
-                        }
                         self.sender.send(Ok(val)).await?;
                     }
                     Err(err) => {
@@ -258,7 +239,6 @@ impl QueryExecutor {
                     }
                 };
             }
-
             return Ok(());
         }
         Err(CoordinatorError::KvInstanceNotFound {
@@ -345,12 +325,4 @@ impl QueryExecutor {
 
         Ok(vnode_mapping)
     }
-}
-
-fn get_record_batch_memory_size(record_batch: &RecordBatch) -> usize {
-    record_batch
-        .columns()
-        .iter()
-        .map(|array| array.get_array_memory_size())
-        .sum()
 }

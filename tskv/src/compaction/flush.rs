@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::slice;
 use std::sync::Arc;
+use std::time::Duration;
 
 use models::codec::Encoding;
 use models::schema::TskvTableSchema;
@@ -20,6 +21,7 @@ use tokio::select;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::Sender as OneShotSender;
+use tokio::time::timeout;
 use trace::{debug, error, info, log_error, warn};
 use utils::BloomFilter;
 
@@ -128,12 +130,6 @@ impl FlushTask {
             edit.add_file(cm, max_level_ts);
         }
         version_edits.push(edit);
-
-        for mem in self.mem_caches.iter() {
-            // TODO Cache marked as flushed but there are no column files in current version.
-            //      May it turned to true after the new version inited?
-            mem.write().flushed = true;
-        }
 
         Ok(())
     }
@@ -369,7 +365,9 @@ pub async fn run_flush_memtable_job(
     summary_task_sender: Sender<SummaryTask>,
     compact_task_sender: Sender<TseriesFamilyId>,
 ) -> Result<()> {
-    let mut tsf_caches: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> = HashMap::new();
+    let mut all_mems = vec![];
+    let mut tsf_caches: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> =
+        HashMap::with_capacity(req.mems.len());
     {
         info!("Flush: Running flush job on {} MemCaches", req.mems.len());
         if req.mems.is_empty() {
@@ -402,7 +400,11 @@ pub async fn run_flush_memtable_job(
             let path_tsm = storage_opt.tsm_dir(&database, tsf_id);
             let path_delta = storage_opt.delta_dir(&database, tsf_id);
 
-            FlushTask::new(caches, tsf_id, global_context.clone(), path_tsm, path_delta)
+            let flush_task =
+                FlushTask::new(caches, tsf_id, global_context.clone(), path_tsm, path_delta);
+            all_mems.extend(flush_task.mem_caches.clone());
+
+            flush_task
                 .run(version, &mut version_edits, &mut file_metas)
                 .await?;
 
@@ -422,6 +424,17 @@ pub async fn run_flush_memtable_job(
     if let Err(e) = summary_task_sender.send(task).await {
         warn!("failed to send Summary task, {}", e);
     }
+
+    if timeout(Duration::from_secs(10), task_state_receiver)
+        .await
+        .is_ok()
+    {
+        all_mems.iter().for_each(|mem| mem.write().flushed = true)
+    } else {
+        error!("Failed recv summary call back, may case inconsistency of data temporarily");
+        all_mems.iter().for_each(|mem| mem.write().flushed = true)
+    }
+
     Ok(())
 }
 
