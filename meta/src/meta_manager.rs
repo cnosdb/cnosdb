@@ -138,7 +138,7 @@ impl RemoteMetaManager {
         let client_id = format!("watch.{}", mgr.config.node_id);
         let mut request = (client_id, mgr.config.name.clone(), tenants, base_ver);
 
-        let client = MetaHttpClient::new(1, mgr.config.meta_service_addr.clone());
+        let client = MetaHttpClient::new(mgr.config.meta_service_addr.clone());
         loop {
             if let Ok(watch_data) = client.watch::<command::WatchData>(&request).await {
                 if watch_data.full_sync {
