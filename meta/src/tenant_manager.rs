@@ -77,7 +77,7 @@ impl RemoteTenantManager {
     ) -> Self {
         Self {
             tenant_change_sender,
-            client: MetaHttpClient::new(1, cluster_meta.clone()),
+            client: MetaHttpClient::new(cluster_meta.clone()),
             cluster_name,
             cluster_meta,
             node_id: id,

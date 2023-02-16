@@ -50,7 +50,7 @@ impl RemoteAdminMeta {
             config,
             conn_map: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
-            client: MetaHttpClient::new(1, meta_url),
+            client: MetaHttpClient::new(meta_url),
         }
     }
 

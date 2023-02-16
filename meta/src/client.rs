@@ -19,14 +19,24 @@ pub type WriteError =
 #[derive(Debug, Clone)]
 pub struct MetaHttpClient {
     inner: Arc<surf::Client>,
-    pub leader: Arc<Mutex<(ClusterNodeId, String)>>,
+    addrs: Vec<String>,
+    pub leader: Arc<Mutex<String>>,
 }
 
 impl MetaHttpClient {
-    pub fn new(leader_id: ClusterNodeId, leader_addr: String) -> Self {
+    pub fn new(addr: String) -> Self {
+        let mut addrs = vec![];
+        let list: Vec<&str> = addr.split(';').collect();
+        for item in list.iter() {
+            addrs.push(item.to_string());
+        }
+        addrs.sort();
+        let leader_addr = addrs[0].clone();
+
         Self {
             inner: Arc::new(surf::Client::new()),
-            leader: Arc::new(Mutex::new((leader_id, leader_addr))),
+            addrs,
+            leader: Arc::new(Mutex::new(leader_addr)),
         }
     }
 
@@ -72,6 +82,17 @@ impl MetaHttpClient {
 
     //////////////////////////////////////////////////
 
+    fn switch_leader(&self) {
+        let mut t = self.leader.lock().unwrap();
+
+        if let Ok(index) = self.addrs.binary_search(&t) {
+            let index = (index + 1) % self.addrs.len();
+            *t = self.addrs[index].clone();
+        } else {
+            *t = self.addrs[0].clone();
+        }
+    }
+
     async fn send_rpc_to_leader<Req, Resp, Err>(
         &self,
         uri: &str,
@@ -109,21 +130,25 @@ impl MetaHttpClient {
                 >>::try_into(remote_err.source.clone());
 
                 if let Ok(ForwardToLeader {
-                    leader_id: Some(leader_id),
+                    leader_id: Some(_),
                     leader_node: Some(leader_node),
                     ..
                 }) = forward_err_res
                 {
                     {
                         let mut t = self.leader.lock().unwrap();
-                        *t = (leader_id, leader_node.api_addr);
+                        *t = leader_node.api_addr;
                     }
 
                     n_retry -= 1;
                     if n_retry > 0 {
                         continue;
                     }
+                } else {
+                    self.switch_leader();
                 }
+            } else {
+                self.switch_leader();
             }
 
             return Err(rpc_err);
@@ -140,11 +165,7 @@ impl MetaHttpClient {
         Resp: Serialize + DeserializeOwned,
         Err: std::error::Error + Serialize + DeserializeOwned,
     {
-        let (leader_id, url) = {
-            let t = self.leader.lock().unwrap();
-            let target_addr = &t.1;
-            (t.0, format!("http://{}/{}", target_addr, uri))
-        };
+        let url = format!("http://{}/{}", self.leader.lock().unwrap(), uri);
 
         /*-------------------surf client--------------------------- */
         let mut resp = if let Some(r) = req {
@@ -162,7 +183,7 @@ impl MetaHttpClient {
             .await
             .map_err(|e| RPCError::Network(NetworkError::new(&AnyError::error(e.to_string()))))?;
 
-        res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
+        res.map_err(|e| RPCError::RemoteError(RemoteError::new(0, e)))
 
         /*-------------------reqwest client--------------------------- */
         // let resp = if let Some(r) = req {
@@ -218,7 +239,7 @@ mod test {
 
         //let hand = tokio::spawn(watch_tenant("cluster_xxx", "tenant_test"));
 
-        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+        let client = MetaHttpClient::new("127.0.0.1:21001".to_string());
 
         let req = command::ReadCommand::TenaneMetaData(cluster.clone(), "cnosdb".to_string());
         let rsp = client
@@ -298,7 +319,7 @@ mod test {
 
         let req = command::WriteCommand::UpdateVnodeReplSet(args);
 
-        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+        let client = MetaHttpClient::new("127.0.0.1:21001".to_string());
         let rsp = client.write::<command::StatusResponse>(&req).await;
         println!("=========: {:?}", rsp);
     }
@@ -313,7 +334,7 @@ mod test {
             0,
         );
 
-        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+        let client = MetaHttpClient::new("127.0.0.1:21001".to_string());
         loop {
             let watch_data = client.watch::<command::WatchData>(&request).await.unwrap();
             println!("{:?}", watch_data);

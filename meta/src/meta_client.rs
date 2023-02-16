@@ -167,7 +167,7 @@ impl RemoteMetaClient {
             tenant,
             meta_url: meta_url.clone(),
             data: RwLock::new(TenantMetaData::new()),
-            client: MetaHttpClient::new(1, meta_url),
+            client: MetaHttpClient::new(meta_url),
         });
 
         client.sync_all_tenant_metadata().await?;
