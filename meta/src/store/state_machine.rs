@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use models::auth::privilege::DatabasePrivilege;
@@ -250,12 +250,29 @@ impl StateMachine {
 
     //********************************************************************************* */
     //todo: temp it will be removed
-    pub fn version(&self) -> u64 {
-        self.get_last_applied_log()
-            .ok()
-            .unwrap_or_default()
-            .unwrap_or_default()
-            .index
+    fn version(&self) -> u64 {
+        let key = KeyPath::version();
+
+        let mut ver_str = "0".to_string();
+        if let Some(val) = self.db.get(key).unwrap() {
+            unsafe { ver_str = String::from_utf8_unchecked((*val).to_owned()) };
+        }
+
+        from_str::<u64>(&ver_str).unwrap_or(0)
+    }
+
+    fn update_version(&self) -> StorageIOResult<u64> {
+        let key = KeyPath::version();
+
+        let mut ver_str = "0".to_string();
+        if let Some(val) = self.db.get(&key).unwrap() {
+            unsafe { ver_str = String::from_utf8_unchecked((*val).to_owned()) };
+        }
+        let ver = from_str::<u64>(&ver_str).unwrap_or(0) + 1;
+
+        self.db.insert(&key, &*(ver.to_string())).map_err(l_r_err)?;
+
+        Ok(ver)
     }
 
     fn fetch_and_add_incr_id(&self, cluster: &str, count: u32) -> u32 {
@@ -267,7 +284,9 @@ impl StateMachine {
         }
         let id_num = from_str::<u32>(&id_str).unwrap_or(1);
 
-        let _ = self.insert(&id_key, &(id_num + count).to_string());
+        self.db
+            .insert(&id_key, &*(id_num + count).to_string())
+            .unwrap();
 
         id_num
     }
@@ -284,11 +303,12 @@ impl StateMachine {
     }
 
     fn insert(&self, key: &str, val: &str) -> StorageIOResult<()> {
+        let version = self.update_version()?;
         self.db.insert(key, val).map_err(l_r_err)?;
 
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_SET,
-            ver: self.version(),
+            ver: version,
             key: key.to_string(),
             val: val.to_string(),
         };
@@ -299,11 +319,12 @@ impl StateMachine {
     }
 
     fn remove(&self, key: &str) -> StorageIOResult<()> {
+        let version = self.update_version()?;
         self.db.remove(key).map_err(l_r_err)?;
 
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_DEL,
-            ver: self.version(),
+            ver: version,
             key: key.to_string(),
             val: "".to_string(),
         };
@@ -312,7 +333,12 @@ impl StateMachine {
 
         Ok(())
     }
-    pub fn read_change_logs(&self, cluster: &str, tenant: &str, base_ver: u64) -> WatchData {
+    pub fn read_change_logs(
+        &self,
+        cluster: &str,
+        tenants: &HashSet<String>,
+        base_ver: u64,
+    ) -> WatchData {
         let mut data = WatchData {
             full_sync: false,
             entry_logs: vec![],
@@ -320,7 +346,7 @@ impl StateMachine {
             max_ver: self.watch.max_version().unwrap_or(0),
         };
 
-        let (logs, status) = self.watch.read_entry_logs(cluster, tenant, base_ver);
+        let (logs, status) = self.watch.read_entry_logs(cluster, tenants, base_ver);
         if status < 0 {
             data.full_sync = true;
         } else {

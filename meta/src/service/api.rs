@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
 use std::time::Duration;
@@ -35,18 +36,18 @@ pub async fn write(
 #[post("/watch")]
 pub async fn watch(
     app: Data<MetaApp>,
-    req: Json<(String, String, String, u64)>, //client id, cluster,version
+    req: Json<(String, String, HashSet<String>, u64)>, //client id, cluster,version
 ) -> actix_web::Result<impl Responder> {
     info!("watch all  args: {:?}", req);
     let client = req.0 .0;
     let cluster = req.0 .1;
-    let tenant = req.0 .2;
+    let tenants = req.0 .2;
     let base_ver = req.0 .3;
     let mut follow_ver = base_ver;
 
     let mut notify = {
         let sm = app.store.state_machine.read().await;
-        let watch_data = sm.read_change_logs(&cluster, &tenant, follow_ver);
+        let watch_data = sm.read_change_logs(&cluster, &tenants, follow_ver);
         info!(
             "{} {}.{}: change logs: {:?} ",
             client, base_ver, follow_ver, watch_data
@@ -65,12 +66,12 @@ pub async fn watch(
         let _ = tokio::time::timeout(tokio::time::Duration::from_secs(20), notify.recv()).await;
 
         let sm = app.store.state_machine.read().await;
-        let watch_data = sm.read_change_logs(&cluster, &tenant, follow_ver);
+        let watch_data = sm.read_change_logs(&cluster, &tenants, follow_ver);
         info!(
             "{} {}.{}: change logs: {:?} ",
             client, base_ver, follow_ver, watch_data
         );
-        if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(60) {
+        if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
             let data = serde_json::to_string(&watch_data).unwrap();
             let response: Result<CommandResp, Infallible> = Ok(data);
             return Ok(Json(response));

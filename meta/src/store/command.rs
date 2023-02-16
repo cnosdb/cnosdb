@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
@@ -398,22 +398,32 @@ impl Watch {
     pub fn read_entry_logs(
         &self,
         cluster: &str,
-        tenant: &str,
+        tenants: &HashSet<String>,
         base_ver: u64,
     ) -> (Vec<EntryLog>, i32) {
         let filter = |entry: &EntryLog| -> bool {
-            if tenant.is_empty() {
-                if entry.key.starts_with(&KeyPath::cluster_prefix(cluster)) {
-                    return true;
-                }
-            } else {
-                let prefix = KeyPath::tenant_prefix(cluster, tenant);
-                if entry.key.starts_with(&prefix) {
-                    return true;
-                }
+            if entry.key.starts_with(&KeyPath::data_nodes(cluster)) {
+                return true;
+            }
 
-                if entry.key.starts_with(&KeyPath::data_nodes(cluster)) {
-                    return true;
+            if tenants.is_empty() {
+                return false;
+            }
+
+            if !entry.key.starts_with(&KeyPath::cluster_prefix(cluster)) {
+                return false;
+            }
+
+            if tenants.contains(&"".to_string()) {
+                return true;
+            }
+
+            let prefix = KeyPath::tenants(cluster);
+            if let Some(sub_str) = entry.key.strip_prefix(&prefix) {
+                if let Some((tenant, _)) = sub_str.split_once('/') {
+                    if tenants.contains(tenant) {
+                        return true;
+                    }
                 }
             }
 
@@ -444,34 +454,41 @@ impl Default for Watch {
 }
 
 mod test {
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     use tokio::sync::RwLock;
 
     use crate::store::command::Watch;
 
-    async fn _watch_data_test(watch: Arc<RwLock<Watch>>, cluster: &str, ver: u64) {
-        println!("======== {}", cluster);
+    async fn _watch_data_test(watch: Arc<RwLock<Watch>>, cluster: &str, tenant: &str, ver: u64) {
+        println!("======== {}.{}", cluster, tenant);
 
         loop {
             let mut chan = watch.read().await.subscribe();
             let _ = chan.recv().await;
 
-            let logs = watch.read().await.read_entry_logs(cluster, "", ver);
-            println!("=== {}; {:?}", cluster, logs);
+            let logs = watch.read().await.read_entry_logs(
+                cluster,
+                &HashSet::from([tenant.to_string()]),
+                ver,
+            );
+            println!("=== {}.{}; {:?}", cluster, tenant, logs);
         }
     }
 
-    async fn _test_watch() {
+    #[tokio::test]
+    #[ignore]
+    async fn test_watch() {
         use tokio::io::AsyncBufReadExt;
 
         let watch = Arc::new(RwLock::new(Watch::new()));
 
         let w_clone = watch.clone();
-        tokio::spawn(_watch_data_test(w_clone, "t1", 100));
+        tokio::spawn(_watch_data_test(w_clone, "c", "t", 100));
 
         let w_clone = watch.clone();
-        tokio::spawn(_watch_data_test(w_clone, "t2", 200));
+        tokio::spawn(_watch_data_test(w_clone, "c", "", 200));
 
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 

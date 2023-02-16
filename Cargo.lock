@@ -3398,6 +3398,7 @@ dependencies = [
  "surf",
  "sys-info",
  "tokio",
+ "toml",
  "tonic",
  "trace",
  "tracing",
