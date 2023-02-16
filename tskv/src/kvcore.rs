@@ -755,19 +755,20 @@ impl Engine for TsKv {
         vnode_id: u32,
     ) -> Result<Option<Arc<SuperVersion>>> {
         let version_set = self.version_set.read().await;
-        if !version_set.db_exists(tenant, database) {
-            return Err(SchemaError::DatabaseNotFound {
-                database: database.to_string(),
-            }
-            .into());
-        }
+        // Comment it, It's not a error, Maybe the data not right!
+        // if !version_set.db_exists(tenant, database) {
+        //     return Err(SchemaError::DatabaseNotFound {
+        //         database: database.to_string(),
+        //     }
+        //     .into());
+        // }
         if let Some(tsf) = version_set
             .get_tsfamily_by_name_id(tenant, database, vnode_id)
             .await
         {
             Ok(Some(tsf.read().await.super_version()))
         } else {
-            warn!("ts_family with db name '{}' not found.", database);
+            info!("ts_family with db name '{}' not found.", database);
             Ok(None)
         }
     }

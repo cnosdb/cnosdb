@@ -280,7 +280,7 @@ impl MetaManager for MockMetaManager {
         0
     }
 
-    async fn use_tenant(&self, val: Option<String>) -> MetaResult<()> {
+    async fn use_tenant(&self, val: &str) -> MetaResult<()> {
         Ok(())
     }
 

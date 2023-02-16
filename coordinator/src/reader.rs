@@ -83,7 +83,7 @@ impl QueryExecutor {
             res,
         );
 
-        Ok(())
+        res
     }
 
     async fn node_executor(&self, node_id: u64, vnodes: Vec<VnodeInfo>) -> CoordinatorResult<()> {
@@ -328,7 +328,9 @@ impl QueryExecutor {
 
             repl.vnodes.retain(|x| x.node_id != item.node_id);
             if repl.vnodes.is_empty() {
-                return Err(CoordinatorError::VnodeNotFound { id: item.id });
+                return Err(CoordinatorError::CommonError {
+                    msg: format!("try map vnode:{} failed,not found replication", item.id),
+                });
             }
 
             let random = now_timestamp() as usize % repl.vnodes.len();
