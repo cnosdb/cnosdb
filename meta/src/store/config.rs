@@ -5,6 +5,14 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MetaInit {
+    pub cluster_name: String,
+    pub admin_user: String,
+    pub system_tenant: String,
+    pub default_database: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Opt {
     pub id: u64,
     pub http_addr: String,
@@ -13,6 +21,7 @@ pub struct Opt {
     pub snapshot_per_events: u32,
     pub logs_path: String,
     pub logs_level: String,
+    pub meta_init: MetaInit,
 }
 
 pub fn get_opt(path: impl AsRef<Path>) -> Opt {
@@ -59,6 +68,12 @@ logs_path = "/tmp/cnosdb/logs"
 snapshot_path = "/tmp/cnosdb/meta/snapshot"
 journal_path = "/tmp/cnosdb/meta/journal"
 snapshot_per_events = 500
+
+[meta_init]
+cluster_name = "cluster_xxx"
+admin_user = "root"
+system_tenant = "cnosdb"
+default_database = "public"
 "#;
 
         let config: Opt = toml::from_str(config_str).unwrap();
