@@ -122,7 +122,12 @@ impl TableProvider for ClusterTable {
 
         if let Some(agg_with_grouping) = agg_with_grouping {
             debug!("Create aggregate filter tskv scan.");
-            return create_agg_filter_scan(self.coord.clone(), filter, agg_with_grouping);
+            return create_agg_filter_scan(
+                self.coord.clone(),
+                self.schema.clone(),
+                filter,
+                agg_with_grouping,
+            );
         }
 
         return self.create_physical_plan(projection, filter).await;
@@ -188,6 +193,7 @@ impl TableProvider for ClusterTable {
 
 fn create_agg_filter_scan(
     coord: CoordinatorRef,
+    table_schema: TskvTableSchemaRef,
     filter: Arc<Predicate>,
     agg_with_grouping: &AggWithGrouping,
 ) -> Result<Arc<dyn ExecutionPlan>> {
@@ -253,6 +259,7 @@ fn create_agg_filter_scan(
     Ok(Arc::new(AggregateFilterTskvExec::new(
         coord,
         SchemaRef::from(schema.deref()),
+        table_schema,
         pushed_aggs,
         filter,
     )))

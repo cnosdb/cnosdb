@@ -103,6 +103,7 @@ pub trait Engine: Send + Sync + Debug {
     ) -> Result<Option<Arc<SuperVersion>>>;
 
     fn get_storage_options(&self) -> Arc<StorageOptions>;
+
     async fn get_vnode_summary(
         &self,
         tenant: &str,

@@ -47,7 +47,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Config {
     let mut file = match File::open(path) {
         Ok(file) => file,
         Err(err) => panic!(
-            "Failed to open configurtion file '{}': {}",
+            "Failed to open configurtion file '{}': {:?}",
             path.display(),
             err
         ),
@@ -55,7 +55,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Config {
     let mut content = String::new();
     if let Err(err) = file.read_to_string(&mut content) {
         panic!(
-            "Failed to read configurtion file '{}': {}",
+            "Failed to read configurtion file '{}': {:?}",
             path.display(),
             err
         );
@@ -63,7 +63,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Config {
     let mut config: Config = match toml::from_str(&content) {
         Ok(config) => config,
         Err(err) => panic!(
-            "Failed to parse configurtion file '{}': {}",
+            "Failed to parse configurtion file '{}': {:?}",
             path.display(),
             err
         ),
@@ -85,7 +85,7 @@ pub fn default_config() -> Config {
 
     match toml::from_str(DEFAULT_CONFIG) {
         Ok(config) => config,
-        Err(err) => panic!("Failed to get default configurtion : {}", err),
+        Err(err) => panic!("Failed to get default configurtion: {:?}", err),
     }
 }
 

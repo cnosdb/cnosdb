@@ -470,7 +470,7 @@ pub mod flush_tests {
     use crate::version_set::VersionSet;
     use crate::{file_utils, tseries_family};
 
-    pub fn default_with_field_id(ids: Vec<ColumnId>) -> TskvTableSchema {
+    pub fn default_table_schema(ids: Vec<ColumnId>) -> TskvTableSchema {
         let fields = ids
             .iter()
             .map(|i| TableColumn {
@@ -527,18 +527,18 @@ pub mod flush_tests {
 
         #[rustfmt::skip]
             let _skip_fmt = {
-            put_rows_to_cache(&mut caches[0], 1, 1, default_with_field_id(vec![0, 1, 2]), (3, 4), false);
-            put_rows_to_cache(&mut caches[0], 1, 2, default_with_field_id(vec![0, 1, 3]), (1, 2), false);
-            put_rows_to_cache(&mut caches[0], 1, 3, default_with_field_id(vec![0, 1, 2, 3]), (5, 5), true);
-            put_rows_to_cache(&mut caches[0], 1, 3, default_with_field_id(vec![0, 1, 2, 3]), (5, 6), false);
-            put_rows_to_cache(&mut caches[1], 2, 1, default_with_field_id(vec![0, 1, 2]), (9, 10), false);
-            put_rows_to_cache(&mut caches[1], 2, 2, default_with_field_id(vec![0, 1, 3]), (7, 8), false);
-            put_rows_to_cache(&mut caches[1], 2, 3, default_with_field_id(vec![0, 1, 2, 3]), (11, 11), true);
-            put_rows_to_cache(&mut caches[1], 2, 3, default_with_field_id(vec![0, 1, 2, 3]), (11, 12), false);
-            put_rows_to_cache(&mut caches[2], 3, 1, default_with_field_id(vec![0, 1, 2]), (15, 16), false);
-            put_rows_to_cache(&mut caches[2], 3, 2, default_with_field_id(vec![0, 1, 3]), (13, 14), false);
-            put_rows_to_cache(&mut caches[2], 3, 3, default_with_field_id(vec![0, 1, 2, 3]), (17, 17), true);
-            put_rows_to_cache(&mut caches[2], 3, 3, default_with_field_id(vec![0, 1, 2, 3]), (17, 18), false);
+            put_rows_to_cache(&mut caches[0], 1, 1, default_table_schema(vec![0, 1, 2]), (3, 4), false);
+            put_rows_to_cache(&mut caches[0], 1, 2, default_table_schema(vec![0, 1, 3]), (1, 2), false);
+            put_rows_to_cache(&mut caches[0], 1, 3, default_table_schema(vec![0, 1, 2, 3]), (5, 5), true);
+            put_rows_to_cache(&mut caches[0], 1, 3, default_table_schema(vec![0, 1, 2, 3]), (5, 6), false);
+            put_rows_to_cache(&mut caches[1], 2, 1, default_table_schema(vec![0, 1, 2]), (9, 10), false);
+            put_rows_to_cache(&mut caches[1], 2, 2, default_table_schema(vec![0, 1, 3]), (7, 8), false);
+            put_rows_to_cache(&mut caches[1], 2, 3, default_table_schema(vec![0, 1, 2, 3]), (11, 11), true);
+            put_rows_to_cache(&mut caches[1], 2, 3, default_table_schema(vec![0, 1, 2, 3]), (11, 12), false);
+            put_rows_to_cache(&mut caches[2], 3, 1, default_table_schema(vec![0, 1, 2]), (15, 16), false);
+            put_rows_to_cache(&mut caches[2], 3, 2, default_table_schema(vec![0, 1, 3]), (13, 14), false);
+            put_rows_to_cache(&mut caches[2], 3, 3, default_table_schema(vec![0, 1, 2, 3]), (17, 17), true);
+            put_rows_to_cache(&mut caches[2], 3, 3, default_table_schema(vec![0, 1, 2, 3]), (17, 18), false);
             "skip_fmt"
         };
 

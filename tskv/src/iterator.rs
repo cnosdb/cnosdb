@@ -18,7 +18,7 @@ use datafusion::physical_plan::metrics::{
 use datafusion::scalar::ScalarValue;
 use minivec::MiniVec;
 use models::predicate::domain::{ColumnDomains, Domain, PredicateRef, Range, ValueEntry};
-use models::schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
+use models::schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
 use models::utils::{min_num, unite_id};
 use models::{FieldId, SeriesId, ValueType};
 use parking_lot::RwLock;
@@ -32,6 +32,7 @@ use super::memcache::DataType;
 use super::tseries_family::{ColumnFile, SuperVersion, TimeRange};
 use super::tsm::{BlockMetaIterator, DataBlock, TsmReader};
 use super::{error, ColumnFileId, Error};
+use crate::compute::count::count_column_non_null_values;
 use crate::schema::error::SchemaError;
 use crate::tseries_family::Version;
 
@@ -168,6 +169,7 @@ pub struct QueryOption {
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchema,
     pub metrics: TskvSourceMetrics,
+    pub aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
 
     pub time_filter: ColumnDomains<String>,
     pub tags_filter: ColumnDomains<String>,
@@ -175,10 +177,12 @@ pub struct QueryOption {
 }
 
 impl QueryOption {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         batch_size: usize,
         tenant: String,
         filter: PredicateRef,
+        aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
         df_schema: SchemaRef,
         table_schema: TskvTableSchema,
         metrics: TskvSourceMetrics,
@@ -210,6 +214,7 @@ impl QueryOption {
             table_schema,
             df_schema,
             metrics,
+            aggregates,
 
             time_filter,
             tags_filter,
@@ -387,33 +392,21 @@ impl FieldCursor {
         };
 
         let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&iterator.option.time_filter);
-
         debug!("Pushed time range filter: {:?}", time_ranges);
-
-        // get data from im_memcache and memcache
-        let mut mem_data: Vec<DataType> = Vec::new();
-
         let time_predicate = |ts| {
             time_ranges
                 .iter()
                 .any(|time_range| time_range.is_boundless() || time_range.contains(ts))
         };
 
-        super_version
-            .caches
-            .immut_cache
-            .iter()
-            .filter(|m| !m.read().flushed)
-            .for_each(|m| {
-                mem_data.append(&mut m.read().get_data(field_id, time_predicate, |_| true))
-            });
-
-        mem_data.append(&mut super_version.caches.mut_cache.read().get_data(
+        // get data from im_memcache and memcache
+        let mut mem_data: Vec<DataType> = Vec::new();
+        super_version.caches.read_field_data(
             field_id,
             time_predicate,
             |_| true,
-        ));
-
+            |d| mem_data.push(d),
+        );
         mem_data.sort_by_key(|data| data.timestamp());
 
         debug!(
@@ -618,6 +611,8 @@ pub struct RowIterator {
     batch_size: usize,
     vnode_id: u32,
     metrics: TskvSourceMetrics,
+
+    finished: bool,
 }
 
 impl RowIterator {
@@ -654,6 +649,7 @@ impl RowIterator {
 
             batch_size,
             metrics,
+            finished: false,
         })
     }
 
@@ -871,19 +867,79 @@ impl RowIterator {
         Ok(Some(()))
     }
 
-    async fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
-        loop {
-            if self.columns.is_empty() && self.next_series().await?.is_none() {
-                return Ok(None);
+    async fn collect_aggregate_row_data(
+        &mut self,
+        builder: &mut [ArrayBuilderPtr],
+    ) -> Result<Option<()>, Error> {
+        if self.is_finish() {
+            return Ok(None);
+        }
+        self.finished = true;
+        debug!("======collect_aggregate_row_data=========");
+        let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&self.option.time_filter);
+        let time_ranges = Arc::new(time_ranges);
+        if self.version.is_none() {
+            return Ok(None);
+        }
+        let version = self.version.clone().unwrap();
+        if let Some(aggregates) = self.option.aggregates.as_ref() {
+            for (i, item) in aggregates.iter().enumerate() {
+                match item.column_type {
+                    ColumnType::Time => todo!(),
+                    ColumnType::Tag => todo!(),
+
+                    ColumnType::Field(vtype) => match vtype {
+                        ValueType::Unknown => todo!(),
+                        _ => {
+                            let agg_ret = count_column_non_null_values(
+                                version.clone(),
+                                &self.series,
+                                item.id,
+                                time_ranges.clone(),
+                            )
+                            .await?;
+                            let field_builder = builder[i]
+                                .as_any_mut()
+                                .downcast_mut::<Int64Builder>()
+                                .unwrap();
+                            field_builder.append_value(agg_ret as i64);
+                            // field_builder.append_null();
+                        }
+                    },
+                };
             }
 
-            if self.collect_row_data(builder).await?.is_some() {
-                return Ok(Some(()));
+            Ok(Some(()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
+        if self.option.aggregates.is_some() {
+            return self.collect_aggregate_row_data(builder).await;
+        } else {
+            loop {
+                if self.columns.is_empty() && self.next_series().await?.is_none() {
+                    return Ok(None);
+                }
+
+                if self.collect_row_data(builder).await?.is_some() {
+                    return Ok(Some(()));
+                }
             }
         }
     }
 
     fn record_builder(&self) -> Vec<ArrayBuilderPtr> {
+        if let Some(aggregates) = self.option.aggregates.as_ref() {
+            // TODO: Correct the aggregate columns order.
+            let mut builders: Vec<ArrayBuilderPtr> = Vec::with_capacity(aggregates.len());
+            for agg in self.option.aggregates.iter() {
+                builders.push(Box::new(Int64Builder::with_capacity(self.batch_size)));
+            }
+            return builders;
+        }
         let mut builders: Vec<ArrayBuilderPtr> =
             Vec::with_capacity(self.option.table_schema.columns().len());
         for item in self.option.table_schema.columns().iter() {
@@ -923,6 +979,9 @@ impl RowIterator {
     }
 
     fn is_finish(&self) -> bool {
+        if self.finished {
+            return true;
+        }
         if self.series_index == usize::MAX {
             return false;
         }

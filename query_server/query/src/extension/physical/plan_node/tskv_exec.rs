@@ -228,6 +228,7 @@ impl TableScanStream {
             batch_size,
             table_schema.tenant.clone(),
             filter,
+            None,
             proj_schema.clone(),
             proj_table_schema,
             metrics.tskv_metrics(),
@@ -242,6 +243,22 @@ impl TableScanStream {
             iterator,
             metrics,
         })
+    }
+
+    pub fn with_iterator(
+        proj_schema: SchemaRef,
+        batch_size: usize,
+        coord: CoordinatorRef,
+        iterator: ReaderIterator,
+        metrics: TableScanMetrics,
+    ) -> Self {
+        Self {
+            proj_schema,
+            batch_size,
+            coord,
+            iterator,
+            metrics,
+        }
     }
 }
 
