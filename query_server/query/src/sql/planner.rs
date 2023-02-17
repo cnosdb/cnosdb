@@ -1406,9 +1406,9 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     }
 
     fn compact_vnode_to_plan(&self, stmt: ASTCompactVnode) -> Result<PlanWithPrivileges> {
-        let ASTCompactVnode { vnode_ids } = stmt;
+        let ASTCompactVnode { vnode_ids, node_id } = stmt;
 
-        let plan = Plan::DDL(DDLPlan::CompactVnode(CompactVnode { vnode_ids }));
+        let plan = Plan::DDL(DDLPlan::CompactVnode(CompactVnode { vnode_ids, node_id }));
         Ok(PlanWithPrivileges {
             plan,
             privileges: vec![Privilege::Global(GlobalPrivilege::System)],

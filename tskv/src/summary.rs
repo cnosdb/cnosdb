@@ -22,7 +22,7 @@ use tokio::sync::RwLock;
 use trace::{debug, error, info};
 use utils::BloomFilter;
 
-use crate::compaction::FlushReq;
+use crate::compaction::{CompactTask, FlushReq};
 use crate::context::{GlobalContext, GlobalSequenceTask};
 use crate::error::{Error, Result};
 use crate::file_system::file_manager::try_exists;
@@ -332,7 +332,7 @@ impl Summary {
         runtime: Arc<Runtime>,
         flush_task_sender: Sender<FlushReq>,
         sequence_task_sender: Sender<GlobalSequenceTask>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
         load_field_filter: bool,
     ) -> Result<Self> {
         let summary_path = opt.storage.summary_dir();
@@ -379,7 +379,7 @@ impl Summary {
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         flush_task_sender: Sender<FlushReq>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
         load_field_filter: bool,
     ) -> Result<VersionSet> {
         let mut tsf_edits_map: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
@@ -830,7 +830,7 @@ mod test {
     use trace::debug;
     use utils::BloomFilter;
 
-    use crate::compaction::FlushReq;
+    use crate::compaction::{CompactTask, FlushReq};
     use crate::context::GlobalSequenceTask;
     use crate::file_system::file_manager;
     use crate::kv_option::{Options, StorageOptions};
@@ -910,7 +910,7 @@ mod test {
             println!("Mock global sequence job finished (test_summary).");
         });
         let (compact_task_sender, mut compact_task_receiver) =
-            mpsc::channel::<TseriesFamilyId>(COMPACT_REQ_CHANNEL_CAP);
+            mpsc::channel::<CompactTask>(COMPACT_REQ_CHANNEL_CAP);
         let compact_job_mock = runtime.spawn(async move {
             println!("Mock compact job started (test_summary).");
             while compact_task_receiver.recv().await.is_some() {
@@ -989,7 +989,7 @@ mod test {
         runtime: Arc<Runtime>,
         flush_task_sender: Sender<FlushReq>,
         global_seq_task_sender: Sender<GlobalSequenceTask>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
     ) {
         let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
         meta_manager.admin_meta().add_data_node().await.unwrap();
@@ -1029,7 +1029,7 @@ mod test {
         runtime: Arc<Runtime>,
         flush_task_sender: Sender<FlushReq>,
         global_seq_task_sender: Sender<GlobalSequenceTask>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
     ) {
         let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
         meta_manager.admin_meta().add_data_node().await.unwrap();
@@ -1091,7 +1091,7 @@ mod test {
         summary_task_sender: Sender<SummaryTask>,
         flush_task_sender: Sender<FlushReq>,
         global_seq_task_sender: Sender<GlobalSequenceTask>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
     ) {
         let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
         meta_manager.admin_meta().add_data_node().await.unwrap();
@@ -1173,7 +1173,7 @@ mod test {
         summary_task_sender: Sender<SummaryTask>,
         flush_task_sender: Sender<FlushReq>,
         global_seq_task_sender: Sender<GlobalSequenceTask>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
     ) {
         let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
         meta_manager.admin_meta().add_data_node().await.unwrap();

@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
-use crate::compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker};
+use crate::compaction::{CompactReq, CompactTask, FlushReq, LevelCompactionPicker, Picker};
 use crate::error::{Error, Result};
 use crate::file_system::file_manager;
 use crate::file_utils::{self, make_delta_file_name, make_tsm_file_name};
@@ -616,7 +616,7 @@ pub struct TseriesFamily {
     mut_ts_max: AtomicI64,
     last_modified: Arc<tokio::sync::RwLock<Option<Instant>>>,
     flush_task_sender: Sender<FlushReq>,
-    compact_task_sender: Sender<TseriesFamilyId>,
+    compact_task_sender: Sender<CompactTask>,
     cancellation_token: CancellationToken,
 }
 
@@ -630,7 +630,7 @@ impl TseriesFamily {
         cache_opt: Arc<CacheOptions>,
         storage_opt: Arc<StorageOptions>,
         flush_task_sender: Sender<FlushReq>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
     ) -> Self {
         let mm = Arc::new(RwLock::new(cache));
         let seq = version.last_seq;
@@ -824,15 +824,15 @@ impl TseriesFamily {
         let jh = runtime.spawn(async move {
             if compact_trigger_cold_duration == Duration::ZERO {
             } else {
-                let mut code_check_interval = tokio::time::interval(Duration::from_secs(10));
-                code_check_interval.tick().await;
+                let mut cold_check_interval = tokio::time::interval(Duration::from_secs(10));
+                cold_check_interval.tick().await;
                 loop {
                     tokio::select! {
-                        _ = code_check_interval.tick() => {
+                        _ = cold_check_interval.tick() => {
                             let last_modified = last_modified.read().await;
                             if let Some(t) = *last_modified {
                                 if t.elapsed() >= compact_trigger_cold_duration {
-                                    if let Err(e) = compact_task_sender.send(tsf_id).await {
+                                    if let Err(e) = compact_task_sender.send(CompactTask::ColdVnode(tsf_id)).await {
                                         warn!("failed to send compact task({}), {}", tsf_id, e);
                                     }
                                 }
@@ -1409,7 +1409,7 @@ mod test {
                 kernel,
                 version_set.clone(),
                 summary_task_sender,
-                compact_task_sender,
+                Some(compact_task_sender),
             )
             .await
             .unwrap();
