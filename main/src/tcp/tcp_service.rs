@@ -391,6 +391,7 @@ async fn query_record_batch(
         cmd.args.batch_size,
         cmd.args.tenant.clone(),
         filter,
+        None,
         cmd.expr.df_schema,
         cmd.expr.table_schema,
         scan_metrics.tskv_metrics(),

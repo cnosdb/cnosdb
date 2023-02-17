@@ -272,7 +272,7 @@ impl LevelCompactionPicker {
     ) -> (u64, TimeRange) {
         let mut picking_file_size = 0_u64;
         let mut picking_time_range = TimeRange::from((Timestamp::MAX, Timestamp::MIN));
-        let mut prev_non_overlaped_idx = 0_usize;
+        let mut prev_non_overlapped_idx = 0_usize;
         for (i, file) in src_files.iter().enumerate() {
             // The first serial files may be in compaction
             if file.is_compacting() {
@@ -282,10 +282,10 @@ impl LevelCompactionPicker {
                 picking_time_range.merge(file.time_range());
             } else {
                 picking_time_range = *file.time_range();
-                prev_non_overlaped_idx = i;
+                prev_non_overlapped_idx = i;
             }
             picking_file_size += file.size();
-            if picking_file_size > max_compact_size && prev_non_overlaped_idx > 0 {
+            if picking_file_size > max_compact_size && prev_non_overlapped_idx > 0 {
                 break;
             }
             dst_files.push(file.clone());
@@ -293,7 +293,7 @@ impl LevelCompactionPicker {
         }
 
         let mut picked_time_range = *src_files[0].time_range();
-        picked_time_range.merge(src_files[prev_non_overlaped_idx].time_range());
+        picked_time_range.merge(src_files[prev_non_overlapped_idx].time_range());
         (picking_file_size, picked_time_range)
     }
 }
