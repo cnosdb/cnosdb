@@ -255,6 +255,13 @@ async fn process_admin_statement_command(
             }
         }
 
+        AdminStatementType::CompactVnode { vnode_ids } => {
+            if let Err(err) = engine.compact(vnode_ids).await {
+                rsp_code = FAILED_RESPONSE_CODE;
+                rsp_data = err.to_string();
+            }
+        }
+
         AdminStatementType::GetVnodeFilesMeta { db, vnode_id } => {
             let owner = models::schema::make_owner(&cmd.tenant, &db);
             let storage_opt = engine.get_storage_options();

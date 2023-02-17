@@ -9,7 +9,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use trace::{error, info, warn};
 
-use crate::compaction::{LevelCompactionPicker, Picker};
+use crate::compaction::{flush, CompactTask, LevelCompactionPicker, Picker};
 use crate::context::GlobalContext;
 use crate::error::Result;
 use crate::kv_option::StorageOptions;
@@ -20,7 +20,7 @@ use crate::TseriesFamilyId;
 pub fn run(
     storage_opt: Arc<StorageOptions>,
     runtime: Arc<Runtime>,
-    mut receiver: Receiver<TseriesFamilyId>,
+    mut receiver: Receiver<CompactTask>,
     ctx: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
     summary_task_sender: Sender<SummaryTask>,
@@ -33,14 +33,18 @@ pub fn run(
             storage_opt.max_concurrent_compaction as usize,
         ));
 
-        while let Some(ts_family_id) = receiver.recv().await {
+        while let Some(compact_task) = receiver.recv().await {
+            let (vnode_id, flus_vnode) = match compact_task {
+                CompactTask::Vnode(id) => (id, false),
+                CompactTask::ColdVnode(id) => (id, true),
+            };
             let ts_family = version_set
                 .read()
                 .await
-                .get_tsfamily_by_tf_id(ts_family_id)
+                .get_tsfamily_by_tf_id(vnode_id)
                 .await;
             if let Some(tsf) = ts_family {
-                info!("Starting compaction on ts_family {}", ts_family_id);
+                info!("Starting compaction on ts_family {}", vnode_id);
                 let start = Instant::now();
 
                 let picker = LevelCompactionPicker::new(storage_opt.clone());
@@ -52,10 +56,31 @@ pub fn run(
                     let out_level = req.out_level;
 
                     let ctx_inner = ctx.clone();
+                    let version_set_inner = version_set.clone();
                     let summary_task_sender_inner = summary_task_sender.clone();
 
                     let permit = compaction_limit.clone().acquire_owned().await.unwrap();
                     runtime_inner.spawn(async move {
+                        if flus_vnode {
+                            let mut tsf_wlock = tsf.write().await;
+                            tsf_wlock.switch_to_immutable();
+                            let flush_req = tsf_wlock.flush_req(true);
+                            drop(tsf_wlock);
+                            if let Some(req) = flush_req {
+                                if let Err(e) = flush::run_flush_memtable_job(
+                                    req,
+                                    ctx_inner.clone(),
+                                    version_set_inner,
+                                    summary_task_sender_inner.clone(),
+                                    None,
+                                )
+                                .await
+                                {
+                                    error!("Failed to flush vnode {}: {:?}", vnode_id, e);
+                                }
+                            }
+                        }
+
                         match super::run_compaction_job(req, ctx_inner).await {
                             Ok(Some((version_edit, file_metas))) => {
                                 metrics::incr_compaction_success();

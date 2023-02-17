@@ -139,6 +139,7 @@ pub struct ChecksumGroup {
 #[derive(Debug, Clone)]
 pub struct CompactVnode {
     pub vnode_ids: Vec<VnodeId>,
+    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone)]

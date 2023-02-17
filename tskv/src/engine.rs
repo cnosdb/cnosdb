@@ -119,7 +119,7 @@ pub trait Engine: Send + Sync + Debug {
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
 
-    async fn compact(&self, tenant: &str, database: &str);
+    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()>;
 }
 
 #[derive(Debug, Default)]
@@ -288,7 +288,7 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    async fn compact(&self, tenant: &str, database: &str) {
+    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()> {
         todo!()
     }
 }

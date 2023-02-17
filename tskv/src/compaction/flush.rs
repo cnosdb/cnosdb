@@ -25,7 +25,7 @@ use tokio::time::timeout;
 use trace::{debug, error, info, log_error, warn};
 use utils::BloomFilter;
 
-use crate::compaction::FlushReq;
+use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalContext;
 use crate::database::Database;
 use crate::error::{self, Error, Result};
@@ -363,7 +363,7 @@ pub async fn run_flush_memtable_job(
     global_context: Arc<GlobalContext>,
     version_set: Arc<tokio::sync::RwLock<VersionSet>>,
     summary_task_sender: Sender<SummaryTask>,
-    compact_task_sender: Sender<TseriesFamilyId>,
+    compact_task_sender: Option<Sender<CompactTask>>,
 ) -> Result<()> {
     let mut all_mems = vec![];
     let mut tsf_caches: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> =
@@ -410,8 +410,10 @@ pub async fn run_flush_memtable_job(
 
             tsf.read().await.update_last_modfied().await;
 
-            if let Err(e) = compact_task_sender.send(tsf_id).await {
-                warn!("failed to send compact task({}), {}", tsf_id, e);
+            if let Some(sender) = compact_task_sender.as_ref() {
+                if let Err(e) = sender.send(CompactTask::Vnode(tsf_id)).await {
+                    warn!("failed to send compact task({}), {}", tsf_id, e);
+                }
             }
         }
     }
