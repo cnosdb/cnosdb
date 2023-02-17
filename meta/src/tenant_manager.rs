@@ -23,6 +23,15 @@ use crate::store::command::{
 };
 use crate::MetaClientRef;
 
+pub const USE_TENANT_ACTION_ADD: i32 = 1;
+pub const USE_TENANT_ACTION_DEL: i32 = 2;
+#[derive(Debug, Clone)]
+pub struct UseTenantInfo {
+    pub name: String,
+    pub version: u64,
+    pub action: i32, //1: add, 2: del
+}
+
 #[async_trait]
 pub trait TenantManager: Send + Sync + Debug {
     async fn clear(&self);
@@ -53,7 +62,7 @@ pub struct RemoteTenantManager {
     cluster_name: String,
     cluster_meta: String,
     node_id: u64,
-    ver_sender: Sender<u64>,
+    tenant_change_sender: Sender<UseTenantInfo>,
 
     tenants: RwLock<HashMap<String, MetaClientRef>>,
     limiters: RwLock<HashMap<String, Arc<dyn RequestLimiter>>>,
@@ -64,10 +73,10 @@ impl RemoteTenantManager {
         cluster_name: String,
         cluster_meta: String,
         id: u64,
-        ver_sender: Sender<u64>,
+        tenant_change_sender: Sender<UseTenantInfo>,
     ) -> Self {
         Self {
-            ver_sender,
+            tenant_change_sender,
             client: MetaHttpClient::new(1, cluster_meta.clone()),
             cluster_name,
             cluster_meta,
@@ -75,6 +84,39 @@ impl RemoteTenantManager {
             limiters: Default::default(),
             tenants: Default::default(),
         }
+    }
+
+    async fn create_tenant_meta(&self, tenant_info: Tenant) -> MetaResult<MetaClientRef> {
+        let option = tenant_info.options().clone();
+        let tenant_name = tenant_info.name().to_string();
+
+        let client = RemoteMetaClient::new(
+            self.cluster_name.clone(),
+            tenant_info,
+            self.cluster_meta.clone(),
+            self.node_id,
+        )
+        .await?;
+
+        self.tenants
+            .write()
+            .await
+            .insert(tenant_name.clone(), client.clone());
+
+        let limiter = self.new_limiter(&self.cluster_name, &tenant_name, &option);
+        self.limiters
+            .write()
+            .await
+            .insert(tenant_name.clone(), limiter);
+
+        let info = UseTenantInfo {
+            name: tenant_name,
+            version: client.version().await,
+            action: USE_TENANT_ACTION_ADD,
+        };
+        let _ = self.tenant_change_sender.send(info).await;
+
+        Ok(client)
     }
 
     pub fn new_limiter(
@@ -114,26 +156,7 @@ impl TenantManager for RemoteTenantManager {
             .write::<command::CommonResp<Tenant>>(&req)
             .await?
         {
-            command::CommonResp::Ok(tenant) => {
-                let client: MetaClientRef = RemoteMetaClient::new(
-                    self.cluster_name.clone(),
-                    tenant,
-                    self.cluster_meta.clone(),
-                    self.node_id,
-                )
-                .await?;
-
-                self.tenants
-                    .write()
-                    .await
-                    .insert(client.tenant().name().to_string(), client.clone());
-                self.limiters
-                    .write()
-                    .await
-                    .insert(client.tenant().name().to_string(), limiter);
-
-                Ok(client)
-            }
+            command::CommonResp::Ok(tenant) => self.create_tenant_meta(tenant).await,
             command::CommonResp::Err(status) => {
                 // TODO improve response
                 if status.code == META_REQUEST_TENANT_EXIST {
@@ -191,25 +214,7 @@ impl TenantManager for RemoteTenantManager {
             .write::<command::CommonResp<Tenant>>(&req)
             .await?
         {
-            command::CommonResp::Ok(data) => {
-                let client = RemoteMetaClient::new(
-                    self.cluster_name.clone(),
-                    data,
-                    self.cluster_meta.clone(),
-                    self.node_id,
-                )
-                .await?;
-                self.tenants
-                    .write()
-                    .await
-                    .insert(client.tenant().name().to_string(), client);
-
-                self.limiters
-                    .write()
-                    .await
-                    .insert(name.to_string(), limiter);
-                Ok(())
-            }
+            command::CommonResp::Ok(data) => self.create_tenant_meta(data).await.map(|_| ()),
             command::CommonResp::Err(status) => {
                 // TODO improve response
                 if status.code == META_REQUEST_TENANT_NOT_FOUND {
@@ -249,25 +254,7 @@ impl TenantManager for RemoteTenantManager {
         let tenant_name = tenant.to_string();
         if let Ok(tenant_opt) = self.tenant(tenant).await {
             if let Some(tenant_info) = tenant_opt {
-                if let Ok(client) = RemoteMetaClient::new(
-                    self.cluster_name.clone(),
-                    tenant_info,
-                    self.cluster_meta.clone(),
-                    self.node_id,
-                )
-                .await
-                {
-                    let mut tenants = self.tenants.write().await;
-                    if let Some(client) = tenants.get(&tenant_name) {
-                        return Some(client.clone());
-                    } else {
-                        tenants.insert(tenant_name, client.clone());
-
-                        let _ = self.ver_sender.send(client.version().await).await;
-
-                        return Some(client);
-                    }
-                }
+                return self.create_tenant_meta(tenant_info).await.ok();
             }
         }
 

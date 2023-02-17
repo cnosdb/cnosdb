@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use openraft::error::{ClientWriteError, ForwardToLeader, NetworkError, RPCError, RemoteError};
@@ -56,7 +57,7 @@ impl MetaHttpClient {
         Ok(rsp)
     }
 
-    pub async fn watch<T>(&self, req: &(String, String, String, u64)) -> MetaResult<T>
+    pub async fn watch<T>(&self, req: &(String, String, HashSet<String>, u64)) -> MetaResult<T>
     where
         T: for<'a> Deserialize<'a>,
     {
@@ -198,6 +199,7 @@ impl MetaHttpClient {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
     use std::{thread, time};
 
     use models::meta_data::{NodeInfo, VnodeInfo};
@@ -216,7 +218,14 @@ mod test {
 
         //let hand = tokio::spawn(watch_tenant("cluster_xxx", "tenant_test"));
 
-        let client = MetaHttpClient::new(3, "127.0.0.1:21003".to_string());
+        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+
+        let req = command::ReadCommand::TenaneMetaData(cluster.clone(), "cnosdb".to_string());
+        let rsp = client
+            .read::<command::TenaneMetaDataResp>(&req)
+            .await
+            .unwrap();
+        println!("read tenant data: {}", serde_json::to_string(&rsp).unwrap());
 
         let node = NodeInfo {
             id: 111,
@@ -300,7 +309,7 @@ mod test {
         let mut request = (
             "client_123".to_string(),
             "cluster_xx".to_string(),
-            "tenant_xx".to_string(),
+            HashSet::from(["tenant_xx".to_string()]),
             0,
         );
 

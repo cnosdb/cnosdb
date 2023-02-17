@@ -30,10 +30,6 @@ impl KeyPath {
         format!("/{}/", cluster)
     }
 
-    pub fn tenant_prefix(cluster: &str, tenant: &str) -> String {
-        format!("/{}/{}/", cluster, tenant)
-    }
-
     pub fn users(cluster: &str) -> String {
         format!("/{}/users", cluster)
     }
@@ -43,6 +39,10 @@ impl KeyPath {
     }
     pub fn incr_id(cluster: &str) -> String {
         format!("/{}/auto_incr_id", cluster)
+    }
+
+    pub fn version() -> String {
+        "/data_version".to_string()
     }
 
     pub fn data_nodes(cluster: &str) -> String {
@@ -93,7 +93,7 @@ impl KeyPath {
     }
 
     pub fn tenants(cluster: &str) -> String {
-        format!("/{}/tenants", cluster)
+        format!("/{}/tenants/", cluster)
     }
 
     pub fn tenant(cluster: &str, name: &str) -> String {

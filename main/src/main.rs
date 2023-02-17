@@ -172,6 +172,7 @@ sub = {:?}"#,
         let (mut server, tskv) = match &cli.subcmd {
             SubCommand::Tskv {} => {
                 meta_manager.admin_meta().add_data_node().await.unwrap();
+
                 let kv_inst = Arc::new(
                     TsKv::open(meta_manager.clone(), options.clone(), runtime)
                         .await
