@@ -1202,18 +1202,11 @@ impl<'a> ExtParser<'a> {
             let mut vnode_ids = Vec::new();
             loop {
                 vnode_ids.push(self.parse_number::<VnodeId>()?);
-                if self.parser.expect_keyword(Keyword::ON).is_ok() {
+                if self.parser.expect_token(&Token::SemiColon).is_ok() {
                     break;
                 }
             }
-            if self.parse_cnos_keyword(CnosKeyWord::NODE).not() {
-                return parser_err!("expected NODE, after TO");
-            }
-            let node_id = self.parse_number::<NodeId>()?;
-            Ok(ExtStatement::CompactVnode(CompactVnode {
-                vnode_ids,
-                node_id,
-            }))
+            Ok(ExtStatement::CompactVnode(CompactVnode { vnode_ids }))
         } else {
             parser_err!("Expected VNODE, after COMPACT")
         }
@@ -1877,13 +1870,12 @@ mod tests {
             statement[0],
             ExtStatement::DropVnode(DropVnode { vnode_id: 5 })
         );
-        let sql4 = "compact vnode 6 7 8 9 on node 5;";
+        let sql4 = "compact vnode 6 7 8 9;";
         let statement = ExtParser::parse_sql(sql4).unwrap();
         assert_eq!(
             statement[0],
             ExtStatement::CompactVnode(CompactVnode {
                 vnode_ids: vec![6, 7, 8, 9],
-                node_id: 5
             })
         );
         let sql5 = "checksum group 10";

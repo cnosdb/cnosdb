@@ -19,11 +19,11 @@ impl CompactVnodeTask {
 #[async_trait]
 impl DDLDefinitionTask for CompactVnodeTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        let (vnode_ids, node_id) = (self.stmt.vnode_ids.clone(), self.stmt.node_id);
+        let vnode_ids = self.stmt.vnode_ids.clone();
         let tenant = query_state_machine.session.tenant();
 
         let coord = query_state_machine.coord.clone();
-        let cmd_type = coordinator::command::VnodeManagerCmdType::Compact(node_id);
+        let cmd_type = coordinator::command::VnodeManagerCmdType::Compact;
         coord.vnode_manager(tenant, vnode_ids, cmd_type).await?;
 
         Ok(Output::Nil(()))

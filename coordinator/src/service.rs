@@ -301,13 +301,43 @@ impl CoordService {
                 )
             }
 
-            VnodeManagerCmdType::Compact(node_id) => (
-                AdminStatementRequest {
-                    tenant: tenant.to_string(),
-                    stmt: AdminStatementType::CompactVnode { vnode_ids },
-                },
-                node_id,
-            ),
+            VnodeManagerCmdType::Compact => {
+                let meta = self.meta.admin_meta();
+
+                // Group vnode ids by node id.
+                let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
+                for vnode_id in vnode_ids.iter() {
+                    let vnode = self.get_vnode_all_info(tenant, *vnode_id).await?;
+                    node_vnode_ids_map
+                        .entry(vnode.node_id)
+                        .or_default()
+                        .push(*vnode_id);
+                }
+                let nodes = meta.data_nodes().await;
+
+                // Send grouped vnode ids to nodes.
+                let mut req_futures = vec![];
+                for node in nodes {
+                    if let Some(vnode_ids) = node_vnode_ids_map.remove(&node.id) {
+                        let req = AdminStatementRequest {
+                            tenant: tenant.to_string(),
+                            stmt: AdminStatementType::CompactVnode { vnode_ids },
+                        };
+                        let cmd = CoordinatorTcpCmd::AdminStatementCmd(req);
+                        req_futures.push(self.exec_on_node(node.id, cmd));
+                    }
+                }
+                match futures::future::try_join_all(req_futures).await {
+                    Ok(_) => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(CoordinatorError::CommonError {
+                            msg: format!("Failed to compact on VNodes {:?}: {:?}", vnode_ids, e),
+                        })
+                    }
+                };
+            }
         };
 
         let cmd = CoordinatorTcpCmd::AdminStatementCmd(tcp_req);

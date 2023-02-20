@@ -509,8 +509,8 @@ pub struct WriteRequest {
 
 #[derive(Debug, Clone)]
 pub enum VnodeManagerCmdType {
-    Copy(u64),    // dst node id
-    Move(u64),    // dst node id
-    Drop,         //
-    Compact(u64), // dst node id
+    Copy(u64), // dst node id
+    Move(u64), // dst node id
+    Drop,      //
+    Compact,   // dst node id
 }
