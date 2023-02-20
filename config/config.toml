@@ -19,7 +19,7 @@ auth_enabled = false
 # Directory for index:      $path/$database/data/id/index
 # Directory for tsm:        $path/$database/data/id/tsm
 # Directory for delta:      $path/$database/data/id/delta
-path = 'data/db'
+path = '/var/lib/cnosdb/db'
 
 # The maximum file size of summary file.
 #max_summary_size = "128M" # 134,217,728 bytes
@@ -55,7 +55,7 @@ strict_write = false
 enabled = true
 
 # The directory where write ahead logs stored.
-path = 'data/wal'
+path = '/var/lib/cnosdb/wal'
 
 # The maxmimum amount of write request in memory.
 #wal_req_channel_cap = 64
@@ -81,7 +81,7 @@ path = 'data/wal'
 
 [log]
 level = 'info'
-path = 'data/log'
+path = '/var/log/cnosdb'
 
 [security]
 # [security.tls_config]
@@ -103,5 +103,5 @@ store_metrics = true
 
 [hinted_off]
 enable = true
-path = '/tmp/cnosdb/hh'
+path = '/var/lib/cnosdb/hh'
 

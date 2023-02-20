@@ -1,0 +1,20 @@
+# If you modify this, please also make sure to edit init.sh
+
+[Unit]
+Description=Data service for CnosDB, an open-source, distributed, time series database
+Documentation=https://docs.cnosdb.com/
+After=network-online.target
+
+[Service]
+User=cnosdb
+Group=cnosdb
+LimitNOFILE=65536
+EnvironmentFile=-/etc/default/cnosdb
+ExecStart=/usr/lib/cnosdb/scripts/cnosdb-systemd-start.sh
+KillMode=control-group
+Restart=on-failure
+PIDFile=/var/run/cnosdb/cnosdb.pid
+
+[Install]
+WantedBy=multi-user.target
+Alias=cnosdb.service

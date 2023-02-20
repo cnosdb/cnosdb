@@ -1,0 +1,8 @@
+id = 1
+http_addr = "0.0.0.0:21001"
+
+logs_level = "info"
+logs_path = "/var/log/cnosdb"
+snapshot_path = "/var/lib/cnosdb/meta/snapshot"
+journal_path = "/var/lib/cnosdb/meta/journal"
+snapshot_per_events = 500
