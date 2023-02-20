@@ -3,19 +3,15 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use derive_builder::Builder;
-use meta::error::MetaError;
-use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
-use models::auth::user::{User, UserInfo, UserOptionsBuilder, ROOT};
-use models::oid::Identifier;
-use models::schema::{DatabaseSchema, TenantOptionsBuilder, DEFAULT_CATALOG, DEFAULT_DATABASE};
+use models::auth::user::{User, UserInfo};
 use snafu::ResultExt;
 use spi::query::auth::AccessControlRef;
 use spi::query::dispatcher::QueryDispatcher;
 use spi::query::session::IsiphoSessionCtxFactory;
 use spi::server::dbms::DatabaseManagerSystem;
 use spi::service::protocol::{Query, QueryHandle, QueryId};
-use spi::{AuthSnafu, QueryError, Result};
-use trace::{debug, info};
+use spi::{AuthSnafu, Result};
+use trace::debug;
 use tskv::kv_option::Options;
 
 use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
@@ -98,8 +94,6 @@ pub async fn make_cnosdbms(
 
     let queries_limit = options.query.max_server_connections;
 
-    init_metadata(coord.clone()).await?;
-
     let meta_manager = coord.meta_manager();
 
     let query_dispatcher = SimpleQueryDispatcherBuilder::default()
@@ -128,86 +122,6 @@ pub async fn make_cnosdbms(
         .expect("build db server");
 
     Ok(db_server)
-}
-
-async fn init_metadata(coord: CoordinatorRef) -> Result<()> {
-    // init admin
-    let user_manager = coord.meta_manager().user_manager();
-    debug!("Check if system user {} exist", ROOT);
-    if user_manager.user(ROOT).await?.is_none() {
-        info!("Initialize the system user {}", ROOT);
-
-        let options = UserOptionsBuilder::default()
-            .must_change_password(true)
-            .comment("system admin")
-            .build()
-            .expect("failed to init admin user.");
-        let res = user_manager
-            .create_user(ROOT.to_string(), options, true)
-            .await;
-        if let Err(err) = res {
-            match err {
-                MetaError::UserAlreadyExists { .. } => {}
-                _ => return Err(QueryError::Meta { source: err }),
-            }
-        }
-    }
-
-    // init system tenant
-    let tenant_manager = coord.meta_manager().tenant_manager();
-    debug!("Check if system tenant {} exist", DEFAULT_CATALOG);
-    if tenant_manager.tenant(DEFAULT_CATALOG).await?.is_none() {
-        info!("Initialize the system tenant {}", DEFAULT_CATALOG);
-
-        let options = TenantOptionsBuilder::default()
-            .comment("system tenant")
-            .build()
-            .expect("failed to init admin user.");
-        let res = tenant_manager
-            .create_tenant(DEFAULT_CATALOG.to_string(), options)
-            .await;
-        if let Err(err) = res {
-            match err {
-                MetaError::TenantAlreadyExists { .. } => {}
-                _ => return Err(QueryError::Meta { source: err }),
-            }
-        }
-
-        debug!("Add root to the system tenant as owner");
-        if let Some(root) = user_manager.user(ROOT).await? {
-            if let Some(client) = tenant_manager.tenant_meta(DEFAULT_CATALOG).await {
-                let role = TenantRoleIdentifier::System(SystemTenantRole::Owner);
-                if let Err(err) = client.add_member_with_role(*root.id(), role).await {
-                    match err {
-                        MetaError::UserAlreadyExists { .. }
-                        | MetaError::MemberAlreadyExists { .. } => {}
-                        _ => return Err(QueryError::Meta { source: err }),
-                    }
-                }
-            }
-        }
-
-        debug!("Initialize the system database {}", DEFAULT_DATABASE);
-
-        let client =
-            tenant_manager
-                .tenant_meta(DEFAULT_CATALOG)
-                .await
-                .ok_or(MetaError::TenantNotFound {
-                    tenant: DEFAULT_CATALOG.to_string(),
-                })?;
-        let res = client
-            .create_db(DatabaseSchema::new(DEFAULT_CATALOG, DEFAULT_DATABASE))
-            .await;
-        if let Err(err) = res {
-            match err {
-                MetaError::DatabaseAlreadyExists { .. } => {}
-                _ => return Err(QueryError::Meta { source: err }),
-            }
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
