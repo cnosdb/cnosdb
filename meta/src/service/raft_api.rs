@@ -7,6 +7,7 @@ use openraft::raft::{AppendEntriesRequest, InstallSnapshotRequest, VoteRequest};
 use openraft::RaftMetrics;
 use web::Json;
 
+use crate::service::init_meta;
 use crate::{ClusterNode, ClusterNodeId, MetaApp, TypeConfig};
 
 #[post("/raft-vote")]
@@ -71,6 +72,7 @@ pub async fn init(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
         },
     );
     let res = app.raft.initialize(nodes).await;
+    init_meta(&app).await;
     Ok(Json(res))
 }
 

@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use config::RequestLimiterConfig;
 use limiter_bucket::RateBucket;
-use serde::Deserialize;
-use surf::http::convert::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::limiter::limiter_kind::RequestLimiterKind;
 

@@ -21,7 +21,7 @@ use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info};
 use utils::BloomFilter;
 
-use crate::compaction::{check, FlushReq};
+use crate::compaction::{check, CompactTask, FlushReq};
 use crate::error::{self, IndexErrSnafu, Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::Options;
@@ -70,7 +70,7 @@ impl Database {
         &mut self,
         ver: Arc<Version>,
         flush_task_sender: Sender<FlushReq>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
     ) {
         let opt = ver.storage_opt();
 
@@ -110,7 +110,7 @@ impl Database {
         version_edit: Option<VersionEdit>,
         summary_task_sender: Sender<SummaryTask>,
         flush_task_sender: Sender<FlushReq>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
     ) -> Arc<RwLock<TseriesFamily>> {
         let seq_no = version_edit.as_ref().map(|v| v.seq_no).unwrap_or(seq_no);
 

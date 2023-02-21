@@ -4,8 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use config::RequestLimiterConfig;
 use limiter_bucket::CountBucket;
-use serde::Deserialize;
-use surf::http::convert::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};

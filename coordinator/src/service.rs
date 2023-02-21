@@ -58,7 +58,7 @@ pub trait Coordinator: Send + Sync + Debug {
     async fn vnode_manager(
         &self,
         tenant: &str,
-        vnode_id: u32,
+        vnode_ids: Vec<u32>,
         cmd_type: VnodeManagerCmdType,
     ) -> CoordinatorResult<()>;
 }
@@ -108,7 +108,7 @@ impl Coordinator for MockCoordinator {
     async fn vnode_manager(
         &self,
         tenant: &str,
-        vnode_id: u32,
+        vnode_ids: Vec<u32>,
         cmd_type: VnodeManagerCmdType,
     ) -> CoordinatorResult<()> {
         Ok(())
@@ -241,13 +241,18 @@ impl CoordService {
     async fn vnode_manager_request(
         &self,
         tenant: &str,
-        vnode_id: u32,
+        vnode_ids: Vec<u32>,
         cmd_type: VnodeManagerCmdType,
     ) -> CoordinatorResult<()> {
-        let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
-
+        if vnode_ids.is_empty() {
+            return Err(CoordinatorError::CommonError {
+                msg: "Please specify at least one vnode".to_string(),
+            });
+        }
         let (tcp_req, req_node_id) = match cmd_type {
             VnodeManagerCmdType::Copy(node_id) => {
+                let vnode_id = *vnode_ids.first().unwrap();
+                let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
                 if all_info.node_id == node_id {
                     return Err(CoordinatorError::CommonError {
                         msg: format!("Vnode: {} Already in {}", all_info.vnode_id, node_id),
@@ -264,6 +269,8 @@ impl CoordService {
             }
 
             VnodeManagerCmdType::Move(node_id) => {
+                let vnode_id = *vnode_ids.first().unwrap();
+                let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
                 if all_info.node_id == node_id {
                     return Err(CoordinatorError::CommonError {
                         msg: format!("move vnode: {} already in {}", all_info.vnode_id, node_id),
@@ -279,16 +286,58 @@ impl CoordService {
                 )
             }
 
-            VnodeManagerCmdType::Drop => (
-                AdminStatementRequest {
-                    tenant: tenant.to_string(),
-                    stmt: AdminStatementType::DeleteVnode {
-                        db: all_info.db_name.clone(),
-                        vnode_id,
+            VnodeManagerCmdType::Drop => {
+                let vnode_id = *vnode_ids.first().unwrap();
+                let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
+                (
+                    AdminStatementRequest {
+                        tenant: tenant.to_string(),
+                        stmt: AdminStatementType::DeleteVnode {
+                            db: all_info.db_name.clone(),
+                            vnode_id,
+                        },
                     },
-                },
-                all_info.node_id,
-            ),
+                    all_info.node_id,
+                )
+            }
+
+            VnodeManagerCmdType::Compact => {
+                let meta = self.meta.admin_meta();
+
+                // Group vnode ids by node id.
+                let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
+                for vnode_id in vnode_ids.iter() {
+                    let vnode = self.get_vnode_all_info(tenant, *vnode_id).await?;
+                    node_vnode_ids_map
+                        .entry(vnode.node_id)
+                        .or_default()
+                        .push(*vnode_id);
+                }
+                let nodes = meta.data_nodes().await;
+
+                // Send grouped vnode ids to nodes.
+                let mut req_futures = vec![];
+                for node in nodes {
+                    if let Some(vnode_ids) = node_vnode_ids_map.remove(&node.id) {
+                        let req = AdminStatementRequest {
+                            tenant: tenant.to_string(),
+                            stmt: AdminStatementType::CompactVnode { vnode_ids },
+                        };
+                        let cmd = CoordinatorTcpCmd::AdminStatementCmd(req);
+                        req_futures.push(self.exec_on_node(node.id, cmd));
+                    }
+                }
+                match futures::future::try_join_all(req_futures).await {
+                    Ok(_) => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(CoordinatorError::CommonError {
+                            msg: format!("Failed to compact on VNodes {:?}: {:?}", vnode_ids, e),
+                        })
+                    }
+                };
+            }
         };
 
         let cmd = CoordinatorTcpCmd::AdminStatementCmd(tcp_req);
@@ -480,9 +529,10 @@ impl Coordinator for CoordService {
     async fn vnode_manager(
         &self,
         tenant: &str,
-        vnode_id: u32,
+        vnode_ids: Vec<u32>,
         cmd_type: VnodeManagerCmdType,
     ) -> CoordinatorResult<()> {
-        self.vnode_manager_request(tenant, vnode_id, cmd_type).await
+        self.vnode_manager_request(tenant, vnode_ids, cmd_type)
+            .await
     }
 }

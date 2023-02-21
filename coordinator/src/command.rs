@@ -251,6 +251,10 @@ pub enum AdminStatementType {
         vnode_id: u32,
     },
 
+    CompactVnode {
+        vnode_ids: Vec<u32>,
+    },
+
     GetVnodeFilesMeta {
         db: String,
         vnode_id: u32,
@@ -508,4 +512,5 @@ pub enum VnodeManagerCmdType {
     Copy(u64), // dst node id
     Move(u64), // dst node id
     Drop,      //
+    Compact,   // dst node id
 }

@@ -18,6 +18,11 @@ use crate::summary::VersionEdit;
 use crate::tseries_family::{ColumnFile, Version};
 use crate::{LevelId, TseriesFamilyId};
 
+pub enum CompactTask {
+    Vnode(TseriesFamilyId),
+    ColdVnode(TseriesFamilyId),
+}
+
 pub struct CompactReq {
     pub ts_family_id: TseriesFamilyId,
     pub database: Arc<String>,

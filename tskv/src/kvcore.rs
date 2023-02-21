@@ -32,7 +32,7 @@ use tokio::time::Instant;
 use trace::{debug, error, info, trace, warn};
 
 use crate::compaction::{
-    self, run_flush_memtable_job, CompactReq, FlushReq, LevelCompactionPicker, Picker,
+    self, run_flush_memtable_job, CompactReq, CompactTask, FlushReq, LevelCompactionPicker, Picker,
 };
 use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
 use crate::database::Database;
@@ -69,7 +69,7 @@ pub struct TsKv {
     runtime: Arc<Runtime>,
     wal_sender: Sender<WalTask>,
     flush_task_sender: Sender<FlushReq>,
-    compact_task_sender: Sender<TseriesFamilyId>,
+    compact_task_sender: Sender<CompactTask>,
     summary_task_sender: Sender<SummaryTask>,
     global_seq_task_sender: Sender<GlobalSequenceTask>,
     close_sender: BroadcastSender<Sender<()>>,
@@ -81,7 +81,7 @@ impl TsKv {
         let (flush_task_sender, flush_task_receiver) =
             mpsc::channel::<FlushReq>(shared_options.storage.flush_req_channel_cap);
         let (compact_task_sender, compact_task_receiver) =
-            mpsc::channel::<TseriesFamilyId>(COMPACT_REQ_CHANNEL_CAP);
+            mpsc::channel::<CompactTask>(COMPACT_REQ_CHANNEL_CAP);
         let (wal_sender, wal_receiver) =
             mpsc::channel::<WalTask>(shared_options.wal.wal_req_channel_cap);
         let (summary_task_sender, summary_task_receiver) =
@@ -159,7 +159,7 @@ impl TsKv {
         opt: Arc<Options>,
         flush_task_sender: Sender<FlushReq>,
         global_seq_task_sender: Sender<GlobalSequenceTask>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -253,7 +253,7 @@ impl TsKv {
         ctx: Arc<GlobalContext>,
         version_set: Arc<RwLock<VersionSet>>,
         summary_task_sender: Sender<SummaryTask>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
     ) {
         let runtime = self.runtime.clone();
         let f = async move {
@@ -263,7 +263,7 @@ impl TsKv {
                     ctx.clone(),
                     version_set.clone(),
                     summary_task_sender.clone(),
-                    compact_task_sender.clone(),
+                    Some(compact_task_sender.clone()),
                 ));
             }
         };
@@ -594,7 +594,7 @@ impl Engine for TsKv {
                         self.global_ctx.clone(),
                         self.version_set.clone(),
                         self.summary_task_sender.clone(),
-                        self.compact_task_sender.clone(),
+                        Some(self.compact_task_sender.clone()),
                     )
                     .await
                     .unwrap()
@@ -881,11 +881,35 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    async fn compact(&self, tenant: &str, database: &str) {
-        let database = self.version_set.read().await.get_db(tenant, database);
-        if let Some(db) = database {
-            // TODO: stop current and prevent next flush and compaction.
-            for (ts_family_id, ts_family) in db.read().await.ts_families() {
+    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()> {
+        for vnode_id in vnode_ids {
+            if let Some(ts_family) = self
+                .version_set
+                .read()
+                .await
+                .get_tsfamily_by_tf_id(vnode_id)
+                .await
+            {
+                // TODO: stop current and prevent next flush and compaction.
+
+                let mut tsf_wlock = ts_family.write().await;
+                tsf_wlock.switch_to_immutable();
+                let flush_req = tsf_wlock.flush_req(true);
+                drop(tsf_wlock);
+                if let Some(req) = flush_req {
+                    if let Err(e) = run_flush_memtable_job(
+                        req,
+                        self.global_ctx.clone(),
+                        self.version_set.clone(),
+                        self.summary_task_sender.clone(),
+                        None,
+                    )
+                    .await
+                    {
+                        error!("Failed to flush vnode {}: {:?}", vnode_id, e);
+                    }
+                }
+
                 let picker = LevelCompactionPicker::new(self.options.storage.clone());
                 let version = ts_family.read().await.version();
                 if let Some(req) = picker.pick_compaction(version) {
@@ -912,6 +936,8 @@ impl Engine for TsKv {
                 }
             }
         }
+
+        Ok(())
     }
 }
 
@@ -925,43 +951,7 @@ impl TsKv {
         self.flush_task_sender.clone()
     }
 
-    pub(crate) fn compact_task_sender(&self) -> Sender<TseriesFamilyId> {
+    pub(crate) fn compact_task_sender(&self) -> Sender<CompactTask> {
         self.compact_task_sender.clone()
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::collections::HashMap;
-    use std::sync::atomic::{AtomicI64, Ordering};
-    use std::sync::{atomic, Arc};
-
-    use config::get_config;
-    use flatbuffers::{FlatBufferBuilder, WIPOffset};
-    use meta::meta_manager::RemoteMetaManager;
-    use meta::MetaRef;
-    use models::utils::now_timestamp;
-    use models::{ColumnId, InMemPoint, SeriesId, SeriesKey, Timestamp};
-    use protos::models::Points;
-    use protos::models_helper;
-    use tokio::runtime::{self, Runtime};
-    use tokio::sync::watch;
-
-    use crate::engine::Engine;
-    use crate::tsm::DataBlock;
-    use crate::{error, Options, TimeRange, TsKv};
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_compact() {
-        trace::init_default_global_tracing("tskv_log", "tskv.log", "info");
-        let config = get_config("/tmp/test/config/config.toml");
-        let opt = Options::from(&config);
-        let meta_manager: MetaRef = RemoteMetaManager::new(config.cluster.clone()).await;
-        meta_manager.admin_meta().add_data_node().await.unwrap();
-        let tskv = TsKv::open(meta_manager, opt, Arc::new(Runtime::new().unwrap()))
-            .await
-            .unwrap();
-        tskv.compact("cnosdb", "public").await;
     }
 }

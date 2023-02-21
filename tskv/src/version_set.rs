@@ -13,7 +13,7 @@ use tokio::sync::{oneshot, RwLock};
 use trace::error;
 use utils::BloomFilter;
 
-use crate::compaction::FlushReq;
+use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalSequenceContext;
 use crate::database::Database;
 use crate::error::{MetaSnafu, Result};
@@ -46,7 +46,7 @@ impl VersionSet {
         runtime: Arc<Runtime>,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
         flush_task_sender: Sender<FlushReq>,
-        compact_task_sender: Sender<TseriesFamilyId>,
+        compact_task_sender: Sender<CompactTask>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
         for (id, ver) in ver_set {
