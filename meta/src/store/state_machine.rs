@@ -129,7 +129,7 @@ pub struct StateMachine {
 }
 
 impl StateMachine {
-    pub(crate) fn new(db: Arc<sled::Db>) -> StateMachine {
+    pub fn new(db: Arc<sled::Db>) -> StateMachine {
         let sm = Self {
             db: db.clone(),
             data_tree: db.open_tree("data").expect("data open failed"),

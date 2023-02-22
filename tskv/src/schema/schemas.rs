@@ -50,11 +50,6 @@ impl DBschemas {
         self.database_name.clone()
     }
 
-    pub fn alter_db_schema(&self, db_schema: DatabaseSchema) -> Result<()> {
-        // todo: client need alter db action
-        Ok(())
-    }
-
     pub fn check_field_type_from_cache(&self, info: &Point) -> Result<()> {
         let table_name =
             unsafe { String::from_utf8_unchecked(info.tab().unwrap().bytes().to_vec()) };
