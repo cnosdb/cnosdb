@@ -225,6 +225,7 @@ impl std::fmt::Debug for HintedOffManager {
 mod test {
     use std::sync::Arc;
 
+    use tokio::io::AsyncSeekExt;
     use tokio::sync::RwLock;
     use tokio::time::{self, Duration};
     use trace::init_default_global_tracing;
@@ -284,5 +285,23 @@ mod test {
 
             time::sleep(Duration::from_secs(8)).await;
         }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_read_write_file() {
+        let file_name =
+            "/Users/adminliu/github.com/cnosdb/cnosdb_main/coordinator/src/file.test".to_string();
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            //.append(true)
+            .open(file_name)
+            .await
+            .unwrap();
+
+        file.write_all(b"abc_123456").await.unwrap();
+        file.seek(SeekFrom::Start(4)).await.unwrap();
+        file.write_all(b"efg").await.unwrap();
     }
 }
