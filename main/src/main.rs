@@ -34,9 +34,9 @@ static VERSION: Lazy<String> = Lazy::new(|| {
 #[clap(version = & VERSION[..],
 about = "cnosdb command line tools",
 long_about = r#"cnosdb and command line tools
-                        Examples:
-                            # Run the cnosdb:
-                            cargo run -- run
+Examples:
+    # Run the cnosdb:
+    cargo run -- run
                         "#
 )]
 struct Cli {
@@ -63,9 +63,10 @@ enum SubCommand {
     /// run cnosdb server
     #[clap(arg_required_else_help = false)]
     Run {},
-    // /// run tskv
+    /// run tskv
     #[clap(arg_required_else_help = true)]
     Tskv {},
+    /// run query
     #[clap(arg_required_else_help = true)]
     Query {},
 }
