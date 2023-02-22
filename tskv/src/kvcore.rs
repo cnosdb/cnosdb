@@ -142,17 +142,6 @@ impl TsKv {
         Ok(core)
     }
 
-    pub async fn close(&self) {
-        let (tx, mut rx) = mpsc::channel(1);
-        if let Err(e) = self.close_sender.send(tx) {
-            error!("Failed to broadcast close signal: {:?}", e);
-        }
-        while let Some(_x) = rx.recv().await {
-            continue;
-        }
-        info!("TsKv closed");
-    }
-
     async fn recover_summary(
         runtime: Arc<Runtime>,
         meta: MetaRef,
@@ -938,6 +927,17 @@ impl Engine for TsKv {
         }
 
         Ok(())
+    }
+
+    async fn close(&self) {
+        let (tx, mut rx) = mpsc::channel(1);
+        if let Err(e) = self.close_sender.send(tx) {
+            error!("Failed to broadcast close signal: {:?}", e);
+        }
+        while let Some(_x) = rx.recv().await {
+            continue;
+        }
+        info!("TsKv closed");
     }
 }
 
