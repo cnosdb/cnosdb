@@ -13,6 +13,7 @@ use crate::report::ReportService;
 
 mod flight_sql;
 mod http;
+mod meta_single;
 mod report;
 mod rpc;
 pub mod server;
@@ -68,6 +69,8 @@ enum SubCommand {
     Tskv {},
     #[clap(arg_required_else_help = true)]
     Query {},
+    #[clap(arg_required_else_help = true)]
+    Singleton {},
 }
 
 #[global_allocator]
@@ -100,9 +103,10 @@ fn main() -> Result<(), std::io::Error> {
         }
 
         let storage = match &cli.subcmd {
-            SubCommand::Tskv {} => builder.build_stroage_server(&mut server).await,
+            SubCommand::Tskv {} => builder.build_storage_server(&mut server).await,
             SubCommand::Query {} => builder.build_query_server(&mut server).await,
-            SubCommand::Run {} => builder.build_query_stroage(&mut server).await,
+            SubCommand::Run {} => builder.build_query_storage(&mut server).await,
+            SubCommand::Singleton {} => builder.build_singleton(&mut server).await,
         };
 
         server.start().expect("CnosDB server start.");
