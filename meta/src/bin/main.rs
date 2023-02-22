@@ -58,6 +58,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
     let config = config.validate().unwrap();
 
     let config = Arc::new(config);
+    let meta_init = Arc::new(opt.meta_init.clone());
     let es = get_sled_db(&opt);
     let store = Arc::new(Store::new(es));
 
@@ -70,6 +71,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
         raft,
         store,
         config,
+        meta_init,
     });
 
     let server = HttpServer::new(move || {

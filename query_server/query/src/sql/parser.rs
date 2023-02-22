@@ -1875,7 +1875,7 @@ mod tests {
         assert_eq!(
             statement[0],
             ExtStatement::CompactVnode(CompactVnode {
-                vnode_ids: vec![6, 7, 8, 9]
+                vnode_ids: vec![6, 7, 8, 9],
             })
         );
         let sql5 = "checksum group 10";

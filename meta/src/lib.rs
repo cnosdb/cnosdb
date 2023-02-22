@@ -10,6 +10,7 @@ use user_manager::UserManager;
 
 use crate::service::connection::Connections;
 use crate::store::command::WriteCommand;
+use crate::store::config::MetaInit;
 use crate::store::state_machine::CommandResp;
 use crate::store::Store;
 pub mod client;
@@ -60,4 +61,6 @@ pub struct MetaApp {
     pub raft: RaftStore,
     pub store: Arc<Store>,
     pub config: Arc<Config>,
+    // todo: Maybe we can remove this configuration that's only used in init
+    pub meta_init: Arc<MetaInit>,
 }

@@ -6,3 +6,9 @@ logs_path = "/tmp/cnosdb/logs"
 snapshot_path = "/tmp/cnosdb/meta/snapshot"
 journal_path = "/tmp/cnosdb/meta/journal"
 snapshot_per_events = 500
+
+[meta_init]
+cluster_name = "cluster_xxx"
+admin_user = "root"
+system_tenant = "cnosdb"
+default_database = "public"

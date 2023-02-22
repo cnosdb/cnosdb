@@ -1,8 +1,7 @@
 use async_trait::async_trait;
-use meta::error::MetaError;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CompactVnode;
-use spi::{QueryError, Result};
+use spi::Result;
 
 use super::DDLDefinitionTask;
 
@@ -20,18 +19,13 @@ impl CompactVnodeTask {
 #[async_trait]
 impl DDLDefinitionTask for CompactVnodeTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        let CompactVnode { vnode_ids: _ } = self.stmt;
+        let vnode_ids = self.stmt.vnode_ids.clone();
         let tenant = query_state_machine.session.tenant();
-        let _meta = query_state_machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .await
-            .ok_or_else(|| QueryError::Meta {
-                source: MetaError::TenantNotFound {
-                    tenant: tenant.to_string(),
-                },
-            })?;
-        todo!()
+
+        let coord = query_state_machine.coord.clone();
+        let cmd_type = coordinator::command::VnodeManagerCmdType::Compact;
+        coord.vnode_manager(tenant, vnode_ids, cmd_type).await?;
+
+        Ok(Output::Nil(()))
     }
 }

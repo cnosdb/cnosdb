@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
     shift 1
     ;;
   -sc | --skip-clean)
-    ARG_CLEAN=1
+    ARG_SKIP_CLEAN=1
     shift 1
     ;;
   -h | --help)
