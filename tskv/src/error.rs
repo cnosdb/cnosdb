@@ -162,6 +162,12 @@ impl From<IndexError> for Error {
     }
 }
 
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Error::IO { source: value }
+    }
+}
+
 impl Error {
     pub fn error_code(&self) -> &dyn ErrorCode {
         match self {

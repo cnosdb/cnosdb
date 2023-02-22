@@ -121,6 +121,10 @@ pub enum MetaError {
     #[error_code(code = 24)]
     RequestLimit { kind: RequestLimiterKind },
 
+    #[snafu(display("An error occurred while processing the data. Please try again"))]
+    #[error_code(code = 25)]
+    Retry,
+
     #[snafu(display("{}", msg))]
     ObjectLimit { msg: String },
     // RaftRPC{
