@@ -11,6 +11,7 @@ use std::time::Duration;
 use config::get_config;
 use lazy_static::lazy_static;
 use lru_cache::ShardedCache;
+use memory_pool::MemoryPoolRef;
 use models::schema::TableColumn;
 use models::{ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
@@ -618,6 +619,7 @@ pub struct TseriesFamily {
     flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
     cancellation_token: CancellationToken,
+    memory_pool: MemoryPoolRef,
 }
 
 impl TseriesFamily {
@@ -631,6 +633,7 @@ impl TseriesFamily {
         storage_opt: Arc<StorageOptions>,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
+        memory_pool: MemoryPoolRef,
     ) -> Self {
         let mm = Arc::new(RwLock::new(cache));
         let seq = version.last_seq;
@@ -663,6 +666,7 @@ impl TseriesFamily {
             flush_task_sender,
             compact_task_sender,
             cancellation_token: CancellationToken::new(),
+            memory_pool,
         }
     }
 
@@ -701,6 +705,7 @@ impl TseriesFamily {
             self.tf_id,
             self.cache_opt.max_buffer_size,
             self.seq_no,
+            &self.memory_pool,
         )));
         self.new_super_version(self.version.clone());
     }
@@ -752,24 +757,19 @@ impl TseriesFamily {
         }
     }
 
-    pub fn put_points(&self, seq: u64, points: HashMap<(SeriesId, SchemaId), RowGroup>) -> u64 {
+    pub fn put_points(
+        &self,
+        seq: u64,
+        points: HashMap<(SeriesId, SchemaId), RowGroup>,
+    ) -> Result<u64> {
         let mut res = 0;
         for ((sid, schema_id), group) in points {
             let mem = self.super_version.caches.mut_cache.read();
             res += group.rows.len();
-            mem.write_group(sid, seq, group);
+            mem.write_group(sid, seq, group)?;
         }
-        res as u64
+        Ok(res as u64)
     }
-
-    // pub async fn touch_flush(tsf: &mut TseriesFamily) {
-    //     tokio::spawn(|tsf:&mut TseriesFamily| async move {
-    //         while tsf.sub_receiver.changed().await.is_ok() {
-    //             tsf.check_to_flush()
-    //         }
-    //     }
-    //     );
-    // }
 
     pub async fn check_to_flush(&mut self) {
         if self.super_version.caches.mut_cache.read().is_full() {
@@ -822,8 +822,7 @@ impl TseriesFamily {
         let compact_task_sender = self.compact_task_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
         let jh = runtime.spawn(async move {
-            if compact_trigger_cold_duration == Duration::ZERO {
-            } else {
+            if compact_trigger_cold_duration == Duration::ZERO {} else {
                 let mut cold_check_interval = tokio::time::interval(Duration::from_secs(10));
                 cold_check_interval.tick().await;
                 loop {
@@ -933,6 +932,7 @@ mod test {
 
     use config::{get_config, ClusterConfig};
     use lru_cache::ShardedCache;
+    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
     use models::schema::{DatabaseSchema, TenantOptions};
@@ -1197,14 +1197,14 @@ mod test {
         let mut global_config = get_config("../config/config.toml");
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
-
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
         let (compact_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let database = Arc::new("db".to_string());
         let tsf = TseriesFamily::new(
             0,
             database.clone(),
-            MemCache::new(0, 500, 0),
+            MemCache::new(0, 500, 0, &memory_pool),
             Arc::new(Version::new(
                 0,
                 database.clone(),
@@ -1218,6 +1218,7 @@ mod test {
             opt.storage.clone(),
             flush_task_sender,
             compact_task_sender,
+            memory_pool,
         );
 
         let row_group = RowGroup {
@@ -1238,7 +1239,7 @@ mod test {
         };
         let mut points = HashMap::new();
         points.insert((0, 0), row_group);
-        tsf.put_points(0, points);
+        let _ = tsf.put_points(0, points);
 
         assert_eq!(
             tsf.mut_cache.read().get_data(0, |_| true, |_| true).len(),
@@ -1321,8 +1322,8 @@ mod test {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
-
-        let mem = MemCache::new(0, 1000, 0);
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let mem = MemCache::new(0, 1000, 0, &memory_pool);
         let row_group = RowGroup {
             schema: default_with_field_id(vec![0, 1, 2]).into(),
             range: TimeRange {
@@ -1339,7 +1340,7 @@ mod test {
             }],
             size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
-        mem.write_group(1, 0, row_group);
+        mem.write_group(1, 0, row_group).unwrap();
 
         let mem = Arc::new(RwLock::new(mem));
         let req_mem = vec![(0, mem)];
@@ -1358,7 +1359,6 @@ mod test {
         let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
         let (compact_task_sender, compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
-
         let runtime_ref = runtime.clone();
         runtime.block_on(async move {
             let version_set = Arc::new(AsyncRwLock::new(
@@ -1366,6 +1366,7 @@ mod test {
                     meta_manager.clone(),
                     opt.clone(),
                     runtime_ref.clone(),
+                    memory_pool.clone(),
                     HashMap::new(),
                     flush_task_sender.clone(),
                     compact_task_sender.clone(),
@@ -1379,6 +1380,7 @@ mod test {
                 .create_db(
                     DatabaseSchema::new(&tenant, &database),
                     meta_manager.clone(),
+                    memory_pool,
                 )
                 .await
                 .unwrap();

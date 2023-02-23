@@ -42,6 +42,10 @@ pub enum Error {
         source: SchemaError,
     },
 
+    #[snafu(display("Memory Exhausted Retry Later"))]
+    #[error_code(code = 5)]
+    MemoryExhausted,
+
     // Internal Error
     #[snafu(display("{}", source))]
     IO {

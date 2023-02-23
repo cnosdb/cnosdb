@@ -3261,6 +3261,7 @@ dependencies = [
  "license",
  "line_protocol",
  "mem_allocator",
+ "memory_pool",
  "meta",
  "metrics",
  "models",
@@ -3368,6 +3369,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "memory_pool"
+version = "2.1.0"
+dependencies = [
+ "datafusion",
 ]
 
 [[package]]
@@ -4452,6 +4460,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "line_protocol",
+ "memory_pool",
  "meta",
  "minivec",
  "models",
@@ -6275,6 +6284,7 @@ dependencies = [
  "libc",
  "lru",
  "lru_cache",
+ "memory_pool",
  "meta",
  "metrics",
  "minivec",

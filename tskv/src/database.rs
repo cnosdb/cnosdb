@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use datafusion::sql::sqlparser::test_utils::table;
 use lru_cache::ShardedCache;
+use memory_pool::{MemoryPool, MemoryPoolRef};
 use meta::MetaRef;
 use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::utils::{split_id, unite_id};
@@ -45,6 +46,7 @@ pub struct Database {
     ts_indexes: HashMap<TseriesFamilyId, Arc<RwLock<index::ts_index::TSIndex>>>,
     ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
     runtime: Arc<Runtime>,
+    memory_pool: MemoryPoolRef,
 }
 
 impl Database {
@@ -53,6 +55,7 @@ impl Database {
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         meta: MetaRef,
+        memory_pool: MemoryPoolRef,
     ) -> Result<Self> {
         let db = Self {
             opt,
@@ -61,6 +64,7 @@ impl Database {
             ts_indexes: HashMap::new(),
             ts_families: HashMap::new(),
             runtime,
+            memory_pool,
         };
 
         Ok(db)
@@ -77,12 +81,18 @@ impl Database {
         let tf = TseriesFamily::new(
             ver.tf_id(),
             ver.database(),
-            MemCache::new(ver.tf_id(), self.opt.cache.max_buffer_size, ver.last_seq),
+            MemCache::new(
+                ver.tf_id(),
+                self.opt.cache.max_buffer_size,
+                ver.last_seq,
+                &self.memory_pool,
+            ),
             ver.clone(),
             self.opt.cache.clone(),
             self.opt.storage.clone(),
             flush_task_sender,
             compact_task_sender,
+            self.memory_pool.clone(),
         );
         tf.schedule_compaction(self.runtime.clone());
         self.ts_families
@@ -95,6 +105,7 @@ impl Database {
                 tf_id,
                 self.opt.cache.max_buffer_size,
                 seq,
+                &self.memory_pool,
             )));
             let mut tf = tf.write().await;
             tf.switch_memcache(mem);
@@ -127,12 +138,18 @@ impl Database {
         let tf = TseriesFamily::new(
             tsf_id,
             self.owner.clone(),
-            MemCache::new(tsf_id, self.opt.cache.max_buffer_size, seq_no),
+            MemCache::new(
+                tsf_id,
+                self.opt.cache.max_buffer_size,
+                seq_no,
+                &self.memory_pool,
+            ),
             ver,
             self.opt.cache.clone(),
             self.opt.storage.clone(),
             flush_task_sender,
             compact_task_sender,
+            self.memory_pool.clone(),
         );
         let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());

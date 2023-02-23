@@ -20,7 +20,7 @@ use models::auth::user::UserDesc;
 use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
 use parking_lot::RwLock;
 use spi::query::function::FuncMetaManagerRef;
-use spi::query::session::IsiphoSessionCtx;
+use spi::query::session::SessionCtx;
 
 use self::cluster_schema_provider::ClusterSchemaProvider;
 use self::information_schema_provider::InformationSchemaProvider;
@@ -47,7 +47,7 @@ pub trait ContextProviderExtension: ContextProvider {
 }
 
 pub struct MetadataProvider {
-    session: IsiphoSessionCtx,
+    session: SessionCtx,
     config_options: ConfigOptions,
     coord: CoordinatorRef,
     meta_client: MetaClientRef,
@@ -63,7 +63,7 @@ impl MetadataProvider {
         meta_client: MetaClientRef,
         func_manager: SimpleFunctionMetadataManager,
         query_tracker: Arc<QueryTracker>,
-        session: IsiphoSessionCtx,
+        session: SessionCtx,
     ) -> Self {
         Self {
             coord,

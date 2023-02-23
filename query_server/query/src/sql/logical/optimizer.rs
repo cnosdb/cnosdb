@@ -21,7 +21,7 @@ use datafusion::optimizer::single_distinct_to_groupby::SingleDistinctToGroupBy;
 use datafusion::optimizer::type_coercion::TypeCoercion;
 use datafusion::optimizer::unwrap_cast_in_comparison::UnwrapCastInComparison;
 use datafusion::optimizer::OptimizerRule;
-use spi::query::session::IsiphoSessionCtx;
+use spi::query::session::SessionCtx;
 use spi::Result;
 
 use crate::extension::logical::optimizer_rule::implicit_type_conversion::ImplicitTypeConversion;
@@ -32,7 +32,7 @@ use crate::extension::logical::optimizer_rule::transform_bottom_func_to_topk_nod
 use crate::extension::logical::optimizer_rule::transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule;
 
 pub trait LogicalOptimizer: Send + Sync {
-    fn optimize(&self, plan: &LogicalPlan, session: &IsiphoSessionCtx) -> Result<LogicalPlan>;
+    fn optimize(&self, plan: &LogicalPlan, session: &SessionCtx) -> Result<LogicalPlan>;
 
     fn inject_optimizer_rule(&mut self, optimizer_rule: Arc<dyn OptimizerRule + Send + Sync>);
 }
@@ -99,7 +99,7 @@ impl Default for DefaultLogicalOptimizer {
 }
 
 impl LogicalOptimizer for DefaultLogicalOptimizer {
-    fn optimize(&self, plan: &LogicalPlan, session: &IsiphoSessionCtx) -> Result<LogicalPlan> {
+    fn optimize(&self, plan: &LogicalPlan, session: &SessionCtx) -> Result<LogicalPlan> {
         session
             .inner()
             .state()

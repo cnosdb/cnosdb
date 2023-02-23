@@ -360,7 +360,7 @@ async fn query_record_batch(
     );
 
     let plan_metrics = ExecutionPlanMetricsSet::new();
-    let scan_metrics = TableScanMetrics::new(&plan_metrics, 0);
+    let scan_metrics = TableScanMetrics::new(&plan_metrics, 0, None);
     let option = QueryOption::new(
         cmd.args.batch_size,
         cmd.args.tenant.clone(),

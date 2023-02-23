@@ -48,7 +48,8 @@ const ENTRY_TYPE_LEN: usize = 1;
 const ENTRY_SEQUENCE_LEN: usize = 8;
 const ENTRY_VNODE_LEN: usize = 4;
 const ENTRY_TENANT_LEN: usize = 8;
-const ENTRY_HEADER_LEN: usize = 21; // 1 + 8 + 4 + 8
+const ENTRY_HEADER_LEN: usize = 21;
+// 1 + 8 + 4 + 8
 const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'w', b'a', b'l', b'o']);
 const FOOTER_MAGIC_NUMBER_LEN: usize = 4;
 
@@ -560,6 +561,7 @@ mod test {
 
     use chrono::Utc;
     use config::get_config;
+    use datafusion::execution::memory_pool::GreedyMemoryPool;
     use datafusion::parquet::data_type::AsBytes;
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
@@ -846,6 +848,7 @@ mod test {
         });
         let rt_2 = rt.clone();
         rt.block_on(async {
+            let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
             let opt = kv_option::Options::from(&global_config);
             let meta_manager: MetaRef = RemoteMetaManager::new(global_config.cluster).await;
             meta_manager.admin_meta().add_data_node().await.unwrap();
@@ -853,7 +856,9 @@ mod test {
                 .tenant_manager()
                 .create_tenant("cnosdb".to_string(), TenantOptions::default())
                 .await;
-            let tskv = TsKv::open(meta_manager, opt, rt_2).await.unwrap();
+            let tskv = TsKv::open(meta_manager, opt, rt_2, memory_pool)
+                .await
+                .unwrap();
             let ver = tskv
                 .get_db_version("cnosdb", "dba", 10)
                 .await

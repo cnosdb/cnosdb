@@ -448,6 +448,7 @@ pub mod flush_tests {
     use std::sync::Arc;
 
     use lru_cache::ShardedCache;
+    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use models::codec::Encoding;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{utils as model_utils, ColumnId, FieldId, Timestamp, ValueType};
@@ -491,8 +492,8 @@ pub mod flush_tests {
     #[test]
     fn test_sort_dedup() {
         #[rustfmt::skip]
-        let mut data = vec![
-            (1, 11), (1, 12), (2, 21), (3, 3), (2, 22), (4, 41), (4, 42)
+            let mut data = vec![
+            (1, 11), (1, 12), (2, 21), (3, 3), (2, 22), (4, 41), (4, 42),
         ];
         data.sort_by_key(|a| a.0);
         println!("{:?}", &data);
@@ -517,15 +518,15 @@ pub mod flush_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let tsm_dir = dir.join("tsm");
         let delta_dir = dir.join("delta");
-
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let mut caches = vec![
-            MemCache::new(1, 16, 0),
-            MemCache::new(1, 16, 0),
-            MemCache::new(1, 16, 0),
+            MemCache::new(1, 16, 0, &memory_pool),
+            MemCache::new(1, 16, 0, &memory_pool),
+            MemCache::new(1, 16, 0, &memory_pool),
         ];
 
         #[rustfmt::skip]
-        let _skip_fmt = {
+            let _skip_fmt = {
             put_rows_to_cache(&mut caches[0], 1, 1, default_with_field_id(vec![0, 1, 2]), (3, 4), false);
             put_rows_to_cache(&mut caches[0], 1, 2, default_with_field_id(vec![0, 1, 3]), (1, 2), false);
             put_rows_to_cache(&mut caches[0], 1, 3, default_with_field_id(vec![0, 1, 2, 3]), (5, 5), true);
@@ -556,15 +557,15 @@ pub mod flush_tests {
         // Col_2: None, None, 9,    10
         // Col_3: 7,    8,    None, None
         #[rustfmt::skip]
-        let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (model_utils::unite_id(0, 1), vec![DataBlock::F64{ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(1, 1), vec![DataBlock::F64{ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(2, 1), vec![DataBlock::F64{ts: vec![3, 4, 5, 6], val: vec![3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(3, 1), vec![DataBlock::F64{ts: vec![1, 2, 5, 6], val: vec![1.0, 2.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(0, 2), vec![DataBlock::F64{ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(1, 2), vec![DataBlock::F64{ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(2, 2), vec![DataBlock::F64{ts: vec![9, 10], val: vec![9.0, 10.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(3, 2), vec![DataBlock::F64{ts: vec![7, 8], val: vec![7.0, 8.0], enc: DataBlockEncoding::default()}]),
+            let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+            (model_utils::unite_id(0, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(1, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(2, 1), vec![DataBlock::F64 { ts: vec![3, 4, 5, 6], val: vec![3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(3, 1), vec![DataBlock::F64 { ts: vec![1, 2, 5, 6], val: vec![1.0, 2.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(0, 2), vec![DataBlock::F64 { ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(1, 2), vec![DataBlock::F64 { ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(2, 2), vec![DataBlock::F64 { ts: vec![9, 10], val: vec![9.0, 10.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(3, 2), vec![DataBlock::F64 { ts: vec![7, 8], val: vec![7.0, 8.0], enc: DataBlockEncoding::default() }]),
         ]);
 
         // | === SeriesId: 2 === |
@@ -580,15 +581,15 @@ pub mod flush_tests {
         // Col_2: None, None, 15,   16,   None, 17, 18
         // Col_3: 13,   14,   None, None, None, 17, 18
         #[rustfmt::skip]
-        let expected_tsm_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (model_utils::unite_id(0, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(1, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(2, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(3, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(0, 3), vec![DataBlock::F64{ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(1, 3), vec![DataBlock::F64{ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(2, 3), vec![DataBlock::F64{ts: vec![15, 16, 17, 18], val: vec![15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(3, 3), vec![DataBlock::F64{ts: vec![13, 14, 17, 18], val: vec![13.0, 14.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
+            let expected_tsm_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+            (model_utils::unite_id(0, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(1, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(2, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(3, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(0, 3), vec![DataBlock::F64 { ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(1, 3), vec![DataBlock::F64 { ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(2, 3), vec![DataBlock::F64 { ts: vec![15, 16, 17, 18], val: vec![15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(3, 3), vec![DataBlock::F64 { ts: vec![13, 14, 17, 18], val: vec![13.0, 14.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
         ]);
 
         let ts_family_id = 1;
@@ -601,9 +602,12 @@ pub mod flush_tests {
         let global_context = Arc::new(GlobalContext::new());
         let options = Options::from(&config);
         #[rustfmt::skip]
-        let version = Arc::new(Version {
-            ts_family_id, database: database.clone(), storage_opt: options.storage.clone(),
-            last_seq: 1, max_level_ts,
+            let version = Arc::new(Version {
+            ts_family_id,
+            database: database.clone(),
+            storage_opt: options.storage.clone(),
+            last_seq: 1,
+            max_level_ts,
             levels_info: LevelInfo::init_levels(database, 0, options.storage),
             tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
         });
