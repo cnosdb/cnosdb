@@ -651,7 +651,7 @@ impl StateMachine {
             children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone()).iter()
         {
             // Check whether the ip of the same cluster has been added
-            if value.id == value.id
+            if value.id == node.id
                 || value.http_addr == node.http_addr
                 || value.tcp_addr == node.tcp_addr
             {
