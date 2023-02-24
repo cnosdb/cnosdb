@@ -12,6 +12,7 @@ use crate::error::{Error, Result};
 mod case;
 mod client;
 mod db_request;
+mod db_result;
 mod error;
 mod groups;
 
