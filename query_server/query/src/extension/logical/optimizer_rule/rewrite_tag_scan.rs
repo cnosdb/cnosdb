@@ -7,8 +7,8 @@ use datafusion::error::Result;
 use datafusion::logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder, TableScan};
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 
+use crate::data_source::table_provider::tskv::ClusterTable;
 use crate::extension::logical::plan_node::tag_scan::TagScanPlanNode;
-use crate::table::ClusterTable;
 
 /// Convert query statement to query tag operation
 ///
@@ -29,6 +29,7 @@ impl OptimizerRule for RewriteTagScan {
             projected_schema,
             filters,
             fetch,
+            agg_with_grouping,
         }) = plan
         {
             if let Some(cluster_table) = source_as_provider(source)?
@@ -86,6 +87,7 @@ impl OptimizerRule for RewriteTagScan {
                             projected_schema: Arc::new(new_df_schema),
                             filters: filters.clone(),
                             fetch: *fetch,
+                            agg_with_grouping: agg_with_grouping.clone(),
                         });
                         return Ok(Some(LogicalPlanBuilder::from(new_table_scan).build()?));
                     }

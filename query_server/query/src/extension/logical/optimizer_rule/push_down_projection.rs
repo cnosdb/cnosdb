@@ -21,7 +21,7 @@ use datafusion::logical_expr::{
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::prelude::Expr;
 
-use crate::table::ClusterTable;
+use crate::data_source::table_provider::tskv::ClusterTable;
 
 /// Optimizer that removes unused projections and aggregations from plans
 /// This reduces both scans and
@@ -269,7 +269,7 @@ fn optimize_plan(
         }
         // scans:
         // * remove un-used columns from the scan projection
-        LogicalPlan::TableScan(scan) => {
+        LogicalPlan::TableScan(scan) if scan.agg_with_grouping.is_none() => {
             // filter expr may not exist in expr in projection.
             // like: TableScan: t1 projection=[bool_col, int_col], full_filters=[t1.id = Int32(1)]
             // projection=[bool_col, int_col] don't contain `ti.id`.
@@ -396,6 +396,7 @@ fn optimize_plan(
         | LogicalPlan::Dml(_)
         | LogicalPlan::Unnest(_)
         | LogicalPlan::Extension { .. }
+        | LogicalPlan::TableScan(_)
         | LogicalPlan::Prepare(_) => {
             let expr = plan.expressions();
             // collect all required columns by this plan
@@ -530,5 +531,6 @@ fn push_down_scan(
         projected_schema,
         filters: scan.filters.clone(),
         fetch: scan.fetch,
+        agg_with_grouping: scan.agg_with_grouping.clone(),
     }))
 }
