@@ -5,7 +5,7 @@ use coordinator::service::{CoordService, CoordinatorRef};
 use datafusion::execution::memory_pool::MemoryPool;
 use memory_pool::MemoryPoolRef;
 use meta::meta_manager::RemoteMetaManager;
-use meta::MetaRef;
+use meta::{store, MetaRef};
 use query::instance::make_cnosdbms;
 use snafu::{Backtrace, Snafu};
 use spi::server::dbms::DBMSRef;
@@ -17,6 +17,7 @@ use tskv::TsKv;
 
 use crate::flight_sql::FlightSqlServiceAdapter;
 use crate::http::http_service::{HttpService, ServerMode};
+use crate::meta_single::meta_service::MetaService;
 use crate::rpc::grpc_service::GrpcService;
 use crate::tcp::tcp_service::TcpService;
 
@@ -110,7 +111,7 @@ pub(crate) struct ServiceBuilder {
 }
 
 impl ServiceBuilder {
-    pub async fn build_stroage_server(&self, server: &mut Server) -> Option<EngineRef> {
+    pub async fn build_storage_server(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
         meta.admin_meta().add_data_node().await.unwrap();
 
@@ -153,7 +154,7 @@ impl ServiceBuilder {
         None
     }
 
-    pub async fn build_query_stroage(&self, server: &mut Server) -> Option<EngineRef> {
+    pub async fn build_query_storage(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
         meta.admin_meta().add_data_node().await.unwrap();
 
@@ -178,6 +179,15 @@ impl ServiceBuilder {
         server.add_service(flight_sql_service);
 
         Some(kv_inst)
+    }
+
+    pub async fn build_singleton(&self, server: &mut Server) -> Option<EngineRef> {
+        let meta_service = MetaService::new(self.config.clone());
+        meta_service
+            .start()
+            .await
+            .expect("failed to start meta, please check http addr");
+        self.build_query_storage(server).await
     }
 
     async fn create_meta(&self) -> MetaRef {
