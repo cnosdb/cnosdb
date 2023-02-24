@@ -24,9 +24,9 @@ use spi::query::session::SessionCtx;
 
 use self::cluster_schema_provider::ClusterSchemaProvider;
 use self::information_schema_provider::InformationSchemaProvider;
+use crate::data_source::table_provider::tskv::ClusterTable;
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
-use crate::table::ClusterTable;
 
 pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
 pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
