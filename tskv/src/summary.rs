@@ -10,6 +10,7 @@ use config::get_config;
 use futures::TryFutureExt;
 use libc::write;
 use lru_cache::ShardedCache;
+use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
 use meta::MetaRef;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
@@ -295,6 +296,7 @@ impl Summary {
     pub async fn new(
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
         sequence_task_sender: Sender<GlobalSequenceTask>,
     ) -> Result<Self> {
         let db = VersionEdit::default();
@@ -312,7 +314,11 @@ impl Summary {
 
         Ok(Self {
             file_no: 0,
-            version_set: Arc::new(RwLock::new(VersionSet::empty(opt.clone(), runtime.clone()))),
+            version_set: Arc::new(RwLock::new(VersionSet::empty(
+                opt.clone(),
+                runtime.clone(),
+                memory_pool,
+            ))),
             ctx: Arc::new(GlobalContext::default()),
             writer: w,
             opt,
@@ -473,11 +479,12 @@ impl Summary {
         if has_file_id {
             ctx.set_file_id(file_id + 1);
         }
-
+        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let vs = VersionSet::new(
             meta,
             opt,
             runtime,
+            memory_pool,
             versions,
             flush_task_sender,
             compact_task_sender,
@@ -820,6 +827,7 @@ mod test {
     use std::sync::Arc;
 
     use config::{get_config, ClusterConfig, Config};
+    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
@@ -1001,10 +1009,15 @@ mod test {
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
-        let mut summary =
-            Summary::new(opt.clone(), runtime.clone(), global_seq_task_sender.clone())
-                .await
-                .unwrap();
+        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let mut summary = Summary::new(
+            opt.clone(),
+            runtime.clone(),
+            memory_pool,
+            global_seq_task_sender.clone(),
+        )
+        .await
+        .unwrap();
         let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
         summary
             .apply_version_edit(vec![edit], HashMap::new())
@@ -1041,10 +1054,15 @@ mod test {
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
-        let mut summary =
-            Summary::new(opt.clone(), runtime.clone(), global_seq_task_sender.clone())
-                .await
-                .unwrap();
+        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let mut summary = Summary::new(
+            opt.clone(),
+            runtime.clone(),
+            memory_pool,
+            global_seq_task_sender.clone(),
+        )
+        .await
+        .unwrap();
 
         let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
         summary
@@ -1104,10 +1122,15 @@ mod test {
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
-        let mut summary =
-            Summary::new(opt.clone(), runtime.clone(), global_seq_task_sender.clone())
-                .await
-                .unwrap();
+        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let mut summary = Summary::new(
+            opt.clone(),
+            runtime.clone(),
+            memory_pool.clone(),
+            global_seq_task_sender.clone(),
+        )
+        .await
+        .unwrap();
 
         let mut edits = vec![];
         let db = summary
@@ -1117,6 +1140,7 @@ mod test {
             .create_db(
                 DatabaseSchema::new("cnosdb", &database),
                 meta_manager.clone(),
+                memory_pool,
             )
             .await
             .unwrap();
@@ -1175,6 +1199,7 @@ mod test {
         global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
+        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
         meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
@@ -1186,10 +1211,14 @@ mod test {
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
-        let mut summary =
-            Summary::new(opt.clone(), runtime.clone(), global_seq_task_sender.clone())
-                .await
-                .unwrap();
+        let mut summary = Summary::new(
+            opt.clone(),
+            runtime.clone(),
+            memory_pool.clone(),
+            global_seq_task_sender.clone(),
+        )
+        .await
+        .unwrap();
 
         let db = summary
             .version_set
@@ -1198,6 +1227,7 @@ mod test {
             .create_db(
                 DatabaseSchema::new("cnosdb", &database),
                 meta_manager.clone(),
+                memory_pool,
             )
             .await
             .unwrap();

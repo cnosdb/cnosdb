@@ -12,6 +12,7 @@ use std::sync::Arc;
 use flatbuffers::{ForwardsUOffset, Push, Vector};
 use futures::future::ok;
 use libc::time;
+use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
 use models::schema::{TableColumn, TskvTableSchema};
 use models::utils::{split_id, unite_id};
@@ -27,7 +28,7 @@ use trace::{error, info, warn};
 use crate::error::Result;
 use crate::tseries_family::TimeRange;
 use crate::tsm::DataBlock;
-use crate::{byte_utils, TseriesFamilyId};
+use crate::{byte_utils, Error, TseriesFamilyId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldVal {
@@ -330,7 +331,7 @@ pub struct MemCache {
 
     // wal seq number
     seq_no: AtomicU64,
-    cache_size: AtomicU64,
+    memory: RwLock<MemoryReservation>,
 
     part_count: usize,
     // This u64 comes from split_id(SeriesId) % part_count
@@ -338,13 +339,14 @@ pub struct MemCache {
 }
 
 impl MemCache {
-    pub fn new(tf_id: TseriesFamilyId, max_size: u64, seq: u64) -> Self {
+    pub fn new(tf_id: TseriesFamilyId, max_size: u64, seq: u64, pool: &MemoryPoolRef) -> Self {
         let parts = 16;
         let mut partions = Vec::with_capacity(parts);
         for _i in 0..parts {
             partions.push(RwLock::new(HashMap::new()));
         }
-
+        let res =
+            RwLock::new(MemoryConsumer::new(format!("memcache-{}-{}", tf_id, seq)).register(pool));
         Self {
             tf_id,
             partions,
@@ -357,15 +359,16 @@ impl MemCache {
             part_count: parts,
 
             seq_no: AtomicU64::new(seq),
-            cache_size: AtomicU64::new(0),
+            memory: res,
         }
     }
 
-    pub fn write_group(&self, sid: SeriesId, seq: u64, group: RowGroup) {
+    pub fn write_group(&self, sid: SeriesId, seq: u64, group: RowGroup) -> Result<()> {
         self.seq_no.store(seq, Ordering::Relaxed);
-        self.cache_size
-            .fetch_add(group.size as u64, Ordering::Relaxed);
-
+        self.memory
+            .write()
+            .try_grow(group.size)
+            .map_err(|_| Error::MemoryExhausted)?;
         let index = (sid as usize) % self.part_count;
         let entry = self.partions[index]
             .write()
@@ -374,6 +377,7 @@ impl MemCache {
             .clone();
 
         entry.write().write(group);
+        Ok(())
     }
 
     pub fn get_data(
@@ -457,7 +461,7 @@ impl MemCache {
     }
 
     pub fn is_full(&self) -> bool {
-        self.cache_size.load(Ordering::Relaxed) >= self.max_size
+        self.memory.read().size() >= self.max_size as usize
     }
 
     pub fn tf_id(&self) -> TseriesFamilyId {
@@ -477,7 +481,7 @@ impl MemCache {
     }
 
     pub fn cache_size(&self) -> u64 {
-        self.cache_size.load(Ordering::Relaxed)
+        self.memory.read().size() as u64
     }
 }
 
@@ -591,7 +595,7 @@ pub(crate) mod test {
             rows,
             size: size_of::<RowGroup>() + size,
         };
-        cache.write_group(series_id, 1, row_group);
+        cache.write_group(series_id, 1, row_group).unwrap();
     }
 
     pub(crate) fn get_one_series_cache_data(

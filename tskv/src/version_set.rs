@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
+use memory_pool::{MemoryPool, MemoryPoolRef};
 use meta::MetaRef;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use parking_lot::RwLock as SyncRwLock;
@@ -29,14 +30,16 @@ pub struct VersionSet {
     /// Maps DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
     runtime: Arc<Runtime>,
+    memory_pool: MemoryPoolRef,
 }
 
 impl VersionSet {
-    pub fn empty(opt: Arc<Options>, runtime: Arc<Runtime>) -> Self {
+    pub fn empty(opt: Arc<Options>, runtime: Arc<Runtime>, memory_pool: MemoryPoolRef) -> Self {
         Self {
             opt,
             dbs: HashMap::new(),
             runtime,
+            memory_pool,
         }
     }
 
@@ -44,6 +47,7 @@ impl VersionSet {
         meta: MetaRef,
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
@@ -61,7 +65,14 @@ impl VersionSet {
                 },
             };
             let db: &mut Arc<RwLock<Database>> = dbs.entry(owner).or_insert(Arc::new(RwLock::new(
-                Database::new(schema, opt.clone(), runtime.clone(), meta.clone()).await?,
+                Database::new(
+                    schema,
+                    opt.clone(),
+                    runtime.clone(),
+                    meta.clone(),
+                    memory_pool.clone(),
+                )
+                .await?,
             )));
 
             let tf_id = ver.tf_id();
@@ -73,7 +84,12 @@ impl VersionSet {
             db.write().await.get_ts_index_or_add(tf_id).await?;
         }
 
-        Ok(Self { dbs, opt, runtime })
+        Ok(Self {
+            dbs,
+            opt,
+            runtime,
+            memory_pool,
+        })
     }
 
     pub fn options(&self) -> Arc<Options> {
@@ -84,12 +100,20 @@ impl VersionSet {
         &mut self,
         schema: DatabaseSchema,
         meta: MetaRef,
+        memory_pool: MemoryPoolRef,
     ) -> Result<Arc<RwLock<Database>>> {
         let db = self
             .dbs
             .entry(schema.owner())
             .or_insert(Arc::new(RwLock::new(
-                Database::new(schema, self.opt.clone(), self.runtime.clone(), meta.clone()).await?,
+                Database::new(
+                    schema,
+                    self.opt.clone(),
+                    self.runtime.clone(),
+                    meta.clone(),
+                    memory_pool,
+                )
+                .await?,
             )))
             .clone();
         Ok(db)

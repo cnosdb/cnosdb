@@ -19,9 +19,7 @@ pub struct TableScanStream {
     proj_schema: SchemaRef,
     batch_size: usize,
     coord: CoordinatorRef,
-
     iterator: ReaderIterator,
-
     metrics: TableScanMetrics,
 }
 
@@ -99,23 +97,26 @@ impl Stream for TableScanStream {
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-
-        let timer = this.metrics.elapsed_compute().timer();
+        let metrics = &this.metrics;
+        let timer = metrics.elapsed_compute().timer();
 
         let result = match Box::pin(this.iterator.next()).poll_unpin(cx) {
-            Poll::Ready(Some(Ok(record_batch))) => Poll::Ready(Some(Ok(record_batch))),
+            Poll::Ready(Some(Ok(record_batch))) => match metrics.record_memory(&record_batch) {
+                Ok(_) => Poll::Ready(Some(Ok(record_batch))),
+                Err(e) => Poll::Ready(Some(Err(e))),
+            },
             Poll::Ready(Some(Err(e))) => {
                 Poll::Ready(Some(Err(DataFusionError::External(Box::new(e)))))
             }
             Poll::Ready(None) => {
-                this.metrics.done();
+                metrics.done();
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
         };
 
         timer.done();
-        this.metrics.record_poll(result)
+        metrics.record_poll(result)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

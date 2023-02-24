@@ -49,7 +49,7 @@ grpc_listen_addr = '127.0.0.1:32002'
 tcp_listen_addr = '127.0.0.1:32003'
 flight_rpc_listen_addr = '127.0.0.1:32004'
 
-[hintedoff]
+[hinted_off]
 enable = true
 path = '/tmp/cnosdb/2001/hh'
 

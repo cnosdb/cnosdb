@@ -1,7 +1,3 @@
-mod bytes_num;
-mod duration;
-pub mod limiter_config;
-
 use std::fs::File;
 use std::io::prelude::Read;
 use std::path::Path;
@@ -9,6 +5,10 @@ use std::time::Duration;
 
 pub use limiter_config::*;
 use serde::{Deserialize, Serialize};
+
+mod bytes_num;
+mod duration;
+pub mod limiter_config;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Config {
@@ -21,7 +21,7 @@ pub struct Config {
     pub log: LogConfig,
     pub security: SecurityConfig,
     pub cluster: ClusterConfig,
-    pub hintedoff: HintedOffConfig,
+    pub hinted_off: HintedOffConfig,
 }
 
 impl Config {
@@ -81,7 +81,7 @@ pub fn default_config() -> Config {
     [log]
     [security]
     [cluster]
-    [hintedoff]"#;
+    [hinted_off]"#;
 
     match toml::from_str(DEFAULT_CONFIG) {
         Ok(config) => config,
@@ -599,7 +599,7 @@ http_listen_addr = '127.0.0.1:31007'
 grpc_listen_addr = '127.0.0.1:31008'
 tcp_listen_addr = '127.0.0.1:31009'
 
-[hintedoff]
+[hinted_off]
 enable = true
 path = '/tmp/cnosdb/hh'
 "#;

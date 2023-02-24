@@ -43,7 +43,7 @@ message WritePointsRequest {
 }
 
 message WritePointsResponse {
-  uint64 size = 1;
+  uint64 points_number = 1;
 }
 
 service TSKVService {

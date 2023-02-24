@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use mem_allocator::Jemalloc;
+use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
@@ -64,9 +65,10 @@ enum SubCommand {
     /// run cnosdb server
     #[clap(arg_required_else_help = false)]
     Run {},
-    // /// run tskv
+    /// run tskv
     #[clap(arg_required_else_help = true)]
     Tskv {},
+    /// run query
     #[clap(arg_required_else_help = true)]
     Query {},
     #[clap(arg_required_else_help = true)]
@@ -89,12 +91,14 @@ fn main() -> Result<(), std::io::Error> {
     let _ = init_global_tracing(&config.log.path, "tsdb.log", &config.log.level);
     init_tskv_metrics_recorder();
 
-    let runtime = init_runtime(Some(cli.cpu))?;
-    let runtime = Arc::new(runtime);
+    let runtime = Arc::new(init_runtime(Some(cli.cpu))?);
+    let memory_size = cli.memory * 1024 * 1024 * 1024;
+    let memory_pool = Arc::new(GreedyMemoryPool::new(memory_size));
     runtime.clone().block_on(async move {
         let builder = server::ServiceBuilder {
             config: config.clone(),
             runtime: runtime.clone(),
+            memory_pool: memory_pool.clone(),
         };
 
         let mut server = server::Server::default();
