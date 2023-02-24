@@ -1074,6 +1074,11 @@ impl QueryExpr {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PushedAggregateFunction {
+    Count(String),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
