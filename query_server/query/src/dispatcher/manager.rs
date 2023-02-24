@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
+use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use models::oid::Oid;
 use spi::query::ast::ExtStatement;
@@ -11,7 +12,7 @@ use spi::query::logical_planner::LogicalPlanner;
 use spi::query::optimizer::Optimizer;
 use spi::query::parser::Parser;
 use spi::query::scheduler::SchedulerRef;
-use spi::query::session::IsiphoSessionCtxFactory;
+use spi::query::session::SessionCtxFactory;
 use spi::service::protocol::{Query, QueryId};
 use spi::{QueryError, Result};
 
@@ -25,8 +26,9 @@ use crate::sql::logical::planner::DefaultLogicalPlanner;
 #[derive(Clone)]
 pub struct SimpleQueryDispatcher {
     coord: CoordinatorRef,
-    session_factory: Arc<IsiphoSessionCtxFactory>,
-    // TODO resource manager
+    session_factory: Arc<SessionCtxFactory>,
+    // memory pool
+    memory_pool: MemoryPoolRef,
     // query tracker
     query_tracker: Arc<QueryTracker>,
     // parser
@@ -59,9 +61,11 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         query_id: QueryId,
         query: &Query,
     ) -> Result<Output> {
-        let session = self
-            .session_factory
-            .create_isipho_session_ctx(query.context().clone(), tenant_id);
+        let session = self.session_factory.create_session_ctx(
+            query.context().clone(),
+            tenant_id,
+            self.memory_pool.clone(),
+        )?;
 
         let meta_client = self
             .coord
@@ -164,13 +168,14 @@ impl SimpleQueryDispatcher {
 #[derive(Default, Clone)]
 pub struct SimpleQueryDispatcherBuilder {
     coord: Option<CoordinatorRef>,
-    session_factory: Option<Arc<IsiphoSessionCtxFactory>>,
+    session_factory: Option<Arc<SessionCtxFactory>>,
     parser: Option<Arc<dyn Parser + Send + Sync>>,
     // cnosdb optimizer
     optimizer: Option<Arc<dyn Optimizer + Send + Sync>>,
     scheduler: Option<SchedulerRef>,
 
     queries_limit: usize,
+    memory_pool: Option<MemoryPoolRef>, // memory
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -179,7 +184,7 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
-    pub fn with_session_factory(mut self, session_factory: Arc<IsiphoSessionCtxFactory>) -> Self {
+    pub fn with_session_factory(mut self, session_factory: Arc<SessionCtxFactory>) -> Self {
         self.session_factory = Some(session_factory);
         self
     }
@@ -201,6 +206,11 @@ impl SimpleQueryDispatcherBuilder {
 
     pub fn with_queries_limit(mut self, limit: u32) -> Self {
         self.queries_limit = limit as usize;
+        self
+    }
+
+    pub fn with_memory_pool(mut self, memory_pool: MemoryPoolRef) -> Self {
+        self.memory_pool = Some(memory_pool);
         self
     }
 
@@ -239,10 +249,15 @@ impl SimpleQueryDispatcherBuilder {
             scheduler,
             query_tracker.clone(),
         ));
-
+        let memory_pool = self
+            .memory_pool
+            .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                err: "lost of memory pool".to_string(),
+            })?;
         Ok(SimpleQueryDispatcher {
             coord,
             session_factory,
+            memory_pool,
             parser,
             query_execution_factory,
             query_tracker,

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use mem_allocator::Jemalloc;
+use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
@@ -13,6 +14,7 @@ use crate::report::ReportService;
 
 mod flight_sql;
 mod http;
+mod meta_single;
 mod report;
 mod rpc;
 pub mod server;
@@ -69,6 +71,8 @@ enum SubCommand {
     /// run query
     #[clap(arg_required_else_help = true)]
     Query {},
+    #[clap(arg_required_else_help = true)]
+    Singleton {},
 }
 
 #[global_allocator]
@@ -87,12 +91,14 @@ fn main() -> Result<(), std::io::Error> {
     let _ = init_global_tracing(&config.log.path, "tsdb.log", &config.log.level);
     init_tskv_metrics_recorder();
 
-    let runtime = init_runtime(Some(cli.cpu))?;
-    let runtime = Arc::new(runtime);
+    let runtime = Arc::new(init_runtime(Some(cli.cpu))?);
+    let memory_size = cli.memory * 1024 * 1024 * 1024;
+    let memory_pool = Arc::new(GreedyMemoryPool::new(memory_size));
     runtime.clone().block_on(async move {
         let builder = server::ServiceBuilder {
             config: config.clone(),
             runtime: runtime.clone(),
+            memory_pool: memory_pool.clone(),
         };
 
         let mut server = server::Server::default();
@@ -101,9 +107,10 @@ fn main() -> Result<(), std::io::Error> {
         }
 
         let storage = match &cli.subcmd {
-            SubCommand::Tskv {} => builder.build_stroage_server(&mut server).await,
+            SubCommand::Tskv {} => builder.build_storage_server(&mut server).await,
             SubCommand::Query {} => builder.build_query_server(&mut server).await,
-            SubCommand::Run {} => builder.build_query_stroage(&mut server).await,
+            SubCommand::Run {} => builder.build_query_storage(&mut server).await,
+            SubCommand::Singleton {} => builder.build_singleton(&mut server).await,
         };
 
         server.start().expect("CnosDB server start.");

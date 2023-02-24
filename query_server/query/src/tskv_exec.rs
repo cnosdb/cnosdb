@@ -101,7 +101,7 @@ impl ExecutionPlan for TskvExec {
 
         let batch_size = context.session_config().batch_size();
 
-        let metrics = TableScanMetrics::new(&self.metrics, partition);
+        let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
 
         let table_stream = TableScanStream::new(
             self.table_schema.clone(),

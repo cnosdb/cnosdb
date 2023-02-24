@@ -412,6 +412,7 @@ mod test {
     use std::sync::Arc;
 
     use lru_cache::ShardedCache;
+    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use parking_lot::RwLock;
     use tokio::sync::mpsc;
 
@@ -480,7 +481,7 @@ mod test {
                 time_range: TimeRange::new(lvl_desc.1, lvl_desc.2),
             };
         }
-
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let version = Arc::new(Version::new(
             1,
             Arc::new("version_1".to_string()),
@@ -495,12 +496,13 @@ mod test {
         TseriesFamily::new(
             1,
             Arc::new("ts_family_1".to_string()),
-            MemCache::new(1, 1000, 1),
+            MemCache::new(1, 1000, 1, &memory_pool),
             version,
             opt.cache.clone(),
             opt.storage.clone(),
             flush_task_sender,
             compactt_task_sender,
+            memory_pool,
         )
     }
 
@@ -513,7 +515,7 @@ mod test {
         let opt = create_options(dir.to_string());
 
         #[rustfmt::skip]
-        let levels_sketch: LevelsSketch = vec![
+            let levels_sketch: LevelsSketch = vec![
             // vec![( level, Timestamp_Begin, Timestamp_end, vec![(file_id, Timestamp_Begin, Timestamp_end, size, being_compact)] )]
             (0_u32, 1_i64, 1000_i64, vec![
                 (11_u64, 1_i64, 1000_i64, 1000_u64, false),

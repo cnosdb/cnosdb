@@ -3241,11 +3241,14 @@ dependencies = [
 name = "main"
 version = "2.1.0"
 dependencies = [
+ "actix-web",
  "arrow-flight",
  "async-stream",
  "async-trait",
+ "backoff",
  "backtrace",
  "base64 0.13.1",
+ "byteorder",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -3261,14 +3264,17 @@ dependencies = [
  "license",
  "line_protocol",
  "mem_allocator",
+ "memory_pool",
  "meta",
  "metrics",
  "models",
  "moka",
  "num_cpus",
  "once_cell",
+ "openraft",
  "os_info",
  "parking_lot 0.12.1",
+ "pprof",
  "prost",
  "prost-types",
  "protos",
@@ -3277,13 +3283,18 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sled",
  "snafu",
  "spi",
+ "surf",
+ "sys-info",
  "tokio",
  "tokio-stream",
  "tonic",
  "trace",
+ "tracing-futures",
  "tskv",
+ "ureq",
  "warp",
 ]
 
@@ -3368,6 +3379,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "memory_pool"
+version = "2.1.0"
+dependencies = [
+ "datafusion",
 ]
 
 [[package]]
@@ -4452,6 +4470,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "line_protocol",
+ "memory_pool",
  "meta",
  "minivec",
  "models",
@@ -6275,6 +6294,7 @@ dependencies = [
  "libc",
  "lru",
  "lru_cache",
+ "memory_pool",
  "meta",
  "metrics",
  "minivec",

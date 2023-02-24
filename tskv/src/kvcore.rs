@@ -4,11 +4,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use config::ClusterConfig;
-use datafusion::prelude::Column;
 use flatbuffers::FlatBufferBuilder;
 use futures::stream::SelectNextSome;
 use futures::FutureExt;
 use libc::printf;
+use memory_pool::{GreedyMemoryPool, MemoryPool, MemoryPoolRef};
 use meta::meta_manager::RemoteMetaManager;
 use meta::MetaRef;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
@@ -67,6 +67,7 @@ pub struct TsKv {
     meta_manager: MetaRef,
 
     runtime: Arc<Runtime>,
+    memory_pool: Arc<dyn MemoryPool>,
     wal_sender: Sender<WalTask>,
     flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
@@ -76,7 +77,12 @@ pub struct TsKv {
 }
 
 impl TsKv {
-    pub async fn open(meta_manager: MetaRef, opt: Options, runtime: Arc<Runtime>) -> Result<TsKv> {
+    pub async fn open(
+        meta_manager: MetaRef,
+        opt: Options,
+        runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
+    ) -> Result<TsKv> {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) =
             mpsc::channel::<FlushReq>(shared_options.storage.flush_req_channel_cap);
@@ -91,6 +97,7 @@ impl TsKv {
         let (close_sender, _close_receiver) = broadcast::channel(1);
         let (version_set, summary) = Self::recover_summary(
             runtime.clone(),
+            memory_pool.clone(),
             meta_manager.clone(),
             shared_options.clone(),
             flush_task_sender.clone(),
@@ -101,6 +108,7 @@ impl TsKv {
         let global_seq_ctx = version_set.read().await.get_global_sequence_context().await;
         let global_seq_ctx = Arc::new(global_seq_ctx);
         let wal_cfg = shared_options.wal.clone();
+
         let core = Self {
             options: shared_options.clone(),
             global_ctx: summary.global_context(),
@@ -108,6 +116,7 @@ impl TsKv {
             version_set,
             meta_manager,
             runtime: runtime.clone(),
+            memory_pool,
             wal_sender,
             flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
@@ -144,6 +153,7 @@ impl TsKv {
 
     async fn recover_summary(
         runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
         meta: MetaRef,
         opt: Arc<Options>,
         flush_task_sender: Sender<FlushReq>,
@@ -170,7 +180,7 @@ impl TsKv {
             .await
             .unwrap()
         } else {
-            Summary::new(opt, runtime, global_seq_task_sender)
+            Summary::new(opt, runtime, memory_pool, global_seq_task_sender)
                 .await
                 .unwrap()
         };
@@ -192,48 +202,79 @@ impl TsKv {
         wal_manager
     }
 
-    fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: Receiver<WalTask>) {
-        warn!("job 'WAL' starting.");
+    pub(crate) fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: Receiver<WalTask>) {
+        async fn on_write(
+            wal_manager: &mut WalManager,
+            points: Arc<Vec<u8>>,
+            cb: oneshot::Sender<Result<(u64, usize)>>,
+            id: TseriesFamilyId,
+            tenant: Arc<Vec<u8>>,
+        ) {
+            let ret = wal_manager
+                .write(WalEntryType::Write, points, id, tenant)
+                .await;
+            let send_ret = cb.send(ret);
+            if let Err(e) = send_ret {
+                warn!("send WAL write result failed: {:?}", e);
+            }
+        }
+
+        async fn on_tick(wal_manager: &WalManager) {
+            if let Err(e) = wal_manager.sync().await {
+                error!("Failed flushing WAL file: {:?}", e);
+            }
+        }
+
+        async fn on_cancel(wal_manager: WalManager) {
+            info!("Job 'WAL' closing.");
+            if let Err(e) = wal_manager.close().await {
+                error!("Failed to close job 'WAL': {:?}", e);
+            }
+            info!("Job 'WAL' closed.");
+        }
+
+        info!("Job 'WAL' starting.");
         let mut close_receiver = self.close_sender.subscribe();
-        let f = async move {
-            loop {
-                tokio::select! {
-                    wal_task = receiver.recv() => {
-                        match wal_task {
-                            Some(WalTask::Write { id, points, tenant, cb }) => {
-                                // write wal
-                                let ret = wal_manager.write(WalEntryType::Write, points, id, tenant).await;
-                                let send_ret = cb.send(ret);
-                                match send_ret {
-                                    Ok(wal_result) => {}
-                                    Err(err) => {
-                                        warn!("send WAL write result failed.")
-                                    }
-                                }
+        let _ = self.runtime.spawn(async move {
+            info!("Job 'WAL' started.");
+
+            let sync_interval = wal_manager.sync_interval();
+            if sync_interval == Duration::ZERO {
+                loop {
+                    tokio::select! {
+                        wal_task = receiver.recv() => {
+                            match wal_task {
+                                Some(WalTask::Write { id, points, tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant).await,
+                                _ => break
                             }
-                            _ => {
-                                break;
-                            }
+                        }
+                        close_task = close_receiver.recv() => {
+                            on_cancel(wal_manager).await;
+                            break;
                         }
                     }
-                    close_task = close_receiver.recv() => {
-                        info!("job 'WAL' closing.");
-                        if let Err(e) = wal_manager.close().await {
-                            error!("Failed to close wal: {:?}", e);
-                        }
-                        info!("job 'WAL' closed.");
-                        if let Ok(tx) = close_task {
-                            if let Err(e) = tx.send(()).await {
-                                error!("Failed to send wal closed signal: {:?}", e);
+                }
+            } else {
+                let mut ticker = tokio::time::interval(sync_interval);
+                loop {
+                    tokio::select! {
+                        wal_task = receiver.recv() => {
+                            match wal_task {
+                                Some(WalTask::Write { id, points, tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant).await,
+                                _ => break
                             }
                         }
-                        break;
+                        _ = ticker.tick() => {
+                            on_tick(&wal_manager).await;
+                        }
+                        close_task = close_receiver.recv() => {
+                            on_cancel(wal_manager).await;
+                            break;
+                        }
                     }
                 }
             }
-        };
-        self.runtime.spawn(f);
-        info!("job 'WAL' started.");
+        });
     }
 
     fn run_flush_job(
@@ -273,24 +314,6 @@ impl TsKv {
         info!("Summary task handler started");
     }
 
-    // fn run_timer_job(&self, pub_sender: Sender<()>) {
-    //     let f = async move {
-    //         let interval = Duration::from_secs(1);
-    //         let ticker = crossbeam_channel::tick(interval);
-    //         loop {
-    //             ticker.recv().unwrap();
-    //             let _ = pub_sender.send(());
-    //         }
-    //     };
-    //     self.runtime.spawn(f);
-    // }
-
-    // pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
-    //     Ok(None)
-    // }
-
-    // Compact TSM files in database into bigger TSM files.
-
     pub async fn get_db(&self, tenant: &str, database: &str) -> Result<Arc<RwLock<Database>>> {
         let db = self
             .version_set
@@ -322,7 +345,11 @@ impl TsKv {
             .version_set
             .write()
             .await
-            .create_db(schema.clone(), self.meta_manager.clone())
+            .create_db(
+                schema.clone(),
+                self.meta_manager.clone(),
+                self.memory_pool.clone(),
+            )
             .await?;
         Ok(db)
     }
@@ -441,9 +468,12 @@ impl Engine for TsKv {
             }
         };
 
-        let size = tsf.read().await.put_points(seq, write_group);
+        let res = match tsf.read().await.put_points(seq, write_group) {
+            Ok(points_number) => Ok(WritePointsResponse { points_number }),
+            Err(err) => Err(err),
+        };
         tsf.write().await.check_to_flush().await;
-        Ok(WritePointsResponse { size })
+        res
     }
 
     async fn write_from_wal(
@@ -470,6 +500,7 @@ impl Engine for TsKv {
             .create_db(
                 DatabaseSchema::new(&tenant_name, &db_name),
                 self.meta_manager.clone(),
+                self.memory_pool.clone(),
             )
             .await?;
 
@@ -503,8 +534,7 @@ impl Engine for TsKv {
             }
         };
 
-        tsf.read().await.put_points(seq, write_group);
-
+        tsf.read().await.put_points(seq, write_group)?;
         return Ok(());
     }
 

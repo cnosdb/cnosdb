@@ -12,7 +12,7 @@ use openraft::{EffectiveMembership, LogId};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, from_str};
 use sled::Db;
-use trace::{debug, info};
+use trace::{debug, error, info};
 
 use super::command::*;
 use super::key_path;
@@ -129,7 +129,7 @@ pub struct StateMachine {
 }
 
 impl StateMachine {
-    pub(crate) fn new(db: Arc<sled::Db>) -> StateMachine {
+    pub fn new(db: Arc<sled::Db>) -> StateMachine {
         let sm = Self {
             db: db.clone(),
             data_tree: db.open_tree("data").expect("data open failed"),
@@ -647,6 +647,17 @@ impl StateMachine {
     }
 
     fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> CommandResp {
+        for (_, value) in
+            children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone()).iter()
+        {
+            // Check whether the ip of the same cluster has been added
+            if value.id == node.id
+                || value.http_addr == node.http_addr
+                || value.tcp_addr == node.tcp_addr
+            {
+                error!("ip address has been added, the added node is : {:?}", value);
+            }
+        }
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = serde_json::to_string(node).unwrap();
         let _ = self.insert(&key, &value);
