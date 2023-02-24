@@ -97,26 +97,15 @@ impl GlobalSequenceContext {
     ) {
         let mut inner = self.inner.write();
 
-        if del_ts_family.is_empty() {
-            let mut tsf_min_seq = if inner.tsf_seq_map.is_empty() {
-                u64::MAX
-            } else {
-                inner.min_seq
-            };
-            for (tsf_id, min_seq) in ts_family_min_seq {
-                inner.tsf_seq_map.insert(tsf_id, min_seq);
-                tsf_min_seq = tsf_min_seq.min(min_seq);
-            }
-            inner.min_seq = tsf_min_seq;
-        } else {
+        for (tsf_id, min_seq) in ts_family_min_seq {
+            inner.tsf_seq_map.insert(tsf_id, min_seq);
+        }
+        if !del_ts_family.is_empty() {
             for tsf_id in del_ts_family {
                 inner.tsf_seq_map.remove(&tsf_id);
             }
-            for (tsf_id, min_seq) in ts_family_min_seq {
-                inner.tsf_seq_map.insert(tsf_id, min_seq);
-            }
-            inner.reset_min_seq();
         }
+        inner.reset_min_seq();
         self.min_seq.store(inner.min_seq, Ordering::Release);
     }
 
@@ -137,6 +126,7 @@ impl GlobalSequenceContext {
         })
     }
 
+    #[cfg(test)]
     pub fn set_min_seq(&self, min_seq: u64) {
         let mut inner = self.inner.write();
         inner.min_seq = min_seq;
