@@ -78,13 +78,12 @@ impl DBResult {
 
 impl Display for DBResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "-- QUERY: {} --", &self.request)?;
-        if self.is_sorted {
-            writeln!(f, "-- AFTER_SORT --")?;
-        }
+        writeln!(f, "{}", &self.request)?;
+        writeln!(f, "--------------------")?;
         writeln!(f, "{}", &self.response)?;
         if !self.is_ok {
-            writeln!(f, "-- ERROR: --")?;
+            writeln!(f, "--------------------")?;
+            writeln!(f, "ERROR")?;
         }
         Ok(())
     }
