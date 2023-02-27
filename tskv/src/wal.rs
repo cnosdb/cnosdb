@@ -567,6 +567,7 @@ mod test {
     use lazy_static::lazy_static;
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
+    use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::codec::Encoding;
     use models::schema::TenantOptions;
@@ -856,9 +857,15 @@ mod test {
                 .tenant_manager()
                 .create_tenant("cnosdb".to_string(), TenantOptions::default())
                 .await;
-            let tskv = TsKv::open(meta_manager, opt, rt_2, memory_pool)
-                .await
-                .unwrap();
+            let tskv = TsKv::open(
+                meta_manager,
+                opt,
+                rt_2,
+                memory_pool,
+                Arc::new(MetricsRegister::default()),
+            )
+            .await
+            .unwrap();
             let ver = tskv
                 .get_db_version("cnosdb", "dba", 10)
                 .await

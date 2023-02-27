@@ -15,6 +15,7 @@ coordinator = { path = "../../coordinator" }
 line_protocol = { path = "../../common/line_protocol" }
 memory_pool = { path = "../../common/memory_pool" }
 spi = { path = "../spi" }
+metrics = {path = "../../common/metrics"}
 
 
 async-trait = { workspace = true }

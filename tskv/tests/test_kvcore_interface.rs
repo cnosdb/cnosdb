@@ -8,6 +8,7 @@ mod tests {
     use datafusion::execution::memory_pool::GreedyMemoryPool;
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
+    use metrics::metric_register::MetricsRegister;
     use models::schema::TenantOptions;
     use protos::kv_service::Meta;
     use protos::{kv_service, models_helper};
@@ -39,9 +40,15 @@ mod tests {
         rt.block_on(async {
             (
                 rt.clone(),
-                TsKv::open(meta_manager, opt, rt.clone(), memory)
-                    .await
-                    .unwrap(),
+                TsKv::open(
+                    meta_manager,
+                    opt,
+                    rt.clone(),
+                    memory,
+                    Arc::new(MetricsRegister::default()),
+                )
+                .await
+                .unwrap(),
             )
         })
     }

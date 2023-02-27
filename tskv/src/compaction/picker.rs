@@ -413,6 +413,7 @@ mod test {
 
     use lru_cache::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
+    use metrics::metric_register::MetricsRegister;
     use parking_lot::RwLock;
     use tokio::sync::mpsc;
 
@@ -503,6 +504,7 @@ mod test {
             flush_task_sender,
             compactt_task_sender,
             memory_pool,
+            &Arc::new(MetricsRegister::default()),
         )
     }
 

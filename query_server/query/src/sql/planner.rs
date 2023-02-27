@@ -1250,7 +1250,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 let privilege = Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)));
 
                 let tenant_options = sql_options_to_tenant_options(vec![sql_option])?;
-                // .map_err(|err| QueryError::Semantic { err })?;
 
                 (AlterTenantAction::Set(Box::new(tenant_options)), privilege)
             }
