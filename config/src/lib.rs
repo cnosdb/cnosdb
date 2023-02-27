@@ -406,6 +406,8 @@ pub struct ClusterConfig {
     pub tcp_listen_addr: String,
     #[serde(default = "ClusterConfig::default_flight_rpc_listen_addr")]
     pub flight_rpc_listen_addr: String,
+    #[serde(default = "ClusterConfig::default_store_metrics")]
+    pub store_metrics: bool,
 }
 
 impl ClusterConfig {
@@ -435,6 +437,10 @@ impl ClusterConfig {
 
     fn default_flight_rpc_listen_addr() -> String {
         "127.0.0.1:31006".to_string()
+    }
+
+    fn default_store_metrics() -> bool {
+        true
     }
 
     pub fn override_by_env(&mut self) {

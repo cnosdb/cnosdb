@@ -12,6 +12,7 @@ use libc::write;
 use lru_cache::ShardedCache;
 use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
 use meta::MetaRef;
+use metrics::metric_register::MetricsRegister;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
@@ -289,6 +290,7 @@ pub struct Summary {
     opt: Arc<Options>,
     runtime: Arc<Runtime>,
     sequence_task_sender: Sender<GlobalSequenceTask>,
+    metrics_register: Arc<MetricsRegister>,
 }
 
 impl Summary {
@@ -298,6 +300,7 @@ impl Summary {
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
         sequence_task_sender: Sender<GlobalSequenceTask>,
+        metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let db = VersionEdit::default();
         let path = file_utils::make_summary_file(opt.storage.summary_dir(), 0);
@@ -318,12 +321,14 @@ impl Summary {
                 opt.clone(),
                 runtime.clone(),
                 memory_pool,
+                metrics_register.clone(),
             ))),
             ctx: Arc::new(GlobalContext::default()),
             writer: w,
             opt,
             runtime,
             sequence_task_sender,
+            metrics_register,
         })
     }
 
@@ -340,6 +345,7 @@ impl Summary {
         sequence_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
         load_field_filter: bool,
+        metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let summary_path = opt.storage.summary_dir();
         let path = file_utils::make_summary_file(&summary_path, 0);
@@ -359,6 +365,7 @@ impl Summary {
             flush_task_sender,
             compact_task_sender,
             load_field_filter,
+            metrics_register.clone(),
         )
         .await?;
 
@@ -370,6 +377,7 @@ impl Summary {
             opt,
             runtime,
             sequence_task_sender,
+            metrics_register,
         })
     }
 
@@ -387,6 +395,7 @@ impl Summary {
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
         load_field_filter: bool,
+        metrics_register: Arc<MetricsRegister>,
     ) -> Result<VersionSet> {
         let mut tsf_edits_map: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
         let mut database_map: HashMap<String, Arc<String>> = HashMap::new();
@@ -488,6 +497,7 @@ impl Summary {
             versions,
             flush_task_sender,
             compact_task_sender,
+            metrics_register,
         )
         .await?;
         Ok(vs)
@@ -830,6 +840,7 @@ mod test {
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
+    use metrics::metric_register::MetricsRegister;
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
     use snafu::ResultExt;
     use tokio::runtime::Runtime;
@@ -1015,6 +1026,7 @@ mod test {
             runtime.clone(),
             memory_pool,
             global_seq_task_sender.clone(),
+            Arc::new(MetricsRegister::default()),
         )
         .await
         .unwrap();
@@ -1031,6 +1043,7 @@ mod test {
             global_seq_task_sender,
             compact_task_sender,
             false,
+            Arc::new(MetricsRegister::default()),
         )
         .await
         .unwrap();
@@ -1060,6 +1073,7 @@ mod test {
             runtime.clone(),
             memory_pool,
             global_seq_task_sender.clone(),
+            Arc::new(MetricsRegister::default()),
         )
         .await
         .unwrap();
@@ -1077,6 +1091,7 @@ mod test {
             global_seq_task_sender.clone(),
             compact_task_sender.clone(),
             false,
+            Arc::new(MetricsRegister::default()),
         )
         .await
         .unwrap();
@@ -1094,6 +1109,7 @@ mod test {
             global_seq_task_sender,
             compact_task_sender,
             false,
+            Arc::new(MetricsRegister::default()),
         )
         .await
         .unwrap();
@@ -1128,6 +1144,7 @@ mod test {
             runtime.clone(),
             memory_pool.clone(),
             global_seq_task_sender.clone(),
+            Arc::new(MetricsRegister::default()),
         )
         .await
         .unwrap();
@@ -1182,6 +1199,7 @@ mod test {
             global_seq_task_sender.clone(),
             compact_task_sender,
             false,
+            Arc::new(MetricsRegister::default()),
         )
         .await
         .unwrap();
@@ -1216,6 +1234,7 @@ mod test {
             runtime.clone(),
             memory_pool.clone(),
             global_seq_task_sender.clone(),
+            Arc::new(MetricsRegister::default()),
         )
         .await
         .unwrap();
@@ -1297,6 +1316,7 @@ mod test {
             global_seq_task_sender,
             compact_task_sender,
             false,
+            Arc::new(MetricsRegister::default()),
         )
         .await
         .unwrap();

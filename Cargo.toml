@@ -110,9 +110,9 @@ tonic = "0.8"
 tonic-build = "0.8"
 tracing = "0.1.35"
 tracing-futures = "0.2"
-tracing-subscriber = "0.2.25"
-tracing-appender = "0.1.2"
-tracing-error = "0.1.2"
+tracing-subscriber = "0.3.16"
+tracing-appender = "0.2.2"
+tracing-error = "0.2.0"
 url = "2.2"
 uuid = { version = "1.1", features = ["v4"] }
 ureq = { version = "2.5.0", features = ["json", "charset"] }

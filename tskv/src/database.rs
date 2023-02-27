@@ -1,13 +1,18 @@
 use std::collections::HashMap;
 use std::mem::size_of;
 use std::path::{self, Path};
+use std::ptr::read;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use datafusion::sql::sqlparser::test_utils::table;
+use futures::executor::block_on;
 use lru_cache::ShardedCache;
 use memory_pool::{MemoryPool, MemoryPoolRef};
 use meta::MetaRef;
+use metrics::gauge::{GaugeWrap, U64Gauge};
+use metrics::metric::Metric;
+use metrics::metric_register::MetricsRegister;
 use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::utils::{split_id, unite_id};
 use models::{
@@ -47,6 +52,7 @@ pub struct Database {
     ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
     runtime: Arc<Runtime>,
     memory_pool: MemoryPoolRef,
+    metrics_register: Arc<MetricsRegister>,
 }
 
 impl Database {
@@ -56,6 +62,7 @@ impl Database {
         runtime: Arc<Runtime>,
         meta: MetaRef,
         memory_pool: MemoryPoolRef,
+        metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let db = Self {
             opt,
@@ -65,6 +72,7 @@ impl Database {
             ts_families: HashMap::new(),
             runtime,
             memory_pool,
+            metrics_register,
         };
 
         Ok(db)
@@ -93,8 +101,10 @@ impl Database {
             flush_task_sender,
             compact_task_sender,
             self.memory_pool.clone(),
+            &self.metrics_register,
         );
         tf.schedule_compaction(self.runtime.clone());
+
         self.ts_families
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
@@ -150,7 +160,9 @@ impl Database {
             flush_task_sender,
             compact_task_sender,
             self.memory_pool.clone(),
+            &self.metrics_register,
         );
+
         let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
 

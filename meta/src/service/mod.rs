@@ -6,6 +6,8 @@ use models::schema::TenantOptionsBuilder;
 use tracing::error;
 
 use crate::store::command::{CommonResp, ReadCommand};
+use crate::store::config::MetaInit;
+use crate::store::key_path::KeyPath;
 use crate::{MetaApp, WriteCommand};
 
 pub mod api;
@@ -95,20 +97,17 @@ pub async fn init_meta(app: &Data<MetaApp>) {
     }
 
     // init database
-    let req = WriteCommand::Set {
-        key: format!(
-            "/{}/tenants/{}/dbs/{}",
-            app.meta_init.cluster_name, app.meta_init.system_tenant, app.meta_init.default_database
-        ),
-        value: format!(
-            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null}}}}",
-            app.meta_init.system_tenant, app.meta_init.default_database
-        ),
-    };
-    if app.raft.client_write(req).await.is_err() {
-        error!(
-            "failed create default database {}, exist init meta",
-            app.meta_init.default_database
-        );
+    for db in app.meta_init.default_database.iter() {
+        let req = WriteCommand::Set {
+            key: KeyPath::tenant_db_name(
+                &app.meta_init.cluster_name,
+                &app.meta_init.system_tenant,
+                db,
+            ),
+            value: MetaInit::default_db_config(&app.meta_init.system_tenant, db),
+        };
+        if app.raft.client_write(req).await.is_err() {
+            error!("failed create default database {}, exist init meta", db);
+        }
     }
 }

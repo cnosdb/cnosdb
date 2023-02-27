@@ -664,6 +664,7 @@ pub mod test {
     use std::sync::Arc;
 
     use lru_cache::ShardedCache;
+    use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::{FieldId, Timestamp, ValueType};
     use parking_lot::RwLock;

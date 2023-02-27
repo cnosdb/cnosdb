@@ -1,4 +1,4 @@
-use std::borrow::{Borrow, BorrowMut};
+use std::borrow::{Borrow, BorrowMut, Cow};
 use std::cmp::{self, max, min};
 use std::collections::{HashMap, HashSet};
 use std::ops::{Bound, Deref, DerefMut};
@@ -10,9 +10,14 @@ use std::time::Duration;
 
 use config::get_config;
 use lazy_static::lazy_static;
+use libc::sigaction;
 use lru_cache::ShardedCache;
 use memory_pool::MemoryPoolRef;
-use models::schema::TableColumn;
+use metrics::count::U64Counter;
+use metrics::gauge::U64Gauge;
+use metrics::metric::Metric;
+use metrics::metric_register::MetricsRegister;
+use models::schema::{split_owner, TableColumn};
 use models::{ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use tokio::runtime::Runtime;
@@ -402,6 +407,10 @@ impl LevelInfo {
             .sort_by(|a, b| a.file_id.partial_cmp(&b.file_id).unwrap());
     }
 
+    pub fn disk_storage(&self) -> u64 {
+        self.files.iter().map(|f| f.size).sum()
+    }
+
     pub fn level(&self) -> u32 {
         self.level
     }
@@ -602,6 +611,30 @@ impl SuperVersion {
 }
 
 #[derive(Debug)]
+pub struct TsfMetrics {
+    disk_storage_count: U64Counter,
+}
+
+impl TsfMetrics {
+    pub fn new(register: &MetricsRegister, owner: &str, vnode_id: u64) -> Self {
+        let (tenant, db) = split_owner(owner);
+        let metric = register.metric::<U64Counter>("disk_storage", "disk storage of vnode");
+        let counter = metric.recorder([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", vnode_id.to_string().as_str()),
+        ]);
+        Self {
+            disk_storage_count: counter,
+        }
+    }
+
+    pub fn record_disk_storage(&self, size: u64) {
+        self.disk_storage_count.inc(size)
+    }
+}
+
+#[derive(Debug)]
 pub struct TseriesFamily {
     tf_id: TseriesFamilyId,
     database: Arc<String>,
@@ -620,6 +653,7 @@ pub struct TseriesFamily {
     compact_task_sender: Sender<CompactTask>,
     cancellation_token: CancellationToken,
     memory_pool: MemoryPoolRef,
+    tsf_metrics: TsfMetrics,
 }
 
 impl TseriesFamily {
@@ -634,6 +668,7 @@ impl TseriesFamily {
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
         memory_pool: MemoryPoolRef,
+        register: &Arc<MetricsRegister>,
     ) -> Self {
         let mm = Arc::new(RwLock::new(cache));
         let seq = version.last_seq;
@@ -642,7 +677,7 @@ impl TseriesFamily {
 
         Self {
             tf_id,
-            database,
+            database: database.clone(),
             seq_no: seq,
             mut_cache: mm.clone(),
             immut_cache: Default::default(),
@@ -667,6 +702,7 @@ impl TseriesFamily {
             compact_task_sender,
             cancellation_token: CancellationToken::new(),
             memory_pool,
+            tsf_metrics: TsfMetrics::new(register, database.as_str(), tf_id as u64),
         }
     }
 
@@ -678,6 +714,7 @@ impl TseriesFamily {
 
     fn new_super_version(&mut self, version: Arc<Version>) {
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
+        self.tsf_metrics.record_disk_storage(self.disk_storage());
         self.super_version = Arc::new(SuperVersion::new(
             self.tf_id,
             self.storage_opt.clone(),
@@ -914,6 +951,14 @@ impl TseriesFamily {
     pub fn get_tsm_dir(&self) -> PathBuf {
         self.storage_opt.tsm_dir(&self.database, self.tf_id)
     }
+
+    pub fn disk_storage(&self) -> u64 {
+        self.version
+            .levels_info
+            .iter()
+            .map(|l| l.disk_storage())
+            .sum()
+    }
 }
 
 impl Drop for TseriesFamily {
@@ -935,6 +980,7 @@ mod test {
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
+    use metrics::metric_register::MetricsRegister;
     use models::schema::{DatabaseSchema, TenantOptions};
     use models::{Timestamp, ValueType};
     use parking_lot::{Mutex, RwLock};
@@ -1219,6 +1265,7 @@ mod test {
             flush_task_sender,
             compact_task_sender,
             memory_pool,
+            &Arc::new(MetricsRegister::default()),
         );
 
         let row_group = RowGroup {
@@ -1370,6 +1417,7 @@ mod test {
                     HashMap::new(),
                     flush_task_sender.clone(),
                     compact_task_sender.clone(),
+                    Arc::new(MetricsRegister::default()),
                 )
                 .await
                 .unwrap(),

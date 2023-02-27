@@ -48,7 +48,7 @@ regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 snafu = { workspace = true }
-tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time", "tracing"] }
 tokio-stream = { workspace = true, features = ["net"] }
 tonic = { workspace = true, features = ["transport", "tls"] }
 warp = { workspace = true, features = ["tls"] }

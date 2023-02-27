@@ -6,6 +6,7 @@ use datafusion::execution::memory_pool::MemoryPool;
 use memory_pool::MemoryPoolRef;
 use meta::meta_manager::RemoteMetaManager;
 use meta::{store, MetaRef};
+use metrics::metric_register::MetricsRegister;
 use query::instance::make_cnosdbms;
 use snafu::{Backtrace, Snafu};
 use spi::server::dbms::DBMSRef;
@@ -108,6 +109,7 @@ pub(crate) struct ServiceBuilder {
     pub config: config::Config,
     pub runtime: Arc<Runtime>,
     pub memory_pool: MemoryPoolRef,
+    pub metrics_register: Arc<MetricsRegister>,
 }
 
 impl ServiceBuilder {
@@ -203,9 +205,15 @@ impl ServiceBuilder {
         memory_pool: MemoryPoolRef,
     ) -> EngineRef {
         let options = tskv::Options::from(&self.config);
-        let kv = TsKv::open(meta, options.clone(), runtime, memory_pool)
-            .await
-            .unwrap();
+        let kv = TsKv::open(
+            meta,
+            options.clone(),
+            runtime,
+            memory_pool,
+            self.metrics_register.clone(),
+        )
+        .await
+        .unwrap();
 
         let kv: EngineRef = Arc::new(kv);
 
@@ -231,6 +239,7 @@ impl ServiceBuilder {
             meta,
             self.config.cluster.clone(),
             self.config.hinted_off.clone(),
+            self.metrics_register.clone(),
         )
         .await;
 
@@ -245,7 +254,7 @@ impl ServiceBuilder {
             .parse::<SocketAddr>()
             .expect("Invalid tcp host");
 
-        TcpService::new(coord, host)
+        TcpService::new(coord, host, self.metrics_register.clone())
     }
 
     async fn create_http(
@@ -270,6 +279,7 @@ impl ServiceBuilder {
             self.config.query.query_sql_limit,
             self.config.query.write_sql_limit,
             mode,
+            self.metrics_register.clone(),
         )
     }
 

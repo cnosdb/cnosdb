@@ -8,12 +8,14 @@ use coordinator::command::*;
 use coordinator::errors::*;
 use coordinator::file_info::get_files_meta;
 use coordinator::reader::{QueryExecutor, ReaderIterator};
-use coordinator::service::CoordinatorRef;
+use coordinator::service::{CoordServiceMetrics, CoordinatorRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::future::ok;
 use futures::{executor, Future};
+use meta::error::MetaError;
 use meta::MetaRef;
+use metrics::metric_register::MetricsRegister;
 use models::auth::user::{ROOT, ROOT_PWD};
 use models::meta_data::{self, VnodeInfo};
 use models::predicate::domain::Predicate;
@@ -41,14 +43,20 @@ pub struct TcpService {
     addr: SocketAddr,
     coord: CoordinatorRef,
     handle: Option<ServiceHandle<()>>,
+    metrics_register: Arc<MetricsRegister>,
 }
 
 impl TcpService {
-    pub fn new(coord: CoordinatorRef, addr: SocketAddr) -> Self {
+    pub fn new(
+        coord: CoordinatorRef,
+        addr: SocketAddr,
+        metrics_register: Arc<MetricsRegister>,
+    ) -> Self {
         Self {
             addr,
             coord,
             handle: None,
+            metrics_register,
         }
     }
 }
@@ -62,7 +70,7 @@ impl Service for TcpService {
         let addr = self.addr;
         let coord = self.coord.clone();
 
-        let join_handle = tokio::spawn(service_run(addr, coord));
+        let join_handle = tokio::spawn(service_run(addr, coord, self.metrics_register.clone()));
         self.handle = Some(ServiceHandle::new(
             "tcp service".to_string(),
             join_handle,
@@ -79,7 +87,11 @@ impl Service for TcpService {
     }
 }
 
-async fn service_run(addr: SocketAddr, coord: CoordinatorRef) {
+async fn service_run(
+    addr: SocketAddr,
+    coord: CoordinatorRef,
+    metrics_register: Arc<MetricsRegister>,
+) {
     let listener = TcpListener::bind(addr.to_string()).await.unwrap();
     info!("tcp server start addr: {}", addr);
 
@@ -89,8 +101,9 @@ async fn service_run(addr: SocketAddr, coord: CoordinatorRef) {
                 debug!("tcp client address: {}", address);
 
                 let coord = coord.clone();
+                let metrics_register = metrics_register.clone();
                 let processor_fn = async move {
-                    let result = process_client(client, coord).await;
+                    let result = process_client(client, coord, metrics_register).await;
                     info!("process client {} result: {:#?}", address, result);
                 };
 
@@ -105,7 +118,11 @@ async fn service_run(addr: SocketAddr, coord: CoordinatorRef) {
     }
 }
 
-async fn process_client(mut client: TcpStream, coord: CoordinatorRef) -> CoordinatorResult<()> {
+async fn process_client(
+    mut client: TcpStream,
+    coord: CoordinatorRef,
+    metrics_register: Arc<MetricsRegister>,
+) -> CoordinatorResult<()> {
     if let Some(kv_inst) = coord.store_engine() {
         loop {
             let recv_cmd = recv_command(&mut client).await?;
@@ -124,6 +141,7 @@ async fn process_client(mut client: TcpStream, coord: CoordinatorRef) -> Coordin
                         cmd,
                         kv_inst.clone(),
                         coord.meta_manager(),
+                        metrics_register.clone(),
                     )
                     .await?;
                 }
@@ -311,9 +329,16 @@ async fn process_query_record_batch_command(
     cmd: QueryRecordBatchRequest,
     kv_inst: EngineRef,
     meta: MetaRef,
+    metrics_register: Arc<MetricsRegister>,
 ) -> CoordinatorResult<()> {
     let (mut iterator, sender) = ReaderIterator::new();
-    let _ = tokio::spawn(query_record_batch(cmd, kv_inst, meta, sender));
+    let _ = tokio::spawn(query_record_batch(
+        cmd,
+        kv_inst,
+        meta,
+        sender,
+        metrics_register.clone(),
+    ));
 
     loop {
         if let Some(item) = iterator.next().await {
@@ -352,6 +377,7 @@ async fn query_record_batch(
     kv_inst: EngineRef,
     meta: MetaRef,
     sender: Sender<CoordinatorResult<RecordBatch>>,
+    metrics_register: Arc<MetricsRegister>,
 ) {
     let filter = Arc::new(
         Predicate::default()
@@ -376,7 +402,13 @@ async fn query_record_batch(
         vnodes.push(VnodeInfo { id: *id, node_id })
     }
 
-    let executor = QueryExecutor::new(option, Some(kv_inst), meta, sender.clone());
+    let executor = QueryExecutor::new(
+        option,
+        Some(kv_inst),
+        meta,
+        sender.clone(),
+        Arc::new(CoordServiceMetrics::new(&metrics_register)),
+    );
     if let Err(err) = executor.local_node_executor(vnodes).await {
         info!("select statement execute failed: {}", err.to_string());
         let _ = sender.send(Err(err)).await;

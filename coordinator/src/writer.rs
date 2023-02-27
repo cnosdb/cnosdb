@@ -7,6 +7,7 @@ use futures::future::ok;
 //use std::net::{TcpListener, TcpStream};
 use meta::meta_manager::RemoteMetaManager;
 use meta::{MetaClientRef, MetaRef};
+use metrics::metric_register::MetricsRegister;
 use models::auth::user::{ROOT, ROOT_PWD};
 use models::meta_data::*;
 use models::utils::now_timestamp;
@@ -25,6 +26,7 @@ use tskv::engine::EngineRef;
 use crate::command::*;
 use crate::errors::*;
 use crate::hh_queue::{HintedOffBlock, HintedOffManager, HintedOffWriteReq};
+use crate::service::{CoordService, CoordinatorRef};
 
 pub struct VnodePoints<'a> {
     db: String,
@@ -101,6 +103,7 @@ impl VnodePoints<'_> {
 }
 
 pub struct VnodeMapping<'a> {
+    // replication id -> VnodePoints
     pub points: HashMap<u32, VnodePoints<'a>>,
     pub sets: HashMap<u32, ReplicationSet>,
 }
@@ -154,6 +157,7 @@ pub struct PointWriter {
     kv_inst: Option<EngineRef>,
     meta_manager: MetaRef,
     hh_sender: Sender<HintedOffWriteReq>,
+    metrics: Arc<MetricsRegister>,
 }
 
 impl PointWriter {
@@ -162,12 +166,14 @@ impl PointWriter {
         kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
         hh_sender: Sender<HintedOffWriteReq>,
+        metrics: Arc<MetricsRegister>,
     ) -> Self {
         Self {
             node_id,
             kv_inst,
             meta_manager,
             hh_sender,
+            metrics,
         }
     }
 

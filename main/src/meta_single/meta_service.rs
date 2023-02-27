@@ -10,12 +10,15 @@ use actix_web::{get, middleware, post, web, App, HttpServer, Responder};
 use config::Config;
 use meta::store::command::*;
 use meta::store::config::{MetaInit, Opt};
+use meta::store::key_path::KeyPath;
 use meta::store::state_machine::{CommandResp, StateMachine};
 use meta::{ClusterNode, ClusterNodeId, TypeConfig};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder, ROOT};
 use models::oid::Identifier;
-use models::schema::{DatabaseSchema, TenantOptionsBuilder, DEFAULT_CATALOG, DEFAULT_DATABASE};
+use models::schema::{
+    DatabaseSchema, TenantOptionsBuilder, DEFAULT_CATALOG, DEFAULT_DATABASE, USAGE_SCHEMA,
+};
 use openraft::error::ClientWriteError;
 use openraft::raft::ClientWriteResponse;
 use pprof::protos::Message;
@@ -221,6 +224,18 @@ pub async fn init_meta(app: &Data<MetaApp>, opt: Config) {
         value: format!(
             "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null}}}}",
             DEFAULT_CATALOG, DEFAULT_DATABASE
+        ),
+    };
+    app.store.process_write_command(&req);
+    // init database
+    let req = WriteCommand::Set {
+        key: format!(
+            "/{}/tenants/{}/dbs/{}",
+            opt.cluster.name, DEFAULT_CATALOG, USAGE_SCHEMA
+        ),
+        value: format!(
+            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null}}}}",
+            DEFAULT_CATALOG, USAGE_SCHEMA
         ),
     };
     app.store.process_write_command(&req);
