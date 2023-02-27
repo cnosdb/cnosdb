@@ -11,9 +11,9 @@ use crate::metadata::usage_schema_provider::{
 };
 
 pub const USAGE_SCHEMA_VNODE_DISK_STORAGE: &str = "vnode_disk_storage";
-pub struct DiskStorage {}
+pub struct VnodeDiskStorage {}
 
-impl UsageSchemaTableFactory for DiskStorage {
+impl UsageSchemaTableFactory for VnodeDiskStorage {
     fn table_name(&self) -> &'static str {
         USAGE_SCHEMA_VNODE_DISK_STORAGE
     }

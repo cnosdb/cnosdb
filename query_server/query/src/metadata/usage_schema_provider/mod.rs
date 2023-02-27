@@ -5,25 +5,25 @@ use coordinator::service::CoordinatorRef;
 use datafusion::datasource::{provider_as_source, TableProvider, ViewTable};
 use datafusion::logical_expr::{binary_expr, col, LogicalPlanBuilder, Operator};
 use datafusion::prelude::lit;
-pub use disk_storage::USAGE_SCHEMA_VNODE_DISK_STORAGE;
 use meta::error::MetaError;
 use meta::MetaClientRef;
 use models::auth::user::User;
 use models::oid::Identifier;
 use models::schema::DEFAULT_CATALOG;
 use spi::Result;
+pub use vnode_disk_storage::USAGE_SCHEMA_VNODE_DISK_STORAGE;
 
 use crate::metadata::usage_schema_provider::data_in::DataIn;
 use crate::metadata::usage_schema_provider::data_out::DataOut;
-use crate::metadata::usage_schema_provider::disk_storage::DiskStorage;
 use crate::metadata::usage_schema_provider::queries::Queries;
+use crate::metadata::usage_schema_provider::vnode_disk_storage::VnodeDiskStorage;
 use crate::metadata::usage_schema_provider::writes::Writes;
 use crate::table::ClusterTable;
 
 mod data_in;
 mod data_out;
-mod disk_storage;
 mod queries;
+mod vnode_disk_storage;
 mod writes;
 
 pub const USAGE_SCHEMA: &str = "usage_schema";
@@ -39,7 +39,7 @@ impl UsageSchemaProvider {
             tenant_meta: default_meta_client,
             table_factories: Default::default(),
         };
-        provider.register_table_factory(Box::new(DiskStorage {}));
+        provider.register_table_factory(Box::new(VnodeDiskStorage {}));
         provider.register_table_factory(Box::new(DataIn {}));
         provider.register_table_factory(Box::new(DataOut {}));
         provider.register_table_factory(Box::new(Queries {}));
