@@ -612,25 +612,25 @@ impl SuperVersion {
 
 #[derive(Debug)]
 pub struct TsfMetrics {
-    disk_storage_count: U64Counter,
+    vnode_disk_storage_gauge: U64Gauge,
 }
 
 impl TsfMetrics {
     pub fn new(register: &MetricsRegister, owner: &str, vnode_id: u64) -> Self {
         let (tenant, db) = split_owner(owner);
-        let metric = register.metric::<U64Counter>("disk_storage", "disk storage of vnode");
-        let counter = metric.recorder([
+        let metric = register.metric::<U64Gauge>("vnode_disk_storage", "disk storage of vnode");
+        let gauge = metric.recorder([
             ("tenant", tenant),
             ("database", db),
             ("vnode_id", vnode_id.to_string().as_str()),
         ]);
         Self {
-            disk_storage_count: counter,
+            vnode_disk_storage_gauge: gauge,
         }
     }
 
     pub fn record_disk_storage(&self, size: u64) {
-        self.disk_storage_count.inc(size)
+        self.vnode_disk_storage_gauge.set(size)
     }
 }
 

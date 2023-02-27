@@ -5,7 +5,7 @@ use coordinator::service::CoordinatorRef;
 use datafusion::datasource::{provider_as_source, TableProvider, ViewTable};
 use datafusion::logical_expr::{binary_expr, col, LogicalPlanBuilder, Operator};
 use datafusion::prelude::lit;
-pub use disk_storage::USAGE_SCHEMA_DISK_STORAGE;
+pub use disk_storage::USAGE_SCHEMA_VNODE_DISK_STORAGE;
 use meta::error::MetaError;
 use meta::MetaClientRef;
 use models::auth::user::User;

@@ -10,12 +10,12 @@ use crate::metadata::usage_schema_provider::{
     create_usage_schema_view_table, UsageSchemaTableFactory,
 };
 
-pub const USAGE_SCHEMA_DISK_STORAGE: &str = "disk_storage";
+pub const USAGE_SCHEMA_VNODE_DISK_STORAGE: &str = "vnode_disk_storage";
 pub struct DiskStorage {}
 
 impl UsageSchemaTableFactory for DiskStorage {
     fn table_name(&self) -> &'static str {
-        USAGE_SCHEMA_DISK_STORAGE
+        USAGE_SCHEMA_VNODE_DISK_STORAGE
     }
 
     fn create(
@@ -29,7 +29,7 @@ impl UsageSchemaTableFactory for DiskStorage {
             user,
             coord,
             meta,
-            USAGE_SCHEMA_DISK_STORAGE,
+            USAGE_SCHEMA_VNODE_DISK_STORAGE,
             default_catalog,
         )
     }

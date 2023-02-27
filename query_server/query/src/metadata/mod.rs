@@ -32,7 +32,7 @@ use crate::table::ClusterTable;
 
 pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
 pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
-pub use usage_schema_provider::{USAGE_SCHEMA, USAGE_SCHEMA_DISK_STORAGE};
+pub use usage_schema_provider::{USAGE_SCHEMA, USAGE_SCHEMA_VNODE_DISK_STORAGE};
 
 /// remote meta
 pub struct RemoteCatalogMeta {}
