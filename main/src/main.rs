@@ -17,7 +17,6 @@ mod report;
 mod rpc;
 pub mod server;
 mod signal;
-mod tcp;
 
 static VERSION: Lazy<String> = Lazy::new(|| {
     format!(

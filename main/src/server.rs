@@ -16,7 +16,6 @@ use tskv::TsKv;
 use crate::flight_sql::FlightSqlServiceAdapter;
 use crate::http::http_service::{HttpService, ServerMode};
 use crate::rpc::grpc_service::GrpcService;
-use crate::tcp::tcp_service::TcpService;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Snafu)]
@@ -112,16 +111,14 @@ impl ServiceBuilder {
         let kv_inst = self.create_tskv(meta.clone(), self.runtime.clone()).await;
         let coord = self.create_coord(meta, Some(kv_inst.clone())).await;
         let dbms = self.create_dbms(coord.clone()).await;
-        let tcp_service = Box::new(self.create_tcp(coord.clone()).await);
         let http_service = Box::new(
             self.create_http(dbms.clone(), coord.clone(), ServerMode::Store)
                 .await,
         );
-        let grpc_service = Box::new(self.create_grpc(kv_inst.clone()).await);
+        let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()).await);
 
         server.add_service(http_service);
         server.add_service(grpc_service);
-        server.add_service(tcp_service);
 
         Some(kv_inst)
     }
@@ -149,9 +146,8 @@ impl ServiceBuilder {
         let kv_inst = self.create_tskv(meta.clone(), self.runtime.clone()).await;
         let coord = self.create_coord(meta, Some(kv_inst.clone())).await;
         let dbms = self.create_dbms(coord.clone()).await;
-        let tcp_service = Box::new(self.create_tcp(coord.clone()).await);
         let flight_sql_service = Box::new(self.create_flight_sql(dbms.clone()).await);
-        let grpc_service = Box::new(self.create_grpc(kv_inst.clone()).await);
+        let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()).await);
         let http_service = Box::new(
             self.create_http(dbms.clone(), coord.clone(), ServerMode::Bundle)
                 .await,
@@ -159,7 +155,6 @@ impl ServiceBuilder {
 
         server.add_service(http_service);
         server.add_service(grpc_service);
-        server.add_service(tcp_service);
         server.add_service(flight_sql_service);
 
         Some(kv_inst)
@@ -205,17 +200,6 @@ impl ServiceBuilder {
         coord
     }
 
-    async fn create_tcp(&self, coord: CoordinatorRef) -> TcpService {
-        let host = self
-            .config
-            .cluster
-            .tcp_listen_addr
-            .parse::<SocketAddr>()
-            .expect("Invalid tcp host");
-
-        TcpService::new(coord, host)
-    }
-
     async fn create_http(
         &self,
         dbms: DBMSRef,
@@ -241,7 +225,7 @@ impl ServiceBuilder {
         )
     }
 
-    async fn create_grpc(&self, kv: EngineRef) -> GrpcService {
+    async fn create_grpc(&self, kv: EngineRef, coord: CoordinatorRef) -> GrpcService {
         let tls_config = self.config.security.tls_config.clone();
         let host = self
             .config
@@ -250,7 +234,7 @@ impl ServiceBuilder {
             .parse::<SocketAddr>()
             .expect("Invalid tcp host");
 
-        GrpcService::new(kv, host, tls_config)
+        GrpcService::new(kv, coord, host, tls_config)
     }
 
     async fn create_flight_sql(&self, dbms: DBMSRef) -> FlightSqlServiceAdapter {

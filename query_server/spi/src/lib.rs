@@ -40,6 +40,10 @@ pub enum QueryError {
         source: CoordinatorError,
     },
 
+    Models {
+        source: models::Error,
+    },
+
     #[error_code(code = 9999)]
     Unimplement {
         msg: String,
@@ -436,6 +440,12 @@ impl From<CoordinatorError> for QueryError {
 impl From<tskv::Error> for QueryError {
     fn from(value: tskv::Error) -> Self {
         QueryError::TsKv { source: value }
+    }
+}
+
+impl From<models::Error> for QueryError {
+    fn from(value: models::Error) -> Self {
+        QueryError::Models { source: value }
     }
 }
 

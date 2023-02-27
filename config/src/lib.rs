@@ -402,8 +402,6 @@ pub struct ClusterConfig {
     pub http_listen_addr: String,
     #[serde(default = "ClusterConfig::default_grpc_listen_addr")]
     pub grpc_listen_addr: String,
-    #[serde(default = "ClusterConfig::default_tcp_listen_addr")]
-    pub tcp_listen_addr: String,
     #[serde(default = "ClusterConfig::default_flight_rpc_listen_addr")]
     pub flight_rpc_listen_addr: String,
 }
@@ -429,10 +427,6 @@ impl ClusterConfig {
         "127.0.0.1:31008".to_string()
     }
 
-    fn default_tcp_listen_addr() -> String {
-        "127.0.0.1:31009".to_string()
-    }
-
     fn default_flight_rpc_listen_addr() -> String {
         "127.0.0.1:31006".to_string()
     }
@@ -454,10 +448,6 @@ impl ClusterConfig {
 
         if let Ok(val) = std::env::var("CNOSDB_grpc_listen_addr") {
             self.grpc_listen_addr = val;
-        }
-
-        if let Ok(val) = std::env::var("CNOSDB_tcp_listen_addr") {
-            self.tcp_listen_addr = val;
         }
 
         if let Ok(val) = std::env::var("CNOSDB_flight_rpc_listen_addr") {
@@ -597,7 +587,6 @@ tenant = ''
 flight_rpc_listen_addr = '127.0.0.1:31006'
 http_listen_addr = '127.0.0.1:31007'
 grpc_listen_addr = '127.0.0.1:31008'
-tcp_listen_addr = '127.0.0.1:31009'
 
 [hintedoff]
 enable = true

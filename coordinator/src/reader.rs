@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::ipc::reader::StreamReader;
+use datafusion::arrow::ipc::writer::StreamWriter;
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::ok;
 use meta::MetaRef;
@@ -9,16 +12,19 @@ use models::meta_data::VnodeInfo;
 use models::predicate::domain::{PredicateRef, QueryArgs, QueryExpr};
 use models::schema::TskvTableSchema;
 use models::utils::now_timestamp;
+use protos::kv_service::tskv_service_client::TskvServiceClient;
+use protos::kv_service::QueryRecordBatchRequest;
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio_stream::StreamExt;
+use tonic::transport::Channel;
+use tower::timeout::Timeout;
 use trace::info;
 use tskv::engine::EngineRef;
 use tskv::iterator::{filter_to_time_ranges, QueryOption, RowIterator, TableScanMetrics};
 use tskv::TimeRange;
 
-use crate::command::{
-    recv_command, send_command, CoordinatorTcpCmd, QueryRecordBatchRequest, FAILED_RESPONSE_CODE,
-};
 use crate::errors::{CoordinatorError, CoordinatorResult};
+use crate::SUCCESS_RESPONSE_CODE;
 
 #[derive(Debug)]
 pub struct ReaderIterator {
@@ -34,6 +40,20 @@ impl ReaderIterator {
 
     pub async fn next(&mut self) -> Option<CoordinatorResult<RecordBatch>> {
         self.receiver.recv().await
+    }
+
+    pub async fn next_and_encdoe(&mut self) -> Option<CoordinatorResult<Vec<u8>>> {
+        if let Some(record) = self.receiver.recv().await {
+            match record {
+                Ok(record) => match record_batch_encode(&record) {
+                    Ok(data) => return Some(Ok(data)),
+                    Err(err) => return Some(Err(err)),
+                },
+                Err(err) => return Some(Err(err)),
+            }
+        }
+
+        None
     }
 }
 
@@ -77,7 +97,7 @@ impl QueryExecutor {
         let res = futures::future::try_join_all(routines).await.map(|_| ());
 
         info!(
-            "parallel execute select on vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
+            "parallel execute select on vnodes over, start at: {:?} elapsed: {:?}, result: {:?}",
             now,
             now.elapsed(),
             res,
@@ -142,13 +162,6 @@ impl QueryExecutor {
         node_id: u64,
         vnodes: Vec<VnodeInfo>,
     ) -> CoordinatorResult<()> {
-        let mut conn = self
-            .meta_manager
-            .admin_meta()
-            .get_node_conn(node_id)
-            .await
-            .map_err(|e| CoordinatorError::FailoverNode { id: node_id })?;
-
         let mut vnode_ids = Vec::with_capacity(vnodes.len());
         for item in vnodes.iter() {
             vnode_ids.push(item.id);
@@ -164,41 +177,51 @@ impl QueryExecutor {
             df_schema: self.option.df_schema.clone(),
             table_schema: self.option.table_schema.clone(),
         };
-        let req_cmd = QueryRecordBatchRequest { args, expr };
-        send_command(&mut conn, &CoordinatorTcpCmd::QueryRecordBatchCmd(req_cmd))
+
+        let args_bytes = QueryArgs::encode(&args)?;
+        let expr_bytes = QueryExpr::encode(&expr)?;
+        let cmd = tonic::Request::new(QueryRecordBatchRequest {
+            args: args_bytes,
+            expr: expr_bytes,
+        });
+
+        // .map_err(|e| CoordinatorError::FailoverNode { id: node_id })?;
+        let channel = self
+            .meta_manager
+            .admin_meta()
+            .get_node_conn(node_id)
+            .await?;
+        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
+        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut resp_stream = client
+            .query_record_batch(cmd)
             .await
-            .map_err(|e| CoordinatorError::FailoverNode { id: node_id })?;
-
-        loop {
-            let rsp_cmd = recv_command(&mut conn).await?;
-            match rsp_cmd {
-                CoordinatorTcpCmd::StatusResponseCmd(rsp) => {
-                    info!("remote node execute status: {:?}", rsp);
-                    if rsp.code == FAILED_RESPONSE_CODE {
-                        return Err(CoordinatorError::CommonError { msg: rsp.data });
-                    }
-
-                    break;
-                }
-
-                CoordinatorTcpCmd::RecordBatchResponseCmd(rsp) => {
-                    let tenant = self.option.tenant.clone();
-
-                    self.meta_manager
-                        .tenant_manager()
-                        .limiter(self.option.tenant.as_str())
-                        .await
-                        .check_data_out(rsp.record.get_array_memory_size())
-                        .await?;
-
-                    self.sender.send(Ok(rsp.record)).await?;
-                }
-                _ => {
-                    return Err(CoordinatorError::UnExpectResponse);
-                }
+            .map_err(|e| CoordinatorError::FailoverNode { id: node_id })?
+            .into_inner();
+        while let Some(received) = resp_stream.next().await {
+            let received = received?;
+            if received.code != SUCCESS_RESPONSE_CODE {
+                return Err(CoordinatorError::GRPCRequest {
+                    msg: format!(
+                        "server status: {}, {:?}",
+                        received.code,
+                        String::from_utf8(received.data)
+                    ),
+                });
             }
+            let record = record_batch_decode(&received.data)?;
+
+            let tenant = self.option.tenant.clone();
+
+            self.meta_manager
+                .tenant_manager()
+                .limiter(self.option.tenant.as_str())
+                .await
+                .check_data_out(record.get_array_memory_size())
+                .await?;
+
+            self.sender.send(Ok(record)).await?;
         }
-        self.meta_manager.admin_meta().put_node_conn(node_id, conn);
 
         Ok(())
     }
@@ -325,4 +348,23 @@ impl QueryExecutor {
 
         Ok(vnode_mapping)
     }
+}
+
+pub fn record_batch_encode(record: &RecordBatch) -> CoordinatorResult<Vec<u8>> {
+    let buffer: Vec<u8> = Vec::new();
+    let mut stream_writer = StreamWriter::try_new(buffer, &record.schema())?;
+    stream_writer.write(record)?;
+    stream_writer.finish()?;
+    let data = stream_writer.into_inner()?;
+
+    Ok(data)
+}
+
+pub fn record_batch_decode(buf: &[u8]) -> CoordinatorResult<RecordBatch> {
+    let mut stream_reader = StreamReader::try_new(std::io::Cursor::new(buf), None)?;
+    let record = stream_reader.next().ok_or(CoordinatorError::CommonError {
+        msg: "record batch is None".to_string(),
+    })??;
+
+    Ok(record)
 }

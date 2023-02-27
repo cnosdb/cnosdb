@@ -21,6 +21,26 @@ pub struct PathFilesMeta {
     pub meta: Vec<FileInfo>,
 }
 
+impl From<PathFilesMeta> for protos::kv_service::GetVnodeFilesMetaResponse {
+    fn from(src: PathFilesMeta) -> Self {
+        let mut pb_file_infos = vec![];
+        for it in src.meta.iter() {
+            let info = protos::kv_service::FileInfo {
+                md5: it.md5.clone(),
+                name: it.name.clone(),
+                size: it.size,
+            };
+
+            pb_file_infos.push(info);
+        }
+
+        protos::kv_service::GetVnodeFilesMetaResponse {
+            path: src.path,
+            infos: pb_file_infos,
+        }
+    }
+}
+
 pub async fn get_files_meta(dir: &str) -> CoordinatorResult<PathFilesMeta> {
     let mut files_meta = vec![];
     for name in list_all_filenames(std::path::PathBuf::from(dir)).iter() {

@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 
 use config::TLSConfig;
+use coordinator::service::CoordinatorRef;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use spi::server::dbms::DBMSRef;
 use tokio::sync::oneshot;
@@ -12,19 +13,25 @@ use crate::server::{Service, ServiceHandle};
 use crate::{info, server};
 
 pub struct GrpcService {
-    tls_config: Option<TLSConfig>,
     addr: SocketAddr,
-    //todo grpc support sql query
     kv_inst: EngineRef,
+    coord: CoordinatorRef,
+    tls_config: Option<TLSConfig>,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
 }
 
 impl GrpcService {
-    pub fn new(kv_inst: EngineRef, addr: SocketAddr, tls_config: Option<TLSConfig>) -> Self {
+    pub fn new(
+        kv_inst: EngineRef,
+        coord: CoordinatorRef,
+        addr: SocketAddr,
+        tls_config: Option<TLSConfig>,
+    ) -> Self {
         Self {
-            tls_config,
             addr,
+            coord,
             kv_inst,
+            tls_config,
             handle: None,
         }
     }
@@ -53,7 +60,8 @@ impl Service for GrpcService {
     fn start(&mut self) -> server::Result<()> {
         let (shutdown, rx) = oneshot::channel();
         let tskv_grpc_service = TskvServiceServer::new(TskvServiceImpl {
-            kv_engine: self.kv_inst.clone(),
+            kv_inst: self.kv_inst.clone(),
+            coord: self.coord.clone(),
         });
         let mut grpc_builder = build_grpc_server(&self.tls_config)?;
         let grpc_router = grpc_builder.add_service(tskv_grpc_service);
