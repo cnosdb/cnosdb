@@ -4,8 +4,10 @@ mod aggregate_function;
 pub mod expr_utils;
 mod function_utils;
 mod scalar_function;
-pub mod selector_function;
+mod selector_function;
+mod window;
 
+pub use selector_function::{BOTTOM, TOPK};
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
@@ -14,5 +16,6 @@ pub fn load_all_functions(func_manager: &mut dyn FunctionMetadataManager) -> Res
     scalar_function::register_udfs(func_manager)?;
     aggregate_function::register_udafs(func_manager)?;
     selector_function::register_selector_udfs(func_manager)?;
+    window::register_window_udfs(func_manager)?;
     Ok(())
 }
