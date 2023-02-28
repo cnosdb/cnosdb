@@ -32,7 +32,7 @@ pub fn get_env_filter(log_level: &str, tokio_trace: Option<&TokioTrace>) -> EnvF
     EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         if tokio_trace.is_some() {
             let level = log_level.to_string() + TOKIO_TRACE;
-            EnvFilter::new(&level)
+            EnvFilter::new(level)
         } else {
             EnvFilter::new(log_level)
         }
@@ -51,7 +51,7 @@ pub fn init_global_tracing(
         .with_writer(std::io::stderr)
         .with_filter(LevelFilter::DEBUG);
 
-    let file_appender = rolling::daily(&log_path, log_file_prefix_name);
+    let file_appender = rolling::daily(log_path, log_file_prefix_name);
     let (non_blocking_appender, guard) = non_blocking(file_appender);
     let file_layer = fmt::layer()
         .with_writer(non_blocking_appender)
