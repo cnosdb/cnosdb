@@ -1,17 +1,11 @@
-use std::borrow::BorrowMut;
-use std::cmp::Ordering as CmpOrdering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Display;
-use std::iter::{FromIterator, Peekable};
+use std::iter::FromIterator;
 use std::mem::{size_of, size_of_val};
 use std::ops::Index;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use flatbuffers::{ForwardsUOffset, Push, Vector};
-use futures::future::ok;
-use libc::time;
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
 use models::schema::{TableColumn, TskvTableSchema};
@@ -19,10 +13,9 @@ use models::utils::{split_id, unite_id};
 use models::{
     utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TableId, Timestamp, ValueType,
 };
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 use protos::models as fb_models;
-use protos::models::{Field, FieldType, Point};
-use snafu::OptionExt;
+use protos::models::Point;
 use trace::{error, info, warn};
 
 use crate::error::Result;
@@ -310,6 +303,20 @@ impl SeriesData {
         }
     }
 
+    pub fn read_timestamps(
+        &self,
+        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        mut handle_data: impl FnMut(Timestamp),
+    ) {
+        for group in self.groups.iter() {
+            group
+                .rows
+                .iter()
+                .filter(|row| time_predicate(row.ts))
+                .for_each(|row| handle_data(row.ts));
+        }
+    }
+
     pub fn flat_groups(&self) -> Vec<(SchemaId, Arc<TskvTableSchema>, &Vec<RowData>)> {
         self.groups
             .iter()
@@ -394,6 +401,24 @@ impl MemCache {
             series
                 .read()
                 .read_data(column_id, time_predicate, value_predicate, handle_data)
+        }
+    }
+
+    pub fn read_series_timestamps(
+        &self,
+        series_ids: &[SeriesId],
+        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        mut handle_data: impl FnMut(Timestamp),
+    ) {
+        for sid in series_ids.iter() {
+            let index = (*sid as usize) % self.part_count;
+            let part = self.partions[index].read();
+
+            if let Some(series) = part.get(sid) {
+                series
+                    .read()
+                    .read_timestamps(&mut time_predicate, &mut handle_data);
+            }
         }
     }
 
