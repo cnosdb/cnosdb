@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use lru_cache::ShardedCache;
+use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
@@ -154,28 +154,6 @@ pub struct ColumnFile {
 }
 
 impl ColumnFile {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        file_id: ColumnFileId,
-        level: LevelId,
-        time_range: TimeRange,
-        size: u64,
-        is_delta: bool,
-        path: impl AsRef<Path>,
-    ) -> Self {
-        Self {
-            file_id,
-            level,
-            is_delta,
-            time_range,
-            size,
-            field_id_filter: Arc::new(BloomFilter::default()),
-            deleted: AtomicBool::new(false),
-            compacting: AtomicBool::new(false),
-            path: path.as_ref().into(),
-        }
-    }
-
     pub fn with_compact_data(
         meta: &CompactMeta,
         path: impl AsRef<Path>,
@@ -278,6 +256,35 @@ impl Drop for ColumnFile {
             }
             info!("Removed file {} at '{}", self.file_id, path.display());
         }
+    }
+}
+
+#[cfg(test)]
+impl ColumnFile {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        file_id: ColumnFileId,
+        level: LevelId,
+        time_range: TimeRange,
+        size: u64,
+        is_delta: bool,
+        path: impl AsRef<Path>,
+    ) -> Self {
+        Self {
+            file_id,
+            level,
+            is_delta,
+            time_range,
+            size,
+            field_id_filter: Arc::new(BloomFilter::default()),
+            deleted: AtomicBool::new(false),
+            compacting: AtomicBool::new(false),
+            path: path.as_ref().into(),
+        }
+    }
+
+    pub fn set_field_id_filter(&mut self, field_id_filter: Arc<BloomFilter>) {
+        self.field_id_filter = field_id_filter;
     }
 }
 
@@ -567,14 +574,17 @@ impl Version {
 
     pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
         let path = format!("{}", path.as_ref().display());
-        let tsm_reader = match self.tsm_reader_cache.get(&path) {
+        let tsm_reader = match self.tsm_reader_cache.get(&path).await {
             Some(val) => val.clone(),
             None => {
-                let tsm_reader = TsmReader::open(&path).await?;
-                self.tsm_reader_cache
-                    .insert(path, Arc::new(tsm_reader))
-                    .unwrap()
-                    .clone()
+                let mut lock = self.tsm_reader_cache.lock_shard(&path).await;
+                match lock.get(&path) {
+                    Some(val) => val.clone(),
+                    None => {
+                        let tsm_reader = TsmReader::open(&path).await?;
+                        lock.insert(path, Arc::new(tsm_reader)).unwrap().clone()
+                    }
+                }
             }
         };
         Ok(tsm_reader)
@@ -677,7 +687,7 @@ impl SuperVersion {
             }
             for cf in lv.files.iter() {
                 for tr in time_ranges {
-                    if cf.time_range.overlaps(tr) {
+                    if cf.overlap(tr) {
                         files.push(cf.clone());
                         break;
                     }
@@ -1077,7 +1087,7 @@ pub mod test_tseries_family {
     use std::time::Duration;
 
     use config::{get_config, ClusterConfig};
-    use lru_cache::ShardedCache;
+    use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;

@@ -4,7 +4,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use evmap::new;
-use lru_cache::ShardedCache;
 use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
 use trace::{debug, error, info, trace};
@@ -650,7 +649,7 @@ pub mod test {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
     use std::sync::Arc;
 
-    use lru_cache::ShardedCache;
+    use lru_cache::asynchronous::ShardedCache;
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::{FieldId, Timestamp, ValueType};
@@ -688,14 +687,16 @@ pub mod test {
             }
             writer.write_index().await.unwrap();
             writer.finish().await.unwrap();
-            cfs.push(Arc::new(ColumnFile::new(
+            let mut cf = ColumnFile::new(
                 file_seq,
                 2,
                 TimeRange::new(writer.min_ts(), writer.max_ts()),
                 writer.size(),
                 false,
                 writer.path(),
-            )));
+            );
+            cf.set_field_id_filter(Arc::new(writer.bloom_filter_cloned()));
+            cfs.push(Arc::new(cf));
         }
         (file_seq + 1, cfs)
     }

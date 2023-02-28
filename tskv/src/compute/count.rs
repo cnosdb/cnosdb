@@ -2,10 +2,9 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
-use tokio::sync::Semaphore;
 use trace::trace;
 
-use crate::tseries_family::{ColumnFile, SuperVersion, TimeRangeCmp};
+use crate::tseries_family::{ColumnFile, SuperVersion, TimeRangeCmp, Version};
 use crate::tsm::{BlockMeta, IndexMeta, TsmReader};
 use crate::{Error, Result, TimeRange};
 
@@ -18,12 +17,11 @@ pub async fn count_column_non_null_values(
     column_id: Option<ColumnId>,
     time_ranges: Arc<Vec<TimeRange>>,
 ) -> Result<u64> {
+    let column_files = Arc::new(super_version.column_files(&time_ranges));
+
     if let Some(column_id) = column_id {
         trace!("Selecting count for column: {}", column_id);
 
-        let column_files = Arc::new(super_version.column_files(&time_ranges));
-        let cpu_num = num_cpus::get_physical();
-        let series_scan_limit = Arc::new(Semaphore::new(cpu_num));
         let mut jh_vec = Vec::with_capacity(series_ids.len());
 
         for series_id in series_ids {
@@ -32,17 +30,14 @@ pub async fn count_column_non_null_values(
             let cfs_inner = column_files.clone();
             let trs_inner = time_ranges.clone();
 
-            let permit = series_scan_limit.clone().acquire_owned().await.unwrap();
             jh_vec.push(tokio::spawn(async move {
-                let ret = count_non_null_values_inner(
+                count_non_null_values_inner(
                     sv_inner,
                     CountingObject::Field(field_id),
                     &cfs_inner,
                     trs_inner,
                 )
-                .await;
-                drop(permit);
-                ret
+                .await
             }));
         }
 
@@ -56,7 +51,6 @@ pub async fn count_column_non_null_values(
     } else {
         trace!("Selecting count for column: time");
 
-        let column_files = Arc::new(super_version.column_files(&time_ranges));
         count_non_null_values_inner(
             super_version,
             CountingObject::Series(series_ids),
@@ -223,7 +217,7 @@ struct ReadTask {
     time_range_intersected: bool,
 }
 
-/// Filter block metas in files by time ranges and create file read tasks.
+/// Filter block metas in files by time ranges, open files and then create file read tasks.
 async fn create_file_read_tasks<'a>(
     super_version: &SuperVersion,
     files: &[Arc<ColumnFile>],
@@ -236,7 +230,12 @@ async fn create_file_read_tasks<'a>(
         let path = cf.file_path();
         let reader = super_version.version.get_tsm_reader(&path).await?;
         let idx_meta_iter = match counting_object {
-            CountingObject::Field(field_id) => reader.index_iterator_opt(*field_id),
+            CountingObject::Field(field_id) => {
+                if !cf.contains_field_id(*field_id) {
+                    continue;
+                }
+                reader.index_iterator_opt(*field_id)
+            }
             CountingObject::Series(series_ids) => reader.index_iterator(),
         };
         for idx in idx_meta_iter {
