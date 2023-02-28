@@ -72,11 +72,13 @@ mod test {
 id = 1
 http_addr = "127.0.0.1:21001"
 
-logs_level = "warn"
-logs_path = "/tmp/cnosdb/logs"
 snapshot_path = "/tmp/cnosdb/meta/snapshot"
 journal_path = "/tmp/cnosdb/meta/journal"
 snapshot_per_events = 500
+
+[log]
+logs_level = "warn"
+logs_path = "/tmp/cnosdb/logs"
 
 [meta_init]
 cluster_name = "cluster_xxx"
