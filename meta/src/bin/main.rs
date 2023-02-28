@@ -32,8 +32,13 @@ struct Cli {
 async fn main() -> std::io::Result<()> {
     let cli = Cli::parse();
     let options = store::config::get_opt(cli.config);
-    let logs_path = format!("{}/{}", options.logs_path, options.id);
-    let _ = init_global_tracing(&logs_path, "meta_server.log", &options.logs_level);
+    let logs_path = format!("{}/{}", options.log.path, options.id);
+    let _ = init_global_tracing(
+        &logs_path,
+        &options.log.level,
+        "meta_server.log",
+        options.log.tokio_trace.as_ref(),
+    );
 
     start_service(options).await
 }
