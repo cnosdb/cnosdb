@@ -108,7 +108,7 @@ rpc() {
 echo "Killing all running cnosdb-meta"
 
 kill
-sleep 1
+sleep 3
 
 echo "Start 1 uninitialized cnosdb-meta servers..."
 
@@ -121,7 +121,7 @@ else
 fi
 
 echo "Server 1 started"
-sleep 1
+sleep 3
 
 echo "Initialize server 1 as a single-node cluster"
 rpc 21001/init '{}'

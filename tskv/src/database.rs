@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use datafusion::sql::sqlparser::test_utils::table;
 use futures::executor::block_on;
-use lru_cache::ShardedCache;
+use lru_cache::asynchronous::ShardedCache;
 use memory_pool::{MemoryPool, MemoryPoolRef};
 use meta::MetaRef;
 use metrics::gauge::{GaugeWrap, U64Gauge};
