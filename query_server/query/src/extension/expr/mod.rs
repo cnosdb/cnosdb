@@ -1,6 +1,7 @@
 pub mod func_manager;
 
 mod aggregate_function;
+pub mod expr_fn;
 pub mod expr_utils;
 mod function_utils;
 mod scalar_function;
