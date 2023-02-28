@@ -463,7 +463,7 @@ pub mod flush_tests {
     use crate::memcache::test::put_rows_to_cache;
     use crate::memcache::{DataType, FieldVal, MemCache};
     use crate::summary::{CompactMeta, VersionEdit};
-    use crate::tseries_family::{LevelInfo, Version, FLUSH_REQ};
+    use crate::tseries_family::{LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_reader_tests::read_and_check;
     use crate::tsm::{DataBlock, TsmReader};

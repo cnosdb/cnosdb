@@ -24,7 +24,7 @@ use models::{FieldId, SeriesId, ValueType};
 use parking_lot::RwLock;
 use snafu::ResultExt;
 use tokio::time::Instant;
-use trace::{debug, info};
+use trace::{debug, error, info};
 
 use super::engine::EngineRef;
 use super::error::IndexErrSnafu;
@@ -702,7 +702,10 @@ impl RowIterator {
                     }
 
                     ColumnType::Field(vtype) => match vtype {
-                        ValueType::Unknown => todo!(),
+                        ValueType::Unknown => {
+                            error!("Unknown field type for column {}", &field_name);
+                            todo!()
+                        }
                         _ => {
                             let cursor =
                                 FieldCursor::new(unite_id(item.id, id), field_name, vtype, self)
@@ -885,16 +888,32 @@ impl RowIterator {
         if let Some(aggregates) = self.option.aggregates.as_ref() {
             for (i, item) in aggregates.iter().enumerate() {
                 match item.column_type {
-                    ColumnType::Time => todo!(),
                     ColumnType::Tag => todo!(),
-
+                    ColumnType::Time => {
+                        let agg_ret = count_column_non_null_values(
+                            version.clone(),
+                            &self.series,
+                            None,
+                            time_ranges.clone(),
+                        )
+                        .await?;
+                        let field_builder = builder[i]
+                            .as_any_mut()
+                            .downcast_mut::<Int64Builder>()
+                            .unwrap();
+                        field_builder.append_value(agg_ret as i64);
+                    }
                     ColumnType::Field(vtype) => match vtype {
-                        ValueType::Unknown => todo!(),
+                        ValueType::Unknown => {
+                            return Err(Error::CommonError {
+                                reason: format!("unknown type of {}", self.columns[i].name()),
+                            });
+                        }
                         _ => {
                             let agg_ret = count_column_non_null_values(
                                 version.clone(),
                                 &self.series,
-                                item.id,
+                                Some(item.id),
                                 time_ranges.clone(),
                             )
                             .await?;

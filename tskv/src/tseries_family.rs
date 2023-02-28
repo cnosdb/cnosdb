@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::cmp::{self, max, min};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{write, Display};
@@ -8,7 +7,6 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use lazy_static::lazy_static;
 use lru_cache::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
@@ -24,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
-use crate::compaction::{CompactReq, CompactTask, FlushReq, LevelCompactionPicker, Picker};
+use crate::compaction::{CompactTask, FlushReq};
 use crate::error::{Error, Result};
 use crate::file_system::file_manager;
 use crate::file_utils::{self, make_delta_file_name, make_tsm_file_name};
@@ -33,10 +31,6 @@ use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::{DataBlock, TsmReader, TsmTombstone};
 use crate::{ColumnFileId, LevelId, TseriesFamilyId};
-
-lazy_static! {
-    pub static ref FLUSH_REQ: Arc<Mutex<Vec<FlushReq>>> = Arc::new(Mutex::new(vec![]));
-}
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TimeRange {
@@ -620,6 +614,25 @@ impl CacheGroup {
             handle_data,
         );
     }
+
+    pub fn read_series_timestamps(
+        &self,
+        series_ids: &[SeriesId],
+        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        mut handle_data: impl FnMut(Timestamp),
+    ) {
+        self.immut_cache
+            .iter()
+            .filter(|m| !m.read().flushed)
+            .for_each(|m| {
+                m.read()
+                    .read_series_timestamps(series_ids, &mut time_predicate, &mut handle_data);
+            });
+
+        self.mut_cache
+            .read()
+            .read_series_timestamps(series_ids, time_predicate, &mut handle_data);
+    }
 }
 
 #[derive(Debug)]
@@ -738,7 +751,6 @@ impl TseriesFamily {
         let mm = Arc::new(RwLock::new(cache));
         let seq = version.last_seq;
         let max_level_ts = version.max_level_ts;
-        let compact_picker = Arc::new(LevelCompactionPicker::new(storage_opt.clone()));
 
         Self {
             tf_id,
