@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::prelude::Read;
 use std::path::Path;
 
+use config::LogConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -28,8 +29,7 @@ pub struct Opt {
     pub snapshot_path: String,
     pub journal_path: String,
     pub snapshot_per_events: u32,
-    pub logs_path: String,
-    pub logs_level: String,
+    pub log: LogConfig,
     pub meta_init: MetaInit,
 }
 
