@@ -7,14 +7,14 @@ use protos::kv_service::{
     DownloadFileRequest, FetchVnodeSummaryRequest, GetVnodeFilesMetaRequest,
     GetVnodeFilesMetaResponse,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use trace::{error, info};
+use trace::info;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
-use crate::file_info::{get_file_info, PathFilesMeta};
+use crate::file_info::get_file_info;
 use crate::SUCCESS_RESPONSE_CODE;
 
 pub struct VnodeManager {
@@ -165,7 +165,6 @@ impl VnodeManager {
                 .strip_prefix(&(files_meta.path.clone() + "/"))
                 .unwrap();
 
-            let new_id = all_info.vnode_id;
             self.download_file(all_info, relative_filename, data_path, client)
                 .await?;
 

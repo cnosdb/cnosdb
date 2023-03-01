@@ -4,50 +4,33 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use config::{ClusterConfig, HintedOffConfig};
-use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::datasource::TableProvider;
-use futures::TryFutureExt;
-use meta::error::MetaError;
-use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
-use meta::meta_manager::RemoteMetaManager;
 use meta::{MetaClientRef, MetaRef};
 use metrics::count::U64Counter;
 use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::consistency_level::ConsistencyLevel;
-use models::meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo, VnodeAllInfo};
-use models::predicate::domain::{ColumnDomains, PredicateRef};
-use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema, DEFAULT_CATALOG};
-use models::*;
-use parking_lot::Mutex;
+use models::meta_data::{ExpiredBucketInfo, VnodeAllInfo};
+use models::schema::DEFAULT_CATALOG;
 use protos::kv_service::admin_command_request::Command::*;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
-use protos::kv_service::WritePointsRequest;
-use protos::kv_service::{StatusResponse, *};
-use protos::models::Points;
+use protos::kv_service::{WritePointsRequest, *};
 use protos::models_helper::get_db_from_flatbuffers;
-use snafu::ResultExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::oneshot;
+use tokio::sync::mpsc::{self, Sender};
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::info;
 use tracing::error;
-use tskv::engine::{EngineRef, MockEngine};
+use tskv::engine::EngineRef;
 use tskv::iterator::QueryOption;
-use tskv::TimeRange;
 
 use crate::errors::*;
-use crate::file_info::*;
 use crate::hh_queue::HintedOffManager;
 use crate::metrics::LPReporter;
 use crate::reader::{QueryExecutor, ReaderIterator};
 use crate::service_mock::Coordinator;
-use crate::writer::{PointWriter, VnodeMapping};
+use crate::writer::PointWriter;
 use crate::{status_response_to_result, VnodeManagerCmdType, WriteRequest};
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
@@ -58,7 +41,6 @@ pub struct CoordService {
     meta: MetaRef,
     kv_inst: Option<EngineRef>,
     writer: Arc<PointWriter>,
-    handoff: Arc<HintedOffManager>,
     metrics: Arc<CoordServiceMetrics>,
 }
 
@@ -102,21 +84,16 @@ impl CoordService {
             kv_inst.clone(),
             meta_manager.clone(),
             hh_sender,
-            metrics_register.clone(),
         ));
 
         let hh_manager = Arc::new(HintedOffManager::new(handoff_cfg, point_writer.clone()).await);
-        tokio::spawn(HintedOffManager::write_handoff_job(
-            hh_manager.clone(),
-            hh_receiver,
-        ));
+        tokio::spawn(HintedOffManager::write_handoff_job(hh_manager, hh_receiver));
 
         let coord = Arc::new(Self {
             kv_inst,
             node_id: cluster.node_id,
             meta: meta_manager,
             writer: point_writer,
-            handoff: hh_manager,
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
         });
 
@@ -450,7 +427,7 @@ impl Coordinator for CoordService {
                     }
                 }
 
-                let result = futures::future::try_join_all(req_futures).await?;
+                futures::future::try_join_all(req_futures).await?;
 
                 return Ok(());
             }

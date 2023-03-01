@@ -2,19 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::ipc::reader::StreamReader;
 use datafusion::arrow::ipc::writer::StreamWriter;
 use datafusion::arrow::record_batch::RecordBatch;
-use futures::future::ok;
-use meta::error::MetaError;
 use meta::MetaRef;
 use metrics::count::U64Counter;
-use metrics::metric::Metric;
-use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
-use models::predicate::domain::{PredicateRef, QueryArgs, QueryExpr};
-use models::schema::TskvTableSchema;
+use models::predicate::domain::{QueryArgs, QueryExpr};
 use models::utils::now_timestamp;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::QueryRecordBatchRequest;
@@ -24,8 +18,7 @@ use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::info;
 use tskv::engine::EngineRef;
-use tskv::iterator::{filter_to_time_ranges, QueryOption, RowIterator, TableScanMetrics};
-use tskv::TimeRange;
+use tskv::iterator::{QueryOption, RowIterator};
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::service::CoordServiceMetrics;
@@ -120,7 +113,7 @@ impl QueryExecutor {
             self.local_node_executor(vnodes.clone()).await
         } else {
             let result = self.remote_node_executor(node_id, vnodes.clone()).await;
-            if let Err(CoordinatorError::FailoverNode { id }) = result {
+            if let Err(CoordinatorError::FailoverNode { id: _ }) = result {
                 let mut routines = vec![];
                 let mapping = self.try_map_vnode(&vnodes).await?;
                 for (tmp_id, tmp_vnodes) in mapping.iter() {
@@ -205,7 +198,7 @@ impl QueryExecutor {
         let mut resp_stream = client
             .query_record_batch(cmd)
             .await
-            .map_err(|e| CoordinatorError::FailoverNode { id: node_id })?
+            .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?
             .into_inner();
         while let Some(received) = resp_stream.next().await {
             let received = received?;
@@ -219,8 +212,6 @@ impl QueryExecutor {
                 });
             }
             let record = record_batch_decode(&received.data)?;
-
-            let tenant = self.option.tenant.clone();
 
             self.meta_manager
                 .tenant_manager()

@@ -1,10 +1,10 @@
+#![allow(unused_variables)]
 use std::fmt::Debug;
 use std::sync::Arc;
 
 use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
 use meta::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
-use models::schema::TableColumn;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
 use tskv::engine::{EngineRef, MockEngine};
 use tskv::iterator::QueryOption;

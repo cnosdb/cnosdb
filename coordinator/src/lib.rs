@@ -1,5 +1,3 @@
-#![allow(dead_code, unused_imports, unused_variables)]
-
 pub mod errors;
 pub mod file_info;
 pub mod hh_queue;
