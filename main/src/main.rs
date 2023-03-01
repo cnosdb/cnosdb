@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code, unused_variables)]
 
 use std::sync::Arc;
 
@@ -7,7 +7,6 @@ use mem_allocator::Jemalloc;
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
-use models::meta_data::NodeInfo;
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
 use trace::{info, init_global_tracing};

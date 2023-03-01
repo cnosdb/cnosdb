@@ -5,7 +5,6 @@ use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use metrics::metric_register::MetricsRegister;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
-use spi::server::dbms::DBMSRef;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tskv::engine::EngineRef;

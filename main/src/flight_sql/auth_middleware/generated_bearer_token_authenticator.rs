@@ -1,16 +1,14 @@
 use std::time::Duration;
 
 use http_protocol::header::BEARER_PREFIX;
-use models::auth::user::{User, UserInfo};
-use models::oid::{MemoryOidGenerator, UuidGenerator};
+use models::auth::user::User;
+use models::oid::UuidGenerator;
 use moka::sync::Cache;
-use query::auth::auth_control::AccessControlImpl;
-use spi::server::dbms::DBMSRef;
 use tonic::metadata::MetadataMap;
 use tonic::Status;
 use trace::debug;
 
-use super::{AuthResult, CallHeaderAuthenticator, CommonAuthResult};
+use super::{AuthResult, CallHeaderAuthenticator};
 use crate::flight_sql::utils;
 
 /// Generates and caches bearer tokens from user credentials.
@@ -130,7 +128,7 @@ mod test {
 
     use http_protocol::header::{AUTHORIZATION, BEARER_PREFIX};
     use models::auth::role::UserRole;
-    use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
+    use models::auth::user::{User, UserDesc, UserOptionsBuilder};
     use spi::server::dbms::DatabaseManagerSystemMock;
     use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 
