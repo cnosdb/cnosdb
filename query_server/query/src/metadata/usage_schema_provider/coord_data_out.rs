@@ -9,13 +9,13 @@ use crate::metadata::usage_schema_provider::{
     create_usage_schema_view_table, UsageSchemaTableFactory,
 };
 
-pub const USAGE_SCHEMA_DATA_OUT: &str = "data_out";
+pub const USAGE_SCHEMA_COORD_DATA_OUT: &str = "coord_data_out";
 
-pub struct DataOut {}
+pub struct CoordDataOut {}
 
-impl UsageSchemaTableFactory for DataOut {
+impl UsageSchemaTableFactory for CoordDataOut {
     fn table_name(&self) -> &str {
-        USAGE_SCHEMA_DATA_OUT
+        USAGE_SCHEMA_COORD_DATA_OUT
     }
     fn create(
         &self,
@@ -24,6 +24,12 @@ impl UsageSchemaTableFactory for DataOut {
         meta: MetaClientRef,
         default_catalog: MetaClientRef,
     ) -> spi::Result<Arc<dyn TableProvider>> {
-        create_usage_schema_view_table(user, coord, meta, USAGE_SCHEMA_DATA_OUT, default_catalog)
+        create_usage_schema_view_table(
+            user,
+            coord,
+            meta,
+            USAGE_SCHEMA_COORD_DATA_OUT,
+            default_catalog,
+        )
     }
 }
