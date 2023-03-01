@@ -340,11 +340,17 @@ impl CacheConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TokioTrace {
+    pub addr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LogConfig {
     #[serde(default = "LogConfig::default_level")]
     pub level: String,
     #[serde(default = "LogConfig::default_path")]
     pub path: String,
+    pub tokio_trace: Option<TokioTrace>,
 }
 
 impl LogConfig {
