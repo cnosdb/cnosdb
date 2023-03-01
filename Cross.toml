@@ -1,0 +1,43 @@
+# Usage:
+#   This file is used to cross compile the cnosdb program.
+#   1. Download cross first
+#       cross install cross
+#   2. The cross command can be used as an alternative to cargo for building.
+#       cross build --target <target>
+#      Example:
+#            cross build --target x86_64-unknown-linux-gnu
+#      See more: https://github.com/cross-rs/cross/wiki/Getting-Started
+#   The available targets are:
+#       - x86_64-unknown-linux-gnu
+#       - aarch64-unknown-linux-gnu
+
+[target.x86_64-unknown-linux-gnu]
+dockerfile = "./scripts/cross/x86_64-unknown-linux-gnu.dockerfile"
+
+[target.aarch64-unknown-linux-gnu]
+dockerfile = "./scripts/cross/aarch64-unknown-linux-gnu.dockerfile"
+
+# Encountered unexpected events:
+# https://gist.github.com/IvanGao01/d679a70223fb632719124d6bf7194c2c
+[target.armv7-unknown-linux-gnueabihf]
+dockerfile = "./scripts/cross/armv7-unknown-linux-gnueabihf.dockerfile"
+
+# Encountered unexpected events:
+# https://gist.github.com/IvanGao01/6c060a579f3f8ab62f6e38ed82ce8bc0
+[target.powerpc64le-unknown-linux-gnu]
+dockerfile = "./scripts/cross/powerpc64le-unknown-linux-gnu.dockerfile"
+
+# Encountered unexpected events:
+# https://gist.github.com/IvanGao01/6c060a579f3f8ab62f6e38ed82ce8bc0
+[target.powerpc-unknown-linux-gnu]
+dockerfile = "./scripts/cross/powerpc-unknown-linux-gnu.dockerfile"
+
+[target.x86_64-unknown-linux-musl]
+dockerfile = "./scripts/cross/x86_64-unknown-linux-musl.dockerfile"
+
+[target.aarch64-unknown-linux-musl]
+dockerfile = "./scripts/cross/aarch64-unknown-linux-musl.dockerfile"
+
+[target.armv7-unknown-linux-musleabihf]
+dockerfile = "./scripts/cross/armv7-unknown-linux-musleabihf.dockerfile"
+
