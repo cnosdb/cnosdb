@@ -651,7 +651,7 @@ impl StateMachine {
             children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone()).values()
         {
             if value.id != node.id
-                && (value.http_addr == node.http_addr || value.tcp_addr == node.tcp_addr)
+                && (value.http_addr == node.http_addr || value.grpc_addr == node.grpc_addr)
             {
                 error!("ip address has been added, the added node is : {:?}", value);
             }

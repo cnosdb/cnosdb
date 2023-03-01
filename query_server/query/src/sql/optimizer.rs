@@ -108,7 +108,7 @@ impl CascadeOptimizerBuilder {
 mod test {
     use std::sync::Arc;
 
-    use coordinator::service::MockCoordinator;
+    use coordinator::service_mock::MockCoordinator;
     use datafusion::datasource::provider_as_source;
     use datafusion::error::Result;
     use datafusion::execution::context::default_session_builder;

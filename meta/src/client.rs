@@ -250,7 +250,7 @@ mod test {
 
         let node = NodeInfo {
             id: 111,
-            tcp_addr: "".to_string(),
+            grpc_addr: "".to_string(),
             http_addr: "127.0.0.1:8888".to_string(),
             status: 0,
         };

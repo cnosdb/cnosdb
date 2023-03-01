@@ -14,6 +14,7 @@ use models::schema::{
     DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
 };
 use tokio::net::TcpStream;
+use tonic::transport::Channel;
 
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
@@ -45,13 +46,9 @@ impl AdminMeta for MockAdminMeta {
         Ok(NodeInfo::default())
     }
 
-    async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream> {
-        Err(MetaError::CommonError {
-            msg: "mock not implement node conn".to_string(),
-        })
+    async fn get_node_conn(&self, node_id: u64) -> MetaResult<Channel> {
+        todo!()
     }
-
-    fn put_node_conn(&self, node_id: u64, conn: TcpStream) {}
 
     fn heartbeat(&self) {}
 

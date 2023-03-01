@@ -32,7 +32,7 @@ pub struct UserInfo {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct NodeInfo {
     pub id: NodeId,
-    pub tcp_addr: String,
+    pub grpc_addr: String,
     pub http_addr: String,
     pub status: u64,
 }

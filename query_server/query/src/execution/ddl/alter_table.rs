@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use coordinator::command;
 use meta::error::MetaError;
 use models::schema::TableSchema;
+use protos::kv_service::admin_command_request::Command;
+use protos::kv_service::{
+    AddColumnRequest, AdminCommandRequest, AlterColumnRequest, DropColumnRequest,
+};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{AlterTable, AlterTableAction};
 use spi::Result;
@@ -47,40 +50,41 @@ impl DDLDefinitionTask for AlterTableTask {
                 let table_column = table_column.to_owned();
                 schema.add_column(table_column.clone());
 
-                command::AdminStatementRequest {
+                AdminCommandRequest {
                     tenant: tenant.to_string(),
-                    stmt: command::AdminStatementType::AddColumn {
+                    command: Some(Command::AddColumn(AddColumnRequest {
                         db: schema.db.to_owned(),
                         table: schema.name.to_string(),
-                        column: table_column,
-                    },
+                        column: table_column.encode()?,
+                    })),
                 }
             }
 
             AlterTableAction::DropColumn { column_name } => {
                 schema.drop_column(column_name);
-                command::AdminStatementRequest {
+                AdminCommandRequest {
                     tenant: tenant.to_string(),
-                    stmt: command::AdminStatementType::DropColumn {
+                    command: Some(Command::DropColumn(DropColumnRequest {
                         db: schema.db.to_owned(),
                         table: schema.name.to_string(),
                         column: column_name.clone(),
-                    },
+                    })),
                 }
             }
+
             AlterTableAction::AlterColumn {
                 column_name,
                 new_column,
             } => {
                 schema.change_column(column_name, new_column.clone());
-                command::AdminStatementRequest {
+                AdminCommandRequest {
                     tenant: tenant.to_string(),
-                    stmt: command::AdminStatementType::AlterColumn {
+                    command: Some(Command::AlterColumn(AlterColumnRequest {
                         db: schema.db.to_owned(),
                         table: schema.name.to_string(),
-                        column_name: column_name.to_owned(),
-                        new_column: new_column.clone(),
-                    },
+                        name: column_name.to_owned(),
+                        column: new_column.encode()?,
+                    })),
                 }
             }
         };
@@ -89,10 +93,7 @@ impl DDLDefinitionTask for AlterTableTask {
         client
             .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
             .await?;
-        query_state_machine
-            .coord
-            .exec_admin_stat_on_all_node(req)
-            .await?;
+        query_state_machine.coord.broadcast_command(req).await?;
 
         return Ok(Output::Nil(()));
     }

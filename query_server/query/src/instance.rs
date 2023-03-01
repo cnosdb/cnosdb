@@ -133,7 +133,7 @@ mod tests {
 
     use chrono::Utc;
     use config::get_config;
-    use coordinator::service::MockCoordinator;
+    use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::record_batch::RecordBatch;
     use datafusion::arrow::util::pretty::pretty_format_batches;
     use datafusion::execution::memory_pool::GreedyMemoryPool;
