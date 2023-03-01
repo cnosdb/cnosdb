@@ -1,8 +1,11 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
+use memory_pool::{MemoryPool, MemoryPoolRef};
 use meta::MetaRef;
+use metrics::metric_register::MetricsRegister;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use parking_lot::RwLock as SyncRwLock;
 use snafu::ResultExt;
@@ -29,24 +32,36 @@ pub struct VersionSet {
     /// Maps DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
     runtime: Arc<Runtime>,
+    memory_pool: MemoryPoolRef,
+    metrics_register: Arc<MetricsRegister>,
 }
 
 impl VersionSet {
-    pub fn empty(opt: Arc<Options>, runtime: Arc<Runtime>) -> Self {
+    pub fn empty(
+        opt: Arc<Options>,
+        runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
+        metrics_register: Arc<MetricsRegister>,
+    ) -> Self {
         Self {
             opt,
             dbs: HashMap::new(),
             runtime,
+            memory_pool,
+            metrics_register,
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         meta: MetaRef,
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
+        metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
         for (id, ver) in ver_set {
@@ -60,8 +75,17 @@ impl VersionSet {
                     Some(schema) => schema,
                 },
             };
+
             let db: &mut Arc<RwLock<Database>> = dbs.entry(owner).or_insert(Arc::new(RwLock::new(
-                Database::new(schema, opt.clone(), runtime.clone(), meta.clone()).await?,
+                Database::new(
+                    schema,
+                    opt.clone(),
+                    runtime.clone(),
+                    meta.clone(),
+                    memory_pool.clone(),
+                    metrics_register.clone(),
+                )
+                .await?,
             )));
 
             let tf_id = ver.tf_id();
@@ -73,7 +97,13 @@ impl VersionSet {
             db.write().await.get_ts_index_or_add(tf_id).await?;
         }
 
-        Ok(Self { dbs, opt, runtime })
+        Ok(Self {
+            dbs,
+            opt,
+            runtime,
+            memory_pool,
+            metrics_register,
+        })
     }
 
     pub fn options(&self) -> Arc<Options> {
@@ -84,12 +114,25 @@ impl VersionSet {
         &mut self,
         schema: DatabaseSchema,
         meta: MetaRef,
+        memory_pool: MemoryPoolRef,
     ) -> Result<Arc<RwLock<Database>>> {
+        let sub_register = self.metrics_register.sub_register([
+            ("tenant", schema.tenant_name()),
+            ("database", schema.database_name()),
+        ]);
         let db = self
             .dbs
             .entry(schema.owner())
             .or_insert(Arc::new(RwLock::new(
-                Database::new(schema, self.opt.clone(), self.runtime.clone(), meta.clone()).await?,
+                Database::new(
+                    schema,
+                    self.opt.clone(),
+                    self.runtime.clone(),
+                    meta.clone(),
+                    memory_pool,
+                    sub_register,
+                )
+                .await?,
             )))
             .clone();
         Ok(db)

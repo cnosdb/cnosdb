@@ -144,7 +144,7 @@ impl Eq for CompactingFile {}
 
 impl PartialEq for CompactingFile {
     fn eq(&self, other: &Self) -> bool {
-        self.tsm_reader.tsm_id() == other.tsm_reader.tsm_id() && self.field_id == other.field_id
+        self.tsm_reader.file_id() == other.tsm_reader.file_id() && self.field_id == other.field_id
     }
 }
 
@@ -664,6 +664,7 @@ pub mod test {
     use std::sync::Arc;
 
     use lru_cache::ShardedCache;
+    use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::{FieldId, Timestamp, ValueType};
     use parking_lot::RwLock;
@@ -679,7 +680,7 @@ pub mod test {
     use crate::tsm::{self, DataBlock, Tombstone, TsmReader, TsmTombstone};
     use crate::{file_utils, TseriesFamilyId};
 
-    async fn write_data_blocks_to_column_file(
+    pub(crate) async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
         data: Vec<HashMap<FieldId, Vec<DataBlock>>>,
         tsf_id: TseriesFamilyId,

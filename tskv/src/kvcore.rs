@@ -1,16 +1,19 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::panic;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::Duration;
 
 use config::ClusterConfig;
-use datafusion::prelude::Column;
 use flatbuffers::FlatBufferBuilder;
 use futures::stream::SelectNextSome;
 use futures::FutureExt;
 use libc::printf;
+use memory_pool::{GreedyMemoryPool, MemoryPool, MemoryPoolRef};
 use meta::meta_manager::RemoteMetaManager;
 use meta::MetaRef;
+use metrics::metric_register::MetricsRegister;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::codec::Encoding;
 use models::predicate::domain::{ColumnDomains, PredicateRef};
@@ -23,6 +26,7 @@ use models::{
 };
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
+use protos::models_helper::get_db_from_fb_points;
 use snafu::{OptionExt, ResultExt};
 use tokio::runtime::Runtime;
 use tokio::sync::broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender};
@@ -67,16 +71,24 @@ pub struct TsKv {
     meta_manager: MetaRef,
 
     runtime: Arc<Runtime>,
+    memory_pool: Arc<dyn MemoryPool>,
     wal_sender: Sender<WalTask>,
     flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
     summary_task_sender: Sender<SummaryTask>,
     global_seq_task_sender: Sender<GlobalSequenceTask>,
     close_sender: BroadcastSender<Sender<()>>,
+    metrics: Arc<MetricsRegister>,
 }
 
 impl TsKv {
-    pub async fn open(meta_manager: MetaRef, opt: Options, runtime: Arc<Runtime>) -> Result<TsKv> {
+    pub async fn open(
+        meta_manager: MetaRef,
+        opt: Options,
+        runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
+        metrics: Arc<MetricsRegister>,
+    ) -> Result<TsKv> {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) =
             mpsc::channel::<FlushReq>(shared_options.storage.flush_req_channel_cap);
@@ -91,16 +103,19 @@ impl TsKv {
         let (close_sender, _close_receiver) = broadcast::channel(1);
         let (version_set, summary) = Self::recover_summary(
             runtime.clone(),
+            memory_pool.clone(),
             meta_manager.clone(),
             shared_options.clone(),
             flush_task_sender.clone(),
             global_seq_task_sender.clone(),
             compact_task_sender.clone(),
+            metrics.clone(),
         )
         .await;
         let global_seq_ctx = version_set.read().await.get_global_sequence_context().await;
         let global_seq_ctx = Arc::new(global_seq_ctx);
         let wal_cfg = shared_options.wal.clone();
+
         let core = Self {
             options: shared_options.clone(),
             global_ctx: summary.global_context(),
@@ -108,12 +123,14 @@ impl TsKv {
             version_set,
             meta_manager,
             runtime: runtime.clone(),
+            memory_pool,
             wal_sender,
             flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
             global_seq_task_sender: global_seq_task_sender.clone(),
             close_sender,
+            metrics,
         };
 
         let wal_manager = core.recover_wal().await;
@@ -142,13 +159,16 @@ impl TsKv {
         Ok(core)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn recover_summary(
         runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
         meta: MetaRef,
         opt: Arc<Options>,
         flush_task_sender: Sender<FlushReq>,
         global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
+        metrics: Arc<MetricsRegister>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -166,11 +186,12 @@ impl TsKv {
                 global_seq_task_sender,
                 compact_task_sender,
                 true,
+                metrics.clone(),
             )
             .await
             .unwrap()
         } else {
-            Summary::new(opt, runtime, global_seq_task_sender)
+            Summary::new(opt, runtime, memory_pool, global_seq_task_sender, metrics)
                 .await
                 .unwrap()
         };
@@ -304,24 +325,6 @@ impl TsKv {
         info!("Summary task handler started");
     }
 
-    // fn run_timer_job(&self, pub_sender: Sender<()>) {
-    //     let f = async move {
-    //         let interval = Duration::from_secs(1);
-    //         let ticker = crossbeam_channel::tick(interval);
-    //         loop {
-    //             ticker.recv().unwrap();
-    //             let _ = pub_sender.send(());
-    //         }
-    //     };
-    //     self.runtime.spawn(f);
-    // }
-
-    // pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
-    //     Ok(None)
-    // }
-
-    // Compact TSM files in database into bigger TSM files.
-
     pub async fn get_db(&self, tenant: &str, database: &str) -> Result<Arc<RwLock<Database>>> {
         let db = self
             .version_set
@@ -353,7 +356,11 @@ impl TsKv {
             .version_set
             .write()
             .await
-            .create_db(schema.clone(), self.meta_manager.clone())
+            .create_db(
+                schema.clone(),
+                self.meta_manager.clone(),
+                self.memory_pool.clone(),
+            )
             .await?;
         Ok(db)
     }
@@ -411,8 +418,7 @@ impl Engine for TsKv {
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
-        let db_name = String::from_utf8(fb_points.db().unwrap().bytes().to_vec())
-            .map_err(|err| Error::ErrCharacterSet)?;
+        let db_name = get_db_from_fb_points(fb_points);
 
         let db_warp = self.version_set.read().await.get_db(&tenant_name, &db_name);
         let db = match db_warp {
@@ -472,9 +478,12 @@ impl Engine for TsKv {
             }
         };
 
-        let size = tsf.read().await.put_points(seq, write_group);
+        let res = match tsf.read().await.put_points(seq, write_group) {
+            Ok(points_number) => Ok(WritePointsResponse { points_number }),
+            Err(err) => Err(err),
+        };
         tsf.write().await.check_to_flush().await;
-        Ok(WritePointsResponse { size })
+        res
     }
 
     async fn write_from_wal(
@@ -491,8 +500,7 @@ impl Engine for TsKv {
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
-        let db_name = String::from_utf8(fb_points.db().unwrap().bytes().to_vec())
-            .map_err(|err| Error::ErrCharacterSet)?;
+        let db_name = get_db_from_fb_points(fb_points);
 
         let db = self
             .version_set
@@ -501,6 +509,7 @@ impl Engine for TsKv {
             .create_db(
                 DatabaseSchema::new(&tenant_name, &db_name),
                 self.meta_manager.clone(),
+                self.memory_pool.clone(),
             )
             .await?;
 
@@ -534,8 +543,7 @@ impl Engine for TsKv {
             }
         };
 
-        tsf.read().await.put_points(seq, write_group);
-
+        tsf.read().await.put_points(seq, write_group)?;
         return Ok(());
     }
 

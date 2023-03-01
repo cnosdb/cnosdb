@@ -43,6 +43,7 @@ pub const TAG: &str = "_tag";
 pub const TIME_FIELD: &str = "time";
 
 pub const DEFAULT_DATABASE: &str = "public";
+pub const USAGE_SCHEMA: &str = "usage_schema";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

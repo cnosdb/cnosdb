@@ -48,7 +48,7 @@ http_listen_addr = '127.0.0.1:31001'
 grpc_listen_addr = '127.0.0.1:31002'
 flight_rpc_listen_addr = '127.0.0.1:31004'
 
-[hintedoff]
+[hinted_off]
 enable = true
 path = '/tmp/cnosdb/1001/hh'
 

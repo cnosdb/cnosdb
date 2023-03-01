@@ -25,6 +25,9 @@ use libc::sleep;
 use line_protocol::{line_protocol_to_lines, parse_lines_to_points, Line};
 use meta::error::MetaError;
 use meta::MetaClientRef;
+use metrics::count::U64Counter;
+use metrics::metric_register::MetricsRegister;
+use metrics::prom_reporter::PromReporter;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
 use models::consistency_level::ConsistencyLevel;
@@ -52,6 +55,7 @@ use warp::{header, reject, Filter, Rejection, Reply};
 
 use super::header::Header;
 use super::Error as HttpError;
+use crate::http::metrics::HttpMetrics;
 use crate::http::response::ResponseBuilder;
 use crate::http::result_format::{fetch_record_batches, ResultFormat};
 use crate::http::{Error, ParseLineProtocolSnafu, QuerySnafu};
@@ -90,6 +94,8 @@ pub struct HttpService {
     query_body_limit: u64,
     write_body_limit: u64,
     mode: ServerMode,
+    metrics_register: Arc<MetricsRegister>,
+    http_metrics: Arc<HttpMetrics>,
 }
 
 impl HttpService {
@@ -101,6 +107,7 @@ impl HttpService {
         query_body_limit: u64,
         write_body_limit: u64,
         mode: ServerMode,
+        metrics_register: Arc<MetricsRegister>,
     ) -> Self {
         let prs = Arc::new(PromRemoteSqlServer::new(dbms.clone()));
 
@@ -114,6 +121,8 @@ impl HttpService {
             query_body_limit,
             write_body_limit,
             mode,
+            metrics_register: metrics_register.clone(),
+            http_metrics: Arc::new(HttpMetrics::new(&metrics_register)),
         }
     }
 
@@ -144,6 +153,20 @@ impl HttpService {
     ) -> impl Filter<Extract = (PromRemoteServerRef,), Error = Infallible> + Clone {
         let prs = self.prs.clone();
         warp::any().map(move || prs.clone())
+    }
+
+    fn with_metrics_register(
+        &self,
+    ) -> impl Filter<Extract = (Arc<MetricsRegister>,), Error = Infallible> + Clone {
+        let register = self.metrics_register.clone();
+        warp::any().map(move || register.clone())
+    }
+
+    fn with_http_metrics(
+        &self,
+    ) -> impl Filter<Extract = (Arc<HttpMetrics>,), Error = Infallible> + Clone {
+        let metric = self.http_metrics.clone();
+        warp::any().map(move || metric.clone())
     }
 
     fn routes_bundle(
@@ -198,8 +221,13 @@ impl HttpService {
             .and(self.handle_header())
             .and(warp::query::<SqlParam>())
             .and(self.with_dbms())
+            .and(self.with_http_metrics())
             .and_then(
-                |req: Bytes, header: Header, param: SqlParam, dbms: DBMSRef| async move {
+                |req: Bytes,
+                 header: Header,
+                 param: SqlParam,
+                 dbms: DBMSRef,
+                 metrics: Arc<HttpMetrics>| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive http sql request, header: {:?}, param: {:?}",
@@ -219,6 +247,9 @@ impl HttpService {
                     });
                     let tenant = query.context().tenant();
                     let db = query.context().database();
+                    let user = query.context().user_info().desc().name();
+
+                    metrics.queries_inc(tenant, user, db);
 
                     sample_query_read_duration(
                         tenant,
@@ -242,12 +273,14 @@ impl HttpService {
             .and(warp::query::<WriteParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
+            .and(self.with_http_metrics())
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: WriteParam,
                  dbms: DBMSRef,
-                 coord: CoordinatorRef| async move {
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>| async move {
                     let start = Instant::now();
                     let ctx = construct_write_context(header, param, dbms, coord.clone())
                         .await
@@ -259,6 +292,11 @@ impl HttpService {
                         .write_points(ctx.tenant().to_string(), ConsistencyLevel::Any, req)
                         .await
                         .map_err(|e| e.into());
+
+                    let (tenant, db, user) =
+                        (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
+
+                    metrics.writes_inc(tenant, user, db);
 
                     sample_point_write_duration(
                         ctx.tenant(),
@@ -297,10 +335,14 @@ impl HttpService {
     fn metrics(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("metrics").map(|| {
-            debug!("prometheus access");
-            warp::reply::Response::new(Body::from(gather_metrics()))
-        })
+        warp::path!("metrics")
+            .and(self.with_metrics_register())
+            .map(|register: Arc<MetricsRegister>| {
+                let mut buffer = gather_metrics();
+                let mut prom_reporter = PromReporter::new(&mut buffer);
+                register.report(&mut prom_reporter);
+                Response::new(Body::from(buffer))
+            })
     }
 
     fn prom_remote_read(
@@ -373,13 +415,15 @@ impl HttpService {
             .and(self.with_coord())
             .and(self.with_dbms())
             .and(self.with_prom_remote_server())
+            .and(self.with_http_metrics())
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: WriteParam,
                  coord: CoordinatorRef,
                  dbms: DBMSRef,
-                 prs: PromRemoteServerRef| async move {
+                 prs: PromRemoteServerRef,
+                 metrics: Arc<HttpMetrics>| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive rest prom remote write request, header: {:?}, param: {:?}",
@@ -397,6 +441,11 @@ impl HttpService {
                             trace::error!("Failed to handle prom remote write request, err: {}", e);
                             reject::custom(HttpError::from(e))
                         });
+
+                    let (tenant, user, db) =
+                        (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
+
+                    metrics.writes_inc(tenant, user, db);
 
                     sample_point_write_duration(
                         ctx.tenant(),

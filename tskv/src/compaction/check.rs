@@ -131,7 +131,7 @@ pub(crate) async fn get_ts_family_hash_tree(
         None => {
             return Err(Error::InvalidParam {
                 reason: format!("can not find ts_family '{}'", ts_family_id),
-            })
+            });
         }
     };
 
@@ -253,7 +253,7 @@ fn calc_block_partial_time_range(
                 Err(e) => {
                     return Err(Error::Transform {
                         reason: format!("error truncing timestamp {}: {:?}", datetime, e),
-                    })
+                    });
                 }
             };
             let max_ts = min_ts + time_range_nanosecs;
@@ -429,8 +429,10 @@ mod test {
 
     use blake3::Hasher;
     use chrono::{Duration, NaiveDateTime};
+    use datafusion::execution::memory_pool::GreedyMemoryPool;
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
+    use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::codec::Encoding;
     use models::schema::{
@@ -544,13 +546,15 @@ mod test {
             parse_nanos("2023-01-01 00:06:00"),
         ];
         #[rustfmt::skip]
-        let data_blocks = vec![
+            let data_blocks = vec![
             DataBlock::U64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::I64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
-            DataBlock::Str { ts: timestamps.clone(),
+            DataBlock::Str {
+                ts: timestamps.clone(),
                 val: vec![
-                    MiniVec::from("1"), MiniVec::from("2"), MiniVec::from("3"), MiniVec::from("4"), MiniVec::from("5"), MiniVec::from("6")
-                ], enc: DataBlockEncoding::default()
+                    MiniVec::from("1"), MiniVec::from("2"), MiniVec::from("3"), MiniVec::from("4"), MiniVec::from("5"), MiniVec::from("6"),
+                ],
+                enc: DataBlockEncoding::default(),
             },
             DataBlock::F64 { ts: timestamps.clone(), val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() },
             DataBlock::Bool { ts: timestamps, val: vec![true, false, true, false, true, false], enc: DataBlockEncoding::default() },
@@ -791,19 +795,21 @@ mod test {
             parse_nanos("2023-02-01 00:03:00"),
         ];
         #[rustfmt::skip]
-        let data_blocks = vec![
+            let data_blocks = vec![
             DataBlock::U64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::I64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::F64 { ts: timestamps.clone(), val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() },
-            DataBlock::Str { ts: timestamps.clone(),
+            DataBlock::Str {
+                ts: timestamps.clone(),
                 val: vec![
-                    MiniVec::from("1"), MiniVec::from("2"), MiniVec::from("3"), MiniVec::from("4"), MiniVec::from("5"), MiniVec::from("6")
-                ], enc: DataBlockEncoding::default()
+                    MiniVec::from("1"), MiniVec::from("2"), MiniVec::from("3"), MiniVec::from("4"), MiniVec::from("5"), MiniVec::from("6"),
+                ],
+                enc: DataBlockEncoding::default(),
             },
             DataBlock::Bool { ts: timestamps, val: vec![true, false, true, false, true, false], enc: DataBlockEncoding::default() },
         ];
         #[rustfmt::skip]
-        let columns = vec![
+            let columns = vec![
             TableColumn::new(0, TIME_COL_NAME.to_string(), ColumnType::Time, Default::default()),
             TableColumn::new(1, U64_COL_NAME.to_string(), ColumnType::Field(ValueType::Unsigned), Default::default()),
             TableColumn::new(2, I64_COL_NAME.to_string(), ColumnType::Field(ValueType::Integer), Default::default()),
@@ -834,7 +840,16 @@ mod test {
         let meta_client = rt
             .block_on(meta.tenant_manager().tenant_meta(&tenant_name))
             .unwrap();
-        let engine = rt.block_on(TsKv::open(meta, opt, rt.clone())).unwrap();
+        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let engine = rt
+            .block_on(TsKv::open(
+                meta,
+                opt,
+                rt.clone(),
+                memory_pool,
+                Arc::new(MetricsRegister::default()),
+            ))
+            .unwrap();
 
         // Create database and ts_family
         {

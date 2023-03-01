@@ -2,8 +2,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use coordinator::service::{CoordService, CoordinatorRef};
+use datafusion::execution::memory_pool::MemoryPool;
+use memory_pool::MemoryPoolRef;
 use meta::meta_manager::RemoteMetaManager;
-use meta::MetaRef;
+use meta::{store, MetaRef};
+use metrics::metric_register::MetricsRegister;
 use query::instance::make_cnosdbms;
 use snafu::{Backtrace, Snafu};
 use spi::server::dbms::DBMSRef;
@@ -15,9 +18,11 @@ use tskv::TsKv;
 
 use crate::flight_sql::FlightSqlServiceAdapter;
 use crate::http::http_service::{HttpService, ServerMode};
+use crate::meta_single::meta_service::MetaService;
 use crate::rpc::grpc_service::GrpcService;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Please inject DBMS.\nBacktrace:\n{}", backtrace))]
@@ -43,6 +48,7 @@ impl From<std::io::Error> for Error {
 }
 
 pub type ServiceRef = Box<dyn Service + Send + Sync>;
+
 #[async_trait::async_trait]
 pub trait Service {
     fn start(&mut self) -> Result<()>;
@@ -101,16 +107,22 @@ impl Server {
 pub(crate) struct ServiceBuilder {
     pub config: config::Config,
     pub runtime: Arc<Runtime>,
+    pub memory_pool: MemoryPoolRef,
+    pub metrics_register: Arc<MetricsRegister>,
 }
 
 impl ServiceBuilder {
-    pub async fn build_stroage_server(&self, server: &mut Server) -> Option<EngineRef> {
+    pub async fn build_storage_server(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
         meta.admin_meta().add_data_node().await.unwrap();
 
-        let kv_inst = self.create_tskv(meta.clone(), self.runtime.clone()).await;
+        let kv_inst = self
+            .create_tskv(meta.clone(), self.runtime.clone(), self.memory_pool.clone())
+            .await;
         let coord = self.create_coord(meta, Some(kv_inst.clone())).await;
-        let dbms = self.create_dbms(coord.clone()).await;
+        let dbms = self
+            .create_dbms(coord.clone(), self.memory_pool.clone())
+            .await;
         let http_service = Box::new(
             self.create_http(dbms.clone(), coord.clone(), ServerMode::Store)
                 .await,
@@ -126,7 +138,9 @@ impl ServiceBuilder {
     pub async fn build_query_server(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
         let coord = self.create_coord(meta, None).await;
-        let dbms = self.create_dbms(coord.clone()).await;
+        let dbms = self
+            .create_dbms(coord.clone(), self.memory_pool.clone())
+            .await;
         let http_service = Box::new(
             self.create_http(dbms.clone(), coord.clone(), ServerMode::Query)
                 .await,
@@ -139,13 +153,17 @@ impl ServiceBuilder {
         None
     }
 
-    pub async fn build_query_stroage(&self, server: &mut Server) -> Option<EngineRef> {
+    pub async fn build_query_storage(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
         meta.admin_meta().add_data_node().await.unwrap();
 
-        let kv_inst = self.create_tskv(meta.clone(), self.runtime.clone()).await;
+        let kv_inst = self
+            .create_tskv(meta.clone(), self.runtime.clone(), self.memory_pool.clone())
+            .await;
         let coord = self.create_coord(meta, Some(kv_inst.clone())).await;
-        let dbms = self.create_dbms(coord.clone()).await;
+        let dbms = self
+            .create_dbms(coord.clone(), self.memory_pool.clone())
+            .await;
         let flight_sql_service = Box::new(self.create_flight_sql(dbms.clone()).await);
         let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()).await);
         let http_service = Box::new(
@@ -160,24 +178,46 @@ impl ServiceBuilder {
         Some(kv_inst)
     }
 
+    pub async fn build_singleton(&self, server: &mut Server) -> Option<EngineRef> {
+        let meta_service = MetaService::new(self.config.clone());
+        meta_service
+            .start()
+            .await
+            .expect("failed to start meta, please check http addr");
+        self.build_query_storage(server).await
+    }
+
     async fn create_meta(&self) -> MetaRef {
         let meta: MetaRef = RemoteMetaManager::new(self.config.cluster.clone()).await;
 
         meta
     }
 
-    async fn create_tskv(&self, meta: MetaRef, runtime: Arc<Runtime>) -> EngineRef {
+    async fn create_tskv(
+        &self,
+        meta: MetaRef,
+        runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
+    ) -> EngineRef {
         let options = tskv::Options::from(&self.config);
-        let kv = TsKv::open(meta, options.clone(), runtime).await.unwrap();
+        let kv = TsKv::open(
+            meta,
+            options.clone(),
+            runtime,
+            memory_pool,
+            self.metrics_register.clone(),
+        )
+        .await
+        .unwrap();
 
         let kv: EngineRef = Arc::new(kv);
 
         kv
     }
 
-    async fn create_dbms(&self, coord: CoordinatorRef) -> DBMSRef {
+    async fn create_dbms(&self, coord: CoordinatorRef, memory_pool: MemoryPoolRef) -> DBMSRef {
         let options = tskv::Options::from(&self.config);
-        let dbms = make_cnosdbms(coord, options.clone())
+        let dbms = make_cnosdbms(coord, options.clone(), memory_pool)
             .await
             .expect("make dbms");
 
@@ -193,7 +233,8 @@ impl ServiceBuilder {
             kv,
             meta,
             self.config.cluster.clone(),
-            self.config.hintedoff.clone(),
+            self.config.hinted_off.clone(),
+            self.metrics_register.clone(),
         )
         .await;
 
@@ -222,6 +263,7 @@ impl ServiceBuilder {
             self.config.query.query_sql_limit,
             self.config.query.write_sql_limit,
             mode,
+            self.metrics_register.clone(),
         )
     }
 
@@ -234,7 +276,7 @@ impl ServiceBuilder {
             .parse::<SocketAddr>()
             .expect("Invalid tcp host");
 
-        GrpcService::new(kv, coord, host, tls_config)
+        GrpcService::new(kv, coord, host, tls_config, self.metrics_register.clone())
     }
 
     async fn create_flight_sql(&self, dbms: DBMSRef) -> FlightSqlServiceAdapter {

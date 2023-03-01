@@ -7,7 +7,11 @@ use datafusion::arrow::ipc::reader::StreamReader;
 use datafusion::arrow::ipc::writer::StreamWriter;
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::ok;
+use meta::error::MetaError;
 use meta::MetaRef;
+use metrics::count::U64Counter;
+use metrics::metric::Metric;
+use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
 use models::predicate::domain::{PredicateRef, QueryArgs, QueryExpr};
 use models::schema::TskvTableSchema;
@@ -24,6 +28,7 @@ use tskv::iterator::{filter_to_time_ranges, QueryOption, RowIterator, TableScanM
 use tskv::TimeRange;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
+use crate::service::CoordServiceMetrics;
 use crate::SUCCESS_RESPONSE_CODE;
 
 #[derive(Debug)]
@@ -64,6 +69,7 @@ pub struct QueryExecutor {
     meta_manager: MetaRef,
 
     sender: Sender<CoordinatorResult<RecordBatch>>,
+    data_out: U64Counter,
 }
 
 impl QueryExecutor {
@@ -72,12 +78,15 @@ impl QueryExecutor {
         kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
         sender: Sender<CoordinatorResult<RecordBatch>>,
+        metrics: Arc<CoordServiceMetrics>,
     ) -> Self {
+        let data_out = metrics.data_out(option.tenant.as_str(), option.table_schema.db.as_str());
         Self {
             option,
             kv_inst,
             meta_manager,
             sender,
+            data_out,
         }
     }
     pub async fn execute(&self) -> CoordinatorResult<()> {
@@ -247,27 +256,30 @@ impl QueryExecutor {
     }
 
     async fn local_vnode_executor(&self, vnode: VnodeInfo) -> CoordinatorResult<()> {
-        if let Some(kv_inst) = self.kv_inst.clone() {
-            let tenant = self.option.tenant.clone();
-            let mut iterator =
-                RowIterator::new(kv_inst.clone(), self.option.clone(), vnode.id).await?;
+        let kv_inst = self
+            .kv_inst
+            .as_ref()
+            .ok_or(CoordinatorError::KvInstanceNotFound {
+                vnode_id: vnode.id,
+                node_id: vnode.node_id,
+            })?
+            .clone();
 
-            while let Some(data) = iterator.next().await {
-                match data {
-                    Ok(val) => {
-                        self.sender.send(Ok(val)).await?;
-                    }
-                    Err(err) => {
-                        return Err(CoordinatorError::from(err));
-                    }
-                };
-            }
-            return Ok(());
+        let mut iterator = RowIterator::new(kv_inst, self.option.clone(), vnode.id).await?;
+
+        while let Some(data) = iterator.next().await {
+            match data {
+                Ok(val) => {
+                    self.data_out.inc(val.get_array_memory_size() as u64);
+                    self.sender.send(Ok(val)).await?;
+                }
+                Err(err) => {
+                    return Err(CoordinatorError::from(err));
+                }
+            };
         }
-        Err(CoordinatorError::KvInstanceNotFound {
-            vnode_id: vnode.id,
-            node_id: vnode.node_id,
-        })
+
+        Ok(())
     }
 
     async fn map_vnode(&self) -> CoordinatorResult<HashMap<u64, Vec<VnodeInfo>>> {

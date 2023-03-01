@@ -4,7 +4,7 @@ use std::sync::Arc;
 use coordinator::errors::CoordinatorResult;
 use coordinator::file_info::get_files_meta;
 use coordinator::reader::{QueryExecutor, ReaderIterator};
-use coordinator::service::CoordinatorRef;
+use coordinator::service::{CoordServiceMetrics, CoordinatorRef};
 use coordinator::vnode_mgr::VnodeManager;
 use coordinator::{FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE};
 use datafusion::arrow::ipc::writer::StreamWriter;
@@ -12,6 +12,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::Stream;
 use meta::MetaRef;
+use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
 use models::predicate::domain::{Predicate, QueryArgs, QueryExpr};
 use models::schema::TableColumn;
@@ -31,6 +32,7 @@ type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, tonic::Status>> + S
 pub struct TskvServiceImpl {
     pub kv_inst: EngineRef,
     pub coord: CoordinatorRef,
+    pub metrics_register: Arc<MetricsRegister>,
 }
 
 impl TskvServiceImpl {
@@ -186,6 +188,7 @@ impl TskvServiceImpl {
         meta: MetaRef,
         kv_inst: EngineRef,
         sender: Sender<CoordinatorResult<RecordBatch>>,
+        metrics_register: Arc<MetricsRegister>,
     ) {
         let filter = Arc::new(
             Predicate::default()
@@ -194,11 +197,12 @@ impl TskvServiceImpl {
         );
 
         let plan_metrics = ExecutionPlanMetricsSet::new();
-        let scan_metrics = TableScanMetrics::new(&plan_metrics, 0);
+        let scan_metrics = TableScanMetrics::new(&plan_metrics, 0, None);
         let option = QueryOption::new(
             args.batch_size,
             args.tenant.clone(),
             filter,
+            None,
             expr.df_schema,
             expr.table_schema,
             scan_metrics.tskv_metrics(),
@@ -210,7 +214,13 @@ impl TskvServiceImpl {
             vnodes.push(VnodeInfo { id: *id, node_id })
         }
 
-        let executor = QueryExecutor::new(option, Some(kv_inst), meta, sender.clone());
+        let executor = QueryExecutor::new(
+            option,
+            Some(kv_inst),
+            meta,
+            sender.clone(),
+            Arc::new(CoordServiceMetrics::new(&metrics_register)),
+        );
         if let Err(err) = executor.local_node_executor(vnodes).await {
             info!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
@@ -461,6 +471,7 @@ impl TskvService for TskvServiceImpl {
             self.coord.meta_manager(),
             self.kv_inst.clone(),
             record_batch_sender,
+            self.metrics_register.clone(),
         ));
 
         let (send, recv) = mpsc::channel(1024);

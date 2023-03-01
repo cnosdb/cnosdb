@@ -9,7 +9,16 @@ pub struct MetaInit {
     pub cluster_name: String,
     pub admin_user: String,
     pub system_tenant: String,
-    pub default_database: String,
+    pub default_database: Vec<String>,
+}
+
+impl MetaInit {
+    pub fn default_db_config(tenant: &str, db: &str) -> String {
+        format!(
+            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null}}}}",
+            tenant, db
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -73,7 +82,7 @@ snapshot_per_events = 500
 cluster_name = "cluster_xxx"
 admin_user = "root"
 system_tenant = "cnosdb"
-default_database = "public"
+default_database = ["public", "usage_schema"]
 "#;
 
         let config: Opt = toml::from_str(config_str).unwrap();

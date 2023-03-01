@@ -6,19 +6,28 @@ use std::time::Duration;
 use config::{ClusterConfig, HintedOffConfig};
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::datasource::TableProvider;
 use futures::TryFutureExt;
 use meta::error::MetaError;
 use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
 use meta::meta_manager::RemoteMetaManager;
 use meta::{MetaClientRef, MetaRef};
+use metrics::count::U64Counter;
+use metrics::label::Labels;
+use metrics::metric::Metric;
+use metrics::metric_register::MetricsRegister;
 use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo, VnodeAllInfo};
 use models::predicate::domain::{ColumnDomains, PredicateRef};
-use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema, DEFAULT_CATALOG};
 use models::*;
+use parking_lot::Mutex;
 use protos::kv_service::admin_command_request::Command::*;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
+use protos::kv_service::WritePointsRequest;
 use protos::kv_service::{StatusResponse, *};
+use protos::models::Points;
+use protos::models_helper::get_db_from_flatbuffers;
 use snafu::ResultExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -27,6 +36,7 @@ use tokio::sync::oneshot;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::info;
+use tracing::error;
 use tskv::engine::{EngineRef, MockEngine};
 use tskv::iterator::QueryOption;
 use tskv::TimeRange;
@@ -34,6 +44,7 @@ use tskv::TimeRange;
 use crate::errors::*;
 use crate::file_info::*;
 use crate::hh_queue::HintedOffManager;
+use crate::metrics::LPReporter;
 use crate::reader::{QueryExecutor, ReaderIterator};
 use crate::service_mock::Coordinator;
 use crate::writer::{PointWriter, VnodeMapping};
@@ -41,13 +52,40 @@ use crate::{status_response_to_result, VnodeManagerCmdType, WriteRequest};
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CoordService {
     node_id: u64,
     meta: MetaRef,
     kv_inst: Option<EngineRef>,
     writer: Arc<PointWriter>,
     handoff: Arc<HintedOffManager>,
+    metrics: Arc<CoordServiceMetrics>,
+}
+
+#[derive(Debug)]
+pub struct CoordServiceMetrics {
+    data_in: Metric<U64Counter>,
+    data_out: Metric<U64Counter>,
+}
+
+impl CoordServiceMetrics {
+    pub fn new(register: &MetricsRegister) -> Self {
+        let data_in = register.metric("data_in", "tenant data in");
+        let data_out = register.metric("data_out", "tenant data out");
+        Self { data_in, data_out }
+    }
+
+    pub fn tenant_db_labels<'a>(tenant: &'a str, db: &'a str) -> impl Into<Labels> + 'a {
+        [("tenant", tenant), ("database", db)]
+    }
+
+    pub fn data_in(&self, tenant: &str, db: &str) -> U64Counter {
+        self.data_in.recorder(Self::tenant_db_labels(tenant, db))
+    }
+
+    pub fn data_out(&self, tenant: &str, db: &str) -> U64Counter {
+        self.data_out.recorder(Self::tenant_db_labels(tenant, db))
+    }
 }
 
 impl CoordService {
@@ -56,6 +94,7 @@ impl CoordService {
         meta_manager: MetaRef,
         cluster: ClusterConfig,
         handoff_cfg: HintedOffConfig,
+        metrics_register: Arc<MetricsRegister>,
     ) -> Arc<Self> {
         let (hh_sender, hh_receiver) = mpsc::channel(1024);
         let point_writer = Arc::new(PointWriter::new(
@@ -63,6 +102,7 @@ impl CoordService {
             kv_inst.clone(),
             meta_manager.clone(),
             hh_sender,
+            metrics_register.clone(),
         ));
 
         let hh_manager = Arc::new(HintedOffManager::new(handoff_cfg, point_writer.clone()).await);
@@ -77,9 +117,17 @@ impl CoordService {
             meta: meta_manager,
             writer: point_writer,
             handoff: hh_manager,
+            metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
         });
 
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
+
+        if cluster.store_metrics {
+            tokio::spawn(CoordService::metrics_service(
+                coord.clone(),
+                metrics_register.clone(),
+            ));
+        }
 
         coord
     }
@@ -94,6 +142,36 @@ impl CoordService {
                 let result = coord.delete_expired_bucket(info).await;
 
                 info!("delete expired bucket :{:?}, {:?}", info, result);
+            }
+        }
+    }
+
+    async fn metrics_service(
+        coord: Arc<CoordService>,
+        root_metrics_register: Arc<MetricsRegister>,
+    ) {
+        let start = tokio::time::Instant::now() + tokio::time::Duration::from_secs(10);
+        let interval = tokio::time::Duration::from_secs(10);
+        let mut intv = tokio::time::interval_at(start, interval);
+        loop {
+            intv.tick().await;
+            let mut points_buffer = Vec::new();
+            let mut reporter = LPReporter::new("usage_schema", &mut points_buffer);
+            root_metrics_register.report(&mut reporter);
+
+            for points in points_buffer {
+                let req = WritePointsRequest {
+                    version: 0,
+                    meta: None,
+                    points,
+                };
+
+                if let Err(e) = coord
+                    .write_points(DEFAULT_CATALOG.to_string(), ConsistencyLevel::Any, req)
+                    .await
+                {
+                    error!("write metrics to {DEFAULT_CATALOG} fail. {e}")
+                }
             }
         }
     }
@@ -143,14 +221,14 @@ impl CoordService {
     }
 
     async fn select_statement_request(
-        kv_inst: Option<EngineRef>,
-        meta: MetaRef,
+        self,
         option: QueryOption,
         sender: Sender<CoordinatorResult<RecordBatch>>,
     ) {
         let tenant = option.tenant.as_str();
 
-        if let Err(e) = meta
+        if let Err(e) = self
+            .meta
             .tenant_manager()
             .limiter(tenant)
             .await
@@ -161,24 +239,26 @@ impl CoordService {
             let _ = sender.send(Err(e)).await;
             return;
         }
+        let executor = QueryExecutor::new(
+            option,
+            self.kv_inst.clone(),
+            self.meta.clone(),
+            sender.clone(),
+            self.metrics.clone(),
+        );
 
         let now = tokio::time::Instant::now();
         info!("select statement execute now: {:?}", now);
-        let executor = QueryExecutor::new(option, kv_inst.clone(), meta, sender.clone());
-        if let Err(err) = executor.execute().await {
-            info!(
-                "select statement execute failed: {}, start at: {:?} elapsed: {:?}",
-                err,
-                now,
-                now.elapsed(),
-            );
-            let _ = sender.send(Err(err)).await;
-        } else {
+
+        if let Err(err) = executor.execute().await.map(|_| {
             info!(
                 "select statement execute success, start at: {:?} elapsed: {:?}",
                 now,
                 now.elapsed(),
             );
+        }) {
+            error!("select statement execute failed: {}", err.to_string());
+            let _ = sender.send(Err(err)).await;
         }
     }
 
@@ -225,9 +305,17 @@ impl Coordinator for CoordService {
         request: WritePointsRequest,
     ) -> CoordinatorResult<()> {
         let limiter = self.meta.tenant_manager().limiter(&tenant).await;
+        let points = request.points.as_slice();
+        let write_size = points.len();
+
         limiter.check_write().await?;
-        let data_len = request.points.len();
-        limiter.check_data_in(data_len).await?;
+        limiter.check_data_in(write_size).await?;
+
+        let db = get_db_from_flatbuffers(points)?;
+
+        self.metrics
+            .data_in(tenant.as_str(), db.as_str())
+            .inc(write_size as u64);
 
         let req = WriteRequest {
             tenant: tenant.clone(),
@@ -251,11 +339,9 @@ impl Coordinator for CoordService {
     fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
         let (iterator, sender) = ReaderIterator::new();
 
+        let coord = self.clone();
         tokio::spawn(CoordService::select_statement_request(
-            self.kv_inst.clone(),
-            self.meta.clone(),
-            option,
-            sender,
+            coord, option, sender,
         ));
 
         Ok(iterator)

@@ -35,7 +35,7 @@ use super::datasource::gcs::{
 };
 use super::datasource::s3::{S3StorageConfig, S3StorageConfigBuilder};
 use super::datasource::UriSchema;
-use super::session::IsiphoSessionCtx;
+use super::session::SessionCtx;
 use super::AFFECTED_ROWS;
 use crate::service::protocol::QueryId;
 use crate::{ParserSnafu, QueryError, Result};
@@ -435,7 +435,7 @@ pub trait LogicalPlanner {
     async fn create_logical_plan(
         &self,
         statement: ExtStatement,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<Plan>;
 }
 

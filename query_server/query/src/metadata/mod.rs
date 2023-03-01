@@ -1,5 +1,6 @@
 mod cluster_schema_provider;
 mod information_schema_provider;
+mod usage_schema_provider;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -20,16 +21,18 @@ use models::auth::user::UserDesc;
 use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
 use parking_lot::RwLock;
 use spi::query::function::FuncMetaManagerRef;
-use spi::query::session::IsiphoSessionCtx;
+use spi::query::session::SessionCtx;
 
 use self::cluster_schema_provider::ClusterSchemaProvider;
 use self::information_schema_provider::InformationSchemaProvider;
+use crate::data_source::table_provider::tskv::ClusterTable;
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
-use crate::table::ClusterTable;
+use crate::metadata::usage_schema_provider::UsageSchemaProvider;
 
 pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
 pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
+pub use usage_schema_provider::{USAGE_SCHEMA, USAGE_SCHEMA_VNODE_DISK_STORAGE};
 
 /// remote meta
 pub struct RemoteCatalogMeta {}
@@ -47,13 +50,14 @@ pub trait ContextProviderExtension: ContextProvider {
 }
 
 pub struct MetadataProvider {
-    session: IsiphoSessionCtx,
+    session: SessionCtx,
     config_options: ConfigOptions,
     coord: CoordinatorRef,
     meta_client: MetaClientRef,
     func_manager: FuncMetaManagerRef,
     information_schema_provider: InformationSchemaProvider,
     cluster_schema_provider: ClusterSchemaProvider,
+    usage_schema_provider: UsageSchemaProvider,
     access_databases: RwLock<DatabaseSet>,
 }
 
@@ -63,7 +67,8 @@ impl MetadataProvider {
         meta_client: MetaClientRef,
         func_manager: SimpleFunctionMetadataManager,
         query_tracker: Arc<QueryTracker>,
-        session: IsiphoSessionCtx,
+        session: SessionCtx,
+        default_meta: MetaClientRef,
     ) -> Self {
         Self {
             coord,
@@ -74,18 +79,17 @@ impl MetadataProvider {
             func_manager: Arc::new(func_manager),
             information_schema_provider: InformationSchemaProvider::new(query_tracker),
             cluster_schema_provider: ClusterSchemaProvider::new(),
+            usage_schema_provider: UsageSchemaProvider::new(default_meta),
             access_databases: Default::default(),
         }
     }
 
-    fn build_df_data_source(
+    fn process_system_table_source(
         &self,
-        name: &ResolvedTableReference<'_>,
-    ) -> datafusion::common::Result<Arc<dyn TableSource>> {
-        let tenant_name = name.catalog.as_ref();
-        let database_name = name.schema.as_ref();
-        let table_name = name.table.as_ref();
-
+        tenant_name: &str,
+        database_name: &str,
+        table_name: &str,
+    ) -> datafusion::common::Result<Option<Arc<dyn TableSource>>> {
         // process INFORMATION_SCHEMA
         if database_name.eq_ignore_ascii_case(self.information_schema_provider.name()) {
             let mem_table = futures::executor::block_on(self.information_schema_provider.table(
@@ -95,7 +99,21 @@ impl MetadataProvider {
             ))
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
-            return Ok(provider_as_source(mem_table));
+            return Ok(Some(provider_as_source(mem_table)));
+        }
+
+        // process USAGE_SCHEMA
+        if database_name.eq_ignore_ascii_case(self.usage_schema_provider.name()) {
+            let table_provider = self
+                .usage_schema_provider
+                .table(
+                    table_name,
+                    self.session.user(),
+                    self.coord.clone(),
+                    self.meta_client.clone(),
+                )
+                .map_err(|e| DataFusionError::External(Box::new(e)))?;
+            return Ok(Some(provider_as_source(table_provider)));
         }
 
         // process CNOSDB(sys tenant) -> CLUSTER_SCHEMA
@@ -109,7 +127,24 @@ impl MetadataProvider {
             ))
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
-            return Ok(provider_as_source(mem_table));
+            return Ok(Some(provider_as_source(mem_table)));
+        }
+
+        Ok(None)
+    }
+
+    fn build_df_data_source(
+        &self,
+        name: &ResolvedTableReference<'_>,
+    ) -> datafusion::common::Result<Arc<dyn TableSource>> {
+        let tenant_name = name.catalog.as_ref();
+        let database_name = name.schema.as_ref();
+        let table_name = name.table.as_ref();
+
+        if let Some(source) =
+            self.process_system_table_source(tenant_name, database_name, table_name)?
+        {
+            return Ok(source);
         }
 
         let df_table_source = match self

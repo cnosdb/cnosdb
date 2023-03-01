@@ -12,6 +12,7 @@ use datafusion::optimizer::extract_equijoin_predicate::ExtractEquijoinPredicate;
 use datafusion::optimizer::filter_null_join_keys::FilterNullJoinKeys;
 use datafusion::optimizer::inline_table_scan::InlineTableScan;
 use datafusion::optimizer::propagate_empty_relation::PropagateEmptyRelation;
+use datafusion::optimizer::push_down_aggregation::PushDownAggregation;
 use datafusion::optimizer::push_down_filter::PushDownFilter;
 use datafusion::optimizer::push_down_limit::PushDownLimit;
 use datafusion::optimizer::rewrite_disjunctive_predicate::RewriteDisjunctivePredicate;
@@ -21,7 +22,7 @@ use datafusion::optimizer::single_distinct_to_groupby::SingleDistinctToGroupBy;
 use datafusion::optimizer::type_coercion::TypeCoercion;
 use datafusion::optimizer::unwrap_cast_in_comparison::UnwrapCastInComparison;
 use datafusion::optimizer::OptimizerRule;
-use spi::query::session::IsiphoSessionCtx;
+use spi::query::session::SessionCtx;
 use spi::Result;
 
 use crate::extension::logical::optimizer_rule::implicit_type_conversion::ImplicitTypeConversion;
@@ -32,7 +33,7 @@ use crate::extension::logical::optimizer_rule::transform_bottom_func_to_topk_nod
 use crate::extension::logical::optimizer_rule::transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule;
 
 pub trait LogicalOptimizer: Send + Sync {
-    fn optimize(&self, plan: &LogicalPlan, session: &IsiphoSessionCtx) -> Result<LogicalPlan>;
+    fn optimize(&self, plan: &LogicalPlan, session: &SessionCtx) -> Result<LogicalPlan>;
 
     fn inject_optimizer_rule(&mut self, optimizer_rule: Arc<dyn OptimizerRule + Send + Sync>);
 }
@@ -81,6 +82,7 @@ impl Default for DefaultLogicalOptimizer {
             Arc::new(PushDownLimit::new()),
             Arc::new(PushDownFilter::new()),
             Arc::new(SingleDistinctToGroupBy::new()),
+            Arc::new(PushDownAggregation::new()),
             // The previous optimizations added expressions and projections,
             // that might benefit from the following rules
             Arc::new(SimplifyExpressions::new()),
@@ -99,7 +101,7 @@ impl Default for DefaultLogicalOptimizer {
 }
 
 impl LogicalOptimizer for DefaultLogicalOptimizer {
-    fn optimize(&self, plan: &LogicalPlan, session: &IsiphoSessionCtx) -> Result<LogicalPlan> {
+    fn optimize(&self, plan: &LogicalPlan, session: &SessionCtx) -> Result<LogicalPlan> {
         session
             .inner()
             .state()

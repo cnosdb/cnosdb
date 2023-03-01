@@ -80,15 +80,15 @@ use spi::query::logical_planner::{
     FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType, GrantRevoke, LogicalPlanner,
     MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan, TenantObjectType,
 };
-use spi::query::session::IsiphoSessionCtx;
+use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
 use trace::{debug, warn};
 use url::Url;
 
+use crate::data_source::table_provider::tskv::ClusterTable;
 use crate::metadata::{ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
 use crate::sql::logical::planner::TableWriteExt;
 use crate::sql::parser::{merge_object_name, normalize_ident, normalize_sql_object_name};
-use crate::table::ClusterTable;
 
 /// CnosDB SQL query planner
 pub struct SqlPlaner<'a, S: ContextProviderExtension> {
@@ -110,7 +110,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     pub(crate) async fn statement_to_plan(
         &self,
         statement: ExtStatement,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         match statement {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt, session).await,
@@ -165,7 +165,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     async fn df_sql_to_plan(
         &self,
         stmt: Statement,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         match stmt {
             Statement::Query(_) => {
@@ -210,7 +210,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         verbose: bool,
         analyze: bool,
         statement: ExtStatement,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let PlanWithPrivileges { plan, privileges } =
             self.statement_to_plan(statement, session).await?;
@@ -220,7 +220,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             _ => {
                 return Err(QueryError::NotImplemented {
                     err: "explain non-query statement.".to_string(),
-                })
+                });
             }
         };
 
@@ -254,7 +254,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         sql_object_name: ObjectName,
         sql_column_names: &[Ident],
         source: Box<Query>,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         // Transform subqueries
         let source_plan = self
@@ -306,7 +306,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn drop_database_object_to_plan(
         &self,
         stmt: ast::DropDatabaseObject,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let ast::DropDatabaseObject {
             object_name,
@@ -346,7 +346,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn drop_tenant_object_to_plan(
         &self,
         stmt: ast::DropTenantObject,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let ast::DropTenantObject {
             ref object_name,
@@ -496,7 +496,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     pub fn external_table_to_plan(
         &self,
         statement: AstCreateExternalTable,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let table_name = statement.name.clone();
         let (database_name, _) = extract_database_table_name(table_name.as_str(), session);
@@ -517,7 +517,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     pub fn create_table_to_plan(
         &self,
         statement: ASTCreateTable,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let ASTCreateTable {
             name,
@@ -588,7 +588,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn database_to_describe(
         &self,
         statement: DescribeDatabaseOptions,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         // get the current tenant id from the session
         let database_name = normalize_sql_object_name(&statement.database_name);
@@ -611,7 +611,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn table_to_describe(
         &self,
         opts: DescribeTableOptions,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let table_name = object_name_to_resolved_table(session, opts.table_name)?;
         let database_name = table_name.database().to_string();
@@ -630,7 +630,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn table_to_alter(
         &self,
         statement: ASTAlterTable,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let table_name = object_name_to_resolved_table(session, statement.table_name)?;
         let table_schema = self.get_tskv_schema(&table_name)?;
@@ -720,7 +720,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    fn database_to_show(&self, session: &IsiphoSessionCtx) -> Result<PlanWithPrivileges> {
+    fn database_to_show(&self, session: &SessionCtx) -> Result<PlanWithPrivileges> {
         let plan = Plan::DDL(DDLPlan::ShowDatabases());
         // privileges
         let tenant_id = *session.tenant_id();
@@ -737,7 +737,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn table_to_show(
         &self,
         database: Option<ObjectName>,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let db_name = database.map(|db_name| normalize_sql_object_name(&db_name));
         let plan = Plan::DDL(DDLPlan::ShowTables(db_name.clone()));
@@ -753,7 +753,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
 
     fn show_tag_body(
         &self,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
         body: ShowTagBody,
         projection_function: impl FnOnce(
             &TskvTableSchema,
@@ -768,7 +768,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 return Err(QueryError::DBTableConflict {
                     db: body.database_name.unwrap_or(ObjectName(vec![])).to_string(),
                     table: body.table.to_string(),
-                })
+                });
             }
         };
 
@@ -837,7 +837,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn show_series_to_plan(
         &self,
         stmt: ASTShowSeries,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         self.show_tag_body(session, stmt.body, show_series_projection)
     }
@@ -845,7 +845,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn show_tag_values(
         &self,
         stmt: ASTShowTagValues,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         // merge db a.b table b.c to a.b.c
         self.show_tag_body(
@@ -860,7 +860,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn database_to_plan(
         &self,
         stmt: ASTCreateDatabase,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let ASTCreateDatabase {
             name,
@@ -952,7 +952,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                     _ => {
                         return Err(QueryError::Semantic {
                             err: "The OFFSET clause must be a constant of BIGINT type".to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -983,7 +983,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn database_to_alter(
         &self,
         stmt: ASTAlterDatabase,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let ASTAlterDatabase { name, options } = stmt;
         let options = self.make_database_option(options)?;
@@ -1134,7 +1134,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn create_role_to_plan(
         &self,
         stmt: ast::CreateRole,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let ast::CreateRole {
             name,
@@ -1250,7 +1250,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 let privilege = Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)));
 
                 let tenant_options = sql_options_to_tenant_options(vec![sql_option])?;
-                // .map_err(|err| QueryError::Semantic { err })?;
 
                 (AlterTenantAction::Set(Box::new(tenant_options)), privilege)
             }
@@ -1324,7 +1323,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     fn grant_revoke_to_plan(
         &self,
         stmt: ast::GrantRevoke,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         // database_id: Oid,
         // privilege: DatabasePrivilege,
@@ -1439,7 +1438,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     async fn copy_to_plan(
         &self,
         stmt: ast::Copy,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let ast::Copy {
             copy_target,
@@ -1502,7 +1501,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     /// Get target table‘s metadata and insert columns
     async fn build_source_and_target_table(
         &self,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
         stmt: CopyIntoTable,
         file_format_options: FileFormatOptions,
         copy_options: CopyOptions,
@@ -1572,7 +1571,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
 
     async fn copy_into_location(
         &self,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
         stmt: ast::CopyIntoLocation,
         file_format_options: FileFormatOptions,
     ) -> Result<Plan> {
@@ -1849,7 +1848,7 @@ fn check_show_series_expr(columns: &HashSet<Column>, table_schema: &TskvTableSch
                 return Err(QueryError::ColumnNotExists {
                     column: column.to_string(),
                     table: table_schema.name.to_string(),
-                })
+                });
             }
         }
     }
@@ -1933,7 +1932,7 @@ fn show_tag_value_projections(
         _ => {
             return Err(QueryError::NotImplemented {
                 err: "Not implemented Match, UnMatch".to_string(),
-            })
+            });
         }
     };
 
@@ -2004,7 +2003,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlaner
     async fn create_logical_plan(
         &self,
         statement: ExtStatement,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<Plan> {
         let PlanWithPrivileges { plan, privileges } =
             self.statement_to_plan(statement, session).await?;
@@ -2049,7 +2048,7 @@ fn databases_privileges(
         .collect()
 }
 
-fn extract_database_table_name(full_name: &str, session: &IsiphoSessionCtx) -> (String, String) {
+fn extract_database_table_name(full_name: &str, session: &SessionCtx) -> (String, String) {
     let table_ref = TableReference::from(full_name);
     let resloved_table = table_ref.resolve(session.tenant(), session.default_database());
     let table_name = resloved_table.table.to_string();
@@ -2059,7 +2058,7 @@ fn extract_database_table_name(full_name: &str, session: &IsiphoSessionCtx) -> (
 }
 
 fn object_name_to_resolved_table(
-    session: &IsiphoSessionCtx,
+    session: &SessionCtx,
     object_name: ObjectName,
 ) -> Result<ResolvedTable> {
     let table = object_name_to_table_reference(object_name, true)?
@@ -2076,6 +2075,7 @@ mod tests {
 
     use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
     use datafusion::error::Result;
+    use datafusion::execution::memory_pool::UnboundedMemoryPool;
     use datafusion::logical_expr::{Aggregate, AggregateUDF, Extension, ScalarUDF, TableSource};
     use datafusion::sql::planner::ContextProvider;
     use datafusion::sql::TableReference;
@@ -2084,7 +2084,7 @@ mod tests {
     use models::auth::user::{User, UserDesc, UserOptions};
     use models::codec::Encoding;
     use models::schema::{TableSourceAdapter, Tenant};
-    use spi::query::session::IsiphoSessionCtxFactory;
+    use spi::query::session::SessionCtxFactory;
     use spi::service::protocol::ContextBuilder;
 
     use super::*;
@@ -2169,6 +2169,7 @@ mod tests {
             unimplemented!()
         }
     }
+
     struct TestTable {
         table_schema: SchemaRef,
     }
@@ -2189,7 +2190,7 @@ mod tests {
         }
     }
 
-    fn session() -> IsiphoSessionCtx {
+    fn session() -> SessionCtx {
         let user_desc = UserDesc::new(
             0_u128,
             "test_name".to_string(),
@@ -2198,7 +2199,10 @@ mod tests {
         );
         let user = User::new(user_desc, HashSet::default());
         let context = ContextBuilder::new(user).build();
-        IsiphoSessionCtxFactory::default().create_isipho_session_ctx(context, 0_u128)
+        let pool = UnboundedMemoryPool::default();
+        SessionCtxFactory::default()
+            .create_session_ctx(context, 0_u128, Arc::new(pool))
+            .unwrap()
     }
 
     #[tokio::test]
@@ -2245,7 +2249,7 @@ mod tests {
                             id: 0,
                             name: "time".to_string(),
                             column_type: ColumnType::Time,
-                            encoding: Encoding::Default
+                            encoding: Encoding::Default,
                         },
                         TableColumn {
                             id: 1,
@@ -2288,11 +2292,11 @@ mod tests {
                             name: "column5".to_string(),
                             column_type: ColumnType::Field(ValueType::Float),
                             encoding: Encoding::Gorilla,
-                        }
+                        },
                     ],
                     name: TableReference::parse_str("test")
                         .resolve_object("default_catalog", "default_schema"),
-                    if_not_exists: true
+                    if_not_exists: true,
                 }
             );
         } else {

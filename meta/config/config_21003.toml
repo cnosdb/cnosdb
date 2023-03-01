@@ -11,4 +11,4 @@ snapshot_per_events = 500
 cluster_name = "cluster_xxx"
 admin_user = "root"
 system_tenant = "cnosdb"
-default_database = "public"
+default_database = ["public", "usage_schema"]

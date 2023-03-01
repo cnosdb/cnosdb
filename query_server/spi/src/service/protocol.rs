@@ -4,7 +4,7 @@ use models::auth::user::User;
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 
 use crate::query::execution::Output;
-use crate::query::session::IsiphoSessionConfig;
+use crate::query::session::CnosSessionConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QueryId(u64);
@@ -58,7 +58,7 @@ pub struct Context {
     user_info: User,
     tenant: String,
     database: String,
-    session_config: IsiphoSessionConfig,
+    session_config: CnosSessionConfig,
 }
 
 impl Context {
@@ -74,7 +74,7 @@ impl Context {
         &self.user_info
     }
 
-    pub fn session_config(&self) -> &IsiphoSessionConfig {
+    pub fn session_config(&self) -> &CnosSessionConfig {
         &self.session_config
     }
 }
@@ -83,7 +83,7 @@ pub struct ContextBuilder {
     user_info: User,
     tenant: String,
     database: String,
-    session_config: IsiphoSessionConfig,
+    session_config: CnosSessionConfig,
 }
 
 impl ContextBuilder {

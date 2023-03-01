@@ -1,7 +1,9 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
+use metrics::metric_register::MetricsRegister;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use spi::server::dbms::DBMSRef;
 use tokio::sync::oneshot;
@@ -17,6 +19,7 @@ pub struct GrpcService {
     kv_inst: EngineRef,
     coord: CoordinatorRef,
     tls_config: Option<TLSConfig>,
+    metrics_register: Arc<MetricsRegister>,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
 }
 
@@ -26,12 +29,14 @@ impl GrpcService {
         coord: CoordinatorRef,
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
+        metrics_register: Arc<MetricsRegister>,
     ) -> Self {
         Self {
             addr,
             coord,
             kv_inst,
             tls_config,
+            metrics_register,
             handle: None,
         }
     }
@@ -62,6 +67,7 @@ impl Service for GrpcService {
         let tskv_grpc_service = TskvServiceServer::new(TskvServiceImpl {
             kv_inst: self.kv_inst.clone(),
             coord: self.coord.clone(),
+            metrics_register: self.metrics_register.clone(),
         });
         let mut grpc_builder = build_grpc_server(&self.tls_config)?;
         let grpc_router = grpc_builder.add_service(tskv_grpc_service);

@@ -11,7 +11,4 @@ pub mod instance;
 pub mod metadata;
 pub mod prom;
 pub mod sql;
-mod stream;
-mod table;
-mod tskv_exec;
 mod utils;

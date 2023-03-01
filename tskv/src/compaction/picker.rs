@@ -272,7 +272,7 @@ impl LevelCompactionPicker {
     ) -> (u64, TimeRange) {
         let mut picking_file_size = 0_u64;
         let mut picking_time_range = TimeRange::from((Timestamp::MAX, Timestamp::MIN));
-        let mut prev_non_overlaped_idx = 0_usize;
+        let mut prev_non_overlapped_idx = 0_usize;
         for (i, file) in src_files.iter().enumerate() {
             // The first serial files may be in compaction
             if file.is_compacting() {
@@ -282,10 +282,10 @@ impl LevelCompactionPicker {
                 picking_time_range.merge(file.time_range());
             } else {
                 picking_time_range = *file.time_range();
-                prev_non_overlaped_idx = i;
+                prev_non_overlapped_idx = i;
             }
             picking_file_size += file.size();
-            if picking_file_size > max_compact_size && prev_non_overlaped_idx > 0 {
+            if picking_file_size > max_compact_size && prev_non_overlapped_idx > 0 {
                 break;
             }
             dst_files.push(file.clone());
@@ -293,7 +293,7 @@ impl LevelCompactionPicker {
         }
 
         let mut picked_time_range = *src_files[0].time_range();
-        picked_time_range.merge(src_files[prev_non_overlaped_idx].time_range());
+        picked_time_range.merge(src_files[prev_non_overlapped_idx].time_range());
         (picking_file_size, picked_time_range)
     }
 }
@@ -412,6 +412,8 @@ mod test {
     use std::sync::Arc;
 
     use lru_cache::ShardedCache;
+    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
+    use metrics::metric_register::MetricsRegister;
     use parking_lot::RwLock;
     use tokio::sync::mpsc;
 
@@ -480,7 +482,7 @@ mod test {
                 time_range: TimeRange::new(lvl_desc.1, lvl_desc.2),
             };
         }
-
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let version = Arc::new(Version::new(
             1,
             Arc::new("version_1".to_string()),
@@ -495,12 +497,14 @@ mod test {
         TseriesFamily::new(
             1,
             Arc::new("ts_family_1".to_string()),
-            MemCache::new(1, 1000, 1),
+            MemCache::new(1, 1000, 1, &memory_pool),
             version,
             opt.cache.clone(),
             opt.storage.clone(),
             flush_task_sender,
             compactt_task_sender,
+            memory_pool,
+            &Arc::new(MetricsRegister::default()),
         )
     }
 
@@ -513,7 +517,7 @@ mod test {
         let opt = create_options(dir.to_string());
 
         #[rustfmt::skip]
-        let levels_sketch: LevelsSketch = vec![
+            let levels_sketch: LevelsSketch = vec![
             // vec![( level, Timestamp_Begin, Timestamp_end, vec![(file_id, Timestamp_Begin, Timestamp_end, size, being_compact)] )]
             (0_u32, 1_i64, 1000_i64, vec![
                 (11_u64, 1_i64, 1000_i64, 1000_u64, false),

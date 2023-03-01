@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
+use datafusion::execution::memory_pool::GreedyMemoryPool;
 use meta::meta_manager::RemoteMetaManager;
 use meta::MetaRef;
+use metrics::metric_register::MetricsRegister;
 use parking_lot::Mutex;
 use protos::kv_service::WritePointsRequest;
 use protos::models_helper;
@@ -24,8 +26,16 @@ async fn get_tskv() -> TsKv {
 
     let meta_manager: MetaRef = RemoteMetaManager::new(global_config.cluster.clone()).await;
     meta_manager.admin_meta().add_data_node().await.unwrap();
-
-    TsKv::open(meta_manager, opt, runtime).await.unwrap()
+    let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+    TsKv::open(
+        meta_manager,
+        opt,
+        runtime,
+        memory,
+        Arc::new(MetricsRegister::default()),
+    )
+    .await
+    .unwrap()
 }
 
 fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRequest) {

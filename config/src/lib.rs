@@ -1,7 +1,3 @@
-mod bytes_num;
-mod duration;
-pub mod limiter_config;
-
 use std::fs::File;
 use std::io::prelude::Read;
 use std::path::Path;
@@ -9,6 +5,10 @@ use std::time::Duration;
 
 pub use limiter_config::*;
 use serde::{Deserialize, Serialize};
+
+mod bytes_num;
+mod duration;
+pub mod limiter_config;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Config {
@@ -21,7 +21,7 @@ pub struct Config {
     pub log: LogConfig,
     pub security: SecurityConfig,
     pub cluster: ClusterConfig,
-    pub hintedoff: HintedOffConfig,
+    pub hinted_off: HintedOffConfig,
 }
 
 impl Config {
@@ -47,7 +47,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Config {
     let mut file = match File::open(path) {
         Ok(file) => file,
         Err(err) => panic!(
-            "Failed to open configurtion file '{}': {}",
+            "Failed to open configurtion file '{}': {:?}",
             path.display(),
             err
         ),
@@ -55,7 +55,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Config {
     let mut content = String::new();
     if let Err(err) = file.read_to_string(&mut content) {
         panic!(
-            "Failed to read configurtion file '{}': {}",
+            "Failed to read configurtion file '{}': {:?}",
             path.display(),
             err
         );
@@ -63,7 +63,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Config {
     let mut config: Config = match toml::from_str(&content) {
         Ok(config) => config,
         Err(err) => panic!(
-            "Failed to parse configurtion file '{}': {}",
+            "Failed to parse configurtion file '{}': {:?}",
             path.display(),
             err
         ),
@@ -81,11 +81,11 @@ pub fn default_config() -> Config {
     [log]
     [security]
     [cluster]
-    [hintedoff]"#;
+    [hinted_off]"#;
 
     match toml::from_str(DEFAULT_CONFIG) {
         Ok(config) => config,
-        Err(err) => panic!("Failed to get default configurtion : {}", err),
+        Err(err) => panic!("Failed to get default configurtion: {:?}", err),
     }
 }
 
@@ -404,6 +404,8 @@ pub struct ClusterConfig {
     pub grpc_listen_addr: String,
     #[serde(default = "ClusterConfig::default_flight_rpc_listen_addr")]
     pub flight_rpc_listen_addr: String,
+    #[serde(default = "ClusterConfig::default_store_metrics")]
+    pub store_metrics: bool,
 }
 
 impl ClusterConfig {
@@ -429,6 +431,10 @@ impl ClusterConfig {
 
     fn default_flight_rpc_listen_addr() -> String {
         "127.0.0.1:31006".to_string()
+    }
+
+    fn default_store_metrics() -> bool {
+        true
     }
 
     pub fn override_by_env(&mut self) {
@@ -588,7 +594,7 @@ flight_rpc_listen_addr = '127.0.0.1:31006'
 http_listen_addr = '127.0.0.1:31007'
 grpc_listen_addr = '127.0.0.1:31008'
 
-[hintedoff]
+[hinted_off]
 enable = true
 path = '/tmp/cnosdb/hh'
 "#;

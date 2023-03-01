@@ -3,11 +3,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use derive_builder::Builder;
+use memory_pool::MemoryPoolRef;
 use models::auth::user::{User, UserInfo};
 use snafu::ResultExt;
 use spi::query::auth::AccessControlRef;
 use spi::query::dispatcher::QueryDispatcher;
-use spi::query::session::IsiphoSessionCtxFactory;
+use spi::query::session::SessionCtxFactory;
 use spi::server::dbms::DatabaseManagerSystem;
 use spi::service::protocol::{Query, QueryHandle, QueryId};
 use spi::{AuthSnafu, Result};
@@ -84,9 +85,10 @@ where
 pub async fn make_cnosdbms(
     coord: CoordinatorRef,
     options: Options,
+    memory_pool: MemoryPoolRef,
 ) -> Result<impl DatabaseManagerSystem> {
     // TODO session config need load global system config
-    let session_factory = Arc::new(IsiphoSessionCtxFactory::default());
+    let session_factory = Arc::new(SessionCtxFactory::default());
     let parser = Arc::new(DefaultParser::default());
     let optimizer = Arc::new(CascadeOptimizerBuilder::default().build());
     // TODO wrap, and num_threads configurable
@@ -103,6 +105,7 @@ pub async fn make_cnosdbms(
         .with_optimizer(optimizer)
         .with_scheduler(scheduler)
         .with_queries_limit(queries_limit)
+        .with_memory_pool(memory_pool)
         .build()?;
 
     let mut builder = CnosdbmsBuilder::default();
@@ -133,6 +136,7 @@ mod tests {
     use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::record_batch::RecordBatch;
     use datafusion::arrow::util::pretty::pretty_format_batches;
+    use datafusion::execution::memory_pool::GreedyMemoryPool;
     use models::auth::user::UserInfo;
     use models::schema::DEFAULT_CATALOG;
     use spi::service::protocol::ContextBuilder;
@@ -181,7 +185,8 @@ mod tests {
     async fn test_simple_sql() {
         let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+        let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
             .await
             .unwrap();
 
@@ -238,7 +243,8 @@ mod tests {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
         let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+        let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
             .await
             .unwrap();
 
@@ -275,7 +281,8 @@ mod tests {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
         let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+        let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
             .await
             .unwrap();
 
@@ -311,7 +318,8 @@ mod tests {
     async fn test_create_external_csv_table() {
         let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+        let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
             .await
             .unwrap();
 
@@ -367,7 +375,8 @@ mod tests {
     async fn test_create_external_parquet_table() {
         let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+        let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
             .await
             .unwrap();
 
@@ -415,7 +424,8 @@ mod tests {
     async fn test_create_external_json_table() {
         let config = get_config("../config/config.toml");
         let opt = Options::from(&config);
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt)
+        let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
             .await
             .unwrap();
 

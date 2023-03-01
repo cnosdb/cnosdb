@@ -1,13 +1,14 @@
 #[cfg(test)]
 mod tests {
-
     use std::path::Path;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     use config::get_config;
+    use datafusion::execution::memory_pool::GreedyMemoryPool;
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
+    use metrics::metric_register::MetricsRegister;
     use models::schema::TenantOptions;
     use protos::kv_service::Meta;
     use protos::{kv_service, models_helper};
@@ -27,6 +28,7 @@ mod tests {
         global_config.cache.max_buffer_size = 128;
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
+        let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let meta_manager: MetaRef = rt.block_on(RemoteMetaManager::new(global_config.cluster));
         rt.block_on(meta_manager.admin_meta().add_data_node())
             .unwrap();
@@ -38,7 +40,15 @@ mod tests {
         rt.block_on(async {
             (
                 rt.clone(),
-                TsKv::open(meta_manager, opt, rt.clone()).await.unwrap(),
+                TsKv::open(
+                    meta_manager,
+                    opt,
+                    rt.clone(),
+                    memory,
+                    Arc::new(MetricsRegister::default()),
+                )
+                .await
+                .unwrap(),
             )
         })
     }
@@ -268,6 +278,7 @@ mod tests {
             async_func2().await;
         }
     }
+
     #[tokio::test]
     async fn compare() {
         let start = Instant::now();
