@@ -21,6 +21,7 @@ use spi::query::session::SessionCtx;
 use spi::Result;
 
 use super::optimizer::PhysicalOptimizer;
+use crate::extension::physical::transform_rule::expand::ExpandPlanner;
 use crate::extension::physical::transform_rule::table_writer::TableWriterPlanner;
 use crate::extension::physical::transform_rule::tag_scan::TagScanPlanner;
 
@@ -54,8 +55,11 @@ impl DefaultPhysicalPlanner {
 
 impl Default for DefaultPhysicalPlanner {
     fn default() -> Self {
-        let ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>> =
-            vec![Arc::new(TableWriterPlanner {}), Arc::new(TagScanPlanner {})];
+        let ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>> = vec![
+            Arc::new(TableWriterPlanner {}),
+            Arc::new(TagScanPlanner {}),
+            Arc::new(ExpandPlanner::new()),
+        ];
 
         // We need to take care of the rule ordering. They may influence each other.
         let ext_physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Sync + Send>> = vec![

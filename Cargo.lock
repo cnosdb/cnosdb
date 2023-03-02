@@ -1763,7 +1763,7 @@ dependencies = [
 [[package]]
 name = "datafusion"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=44f77425e4714293499bdbce03f069031159869b#44f77425e4714293499bdbce03f069031159869b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1809,7 +1809,7 @@ dependencies = [
 [[package]]
 name = "datafusion-common"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=44f77425e4714293499bdbce03f069031159869b#44f77425e4714293499bdbce03f069031159869b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "arrow",
  "chrono",
@@ -1822,7 +1822,7 @@ dependencies = [
 [[package]]
 name = "datafusion-expr"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=44f77425e4714293499bdbce03f069031159869b#44f77425e4714293499bdbce03f069031159869b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1834,7 +1834,7 @@ dependencies = [
 [[package]]
 name = "datafusion-optimizer"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=44f77425e4714293499bdbce03f069031159869b#44f77425e4714293499bdbce03f069031159869b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "arrow",
  "async-trait",
@@ -1850,7 +1850,7 @@ dependencies = [
 [[package]]
 name = "datafusion-physical-expr"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=44f77425e4714293499bdbce03f069031159869b#44f77425e4714293499bdbce03f069031159869b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1880,7 +1880,7 @@ dependencies = [
 [[package]]
 name = "datafusion-proto"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=44f77425e4714293499bdbce03f069031159869b#44f77425e4714293499bdbce03f069031159869b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "arrow",
  "chrono",
@@ -1897,7 +1897,7 @@ dependencies = [
 [[package]]
 name = "datafusion-row"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=44f77425e4714293499bdbce03f069031159869b#44f77425e4714293499bdbce03f069031159869b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "arrow",
  "datafusion-common",
@@ -1908,7 +1908,7 @@ dependencies = [
 [[package]]
 name = "datafusion-sql"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=44f77425e4714293499bdbce03f069031159869b#44f77425e4714293499bdbce03f069031159869b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "arrow-schema",
  "datafusion-common",

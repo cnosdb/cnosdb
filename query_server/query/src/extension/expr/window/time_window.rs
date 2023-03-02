@@ -11,7 +11,7 @@ use datafusion::physical_expr::functions::make_scalar_function;
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
-use super::TIME_WINDOW;
+use super::{TIME_WINDOW, WINDOW_END, WINDOW_START};
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
     let udf = new();
@@ -59,8 +59,8 @@ fn new() -> ScalarUDF {
     let return_type: ReturnTypeFunction = Arc::new(move |input_expr_types| {
         let bound_type = input_expr_types[0].clone();
         let return_type = DataType::Struct(vec![
-            Field::new("start", bound_type.clone(), false),
-            Field::new("end", bound_type, false),
+            Field::new(WINDOW_START, bound_type.clone(), false),
+            Field::new(WINDOW_END, bound_type, false),
         ]);
 
         Ok(Arc::new(return_type))
