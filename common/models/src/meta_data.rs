@@ -164,10 +164,19 @@ pub fn get_time_range(ts: i64, duration: i64) -> (i64, i64) {
     if duration <= 0 {
         (std::i64::MIN, std::i64::MAX)
     } else {
-        (
-            (ts / duration) * duration,
-            ((ts / duration) * duration).saturating_add(duration),
-        )
+        if ts >= 0 {
+            let floor = ts / duration;
+            (
+                floor * duration,
+                (floor * duration).saturating_add(duration),
+            )
+        } else {
+            let floor = (ts + 1) / duration;
+            (
+                (floor * duration).saturating_sub(duration),
+                floor * duration,
+            )
+        }
     }
 }
 
