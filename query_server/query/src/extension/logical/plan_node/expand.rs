@@ -61,7 +61,7 @@ impl ExpandNode {
 }
 
 impl Debug for ExpandNode {
-    /// For TopK, use explain format for the Debug format. Other types
+    /// For ExpandNode, use explain format for the Debug format. Other types
     /// of nodes may
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_for_explain(f)
@@ -103,6 +103,7 @@ impl UserDefinedLogicalNode for ExpandNode {
         write!(f, "Expand: [{projections}]")
     }
 
+    /// TODO [`PushDownProjection`] has no effect on this node
     fn from_template(
         &self,
         _exprs: &[Expr],

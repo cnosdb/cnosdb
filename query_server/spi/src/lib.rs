@@ -40,6 +40,16 @@ pub enum QueryError {
         source: CoordinatorError,
     },
 
+    #[snafu(display(
+        "Internal error: {}. This was likely caused by a bug in Cnosdb's \
+    code and we would welcome that you file an bug report in our issue tracker",
+        reason
+    ))]
+    #[error_code(code = 9998)]
+    Internal {
+        reason: String,
+    },
+
     Models {
         source: models::Error,
     },
@@ -386,6 +396,12 @@ pub enum QueryError {
     #[snafu(display("Invalid prom remote write requeset, error: {}", source))]
     InvalidRemoteWriteReq {
         source: GenericError,
+    },
+
+    #[snafu(display("Invalid TimeWindow parameter : {}", reason))]
+    #[error_code(code = 58)]
+    InvalidTimeWindowParam {
+        reason: String,
     },
 }
 

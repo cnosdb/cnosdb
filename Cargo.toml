@@ -53,8 +53,8 @@ dashmap = "5.2"
 derive_builder = "0.11"
 arrow-schema = { version = "32.0.0", features = ["serde"] }
 arrow-flight = { version = "32.0.0" }
-datafusion-proto = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "44f77425e4714293499bdbce03f069031159869b" }
-datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "44f77425e4714293499bdbce03f069031159869b" }
+datafusion-proto = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "10a2325d6260c5f0251cfb1187e022c6607c6ef5" }
+datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "10a2325d6260c5f0251cfb1187e022c6607c6ef5" }
 diff = "0.1.13"
 dirs = "4.0.0"
 env_logger = "0.9"

@@ -54,3 +54,12 @@ impl From<io::Error> for Error {
         }
     }
 }
+
+pub fn tuple_err<T, R, E>(value: (Result<T, E>, Result<R, E>)) -> Result<(T, R), E> {
+    match value {
+        (Ok(e), Ok(e1)) => Ok((e, e1)),
+        (Err(e), Ok(_)) => Err(e),
+        (Ok(_), Err(e1)) => Err(e1),
+        (Err(e), Err(_)) => Err(e),
+    }
+}
