@@ -113,7 +113,12 @@ pub enum WriteCommand {
 /******************* read command *************************/
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ReadCommand {
-    DataNodes(String),              //cluster
+    DataNodes(String), //cluster
+
+    BucketData(String, String, String), //cluser tenant db
+
+    DataNode(String, u64), //cluster id
+
     TenaneMetaData(String, String), // cluster tenant
 
     // cluster, role_name, tenant_name

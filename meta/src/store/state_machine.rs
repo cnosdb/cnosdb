@@ -129,7 +129,7 @@ pub struct StateMachine {
 }
 
 impl StateMachine {
-    pub fn new(db: Arc<sled::Db>) -> StateMachine {
+    pub(crate) fn new(db: Arc<sled::Db>) -> StateMachine {
         let sm = Self {
             db: db.clone(),
             data_tree: db.open_tree("data").expect("data open failed"),
@@ -404,6 +404,25 @@ impl StateMachine {
                         .collect();
 
                 serde_json::to_string(&(response, self.version())).unwrap()
+            }
+
+            ReadCommand::BucketData(cluster, tenant, schema) => {
+                let response: Vec<BucketInfo> = children_data::<BucketInfo>(
+                    &KeyPath::tenant_db_buckets(cluster, tenant, schema),
+                    self.db.clone(),
+                )
+                .into_values()
+                .collect();
+
+                serde_json::to_string(&(response, self.version())).unwrap()
+            }
+
+            ReadCommand::DataNode(cluster, id) => {
+                let path = KeyPath::data_node_id(cluster, *id);
+
+                let node = get_struct::<NodeInfo>(&path, self.db.clone());
+
+                CommonResp::Ok(node).to_string()
             }
 
             ReadCommand::TenaneMetaData(cluster, tenant) => TenaneMetaDataResp::new_from_data(
