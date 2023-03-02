@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crypto::digest::Digest;
 use crypto::md5::Md5;
 use serde::{Deserialize, Serialize};
@@ -19,6 +17,26 @@ pub struct FileInfo {
 pub struct PathFilesMeta {
     pub path: String,
     pub meta: Vec<FileInfo>,
+}
+
+impl From<PathFilesMeta> for protos::kv_service::GetVnodeFilesMetaResponse {
+    fn from(src: PathFilesMeta) -> Self {
+        let mut pb_file_infos = vec![];
+        for it in src.meta.iter() {
+            let info = protos::kv_service::FileInfo {
+                md5: it.md5.clone(),
+                name: it.name.clone(),
+                size: it.size,
+            };
+
+            pb_file_infos.push(info);
+        }
+
+        protos::kv_service::GetVnodeFilesMetaResponse {
+            path: src.path,
+            infos: pb_file_infos,
+        }
+    }
 }
 
 pub async fn get_files_meta(dir: &str) -> CoordinatorResult<PathFilesMeta> {
@@ -59,7 +77,6 @@ pub async fn get_file_info(name: &str) -> CoordinatorResult<FileInfo> {
 
 fn list_all_filenames(dir: impl AsRef<std::path::Path>) -> Vec<String> {
     let mut list = Vec::new();
-    let parent = dir.as_ref().to_string_lossy().to_string();
     for file_name in walkdir::WalkDir::new(dir)
         .min_depth(1)
         .max_depth(5)
@@ -83,10 +100,10 @@ fn list_all_filenames(dir: impl AsRef<std::path::Path>) -> Vec<String> {
 }
 
 mod test {
-    use crate::file_info::{get_files_meta, list_all_filenames};
-
     #[tokio::test]
     async fn test_list_filenames() {
+        use crate::file_info::{get_files_meta, list_all_filenames};
+
         let list = list_all_filenames(std::path::PathBuf::from("../common/".to_string()));
         print!("list_all_filenames: {:#?}", list);
 
@@ -100,7 +117,7 @@ mod test {
             .await
             .unwrap();
 
-        let file = tokio::fs::OpenOptions::new()
+        let _file = tokio::fs::OpenOptions::new()
             .create(true)
             .truncate(true)
             .read(true)

@@ -665,18 +665,20 @@ impl StateMachine {
         serde_json::to_string(&status).unwrap()
     }
 
-    fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> CommandResp {
-        for (_, value) in
-            children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone()).iter()
+    fn check_node_ip_address(&self, cluster: &str, node: &NodeInfo) {
+        for value in
+            children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone()).values()
         {
-            // Check whether the ip of the same cluster has been added
-            if value.id == node.id
-                || value.http_addr == node.http_addr
-                || value.tcp_addr == node.tcp_addr
+            if value.id != node.id
+                && (value.http_addr == node.http_addr || value.grpc_addr == node.grpc_addr)
             {
                 error!("ip address has been added, the added node is : {:?}", value);
             }
         }
+    }
+
+    fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> CommandResp {
+        self.check_node_ip_address(cluster, node);
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = serde_json::to_string(node).unwrap();
         let _ = self.insert(&key, &value);

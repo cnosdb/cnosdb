@@ -3,7 +3,6 @@ use std::io::IoSlice;
 use std::path::{Path, PathBuf};
 
 use models::{FieldId, Timestamp, ValueType};
-use protos::kv_service::FieldType;
 use snafu::{ResultExt, Snafu};
 use utils::{BkdrHasher, BloomFilter};
 

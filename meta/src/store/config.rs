@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::prelude::Read;
 use std::path::Path;
 
+use config::LogConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -28,8 +29,7 @@ pub struct Opt {
     pub snapshot_path: String,
     pub journal_path: String,
     pub snapshot_per_events: u32,
-    pub logs_path: String,
-    pub logs_level: String,
+    pub log: LogConfig,
     pub meta_init: MetaInit,
 }
 
@@ -72,11 +72,13 @@ mod test {
 id = 1
 http_addr = "127.0.0.1:21001"
 
-logs_level = "warn"
-logs_path = "/tmp/cnosdb/logs"
 snapshot_path = "/tmp/cnosdb/meta/snapshot"
 journal_path = "/tmp/cnosdb/meta/journal"
 snapshot_per_events = 500
+
+[log]
+logs_level = "warn"
+logs_path = "/tmp/cnosdb/logs"
 
 [meta_init]
 cluster_name = "cluster_xxx"

@@ -1,23 +1,17 @@
 use std::collections::HashMap;
-use std::io::SeekFrom;
-use std::marker::PhantomData;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use config::HintedOffConfig;
-use protos::models as fb_models;
-use snafu::prelude::*;
-use snafu::ResultExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::oneshot::{self, Sender};
+use tokio::sync::oneshot::Sender;
 use tokio::sync::RwLock;
 use tokio::time::{self, Duration};
-use trace::{debug, error, info, warn};
-use tskv::file_system::file_manager::{self, list_dir_names, FileManager};
+use trace::{debug, info};
+use tskv::byte_utils;
+use tskv::file_system::file_manager::list_dir_names;
 use tskv::file_system::queue::{DataBlock, Queue, QueueConfig};
-use tskv::file_system::{AsyncFile, FileCursor, IFile};
-use tskv::{byte_utils, file_utils};
 
 use crate::errors::*;
 use crate::writer::PointWriter;
@@ -216,7 +210,7 @@ impl HintedOffManager {
 }
 
 impl std::fmt::Debug for HintedOffManager {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Ok(())
     }
 }
@@ -290,6 +284,8 @@ mod test {
     #[tokio::test]
     #[ignore]
     async fn test_read_write_file() {
+        use std::io::SeekFrom;
+
         let file_name =
             "/Users/adminliu/github.com/cnosdb/cnosdb_main/coordinator/src/file.test".to_string();
         let mut file = tokio::fs::OpenOptions::new()

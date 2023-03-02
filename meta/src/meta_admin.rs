@@ -1,11 +1,11 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 use async_trait::async_trait;
 use config::ClusterConfig;
 use models::meta_data::*;
-use parking_lot::RwLock;
-use tokio::net::TcpStream;
+use tokio::sync::RwLock;
+use tonic::transport::{Channel, Endpoint};
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
@@ -27,8 +27,7 @@ pub trait AdminMeta: Send + Sync + Debug {
     fn heartbeat(&self); // update node status
 
     async fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo>;
-    async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream>;
-    fn put_node_conn(&self, node_id: u64, conn: TcpStream);
+    async fn get_node_conn(&self, node_id: u64) -> MetaResult<Channel>;
     async fn retain_id(&self, count: u32) -> MetaResult<u32>;
     async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()>;
 }
@@ -37,7 +36,7 @@ pub trait AdminMeta: Send + Sync + Debug {
 pub struct RemoteAdminMeta {
     config: ClusterConfig,
     data_nodes: RwLock<HashMap<u64, NodeInfo>>,
-    conn_map: RwLock<HashMap<u64, VecDeque<TcpStream>>>,
+    conn_map: RwLock<HashMap<u64, Channel>>,
 
     client: MetaHttpClient,
 }
@@ -58,7 +57,7 @@ impl RemoteAdminMeta {
         let req = command::ReadCommand::DataNodes(self.config.name.clone());
         let (resp, version) = self.client.read::<(Vec<NodeInfo>, u64)>(&req).await?;
         {
-            let mut nodes = self.data_nodes.write();
+            let mut nodes = self.data_nodes.write().await;
             for item in resp.iter() {
                 nodes.insert(item.id, item.clone());
             }
@@ -96,7 +95,7 @@ impl AdminMeta for RemoteAdminMeta {
         let node = NodeInfo {
             status: 0,
             id: self.config.node_id,
-            tcp_addr: self.config.tcp_listen_addr.clone(),
+            grpc_addr: self.config.grpc_listen_addr.clone(),
             http_addr: self.config.http_listen_addr.clone(),
         };
 
@@ -108,14 +107,14 @@ impl AdminMeta for RemoteAdminMeta {
             });
         }
 
-        self.data_nodes.write().insert(node.id, node);
+        self.data_nodes.write().await.insert(node.id, node);
 
         Ok(())
     }
 
     async fn data_nodes(&self) -> Vec<NodeInfo> {
         let mut nodes = vec![];
-        for (_, val) in self.data_nodes.read().iter() {
+        for (_, val) in self.data_nodes.read().await.iter() {
             nodes.push(val.clone())
         }
 
@@ -123,40 +122,36 @@ impl AdminMeta for RemoteAdminMeta {
     }
 
     async fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {
-        if let Some(val) = self.data_nodes.read().get(&id) {
+        if let Some(val) = self.data_nodes.read().await.get(&id) {
             return Ok(val.clone());
         }
 
         Err(MetaError::NotFoundNode { id })
     }
 
-    async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream> {
-        {
-            let mut write = self.conn_map.write();
-            let entry = write
-                .entry(node_id)
-                .or_insert_with(|| VecDeque::with_capacity(32));
-            if let Some(val) = entry.pop_front() {
-                return Ok(val);
-            }
+    async fn get_node_conn(&self, node_id: u64) -> MetaResult<Channel> {
+        if let Some(val) = self.conn_map.read().await.get(&node_id) {
+            return Ok(val.clone());
         }
 
         let info = self.node_info_by_id(node_id).await?;
-        let client = TcpStream::connect(info.tcp_addr).await?;
+        let connector =
+            Endpoint::from_shared(format!("http://{}", info.grpc_addr)).map_err(|err| {
+                MetaError::ConnectMetaError {
+                    msg: err.to_string(),
+                }
+            })?;
 
-        return Ok(client);
-    }
+        let channel = connector
+            .connect()
+            .await
+            .map_err(|err| MetaError::ConnectMetaError {
+                msg: err.to_string(),
+            })?;
 
-    fn put_node_conn(&self, node_id: u64, conn: TcpStream) {
-        let mut write = self.conn_map.write();
-        let entry = write
-            .entry(node_id)
-            .or_insert_with(|| VecDeque::with_capacity(32));
+        self.conn_map.write().await.insert(node_id, channel.clone());
 
-        // close too more idle connection
-        if entry.len() < 32 {
-            entry.push_back(conn);
-        }
+        return Ok(channel);
     }
 
     async fn retain_id(&self, count: u32) -> MetaResult<u32> {
@@ -186,11 +181,11 @@ impl AdminMeta for RemoteAdminMeta {
             if let Ok(node_id) = serde_json::from_str::<u64>(strs[3]) {
                 if entry.tye == command::ENTRY_LOG_TYPE_SET {
                     if let Ok(info) = serde_json::from_str::<NodeInfo>(&entry.val) {
-                        self.data_nodes.write().insert(node_id, info);
+                        self.data_nodes.write().await.insert(node_id, info);
                     }
                 } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
-                    self.data_nodes.write().remove(&node_id);
-                    self.conn_map.write().remove(&node_id);
+                    self.data_nodes.write().await.remove(&node_id);
+                    self.conn_map.write().await.remove(&node_id);
                 }
             }
         }

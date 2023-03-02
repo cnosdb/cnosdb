@@ -53,8 +53,8 @@ dashmap = "5.2"
 derive_builder = "0.11"
 arrow-schema = { version = "32.0.0", features = ["serde"] }
 arrow-flight = { version = "32.0.0" }
-datafusion-proto = { git = "https://github.com/apache/arrow-datafusion.git", rev = "e16650073320dec3b0517aba12c6ce738eb4a503" }
-datafusion = { git = "https://github.com/apache/arrow-datafusion.git", rev = "e16650073320dec3b0517aba12c6ce738eb4a503" }
+datafusion-proto = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "10a2325d6260c5f0251cfb1187e022c6607c6ef5" }
+datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "10a2325d6260c5f0251cfb1187e022c6607c6ef5" }
 diff = "0.1.13"
 dirs = "4.0.0"
 env_logger = "0.9"
@@ -113,6 +113,7 @@ tracing-futures = "0.2"
 tracing-subscriber = "0.3.16"
 tracing-appender = "0.2.2"
 tracing-error = "0.2.0"
+console-subscriber = "0.1.8"
 url = "2.2"
 uuid = { version = "1.1", features = ["v4"] }
 ureq = { version = "2.5.0", features = ["json", "charset"] }
@@ -121,7 +122,7 @@ walkdir = "2.3.2"
 zstd = "0.11.2"
 
 [workspace.package]
-version = "2.1.0"
+version = "2.2.0"
 edition = "2021"
 
 [profile.dev]

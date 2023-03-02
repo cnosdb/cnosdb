@@ -1,5 +1,4 @@
-use std::fmt::{Debug, Formatter};
-use std::thread::current;
+use std::fmt::Debug;
 
 use line_protocol::{parse_lines_to_points, FieldValue, Line};
 use metrics::label::Labels;
@@ -49,7 +48,7 @@ impl<'a> LPReporter<'a> {
 }
 
 impl<'a> Reporter for LPReporter<'a> {
-    fn start(&mut self, name: &'static str, description: &'static str, metrics_type: MetricType) {
+    fn start(&mut self, name: &'static str, _description: &'static str, metrics_type: MetricType) {
         if metrics_type.eq(&MetricType::UnTyped) {
             return;
         }
@@ -67,10 +66,10 @@ impl<'a> Reporter for LPReporter<'a> {
             MetricValue::U64Gauge(g) => FieldValue::U64(g),
             MetricValue::DurationGauge(g) => FieldValue::F64(g.as_secs_f64()),
             MetricValue::DurationCounter(c) => FieldValue::F64(c.as_secs_f64()),
-            MetricValue::U64Histogram(h) => {
+            MetricValue::U64Histogram(_h) => {
                 todo!()
             }
-            MetricValue::DurationHistogram(h) => {
+            MetricValue::DurationHistogram(_h) => {
                 todo!()
             }
             MetricValue::Null => return,
@@ -85,7 +84,7 @@ impl<'a> Reporter for LPReporter<'a> {
     }
 
     fn stop(&mut self) {
-        if let Some((lines, name, metrics_type)) = &self.current_measure {
+        if let Some((lines, _name, _metrics_type)) = &self.current_measure {
             let lines = lines.iter().map(|l| l.to_line()).collect::<Vec<_>>();
             let points = parse_lines_to_points(self.db, &lines);
             self.points_buffer.push(points);

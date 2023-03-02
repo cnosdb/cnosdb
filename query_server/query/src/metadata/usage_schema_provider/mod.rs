@@ -13,18 +13,20 @@ use models::schema::DEFAULT_CATALOG;
 use spi::Result;
 pub use vnode_disk_storage::USAGE_SCHEMA_VNODE_DISK_STORAGE;
 
-use crate::metadata::usage_schema_provider::data_in::DataIn;
-use crate::metadata::usage_schema_provider::data_out::DataOut;
-use crate::metadata::usage_schema_provider::queries::Queries;
+use crate::data_source::table_provider::tskv::ClusterTable;
+use crate::metadata::usage_schema_provider::coord_data_in::CoordDataIn;
+use crate::metadata::usage_schema_provider::coord_data_out::CoordDataOut;
+use crate::metadata::usage_schema_provider::user_queries::UserQueries;
+use crate::metadata::usage_schema_provider::user_writes::UserWrites;
+use crate::metadata::usage_schema_provider::vnode_cache_size::VnodeCacheSize;
 use crate::metadata::usage_schema_provider::vnode_disk_storage::VnodeDiskStorage;
-use crate::metadata::usage_schema_provider::writes::Writes;
-use crate::table::ClusterTable;
 
-mod data_in;
-mod data_out;
-mod queries;
+mod coord_data_in;
+mod coord_data_out;
+mod user_queries;
+mod user_writes;
+mod vnode_cache_size;
 mod vnode_disk_storage;
-mod writes;
 
 pub const USAGE_SCHEMA: &str = "usage_schema";
 
@@ -40,10 +42,11 @@ impl UsageSchemaProvider {
             table_factories: Default::default(),
         };
         provider.register_table_factory(Box::new(VnodeDiskStorage {}));
-        provider.register_table_factory(Box::new(DataIn {}));
-        provider.register_table_factory(Box::new(DataOut {}));
-        provider.register_table_factory(Box::new(Queries {}));
-        provider.register_table_factory(Box::new(Writes {}));
+        provider.register_table_factory(Box::new(VnodeCacheSize {}));
+        provider.register_table_factory(Box::new(CoordDataIn {}));
+        provider.register_table_factory(Box::new(CoordDataOut {}));
+        provider.register_table_factory(Box::new(UserQueries {}));
+        provider.register_table_factory(Box::new(UserWrites {}));
         provider
     }
 

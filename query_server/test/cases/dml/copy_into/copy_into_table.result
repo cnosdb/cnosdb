@@ -63,7 +63,7 @@ rows
 -- EXECUTE SQL: select count(time) from inner_parquet; --
 200 OK
 COUNT(inner_parquet.time)
-8192
+1800
 
 
 -- EXECUTE SQL: copy into inner_parquet from 'query_server/test/resource/csv/part-0.csv' file_format = (type = 'csv'); --

@@ -64,6 +64,7 @@ impl OptimizerRule for ImplicitTypeConversion {
                 projected_schema,
                 filters,
                 fetch,
+                agg_with_grouping,
             }) => {
                 let rewrite_filters = filters
                     .clone()
@@ -77,6 +78,7 @@ impl OptimizerRule for ImplicitTypeConversion {
                     projected_schema: projected_schema.clone(),
                     filters: rewrite_filters,
                     fetch: *fetch,
+                    agg_with_grouping: agg_with_grouping.clone(),
                 })))
             }
             LogicalPlan::Projection { .. }

@@ -214,6 +214,11 @@ impl BlockMeta {
     }
 
     #[inline(always)]
+    pub fn time_range(&self) -> TimeRange {
+        (self.min_ts, self.max_ts).into()
+    }
+
+    #[inline(always)]
     pub fn count(&self) -> u32 {
         self.count
     }

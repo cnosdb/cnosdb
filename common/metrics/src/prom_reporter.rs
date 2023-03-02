@@ -170,6 +170,9 @@ impl<'a> Reporter for PromReporter<'a> {
 
     fn stop(&mut self) {
         if let Some(family) = self.metric.take() {
+            if family.get_metric().is_empty() {
+                return;
+            }
             match self.encoder.encode(&[family], self.buffer) {
                 Ok(_) => {}
                 Err(e) => error!(%e, "error encoding metric family"),

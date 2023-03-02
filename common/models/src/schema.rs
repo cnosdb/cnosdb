@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::codec::Encoding;
 use crate::oid::{Identifier, Oid};
-use crate::{ColumnId, SchemaId, ValueType};
+use crate::{ColumnId, Error, SchemaId, ValueType};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
@@ -368,6 +368,20 @@ impl TableColumn {
     pub fn nullable(&self) -> bool {
         // The time column cannot be empty
         !matches!(self.column_type, ColumnType::Time)
+    }
+
+    pub fn encode(&self) -> crate::errors::Result<Vec<u8>> {
+        let buf = bincode::serialize(&self)
+            .map_err(|e| Error::InvalidSerdeMessage { err: e.to_string() })?;
+
+        Ok(buf)
+    }
+
+    pub fn decode(buf: &[u8]) -> crate::errors::Result<Self> {
+        let column = bincode::deserialize::<TableColumn>(buf)
+            .map_err(|e| Error::InvalidSerdeMessage { err: e.to_string() })?;
+
+        Ok(column)
     }
 }
 

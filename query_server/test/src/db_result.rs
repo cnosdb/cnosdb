@@ -8,6 +8,7 @@ pub struct DBResult {
     pub response: String,
     pub is_sorted: bool,
     pub is_ok: bool,
+    pub is_line_protocol: bool,
 }
 
 impl DBResult {
@@ -21,6 +22,7 @@ impl DBResult {
         let mut resp_buf = String::with_capacity(256);
         let mut is_ok = true;
         let mut is_sorted = false;
+        let mut is_line_protocol = false;
 
         for line in lines.lines() {
             if line.trim().is_empty() && parsing {
@@ -30,6 +32,7 @@ impl DBResult {
                     response: resp_buf.trim_end().to_string(),
                     is_ok,
                     is_sorted,
+                    is_line_protocol,
                 });
 
                 parsing = false;
@@ -54,6 +57,7 @@ impl DBResult {
                     parsing = true;
                     parsing_header = false;
                     parsing_line_protocol = true;
+                    is_line_protocol = true;
                 }
             } else if parsing_line_protocol {
                 if line.starts_with("-- LINE PROTOCOL END") {
@@ -78,13 +82,22 @@ impl DBResult {
 
 impl Display for DBResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "-- QUERY: {} --", &self.request)?;
-        if self.is_sorted {
-            writeln!(f, "-- AFTER_SORT --")?;
+        if self.is_line_protocol {
+            writeln!(f, "-- WRITE LINE PROTOCOL --")?;
+            writeln!(f, "{}", self.request)?;
+            writeln!(f, "-- LINE PROTOCOL END --")?;
+        } else {
+            writeln!(f, "-- EXECUTE SQL: {} --", self.request)?;
+            if self.is_sorted {
+                writeln!(f, "-- AFTER_SORT --")?;
+            }
         }
-        writeln!(f, "{}", &self.response)?;
-        if !self.is_ok {
+
+        if self.is_ok {
+            writeln!(f, "{}\n", self.response)?;
+        } else {
             writeln!(f, "-- ERROR: --")?;
+            writeln!(f, "{}\n", self.response)?;
         }
         Ok(())
     }

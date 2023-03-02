@@ -85,10 +85,10 @@ use spi::{QueryError, Result};
 use trace::{debug, warn};
 use url::Url;
 
+use crate::data_source::table_provider::tskv::ClusterTable;
 use crate::metadata::{ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
 use crate::sql::logical::planner::TableWriteExt;
 use crate::sql::parser::{merge_object_name, normalize_ident, normalize_sql_object_name};
-use crate::table::ClusterTable;
 
 /// CnosDB SQL query planner
 pub struct SqlPlaner<'a, S: ContextProviderExtension> {

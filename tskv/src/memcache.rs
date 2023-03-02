@@ -1,17 +1,11 @@
-use std::borrow::BorrowMut;
-use std::cmp::Ordering as CmpOrdering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Display;
-use std::iter::{FromIterator, Peekable};
+use std::iter::FromIterator;
 use std::mem::{size_of, size_of_val};
 use std::ops::Index;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use flatbuffers::{ForwardsUOffset, Push, Vector};
-use futures::future::ok;
-use libc::time;
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
 use models::schema::{TableColumn, TskvTableSchema};
@@ -19,10 +13,9 @@ use models::utils::{split_id, unite_id};
 use models::{
     utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TableId, Timestamp, ValueType,
 };
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 use protos::models as fb_models;
-use protos::models::{Field, FieldType, Point};
-use snafu::OptionExt;
+use protos::models::Point;
 use trace::{error, info, warn};
 
 use crate::error::Result;
@@ -202,11 +195,23 @@ pub struct RowGroup {
 
 #[derive(Debug)]
 pub struct SeriesData {
+    pub series_id: SeriesId,
     pub range: TimeRange,
     pub groups: Vec<RowGroup>,
 }
 
 impl SeriesData {
+    fn new(series_id: SeriesId) -> Self {
+        Self {
+            series_id,
+            range: TimeRange {
+                min_ts: i64::MAX,
+                max_ts: i64::MIN,
+            },
+            groups: Vec::with_capacity(4),
+        }
+    }
+
     pub fn write(&mut self, mut group: RowGroup) {
         self.range.merge(&group.range);
 
@@ -276,8 +281,8 @@ impl SeriesData {
         column_id: ColumnId,
         mut time_predicate: impl FnMut(Timestamp) -> bool,
         mut value_predicate: impl FnMut(&FieldVal) -> bool,
-    ) -> Vec<DataType> {
-        let mut res = Vec::new();
+        mut handle_data: impl FnMut(DataType),
+    ) {
         for group in self.groups.iter() {
             let field_index = group.schema.fields_id();
             let index = match field_index.get(&column_id) {
@@ -291,12 +296,25 @@ impl SeriesData {
                 .for_each(|row| {
                     if let Some(Some(field)) = row.fields.get(*index) {
                         if value_predicate(field) {
-                            res.push(field.data_value(row.ts));
+                            handle_data(field.data_value(row.ts))
                         }
                     }
                 });
         }
-        res
+    }
+
+    pub fn read_timestamps(
+        &self,
+        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        mut handle_data: impl FnMut(Timestamp),
+    ) {
+        for group in self.groups.iter() {
+            group
+                .rows
+                .iter()
+                .filter(|row| time_predicate(row.ts))
+                .for_each(|row| handle_data(row.ts));
+        }
     }
 
     pub fn flat_groups(&self) -> Vec<(SchemaId, Arc<TskvTableSchema>, &Vec<RowData>)> {
@@ -304,18 +322,6 @@ impl SeriesData {
             .iter()
             .map(|g| (g.schema.schema_id, g.schema.clone(), &g.rows))
             .collect()
-    }
-}
-
-impl Default for SeriesData {
-    fn default() -> Self {
-        Self {
-            range: TimeRange {
-                min_ts: i64::MAX,
-                max_ts: i64::MIN,
-            },
-            groups: Vec::with_capacity(4),
-        }
     }
 }
 
@@ -373,28 +379,46 @@ impl MemCache {
         let entry = self.partions[index]
             .write()
             .entry(sid)
-            .or_insert_with(|| Arc::new(RwLock::new(SeriesData::default())))
+            .or_insert_with(|| Arc::new(RwLock::new(SeriesData::new(sid))))
             .clone();
 
         entry.write().write(group);
         Ok(())
     }
 
-    pub fn get_data(
+    pub fn read_field_data(
         &self,
         field_id: FieldId,
         time_predicate: impl FnMut(Timestamp) -> bool,
         value_predicate: impl FnMut(&FieldVal) -> bool,
-    ) -> Vec<DataType> {
-        let (field_id, sid) = split_id(field_id);
+        handle_data: impl FnMut(DataType),
+    ) {
+        let (column_id, sid) = split_id(field_id);
         let index = (sid as usize) % self.part_count;
         let part = self.partions[index].read();
 
-        match part.get(&sid) {
-            Some(series) => series
+        if let Some(series) = part.get(&sid) {
+            series
                 .read()
-                .read_data(field_id, time_predicate, value_predicate),
-            None => Vec::new(),
+                .read_data(column_id, time_predicate, value_predicate, handle_data)
+        }
+    }
+
+    pub fn read_series_timestamps(
+        &self,
+        series_ids: &[SeriesId],
+        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        mut handle_data: impl FnMut(Timestamp),
+    ) {
+        for sid in series_ids.iter() {
+            let index = (*sid as usize) % self.part_count;
+            let part = self.partions[index].read();
+
+            if let Some(series) = part.get(sid) {
+                series
+                    .read()
+                    .read_timestamps(&mut time_predicate, &mut handle_data);
+            }
         }
     }
 
@@ -573,7 +597,7 @@ pub(crate) mod test {
     ) {
         let mut rows = Vec::new();
         let mut size: usize = schema.size();
-        for ts in time_range.0..time_range.1 + 1 {
+        for ts in time_range.0..=time_range.1 {
             let mut fields = Vec::new();
             for _ in 0..schema.columns().len() {
                 size += size_of::<Option<FieldVal>>();

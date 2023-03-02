@@ -47,7 +47,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Config {
     let mut file = match File::open(path) {
         Ok(file) => file,
         Err(err) => panic!(
-            "Failed to open configurtion file '{}': {}",
+            "Failed to open configurtion file '{}': {:?}",
             path.display(),
             err
         ),
@@ -55,7 +55,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Config {
     let mut content = String::new();
     if let Err(err) = file.read_to_string(&mut content) {
         panic!(
-            "Failed to read configurtion file '{}': {}",
+            "Failed to read configurtion file '{}': {:?}",
             path.display(),
             err
         );
@@ -63,7 +63,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Config {
     let mut config: Config = match toml::from_str(&content) {
         Ok(config) => config,
         Err(err) => panic!(
-            "Failed to parse configurtion file '{}': {}",
+            "Failed to parse configurtion file '{}': {:?}",
             path.display(),
             err
         ),
@@ -85,7 +85,7 @@ pub fn default_config() -> Config {
 
     match toml::from_str(DEFAULT_CONFIG) {
         Ok(config) => config,
-        Err(err) => panic!("Failed to get default configurtion : {}", err),
+        Err(err) => panic!("Failed to get default configurtion: {:?}", err),
     }
 }
 
@@ -340,11 +340,17 @@ impl CacheConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TokioTrace {
+    pub addr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LogConfig {
     #[serde(default = "LogConfig::default_level")]
     pub level: String,
     #[serde(default = "LogConfig::default_path")]
     pub path: String,
+    pub tokio_trace: Option<TokioTrace>,
 }
 
 impl LogConfig {
@@ -402,8 +408,6 @@ pub struct ClusterConfig {
     pub http_listen_addr: String,
     #[serde(default = "ClusterConfig::default_grpc_listen_addr")]
     pub grpc_listen_addr: String,
-    #[serde(default = "ClusterConfig::default_tcp_listen_addr")]
-    pub tcp_listen_addr: String,
     #[serde(default = "ClusterConfig::default_flight_rpc_listen_addr")]
     pub flight_rpc_listen_addr: String,
     #[serde(default = "ClusterConfig::default_store_metrics")]
@@ -431,10 +435,6 @@ impl ClusterConfig {
         "127.0.0.1:31008".to_string()
     }
 
-    fn default_tcp_listen_addr() -> String {
-        "127.0.0.1:31009".to_string()
-    }
-
     fn default_flight_rpc_listen_addr() -> String {
         "127.0.0.1:31006".to_string()
     }
@@ -460,10 +460,6 @@ impl ClusterConfig {
 
         if let Ok(val) = std::env::var("CNOSDB_grpc_listen_addr") {
             self.grpc_listen_addr = val;
-        }
-
-        if let Ok(val) = std::env::var("CNOSDB_tcp_listen_addr") {
-            self.tcp_listen_addr = val;
         }
 
         if let Ok(val) = std::env::var("CNOSDB_flight_rpc_listen_addr") {
@@ -603,7 +599,6 @@ tenant = ''
 flight_rpc_listen_addr = '127.0.0.1:31006'
 http_listen_addr = '127.0.0.1:31007'
 grpc_listen_addr = '127.0.0.1:31008'
-tcp_listen_addr = '127.0.0.1:31009'
 
 [hinted_off]
 enable = true

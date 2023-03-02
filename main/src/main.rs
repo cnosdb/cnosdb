@@ -21,7 +21,6 @@ mod report;
 mod rpc;
 pub mod server;
 mod signal;
-mod tcp;
 
 static VERSION: Lazy<String> = Lazy::new(|| {
     format!(
@@ -90,7 +89,12 @@ fn main() -> Result<(), std::io::Error> {
     let cli = Cli::parse();
     let config = parse_config(&cli);
 
-    let _ = init_global_tracing(&config.log.path, "tsdb.log", &config.log.level);
+    let _ = init_global_tracing(
+        &config.log.path,
+        &config.log.level,
+        "tsdb.log",
+        config.log.tokio_trace.as_ref(),
+    );
     init_tskv_metrics_recorder();
 
     let runtime = Arc::new(init_runtime(Some(cli.cpu))?);

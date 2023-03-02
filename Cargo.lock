@@ -1162,7 +1162,7 @@ dependencies = [
 
 [[package]]
 name = "client"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "clap 3.2.23",
  "datafusion",
@@ -1243,10 +1243,46 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "serde",
  "toml",
+]
+
+[[package]]
+name = "console-api"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e57ff02e8ad8e06ab9731d5dc72dc23bef9200778eae1a89d555d8c42e5d4a86"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
+ "tracing-core",
+]
+
+[[package]]
+name = "console-subscriber"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22a3a81dfaf6b66bce5d159eddae701e3a002f194d378cbf7be5f053c281d9be"
+dependencies = [
+ "console-api",
+ "crossbeam-channel",
+ "crossbeam-utils",
+ "futures",
+ "hdrhistogram",
+ "humantime",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "thread_local",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+ "tracing-core",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1325,7 +1361,7 @@ dependencies = [
 
 [[package]]
 name = "coordinator"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -1349,6 +1385,8 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "tonic",
+ "tower",
  "trace",
  "tracing",
  "tracing-futures",
@@ -1724,8 +1762,8 @@ dependencies = [
 
 [[package]]
 name = "datafusion"
-version = "17.0.0"
-source = "git+https://github.com/apache/arrow-datafusion.git?rev=e16650073320dec3b0517aba12c6ce738eb4a503#e16650073320dec3b0517aba12c6ce738eb4a503"
+version = "18.0.0"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1770,8 +1808,8 @@ dependencies = [
 
 [[package]]
 name = "datafusion-common"
-version = "17.0.0"
-source = "git+https://github.com/apache/arrow-datafusion.git?rev=e16650073320dec3b0517aba12c6ce738eb4a503#e16650073320dec3b0517aba12c6ce738eb4a503"
+version = "18.0.0"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "arrow",
  "chrono",
@@ -1783,8 +1821,8 @@ dependencies = [
 
 [[package]]
 name = "datafusion-expr"
-version = "17.0.0"
-source = "git+https://github.com/apache/arrow-datafusion.git?rev=e16650073320dec3b0517aba12c6ce738eb4a503#e16650073320dec3b0517aba12c6ce738eb4a503"
+version = "18.0.0"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1795,8 +1833,8 @@ dependencies = [
 
 [[package]]
 name = "datafusion-optimizer"
-version = "17.0.0"
-source = "git+https://github.com/apache/arrow-datafusion.git?rev=e16650073320dec3b0517aba12c6ce738eb4a503#e16650073320dec3b0517aba12c6ce738eb4a503"
+version = "18.0.0"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "arrow",
  "async-trait",
@@ -1811,8 +1849,8 @@ dependencies = [
 
 [[package]]
 name = "datafusion-physical-expr"
-version = "17.0.0"
-source = "git+https://github.com/apache/arrow-datafusion.git?rev=e16650073320dec3b0517aba12c6ce738eb4a503#e16650073320dec3b0517aba12c6ce738eb4a503"
+version = "18.0.0"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1841,8 +1879,8 @@ dependencies = [
 
 [[package]]
 name = "datafusion-proto"
-version = "17.0.0"
-source = "git+https://github.com/apache/arrow-datafusion.git?rev=e16650073320dec3b0517aba12c6ce738eb4a503#e16650073320dec3b0517aba12c6ce738eb4a503"
+version = "18.0.0"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "arrow",
  "chrono",
@@ -1858,8 +1896,8 @@ dependencies = [
 
 [[package]]
 name = "datafusion-row"
-version = "17.0.0"
-source = "git+https://github.com/apache/arrow-datafusion.git?rev=e16650073320dec3b0517aba12c6ce738eb4a503#e16650073320dec3b0517aba12c6ce738eb4a503"
+version = "18.0.0"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "arrow",
  "datafusion-common",
@@ -1869,8 +1907,8 @@ dependencies = [
 
 [[package]]
 name = "datafusion-sql"
-version = "17.0.0"
-source = "git+https://github.com/apache/arrow-datafusion.git?rev=e16650073320dec3b0517aba12c6ce738eb4a503#e16650073320dec3b0517aba12c6ce738eb4a503"
+version = "18.0.0"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
 dependencies = [
  "arrow-schema",
  "datafusion-common",
@@ -2025,7 +2063,7 @@ checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "e2e_test"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "actix-rt",
  "flatbuffers 22.12.6",
@@ -2112,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "error_code"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "error_code_macro",
  "snafu",
@@ -2522,6 +2560,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "hdrhistogram"
+version = "7.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f19b9f54f7c7f55e31401bb647626ce0cf0f67b0004982ce815b3ee72a02aa8"
+dependencies = [
+ "base64 0.13.1",
+ "byteorder",
+ "flate2",
+ "nom",
+ "num-traits",
+]
+
+[[package]]
 name = "headers"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2668,7 +2719,7 @@ dependencies = [
 
 [[package]]
 name = "http_protocol"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "models",
  "reqwest",
@@ -3085,7 +3136,7 @@ dependencies = [
 
 [[package]]
 name = "license"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "base64 0.12.3",
  "chrono",
@@ -3110,7 +3161,7 @@ dependencies = [
 
 [[package]]
 name = "line_protocol"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "flatbuffers 22.12.6",
  "protos",
@@ -3233,7 +3284,7 @@ dependencies = [
 
 [[package]]
 name = "main"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "actix-web",
  "arrow-flight",
@@ -3242,6 +3293,7 @@ dependencies = [
  "backoff",
  "backtrace",
  "base64 0.13.1",
+ "bincode",
  "byteorder",
  "chrono",
  "clap 3.2.23",
@@ -3324,7 +3376,7 @@ dependencies = [
 
 [[package]]
 name = "mem_allocator"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "chrono",
  "libc",
@@ -3377,14 +3429,14 @@ dependencies = [
 
 [[package]]
 name = "memory_pool"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "datafusion",
 ]
 
 [[package]]
 name = "meta"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3422,7 +3474,7 @@ dependencies = [
 
 [[package]]
 name = "metrics"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "chrono",
  "once_cell",
@@ -3483,7 +3535,7 @@ dependencies = [
 
 [[package]]
 name = "models"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "arrow-schema",
  "async-trait",
@@ -4419,7 +4471,7 @@ dependencies = [
 
 [[package]]
 name = "protos"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "chrono",
  "flatbuffers 22.12.6",
@@ -4466,7 +4518,7 @@ dependencies = [
 
 [[package]]
 name = "query"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -5404,7 +5456,7 @@ dependencies = [
 
 [[package]]
 name = "spi"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "async-trait",
  "bytes 1.4.0",
@@ -5690,7 +5742,7 @@ dependencies = [
 
 [[package]]
 name = "test"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "clap 3.2.23",
  "diff",
@@ -6130,9 +6182,11 @@ checksum = "b6bc1c9ce2b5135ac7f93c72918fc37feb872bdc6a5533a8b85eb4b86bfdae52"
 
 [[package]]
 name = "trace"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "color-eyre",
+ "config",
+ "console-subscriber",
  "once_cell",
  "tracing",
  "tracing-appender",
@@ -6249,7 +6303,7 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 
 [[package]]
 name = "tskv"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -6465,7 +6519,7 @@ checksum = "936e4b492acfd135421d8dca4b1aa80a7bfc26e702ef3af710e0752684df5372"
 
 [[package]]
 name = "utils"
-version = "2.1.0"
+version = "2.2.0"
 
 [[package]]
 name = "uuid"

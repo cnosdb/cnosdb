@@ -12,6 +12,7 @@ use datafusion::optimizer::extract_equijoin_predicate::ExtractEquijoinPredicate;
 use datafusion::optimizer::filter_null_join_keys::FilterNullJoinKeys;
 use datafusion::optimizer::inline_table_scan::InlineTableScan;
 use datafusion::optimizer::propagate_empty_relation::PropagateEmptyRelation;
+use datafusion::optimizer::push_down_aggregation::PushDownAggregation;
 use datafusion::optimizer::push_down_filter::PushDownFilter;
 use datafusion::optimizer::push_down_limit::PushDownLimit;
 use datafusion::optimizer::rewrite_disjunctive_predicate::RewriteDisjunctivePredicate;
@@ -29,6 +30,7 @@ use crate::extension::logical::optimizer_rule::push_down_projection::PushDownPro
 use crate::extension::logical::optimizer_rule::reject_cross_join::RejectCrossJoin;
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
 use crate::extension::logical::optimizer_rule::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
+use crate::extension::logical::optimizer_rule::transform_time_window::TransformTimeWindowRule;
 use crate::extension::logical::optimizer_rule::transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule;
 
 pub trait LogicalOptimizer: Send + Sync {
@@ -81,6 +83,7 @@ impl Default for DefaultLogicalOptimizer {
             Arc::new(PushDownLimit::new()),
             Arc::new(PushDownFilter::new()),
             Arc::new(SingleDistinctToGroupBy::new()),
+            Arc::new(PushDownAggregation::new()),
             // The previous optimizations added expressions and projections,
             // that might benefit from the following rules
             Arc::new(SimplifyExpressions::new()),
@@ -92,6 +95,7 @@ impl Default for DefaultLogicalOptimizer {
             Arc::new(RewriteTagScan {}),
             Arc::new(TransformBottomFuncToTopkNodeRule {}),
             Arc::new(TransformTopkFuncToTopkNodeRule {}),
+            Arc::new(TransformTimeWindowRule),
         ];
 
         Self { rules }
