@@ -13,10 +13,11 @@ use futures::StreamExt;
 use spi::Result;
 use trace::warn;
 
+use self::table_provider::tskv::ClusterTable;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
-use crate::table::ClusterTable;
 
 pub mod sink;
+pub mod table_provider;
 pub mod write_exec_ext;
 
 #[async_trait]

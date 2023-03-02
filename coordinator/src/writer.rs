@@ -1,30 +1,25 @@
-use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::time::Duration;
 
-use async_channel as channel;
 use flatbuffers::FlatBufferBuilder;
-use futures::future::ok;
-//use std::net::{TcpListener, TcpStream};
-use meta::meta_manager::RemoteMetaManager;
 use meta::{MetaClientRef, MetaRef};
-use models::auth::user::{ROOT, ROOT_PWD};
 use models::meta_data::*;
 use models::utils::now_timestamp;
-use models::RwLockRef;
-use parking_lot::{RwLock, RwLockReadGuard};
-use protos::kv_service::{Meta, WritePointsRequest, WritePointsResponse};
+use protos::kv_service::tskv_service_client::TskvServiceClient;
+use protos::kv_service::{Meta, WritePointsRequest, WriteVnodeRequest};
 use protos::models as fb_models;
 use protos::models::{FieldBuilder, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::ResultExt;
-use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
+use tonic::transport::Channel;
+use tower::timeout::Timeout;
 use trace::{debug, info};
 use tskv::engine::EngineRef;
 
-use crate::command::*;
 use crate::errors::*;
-use crate::hh_queue::{HintedOffBlock, HintedOffManager, HintedOffWriteReq};
+use crate::hh_queue::{HintedOffBlock, HintedOffWriteReq};
+use crate::{status_response_to_result, WriteRequest};
 
 pub struct VnodePoints<'a> {
     db: String,
@@ -101,6 +96,7 @@ impl VnodePoints<'_> {
 }
 
 pub struct VnodeMapping<'a> {
+    // replication id -> VnodePoints
     pub points: HashMap<u32, VnodePoints<'a>>,
     pub sets: HashMap<u32, ReplicationSet>,
 }
@@ -197,7 +193,7 @@ impl PointWriter {
 
         let mut requests = vec![];
         let now = tokio::time::Instant::now();
-        for (id, points) in mapping.points.iter_mut() {
+        for (_id, points) in mapping.points.iter_mut() {
             points.finish();
 
             for vnode in points.repl_set.vnodes.iter() {
@@ -285,32 +281,22 @@ impl PointWriter {
         tenant: &str,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
-        let mut conn = self
+        let channel = self
             .meta_manager
             .admin_meta()
             .get_node_conn(node_id)
             .await?;
+        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
+        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
 
-        let req_cmd = WriteVnodeRequest {
+        let cmd = tonic::Request::new(WriteVnodeRequest {
             vnode_id,
             tenant: tenant.to_string(),
             data,
-        };
-        send_command(&mut conn, &CoordinatorTcpCmd::WriteVnodePointCmd(req_cmd)).await?;
+        });
 
-        let rsp_cmd = recv_command(&mut conn).await?;
-        if let CoordinatorTcpCmd::StatusResponseCmd(msg) = rsp_cmd {
-            self.meta_manager.admin_meta().put_node_conn(node_id, conn);
-            if msg.code == SUCCESS_RESPONSE_CODE {
-                Ok(())
-            } else {
-                Err(CoordinatorError::WriteVnode {
-                    msg: format!("code: {}, msg: {}", msg.code, msg.data),
-                })
-            }
-        } else {
-            Err(CoordinatorError::UnExpectResponse)
-        }
+        let response = client.write_vnode_points(cmd).await?.into_inner();
+        status_response_to_result(&response)
     }
 
     async fn write_to_local_node(

@@ -432,6 +432,7 @@ mod test {
     use datafusion::execution::memory_pool::GreedyMemoryPool;
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
+    use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::codec::Encoding;
     use models::schema::{
@@ -841,7 +842,13 @@ mod test {
             .unwrap();
         let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let engine = rt
-            .block_on(TsKv::open(meta, opt, rt.clone(), memory_pool))
+            .block_on(TsKv::open(
+                meta,
+                opt,
+                rt.clone(),
+                memory_pool,
+                Arc::new(MetricsRegister::default()),
+            ))
             .unwrap();
 
         // Create database and ts_family

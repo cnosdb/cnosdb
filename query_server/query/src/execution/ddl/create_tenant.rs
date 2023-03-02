@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
+use models::schema::DatabaseSchema;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateTenant;
 use spi::Result;
 use trace::debug;
 
 use crate::execution::ddl::DDLDefinitionTask;
+use crate::metadata::USAGE_SCHEMA;
 
 pub struct CreateTenantTask {
     stmt: CreateTenant,
@@ -43,8 +45,11 @@ impl DDLDefinitionTask for CreateTenantTask {
                 // name: String
                 // options: TenantOptions
                 debug!("Create tenant {} with options [{}]", name, options);
-                tenant_manager
+                let meta_client = tenant_manager
                     .create_tenant(name.to_string(), options.clone())
+                    .await?;
+                meta_client
+                    .create_db(DatabaseSchema::new(name, USAGE_SCHEMA))
                     .await?;
 
                 Ok(Output::Nil(()))

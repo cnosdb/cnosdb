@@ -113,7 +113,7 @@ where
 #[cfg(feature = "test")]
 mod test {
     use chrono::prelude::*;
-    use flatbuffers::{self, ForwardsUOffset, Vector, WIPOffset};
+    use flatbuffers::{self, ForwardsUOffset, InvalidFlatbuffer, Vector, WIPOffset};
 
     use crate::models::{self, *};
 
@@ -440,5 +440,17 @@ mod test {
                 points: Some(points),
             },
         )
+    }
+
+    pub fn get_db_from_fb_points(fb_points: Points) -> String {
+        unsafe {
+            let db = fb_points.db().unwrap().bytes().to_vec();
+            String::from_utf8_unchecked(db)
+        }
+    }
+
+    pub fn get_db_from_flatbuffers(points: &[u8]) -> Result<String, InvalidFlatbuffer> {
+        let fb_points = flatbuffers::root::<Points>(points)?;
+        Ok(get_db_from_fb_points(fb_points))
     }
 }

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
-use coordinator::command;
 use meta::error::MetaError;
+use protos::kv_service::admin_command_request::Command::DropTab;
+use protos::kv_service::{AdminCommandRequest, DropTableRequest};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DatabaseObjectType, DropDatabaseObject};
@@ -43,18 +44,14 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                         tenant: tenant.to_string(),
                     })?;
 
-                let req = command::AdminStatementRequest {
+                let req = AdminCommandRequest {
                     tenant: tenant.to_string(),
-                    stmt: command::AdminStatementType::DropTable {
+                    command: Some(DropTab(DropTableRequest {
                         db: object_name.database().to_string(),
                         table: object_name.table().to_string(),
-                    },
+                    })),
                 };
-
-                query_state_machine
-                    .coord
-                    .exec_admin_stat_on_all_node(req)
-                    .await?;
+                query_state_machine.coord.broadcast_command(req).await?;
 
                 client
                     .drop_table(object_name.database(), object_name.table())

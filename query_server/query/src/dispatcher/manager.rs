@@ -5,6 +5,7 @@ use coordinator::service::CoordinatorRef;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use models::oid::Oid;
+use models::schema::DEFAULT_CATALOG;
 use spi::query::ast::ExtStatement;
 use spi::query::dispatcher::{QueryDispatcher, QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecutionFactory, QueryStateMachine};
@@ -79,12 +80,22 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 
         let mut func_manager = SimpleFunctionMetadataManager::default();
         load_all_functions(&mut func_manager)?;
+
+        let default_catalog_meta_client = self
+            .coord
+            .tenant_meta(DEFAULT_CATALOG)
+            .await
+            .ok_or_else(|| MetaError::TenantNotFound {
+                tenant: DEFAULT_CATALOG.to_string(),
+            })?;
+
         let scheme_provider = MetadataProvider::new(
             self.coord.clone(),
             meta_client,
             func_manager,
             self.query_tracker.clone(),
             session.clone(),
+            default_catalog_meta_client,
         );
 
         let logical_planner = DefaultLogicalPlanner::new(&scheme_provider);

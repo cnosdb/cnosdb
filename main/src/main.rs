@@ -6,6 +6,8 @@ use clap::{Parser, Subcommand};
 use mem_allocator::Jemalloc;
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
+use metrics::metric_register::MetricsRegister;
+use models::meta_data::NodeInfo;
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
 use trace::{info, init_global_tracing};
@@ -19,7 +21,6 @@ mod report;
 mod rpc;
 pub mod server;
 mod signal;
-mod tcp;
 
 static VERSION: Lazy<String> = Lazy::new(|| {
     format!(
@@ -88,7 +89,12 @@ fn main() -> Result<(), std::io::Error> {
     let cli = Cli::parse();
     let config = parse_config(&cli);
 
-    let _ = init_global_tracing(&config.log.path, "tsdb.log", &config.log.level);
+    let _ = init_global_tracing(
+        &config.log.path,
+        &config.log.level,
+        "tsdb.log",
+        config.log.tokio_trace.as_ref(),
+    );
     init_tskv_metrics_recorder();
 
     let runtime = Arc::new(init_runtime(Some(cli.cpu))?);
@@ -99,6 +105,10 @@ fn main() -> Result<(), std::io::Error> {
             config: config.clone(),
             runtime: runtime.clone(),
             memory_pool: memory_pool.clone(),
+            metrics_register: Arc::new(MetricsRegister::new([(
+                "node_id",
+                config.cluster.node_id.to_string(),
+            )])),
         };
 
         let mut server = server::Server::default();

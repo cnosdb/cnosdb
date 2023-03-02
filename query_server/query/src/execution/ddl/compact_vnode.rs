@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use coordinator::VnodeManagerCmdType;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CompactVnode;
 use spi::Result;
@@ -23,8 +24,8 @@ impl DDLDefinitionTask for CompactVnodeTask {
         let tenant = query_state_machine.session.tenant();
 
         let coord = query_state_machine.coord.clone();
-        let cmd_type = coordinator::command::VnodeManagerCmdType::Compact;
-        coord.vnode_manager(tenant, vnode_ids, cmd_type).await?;
+        let cmd_type = VnodeManagerCmdType::Compact(vnode_ids);
+        coord.vnode_manager(tenant, cmd_type).await?;
 
         Ok(Output::Nil(()))
     }

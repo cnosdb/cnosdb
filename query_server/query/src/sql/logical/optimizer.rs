@@ -12,6 +12,7 @@ use datafusion::optimizer::extract_equijoin_predicate::ExtractEquijoinPredicate;
 use datafusion::optimizer::filter_null_join_keys::FilterNullJoinKeys;
 use datafusion::optimizer::inline_table_scan::InlineTableScan;
 use datafusion::optimizer::propagate_empty_relation::PropagateEmptyRelation;
+use datafusion::optimizer::push_down_aggregation::PushDownAggregation;
 use datafusion::optimizer::push_down_filter::PushDownFilter;
 use datafusion::optimizer::push_down_limit::PushDownLimit;
 use datafusion::optimizer::rewrite_disjunctive_predicate::RewriteDisjunctivePredicate;
@@ -81,6 +82,7 @@ impl Default for DefaultLogicalOptimizer {
             Arc::new(PushDownLimit::new()),
             Arc::new(PushDownFilter::new()),
             Arc::new(SingleDistinctToGroupBy::new()),
+            Arc::new(PushDownAggregation::new()),
             // The previous optimizations added expressions and projections,
             // that might benefit from the following rules
             Arc::new(SimplifyExpressions::new()),

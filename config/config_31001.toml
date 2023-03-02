@@ -33,6 +33,7 @@ max_immutable_number = 4
 [log]
 level = 'info'
 path = '/tmp/cnosdb/1001/log'
+#tokio_trace = { addr = "127.0.0.1:6669"}
 
 [security]
 # [security.tls_config]
@@ -46,7 +47,6 @@ meta_service_addr = '127.0.0.1:21001'
 
 http_listen_addr = '127.0.0.1:31001'
 grpc_listen_addr = '127.0.0.1:31002'
-tcp_listen_addr = '127.0.0.1:31003'
 flight_rpc_listen_addr = '127.0.0.1:31004'
 
 [hinted_off]

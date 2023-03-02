@@ -3,6 +3,8 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use datafusion::physical_plan::Metric;
+use datafusion::prelude::Column;
 use models::codec::Encoding;
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
@@ -101,6 +103,7 @@ pub trait Engine: Send + Sync + Debug {
     ) -> Result<Option<Arc<SuperVersion>>>;
 
     fn get_storage_options(&self) -> Arc<StorageOptions>;
+
     async fn get_vnode_summary(
         &self,
         tenant: &str,

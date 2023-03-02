@@ -88,7 +88,7 @@ impl Parser {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum FieldValue {
     U64(u64),
     I64(i64),

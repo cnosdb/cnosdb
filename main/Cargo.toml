@@ -48,7 +48,7 @@ regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 snafu = { workspace = true }
-tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time", "tracing"] }
 tokio-stream = { workspace = true, features = ["net"] }
 tonic = { workspace = true, features = ["transport", "tls"] }
 warp = { workspace = true, features = ["tls"] }
@@ -56,6 +56,7 @@ os_info = { workspace = true }
 reqwest = { workspace = true, features = ["native-tls", "json"] }
 moka = {workspace = true}
 dashmap = {workspace = true}
+bincode = {workspace = true}
 openraft = { workspace = true, features = ["serde"] }
 actix-web = {workspace = true}
 byteorder = {workspace = true}

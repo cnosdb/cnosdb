@@ -53,8 +53,8 @@ dashmap = "5.2"
 derive_builder = "0.11"
 arrow-schema = { version = "32.0.0", features = ["serde"] }
 arrow-flight = { version = "32.0.0" }
-datafusion-proto = { git = "https://github.com/apache/arrow-datafusion.git", rev = "e16650073320dec3b0517aba12c6ce738eb4a503" }
-datafusion = { git = "https://github.com/apache/arrow-datafusion.git", rev = "e16650073320dec3b0517aba12c6ce738eb4a503" }
+datafusion-proto = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "44f77425e4714293499bdbce03f069031159869b" }
+datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "44f77425e4714293499bdbce03f069031159869b" }
 diff = "0.1.13"
 dirs = "4.0.0"
 env_logger = "0.9"
@@ -110,9 +110,10 @@ tonic = "0.8"
 tonic-build = "0.8"
 tracing = "0.1.35"
 tracing-futures = "0.2"
-tracing-subscriber = "0.2.25"
-tracing-appender = "0.1.2"
-tracing-error = "0.1.2"
+tracing-subscriber = "0.3.16"
+tracing-appender = "0.2.2"
+tracing-error = "0.2.0"
+console-subscriber = "0.1.8"
 url = "2.2"
 uuid = { version = "1.1", features = ["v4"] }
 ureq = { version = "2.5.0", features = ["json", "charset"] }

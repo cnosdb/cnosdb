@@ -1,6 +1,7 @@
 use async_trait::async_trait;
-use coordinator::command;
 use meta::error::MetaError;
+use protos::kv_service::admin_command_request::Command::DropDb;
+use protos::kv_service::{AdminCommandRequest, DropDbRequest};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropTenantObject, TenantObjectType};
 use spi::{QueryError, Result};
@@ -69,15 +70,12 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 // tenant_id
                 // database_name
 
-                let req = command::AdminStatementRequest {
+                let req = AdminCommandRequest {
                     tenant: tenant_name.to_string(),
-                    stmt: command::AdminStatementType::DropDB { db: name.clone() },
+                    command: Some(DropDb(DropDbRequest { db: name.clone() })),
                 };
 
-                query_state_machine
-                    .coord
-                    .exec_admin_stat_on_all_node(req)
-                    .await?;
+                query_state_machine.coord.broadcast_command(req).await?;
 
                 debug!("Drop database {} of tenant {}", name, tenant_name);
                 let success = meta.drop_db(name).await?;

@@ -2,11 +2,11 @@ use std::fmt::Debug;
 use std::io;
 
 use datafusion::arrow::error::ArrowError;
-use datafusion::error::DataFusionError;
 use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
 use snafu::Snafu;
+use tonic::Status;
 
 #[derive(Snafu, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]
@@ -123,6 +123,12 @@ pub enum CoordinatorError {
         vnode_id: u32,
         node_id: u64,
     },
+
+    #[snafu(display("grpc client request error: {}", msg))]
+    #[error_code(code = 19)]
+    GRPCRequest {
+        msg: String,
+    },
 }
 
 impl From<meta::error::MetaError> for CoordinatorError {
@@ -189,6 +195,14 @@ impl From<tokio::sync::oneshot::error::RecvError> for CoordinatorError {
     fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
         CoordinatorError::ChannelRecv {
             msg: err.to_string(),
+        }
+    }
+}
+
+impl From<Status> for CoordinatorError {
+    fn from(s: Status) -> Self {
+        CoordinatorError::GRPCRequest {
+            msg: format!("grpc status: {}", s),
         }
     }
 }
