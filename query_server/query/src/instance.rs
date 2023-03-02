@@ -217,7 +217,6 @@ mod tests {
         // random.gen_range();
         debug!("start generate data.");
         let rows: Vec<String> = (0..n)
-            .into_iter()
             .map(|i| {
                 format!(
                     "({}, '{}----xxxxxx=====3333444hhhhhhxx324r9cc')",

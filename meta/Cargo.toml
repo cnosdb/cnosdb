@@ -19,6 +19,7 @@ limiter_bucket = {path = "../common/limiter_bucket"}
 toml = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
+once_cell = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
