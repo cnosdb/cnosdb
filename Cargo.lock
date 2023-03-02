@@ -1162,7 +1162,7 @@ dependencies = [
 
 [[package]]
 name = "client"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "clap 3.2.23",
  "datafusion",
@@ -1243,7 +1243,7 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "serde",
  "toml",
@@ -1361,7 +1361,7 @@ dependencies = [
 
 [[package]]
 name = "coordinator"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -2063,7 +2063,7 @@ checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "e2e_test"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "actix-rt",
  "flatbuffers 22.12.6",
@@ -2150,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "error_code"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "error_code_macro",
  "snafu",
@@ -2719,7 +2719,7 @@ dependencies = [
 
 [[package]]
 name = "http_protocol"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "models",
  "reqwest",
@@ -3136,7 +3136,7 @@ dependencies = [
 
 [[package]]
 name = "license"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "base64 0.12.3",
  "chrono",
@@ -3161,7 +3161,7 @@ dependencies = [
 
 [[package]]
 name = "line_protocol"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "flatbuffers 22.12.6",
  "protos",
@@ -3284,7 +3284,7 @@ dependencies = [
 
 [[package]]
 name = "main"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "actix-web",
  "arrow-flight",
@@ -3376,7 +3376,7 @@ dependencies = [
 
 [[package]]
 name = "mem_allocator"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "chrono",
  "libc",
@@ -3436,7 +3436,7 @@ dependencies = [
 
 [[package]]
 name = "meta"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3474,7 +3474,7 @@ dependencies = [
 
 [[package]]
 name = "metrics"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "chrono",
  "once_cell",
@@ -3535,7 +3535,7 @@ dependencies = [
 
 [[package]]
 name = "models"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "arrow-schema",
  "async-trait",
@@ -4471,7 +4471,7 @@ dependencies = [
 
 [[package]]
 name = "protos"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "chrono",
  "flatbuffers 22.12.6",
@@ -4518,7 +4518,7 @@ dependencies = [
 
 [[package]]
 name = "query"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -5456,7 +5456,7 @@ dependencies = [
 
 [[package]]
 name = "spi"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "async-trait",
  "bytes 1.4.0",
@@ -5742,7 +5742,7 @@ dependencies = [
 
 [[package]]
 name = "test"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "clap 3.2.23",
  "diff",
@@ -6182,7 +6182,7 @@ checksum = "b6bc1c9ce2b5135ac7f93c72918fc37feb872bdc6a5533a8b85eb4b86bfdae52"
 
 [[package]]
 name = "trace"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "color-eyre",
  "config",
@@ -6303,7 +6303,7 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 
 [[package]]
 name = "tskv"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -6519,7 +6519,7 @@ checksum = "936e4b492acfd135421d8dca4b1aa80a7bfc26e702ef3af710e0752684df5372"
 
 [[package]]
 name = "utils"
-version = "2.1.0"
+version = "2.2.0"
 
 [[package]]
 name = "uuid"
