@@ -700,25 +700,39 @@ impl SuperVersion {
 
 #[derive(Debug)]
 pub struct TsfMetrics {
-    vnode_disk_storage_gauge: U64Gauge,
+    vnode_disk_storage: U64Gauge,
+    vnode_cache_size: U64Gauge,
 }
 
 impl TsfMetrics {
     pub fn new(register: &MetricsRegister, owner: &str, vnode_id: u64) -> Self {
         let (tenant, db) = split_owner(owner);
         let metric = register.metric::<U64Gauge>("vnode_disk_storage", "disk storage of vnode");
-        let gauge = metric.recorder([
+        let disk_storage_gauge = metric.recorder([
             ("tenant", tenant),
             ("database", db),
             ("vnode_id", vnode_id.to_string().as_str()),
         ]);
+
+        let metric = register.metric::<U64Gauge>("vnode_cache_size", "cache size of vnode");
+        let cache_gauge = metric.recorder([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", vnode_id.to_string().as_str()),
+        ]);
+
         Self {
-            vnode_disk_storage_gauge: gauge,
+            vnode_disk_storage: disk_storage_gauge,
+            vnode_cache_size: cache_gauge,
         }
     }
 
     pub fn record_disk_storage(&self, size: u64) {
-        self.vnode_disk_storage_gauge.set(size)
+        self.vnode_disk_storage.set(size)
+    }
+
+    pub fn record_cache_size(&self, size: u64) {
+        self.vnode_cache_size.set(size)
     }
 }
 
@@ -745,6 +759,7 @@ pub struct TseriesFamily {
 }
 
 impl TseriesFamily {
+    pub const MAX_DATA_BLOCK_SIZE: u32 = 1000;
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         tf_id: TseriesFamilyId,
@@ -802,6 +817,7 @@ impl TseriesFamily {
     fn new_super_version(&mut self, version: Arc<Version>) {
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
         self.tsf_metrics.record_disk_storage(self.disk_storage());
+        self.tsf_metrics.record_cache_size(self.cache_size());
         self.super_version = Arc::new(SuperVersion::new(
             self.tf_id,
             self.storage_opt.clone(),
@@ -1045,6 +1061,14 @@ impl TseriesFamily {
             .iter()
             .map(|l| l.disk_storage())
             .sum()
+    }
+
+    pub fn cache_size(&self) -> u64 {
+        self.immut_cache
+            .iter()
+            .map(|c| c.read().cache_size())
+            .sum::<u64>()
+            + self.mut_cache.read().cache_size()
     }
 }
 

@@ -52,8 +52,8 @@ pub struct CoordServiceMetrics {
 
 impl CoordServiceMetrics {
     pub fn new(register: &MetricsRegister) -> Self {
-        let data_in = register.metric("data_in", "tenant data in");
-        let data_out = register.metric("data_out", "tenant data out");
+        let data_in = register.metric("coord_data_in", "tenant data in");
+        let data_out = register.metric("coord_data_out", "tenant data out");
         Self { data_in, data_out }
     }
 
