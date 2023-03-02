@@ -20,7 +20,9 @@ impl U64Counter {
     }
 
     pub fn fetch(&self) -> u64 {
-        self.state.load(Ordering::Relaxed)
+        let counts = self.state.load(Ordering::Relaxed);
+        self.state.store(0, Ordering::Relaxed);
+        counts
     }
 }
 impl MetricRecorder for U64Counter {
