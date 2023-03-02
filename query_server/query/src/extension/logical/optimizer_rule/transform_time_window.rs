@@ -116,11 +116,9 @@ fn make_time_window(expr: &Expr) -> Result<TimeWindow, QueryError> {
 
             Ok(time_window_builder.build())
         }
-        _ => {
-            return Err(QueryError::Internal {
-                reason: format!("Expected TimeWindow, but found {expr}"),
-            })
-        }
+        _ => Err(QueryError::Internal {
+            reason: format!("Expected TimeWindow, but found {expr}"),
+        }),
     }
 }
 
