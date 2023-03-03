@@ -56,7 +56,7 @@ use crate::tsm::codec::get_str_codec;
 use crate::tsm::{DataBlock, TsmTombstone, MAX_BLOCK_VALUES};
 use crate::version_set::VersionSet;
 use crate::wal::{self, WalEntryType, WalManager, WalTask};
-use crate::{database, file_utils, version_set, Error, TseriesFamilyId};
+use crate::{database, file_utils, tenant_name_from_request, version_set, Error, TseriesFamilyId};
 
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 16;
 pub const SUMMARY_REQ_CHANNEL_CAP: usize = 16;
@@ -430,6 +430,30 @@ impl TsKv {
 
         Ok(())
     }
+
+    async fn write_wal(&self, id: TseriesFamilyId, tenant: &str, points: &[u8]) -> Result<u64> {
+        if !self.options.wal.enabled {
+            return Ok(0);
+        }
+
+        let (cb, rx) = oneshot::channel();
+        let mut enc_points = Vec::with_capacity(points.len() / 2);
+        get_str_codec(Encoding::Zstd)
+            .encode(&[&points], &mut enc_points)
+            .map_err(|_| Error::Send)?;
+        self.wal_sender
+            .send(WalTask::Write {
+                id,
+                cb,
+                points: Arc::new(enc_points),
+                tenant: Arc::new(tenant.as_bytes().to_vec()),
+            })
+            .await
+            .map_err(|err| Error::Send)?;
+        let seq = rx.await.context(error::ReceiveSnafu)??.0;
+
+        Ok(seq)
+    }
 }
 
 #[async_trait::async_trait]
@@ -439,45 +463,21 @@ impl Engine for TsKv {
         id: TseriesFamilyId,
         write_batch: WritePointsRequest,
     ) -> Result<WritePointsResponse> {
-        let tenant_name = write_batch
-            .meta
-            .map(|meta| meta.tenant)
-            .ok_or(Error::CommonError {
-                reason: "Write data missing tenant".to_string(),
-            })?;
+        let tenant = tenant_name_from_request(&write_batch);
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = get_db_from_fb_points(fb_points);
-        let db = self.get_db_or_else_create(&tenant_name, &db_name).await?;
+        let db = self.get_db_or_else_create(&tenant, &db_name).await?;
         let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
-
         let write_group = db
             .read()
             .await
             .build_write_group(fb_points.points().unwrap(), ts_index)
             .await?;
 
-        let mut seq = 0;
-        if self.options.wal.enabled {
-            let (cb, rx) = oneshot::channel();
-            let mut enc_points = Vec::with_capacity(points.len() / 2);
-            get_str_codec(Encoding::Zstd)
-                .encode(&[&points], &mut enc_points)
-                .map_err(|_| Error::Send)?;
-            self.wal_sender
-                .send(WalTask::Write {
-                    id,
-                    cb,
-                    points: Arc::new(enc_points),
-                    tenant: Arc::new(tenant_name.as_bytes().to_vec()),
-                })
-                .await
-                .map_err(|err| Error::Send)?;
-            seq = rx.await.context(error::ReceiveSnafu)??.0;
-        }
-
+        let seq = self.write_wal(id, &tenant, &points).await?;
         let tsf = self
             .get_tsfamily_or_else_create(seq, id, None, db.clone())
             .await?;
@@ -496,27 +496,13 @@ impl Engine for TsKv {
         write_batch: WritePointsRequest,
         seq: u64,
     ) -> Result<()> {
-        let tenant_name = write_batch
-            .meta
-            .map(|meta| meta.tenant)
-            .unwrap_or_else(|| DEFAULT_CATALOG.to_string());
+        let tenant = tenant_name_from_request(&write_batch);
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = get_db_from_fb_points(fb_points);
-
-        let db = self
-            .version_set
-            .write()
-            .await
-            .create_db(
-                DatabaseSchema::new(&tenant_name, &db_name),
-                self.meta_manager.clone(),
-                self.memory_pool.clone(),
-            )
-            .await?;
-
+        let db = self.get_db_or_else_create(&tenant, &db_name).await?;
         let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
 
         let write_group = db
