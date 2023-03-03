@@ -371,6 +371,31 @@ impl TsKv {
         }
     }
 
+    pub(crate) async fn get_tsfamily_or_else_create(
+        &self,
+        seq: u64,
+        id: TseriesFamilyId,
+        ve: Option<VersionEdit>,
+        db: Arc<RwLock<Database>>,
+    ) -> Result<Arc<RwLock<TseriesFamily>>> {
+        let opt_tsf = db.read().await.get_tsfamily(id);
+        match opt_tsf {
+            Some(v) => Ok(v),
+            None => Ok(db
+                .write()
+                .await
+                .add_tsfamily(
+                    id,
+                    seq,
+                    ve,
+                    self.summary_task_sender.clone(),
+                    self.flush_task_sender.clone(),
+                    self.compact_task_sender.clone(),
+                )
+                .await),
+        }
+    }
+
     async fn delete_columns(
         &self,
         tenant: &str,
@@ -453,23 +478,9 @@ impl Engine for TsKv {
             seq = rx.await.context(error::ReceiveSnafu)??.0;
         }
 
-        let opt_tsf = db.read().await.get_tsfamily(id);
-        let tsf = match opt_tsf {
-            Some(v) => v,
-            None => {
-                db.write()
-                    .await
-                    .add_tsfamily(
-                        id,
-                        seq,
-                        None,
-                        self.summary_task_sender.clone(),
-                        self.flush_task_sender.clone(),
-                        self.compact_task_sender.clone(),
-                    )
-                    .await
-            }
-        };
+        let tsf = self
+            .get_tsfamily_or_else_create(seq, id, None, db.clone())
+            .await?;
 
         let res = match tsf.read().await.put_points(seq, write_group) {
             Ok(points_number) => Ok(WritePointsResponse { points_number }),
@@ -514,23 +525,9 @@ impl Engine for TsKv {
             .build_write_group(fb_points.points().unwrap(), ts_index)
             .await?;
 
-        let opt_tsf = db.read().await.get_tsfamily(id);
-        let tsf = match opt_tsf {
-            Some(v) => v,
-            None => {
-                db.write()
-                    .await
-                    .add_tsfamily(
-                        id,
-                        seq,
-                        None,
-                        self.summary_task_sender.clone(),
-                        self.flush_task_sender.clone(),
-                        self.compact_task_sender.clone(),
-                    )
-                    .await
-            }
-        };
+        let tsf = self
+            .get_tsfamily_or_else_create(seq, id, None, db.clone())
+            .await?;
 
         tsf.read().await.put_points(seq, write_group)?;
         return Ok(());
