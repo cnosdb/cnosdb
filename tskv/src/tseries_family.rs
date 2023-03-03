@@ -913,11 +913,14 @@ impl TseriesFamily {
 
     pub async fn check_to_flush(&mut self) {
         if self.super_version.caches.mut_cache.read().is_full() {
-            info!("mut_cache full,switch to immutable");
+            info!(
+                "mut_cache full,switch to immutable current pool_size : {}",
+                self.memory_pool.reserved()
+            );
             self.switch_to_immutable();
-            if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
-                self.wrap_flush_req(false).await;
-            }
+        }
+        if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
+            self.wrap_flush_req(false).await;
         }
     }
 
