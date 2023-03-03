@@ -9,7 +9,7 @@ use crate::metadata::usage_schema_provider::{
     create_usage_schema_view_table, UsageSchemaTableFactory,
 };
 
-pub const USAGE_SCHEMA_USER_QUERIES: &str = "queries";
+pub const USAGE_SCHEMA_USER_QUERIES: &str = "user_queries";
 
 pub struct UserQueries {}
 

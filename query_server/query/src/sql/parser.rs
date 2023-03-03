@@ -15,14 +15,14 @@ use datafusion::sql::sqlparser::tokenizer::{Token, TokenWithLocation, Tokenizer}
 use models::codec::Encoding;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use snafu::ResultExt;
-use spi::query::ast;
 use spi::query::ast::{
-    parse_string_value, Action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
+    self, parse_string_value, Action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
     AlterTenantOperation, AlterUser, AlterUserOperation, ChecksumGroup, ColumnOption, CompactVnode,
     CopyIntoLocation, CopyIntoTable, CopyTarget, CopyVnode, CreateDatabase, CreateRole,
-    CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase, DescribeTable,
-    DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode, Explain, ExtStatement,
-    GrantRevoke, MoveVnode, Privilege, ShowSeries, ShowTagBody, ShowTagValues, UriLocation, With,
+    CreateStream, CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase,
+    DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode, Explain,
+    ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege, ShowSeries, ShowTagBody,
+    ShowTagValues, Trigger, UriLocation, With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -95,6 +95,25 @@ enum CnosKeyWord {
     CHECKSUM,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     GROUP,
+
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    STREAM,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    STREAMS,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    TRIGGER,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    WATERMARK,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    OUTPUT_MODE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    ONCE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    COMPLETE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    APPEND,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    UPDATE,
 }
 
 impl FromStr for CnosKeyWord {
@@ -129,6 +148,15 @@ impl FromStr for CnosKeyWord {
             "COMPACT" => Ok(CnosKeyWord::COMPACT),
             "CHECKSUM" => Ok(CnosKeyWord::CHECKSUM),
             "GROUP" => Ok(CnosKeyWord::GROUP),
+            "STREAM" => Ok(CnosKeyWord::STREAM),
+            "STREAMS" => Ok(CnosKeyWord::STREAMS),
+            "TRIGGER" => Ok(CnosKeyWord::TRIGGER),
+            "WATERMARK" => Ok(CnosKeyWord::WATERMARK),
+            "OUTPUT_MODE" => Ok(CnosKeyWord::OUTPUT_MODE),
+            "ONCE" => Ok(CnosKeyWord::ONCE),
+            "COMPLETE" => Ok(CnosKeyWord::COMPLETE),
+            "APPEND" => Ok(CnosKeyWord::APPEND),
+            "UPDATE" => Ok(CnosKeyWord::UPDATE),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
                 s
@@ -307,9 +335,16 @@ impl<'a> ExtParser<'a> {
             }
         } else if self.parse_cnos_keyword(CnosKeyWord::QUERIES) {
             self.parse_show_queries()
+        } else if self.parse_cnos_keyword(CnosKeyWord::STREAMS) {
+            let verbose = self
+                .parser
+                .parse_keyword(Keyword::VERBOSE)
+                .then_some(true)
+                .unwrap_or_default();
+            Ok(ExtStatement::ShowStreams(ast::ShowStreams { verbose }))
         } else {
             self.expected(
-                "TABLES or DATABASES or SERIES or TAG or QUERIES",
+                "TABLES or DATABASES or SERIES or TAG or QUERIES or STREAMS",
                 self.parser.peek_token(),
             )
         }
@@ -933,6 +968,65 @@ impl<'a> ExtParser<'a> {
         }))
     }
 
+    fn parse_create_stream(&mut self) -> Result<ExtStatement> {
+        let if_not_exists =
+            self.parser
+                .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+
+        let name = self.parser.parse_identifier()?;
+
+        let mut trigger = None;
+        let mut watermark = None;
+        let mut output_mode = None;
+
+        loop {
+            if self.parse_cnos_keyword(CnosKeyWord::TRIGGER) {
+                self.parser.expect_token(&Token::Eq)?;
+
+                trigger = Some(if self.parse_cnos_keyword(CnosKeyWord::ONCE) {
+                    Trigger::Once
+                } else {
+                    let interval = self.parse_string_value()?;
+                    Trigger::Interval(interval)
+                });
+            } else if self.parse_cnos_keyword(CnosKeyWord::WATERMARK) {
+                self.parser.expect_token(&Token::Eq)?;
+
+                watermark = Some(self.parse_string_value()?);
+            } else if self.parse_cnos_keyword(CnosKeyWord::OUTPUT_MODE) {
+                self.parser.expect_token(&Token::Eq)?;
+
+                output_mode = Some(if self.parse_cnos_keyword(CnosKeyWord::COMPLETE) {
+                    OutputMode::Complete
+                } else if self.parse_cnos_keyword(CnosKeyWord::APPEND) {
+                    OutputMode::Append
+                } else if self.parse_cnos_keyword(CnosKeyWord::UPDATE) {
+                    OutputMode::Update
+                } else {
+                    return self.expected(
+                        "one of COMPLETE, APPEND, or UPDATE",
+                        self.parser.peek_token(),
+                    );
+                });
+            } else {
+                break;
+            }
+        }
+
+        self.parser.expect_keyword(Keyword::AS)?;
+        self.parser.expect_keyword(Keyword::INSERT)?;
+        let statement = Box::new(self.parser.parse_insert()?);
+
+        Ok(ExtStatement::CreateStream(CreateStream {
+            if_not_exists,
+            name,
+            trigger,
+            watermark,
+            output_mode,
+            statement,
+        }))
+    }
+
     /// Parse a SQL CREATE statement
     fn parse_create(&mut self) -> Result<ExtStatement> {
         // Currently only supports the creation of external tables
@@ -948,6 +1042,8 @@ impl<'a> ExtParser<'a> {
             self.parse_create_user()
         } else if self.parser.parse_keyword(Keyword::ROLE) {
             self.parse_create_role()
+        } else if self.parse_cnos_keyword(CnosKeyWord::STREAM) {
+            self.parse_create_stream()
         } else {
             self.expected("an object type after CREATE", self.parser.peek_token())
         }
@@ -1173,9 +1269,13 @@ impl<'a> ExtParser<'a> {
         } else if self.parse_cnos_keyword(CnosKeyWord::VNODE) {
             let vnode_id = self.parse_number::<VnodeId>()?;
             ExtStatement::DropVnode(DropVnode { vnode_id })
+        } else if self.parse_cnos_keyword(CnosKeyWord::STREAM) {
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let name = self.parser.parse_identifier()?;
+            ExtStatement::DropStream(ast::DropStream { if_exist, name })
         } else {
             return self.expected(
-                "TABLE,DATABASE,TENANT,USER,ROLE,VNODE after DROP",
+                "TABLE,DATABASE,TENANT,USER,ROLE,VNODE,STREAM after DROP",
                 self.parser.peek_token(),
             );
         };
@@ -1448,10 +1548,18 @@ mod tests {
     use datafusion::sql::sqlparser::ast::{
         Ident, ObjectName, SetExpr, Statement, TableFactor, Value,
     };
-    use spi::query::ast::{AlterTable, DropDatabaseObject, ExtStatement, UriLocation};
+    use spi::query::ast::{AlterTable, DropDatabaseObject, ExtStatement, ShowStreams, UriLocation};
     use spi::query::logical_planner::{DatabaseObjectType, TenantObjectType};
 
     use super::*;
+
+    fn parse_sql(sql: &str) -> ExtStatement {
+        ExtParser::parse_sql(sql)
+            .unwrap()
+            .into_iter()
+            .last()
+            .unwrap()
+    }
 
     #[test]
     fn test_drop() {
@@ -1957,5 +2065,52 @@ mod tests {
         "#;
 
         let _ = ExtParser::parse_sql(sql).unwrap();
+    }
+
+    #[test]
+    fn test_create_stream() {
+        let statement = parse_sql("create stream if not exists test_s trigger = once watermark = '10s' output_mode = update as insert into t_tbl select 1;");
+
+        match statement {
+            ExtStatement::CreateStream(s) => {
+                let CreateStream {
+                    if_not_exists,
+                    name,
+                    trigger,
+                    watermark,
+                    output_mode,
+                    statement,
+                } = s;
+
+                assert!(if_not_exists);
+                assert_eq!(name, Ident::new("test_s"));
+                assert_eq!(trigger, Some(Trigger::Once));
+                assert_eq!(watermark, Some("10s".into()));
+                assert_eq!(output_mode, Some(OutputMode::Update));
+                assert!(matches!(statement.deref(), Statement::Insert { .. }));
+            }
+            _ => panic!("expect CreateStream"),
+        }
+    }
+
+    #[test]
+    fn test_drop_stream() {
+        let result = parse_sql("drop stream if exists test_s;");
+
+        let expected = ExtStatement::DropStream(ast::DropStream {
+            if_exist: true,
+            name: Ident::new("test_s"),
+        });
+
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn test_show_streams() {
+        let result = parse_sql("show streams verbose;");
+
+        let expected = ExtStatement::ShowStreams(ShowStreams { verbose: true });
+
+        assert_eq!(expected, result);
     }
 }

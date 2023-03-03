@@ -1,6 +1,6 @@
 pub mod codec;
 pub mod consistency_level;
-mod errors;
+pub mod errors;
 mod field_info;
 pub mod meta_data;
 mod node_info;
@@ -13,6 +13,7 @@ pub mod utils;
 // pub mod error_code;
 pub mod arrow_array;
 pub mod auth;
+pub mod duration;
 pub mod object_reference;
 pub mod oid;
 pub mod predicate;
