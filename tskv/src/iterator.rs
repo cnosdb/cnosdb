@@ -45,32 +45,17 @@ pub struct TableScanMetrics {
     baseline_metrics: BaselineMetrics,
     partition: usize,
     metrics: ExecutionPlanMetricsSet,
-    reservation: Option<RwLock<MemoryReservation>>,
 }
 
 impl TableScanMetrics {
     /// Create new metrics
-    pub fn new(
-        metrics: &ExecutionPlanMetricsSet,
-        partition: usize,
-        pool: Option<&Arc<dyn MemoryPool>>,
-    ) -> Self {
+    pub fn new(metrics: &ExecutionPlanMetricsSet, partition: usize) -> Self {
         let baseline_metrics = BaselineMetrics::new(metrics, partition);
-        let reservation = match pool {
-            None => None,
-            Some(pool) => {
-                let reservation = RwLock::new(
-                    MemoryConsumer::new(format!("TableScanMetrics[{partition}]")).register(pool),
-                );
-                Some(reservation)
-            }
-        };
 
         Self {
             baseline_metrics,
             partition,
             metrics: metrics.clone(),
-            reservation,
         }
     }
 
@@ -91,13 +76,6 @@ impl TableScanMetrics {
         poll: Poll<Option<std::result::Result<RecordBatch, DataFusionError>>>,
     ) -> Poll<Option<std::result::Result<RecordBatch, DataFusionError>>> {
         self.baseline_metrics.record_poll(poll)
-    }
-
-    pub fn record_memory(&self, rb: &RecordBatch) -> Result<(), DataFusionError> {
-        if let Some(res) = &self.reservation {
-            res.write().try_grow(rb.get_array_memory_size())?
-        }
-        Ok(())
     }
 
     /// Records the fact that this operator's execution is complete

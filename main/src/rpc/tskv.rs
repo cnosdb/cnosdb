@@ -197,7 +197,7 @@ impl TskvServiceImpl {
         );
 
         let plan_metrics = ExecutionPlanMetricsSet::new();
-        let scan_metrics = TableScanMetrics::new(&plan_metrics, 0, None);
+        let scan_metrics = TableScanMetrics::new(&plan_metrics, 0);
         let option = QueryOption::new(
             args.batch_size,
             args.tenant.clone(),

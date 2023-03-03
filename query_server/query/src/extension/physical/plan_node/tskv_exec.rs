@@ -107,7 +107,7 @@ impl ExecutionPlan for TskvExec {
 
         let batch_size = context.session_config().batch_size();
 
-        let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
+        let metrics = TableScanMetrics::new(&self.metrics, partition);
 
         let table_stream = TableScanStream::new(
             self.table_schema.clone(),
@@ -274,10 +274,7 @@ impl Stream for TableScanStream {
         let timer = metrics.elapsed_compute().timer();
 
         let result = match Box::pin(this.iterator.next()).poll_unpin(cx) {
-            Poll::Ready(Some(Ok(record_batch))) => match metrics.record_memory(&record_batch) {
-                Ok(_) => Poll::Ready(Some(Ok(record_batch))),
-                Err(e) => Poll::Ready(Some(Err(e))),
-            },
+            Poll::Ready(Some(Ok(record_batch))) => Poll::Ready(Some(Ok(record_batch))),
             Poll::Ready(Some(Err(e))) => {
                 Poll::Ready(Some(Err(DataFusionError::External(Box::new(e)))))
             }
