@@ -43,7 +43,7 @@ use crate::database::Database;
 use crate::engine::Engine;
 use crate::error::{self, IndexErrSnafu, MetaSnafu, Result, SchemaSnafu, SendSnafu};
 use crate::file_system::file_manager::{self, FileManager};
-use crate::index::IndexResult;
+use crate::index::{ts_index, IndexResult};
 use crate::kv_option::{Options, StorageOptions};
 use crate::memcache::{DataType, MemCache};
 use crate::record_file::Reader;
@@ -359,6 +359,18 @@ impl TsKv {
         Ok(db)
     }
 
+    pub(crate) async fn get_ts_index_or_else_create(
+        &self,
+        db: Arc<RwLock<Database>>,
+        id: TseriesFamilyId,
+    ) -> Result<Arc<RwLock<ts_index::TSIndex>>> {
+        let opt_index = db.read().await.get_ts_index(id);
+        match opt_index {
+            Some(v) => Ok(v),
+            None => db.write().await.get_ts_index_or_add(id).await,
+        }
+    }
+
     async fn delete_columns(
         &self,
         tenant: &str,
@@ -414,12 +426,7 @@ impl Engine for TsKv {
 
         let db_name = get_db_from_fb_points(fb_points);
         let db = self.get_db_or_else_create(&tenant_name, &db_name).await?;
-
-        let opt_index = db.read().await.get_ts_index(id);
-        let ts_index = match opt_index {
-            Some(v) => v,
-            None => db.write().await.get_ts_index_or_add(id).await?,
-        };
+        let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
 
         let write_group = db
             .read()
@@ -499,11 +506,7 @@ impl Engine for TsKv {
             )
             .await?;
 
-        let opt_index = db.read().await.get_ts_index(id);
-        let ts_index = match opt_index {
-            Some(v) => v,
-            None => db.write().await.get_ts_index_or_add(id).await?,
-        };
+        let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
 
         let write_group = db
             .read()
@@ -842,6 +845,8 @@ impl Engine for TsKv {
 
         summary.tsf_id = vnode_id;
         let db = self.get_db_or_else_create(tenant, database).await?;
+        self.get_ts_index_or_else_create(db.clone(), vnode_id)
+            .await?;
 
         let mut db_wlock = db.write().await;
         // If there is a ts_family here, delete and re-build it.
@@ -850,8 +855,6 @@ impl Engine for TsKv {
                 .del_tsfamily(vnode_id, self.summary_task_sender.clone())
                 .await;
         }
-
-        db_wlock.get_ts_index_or_add(vnode_id).await?;
 
         db_wlock
             .add_tsfamily(
