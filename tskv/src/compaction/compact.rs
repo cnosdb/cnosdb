@@ -4,7 +4,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use evmap::new;
-use lru_cache::ShardedCache;
 use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
 use trace::{debug, error, info, trace};
@@ -18,7 +17,7 @@ use crate::file_system::file_manager::{self, get_file_manager};
 use crate::kv_option::Options;
 use crate::memcache::DataType;
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tseries_family::{ColumnFile, TimeRange};
+use crate::tseries_family::{ColumnFile, TimeRange, TseriesFamily};
 use crate::tsm::{
     self, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index, IndexIterator, IndexMeta,
     IndexReader, TsmReader, TsmWriter,
@@ -527,7 +526,7 @@ pub async fn run_compaction_job(
     let version = request.version;
 
     // Buffers all tsm-files and it's indexes for this compaction
-    let max_data_block_size = 1000; // TODO this const value is in module tsm
+    let max_data_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE;
     let tsf_id = request.ts_family_id;
     let storage_opt = request.storage_opt;
     let mut tsm_readers = Vec::new();
@@ -545,63 +544,50 @@ pub async fn run_compaction_job(
     let mut version_edit = VersionEdit::new(tsf_id);
     let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
 
-    loop {
-        let block = iter.next().await;
-        match block {
-            None => break,
-            Some(next) => {
-                let blk = next?;
-                trace!("===============================");
-                let write_ret = match blk {
-                    CompactingBlock::DataBlock {
-                        field_id: fid,
-                        data_block: b,
-                        ..
-                    } => {
-                        // TODO: let enc = b.encodings();
-                        tsm_writer.write_block(fid, &b).await
-                    }
-                    CompactingBlock::Raw { meta, raw, .. } => {
-                        tsm_writer.write_raw(&meta, &raw).await
-                    }
-                };
-                if let Err(e) = write_ret {
-                    match e {
-                        tsm::WriteTsmError::IO { source } => {
-                            // TODO handle this: stop compaction and report an error.
-                            error!("IO error when write tsm: {:?}", source);
-                        }
-                        tsm::WriteTsmError::Encode { source } => {
-                            // TODO handle this: stop compaction and report an error.
-                            error!("Encoding error when write tsm: {:?}", source);
-                        }
-                        tsm::WriteTsmError::MaxFileSizeExceed { source } => {
-                            tsm_writer
-                                .write_index()
-                                .await
-                                .context(error::WriteTsmSnafu)?;
-                            tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
-                            info!(
-                                "Compaction: File: {} write finished (level: {}, {} B).",
-                                tsm_writer.sequence(),
-                                request.out_level,
-                                tsm_writer.size()
-                            );
-                            let cm = new_compact_meta(
-                                &tsm_writer,
-                                request.ts_family_id,
-                                request.out_level,
-                            );
-                            version_edit.add_file(cm, version.max_level_ts);
-                            tsm_writer =
-                                tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)
-                                    .await?;
-                            info!("Compaction: File {} been created.", tsm_writer.sequence());
-                        }
-                        tsm::WriteTsmError::Finished { path } => {
-                            error!("Tsm writer finished: {}", path.display());
-                        }
-                    }
+    while let Some(block) = iter.next().await {
+        let blk = block?;
+        trace!("===============================");
+        let write_ret = match blk {
+            CompactingBlock::DataBlock {
+                field_id: fid,
+                data_block: b,
+                ..
+            } => {
+                // TODO: let enc = b.encodings();
+                tsm_writer.write_block(fid, &b).await
+            }
+            CompactingBlock::Raw { meta, raw, .. } => tsm_writer.write_raw(&meta, &raw).await,
+        };
+        if let Err(e) = write_ret {
+            match e {
+                tsm::WriteTsmError::IO { source } => {
+                    // TODO handle this: stop compaction and report an error.
+                    error!("IO error when write tsm: {:?}", source);
+                }
+                tsm::WriteTsmError::Encode { source } => {
+                    // TODO handle this: stop compaction and report an error.
+                    error!("Encoding error when write tsm: {:?}", source);
+                }
+                tsm::WriteTsmError::MaxFileSizeExceed { source } => {
+                    tsm_writer
+                        .write_index()
+                        .await
+                        .context(error::WriteTsmSnafu)?;
+                    tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
+                    info!(
+                        "Compaction: File: {} write finished (level: {}, {} B).",
+                        tsm_writer.sequence(),
+                        request.out_level,
+                        tsm_writer.size()
+                    );
+                    let cm = new_compact_meta(&tsm_writer, request.ts_family_id, request.out_level);
+                    version_edit.add_file(cm, version.max_level_ts);
+                    tsm_writer =
+                        tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
+                    info!("Compaction: File {} been created.", tsm_writer.sequence());
+                }
+                tsm::WriteTsmError::Finished { path } => {
+                    error!("Tsm writer finished: {}", path.display());
                 }
             }
         }
@@ -663,7 +649,7 @@ pub mod test {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
     use std::sync::Arc;
 
-    use lru_cache::ShardedCache;
+    use lru_cache::asynchronous::ShardedCache;
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::{FieldId, Timestamp, ValueType};
@@ -701,14 +687,16 @@ pub mod test {
             }
             writer.write_index().await.unwrap();
             writer.finish().await.unwrap();
-            cfs.push(Arc::new(ColumnFile::new(
+            let mut cf = ColumnFile::new(
                 file_seq,
                 2,
                 TimeRange::new(writer.min_ts(), writer.max_ts()),
                 writer.size(),
                 false,
                 writer.path(),
-            )));
+            );
+            cf.set_field_id_filter(Arc::new(writer.bloom_filter_cloned()));
+            cfs.push(Arc::new(cf));
         }
         (file_seq + 1, cfs)
     }

@@ -936,7 +936,7 @@ impl RowIterator {
 
     async fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
         if self.option.aggregates.is_some() {
-            return self.collect_aggregate_row_data(builder).await;
+            self.collect_aggregate_row_data(builder).await
         } else {
             loop {
                 if self.columns.is_empty() && self.next_series().await?.is_none() {

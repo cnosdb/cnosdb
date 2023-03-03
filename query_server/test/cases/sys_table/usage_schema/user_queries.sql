@@ -2,4 +2,4 @@
 --#SLEEP = 10000
 DESCRIBE DATABASE usage_schema;
 
-DESCRIBE TABLE data_in;
+DESCRIBE TABLE user_queries;

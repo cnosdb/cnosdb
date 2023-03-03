@@ -13,11 +13,11 @@ pub struct HttpMetrics {
 impl HttpMetrics {
     pub fn new(register: &Arc<MetricsRegister>) -> Self {
         let queries = register.metric(
-            "queries",
+            "user_queries",
             "the number of query requests received by the user",
         );
         let writes = register.metric(
-            "writes",
+            "user_writes",
             "the number of write requests received by the user",
         );
 

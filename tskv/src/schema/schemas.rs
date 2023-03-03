@@ -195,7 +195,7 @@ impl DBschemas {
         res: MetaResult<()>,
         schema: Arc<TskvTableSchema>,
     ) -> Result<()> {
-        return match res {
+        match res {
             Ok(_) => Ok(()),
             Err(e) => {
                 if let MetaError::TableAlreadyExists { .. } = e {
@@ -234,7 +234,7 @@ impl DBschemas {
                     Err(e.into())
                 }
             }
-        };
+        }
     }
 
     pub fn get_table_schema(&self, tab: &str) -> Result<Option<Arc<TskvTableSchema>>> {

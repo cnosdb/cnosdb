@@ -289,9 +289,9 @@ impl TskvTableSchema {
     pub fn size(&self) -> usize {
         let mut size = 0;
         for i in self.columns.iter() {
-            size += size_of_val(&i);
+            size += size_of_val(i);
         }
-        size += size_of_val(&self);
+        size += size_of_val(self);
         size
     }
 

@@ -6,8 +6,7 @@ use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::prelude::Expr;
 use datafusion::scalar::ScalarValue;
 
-use crate::extension::expr::expr_utils;
-use crate::extension::expr::selector_function::TOPK;
+use crate::extension::expr::{expr_utils, TOPK};
 
 const INVALID_EXPRS: &str = "1. There cannot be nested selection functions. 2. There cannot be multiple selection functions.";
 const INVALID_ARGUMENTS: &str =

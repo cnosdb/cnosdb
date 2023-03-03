@@ -79,6 +79,19 @@ impl Case {
 
     /// check out and expected result
     pub async fn check(&self, origins: &[DBResult], outs: &[DBResult]) -> bool {
+        if origins.len() != outs.len() {
+            let out_put = outs
+                .iter()
+                .map(|r| r.to_string())
+                .collect::<Vec<String>>()
+                .join("\n");
+
+            fs::write(&self.out_file_path, out_put.as_bytes())
+                .await
+                .unwrap();
+            return false;
+        }
+
         let mut no_diff = true;
         let mut diff_buf = String::with_capacity(512);
         let mut all_diff_outs = vec![];
