@@ -2,10 +2,11 @@ use std::path::Path;
 use std::time::Duration;
 
 use models::meta_data::{VnodeAllInfo, VnodeInfo};
+use protos::kv_service::admin_command_request::Command::DelVnode;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{
-    DownloadFileRequest, FetchVnodeSummaryRequest, GetVnodeFilesMetaRequest,
-    GetVnodeFilesMetaResponse,
+    AdminCommandRequest, DeleteVnodeRequest, DownloadFileRequest, FetchVnodeSummaryRequest,
+    GetVnodeFilesMetaRequest, GetVnodeFilesMetaResponse,
 };
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
@@ -15,7 +16,7 @@ use trace::info;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::file_info::get_file_info;
-use crate::SUCCESS_RESPONSE_CODE;
+use crate::{status_response_to_result, SUCCESS_RESPONSE_CODE};
 
 pub struct VnodeManager {
     node_id: u64,
@@ -34,7 +35,7 @@ impl VnodeManager {
 
     pub async fn move_vnode(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
         self.copy_vnode(tenant, vnode_id).await?;
-        self.drop_vnode(tenant, vnode_id).await?;
+        self.drop_vnode_remote(tenant, vnode_id).await?;
 
         Ok(())
     }
@@ -95,6 +96,16 @@ impl VnodeManager {
         Ok(())
     }
 
+    pub async fn flush_vnode(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
+        let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
+
+        self.kv_inst
+            .flush_tsfamily(&tenant, &all_info.db_name, vnode_id)
+            .await?;
+
+        Ok(())
+    }
+
     pub async fn drop_vnode(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
         let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
 
@@ -123,6 +134,25 @@ impl VnodeManager {
             .await?;
 
         Ok(())
+    }
+
+    async fn drop_vnode_remote(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
+        let info = self.get_vnode_all_info(tenant, vnode_id).await?;
+        let cmd = AdminCommandRequest {
+            tenant: tenant.to_string(),
+            command: Some(DelVnode(DeleteVnodeRequest {
+                db: info.db_name.clone(),
+                vnode_id,
+            })),
+        };
+
+        let channel = self.meta.admin_meta().get_node_conn(info.node_id).await?;
+        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
+        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let request = tonic::Request::new(cmd);
+
+        let response = client.exec_admin_command(request).await?.into_inner();
+        status_response_to_result(&response)
     }
 
     async fn fetch_vnode_summary(

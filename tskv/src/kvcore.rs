@@ -337,27 +337,21 @@ impl TsKv {
         Ok(db)
     }
 
-    pub(crate) async fn create_database(
+    pub(crate) async fn get_db_or_else_create(
         &self,
-        schema: &DatabaseSchema,
+        tenant: &str,
+        db_name: &str,
     ) -> Result<Arc<RwLock<Database>>> {
-        if self
-            .version_set
-            .read()
-            .await
-            .db_exists(schema.tenant_name(), schema.database_name())
-        {
-            return Err(SchemaError::DatabaseAlreadyExists {
-                database: schema.database_name().to_string(),
-            }
-            .into());
+        if let Some(db) = self.version_set.read().await.get_db(tenant, db_name) {
+            return Ok(db);
         }
+
         let db = self
             .version_set
             .write()
             .await
             .create_db(
-                schema.clone(),
+                DatabaseSchema::new(tenant, db_name),
                 self.meta_manager.clone(),
                 self.memory_pool.clone(),
             )
@@ -419,15 +413,7 @@ impl Engine for TsKv {
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = get_db_from_fb_points(fb_points);
-
-        let db_warp = self.version_set.read().await.get_db(&tenant_name, &db_name);
-        let db = match db_warp {
-            Some(database) => database,
-            None => {
-                self.create_database(&DatabaseSchema::new(&tenant_name, &db_name))
-                    .await?
-            }
-        };
+        let db = self.get_db_or_else_create(&tenant_name, &db_name).await?;
 
         let opt_index = db.read().await.get_ts_index(id);
         let ts_index = match opt_index {
@@ -627,6 +613,10 @@ impl Engine for TsKv {
                     .await
                     .unwrap()
                 }
+            }
+
+            if let Some(ts_index) = db.read().await.get_ts_index(id) {
+                let _ = ts_index.write().await.flush().await;
             }
         }
 
@@ -851,35 +841,29 @@ impl Engine for TsKv {
         }
 
         summary.tsf_id = vnode_id;
-        let version_set = self.version_set.read().await;
-        if let Some(db) = version_set.get_db(tenant, database) {
-            let mut db_wlock = db.write().await;
-            // If there is a ts_family here, delete and re-build it.
-            if let Some(tsf) = db_wlock.get_tsfamily(vnode_id) {
-                db_wlock
-                    .del_tsfamily(vnode_id, self.summary_task_sender.clone())
-                    .await;
-            }
+        let db = self.get_db_or_else_create(tenant, database).await?;
 
-            db_wlock.get_ts_index_or_add(vnode_id).await?;
-
+        let mut db_wlock = db.write().await;
+        // If there is a ts_family here, delete and re-build it.
+        if let Some(tsf) = db_wlock.get_tsfamily(vnode_id) {
             db_wlock
-                .add_tsfamily(
-                    vnode_id,
-                    0,
-                    Some(summary),
-                    self.summary_task_sender.clone(),
-                    self.flush_task_sender.clone(),
-                    self.compact_task_sender.clone(),
-                )
+                .del_tsfamily(vnode_id, self.summary_task_sender.clone())
                 .await;
-            Ok(())
-        } else {
-            return Err(SchemaError::DatabaseNotFound {
-                database: database.to_string(),
-            }
-            .into());
         }
+
+        db_wlock.get_ts_index_or_add(vnode_id).await?;
+
+        db_wlock
+            .add_tsfamily(
+                vnode_id,
+                0,
+                Some(summary),
+                self.summary_task_sender.clone(),
+                self.flush_task_sender.clone(),
+                self.compact_task_sender.clone(),
+            )
+            .await;
+        Ok(())
     }
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
