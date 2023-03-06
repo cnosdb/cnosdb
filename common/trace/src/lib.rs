@@ -1,11 +1,12 @@
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, Once};
+use std::sync::Arc;
 
 use config::TokioTrace;
 use once_cell::sync::Lazy;
+use parking_lot::{Mutex, Once};
 use tracing::metadata::LevelFilter;
 pub use tracing::{debug, error, info, instrument, trace, warn};
-use tracing_appender::non_blocking::WorkerGuard;
+pub use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::{non_blocking, rolling};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::filter::EnvFilter;
@@ -20,7 +21,7 @@ pub fn init_default_global_tracing(dir: &str, file_name: &str, level: &str) {
     static START: Once = Once::new();
 
     START.call_once(|| {
-        let mut g = GLOBAL_UT_LOG_GUARD.as_ref().lock().unwrap();
+        let mut g = GLOBAL_UT_LOG_GUARD.as_ref().lock();
         *g = Some(init_global_tracing(dir, level, file_name, None));
     });
 }
@@ -37,6 +38,26 @@ pub fn get_env_filter(log_level: &str, tokio_trace: Option<&TokioTrace>) -> EnvF
             EnvFilter::new(log_level)
         }
     })
+}
+
+pub fn init_process_global_tracing(
+    log_path: &str,
+    log_level: &str,
+    log_file_prefix_name: &str,
+    tokio_trace: Option<&TokioTrace>,
+    guard: &Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>>,
+) {
+    static START: Once = Once::new();
+
+    START.call_once(|| {
+        let mut g = guard.as_ref().lock();
+        *g = Some(init_global_tracing(
+            log_path,
+            log_level,
+            log_file_prefix_name,
+            tokio_trace,
+        ));
+    });
 }
 
 pub fn init_global_tracing(

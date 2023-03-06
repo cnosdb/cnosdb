@@ -1,6 +1,4 @@
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,26 +7,18 @@ use actix_web::web::Data;
 use actix_web::{get, middleware, post, web, App, HttpServer, Responder};
 use config::Config;
 use meta::store::command::*;
-use meta::store::config::{MetaInit, Opt};
-use meta::store::key_path::KeyPath;
 use meta::store::state_machine::{CommandResp, StateMachine};
 use meta::{ClusterNode, ClusterNodeId, TypeConfig};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder, ROOT};
 use models::oid::Identifier;
-use models::schema::{
-    DatabaseSchema, TenantOptionsBuilder, DEFAULT_CATALOG, DEFAULT_DATABASE, USAGE_SCHEMA,
-};
+use models::schema::{TenantOptionsBuilder, DEFAULT_CATALOG, DEFAULT_DATABASE, USAGE_SCHEMA};
 use openraft::error::ClientWriteError;
 use openraft::raft::ClientWriteResponse;
-use pprof::protos::Message;
-use tokio::sync::RwLock;
 use trace::{error, info};
 use web::Json;
 
 use crate::meta_single::Infallible;
-use crate::server::Service;
-
 pub struct MetaApp {
     pub http_addr: String,
     pub store: StateMachine,

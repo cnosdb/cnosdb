@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::{self, format};
+use std::fmt::{self};
 
 use arrow_flight::sql::{Any, ProstMessageExt};
 use arrow_flight::{FlightDescriptor, FlightEndpoint, Location, Ticket};
@@ -8,11 +8,9 @@ use datafusion::arrow::buffer::Buffer;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::ipc::{self, reader};
 use datafusion::arrow::record_batch::RecordBatch;
-use http_protocol::header::{AUTHORIZATION, BASIC_PREFIX};
-use http_protocol::status_code::OK;
+use http_protocol::header::AUTHORIZATION;
 use models::auth::user::UserInfo;
 use prost::Message;
-use spi::service::protocol::QueryId;
 use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::{Request, Status};
 

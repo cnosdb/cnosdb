@@ -30,6 +30,7 @@ use crate::extension::logical::optimizer_rule::push_down_projection::PushDownPro
 use crate::extension::logical::optimizer_rule::reject_cross_join::RejectCrossJoin;
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
 use crate::extension::logical::optimizer_rule::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
+use crate::extension::logical::optimizer_rule::transform_time_window::TransformTimeWindowRule;
 use crate::extension::logical::optimizer_rule::transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule;
 
 pub trait LogicalOptimizer: Send + Sync {
@@ -94,6 +95,7 @@ impl Default for DefaultLogicalOptimizer {
             Arc::new(RewriteTagScan {}),
             Arc::new(TransformBottomFuncToTopkNodeRule {}),
             Arc::new(TransformTopkFuncToTopkNodeRule {}),
+            Arc::new(TransformTimeWindowRule),
         ];
 
         Self { rules }

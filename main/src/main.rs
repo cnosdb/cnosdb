@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code)]
 
 use std::sync::Arc;
 
@@ -7,10 +7,10 @@ use mem_allocator::Jemalloc;
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
-use models::meta_data::NodeInfo;
 use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use tokio::runtime::Runtime;
-use trace::{info, init_global_tracing};
+use trace::{info, init_process_global_tracing, WorkerGuard};
 
 use crate::report::ReportService;
 
@@ -30,8 +30,11 @@ static VERSION: Lazy<String> = Lazy::new(|| {
     )
 });
 
+static GLOBAL_MAIN_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(None)));
+
 /// cli examples is here
-/// https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs
+/// <https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs>
 #[derive(Debug, clap::Parser)]
 #[clap(name = "cnosdb")]
 #[clap(version = & VERSION[..],
@@ -89,11 +92,12 @@ fn main() -> Result<(), std::io::Error> {
     let cli = Cli::parse();
     let config = parse_config(&cli);
 
-    let _ = init_global_tracing(
+    init_process_global_tracing(
         &config.log.path,
         &config.log.level,
         "tsdb.log",
         config.log.tokio_trace.as_ref(),
+        &GLOBAL_MAIN_LOG_GUARD,
     );
     init_tskv_metrics_recorder();
 

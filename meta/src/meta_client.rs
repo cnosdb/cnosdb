@@ -1,47 +1,28 @@
-#![allow(dead_code, unused_imports, unused_variables, clippy::if_same_then_else)]
+#![allow(dead_code, clippy::if_same_then_else)]
 
-use std::borrow::BorrowMut;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 use std::fmt::Debug;
-use std::io;
-use std::ops::DerefMut;
 use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use client::MetaHttpClient;
-use config::{ClusterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
+use config::TenantObjectLimiterConfig;
 use models::auth::privilege::DatabasePrivilege;
-use models::auth::role::{
-    CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier, UserRole,
-};
-use models::auth::user::{User, UserDesc};
+use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
-use models::schema::{
-    DatabaseSchema, ExternalTableSchema, TableColumn, TableSchema, Tenant, TenantOptions,
-    TskvTableSchema,
-};
-use models::utils::min_num;
+use models::schema::{DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TskvTableSchema};
 use parking_lot::RwLock;
-use rand::distributions::{Alphanumeric, DistString};
-use snafu::Snafu;
 use store::command;
-use tokio::net::TcpStream;
-use tokio::sync::mpsc::{self, Receiver};
-use trace::{debug, error, info, warn};
+use trace::{debug, info, warn};
 
 use crate::error::{MetaError, MetaResult};
-use crate::limiter::{LocalRequestLimiter, NoneLimiter, RequestLimiter};
 use crate::store::command::{
-    EntryLog, META_REQUEST_FAILED, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
-    META_REQUEST_ROLE_EXIST, META_REQUEST_ROLE_NOT_FOUND, META_REQUEST_SUCCESS,
-    META_REQUEST_TENANT_NOT_FOUND, META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND,
+    EntryLog, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
+    META_REQUEST_ROLE_EXIST, META_REQUEST_ROLE_NOT_FOUND, META_REQUEST_USER_EXIST,
+    META_REQUEST_USER_NOT_FOUND,
 };
 use crate::store::key_path;
-use crate::tenant_manager::RemoteTenantManager;
-use crate::user_manager::{RemoteUserManager, UserManager, UserManagerMock};
 use crate::{client, store};
 
 #[async_trait]
@@ -160,7 +141,7 @@ impl RemoteMetaClient {
         cluster: String,
         tenant: Tenant,
         meta_url: String,
-        node_id: u64,
+        _node_id: u64,
     ) -> MetaResult<Arc<Self>> {
         let client = Arc::new(Self {
             cluster,
@@ -876,7 +857,7 @@ impl MetaClient for RemoteMetaClient {
 
     fn get_vnode_repl_set(&self, id: u32) -> Option<ReplicationSet> {
         let data = self.data.read();
-        for (db_name, db_info) in data.dbs.iter() {
+        for (_db_name, db_info) in data.dbs.iter() {
             for bucket in db_info.buckets.iter() {
                 for repl_set in bucket.shard_group.iter() {
                     for vnode_info in repl_set.vnodes.iter() {
@@ -947,7 +928,7 @@ impl MetaClient for RemoteMetaClient {
             && strs[4] == key_path::DBS
             && strs[2] == key_path::TENANTS
         {
-            let tenant = strs[3];
+            let _tenant = strs[3];
             let db_name = strs[5];
             let tab_name = strs[7];
             if let Some(db) = self.data.write().dbs.get_mut(db_name) {
@@ -964,7 +945,7 @@ impl MetaClient for RemoteMetaClient {
             && strs[4] == key_path::DBS
             && strs[2] == key_path::TENANTS
         {
-            let tenant = strs[3];
+            let _tenant = strs[3];
             let db_name = strs[5];
             if let Some(db) = self.data.write().dbs.get_mut(db_name) {
                 if let Ok(bucket_id) = serde_json::from_str::<u32>(strs[7]) {
@@ -984,7 +965,7 @@ impl MetaClient for RemoteMetaClient {
                 }
             }
         } else if len == 6 && strs[4] == key_path::DBS && strs[2] == key_path::TENANTS {
-            let tenant = strs[3];
+            let _tenant = strs[3];
             let db_name = strs[5];
             let mut data = self.data.write();
             if entry.tye == command::ENTRY_LOG_TYPE_SET {

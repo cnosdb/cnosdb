@@ -5,9 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use config::Config;
-use serde::{Deserialize, Serialize};
 
-use crate::{file_system, summary, TseriesFamilyId};
+use crate::TseriesFamilyId;
 
 const SUMMARY_PATH: &str = "summary";
 const INDEX_PATH: &str = "index";

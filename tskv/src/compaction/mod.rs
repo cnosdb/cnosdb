@@ -14,7 +14,6 @@ pub use picker::*;
 
 use crate::kv_option::StorageOptions;
 use crate::memcache::MemCache;
-use crate::summary::VersionEdit;
 use crate::tseries_family::{ColumnFile, Version};
 use crate::{LevelId, TseriesFamilyId};
 

@@ -1,23 +1,15 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::fmt::Debug;
-use std::ops::{Add, Div};
-use std::sync::atomic::{self, AtomicBool};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use chrono::{
-    DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc,
-};
-use lazy_static::lazy_static;
 use models::Timestamp;
-use parking_lot::RwLock;
 use trace::{debug, error, info};
 
 use crate::compaction::CompactReq;
-use crate::error::Result;
-use crate::kv_option::{Options, StorageOptions};
-use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
-use crate::{LevelId, TimeRange, TseriesFamilyId};
+use crate::kv_option::StorageOptions;
+use crate::tseries_family::{ColumnFile, LevelInfo, Version};
+use crate::{LevelId, TimeRange};
 
 pub trait Picker: Send + Sync + Debug {
     fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq>;
@@ -314,7 +306,6 @@ impl LevelCompatContext {
                 break;
             }
         }
-        let l0_size = storage_opt.base_file_size;
         let base_level = 0;
 
         if !level0_being_compact {
@@ -411,16 +402,15 @@ impl LevelCompatContext {
 mod test {
     use std::sync::Arc;
 
-    use lru_cache::ShardedCache;
+    use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use metrics::metric_register::MetricsRegister;
-    use parking_lot::RwLock;
     use tokio::sync::mpsc;
 
     use crate::compaction::test::create_options;
     use crate::compaction::{LevelCompactionPicker, Picker};
     use crate::file_utils::make_tsm_file_name;
-    use crate::kv_option::{Options, StorageOptions};
+    use crate::kv_option::Options;
     use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
     use crate::memcache::MemCache;
     use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};

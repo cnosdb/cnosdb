@@ -1,38 +1,22 @@
-use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
-use std::hash::Hash;
-use std::mem::size_of;
-use std::ops::{BitAnd, BitOr, Bound, Index, RangeBounds};
-use std::path::{self, Path, PathBuf};
-use std::string::FromUtf8Error;
-use std::sync::Arc;
+use std::ops::{BitAnd, BitOr, Bound, RangeBounds};
+use std::path::{Path, PathBuf};
 
 use bytes::BufMut;
-use chrono::format::format;
-use config::Config;
-use datafusion::arrow::datatypes::{DataType, ToByteSlice};
-use datafusion::parquet::data_type::AsBytes;
-use datafusion::prelude::Column;
+use datafusion::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
-use fmt::Debug;
-use lazy_static::__Deref;
-use models::codec::Encoding;
-use models::predicate::domain::{utf8_from, Domain, Marker, Range, ValueEntry};
+use models::predicate::domain::{utf8_from, Domain, Range};
 use models::tag::TagFromParts;
-use models::{utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType};
-use once_cell::sync::OnceCell;
-use parking_lot::RwLock;
-use protos::models::Point;
-use sled::Error;
-use snafu::ResultExt;
-use trace::{debug, error, info, warn};
+use models::{utils, SeriesKey, Tag};
+use trace::{debug, info};
 
-use super::binlog::*;
+use super::binlog::{IndexBinlog, SeriesKeyBlock};
 use super::cache::{ForwardIndexCache, SeriesKeyInfo};
-use super::{errors, IndexEngine, IndexError, IndexResult, *};
+use super::{IndexEngine, IndexError, IndexResult};
 use crate::file_system::file_manager;
-use crate::Error::IndexErr;
+use crate::index::binlog::{BinlogReader, BinlogWriter};
+use crate::index::ts_index::fmt::Debug;
 use crate::{byte_utils, file_utils};
 
 const SERIES_ID_PREFIX: &str = "_id_";
@@ -284,7 +268,7 @@ impl TSIndex {
         debug!("pushed tags: {:?}", tag_domains);
 
         let mut series_ids = Vec::with_capacity(tag_domains.len());
-        for (idx, (tag_key, v)) in tag_domains.iter().enumerate() {
+        for (_idx, (tag_key, v)) in tag_domains.iter().enumerate() {
             series_ids.push(self.get_series_ids_by_domain(tab, tag_key, v)?);
         }
 
@@ -440,7 +424,7 @@ impl TSIndex {
 }
 
 impl Debug for TSIndex {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Ok(())
     }
 }
@@ -591,7 +575,7 @@ pub fn encode_series_id_list(list: &[u32]) -> Vec<u8> {
 #[cfg(test)]
 mod test {
     use std::num::NonZeroUsize;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
     use lru::LruCache;

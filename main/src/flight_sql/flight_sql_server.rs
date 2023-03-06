@@ -1,9 +1,7 @@
-use std::collections::HashMap;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::time::Duration;
 
-use arrow_flight::flight_service_server::{FlightService, FlightServiceServer};
+use arrow_flight::flight_service_server::FlightService;
 use arrow_flight::sql::server::FlightSqlService;
 use arrow_flight::sql::{
     ActionClosePreparedStatementRequest, ActionCreatePreparedStatementRequest,
@@ -14,38 +12,27 @@ use arrow_flight::sql::{
     TicketStatementQuery,
 };
 use arrow_flight::{
-    flight_service_server, utils as flight_utils, Action, FlightData, FlightDescriptor,
-    FlightEndpoint, FlightInfo, HandshakeRequest, HandshakeResponse, IpcMessage, SchemaAsIpc,
-    Ticket,
+    utils as flight_utils, Action, FlightData, FlightDescriptor, FlightInfo, HandshakeRequest,
+    HandshakeResponse, IpcMessage, SchemaAsIpc, Ticket,
 };
-use chrono::format::Item;
-use dashmap::DashMap;
 use datafusion::arrow::datatypes::{Schema, ToByteSlice};
-use datafusion::arrow::ipc::writer::{DictionaryTracker, IpcDataGenerator, IpcWriteOptions};
+use datafusion::arrow::ipc::writer::IpcWriteOptions;
 use futures::Stream;
-use http_protocol::header::{AUTHORIZATION, BASIC_PREFIX, BEARER_PREFIX, DB, TENANT};
-use models::auth::user::{User, UserInfo};
-use models::oid::{MemoryOidGenerator, Oid, OidGenerator, UuidGenerator};
+use http_protocol::header::{DB, TENANT};
+use models::auth::user::User;
+use models::oid::UuidGenerator;
 use moka::sync::Cache;
 use prost::bytes::Bytes;
-use prost::Message;
-use prost_types::Any;
-use query::dispatcher::manager::SimpleQueryDispatcher;
-use query::instance::Cnosdbms;
-use spi::query::dispatcher::QueryDispatcher;
 use spi::query::execution::Output;
-use spi::server::dbms::{DBMSRef, DatabaseManagerSystem, DatabaseManagerSystemMock};
-use spi::service::protocol::{Context, ContextBuilder, Query, QueryHandle, QueryId};
-use tonic::metadata::{AsciiMetadataValue, MetadataMap};
-use tonic::transport::Server;
+use spi::server::dbms::DBMSRef;
+use spi::service::protocol::{Context, ContextBuilder, Query, QueryHandle};
+use tonic::metadata::MetadataMap;
 use tonic::{Request, Response, Status, Streaming};
 use trace::debug;
 
 use super::auth_middleware::CallHeaderAuthenticator;
 use crate::flight_sql::auth_middleware::AuthResult;
 use crate::flight_sql::utils;
-use crate::http::header::Header;
-
 pub struct FlightSqlServiceImpl<T> {
     instance: DBMSRef,
     authenticator: T,
@@ -258,11 +245,11 @@ where
 /// use flight sql to execute statement query:
 ///
 /// e.g.
-/// ```
+///
 /// 1. do_handshake: basic auth -> baerar token
 /// 4. get_flight_info_statement: sql(baerar token) -> address of resut set
 /// 5. do_get_statement: address of resut set(baerar token) -> resut set stream
-/// ```
+///
 #[tonic::async_trait]
 impl<T> FlightSqlService for FlightSqlServiceImpl<T>
 where
@@ -355,7 +342,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_catalogs(
         &self,
         query: CommandGetCatalogs,
@@ -372,7 +359,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_schemas(
         &self,
         query: CommandGetDbSchemas,
@@ -389,7 +376,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_tables(
         &self,
         query: CommandGetTables,
@@ -406,7 +393,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_table_types(
         &self,
         query: CommandGetTableTypes,
@@ -551,7 +538,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn do_get_catalogs(
         &self,
         query: CommandGetCatalogs,
@@ -566,7 +553,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn do_get_schemas(
         &self,
         query: CommandGetDbSchemas,
@@ -578,7 +565,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for `<https://github.com/cnosdb/cnosdb/issues/642>`
     async fn do_get_tables(
         &self,
         query: CommandGetTables,
@@ -590,7 +577,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn do_get_table_types(
         &self,
         query: CommandGetTableTypes,
@@ -760,7 +747,7 @@ where
         // get result metadata
         let output = query_result.result();
         let schema = output.schema();
-        let total_records = output.num_rows();
+        let _total_records = output.num_rows();
 
         // cache result wait cli fetching
         self.result_cache.insert(result_ident.clone(), output);
@@ -804,28 +791,21 @@ where
 mod test {
     use std::collections::HashMap;
     use std::sync::Arc;
-    use std::time::Duration;
 
     use arrow_flight::flight_service_client::FlightServiceClient;
     use arrow_flight::flight_service_server::FlightServiceServer;
     use arrow_flight::sql::{Any, CommandStatementQuery};
-    use arrow_flight::{
-        utils as flight_utils, FlightData, FlightDescriptor, HandshakeRequest, IpcMessage,
-    };
+    use arrow_flight::{FlightDescriptor, HandshakeRequest, IpcMessage};
     use datafusion::arrow::buffer::Buffer;
     use datafusion::arrow::datatypes::Schema;
     use datafusion::arrow::{self, ipc};
-    use futures::{StreamExt, TryStreamExt};
+    use futures::StreamExt;
     use http_protocol::header::AUTHORIZATION;
-    use moka::sync::Cache;
     use prost::Message;
     use spi::server::dbms::DatabaseManagerSystemMock;
-    use tokio::time;
-    use tonic::client::Grpc;
-    use tonic::metadata::{AsciiMetadataValue, KeyAndValueRef, MetadataValue};
-    use tonic::service::Interceptor;
-    use tonic::transport::{Channel, Endpoint, Server};
-    use tonic::{Code, Request, Status, Streaming};
+    use tonic::metadata::MetadataValue;
+    use tonic::transport::{Endpoint, Server};
+    use tonic::Request;
 
     use crate::flight_sql::auth_middleware::basic_call_header_authenticator::BasicCallHeaderAuthenticator;
     use crate::flight_sql::auth_middleware::generated_bearer_token_authenticator::GeneratedBearerTokenAuthenticator;
@@ -925,7 +905,7 @@ mod test {
                             )
                             .expect("dictionary_from_message");
                         }
-                        t => {
+                        _t => {
                             panic!("Reading types other than record batches not yet supported");
                         }
                     }
