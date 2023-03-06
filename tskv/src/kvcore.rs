@@ -821,7 +821,7 @@ impl Engine for TsKv {
         vnode_id: u32,
         summary: VersionEdit,
     ) -> Result<()> {
-        info!("source tsfamily summary: {:?}", summary);
+        info!("apply tsfamily summary: {:?}", summary);
         // It should be a version edit that add a vnode.
         if !summary.add_tsf {
             return Ok(());
@@ -839,43 +839,16 @@ impl Engine for TsKv {
                 .await;
         }
 
-        let mut levels = crate::tseries_family::LevelInfo::init_levels(
-            db_wlock.owner(),
-            vnode_id,
-            self.options.storage.clone(),
-        );
-        for meta in summary.add_files.iter() {
-            let field_filter = Arc::new(utils::BloomFilter::default());
-
-            levels[meta.level as usize].push_compact_meta(&meta, field_filter);
-        }
-
-        let ver = Version::new(
-            vnode_id,
-            Arc::new(database.to_string()),
-            self.options.storage.clone(),
-            0,
-            levels,
-            i64::MIN,
-            Arc::new(lru_cache::ShardedCache::default()),
-        );
-
-        db_wlock.open_tsfamily(
-            Arc::new(ver),
-            self.flush_task_sender.clone(),
-            self.compact_task_sender.clone(),
-        );
-
-        // db_wlock
-        //     .add_tsfamily(
-        //         vnode_id,
-        //         0,
-        //         Some(summary),
-        //         self.summary_task_sender.clone(),
-        //         self.flush_task_sender.clone(),
-        //         self.compact_task_sender.clone(),
-        //     )
-        //     .await;
+        db_wlock
+            .add_tsfamily(
+                vnode_id,
+                0,
+                Some(summary),
+                self.summary_task_sender.clone(),
+                self.flush_task_sender.clone(),
+                self.compact_task_sender.clone(),
+            )
+            .await;
         Ok(())
     }
 
