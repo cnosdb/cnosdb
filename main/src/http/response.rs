@@ -90,7 +90,7 @@ impl ResponseBuilder {
 #[cfg(test)]
 mod tests {
     use http_protocol::response::ErrorResponse;
-    use models::error_code::{ErrorCode, UnknownCode};
+    use models::error_code::UnknownCode;
 
     use super::*;
 
@@ -114,7 +114,6 @@ mod tests {
 
     #[test]
     fn test_bad_request() {
-        let error_message = "error";
         let error_resp = ErrorResponse::new(&UnknownCode);
         let resp = ResponseBuilder::bad_request(&error_resp);
 

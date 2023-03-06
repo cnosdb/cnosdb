@@ -24,6 +24,7 @@ pub mod service;
 pub mod store;
 pub mod tenant_manager;
 pub mod user_manager;
+pub mod user_manager_mock;
 
 pub type UserManagerRef = Arc<dyn UserManager>;
 pub type TenantManagerRef = Arc<dyn TenantManager>;

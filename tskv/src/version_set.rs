@@ -1,29 +1,22 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use memory_pool::{MemoryPool, MemoryPoolRef};
+use memory_pool::MemoryPoolRef;
 use meta::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
-use parking_lot::RwLock as SyncRwLock;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::watch::Receiver;
-use tokio::sync::{oneshot, RwLock};
-use trace::error;
+use tokio::sync::RwLock;
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalSequenceContext;
 use crate::database::Database;
 use crate::error::{MetaSnafu, Result};
-use crate::kv_option::StorageOptions;
-use crate::memcache::MemCache;
-use crate::summary::{VersionEdit, WriteSummaryRequest};
-use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
+use crate::summary::VersionEdit;
+use crate::tseries_family::{TseriesFamily, Version};
 use crate::{ColumnFileId, Options, TseriesFamilyId};
 
 #[derive(Debug)]
@@ -64,7 +57,7 @@ impl VersionSet {
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
-        for (id, ver) in ver_set {
+        for (_id, ver) in ver_set {
             let owner = ver.database().to_string();
             let (tenant, database) = split_owner(&owner);
 
@@ -232,7 +225,7 @@ impl VersionSet {
     ) -> (Vec<VersionEdit>, HashMap<ColumnFileId, Arc<BloomFilter>>) {
         let mut version_edits = vec![];
         let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
-        for (name, db) in self.dbs.iter() {
+        for (_name, db) in self.dbs.iter() {
             db.read()
                 .await
                 .snapshot(last_seq, None, &mut version_edits, &mut file_metas)

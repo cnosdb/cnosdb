@@ -2,10 +2,9 @@ use std::path::{Path, PathBuf};
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use snafu::ResultExt;
 
 use crate::file_system::file_manager;
-use crate::{error, Error, Result};
+use crate::{Error, Result};
 
 lazy_static! {
     static ref SUMMARY_FILE_NAME_PATTERN: Regex = Regex::new(r"summary-\d{6}").unwrap();
@@ -246,7 +245,7 @@ pub fn get_file_id_range(dir: impl AsRef<Path>, suffix: &str) -> Option<(u64, u6
     let mut max_id = 0;
     let mut min_id = u64::MAX;
     let mut is_found = false;
-    for (i, file_name) in file_names.iter().enumerate() {
+    for (_i, file_name) in file_names.iter().enumerate() {
         if let Ok(id) = get_file_id(file_name) {
             is_found = true;
             if max_id < id {
@@ -271,7 +270,7 @@ mod test {
 
     use super::{check_summary_file_name, make_summary_file};
     use crate::file_utils::{
-        self, check_schema_file, check_wal_file_name, get_schema_file_id, get_summary_file_id,
+        check_schema_file, check_wal_file_name, get_schema_file_id, get_summary_file_id,
         get_wal_file_id, make_schema_file, make_wal_file,
     };
 

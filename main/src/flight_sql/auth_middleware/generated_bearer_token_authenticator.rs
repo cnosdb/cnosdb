@@ -1,16 +1,14 @@
 use std::time::Duration;
 
 use http_protocol::header::BEARER_PREFIX;
-use models::auth::user::{User, UserInfo};
-use models::oid::{MemoryOidGenerator, UuidGenerator};
+use models::auth::user::User;
+use models::oid::UuidGenerator;
 use moka::sync::Cache;
-use query::auth::auth_control::AccessControlImpl;
-use spi::server::dbms::DBMSRef;
 use tonic::metadata::MetadataMap;
 use tonic::Status;
 use trace::debug;
 
-use super::{AuthResult, CallHeaderAuthenticator, CommonAuthResult};
+use super::{AuthResult, CallHeaderAuthenticator};
 use crate::flight_sql::utils;
 
 /// Generates and caches bearer tokens from user credentials.
@@ -126,12 +124,10 @@ impl AuthResult for GeneratedBearerTokenAuthResult {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
 
     use http_protocol::header::{AUTHORIZATION, BEARER_PREFIX};
     use models::auth::role::UserRole;
-    use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
-    use spi::server::dbms::DatabaseManagerSystemMock;
+    use models::auth::user::{User, UserDesc, UserOptionsBuilder};
     use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 
     use crate::flight_sql::auth_middleware::generated_bearer_token_authenticator::GeneratedBearerTokenAuthenticator;
@@ -149,7 +145,7 @@ mod test {
 
         async fn authenticate(
             &self,
-            req_headers: &MetadataMap,
+            _req_headers: &MetadataMap,
         ) -> Result<Self::AuthResult, tonic::Status> {
             let options = unsafe {
                 UserOptionsBuilder::default()
@@ -165,8 +161,6 @@ mod test {
 
     #[tokio::test]
     async fn test() {
-        let instance = Arc::new(DatabaseManagerSystemMock {});
-
         let authenticator = GeneratedBearerTokenAuthenticator::new(CallHeaderAuthenticatorMock {});
 
         let mut req_headers = MetadataMap::default();

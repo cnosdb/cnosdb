@@ -4,8 +4,8 @@ use std::sync::Arc;
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
 use trace::trace;
 
-use crate::tseries_family::{ColumnFile, SuperVersion, TimeRangeCmp, Version};
-use crate::tsm::{BlockMeta, IndexMeta, TsmReader};
+use crate::tseries_family::{ColumnFile, SuperVersion, TimeRangeCmp};
+use crate::tsm::{BlockMeta, TsmReader};
 use crate::{Error, Result, TimeRange};
 
 /// Compute pushed down aggregate:
@@ -236,7 +236,7 @@ async fn create_file_read_tasks<'a>(
                 }
                 reader.index_iterator_opt(*field_id)
             }
-            CountingObject::Series(series_ids) => reader.index_iterator(),
+            CountingObject::Series(_series_ids) => reader.index_iterator(),
         };
         for idx in idx_meta_iter {
             if let CountingObject::Series(series_ids) = counting_object {

@@ -2,10 +2,7 @@ use protobuf::Message;
 #[cfg(feature = "test")]
 pub use test::*;
 
-use crate::{
-    models::{FieldType, Points},
-    prompb::remote::ReadRequest,
-};
+use crate::models::{FieldType, Points};
 
 pub fn print_points(points: Points) {
     if let Some(db) = points.db() {
@@ -115,7 +112,7 @@ mod test {
     use chrono::prelude::*;
     use flatbuffers::{self, ForwardsUOffset, InvalidFlatbuffer, Vector, WIPOffset};
 
-    use crate::models::{self, *};
+    use crate::models::*;
 
     pub fn create_tags<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
@@ -192,14 +189,7 @@ mod test {
             let fields = create_fields(fbb, &fields);
 
             let table = fbb.create_vector(table.as_bytes());
-            points.push(create_point(
-                fbb,
-                timestamp,
-                db.clone(),
-                table,
-                tags,
-                fields,
-            ))
+            points.push(create_point(fbb, timestamp, db, table, tags, fields))
         }
         let points = fbb.create_vector(&points);
         Points::create(
@@ -247,14 +237,7 @@ mod test {
             );
 
             let table = fbb.create_vector("table".as_bytes());
-            points.push(create_point(
-                fbb,
-                timestamp,
-                db.clone(),
-                table,
-                tags,
-                fields,
-            ))
+            points.push(create_point(fbb, timestamp, db, table, tags, fields))
         }
 
         let points = fbb.create_vector(&points);
@@ -327,14 +310,7 @@ mod test {
             };
 
             let table = fbb.create_vector("table".as_bytes());
-            points.push(create_point(
-                fbb,
-                timestamp,
-                db.clone(),
-                table,
-                tags,
-                fields,
-            ))
+            points.push(create_point(fbb, timestamp, db, table, tags, fields))
         }
         let points = fbb.create_vector(&points);
         Points::create(
@@ -371,14 +347,7 @@ mod test {
             let fields = create_fields(fbb, &fields);
 
             let table = fbb.create_vector("table".as_bytes());
-            points.push(create_point(
-                fbb,
-                timestamp,
-                db.clone(),
-                table,
-                tags,
-                fields,
-            ));
+            points.push(create_point(fbb, timestamp, db, table, tags, fields));
         }
         let points = fbb.create_vector(&points);
         Points::create(
@@ -423,14 +392,7 @@ mod test {
             }
             let fields = create_fields(fbb, &fields);
 
-            points.push(create_point(
-                fbb,
-                timestamp,
-                database.clone(),
-                table,
-                tags,
-                fields,
-            ));
+            points.push(create_point(fbb, timestamp, database, table, tags, fields));
         }
         let points = fbb.create_vector(&points);
         Points::create(

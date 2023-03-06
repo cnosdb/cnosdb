@@ -2,10 +2,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use coordinator::service::{CoordService, CoordinatorRef};
-use datafusion::execution::memory_pool::MemoryPool;
 use memory_pool::MemoryPoolRef;
 use meta::meta_manager::RemoteMetaManager;
-use meta::{store, MetaRef};
+use meta::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use query::instance::make_cnosdbms;
 use snafu::{Backtrace, Snafu};
@@ -227,7 +226,7 @@ impl ServiceBuilder {
     }
 
     async fn create_coord(&self, meta: MetaRef, kv: Option<EngineRef>) -> CoordinatorRef {
-        let options = tskv::Options::from(&self.config);
+        let _options = tskv::Options::from(&self.config);
 
         let coord: CoordinatorRef = CoordService::new(
             kv,

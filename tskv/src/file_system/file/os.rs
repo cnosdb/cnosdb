@@ -16,7 +16,7 @@ pub use windows::*;
 
 #[cfg(test)]
 mod test {
-    use std::fs::{File, OpenOptions};
+    use std::fs::File;
 
     use tempfile::NamedTempFile;
 
