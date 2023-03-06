@@ -13,7 +13,7 @@ use tskv::engine::Engine;
 use tskv::TsKv;
 
 async fn get_tskv() -> TsKv {
-    let mut global_config = config::get_config("../config/config.toml");
+    let mut global_config = config::get_config_for_test();
     global_config.wal.path = "/tmp/test_bench/wal".to_string();
     let opt = tskv::kv_option::Options::from(&global_config);
 

@@ -75,7 +75,7 @@ impl SessionConfig {
         self
     }
 
-    pub fn with_port(mut self, port: usize) -> Self {
+    pub fn with_port(mut self, port: u16) -> Self {
         self.connection_info.port = port;
 
         self
@@ -111,7 +111,7 @@ impl Default for UserInfo {
 #[derive(Default)]
 pub struct ConnectionInfo {
     pub host: String,
-    pub port: usize,
+    pub port: u16,
 
     pub tls_config: Option<TLSConfig>,
 }

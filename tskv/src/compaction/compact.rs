@@ -741,8 +741,7 @@ pub mod test {
     }
 
     pub(crate) fn create_options(base_dir: String) -> Arc<Options> {
-        let dir = "../config/config.toml";
-        let mut config = config::get_config(dir);
+        let mut config = config::get_config_for_test();
         config.storage.path = base_dir;
         let opt = Options::from(&config);
         Arc::new(opt)

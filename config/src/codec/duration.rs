@@ -146,7 +146,7 @@ mod test {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::duration;
+    use crate::codec::duration;
 
     #[derive(Serialize, Deserialize, Debug)]
     pub struct Foo {

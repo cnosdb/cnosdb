@@ -3,11 +3,11 @@ use reqwest::RequestBuilder;
 pub struct HttpClient {
     client: reqwest::Client,
     host: String,
-    port: usize,
+    port: u16,
 }
 
 impl HttpClient {
-    pub fn from_addr(host: String, port: usize) -> HttpClient {
+    pub fn from_addr(host: String, port: u16) -> HttpClient {
         HttpClient {
             host,
             port,

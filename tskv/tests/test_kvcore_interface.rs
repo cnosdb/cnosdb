@@ -4,7 +4,6 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use config::get_config;
     use datafusion::execution::memory_pool::GreedyMemoryPool;
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
@@ -22,7 +21,7 @@ mod tests {
 
     fn get_tskv(dir: impl AsRef<Path>) -> (Arc<Runtime>, TsKv) {
         let dir = dir.as_ref();
-        let mut global_config = get_config("../config/config_31001.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.wal.path = dir.join("wal").to_str().unwrap().to_string();
         global_config.storage.path = dir.to_str().unwrap().to_string();
         global_config.cache.max_buffer_size = 128;

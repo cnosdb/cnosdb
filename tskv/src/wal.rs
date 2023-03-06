@@ -590,9 +590,7 @@ mod test {
     use std::path::Path;
     use std::sync::Arc;
 
-    use config::get_config;
     use datafusion::execution::memory_pool::GreedyMemoryPool;
-    use flatbuffers::{self};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
     use metrics::metric_register::MetricsRegister;
@@ -727,7 +725,7 @@ mod test {
     async fn test_read_and_write() {
         let dir = "/tmp/test/wal/1".to_string();
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.wal.path = dir.clone();
         let wal_config = WalOptions::from(&global_config);
 
@@ -757,7 +755,7 @@ mod test {
 
         let dir = "/tmp/test/wal/2".to_string();
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.wal.path = dir.clone();
         // Argument max_file_size is so small that there must a new wal file created.
         global_config.wal.max_file_size = 1;
@@ -795,7 +793,7 @@ mod test {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let dir = "/tmp/test/wal/3".to_string();
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.wal.path = dir.clone();
         let wal_config = WalOptions::from(&global_config);
 
@@ -835,7 +833,7 @@ mod test {
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let dir = "/tmp/test/wal/4/wal";
         let _ = std::fs::remove_dir_all(dir);
-        let mut global_config = get_config("../config/config_31001.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.wal.path = dir.to_string();
         global_config.storage.path = "/tmp/test/wal/4".to_string();
         let wal_config = WalOptions::from(&global_config);
@@ -909,5 +907,10 @@ mod test {
             assert_eq!(wrote_data.len(), 2);
             assert_eq!(wrote_data, cached_data);
         });
+    }
+
+    #[test]
+    fn test_get_test_config() {
+        let _ = config::get_config_for_test();
     }
 }

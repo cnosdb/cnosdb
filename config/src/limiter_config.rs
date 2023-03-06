@@ -6,7 +6,6 @@ pub struct TenantLimiterConfig {
     pub request_config: Option<RequestLimiterConfig>,
 }
 
-#[allow(dead_code)]
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct TenantObjectLimiterConfig {
     // add user limit
@@ -46,6 +45,7 @@ pub struct RequestLimiterConfig {
     pub queries: Option<Bucket>,
     pub writes: Option<Bucket>,
 }
+
 #[test]
 fn test_config() {
     let config_str = r#"

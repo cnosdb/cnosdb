@@ -21,10 +21,10 @@ use trace::{init_process_global_tracing, WorkerGuard};
 static GLOBAL_META_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 
-#[derive(Debug, clap::Parser)]
+#[derive(Debug, Parser)]
 struct Cli {
     /// configuration path
-    #[clap(short, long, default_value = "./config.toml")]
+    #[arg(short, long, default_value = "./config.toml")]
     config: String,
 }
 

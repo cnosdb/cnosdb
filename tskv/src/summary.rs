@@ -776,7 +776,7 @@ mod test {
     use std::fs;
     use std::sync::Arc;
 
-    use config::{get_config, ClusterConfig};
+    use config::ClusterConfig;
     use memory_pool::GreedyMemoryPool;
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
@@ -824,7 +824,7 @@ mod test {
 
     #[test]
     fn test_summary() {
-        let mut config = get_config("../config/config_31001.toml");
+        let mut config = config::get_config_for_test();
 
         let runtime = Arc::new(
             tokio::runtime::Builder::new_multi_thread()

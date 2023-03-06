@@ -809,7 +809,6 @@ mod test {
 
     #[test]
     fn test_get_ts_family_hash_tree() {
-        let config_file_path = "../config/config_31001.toml";
         let base_dir = "/tmp/test/repair/1".to_string();
         let wal_dir = "/tmp/test/repair/1/wal".to_string();
         let log_dir = "/tmp/test/repair/1/log".to_string();
@@ -860,7 +859,7 @@ mod test {
                 .unwrap(),
         );
 
-        let mut config = config::get_config(config_file_path);
+        let mut config = config::get_config_for_test();
         config.storage.path = base_dir;
         config.wal.path = wal_dir;
         config.wal.sync = true;

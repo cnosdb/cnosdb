@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
+use std::path::Path;
 use std::sync::Arc;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
@@ -34,48 +35,76 @@ static GLOBAL_MAIN_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
 
 /// cli examples is here
 /// <https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs>
-#[derive(Debug, clap::Parser)]
-#[clap(name = "cnosdb")]
-#[clap(version = & VERSION[..],
-about = "cnosdb command line tools",
-long_about = r#"cnosdb and command line tools
+#[derive(Debug, Parser)]
+#[command(name = "cnosdb", version = & VERSION[..])]
+#[command(about = "CnosDB command line tools")]
+#[command(long_about = r#"CnosDB and command line tools
 Examples:
-    # Run the cnosdb:
-    cargo run -- run
-                        "#
-)]
+    # Run the CnosDB:
+    cnosdb run
+    # Check configuration file:
+    cnosdb check server-config ./config/config.toml"#)]
 struct Cli {
-    #[clap(short, long, global = true, default_value_t = 4)]
-    /// the number of cores on the system
-    cpu: usize,
-
-    #[clap(short, long, global = true, default_value_t = 16)]
-    /// the number of memory on the system(GB)
-    memory: usize,
-
-    /// configuration path
-    #[clap(long, global = true)]
-    config: Option<String>,
-
-    #[clap(subcommand)]
-    subcmd: SubCommand,
+    #[command(subcommand)]
+    subcmd: CliCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum SubCommand {
-    // #[clap(arg_required_else_help = true)]
-    // Debug { debug: String },
-    /// run cnosdb server
-    #[clap(arg_required_else_help = false)]
-    Run {},
-    /// run tskv
-    #[clap(arg_required_else_help = true)]
+enum CliCommand {
+    /// Run CnosDB server.
+    Run(RunArgs),
+    /// Check configurations.
+    Check {
+        #[command(subcommand)]
+        subcmd: CheckCommand,
+    },
+}
+
+#[derive(Debug, Args)]
+struct RunArgs {
+    /// Number of CPUs on the system.
+    #[arg(short, long, global = true, default_value_t = 4)]
+    cpu: usize,
+
+    /// Gigabytes(G) of memory on the system.
+    #[arg(short, long, global = true, default_value_t = 16)]
+    memory: usize,
+
+    /// Path to configuration file.
+    #[arg(long, global = true)]
+    config: Option<String>,
+
+    #[command(subcommand)]
+    subcmd: Option<RunCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+enum RunCommand {
+    /// Run storage engine (default).
+    #[command()]
     Tskv {},
-    /// run query
-    #[clap(arg_required_else_help = true)]
+    /// Run query server.
+    #[command(arg_required_else_help = true)]
     Query {},
-    #[clap(arg_required_else_help = true)]
+    /// Run singleton server.
+    #[command()]
     Singleton {},
+}
+
+#[derive(Debug, Subcommand)]
+enum CheckCommand {
+    /// Check server configurations.
+    #[command(arg_required_else_help = false)]
+    ServerConfig {
+        /// Print warnings.
+        #[arg(short, long)]
+        show_warnings: bool,
+        /// Path to configuration file.
+        config: String,
+    },
+    // /// Check meta server configurations.
+    // #[command(arg_required_else_help = false)]
+    // MetaConfig {},
 }
 
 #[global_allocator]
@@ -89,7 +118,20 @@ static A: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 fn main() -> Result<(), std::io::Error> {
     signal::install_crash_handler();
     let cli = Cli::parse();
-    let config = parse_config(&cli);
+    let run_args = match cli.subcmd {
+        CliCommand::Run(run_args) => run_args,
+        CliCommand::Check { subcmd } => match subcmd {
+            CheckCommand::ServerConfig {
+                config,
+                show_warnings,
+            } => {
+                config::check_config(config, show_warnings);
+                return Ok(());
+            }
+        },
+    };
+
+    let config = parse_config(run_args.config.as_ref());
 
     init_process_global_tracing(
         &config.log.path,
@@ -100,8 +142,8 @@ fn main() -> Result<(), std::io::Error> {
     );
     init_tskv_metrics_recorder();
 
-    let runtime = Arc::new(init_runtime(Some(cli.cpu))?);
-    let memory_size = cli.memory * 1024 * 1024 * 1024;
+    let runtime = Arc::new(init_runtime(Some(run_args.cpu))?);
+    let memory_size = run_args.memory * 1024 * 1024 * 1024;
     let memory_pool = Arc::new(GreedyMemoryPool::new(memory_size));
     runtime.clone().block_on(async move {
         let builder = server::ServiceBuilder {
@@ -119,11 +161,11 @@ fn main() -> Result<(), std::io::Error> {
             server.add_service(Box::new(ReportService::new()));
         }
 
-        let storage = match &cli.subcmd {
-            SubCommand::Tskv {} => builder.build_storage_server(&mut server).await,
-            SubCommand::Query {} => builder.build_query_server(&mut server).await,
-            SubCommand::Run {} => builder.build_query_storage(&mut server).await,
-            SubCommand::Singleton {} => builder.build_singleton(&mut server).await,
+        let storage = match &run_args.subcmd {
+            None => builder.build_query_storage(&mut server).await,
+            Some(RunCommand::Tskv {}) => builder.build_storage_server(&mut server).await,
+            Some(RunCommand::Query {}) => builder.build_query_server(&mut server).await,
+            Some(RunCommand::Singleton {}) => builder.build_singleton(&mut server).await,
         };
 
         server.start().expect("CnosDB server start.");
@@ -138,13 +180,13 @@ fn main() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn parse_config(cli: &Cli) -> config::Config {
-    let global_config = if let Some(cfg_path) = cli.config.clone() {
+fn parse_config(config_path: Option<impl AsRef<Path>>) -> config::Config {
+    let global_config = if let Some(p) = config_path {
         println!("----------\nStart with configuration:");
-        config::get_config(cfg_path)
+        config::get_config(p).unwrap()
     } else {
         println!("----------\nStart with default configuration:");
-        config::default_config()
+        config::Config::default()
     };
     println!("{}----------", global_config.to_string_pretty());
 

@@ -488,7 +488,7 @@ pub mod flush_tests {
 
     #[tokio::test]
     async fn test_flush() {
-        let mut config = config::get_config("../config/config.toml");
+        let mut config = config::get_config_for_test();
         config.storage.path = "/tmp/test/flush/test_flush".to_string();
         config.log.path = "/tmp/test/flush/test_flush/logs".to_string();
         trace::init_default_global_tracing(&config.log.path, "tskv.log", "debug");

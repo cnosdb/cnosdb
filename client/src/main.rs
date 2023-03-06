@@ -1,8 +1,7 @@
 use std::env;
-use std::net::IpAddr;
 use std::path::Path;
 
-use clap::Parser;
+use clap::{value_parser, Parser};
 use client::ctx::{SessionConfig, SessionContext};
 use client::print_format::PrintFormat;
 use client::print_options::PrintOptions;
@@ -10,27 +9,27 @@ use client::{exec, CNOSDB_CLI_VERSION};
 use datafusion::error::Result;
 
 #[derive(Debug, Parser, PartialEq)]
-#[clap(author, version, about, long_about= None)]
+#[command(author, version, about, long_about= None)]
 struct Args {
-    #[clap(
-        short,
+    #[arg(
+        short = 'H',
         long,
         help = "CnosDB server http api host",
         default_value = "0.0.0.0",
-        validator(is_valid_host)
+        value_parser = try_parse_host
     )]
     host: String,
 
-    #[clap(
+    #[arg(
         short = 'P',
         long,
         help = "CnosDB server http api port",
         default_value = "31001",
-        validator(is_valid_port)
+        value_parser = value_parser!(u16).range(0..=65535)
     )]
-    port: usize,
+    port: u16,
 
-    #[clap(
+    #[arg(
         short,
         long,
         help = "The user name used to connect to the CnosDB",
@@ -38,10 +37,10 @@ struct Args {
     )]
     user: String,
 
-    #[clap(short, long, help = "Password used to connect to the CnosDB")]
+    #[arg(short, long, help = "Password used to connect to the CnosDB")]
     password: Option<String>,
 
-    #[clap(
+    #[arg(
         short,
         long,
         help = "Default database to connect to the CnosDB",
@@ -49,7 +48,7 @@ struct Args {
     )]
     database: String,
 
-    #[clap(
+    #[arg(
         short,
         long,
         help = "Default tenant to connect to the CnosDB",
@@ -57,48 +56,48 @@ struct Args {
     )]
     tenant: String,
 
-    #[clap(
+    #[arg(
         long,
         help = "Number of partitions for query execution. Increasing partitions can increase concurrency.",
-        validator(is_valid_target_partitions)
+        value_parser = try_parse_target_partitions
     )]
     target_partitions: Option<usize>,
 
-    #[clap(
+    #[arg(
         long,
         help = "Path to your data, default to current directory",
-        validator(is_valid_data_dir)
+        value_parser = try_parse_data_dir
     )]
     data_path: Option<String>,
 
-    // #[clap(
+    // #[arg(
     //     long,
     //     help = "The batch size of each query, or use CnosDB default",
-    //     validator(is_valid_batch_size)
+    //     value_parser = is_valid_batch_size
     // )]
     // batch_size: Option<usize>,
-    #[clap(
+    #[arg(
         short,
         long,
-        multiple_values = true,
+        num_args = 0..,
         help = "Execute commands from file(s), then exit",
-        validator(is_valid_file)
+        value_parser = try_parse_file
     )]
     file: Vec<String>,
 
-    #[clap(
+    #[arg(
         long,
-        multiple_values = true,
+        num_args = 0..,
         help = "Run the provided files on startup instead of ~/.cnosdbrc",
-        validator(is_valid_file),
+        value_parser = try_parse_file,
         conflicts_with = "file"
     )]
     rc: Option<Vec<String>>,
 
-    #[clap(long, arg_enum, default_value_t = PrintFormat::Table)]
+    #[arg(long, value_enum, default_value_t = PrintFormat::Table)]
     format: PrintFormat,
 
-    #[clap(
+    #[arg(
         short,
         long,
         help = "Reduce printing other than the results and work quietly"
@@ -165,39 +164,32 @@ pub async fn main() -> Result<()> {
     Ok(())
 }
 
-fn is_valid_host(address: &str) -> std::result::Result<(), String> {
-    address
-        .parse::<IpAddr>()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+fn try_parse_host(address: &str) -> std::result::Result<String, String> {
+    if address.trim().is_empty() {
+        return Err("host cannot be empty".to_string());
+    }
+    Ok(address.to_string())
 }
 
-fn is_valid_file(dir: &str) -> std::result::Result<(), String> {
-    if Path::new(dir).is_file() {
-        Ok(())
+fn try_parse_file(dir: &str) -> std::result::Result<String, String> {
+    if Path::new(&dir).is_file() {
+        Ok(dir.to_string())
     } else {
-        Err(format!("Invalid file '{}'", dir))
+        Err("file must be a file".to_string())
     }
 }
 
-fn is_valid_data_dir(dir: &str) -> std::result::Result<(), String> {
-    if Path::new(dir).is_dir() {
-        Ok(())
+fn try_parse_data_dir(dir: &str) -> std::result::Result<String, String> {
+    if Path::new(&dir).is_dir() {
+        Ok(dir.to_string())
     } else {
-        Err(format!("Invalid data directory '{}'", dir))
+        Err("data-dir must be a directory".to_string())
     }
 }
 
-fn is_valid_target_partitions(size: &str) -> std::result::Result<(), String> {
+fn try_parse_target_partitions(size: &str) -> std::result::Result<String, String> {
     match size.parse::<usize>() {
-        Ok(size) if size > 0 => Ok(()),
-        _ => Err(format!("Invalid target partitions '{}'", size)),
-    }
-}
-
-fn is_valid_port(size: &str) -> std::result::Result<(), String> {
-    match size.parse::<usize>() {
-        Ok(size) if size > 0 => Ok(()),
-        _ => Err(format!("Invalid port range '{}'", size)),
+        Ok(s) if s > 0 => Ok(size.to_string()),
+        _ => Err(format!("target-partition is not in 1..={}", usize::MAX)),
     }
 }

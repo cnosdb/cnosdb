@@ -153,7 +153,7 @@ mod test {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::bytes_num::{self, parse_number};
+    use crate::codec::bytes_num::{self, parse_number};
 
     #[test]
     fn test_parse() {
