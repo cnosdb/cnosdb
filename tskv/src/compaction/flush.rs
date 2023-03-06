@@ -421,7 +421,7 @@ pub async fn run_flush_memtable_job(
     info!("Flush: Flush finished, version edits: {:?}", version_edits);
 
     let (task_state_sender, task_state_receiver) = oneshot::channel();
-    let task = SummaryTask::new_column_file_task(file_metas, version_edits, task_state_sender);
+    let task = SummaryTask::new(version_edits, Some(file_metas), task_state_sender);
 
     if let Err(e) = summary_task_sender.send(task).await {
         warn!("failed to send Summary task, {}", e);

@@ -19,7 +19,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::watch::Receiver;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-use trace::{debug, error, info, warn};
+use trace::{debug, error, info, trace, warn};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
@@ -808,6 +808,11 @@ impl TseriesFamily {
     /// then create new SuperVersion, update seq_no
     pub fn new_version(&mut self, new_version: Version) {
         let version = Arc::new(new_version);
+        trace!(
+            "New version(level_info) for ts_family({}): {:?}",
+            self.tf_id,
+            &version.levels_info()
+        );
         self.new_super_version(version.clone());
         self.seq_no = version.last_seq;
         self.version = version;
@@ -1383,11 +1388,7 @@ pub mod test_tseries_family {
         let mut version_edits: Vec<VersionEdit> = Vec::new();
         let mut min_seq: u64 = 0;
         while let Some(summary_task) = summary_task_receiver.recv().await {
-            for edit in summary_task
-                .write_summary_request()
-                .version_edits
-                .into_iter()
-            {
+            for edit in summary_task.request.version_edits.into_iter() {
                 if edit.tsf_id == ts_family_id {
                     version_edits.push(edit.clone());
                     if edit.has_seq_no {

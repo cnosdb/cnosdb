@@ -85,13 +85,11 @@ pub fn run(
                             Ok(Some((version_edit, file_metas))) => {
                                 metrics::incr_compaction_success();
                                 let (summary_tx, summary_rx) = oneshot::channel();
-                                let ret = summary_task_sender_inner.send(
-                                    SummaryTask::new_column_file_task(
-                                        file_metas,
-                                        vec![version_edit],
-                                        summary_tx,
-                                    ),
-                                );
+                                let ret = summary_task_sender_inner.send(SummaryTask::new(
+                                    vec![version_edit],
+                                    Some(file_metas),
+                                    summary_tx,
+                                ));
 
                                 metrics::sample_tskv_compaction_duration(
                                     database.as_str(),

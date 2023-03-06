@@ -133,7 +133,29 @@ impl Database {
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
     ) -> Arc<RwLock<TseriesFamily>> {
-        let seq_no = version_edit.as_ref().map(|v| v.seq_no).unwrap_or(seq_no);
+        let (seq_no, version_edits, file_metas) = match version_edit {
+            Some(mut ve) => {
+                ve.tsf_id = tsf_id;
+                let mut file_metas = HashMap::with_capacity(ve.add_files.len());
+                for f in ve.add_files.iter_mut() {
+                    f.tsf_id = tsf_id;
+                    let file_path = f.file_path(&self.opt.storage, &self.owner, f.tsf_id);
+                    // TODO: Receive file_metas from the source node.
+                    let file_reader = crate::tsm::TsmReader::open(file_path).await.unwrap();
+                    file_metas.insert(f.file_id, file_reader.bloom_filter());
+                }
+                ve.del_files.iter_mut().for_each(|f| f.tsf_id = tsf_id);
+                (ve.seq_no, vec![ve], Some(file_metas))
+            }
+            None => (
+                seq_no,
+                vec![VersionEdit::new_add_vnode(
+                    tsf_id,
+                    self.owner.as_ref().clone(),
+                )],
+                None,
+            ),
+        };
 
         let ver = Arc::new(Version::new(
             tsf_id,
@@ -166,14 +188,8 @@ impl Database {
         let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
 
-        let edits = version_edit.map(|v| vec![v]).unwrap_or_else(|| {
-            vec![VersionEdit::new_add_vnode(
-                tsf_id,
-                self.owner.as_ref().clone(),
-            )]
-        });
         let (task_state_sender, task_state_receiver) = oneshot::channel();
-        let task = SummaryTask::new_vnode_task(edits, task_state_sender);
+        let task = SummaryTask::new(version_edits, file_metas, task_state_sender);
         if let Err(e) = summary_task_sender.send(task).await {
             error!("failed to send Summary task, {:?}", e);
         }
@@ -188,7 +204,7 @@ impl Database {
 
         let edits = vec![VersionEdit::new_del_vnode(tf_id)];
         let (task_state_sender, task_state_receiver) = oneshot::channel();
-        let task = SummaryTask::new_vnode_task(edits, task_state_sender);
+        let task = SummaryTask::new(edits, None, task_state_sender);
         if let Err(e) = summary_task_sender.send(task).await {
             error!("failed to send Summary task, {:?}", e);
         }

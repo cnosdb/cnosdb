@@ -407,11 +407,15 @@ impl Summary {
                 Ok(result) => {
                     let ed = VersionEdit::decode(&result.data)?;
                     if ed.add_tsf {
-                        tsf_edits_map.insert(ed.tsf_id, vec![]);
                         let db_ref = database_map
                             .entry(ed.tsf_name.clone())
-                            .or_insert_with(|| Arc::new(ed.tsf_name));
+                            .or_insert_with(|| Arc::new(ed.tsf_name.clone()));
                         tsf_database_map.insert(ed.tsf_id, db_ref.clone());
+                        if ed.has_file_id {
+                            tsf_edits_map.insert(ed.tsf_id, vec![ed]);
+                        } else {
+                            tsf_edits_map.insert(ed.tsf_id, vec![]);
+                        }
                     } else if ed.del_tsf {
                         tsf_edits_map.remove(&ed.tsf_id);
                         tsf_database_map.remove(&ed.tsf_id);
@@ -704,23 +708,10 @@ impl SummaryProcessor {
     }
 
     pub fn batch(&mut self, task: SummaryTask) {
-        let mut req = match task {
-            SummaryTask::ColumnFile {
-                file_metas,
-                request,
-            } => {
-                self.file_metas.extend(file_metas.into_iter());
-                request
-            }
-            SummaryTask::Vnode { request } => request,
-            SummaryTask::ApplySummary {
-                ts_family_id,
-                request,
-            } => {
-                // TODO append ts_family into this current vnode
-                return;
-            }
-        };
+        if let Some(file_metas) = task.file_metas {
+            self.file_metas.extend(file_metas.into_iter());
+        }
+        let mut req = task.request;
         self.edits.append(&mut req.version_edits);
         self.cbs.push(req.call_back);
     }
@@ -748,67 +739,23 @@ impl SummaryProcessor {
 }
 
 #[derive(Debug)]
-pub enum SummaryTask {
-    /// Vnode create / delete.
-    Vnode { request: WriteSummaryRequest },
-    /// Column file add / delete. Usually in compactions.
-    ColumnFile {
-        request: WriteSummaryRequest,
-        file_metas: HashMap<ColumnFileId, Arc<BloomFilter>>,
-    },
-    /// TODO: Apply summary directly. Usually in vnode migrate.
-    ApplySummary {
-        request: WriteSummaryRequest,
-        ts_family_id: TseriesFamilyId,
-    },
+pub struct SummaryTask {
+    pub request: WriteSummaryRequest,
+    pub file_metas: Option<HashMap<ColumnFileId, Arc<BloomFilter>>>,
 }
 
 impl SummaryTask {
-    pub fn new_vnode_task(
+    pub fn new(
         version_edits: Vec<VersionEdit>,
+        file_metas: Option<HashMap<ColumnFileId, Arc<BloomFilter>>>,
         call_back: OneShotSender<Result<()>>,
     ) -> Self {
-        Self::Vnode {
+        Self {
             request: WriteSummaryRequest {
                 version_edits,
                 call_back,
             },
-        }
-    }
-
-    pub fn new_column_file_task(
-        file_metas: HashMap<ColumnFileId, Arc<BloomFilter>>,
-        version_edits: Vec<VersionEdit>,
-        call_back: OneShotSender<Result<()>>,
-    ) -> Self {
-        Self::ColumnFile {
             file_metas,
-            request: WriteSummaryRequest {
-                version_edits,
-                call_back,
-            },
-        }
-    }
-
-    pub fn new_apply_task(
-        ts_family_id: TseriesFamilyId,
-        version_edits: Vec<VersionEdit>,
-        call_back: OneShotSender<Result<()>>,
-    ) -> Self {
-        Self::ApplySummary {
-            ts_family_id,
-            request: WriteSummaryRequest {
-                version_edits,
-                call_back,
-            },
-        }
-    }
-
-    pub fn write_summary_request(self) -> WriteSummaryRequest {
-        match self {
-            SummaryTask::Vnode { request: req, .. } => req,
-            SummaryTask::ColumnFile { request: req, .. } => req,
-            SummaryTask::ApplySummary { request: req, .. } => req,
         }
     }
 }
@@ -906,7 +853,7 @@ mod test {
             println!("Mock summary job started (test_summary).");
             while let Some(t) = summary_task_receiver.recv().await {
                 // Do nothing
-                let _ = t.write_summary_request().call_back.send(Ok(()));
+                let _ = t.request.call_back.send(Ok(()));
             }
             println!("Mock summary job finished (test_summary).");
         });

@@ -100,7 +100,7 @@ impl VnodeManager {
         let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
 
         self.kv_inst
-            .flush_tsfamily(&tenant, &all_info.db_name, vnode_id)
+            .flush_tsfamily(tenant, &all_info.db_name, vnode_id)
             .await?;
 
         Ok(())

@@ -116,7 +116,7 @@ pub trait Engine: Send + Sync + Debug {
         tenant: &str,
         database: &str,
         vnode_id: u32,
-        mut summary: VersionEdit,
+        summary: VersionEdit,
     ) -> Result<()>;
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
