@@ -40,7 +40,7 @@ bytes = "1.1"
 byteorder = "1.4.3"
 bzip2 = "0.4.3"
 chrono = "0.4"
-clap = { version = "3" }
+clap = { version = "4", features = ["default", "derive"] }
 color-eyre = "0.6"
 core_affinity = "0.5.10"
 crc32fast = "1.3.0"

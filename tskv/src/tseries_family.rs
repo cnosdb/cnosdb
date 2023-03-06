@@ -982,7 +982,6 @@ pub mod test_tseries_family {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use config::get_config;
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use meta::meta_manager::RemoteMetaManager;
@@ -1029,7 +1028,7 @@ pub mod test_tseries_family {
         let dir = "/tmp/test/ts_family/1";
         let _ = std::fs::remove_dir(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
@@ -1114,7 +1113,7 @@ pub mod test_tseries_family {
         let dir = "/tmp/test/ts_family/2";
         let _ = std::fs::remove_dir(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
@@ -1233,7 +1232,7 @@ pub mod test_tseries_family {
         let dir = "/tmp/test/ts_family/tsf_delete";
         let _ = std::fs::remove_dir(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
         let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
@@ -1340,7 +1339,7 @@ pub mod test_tseries_family {
                 .unwrap(),
         );
 
-        let config = get_config("../config/config_31001.toml");
+        let config = config::get_config_for_test();
         let meta_manager: MetaRef = runtime.block_on(async {
             let meta_manager: MetaRef = RemoteMetaManager::new(config.cluster).await;
             meta_manager.admin_meta().add_data_node().await.unwrap();
@@ -1386,7 +1385,7 @@ pub mod test_tseries_family {
         let dir = "/tmp/test/ts_family/read_with_tomb";
         let _ = std::fs::remove_dir(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 

@@ -1,16 +1,34 @@
-use std::fs::File;
-use std::io::prelude::Read;
-use std::path::Path;
-use std::time::Duration;
+mod cache_config;
+mod check;
+mod cluster_config;
+mod codec;
+mod hinted_off_config;
+mod limiter_config;
+mod log_config;
+mod query_config;
+mod security_config;
+mod storage_config;
+mod wal_config;
 
-pub use limiter_config::*;
+use std::fs::File;
+use std::io;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use check::{CheckConfig, CheckConfigResult};
 use serde::{Deserialize, Serialize};
 
-mod bytes_num;
-mod duration;
-pub mod limiter_config;
+pub use crate::cache_config::*;
+pub use crate::cluster_config::*;
+pub use crate::hinted_off_config::*;
+pub use crate::limiter_config::*;
+pub use crate::log_config::*;
+pub use crate::query_config::*;
+pub use crate::security_config::*;
+pub use crate::storage_config::*;
+pub use crate::wal_config::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Config {
     #[serde(default = "Config::default_reporting_disabled")]
     pub reporting_disabled: bool,
@@ -42,457 +60,100 @@ impl Config {
     }
 }
 
-pub fn get_config(path: impl AsRef<Path>) -> Config {
+pub fn get_config(path: impl AsRef<Path>) -> Result<Config, std::io::Error> {
     let path = path.as_ref();
     let mut file = match File::open(path) {
         Ok(file) => file,
-        Err(err) => panic!(
-            "Failed to open configurtion file '{}': {:?}",
-            path.display(),
-            err
-        ),
+        Err(err) => {
+            return Err(io::Error::new(
+                err.kind(),
+                format!(
+                    "Failed to open configurtion file '{}': {:?}",
+                    path.display(),
+                    err
+                )
+                .as_str(),
+            ))
+        }
     };
     let mut content = String::new();
     if let Err(err) = file.read_to_string(&mut content) {
-        panic!(
-            "Failed to read configurtion file '{}': {:?}",
-            path.display(),
-            err
-        );
+        return Err(io::Error::new(
+            err.kind(),
+            format!(
+                "Failed to read configurtion file '{}': {:?}",
+                path.display(),
+                err
+            )
+            .as_str(),
+        ));
     }
     let mut config: Config = match toml::from_str(&content) {
         Ok(config) => config,
-        Err(err) => panic!(
-            "Failed to parse configurtion file '{}': {:?}",
-            path.display(),
-            err
-        ),
+        Err(err) => {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "Failed to parse configurtion file '{}': {:?}",
+                    path.display(),
+                    err
+                )
+                .as_str(),
+            ))
+        }
     };
     config.wal.introspect();
-    config
+    Ok(config)
 }
 
-pub fn default_config() -> Config {
-    const DEFAULT_CONFIG: &str = r#"
-    [query]
-    [storage]
-    [wal]
-    [cache]
-    [log]
-    [security]
-    [cluster]
-    [hinted_off]"#;
-
-    match toml::from_str(DEFAULT_CONFIG) {
-        Ok(config) => config,
-        Err(err) => panic!("Failed to get default configurtion: {:?}", err),
-    }
+pub fn get_config_for_test() -> Config {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path = path
+        .parent()
+        .unwrap()
+        .join("config")
+        .join("config_31001.toml");
+    get_config(path).unwrap()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct QueryConfig {
-    #[serde(default = "QueryConfig::default_max_server_connections")]
-    pub max_server_connections: u32,
-    #[serde(default = "QueryConfig::default_query_sql_limit")]
-    pub query_sql_limit: u64,
-    #[serde(default = "QueryConfig::default_write_sql_limit")]
-    pub write_sql_limit: u64,
-    #[serde(default = "QueryConfig::default_auth_enabled")]
-    pub auth_enabled: bool,
-}
+pub fn check_config(path: impl AsRef<Path>, show_warnings: bool) {
+    match get_config(path) {
+        Ok(cfg) => {
+            let mut check_results = CheckConfigResult::default();
 
-impl QueryConfig {
-    fn default_max_server_connections() -> u32 {
-        10240
-    }
+            if let Some(c) = cfg.query.check(&cfg) {
+                check_results.add_all(c)
+            }
+            if let Some(c) = cfg.storage.check(&cfg) {
+                check_results.add_all(c)
+            }
+            if let Some(c) = cfg.wal.check(&cfg) {
+                check_results.add_all(c)
+            }
+            if let Some(c) = cfg.cache.check(&cfg) {
+                check_results.add_all(c)
+            }
+            if let Some(c) = cfg.log.check(&cfg) {
+                check_results.add_all(c)
+            }
+            if let Some(c) = cfg.security.check(&cfg) {
+                check_results.add_all(c)
+            }
+            if let Some(c) = cfg.cluster.check(&cfg) {
+                check_results.add_all(c)
+            }
+            if let Some(c) = cfg.hinted_off.check(&cfg) {
+                check_results.add_all(c)
+            }
 
-    fn default_query_sql_limit() -> u64 {
-        16 * 1024 * 1024
-    }
-
-    fn default_write_sql_limit() -> u64 {
-        160 * 1024 * 1024
-    }
-
-    fn default_auth_enabled() -> bool {
-        false
-    }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(size) = std::env::var("MAX_SERVER_CONNECTIONS") {
-            self.max_server_connections = size.parse::<u32>().unwrap();
+            check_results.introspect();
+            check_results.show_warnings = show_warnings;
+            println!("{}", check_results);
         }
-        if let Ok(size) = std::env::var("QUERY_SQL_LIMIT") {
-            self.query_sql_limit = size.parse::<u64>().unwrap();
+        Err(err) => {
+            println!("{}", err);
         }
-        if let Ok(size) = std::env::var("WRITE_SQL_LIMIT") {
-            self.write_sql_limit = size.parse::<u64>().unwrap();
-        }
-        if let Ok(val) = std::env::var("AUTH_ENABLED") {
-            self.auth_enabled = val.parse::<bool>().unwrap();
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct StorageConfig {
-    #[serde(default = "StorageConfig::default_path")]
-    pub path: String,
-    #[serde(
-        with = "bytes_num",
-        default = "StorageConfig::default_max_summary_size"
-    )]
-    pub max_summary_size: u64,
-    #[serde(with = "bytes_num", default = "StorageConfig::default_base_file_size")]
-    pub base_file_size: u64,
-    #[serde(default = "StorageConfig::default_flush_req_channel_cap")]
-    pub flush_req_channel_cap: usize,
-    #[serde(default = "StorageConfig::default_max_level")]
-    pub max_level: u16,
-    #[serde(default = "StorageConfig::default_compact_trigger_file_num")]
-    pub compact_trigger_file_num: u32,
-    #[serde(
-        with = "duration",
-        default = "StorageConfig::default_compact_trigger_cold_duration"
-    )]
-    pub compact_trigger_cold_duration: Duration,
-    #[serde(
-        with = "bytes_num",
-        default = "StorageConfig::default_max_compact_size"
-    )]
-    pub max_compact_size: u64,
-    #[serde(default = "StorageConfig::default_max_concurrent_compaction")]
-    pub max_concurrent_compaction: u16,
-    #[serde(default = "StorageConfig::default_strict_write")]
-    pub strict_write: bool,
-}
-
-impl StorageConfig {
-    fn default_path() -> String {
-        "data/db".to_string()
-    }
-
-    fn default_max_summary_size() -> u64 {
-        128 * 1024 * 1024
-    }
-
-    fn default_base_file_size() -> u64 {
-        16 * 1024 * 1024
-    }
-
-    fn default_flush_req_channel_cap() -> usize {
-        16
-    }
-
-    fn default_max_level() -> u16 {
-        4
-    }
-
-    fn default_compact_trigger_file_num() -> u32 {
-        4
-    }
-
-    fn default_compact_trigger_cold_duration() -> Duration {
-        Duration::from_secs(0)
-    }
-
-    fn default_max_compact_size() -> u64 {
-        2 * 1024 * 1024 * 1024
-    }
-
-    fn default_max_concurrent_compaction() -> u16 {
-        4
-    }
-
-    fn default_strict_write() -> bool {
-        false
-    }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(path) = std::env::var("CNOSDB_APPLICATION_PATH") {
-            self.path = path;
-        }
-        if let Ok(size) = std::env::var("CNOSDB_SUMMARY_MAX_SUMMARY_SIZE") {
-            self.max_summary_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_BASE_FILE_SIZE") {
-            self.base_file_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_FLUSH_REQ_CHANNEL_CAP") {
-            self.flush_req_channel_cap = size.parse::<usize>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_LEVEL") {
-            self.max_level = size.parse::<u16>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_COMPACT_TRIGGER_FILE_NUM") {
-            self.compact_trigger_file_num = size.parse::<u32>().unwrap();
-        }
-        if let Ok(dur) = std::env::var("CNOSDB_STORAGE_compact_trigger_cold_duration") {
-            self.compact_trigger_cold_duration = duration::parse_duration(&dur).unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_COMPACT_SIZE") {
-            self.max_compact_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_CONCURRENT_COMPACTION") {
-            self.max_concurrent_compaction = size.parse::<u16>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_STRICT_WRITE") {
-            self.strict_write = size.parse::<bool>().unwrap();
-        }
-
-        self.introspect();
-    }
-
-    pub fn introspect(&mut self) {
-        // Unit of storage.compact_trigger_cold_duration is seconds
-        self.compact_trigger_cold_duration =
-            Duration::from_secs(self.compact_trigger_cold_duration.as_secs());
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WalConfig {
-    #[serde(default = "WalConfig::default_wal_req_channel_cap")]
-    pub wal_req_channel_cap: usize,
-    #[serde(default = "WalConfig::default_enabled")]
-    pub enabled: bool,
-    #[serde(default = "WalConfig::default_path")]
-    pub path: String,
-    #[serde(with = "bytes_num", default = "WalConfig::default_max_file_size")]
-    pub max_file_size: u64,
-    #[serde(default = "WalConfig::default_sync")]
-    pub sync: bool,
-    #[serde(with = "duration", default = "WalConfig::default_sync_interval")]
-    pub sync_interval: Duration,
-}
-
-impl WalConfig {
-    fn default_wal_req_channel_cap() -> usize {
-        64
-    }
-
-    fn default_enabled() -> bool {
-        true
-    }
-
-    fn default_path() -> String {
-        "data/wal".to_string()
-    }
-
-    fn default_max_file_size() -> u64 {
-        1024 * 1024 * 1024
-    }
-
-    fn default_sync() -> bool {
-        false
-    }
-
-    fn default_sync_interval() -> Duration {
-        Duration::from_secs(0)
-    }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(cap) = std::env::var("CNOSDB_WAL_REQ_CHANNEL_CAP") {
-            self.wal_req_channel_cap = cap.parse::<usize>().unwrap();
-        }
-        if let Ok(enabled) = std::env::var("CNOSDB_WAL_ENABLED") {
-            self.enabled = enabled.as_str() == "true";
-        }
-        if let Ok(path) = std::env::var("CNOSDB_WAL_PATH") {
-            self.path = path;
-        }
-        if let Ok(sync) = std::env::var("CNOSDB_WAL_SYNC") {
-            self.sync = sync.as_str() == sync;
-        }
-    }
-
-    pub fn introspect(&mut self) {
-        // Unit of wal.sync_interval is seconds
-        self.sync_interval = Duration::from_secs(self.sync_interval.as_secs());
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CacheConfig {
-    #[serde(with = "bytes_num", default = "CacheConfig::default_max_buffer_size")]
-    pub max_buffer_size: u64,
-    #[serde(default = "CacheConfig::default_max_immutable_number")]
-    pub max_immutable_number: u16,
-}
-
-impl CacheConfig {
-    fn default_max_buffer_size() -> u64 {
-        128 * 1024 * 1024
-    }
-
-    fn default_max_immutable_number() -> u16 {
-        4
-    }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_BUFFER_SIZE") {
-            self.max_buffer_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_IMMUTABLE_NUMBER") {
-            self.max_immutable_number = size.parse::<u16>().unwrap();
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TokioTrace {
-    pub addr: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct LogConfig {
-    #[serde(default = "LogConfig::default_level")]
-    pub level: String,
-    #[serde(default = "LogConfig::default_path")]
-    pub path: String,
-    pub tokio_trace: Option<TokioTrace>,
-}
-
-impl LogConfig {
-    fn default_level() -> String {
-        "info".to_string()
-    }
-
-    fn default_path() -> String {
-        "data/log".to_string()
-    }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(level) = std::env::var("CNOSDB_LOG_LEVEL") {
-            self.level = level;
-        }
-        if let Ok(path) = std::env::var("CNOSDB_LOG_PATH") {
-            self.path = path;
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SecurityConfig {
-    pub tls_config: Option<TLSConfig>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TLSConfig {
-    #[serde(default = "TLSConfig::default_certificate")]
-    pub certificate: String,
-    #[serde(default = "TLSConfig::default_private_key")]
-    pub private_key: String,
-}
-
-impl TLSConfig {
-    fn default_certificate() -> String {
-        "./config/tls/server.crt".to_string()
-    }
-
-    fn default_private_key() -> String {
-        "./config/tls/server.key".to_string()
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Default, Deserialize, PartialEq, Eq)]
-pub struct ClusterConfig {
-    #[serde(default = "ClusterConfig::default_node_id")]
-    pub node_id: u64,
-    #[serde(default = "ClusterConfig::default_name")]
-    pub name: String,
-    #[serde(default = "ClusterConfig::default_meta_service_addr")]
-    pub meta_service_addr: String,
-
-    #[serde(default = "ClusterConfig::default_http_listen_addr")]
-    pub http_listen_addr: String,
-    #[serde(default = "ClusterConfig::default_grpc_listen_addr")]
-    pub grpc_listen_addr: String,
-    #[serde(default = "ClusterConfig::default_flight_rpc_listen_addr")]
-    pub flight_rpc_listen_addr: String,
-    #[serde(default = "ClusterConfig::default_store_metrics")]
-    pub store_metrics: bool,
-}
-
-impl ClusterConfig {
-    fn default_node_id() -> u64 {
-        100
-    }
-
-    fn default_name() -> String {
-        "cluster_xxx".to_string()
-    }
-
-    fn default_meta_service_addr() -> String {
-        "127.0.0.1:21001".to_string()
-    }
-
-    fn default_http_listen_addr() -> String {
-        "127.0.0.1:31007".to_string()
-    }
-
-    fn default_grpc_listen_addr() -> String {
-        "127.0.0.1:31008".to_string()
-    }
-
-    fn default_flight_rpc_listen_addr() -> String {
-        "127.0.0.1:31006".to_string()
-    }
-
-    fn default_store_metrics() -> bool {
-        true
-    }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(name) = std::env::var("CNOSDB_CLUSTER_NAME") {
-            self.name = name;
-        }
-        if let Ok(meta) = std::env::var("CNOSDB_CLUSTER_META") {
-            self.meta_service_addr = meta;
-        }
-        if let Ok(id) = std::env::var("CNOSDB_NODE_ID") {
-            self.node_id = id.parse::<u64>().unwrap();
-        }
-
-        if let Ok(val) = std::env::var("CNOSDB_http_listen_addr") {
-            self.http_listen_addr = val;
-        }
-
-        if let Ok(val) = std::env::var("CNOSDB_grpc_listen_addr") {
-            self.grpc_listen_addr = val;
-        }
-
-        if let Ok(val) = std::env::var("CNOSDB_flight_rpc_listen_addr") {
-            self.flight_rpc_listen_addr = val;
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct HintedOffConfig {
-    #[serde(default = "HintedOffConfig::default_enable")]
-    pub enable: bool,
-    #[serde(default = "HintedOffConfig::default_path")]
-    pub path: String,
-}
-
-impl HintedOffConfig {
-    fn default_enable() -> bool {
-        true
-    }
-
-    fn default_path() -> String {
-        "/tmp/cnosdb/hh".to_string()
-    }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(enable) = std::env::var("CNOSDB_HINTEDOFF_ENABLE") {
-            self.enable = enable.parse::<bool>().unwrap();
-        }
-        if let Ok(path) = std::env::var("CNOSDB_HINTEDOFF_PATH") {
-            self.path = path;
-        }
-    }
+    };
 }
 
 #[cfg(test)]
@@ -502,8 +163,8 @@ mod test {
     use crate::Config;
 
     #[test]
-    fn test_functions() {
-        let cfg = crate::default_config();
+    fn test_write_read() {
+        let cfg = Config::default();
         std::fs::create_dir_all("/tmp/test/config/1/").unwrap();
         let cfg_path = "/tmp/test/config/1/config.toml";
         let mut cfg_file = std::fs::OpenOptions::new()
@@ -512,13 +173,18 @@ mod test {
             .open(cfg_path)
             .unwrap();
         let _ = cfg_file.write(cfg.to_string_pretty().as_bytes()).unwrap();
-        let cfg_2 = crate::get_config(cfg_path);
+        let cfg_2 = crate::get_config(cfg_path).unwrap();
 
         assert_eq!(cfg, cfg_2);
     }
 
     #[test]
-    fn test() {
+    fn test_get_test_config() {
+        let _ = crate::get_config_for_test();
+    }
+
+    #[test]
+    fn test_parse() {
         let config_str = r#"
 #reporting_disabled = false
 

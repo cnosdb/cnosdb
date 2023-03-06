@@ -16,11 +16,11 @@ mod db_result;
 mod error;
 mod groups;
 
-#[derive(Parser, Debug)]
-#[clap(author, version = "0.1.0", about, long_about = None)]
+#[derive(Debug, Parser)]
+#[command(author, version = "0.1.0", about, long_about = None)]
 pub struct Args {
     /// client url
-    #[clap(
+    #[arg(
         short,
         long,
         value_parser,
@@ -29,10 +29,10 @@ pub struct Args {
     pub client_url: Url,
 
     /// work thread num
-    #[clap(short, long, value_parser, default_value = "4")]
+    #[arg(short, long, value_parser, default_value = "4")]
     pub thread: usize,
 
-    #[clap(short, long)]
+    #[arg(short, long)]
     pub pattern: Option<String>,
 }
 

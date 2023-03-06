@@ -376,7 +376,6 @@ mod test {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use config::get_config;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use models::predicate::domain::TimeRange;
     use models::{utils as model_utils, ColumnId, SeriesId};
@@ -420,7 +419,7 @@ mod test {
     #[test]
     fn test_super_version_count_file() {
         let dir = "/tmp/test/ts_family/super_version_count_file";
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
 
         #[rustfmt::skip]
@@ -505,7 +504,7 @@ mod test {
     #[test]
     fn test_super_version_count_memcache() {
         let dir = "/tmp/test/ts_family/super_version_count_memcache";
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
 
         let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
@@ -583,7 +582,7 @@ mod test {
     #[test]
     fn test_super_version_count() {
         let dir = "/tmp/test/ts_family/super_version_count";
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
 
         #[rustfmt::skip]

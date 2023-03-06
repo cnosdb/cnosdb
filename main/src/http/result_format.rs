@@ -44,7 +44,7 @@ fn batches_with_sep(batches: &[RecordBatch], delimiter: u8) -> ArrowResult<Vec<u
 }
 
 /// Allow records to be printed in different formats
-#[derive(Debug, PartialEq, Eq, clap::ArgEnum, Clone)]
+#[derive(Debug, PartialEq, Eq, clap::ValueEnum, Clone)]
 pub enum ResultFormat {
     Csv,
     Tsv,
@@ -117,7 +117,7 @@ impl FromStr for ResultFormat {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        clap::ArgEnum::from_str(s, true)
+        clap::ValueEnum::from_str(s, true)
     }
 }
 
