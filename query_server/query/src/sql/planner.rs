@@ -159,6 +159,15 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             ExtStatement::MoveVnode(stmt) => self.move_vnode_to_plan(stmt),
             ExtStatement::CompactVnode(stmt) => self.compact_vnode_to_plan(stmt),
             ExtStatement::ChecksumGroup(stmt) => self.checksum_group_to_plan(stmt),
+            ExtStatement::CreateStream(_) => Err(QueryError::NotImplemented {
+                err: "CreateStream Planner.".to_string(),
+            }),
+            ExtStatement::DropStream(_) => Err(QueryError::NotImplemented {
+                err: "DropStream Planner.".to_string(),
+            }),
+            ExtStatement::ShowStreams(_) => Err(QueryError::NotImplemented {
+                err: "ShowStreams Planner.".to_string(),
+            }),
         }
     }
 

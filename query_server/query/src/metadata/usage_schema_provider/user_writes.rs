@@ -4,19 +4,18 @@ use coordinator::service::CoordinatorRef;
 use datafusion::datasource::TableProvider;
 use meta::MetaClientRef;
 use models::auth::user::User;
-use spi::Result;
 
 use crate::metadata::usage_schema_provider::{
     create_usage_schema_view_table, UsageSchemaTableFactory,
 };
 
-pub const USAGE_SCHEMA_DATA_IN: &str = "data_in";
+pub const USAGE_SCHEMA_USER_WRITES: &str = "user_writes";
 
-pub struct DataIn {}
+pub struct UserWrites {}
 
-impl UsageSchemaTableFactory for DataIn {
+impl UsageSchemaTableFactory for UserWrites {
     fn table_name(&self) -> &str {
-        USAGE_SCHEMA_DATA_IN
+        USAGE_SCHEMA_USER_WRITES
     }
     fn create(
         &self,
@@ -24,7 +23,7 @@ impl UsageSchemaTableFactory for DataIn {
         coord: CoordinatorRef,
         meta: MetaClientRef,
         default_catalog: MetaClientRef,
-    ) -> Result<Arc<dyn TableProvider>> {
-        create_usage_schema_view_table(user, coord, meta, USAGE_SCHEMA_DATA_IN, default_catalog)
+    ) -> spi::Result<Arc<dyn TableProvider>> {
+        create_usage_schema_view_table(user, coord, meta, USAGE_SCHEMA_USER_WRITES, default_catalog)
     }
 }

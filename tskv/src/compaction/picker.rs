@@ -411,7 +411,7 @@ impl LevelCompatContext {
 mod test {
     use std::sync::Arc;
 
-    use lru_cache::ShardedCache;
+    use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use metrics::metric_register::MetricsRegister;
     use parking_lot::RwLock;

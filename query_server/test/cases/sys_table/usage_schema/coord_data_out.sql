@@ -2,4 +2,4 @@
 --#SLEEP = 10000
 DESCRIBE DATABASE usage_schema;
 
-DESCRIBE TABLE data_out;
+DESCRIBE TABLE coord_data_out;

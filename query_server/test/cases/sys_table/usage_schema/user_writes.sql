@@ -2,6 +2,4 @@
 --#SLEEP = 10000
 DESCRIBE DATABASE usage_schema;
 
-DESCRIBE TABLE vnode_disk_storage;
-
-
+DESCRIBE TABLE user_writes;

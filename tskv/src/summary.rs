@@ -8,8 +8,7 @@ use std::sync::Arc;
 
 use config::get_config;
 use futures::TryFutureExt;
-use libc::write;
-use lru_cache::ShardedCache;
+use lru_cache::asynchronous::ShardedCache;
 use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
 use meta::MetaRef;
 use metrics::metric_register::MetricsRegister;

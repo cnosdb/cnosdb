@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use lru_cache::ShardedCache;
+use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
@@ -154,28 +154,6 @@ pub struct ColumnFile {
 }
 
 impl ColumnFile {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        file_id: ColumnFileId,
-        level: LevelId,
-        time_range: TimeRange,
-        size: u64,
-        is_delta: bool,
-        path: impl AsRef<Path>,
-    ) -> Self {
-        Self {
-            file_id,
-            level,
-            is_delta,
-            time_range,
-            size,
-            field_id_filter: Arc::new(BloomFilter::default()),
-            deleted: AtomicBool::new(false),
-            compacting: AtomicBool::new(false),
-            path: path.as_ref().into(),
-        }
-    }
-
     pub fn with_compact_data(
         meta: &CompactMeta,
         path: impl AsRef<Path>,
@@ -278,6 +256,35 @@ impl Drop for ColumnFile {
             }
             info!("Removed file {} at '{}", self.file_id, path.display());
         }
+    }
+}
+
+#[cfg(test)]
+impl ColumnFile {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        file_id: ColumnFileId,
+        level: LevelId,
+        time_range: TimeRange,
+        size: u64,
+        is_delta: bool,
+        path: impl AsRef<Path>,
+    ) -> Self {
+        Self {
+            file_id,
+            level,
+            is_delta,
+            time_range,
+            size,
+            field_id_filter: Arc::new(BloomFilter::default()),
+            deleted: AtomicBool::new(false),
+            compacting: AtomicBool::new(false),
+            path: path.as_ref().into(),
+        }
+    }
+
+    pub fn set_field_id_filter(&mut self, field_id_filter: Arc<BloomFilter>) {
+        self.field_id_filter = field_id_filter;
     }
 }
 
@@ -567,14 +574,17 @@ impl Version {
 
     pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
         let path = format!("{}", path.as_ref().display());
-        let tsm_reader = match self.tsm_reader_cache.get(&path) {
+        let tsm_reader = match self.tsm_reader_cache.get(&path).await {
             Some(val) => val.clone(),
             None => {
-                let tsm_reader = TsmReader::open(&path).await?;
-                self.tsm_reader_cache
-                    .insert(path, Arc::new(tsm_reader))
-                    .unwrap()
-                    .clone()
+                let mut lock = self.tsm_reader_cache.lock_shard(&path).await;
+                match lock.get(&path) {
+                    Some(val) => val.clone(),
+                    None => {
+                        let tsm_reader = TsmReader::open(&path).await?;
+                        lock.insert(path, Arc::new(tsm_reader)).unwrap().clone()
+                    }
+                }
             }
         };
         Ok(tsm_reader)
@@ -677,7 +687,7 @@ impl SuperVersion {
             }
             for cf in lv.files.iter() {
                 for tr in time_ranges {
-                    if cf.time_range.overlaps(tr) {
+                    if cf.overlap(tr) {
                         files.push(cf.clone());
                         break;
                     }
@@ -690,25 +700,39 @@ impl SuperVersion {
 
 #[derive(Debug)]
 pub struct TsfMetrics {
-    vnode_disk_storage_gauge: U64Gauge,
+    vnode_disk_storage: U64Gauge,
+    vnode_cache_size: U64Gauge,
 }
 
 impl TsfMetrics {
     pub fn new(register: &MetricsRegister, owner: &str, vnode_id: u64) -> Self {
         let (tenant, db) = split_owner(owner);
         let metric = register.metric::<U64Gauge>("vnode_disk_storage", "disk storage of vnode");
-        let gauge = metric.recorder([
+        let disk_storage_gauge = metric.recorder([
             ("tenant", tenant),
             ("database", db),
             ("vnode_id", vnode_id.to_string().as_str()),
         ]);
+
+        let metric = register.metric::<U64Gauge>("vnode_cache_size", "cache size of vnode");
+        let cache_gauge = metric.recorder([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", vnode_id.to_string().as_str()),
+        ]);
+
         Self {
-            vnode_disk_storage_gauge: gauge,
+            vnode_disk_storage: disk_storage_gauge,
+            vnode_cache_size: cache_gauge,
         }
     }
 
     pub fn record_disk_storage(&self, size: u64) {
-        self.vnode_disk_storage_gauge.set(size)
+        self.vnode_disk_storage.set(size)
+    }
+
+    pub fn record_cache_size(&self, size: u64) {
+        self.vnode_cache_size.set(size)
     }
 }
 
@@ -735,6 +759,7 @@ pub struct TseriesFamily {
 }
 
 impl TseriesFamily {
+    pub const MAX_DATA_BLOCK_SIZE: u32 = 1000;
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         tf_id: TseriesFamilyId,
@@ -792,6 +817,7 @@ impl TseriesFamily {
     fn new_super_version(&mut self, version: Arc<Version>) {
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
         self.tsf_metrics.record_disk_storage(self.disk_storage());
+        self.tsf_metrics.record_cache_size(self.cache_size());
         self.super_version = Arc::new(SuperVersion::new(
             self.tf_id,
             self.storage_opt.clone(),
@@ -892,11 +918,14 @@ impl TseriesFamily {
 
     pub async fn check_to_flush(&mut self) {
         if self.super_version.caches.mut_cache.read().is_full() {
-            info!("mut_cache full,switch to immutable");
+            info!(
+                "mut_cache full,switch to immutable current pool_size : {}",
+                self.memory_pool.reserved()
+            );
             self.switch_to_immutable();
-            if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
-                self.wrap_flush_req(false).await;
-            }
+        }
+        if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
+            self.wrap_flush_req(false).await;
         }
     }
 
@@ -1041,6 +1070,14 @@ impl TseriesFamily {
             .map(|l| l.disk_storage())
             .sum()
     }
+
+    pub fn cache_size(&self) -> u64 {
+        self.immut_cache
+            .iter()
+            .map(|c| c.read().cache_size())
+            .sum::<u64>()
+            + self.mut_cache.read().cache_size()
+    }
 }
 
 impl Drop for TseriesFamily {
@@ -1058,7 +1095,7 @@ pub mod test_tseries_family {
     use std::time::Duration;
 
     use config::{get_config, ClusterConfig};
-    use lru_cache::ShardedCache;
+    use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
