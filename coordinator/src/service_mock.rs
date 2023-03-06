@@ -1,4 +1,5 @@
-#![allow(unused_variables)]
+#![allow(dead_code, unused_variables)]
+
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -6,7 +7,8 @@ use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
 use meta::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
-use tskv::engine::{EngineRef, MockEngine};
+use tskv::engine::EngineRef;
+use tskv::engine_mock::MockEngine;
 use tskv::iterator::QueryOption;
 
 use crate::errors::CoordinatorResult;

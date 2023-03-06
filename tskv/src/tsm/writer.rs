@@ -1,17 +1,17 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::io::IoSlice;
 use std::path::{Path, PathBuf};
 
-use models::{FieldId, Timestamp, ValueType};
+use models::{FieldId, Timestamp};
 use snafu::{ResultExt, Snafu};
-use utils::{BkdrHasher, BloomFilter};
+use utils::BloomFilter;
 
 use crate::error::{self, Error, Result};
 use crate::file_system::{file_manager, FileCursor, IFile};
 use crate::file_utils;
 use crate::tsm::{
-    BlockEntry, BlockMeta, BlockMetaIterator, DataBlock, Index, IndexEntry, IndexMeta,
-    BLOCK_META_SIZE, BLOOM_FILTER_BITS, INDEX_META_SIZE, MAX_BLOCK_VALUES,
+    BlockEntry, BlockMeta, DataBlock, IndexEntry, BLOCK_META_SIZE, BLOOM_FILTER_BITS,
+    INDEX_META_SIZE,
 };
 
 // A TSM file is composed for four sections: header, blocks, index and the footer.
@@ -370,7 +370,7 @@ pub async fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
 
 async fn write_raw_data_to(
     writer: &mut FileCursor,
-    write_pos: &mut u64,
+    _write_pos: &mut u64,
     index_buf: &mut IndexBuf,
     block_meta: &BlockMeta,
     block: &[u8],
@@ -407,7 +407,7 @@ async fn write_raw_data_to(
 
 async fn write_block_to(
     writer: &mut FileCursor,
-    write_pos: &mut u64,
+    _write_pos: &mut u64,
     index_buf: &mut IndexBuf,
     field_id: FieldId,
     block: &DataBlock,
@@ -476,21 +476,17 @@ async fn write_footer_to(
 #[cfg(test)]
 pub mod tsm_writer_tests {
     use std::collections::HashMap;
-    use std::io::{Error as IoError, ErrorKind as IoErrorKind};
-    use std::path::{Path, PathBuf};
-    use std::sync::Arc;
+    use std::path::Path;
 
-    use models::{FieldId, ValueType};
+    use models::FieldId;
     use snafu::ResultExt;
 
-    use crate::error::{self, Error, Result};
-    use crate::file_system::file_manager::{self, get_file_manager, FileManager};
-    use crate::file_system::IFile;
+    use crate::error::{self, Result};
+    use crate::file_system::file_manager::{self};
     use crate::file_utils::{self, make_tsm_file_name};
-    use crate::memcache::FieldVal;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_reader_tests::read_and_check;
-    use crate::tsm::{new_tsm_writer, ColumnReader, DataBlock, IndexReader, TsmReader, TsmWriter};
+    use crate::tsm::{DataBlock, TsmReader, TsmWriter};
 
     const TEST_PATH: &str = "/tmp/test/tsm_writer";
 

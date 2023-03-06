@@ -1,26 +1,20 @@
-#![allow(dead_code, unused_imports, unused_variables, clippy::collapsible_match)]
+#![allow(dead_code, clippy::collapsible_match)]
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use config::TenantLimiterConfig;
 use models::meta_data::ExpiredBucketInfo;
-use models::oid::{Identifier, Oid};
+use models::oid::Identifier;
 use models::schema::{Tenant, TenantOptions};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
-use trace::info;
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
-use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
 use crate::limiter::{LocalRequestLimiter, NoneLimiter, RequestLimiter};
 use crate::meta_client::{MetaClient, RemoteMetaClient};
-use crate::store::command::{
-    self, WriteCommand, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST,
-    META_REQUEST_TENANT_NOT_FOUND,
-};
+use crate::store::command::{self, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND};
 use crate::MetaClientRef;
 
 pub const USE_TENANT_ACTION_ADD: i32 = 1;
@@ -121,7 +115,7 @@ impl RemoteTenantManager {
 
     pub fn new_limiter(
         &self,
-        cluster_name: &str,
+        _cluster_name: &str,
         tenant_name: &str,
         options: &TenantOptions,
     ) -> Arc<dyn RequestLimiter> {
@@ -148,7 +142,7 @@ impl TenantManager for RemoteTenantManager {
         name: String,
         options: TenantOptions,
     ) -> MetaResult<MetaClientRef> {
-        let limiter = self.new_limiter(&self.cluster_name, &name, &options);
+        let _limiter = self.new_limiter(&self.cluster_name, &name, &options);
         let req = command::WriteCommand::CreateTenant(self.cluster_name.clone(), name, options);
 
         match self
@@ -201,7 +195,7 @@ impl TenantManager for RemoteTenantManager {
     }
 
     async fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
-        let limiter = self.new_limiter(&self.cluster_name, name, &options);
+        let _limiter = self.new_limiter(&self.cluster_name, name, &options);
 
         let req = command::WriteCommand::AlterTenant(
             self.cluster_name.clone(),
@@ -251,7 +245,7 @@ impl TenantManager for RemoteTenantManager {
             return Some(client.clone());
         }
 
-        let tenant_name = tenant.to_string();
+        let _tenant_name = tenant.to_string();
         if let Ok(tenant_opt) = self.tenant(tenant).await {
             if let Some(tenant_info) = tenant_opt {
                 return self.create_tenant_meta(tenant_info).await.ok();
@@ -271,7 +265,7 @@ impl TenantManager for RemoteTenantManager {
 
     async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         let mut list = vec![];
-        for (key, val) in self.tenants.write().await.iter() {
+        for (_key, val) in self.tenants.write().await.iter() {
             list.append(&mut val.expired_bucket());
         }
         list

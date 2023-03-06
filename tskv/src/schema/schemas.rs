@@ -1,21 +1,14 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use meta::error::{MetaError, MetaResult};
-use meta::meta_manager::RemoteMetaManager;
 use meta::{MetaClientRef, MetaRef};
 use models::codec::Encoding;
-use models::schema::{
-    ColumnType, DatabaseSchema, TableColumn, TableSchema, TenantOptions, TskvTableSchema,
-};
-use models::{ColumnId, SeriesId};
-use parking_lot::RwLock;
+use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
+use models::ColumnId;
 use protos::models::Point;
-use snafu::ResultExt;
-use trace::{error, info, warn};
+use trace::error;
 
-use crate::schema::error::{MetaSnafu, Result, SchemaError};
-use crate::Error;
+use crate::schema::error::{Result, SchemaError};
 
 const TIME_STAMP_NAME: &str = "time";
 
@@ -28,7 +21,6 @@ pub struct DBschemas {
 
 impl DBschemas {
     pub async fn new(db_schema: DatabaseSchema, meta: MetaRef) -> Result<Self> {
-        let table_schemas: HashMap<String, TskvTableSchema> = HashMap::new();
         let client = meta
             .tenant_manager()
             .tenant_meta(db_schema.tenant_name())

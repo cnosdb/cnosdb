@@ -1,16 +1,14 @@
 use std::cmp;
 use std::fmt::Display;
-use std::io::SeekFrom;
 use std::sync::Arc;
 
 use models::{FieldId, Timestamp, ValueType};
 use utils::BloomFilter;
 
-use crate::byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64};
-use crate::error::{Error, Result};
+use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64};
 use crate::tseries_family::TimeRange;
 use crate::tsm::{
-    BlockMetaIterator, WriteTsmError, WriteTsmResult, BLOCK_META_SIZE, FOOTER_SIZE, INDEX_META_SIZE,
+    BlockMetaIterator, WriteTsmError, WriteTsmResult, BLOCK_META_SIZE, INDEX_META_SIZE,
 };
 
 #[derive(Debug, Clone)]

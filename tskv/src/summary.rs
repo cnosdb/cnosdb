@@ -1,27 +1,20 @@
-use std::borrow::Borrow;
-use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::fs::{remove_file, rename};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use config::get_config;
-use futures::TryFutureExt;
-use libc::write;
-use lru_cache::ShardedCache;
+use lru_cache::asynchronous::ShardedCache;
 use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
 use meta::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::Timestamp;
-use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Sender as OneShotSender;
-use tokio::sync::watch::Receiver;
 use tokio::sync::RwLock;
-use trace::{debug, error, info};
+use trace::error;
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
@@ -434,8 +427,6 @@ impl Summary {
         let mut file_id = 0_u64;
         for (tsf_id, edits) in tsf_edits_map {
             let database = tsf_database_map.remove(&tsf_id).unwrap();
-            let tsm_dir = opt.storage.tsm_dir(&database, tsf_id);
-            let delta_dir = opt.storage.delta_dir(&database, tsf_id);
 
             let mut files: HashMap<u64, CompactMeta> = HashMap::new();
             let mut max_log = 0;
@@ -460,7 +451,7 @@ impl Summary {
             }
             let mut levels = LevelInfo::init_levels(database.clone(), tsf_id, opt.storage.clone());
             // according files map to recover levels_info;
-            for (file_id, meta) in files {
+            for (_file_id, meta) in files {
                 let field_filter = if load_field_filter {
                     let tsm_path = meta.file_path(opt.storage.as_ref(), &database, tsf_id);
                     let tsm_reader = TsmReader::open(tsm_path).await?;
@@ -564,7 +555,7 @@ impl Summary {
         drop(version_set);
 
         // Send a GlobalSequenceTask to get a global min_sequence
-        if let Err(e) = self
+        if let Err(_e) = self
             .sequence_task_sender
             .send(GlobalSequenceTask {
                 del_ts_family: del_tsf,
@@ -713,10 +704,7 @@ impl SummaryProcessor {
                 request
             }
             SummaryTask::Vnode { request } => request,
-            SummaryTask::ApplySummary {
-                ts_family_id,
-                request,
-            } => {
+            SummaryTask::ApplySummary { .. } => {
                 // TODO append ts_family into this current vnode
                 return;
             }
@@ -734,7 +722,7 @@ impl SummaryProcessor {
                     let _ = cb.send(Ok(()));
                 }
             }
-            Err(e) => {
+            Err(_e) => {
                 for cb in self.cbs.drain(..) {
                     let _ = cb.send(Err(Error::ErrApplyEdit));
                 }
@@ -836,29 +824,25 @@ mod test {
     use std::fs;
     use std::sync::Arc;
 
-    use config::{get_config, ClusterConfig, Config};
-    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
+    use config::{get_config, ClusterConfig};
+    use memory_pool::GreedyMemoryPool;
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
-    use snafu::ResultExt;
     use tokio::runtime::Runtime;
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::Sender;
-    use trace::debug;
     use utils::BloomFilter;
 
     use crate::compaction::{CompactTask, FlushReq};
     use crate::context::GlobalSequenceTask;
     use crate::file_system::file_manager;
-    use crate::kv_option::{Options, StorageOptions};
+    use crate::kv_option::Options;
     use crate::kvcore::{
         COMPACT_REQ_CHANNEL_CAP, GLOBAL_TASK_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP,
     };
-    use crate::summary::{CompactMeta, Summary, SummaryTask, VersionEdit, WriteSummaryRequest};
-    use crate::tseries_family::LevelInfo;
-    use crate::{error, TseriesFamilyId};
+    use crate::summary::{CompactMeta, Summary, SummaryTask, VersionEdit};
 
     #[test]
     fn test_version_edit() {
@@ -888,7 +872,6 @@ mod test {
 
     #[test]
     fn test_summary() {
-        let base_dir = "/tmp/test/summary/1".to_string();
         let mut config = get_config("../config/config_31001.toml");
 
         let runtime = Arc::new(
@@ -921,9 +904,9 @@ mod test {
         });
         let (global_seq_task_sender, mut global_seq_task_receiver) =
             mpsc::channel::<GlobalSequenceTask>(GLOBAL_TASK_REQ_CHANNEL_CAP);
-        let global_seq_job_mock = runtime.spawn(async move {
+        let _global_seq_job_mock = runtime.spawn(async move {
             println!("Mock global sequence job started (test_summary).");
-            while let Some(t) = global_seq_task_receiver.recv().await {
+            while let Some(_t) = global_seq_task_receiver.recv().await {
                 // Do nothing
             }
             println!("Mock global sequence job finished (test_summary).");
@@ -1035,7 +1018,7 @@ mod test {
             .apply_version_edit(vec![edit], HashMap::new())
             .await
             .unwrap();
-        let summary = Summary::recover(
+        let _summary = Summary::recover(
             meta_manager,
             opt.clone(),
             runtime.clone(),

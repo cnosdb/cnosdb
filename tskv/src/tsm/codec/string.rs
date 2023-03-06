@@ -9,7 +9,7 @@ use flate2::Compression as CompressionFlate;
 use integer_encoding::VarInt;
 use minivec::MiniVec;
 
-use crate::byte_utils::{decode_be_i64, decode_be_u32, decode_be_u64};
+use crate::byte_utils::decode_be_u64;
 use crate::tsm::codec::Encoding;
 // note: encode/decode adapted from influxdb_iox
 // https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
@@ -354,7 +354,6 @@ pub fn str_without_compress_decode(
 
 #[cfg(test)]
 mod tests {
-    use datafusion::parquet::data_type::AsBytes;
 
     use super::*;
 

@@ -7,7 +7,6 @@ use coordinator::reader::{QueryExecutor, ReaderIterator};
 use coordinator::service::{CoordServiceMetrics, CoordinatorRef};
 use coordinator::vnode_mgr::VnodeManager;
 use coordinator::{FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE};
-use datafusion::arrow::ipc::writer::StreamWriter;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::Stream;
@@ -172,7 +171,7 @@ impl TskvServiceImpl {
 
     async fn admin_compact_vnode(
         &self,
-        tenant: &str,
+        _tenant: &str,
         request: &CompactVnodeRequest,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
         if let Err(err) = self.kv_inst.compact(request.vnode_ids.clone()).await {

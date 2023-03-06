@@ -1,16 +1,13 @@
-use std::borrow::Borrow;
 use std::fmt::Debug;
-use std::path::{Path, PathBuf};
-use std::ptr;
+use std::path::Path;
 use std::sync::Arc;
 
-use minivec::MiniVec;
-use models::{utils as model_utils, FieldId, Timestamp, ValueType};
+use models::{FieldId, ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
 use utils::BloomFilter;
 
-use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64};
+use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u64};
 use crate::error::{self, Error, Result};
 use crate::file_system::{file_manager, AsyncFile, IFile};
 use crate::file_utils;
@@ -450,7 +447,7 @@ impl TsmReader {
 
     /// Returns a DataBlock without tombstone
     pub async fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
-        let blk_range = (block_meta.min_ts(), block_meta.max_ts());
+        let _blk_range = (block_meta.min_ts(), block_meta.max_ts());
         let mut buf = vec![0_u8; block_meta.size() as usize];
         let mut blk = read_data_block(
             self.reader.clone(),
@@ -538,7 +535,7 @@ impl ColumnReader {
     }
 
     async fn decode(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
-        let (offset, size) = (block_meta.offset(), block_meta.size());
+        let (_offset, size) = (block_meta.offset(), block_meta.size());
         self.buf.resize(size as usize, 0);
         read_data_block(
             self.reader.clone(),
@@ -672,18 +669,15 @@ pub mod tsm_reader_tests {
     use std::sync::Arc;
 
     use models::{FieldId, Timestamp};
-    use parking_lot::Mutex;
     use snafu::ResultExt;
 
     use crate::error::{self, Error, Result};
-    use crate::file_system::file_manager::{self, get_file_manager};
+    use crate::file_system::file_manager::{self};
     use crate::file_utils;
     use crate::tseries_family::TimeRange;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_writer_tests::write_to_tsm;
-    use crate::tsm::{
-        BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone, TsmWriter,
-    };
+    use crate::tsm::{BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone};
 
     async fn prepare(dir: impl AsRef<Path>) -> Result<(PathBuf, PathBuf)> {
         if file_manager::try_exists(&dir) {
