@@ -1,5 +1,5 @@
 <div align="center">
-  <img  src="docs/source/_static/img/cnosdb_logo_new_year.gif" width="500" alt="CnodSB Logo">
+  <img  src="docs/source/_static/img/cnosdb_logo_white.svg" width="500" alt="CnodSB Logo">
 </div>
 
 <p align="center">
@@ -268,3 +268,4 @@ Query took 0.036 seconds.
 
 - CnosDB 2.0使用[Apache Arrow](https://github.com/apache/arrow)作为内存模型。
 - CnosDB 2.0的查询引擎基于[Apache Arrow DataFusion](https://github.com/apache/arrow-datafusion)构建。
+- CnosDB 2.0的测试框架使用[SQLancer](https://github.com/sqlancer/sqlancer)作为支持。
