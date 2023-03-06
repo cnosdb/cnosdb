@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 use arrow_flight::flight_service_server::FlightServiceServer;
 use config::TLSConfig;
@@ -7,7 +6,6 @@ use spi::server::dbms::DBMSRef;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use trace::info;
-use warp::trace::Info;
 
 use self::flight_sql_server::FlightSqlServiceImpl;
 use crate::flight_sql::auth_middleware::basic_call_header_authenticator::BasicCallHeaderAuthenticator;

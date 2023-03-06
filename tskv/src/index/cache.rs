@@ -1,8 +1,5 @@
-use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use lru::LruCache;
 use lru_cache::ShardedCache;
 use models::{SeriesId, SeriesKey};
 

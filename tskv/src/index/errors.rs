@@ -4,8 +4,6 @@ use std::io;
 use sled;
 use snafu::Snafu;
 
-use crate::record_file;
-
 #[derive(Snafu, Debug)]
 pub enum IndexError {
     #[snafu(display("Unrecognized action"))]

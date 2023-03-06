@@ -1,7 +1,5 @@
 use std::error::Error;
 
-use datafusion::physical_plan::expressions::Min;
-use libc::max_align_t;
 use minivec::MiniVec;
 use models::codec::Encoding;
 
@@ -22,7 +20,6 @@ use crate::tsm::codec::string::{
     str_snappy_encode, str_without_compress_decode, str_without_compress_encode, str_zlib_decode,
     str_zlib_encode, str_zstd_decode, str_zstd_encode,
 };
-use crate::tsm::codec::timestamp;
 use crate::tsm::codec::timestamp::{
     ts_q_compress_decode, ts_q_compress_encode, ts_without_compress_decode,
     ts_without_compress_encode, ts_zigzag_simple8b_decode, ts_zigzag_simple8b_encode,

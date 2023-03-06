@@ -9,7 +9,6 @@ pub use not_macos::*;
 #[cfg(not(target_os = "macos"))]
 mod not_macos {
     use std::fs::OpenOptions;
-    use std::os::unix::fs::OpenOptionsExt;
     use std::path::Path;
 
     use super::*;

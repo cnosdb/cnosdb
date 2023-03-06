@@ -1,42 +1,30 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::fmt::Display;
 use std::net::SocketAddr;
-use std::ops::Not;
 use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::Local;
 use config::TLSConfig;
-use coordinator::hh_queue::HintedOffManager;
 use coordinator::service::CoordinatorRef;
-use coordinator::writer::{PointWriter, VnodeMapping};
-use datafusion::arrow::util::pretty::pretty_format_batches;
-use datafusion::parquet::data_type::AsBytes;
-use flatbuffers::FlatBufferBuilder;
 use http_protocol::header::{ACCEPT, AUTHORIZATION};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
-use libc::sleep;
-use line_protocol::{line_protocol_to_lines, parse_lines_to_points, Line};
+use line_protocol::{line_protocol_to_lines, parse_lines_to_points};
 use meta::error::MetaError;
-use meta::MetaClientRef;
-use metrics::count::U64Counter;
 use metrics::metric_register::MetricsRegister;
 use metrics::prom_reporter::PromReporter;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
 use models::consistency_level::ConsistencyLevel;
-use models::error_code::{ErrorCode, UnknownCode, UnknownCodeWithMessage};
+use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
 use models::schema::DEFAULT_CATALOG;
-use protos::kv_service::{Meta, WritePointsRequest};
-use protos::models as fb_models;
-use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
+use protos::kv_service::WritePointsRequest;
 use query::prom::remote_server::PromRemoteSqlServer;
 use snafu::ResultExt;
 use spi::server::dbms::DBMSRef;
@@ -44,9 +32,7 @@ use spi::server::prom::PromRemoteServerRef;
 use spi::service::protocol::{Context, ContextBuilder, Query};
 use spi::QueryError;
 use tokio::sync::oneshot;
-use tokio::time::Sleep;
 use trace::{debug, info};
-use tskv::engine::EngineRef;
 use warp::hyper::body::Bytes;
 use warp::hyper::Body;
 use warp::reject::{MethodNotAllowed, MissingHeader, PayloadTooLarge};
@@ -58,7 +44,7 @@ use super::Error as HttpError;
 use crate::http::metrics::HttpMetrics;
 use crate::http::response::ResponseBuilder;
 use crate::http::result_format::{fetch_record_batches, ResultFormat};
-use crate::http::{Error, ParseLineProtocolSnafu, QuerySnafu};
+use crate::http::QuerySnafu;
 use crate::server::{Service, ServiceHandle};
 use crate::{server, VERSION};
 
@@ -315,7 +301,7 @@ impl HttpService {
         warp::path!("api" / "v1" / "meta")
             .and(self.handle_header())
             .and(self.with_coord())
-            .and_then(|header: Header, coord: CoordinatorRef| async move {
+            .and_then(|_header: Header, coord: CoordinatorRef| async move {
                 let tenant = DEFAULT_CATALOG.to_string();
 
                 let meta_client = match coord.tenant_meta(&tenant).await {

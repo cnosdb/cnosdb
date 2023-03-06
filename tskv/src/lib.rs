@@ -1,7 +1,5 @@
 #![allow(dead_code)]
-#![allow(dead_code)]
 #![allow(unreachable_patterns)]
-#![allow(unused_imports, unused_variables)]
 
 pub use error::{Error, Result};
 pub use kv_option::Options;
@@ -17,6 +15,7 @@ mod compute;
 mod context;
 pub mod database;
 pub mod engine;
+pub mod engine_mock;
 pub mod error;
 pub mod file_system;
 pub mod file_utils;

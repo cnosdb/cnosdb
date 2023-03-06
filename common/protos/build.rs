@@ -12,7 +12,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .join("mod.rs");
     let mut generated_mod_rs_file = fs::File::create(generated_mod_rs_path)?;
     generated_mod_rs_file.write_all(
-        b"mod protobuf_generated;
+        b"#![allow(unused_imports)]
+#![allow(clippy::all)]
+mod protobuf_generated;
 pub use protobuf_generated::*;
 
 mod flatbuffers_generated;

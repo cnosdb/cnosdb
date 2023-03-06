@@ -1,26 +1,20 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::iter::FromIterator;
-use std::mem::{size_of, size_of_val};
-use std::ops::Index;
+use std::mem::size_of_val;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
 use models::schema::{TableColumn, TskvTableSchema};
-use models::utils::{split_id, unite_id};
-use models::{
-    utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TableId, Timestamp, ValueType,
-};
+use models::utils::split_id;
+use models::{utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use protos::models as fb_models;
-use protos::models::Point;
-use trace::{error, info, warn};
 
 use crate::error::Result;
 use crate::tseries_family::TimeRange;
-use crate::tsm::DataBlock;
 use crate::{byte_utils, Error, TseriesFamilyId};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -111,7 +105,7 @@ impl RowData {
         let fields = match p.fields() {
             None => {
                 let mut fields = Vec::with_capacity(schema.field_num());
-                for i in 0..fields.capacity() {
+                for _i in 0..fields.capacity() {
                     fields.push(None);
                 }
                 fields
@@ -119,10 +113,10 @@ impl RowData {
             Some(fields_inner) => {
                 let fields_id = schema.fields_id();
                 let mut fields: Vec<Option<FieldVal>> = Vec::with_capacity(fields_id.len());
-                for i in 0..fields.capacity() {
+                for _i in 0..fields.capacity() {
                     fields.push(None);
                 }
-                for (i, f) in fields_inner.into_iter().enumerate() {
+                for (_i, f) in fields_inner.into_iter().enumerate() {
                     let vtype = f.type_().into();
                     let val = MiniVec::from(f.value().unwrap().bytes());
                     match schema.column(
@@ -575,16 +569,14 @@ impl Display for DataType {
 #[cfg(test)]
 pub(crate) mod test {
     use std::collections::HashMap;
-    use std::mem::{size_of, size_of_val};
+    use std::mem::size_of;
     use std::sync::Arc;
 
-    use bytes::buf;
     use models::schema::TskvTableSchema;
-    use models::{FieldId, SchemaId, SeriesId, Timestamp};
+    use models::{SchemaId, SeriesId, Timestamp};
     use parking_lot::RwLock;
 
-    use super::{DataType, FieldVal, MemCache, RowData, RowGroup};
-    use crate::tsm::DataBlock;
+    use super::{FieldVal, MemCache, RowData, RowGroup};
     use crate::TimeRange;
 
     pub(crate) fn put_rows_to_cache(
@@ -627,10 +619,10 @@ pub(crate) mod test {
     ) -> HashMap<String, Vec<(Timestamp, FieldVal)>> {
         let mut fname_vals_map: HashMap<String, Vec<(Timestamp, FieldVal)>> = HashMap::new();
         let series_data = cache.read().read_series_data();
-        for (sid, sdata) in series_data {
+        for (_sid, sdata) in series_data {
             let sdata_rlock = sdata.read();
             let schema_groups = sdata_rlock.flat_groups();
-            for (sch_id, sch, row) in schema_groups {
+            for (_sch_id, sch, row) in schema_groups {
                 let fields = sch.fields();
                 for r in row {
                     for (i, f) in r.fields.iter().enumerate() {
