@@ -1,11 +1,8 @@
 use std::cmp::min;
 use std::fmt::Display;
-use std::mem::size_of;
-use std::ops::Index;
 
 use minivec::MiniVec;
 use models::{Timestamp, ValueType};
-use protos::models::FieldType;
 use trace::error;
 
 use crate::memcache::DataType;
@@ -544,7 +541,7 @@ impl DataBlock {
 impl Display for DataBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DataBlock::U64 { ts, val, .. } => {
+            DataBlock::U64 { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -557,7 +554,7 @@ impl Display for DataBlock {
                     write!(f, "U64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::I64 { ts, val, .. } => {
+            DataBlock::I64 { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -570,7 +567,7 @@ impl Display for DataBlock {
                     write!(f, "I64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::Str { ts, val, .. } => {
+            DataBlock::Str { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -583,7 +580,7 @@ impl Display for DataBlock {
                     write!(f, "Str {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::F64 { ts, val, .. } => {
+            DataBlock::F64 { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -596,7 +593,7 @@ impl Display for DataBlock {
                     write!(f, "F64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::Bool { ts, val, .. } => {
+            DataBlock::Bool { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -650,13 +647,11 @@ fn exclude_slow(v: &mut Vec<MiniVec<u8>>, min_idx: usize, max_idx: usize) {
 
 #[cfg(test)]
 pub mod test {
-    use std::mem::size_of;
 
     use minivec::mini_vec;
 
     use crate::memcache::DataType;
     use crate::tseries_family::TimeRange;
-    use crate::tsm::block::exclude_fast;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
 

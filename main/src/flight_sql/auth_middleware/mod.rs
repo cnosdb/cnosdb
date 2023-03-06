@@ -36,7 +36,7 @@ impl AuthResult for CommonAuthResult {
         self.user.clone()
     }
 
-    fn append_to_outgoing_headers(&self, resp_headers: &mut MetadataMap) -> Result<(), Status> {
+    fn append_to_outgoing_headers(&self, _resp_headers: &mut MetadataMap) -> Result<(), Status> {
         Ok(())
     }
 }

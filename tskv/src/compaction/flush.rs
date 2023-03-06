@@ -1,41 +1,26 @@
-use std::cmp::max;
 use std::collections::HashMap;
-use std::iter::Peekable;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::slice;
 use std::sync::Arc;
 use std::time::Duration;
 
 use models::codec::Encoding;
 use models::schema::TskvTableSchema;
 use models::utils::split_id;
-use models::{
-    utils as model_utils, ColumnId, FieldId, FieldInfo, RwLockRef, SeriesId, SeriesKey, Timestamp,
-    ValueType,
-};
-use parking_lot::{Mutex, RwLock};
-use regex::internal::Input;
-use snafu::{NoneError, OptionExt, ResultExt};
-use tokio::select;
-use tokio::sync::mpsc::{self, Sender};
+use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp, ValueType};
+use parking_lot::RwLock;
+use snafu::ResultExt;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
-use tokio::sync::oneshot::Sender as OneShotSender;
 use tokio::time::timeout;
-use trace::{debug, error, info, log_error, warn};
+use trace::{error, info, warn};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalContext;
-use crate::database::Database;
-use crate::error::{self, Error, Result};
-use crate::index::IndexResult;
-use crate::kv_option::Options;
-use crate::memcache::{DataType, FieldVal, MemCache, SeriesData};
-use crate::summary::{
-    CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit, WriteSummaryRequest,
-};
-use crate::tseries_family::{LevelInfo, Version};
+use crate::error::{self, Result};
+use crate::memcache::{FieldVal, MemCache, SeriesData};
+use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
+use crate::tseries_family::Version;
 use crate::tsm::codec::DataBlockEncoding;
 use crate::tsm::{self, DataBlock, TsmWriter};
 use crate::version_set::VersionSet;
@@ -154,7 +139,7 @@ impl FlushTask {
             // Iterates [ MemCache ] -> next_series_id -> [ SeriesData ]
             for series_data in series_datas.iter_mut() {
                 // Iterates SeriesData -> [ RowGroups{ schema_id, schema, [ RowData ] } ]
-                for (sch_id, sch_cols, rows) in series_data.read().flat_groups() {
+                for (_sch_id, sch_cols, rows) in series_data.read().flat_groups() {
                     self.build_codec_map(sch_cols.clone(), &mut field_id_code_type_map);
                     // Iterates [ RowData ]
                     for row in rows.iter() {
@@ -442,33 +427,28 @@ pub async fn run_flush_memtable_job(
 
 #[cfg(test)]
 pub mod flush_tests {
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::HashMap;
     use std::path::PathBuf;
-    use std::str::FromStr;
     use std::sync::Arc;
 
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use models::codec::Encoding;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::{utils as model_utils, ColumnId, FieldId, Timestamp, ValueType};
+    use models::{utils as model_utils, ColumnId, FieldId, ValueType};
     use parking_lot::RwLock;
     use utils::dedup_front_by_key;
 
     use super::FlushTask;
-    use crate::compaction::FlushReq;
     use crate::context::GlobalContext;
-    use crate::file_system::file_manager;
+    use crate::file_utils;
     use crate::kv_option::Options;
     use crate::memcache::test::put_rows_to_cache;
-    use crate::memcache::{DataType, FieldVal, MemCache};
-    use crate::summary::{CompactMeta, VersionEdit};
+    use crate::memcache::MemCache;
     use crate::tseries_family::{LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_reader_tests::read_and_check;
     use crate::tsm::{DataBlock, TsmReader};
-    use crate::version_set::VersionSet;
-    use crate::{file_utils, tseries_family};
 
     pub fn default_table_schema(ids: Vec<ColumnId>) -> TskvTableSchema {
         let fields = ids

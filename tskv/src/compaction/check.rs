@@ -222,15 +222,14 @@ pub(crate) async fn get_ts_family_hash_tree(
     }
 
     Ok(hash_tree_builder
-        .into_iter()
-        .map(|(k, v)| v)
+        .into_values()
         .collect::<Vec<TableHashTreeNode>>())
 }
 
 fn get_default_time_range(db_schemas: Arc<DBschemas>) -> Result<i64> {
     let db_schema = db_schemas.db_schema().context(error::SchemaSnafu)?;
-    let tenant_name = db_schema.tenant_name();
-    let database_name = db_schema.database_name();
+    let _tenant_name = db_schema.tenant_name();
+    let _database_name = db_schema.database_name();
     Ok(db_schema
         .config
         .ttl()
@@ -285,35 +284,35 @@ fn hash_partial_datablock(
     match data_block {
         DataBlock::U64 { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
+            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
                 hasher.update(v.to_be_bytes().as_slice());
             }
             limit
         }
         DataBlock::I64 { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
+            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
                 hasher.update(v.to_be_bytes().as_slice());
             }
             limit
         }
         DataBlock::F64 { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
+            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
                 hasher.update(v.to_be_bytes().as_slice());
             }
             limit
         }
         DataBlock::Str { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
+            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
                 hasher.update(v.as_slice());
             }
             limit
         }
         DataBlock::Bool { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
+            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
                 hasher.update(if *v { &[1_u8] } else { &[0_u8] });
             }
             limit
@@ -422,9 +421,7 @@ async fn read_from_compact_iterator(
 
 #[cfg(test)]
 mod test {
-    use std::collections::{BTreeMap, HashMap};
-    use std::default;
-    use std::rc::Rc;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use blake3::Hasher;
@@ -434,7 +431,6 @@ mod test {
     use meta::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
-    use models::codec::Encoding;
     use models::schema::{
         ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
         TskvTableSchema,
@@ -444,20 +440,12 @@ mod test {
     use protos::models::{self as fb_models, FieldType};
     use protos::models_helper;
     use tokio::runtime;
-    use tokio::sync::mpsc;
 
-    use super::{
-        calc_block_partial_time_range, find_timestamp, hash_partial_datablock, Hash,
-        TableHashTreeNode,
-    };
-    use crate::compaction::check::{
-        get_default_time_range, hash_to_string, ColumnHashTreeNode, TimeRangeHashTreeNode,
-    };
-    use crate::compaction::FlushReq;
+    use super::{calc_block_partial_time_range, find_timestamp, hash_partial_datablock, Hash};
+    use crate::compaction::check::{get_default_time_range, TimeRangeHashTreeNode};
     use crate::engine::Engine;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
-    use crate::version_set::VersionSet;
     use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
 
     fn parse_nanos(datetime: &str) -> Timestamp {

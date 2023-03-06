@@ -1,9 +1,4 @@
-#![allow(
-    dead_code,
-    unused_imports,
-    unused_variables,
-    clippy::field_reassign_with_default
-)]
+#![allow(dead_code, clippy::field_reassign_with_default)]
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,17 +7,16 @@ use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{middleware, App, HttpServer};
 use clap::Parser;
-use config::TokioTrace;
 use meta::service::connection::Connections;
 use meta::service::{api, raft_api};
 use meta::store::config::Opt;
 use meta::store::Store;
 use meta::{store, MetaApp, RaftStore};
 use once_cell::sync::Lazy;
-use openraft::{Config, Raft};
-use parking_lot::{Mutex, Once};
+use openraft::Config;
+use parking_lot::Mutex;
 use sled::Db;
-use trace::{init_global_tracing, init_process_global_tracing, WorkerGuard};
+use trace::{init_process_global_tracing, WorkerGuard};
 
 static GLOBAL_META_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));

@@ -1,25 +1,15 @@
 use std::collections::HashMap;
 use std::mem::size_of;
-use std::path::{self, Path};
-use std::ptr::read;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use datafusion::sql::sqlparser::test_utils::table;
-use futures::executor::block_on;
 use lru_cache::asynchronous::ShardedCache;
-use memory_pool::{MemoryPool, MemoryPoolRef};
+use memory_pool::MemoryPoolRef;
 use meta::MetaRef;
-use metrics::gauge::{GaugeWrap, U64Gauge};
-use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
-use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
-use models::utils::{split_id, unite_id};
-use models::{
-    ColumnId, FieldInfo, InMemPoint, SchemaId, SeriesId, SeriesKey, Tag, Timestamp, ValueType,
-};
-use parking_lot::RwLock as SyncRwLock;
-use protos::models::{Point, Points};
+use models::schema::{DatabaseSchema, TskvTableSchema};
+use models::utils::unite_id;
+use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
+use protos::models::Point;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
@@ -28,7 +18,7 @@ use trace::{debug, error, info};
 use utils::BloomFilter;
 
 use crate::compaction::{check, CompactTask, FlushReq};
-use crate::error::{self, IndexErrSnafu, Result, SchemaSnafu};
+use crate::error::{self, Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::Options;
 use crate::memcache::{MemCache, RowData, RowGroup};
@@ -84,8 +74,6 @@ impl Database {
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
     ) {
-        let opt = ver.storage_opt();
-
         let tf = TseriesFamily::new(
             ver.tf_id(),
             ver.database(),
@@ -188,7 +176,7 @@ impl Database {
         let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
 
-        let (task_state_sender, task_state_receiver) = oneshot::channel();
+        let (task_state_sender, _task_state_receiver) = oneshot::channel();
         let task = SummaryTask::new(version_edits, file_metas, task_state_sender);
         if let Err(e) = summary_task_sender.send(task).await {
             error!("failed to send Summary task, {:?}", e);
@@ -203,7 +191,7 @@ impl Database {
         }
 
         let edits = vec![VersionEdit::new_del_vnode(tf_id)];
-        let (task_state_sender, task_state_receiver) = oneshot::channel();
+        let (task_state_sender, _task_state_receiver) = oneshot::channel();
         let task = SummaryTask::new(edits, None, task_state_sender);
         if let Err(e) = summary_task_sender.send(task).await {
             error!("failed to send Summary task, {:?}", e);
@@ -339,7 +327,7 @@ impl Database {
                 version_edits.push(ve);
             }
         } else {
-            for (id, tsf) in &self.ts_families {
+            for tsf in self.ts_families.values() {
                 let ve = tsf
                     .read()
                     .await
@@ -464,7 +452,6 @@ pub(crate) async fn delete_table_async(
 ) -> Result<()> {
     info!("Drop table: '{}.{}'", &database, &table);
     let version_set_rlock = version_set.read().await;
-    let options = version_set_rlock.options();
     let db_instance = version_set_rlock.get_db(&tenant, &database);
     drop(version_set_rlock);
 
@@ -474,7 +461,7 @@ pub(crate) async fn delete_table_async(
         schemas.del_table_schema(&table).await?;
 
         let mut sids = vec![];
-        for (id, index) in db.read().await.ts_indexes().iter() {
+        for (_id, index) in db.read().await.ts_indexes().iter() {
             let mut index = index.write().await;
 
             let mut ids = index
@@ -507,7 +494,7 @@ pub(crate) async fn delete_table_async(
                 max_ts: Timestamp::MAX,
             };
 
-            for (ts_family_id, ts_family) in db.read().await.ts_families().iter() {
+            for (_ts_family_id, ts_family) in db.read().await.ts_families().iter() {
                 // TODO: Concurrent delete on ts_family.
                 // TODO: Limit parallel delete to 1.
                 ts_family.write().await.delete_series(&sids, time_range);

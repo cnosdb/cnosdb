@@ -1,21 +1,17 @@
 use std::sync::Arc;
-use std::time::Duration;
 
-use datafusion::arrow::compute::kernels::limit;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{broadcast, oneshot, RwLock, Semaphore};
+use tokio::sync::{oneshot, RwLock, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
-use trace::{error, info, warn};
+use trace::{error, info};
 
 use crate::compaction::{flush, CompactTask, LevelCompactionPicker, Picker};
 use crate::context::GlobalContext;
-use crate::error::Result;
 use crate::kv_option::StorageOptions;
 use crate::summary::SummaryTask;
 use crate::version_set::VersionSet;
-use crate::TseriesFamilyId;
 
 pub fn run(
     storage_opt: Arc<StorageOptions>,
@@ -84,8 +80,8 @@ pub fn run(
                         match super::run_compaction_job(req, ctx_inner).await {
                             Ok(Some((version_edit, file_metas))) => {
                                 metrics::incr_compaction_success();
-                                let (summary_tx, summary_rx) = oneshot::channel();
-                                let ret = summary_task_sender_inner.send(SummaryTask::new(
+                                let (summary_tx, _summary_rx) = oneshot::channel();
+                                let _ret = summary_task_sender_inner.send(SummaryTask::new(
                                     vec![version_edit],
                                     Some(file_metas),
                                     summary_tx,

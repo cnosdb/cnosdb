@@ -1,24 +1,13 @@
-use std::collections::HashMap;
 use std::io::SeekFrom;
-use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use async_trait::async_trait;
-use config::HintedOffConfig;
-use protos::models as fb_models;
-use snafu::prelude::*;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use tokio::sync::mpsc::Receiver;
-use tokio::sync::oneshot::{self, Sender};
-use tokio::sync::RwLock;
-use tokio::time::{self, Duration};
-use trace::{debug, error, info, warn};
+use trace::{debug, info};
 
-use crate::error::{self, Error, Result};
-use crate::file_system::file_manager::{self, list_dir_names, FileManager};
-use crate::file_system::{AsyncFile, FileCursor, IFile};
+use crate::error::Result;
+use crate::file_system::file_manager::{self};
 use crate::{byte_utils, file_utils};
 
 const SEGMENT_FILE_HEADER_SIZE: u64 = 12;

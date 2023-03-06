@@ -8,7 +8,6 @@ mod writer;
 pub use block::*;
 pub use index::*;
 pub use reader::*;
-use snafu::Snafu;
 pub use tombstone::{Tombstone, TsmTombstone};
 pub use writer::*;
 

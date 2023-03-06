@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code)]
 
 use std::fs;
 
@@ -9,9 +9,6 @@ use crypto::buffer::BufferResult::BufferUnderflow;
 use crypto::buffer::{ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer};
 use crypto::digest::Digest;
 use crypto::md5::Md5;
-use crypto::symmetriccipher::SymmetricCipherError;
-use rand::rngs::OsRng;
-use rand::RngCore;
 use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPrivateKey, EncodeRsaPublicKey};
 use rsa::pkcs8::LineEnding;
 use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
@@ -164,13 +161,14 @@ impl RsaAes {
 }
 
 mod test {
-    use rand::rngs::OsRng;
-    use rand::RngCore;
-
-    use crate::rsa_aes::RsaAes;
 
     #[test]
     fn test_aes256() {
+        use rand::rngs::OsRng;
+        use rand::RngCore;
+
+        use crate::rsa_aes::RsaAes;
+
         let mut rng = OsRng::default();
         let mut key = [0; 32];
         let mut iv = [0; 16];

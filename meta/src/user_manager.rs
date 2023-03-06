@@ -1,25 +1,14 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code)]
 
-use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use async_trait::async_trait;
-use dashmap::DashMap;
-use models::auth::privilege::DatabasePrivilege;
-use models::auth::role::{
-    CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier, UserRole,
-};
-use models::auth::user::{User, UserDesc, UserOptions, UserOptionsBuilder};
-use models::auth::AuthError;
-use models::oid::{Identifier, Oid};
-use trace::debug;
+use models::auth::user::{UserDesc, UserOptions};
+use models::oid::Oid;
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
-use crate::store::command::{
-    self, META_REQUEST_FAILED, META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND,
-};
+use crate::store::command::{self, META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND};
 
 #[async_trait]
 pub trait UserManager: Send + Sync + Debug {
@@ -116,7 +105,7 @@ impl UserManager for RemoteUserManager {
             .write::<command::CommonResp<UserDesc>>(&req)
             .await?
         {
-            command::CommonResp::Ok(data) => Ok(()),
+            command::CommonResp::Ok(_data) => Ok(()),
             command::CommonResp::Err(status) => {
                 // TODO improve response
                 if status.code == META_REQUEST_USER_NOT_FOUND {
@@ -159,73 +148,5 @@ impl UserManager for RemoteUserManager {
                 }
             }
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct UserManagerMock {
-    mock_user: User,
-}
-
-impl Default for UserManagerMock {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl UserManagerMock {
-    pub fn new() -> Self {
-        let options = unsafe {
-            UserOptionsBuilder::default()
-                .password("123456")
-                .build()
-                .unwrap_unchecked()
-        };
-        let mock_desc = UserDesc::new(0_u128, "name".to_string(), options, false);
-        let mock_user = User::new(mock_desc, UserRole::Dba.to_privileges());
-        Self { mock_user }
-    }
-}
-
-#[async_trait::async_trait]
-impl UserManager for UserManagerMock {
-    async fn create_user(
-        &self,
-        name: String,
-        options: UserOptions,
-        is_admin: bool,
-    ) -> MetaResult<Oid> {
-        debug!("AuthClientMock::create_user({}, {})", name, options);
-        Ok(*self.mock_user.desc().id())
-    }
-
-    async fn user(&self, name: &str) -> MetaResult<Option<UserDesc>> {
-        debug!("AuthClientMock::user({})", name);
-
-        Ok(Some(self.mock_user.desc().clone()))
-    }
-
-    async fn users(&self) -> MetaResult<Vec<UserDesc>> {
-        debug!("AuthClientMock::users()");
-
-        Ok(vec![self.mock_user.desc().clone()])
-    }
-
-    async fn alter_user(&self, user_id: &str, options: UserOptions) -> MetaResult<()> {
-        debug!("AuthClientMock::alter_user({}, {})", user_id, options);
-
-        Ok(())
-    }
-
-    async fn drop_user(&self, name: &str) -> MetaResult<bool> {
-        debug!("AuthClientMock::drop_user({})", name);
-
-        Ok(true)
-    }
-
-    async fn rename_user(&self, user_id: &str, new_name: String) -> MetaResult<()> {
-        debug!("AuthClientMock::rename_user({}, {})", user_id, new_name);
-
-        Ok(())
     }
 }

@@ -1,6 +1,5 @@
 use std::error::Error;
 
-use bytes::Buf;
 use integer_encoding::*;
 use q_compress::{auto_compress, auto_decompress, DEFAULT_COMPRESSION_LEVEL};
 
