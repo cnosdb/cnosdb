@@ -1,6 +1,6 @@
-use std::cmp::{self, max, min};
+use std::cmp::{self};
 use std::collections::{HashMap, HashSet};
-use std::fmt::{write, Display};
+use std::fmt::Display;
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
@@ -13,20 +13,18 @@ use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
 use models::schema::{split_owner, TableColumn};
 use models::{FieldId, SchemaId, SeriesId, Timestamp};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::watch::Receiver;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
-use crate::error::{Error, Result};
-use crate::file_system::file_manager;
-use crate::file_utils::{self, make_delta_file_name, make_tsm_file_name};
-use crate::kv_option::{CacheOptions, Options, StorageOptions};
+use crate::error::Result;
+use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
+use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::{DataBlock, TsmReader, TsmTombstone};
@@ -385,7 +383,7 @@ impl LevelInfo {
 
     pub async fn read_column_file(
         &self,
-        tf_id: u32,
+        _tf_id: u32,
         field_id: FieldId,
         time_range: &TimeRange,
     ) -> Vec<DataBlock> {
@@ -568,7 +566,7 @@ impl Version {
     }
 
     // todo:
-    pub fn get_ts_overlap(&self, level: u32, ts_min: i64, ts_max: i64) -> Vec<Arc<ColumnFile>> {
+    pub fn get_ts_overlap(&self, _level: u32, _ts_min: i64, _ts_max: i64) -> Vec<Arc<ColumnFile>> {
         vec![]
     }
 
@@ -903,7 +901,7 @@ impl TseriesFamily {
         points: HashMap<(SeriesId, SchemaId), RowGroup>,
     ) -> Result<u64> {
         let mut res = 0;
-        for ((sid, schema_id), group) in points {
+        for ((sid, _schema_id), group) in points {
             let mem = self.super_version.caches.mut_cache.read();
             res += group.rows.len();
             mem.write_group(sid, seq, group)?;
@@ -964,7 +962,7 @@ impl TseriesFamily {
         let last_modified = self.last_modified.clone();
         let compact_task_sender = self.compact_task_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
-        let jh = runtime.spawn(async move {
+        let _jh = runtime.spawn(async move {
             if compact_trigger_cold_duration == Duration::ZERO {} else {
                 let mut cold_check_interval = tokio::time::interval(Duration::from_secs(10));
                 cold_check_interval.tick().await;
@@ -1083,13 +1081,12 @@ impl Drop for TseriesFamily {
 
 #[cfg(test)]
 pub mod test_tseries_family {
-    use std::collections::{hash_map, HashMap};
-    use std::mem::{size_of, size_of_val};
+    use std::collections::HashMap;
+    use std::mem::size_of;
     use std::path::PathBuf;
     use std::sync::Arc;
-    use std::time::Duration;
 
-    use config::{get_config, ClusterConfig};
+    use config::get_config;
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use meta::meta_manager::RemoteMetaManager;
@@ -1097,26 +1094,22 @@ pub mod test_tseries_family {
     use metrics::metric_register::MetricsRegister;
     use models::schema::{DatabaseSchema, TenantOptions};
     use models::Timestamp;
-    use parking_lot::{Mutex, RwLock};
+    use parking_lot::RwLock;
     use tokio::sync::mpsc::{self, Receiver};
     use tokio::sync::RwLock as AsyncRwLock;
-    use trace::{error, info};
 
-    use super::{ColumnFile, LevelInfo, SuperVersion};
+    use super::{ColumnFile, LevelInfo};
     use crate::compaction::flush_tests::default_table_schema;
-    use crate::compaction::test::write_data_blocks_to_column_file;
     use crate::compaction::{run_flush_memtable_job, FlushReq};
     use crate::context::GlobalContext;
     use crate::file_system::file_manager;
-    use crate::file_utils::{self, make_tsm_file_name};
+    use crate::file_utils::make_tsm_file_name;
     use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
-    use crate::memcache::test::put_rows_to_cache;
     use crate::memcache::{FieldVal, MemCache, RowData, RowGroup};
     use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
-    use crate::tseries_family::{CacheGroup, TimeRange, TseriesFamily, Version};
-    use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::{DataBlock, TsmTombstone};
+    use crate::tseries_family::{TimeRange, TseriesFamily, Version};
+    use crate::tsm::TsmTombstone;
     use crate::version_set::VersionSet;
     use crate::TseriesFamilyId;
 
@@ -1509,7 +1502,7 @@ pub mod test_tseries_family {
         let database = "test_db".to_string();
         let kernel = Arc::new(GlobalContext::new());
         let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
-        let (compact_task_sender, compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
+        let (compact_task_sender, _compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
         let runtime_ref = runtime.clone();
         runtime.block_on(async move {

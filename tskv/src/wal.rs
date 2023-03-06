@@ -25,23 +25,20 @@ use std::path::{Path, PathBuf};
 use std::string::String;
 use std::sync::Arc;
 
-use datafusion::parquet::data_type::AsBytes;
-use models::auth::user::{ROOT, ROOT_PWD};
 use models::codec::Encoding;
 use protos::kv_service::{Meta, WritePointsRequest};
 use snafu::ResultExt;
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::oneshot;
 use trace::{debug, error, info, warn};
 
-use crate::byte_utils::{self, decode_be_f64, decode_be_i64, decode_be_u32, decode_be_u64};
+use crate::byte_utils::{decode_be_f64, decode_be_i64, decode_be_u32, decode_be_u64};
 use crate::context::{GlobalContext, GlobalSequenceContext};
-use crate::error::{self, Error, Result};
-use crate::file_system::file_manager::{self, FileManager};
+use crate::error::{Error, Result};
+use crate::file_system::file_manager::{self};
 use crate::kv_option::WalOptions;
-use crate::record_file::{self, Record, RecordDataType, RecordDataVersion};
+use crate::record_file::{self, RecordDataType, RecordDataVersion};
 use crate::tsm::codec::get_str_codec;
-use crate::tsm::{DecodeSnafu, EncodeSnafu};
-use crate::version_set::VersionSet;
+use crate::tsm::DecodeSnafu;
 use crate::{engine, file_utils, TseriesFamilyId};
 
 const ENTRY_TYPE_LEN: usize = 1;
@@ -385,7 +382,7 @@ impl WalManager {
         let wal_files = file_manager::list_file_names(&self.current_dir);
         // TODO: Parallel get min_sequence at first.
         for file_name in wal_files {
-            let id = file_utils::get_wal_file_id(&file_name)?;
+            let _id = file_utils::get_wal_file_id(&file_name)?;
             let path = self.current_dir.join(file_name);
             if !file_manager::try_exists(&path) {
                 continue;
@@ -675,18 +672,13 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
 #[cfg(test)]
 mod test {
     use core::panic;
-    use std::borrow::BorrowMut;
     use std::collections::HashMap;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::sync::Arc;
-    use std::time::Duration;
 
-    use chrono::Utc;
     use config::get_config;
     use datafusion::execution::memory_pool::GreedyMemoryPool;
-    use datafusion::parquet::data_type::AsBytes;
-    use flatbuffers::{self, Vector, WIPOffset};
-    use lazy_static::lazy_static;
+    use flatbuffers::{self};
     use meta::meta_manager::RemoteMetaManager;
     use meta::MetaRef;
     use metrics::metric_register::MetricsRegister;
@@ -698,21 +690,17 @@ mod test {
     use protos::{models as fb_models, models_helper};
     use serial_test::serial;
     use tokio::runtime;
-    use tokio::sync::RwLock;
-    use tokio::time::sleep;
-    use trace::{info, init_default_global_tracing};
+    use trace::init_default_global_tracing;
 
     use crate::context::GlobalSequenceContext;
     use crate::engine::Engine;
-    use crate::file_system::file_manager::{self, list_file_names, FileManager};
-    use crate::file_system::FileCursor;
+    use crate::file_system::file_manager::list_file_names;
     use crate::kv_option::WalOptions;
     use crate::memcache::test::get_one_series_cache_data;
-    use crate::memcache::{FieldVal, MemCache};
+    use crate::memcache::FieldVal;
     use crate::tsm::codec::get_str_codec;
-    use crate::version_set::VersionSet;
-    use crate::wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader};
-    use crate::{kv_option, Error, Options, Result, TsKv};
+    use crate::wal::{WalEntryType, WalManager, WalReader};
+    use crate::{kv_option, Error, Result, TsKv};
 
     fn random_write_data() -> Vec<u8> {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -815,7 +803,6 @@ mod test {
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir.clone();
-        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
         let mut mgr = WalManager::open(Arc::new(wal_config), GlobalSequenceContext::empty())
@@ -849,12 +836,9 @@ mod test {
         // Argument max_file_size is so small that there must a new wal file created.
         global_config.wal.max_file_size = 1;
         global_config.wal.sync = false;
-        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
         let tenant = Arc::new(b"cnosdb".to_vec());
-        let database = "test_db".to_string();
-        let table = "test_table".to_string();
         let min_seq_no = 6;
 
         let gcs = GlobalSequenceContext::empty();
@@ -887,7 +871,6 @@ mod test {
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir.clone();
-        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
         let mut mgr = WalManager::open(Arc::new(wal_config), GlobalSequenceContext::empty())
@@ -896,7 +879,7 @@ mod test {
         let coder = get_str_codec(Encoding::Zstd);
         let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
 
-        for i in 0..10 {
+        for _i in 0..10 {
             let data = Arc::new(random_write_data());
             data_vec.push(data.clone());
 
@@ -929,7 +912,6 @@ mod test {
         let mut global_config = get_config("../config/config_31001.toml");
         global_config.wal.path = dir.to_string();
         global_config.storage.path = "/tmp/test/wal/4".to_string();
-        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
         let mut wrote_data: HashMap<String, Vec<(Timestamp, FieldVal)>> = HashMap::new();

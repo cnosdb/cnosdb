@@ -226,6 +226,8 @@ impl ServiceBuilder {
     }
 
     async fn create_coord(&self, meta: MetaRef, kv: Option<EngineRef>) -> CoordinatorRef {
+        let _options = tskv::Options::from(&self.config);
+
         let coord: CoordinatorRef = CoordService::new(
             kv,
             meta,

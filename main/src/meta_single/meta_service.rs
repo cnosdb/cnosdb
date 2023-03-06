@@ -19,7 +19,6 @@ use trace::{error, info};
 use web::Json;
 
 use crate::meta_single::Infallible;
-
 pub struct MetaApp {
     pub http_addr: String,
     pub store: StateMachine,

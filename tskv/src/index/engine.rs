@@ -1,8 +1,6 @@
-use std::cmp::Ordering;
-use std::ops::{Range, RangeBounds};
+use std::fs;
+use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::{default, fs, io};
 
 use radixdb;
 use radixdb::store;
@@ -135,7 +133,7 @@ impl IndexEngine {
     }
 
     pub fn flush(&mut self) -> IndexResult<()> {
-        let id = self
+        let _id = self
             .db
             .try_reattach()
             .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
@@ -274,7 +272,6 @@ mod test {
     use std::sync::{self, Arc};
 
     use models::utils::now_timestamp;
-    use parking_lot::RwLock;
     use tokio::time::{self, Duration};
 
     use super::IndexEngine;
@@ -345,7 +342,7 @@ mod test {
     }
 
     fn random_read(engine: Arc<IndexEngine>, count: Arc<AtomicU64>) {
-        for i in 1..10000000 {
+        for _i in 1..10000000 {
             let random: i32 = rand::Rng::gen_range(&mut rand::thread_rng(), 1..=10000000);
 
             let key = format!("key012345678901234567890123456789_{}", random);

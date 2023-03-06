@@ -1,30 +1,27 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code, unused_variables)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use models::auth::privilege::DatabasePrivilege;
-use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier};
-use models::auth::user::UserDesc;
+use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::meta_data::{
     BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
 };
-use models::oid::{Identifier, Oid};
+use models::oid::Oid;
 use models::schema::{
     DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
 };
-use tokio::net::TcpStream;
 use tonic::transport::Channel;
 
-use crate::error::{MetaError, MetaResult};
-use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
+use crate::error::MetaResult;
 use crate::limiter::RequestLimiter;
 use crate::meta_admin::AdminMeta;
 use crate::meta_client::MetaClient;
 use crate::meta_manager::MetaManager;
 use crate::store::command::EntryLog;
 use crate::tenant_manager::TenantManager;
-use crate::user_manager::UserManagerMock;
+use crate::user_manager_mock::UserManagerMock;
 use crate::{AdminMetaRef, MetaClientRef, TenantManagerRef, UserManagerRef};
 
 #[derive(Default, Debug)]

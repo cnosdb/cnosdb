@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_variables)]
+#![allow(dead_code)]
 
 use std::sync::Arc;
 
@@ -34,7 +34,7 @@ static GLOBAL_MAIN_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 
 /// cli examples is here
-/// https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs
+/// <https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs>
 #[derive(Debug, clap::Parser)]
 #[clap(name = "cnosdb")]
 #[clap(version = & VERSION[..],

@@ -8,7 +8,6 @@ use datafusion::arrow::array::{
     TimestampNanosecondBuilder, UInt64Builder,
 };
 use datafusion::arrow::datatypes::{DataType as ArrowDataType, SchemaRef};
-use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use datafusion::execution::memory_pool::{MemoryConsumer, MemoryPool, MemoryReservation};
@@ -33,7 +32,6 @@ use super::tseries_family::{ColumnFile, SuperVersion, TimeRange};
 use super::tsm::{BlockMetaIterator, DataBlock, TsmReader};
 use super::{error, ColumnFileId, Error};
 use crate::compute::count::count_column_non_null_values;
-use crate::schema::error::SchemaError;
 use crate::tseries_family::Version;
 
 pub type CursorPtr = Box<dyn Cursor>;
@@ -954,7 +952,7 @@ impl RowIterator {
         if let Some(aggregates) = self.option.aggregates.as_ref() {
             // TODO: Correct the aggregate columns order.
             let mut builders: Vec<ArrayBuilderPtr> = Vec::with_capacity(aggregates.len());
-            for agg in self.option.aggregates.iter() {
+            for _agg in self.option.aggregates.iter() {
                 builders.push(Box::new(Int64Builder::with_capacity(self.batch_size)));
             }
             return builders;

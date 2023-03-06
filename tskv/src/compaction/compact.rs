@@ -1,28 +1,22 @@
 use std::collections::{BinaryHeap, HashMap, VecDeque};
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use evmap::new;
-use models::{FieldId, Timestamp, ValueType};
+use models::{FieldId, Timestamp};
 use snafu::ResultExt;
-use trace::{debug, error, info, trace};
+use trace::{error, info, trace};
 use utils::BloomFilter;
 
 use super::iterator::BufferedIterator;
 use crate::compaction::CompactReq;
 use crate::context::GlobalContext;
 use crate::error::{self, Result};
-use crate::file_system::file_manager::{self, get_file_manager};
-use crate::kv_option::Options;
-use crate::memcache::DataType;
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tseries_family::{ColumnFile, TimeRange, TseriesFamily};
+use crate::tseries_family::TseriesFamily;
 use crate::tsm::{
-    self, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index, IndexIterator, IndexMeta,
-    IndexReader, TsmReader, TsmWriter,
+    self, BlockMeta, BlockMetaIterator, DataBlock, IndexIterator, IndexMeta, TsmReader, TsmWriter,
 };
-use crate::{file_utils, ColumnFileId, Error, LevelId, TseriesFamilyId};
+use crate::{ColumnFileId, LevelId, TseriesFamilyId};
 
 /// Temporary compacting data block meta
 struct CompactingBlockMeta {
@@ -358,7 +352,7 @@ impl CompactIterator {
                 if !merging_blks.is_empty() {
                     if merging_blks.len() == 1 {
                         // 2.2.1
-                        if let Some(CompactingBlock::Raw { meta, raw, .. }) = merging_blks.first() {
+                        if let Some(CompactingBlock::Raw { meta, .. }) = merging_blks.first() {
                             if meta.count() == self.max_datablock_values {
                                 self.merged_blocks.push_back(merging_blks.remove(0));
                             }
@@ -370,7 +364,7 @@ impl CompactIterator {
                         let merged_data_blks =
                             DataBlock::merge_blocks(merging_data_blks, self.max_datablock_values);
 
-                        for (i, data_block) in merged_data_blks.into_iter().enumerate() {
+                        for (_i, data_block) in merged_data_blks.into_iter().enumerate() {
                             if data_block.len() < self.max_datablock_values as usize {
                                 merging_blks.push(CompactingBlock::DataBlock {
                                     priority: 0,
@@ -439,7 +433,7 @@ impl CompactIterator {
             let merged_data_blks =
                 DataBlock::merge_blocks(merging_data_blks, self.max_datablock_values);
 
-            for (i, data_block) in merged_data_blks.into_iter().enumerate() {
+            for (_i, data_block) in merged_data_blks.into_iter().enumerate() {
                 self.merged_blocks.push_back(CompactingBlock::DataBlock {
                     priority: 0,
                     field_id,
@@ -568,7 +562,7 @@ pub async fn run_compaction_job(
                     // TODO handle this: stop compaction and report an error.
                     error!("Encoding error when write tsm: {:?}", source);
                 }
-                tsm::WriteTsmError::MaxFileSizeExceed { source } => {
+                tsm::WriteTsmError::MaxFileSizeExceed { .. } => {
                     tsm_writer
                         .write_index()
                         .await
@@ -644,17 +638,12 @@ fn new_compact_meta(
 pub mod test {
     use core::panic;
     use std::collections::HashMap;
-    use std::default;
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
     use std::sync::Arc;
 
     use lru_cache::asynchronous::ShardedCache;
-    use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::{FieldId, Timestamp, ValueType};
-    use parking_lot::RwLock;
-    use utils::BloomFilter;
 
     use crate::compaction::{run_compaction_job, CompactReq};
     use crate::context::GlobalContext;
@@ -663,14 +652,14 @@ pub mod test {
     use crate::summary::VersionEdit;
     use crate::tseries_family::{ColumnFile, LevelInfo, TimeRange, Version};
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::{self, DataBlock, Tombstone, TsmReader, TsmTombstone};
+    use crate::tsm::{self, DataBlock, TsmReader, TsmTombstone};
     use crate::{file_utils, TseriesFamilyId};
 
     pub(crate) async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
         data: Vec<HashMap<FieldId, Vec<DataBlock>>>,
-        tsf_id: TseriesFamilyId,
-        tsf_opt: Arc<Options>,
+        _tsf_id: TseriesFamilyId,
+        _tsf_opt: Arc<Options>,
     ) -> (u64, Vec<Arc<ColumnFile>>) {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();

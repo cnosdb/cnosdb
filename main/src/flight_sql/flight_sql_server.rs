@@ -33,7 +33,6 @@ use trace::debug;
 use super::auth_middleware::CallHeaderAuthenticator;
 use crate::flight_sql::auth_middleware::AuthResult;
 use crate::flight_sql::utils;
-
 pub struct FlightSqlServiceImpl<T> {
     instance: DBMSRef,
     authenticator: T,
@@ -246,11 +245,11 @@ where
 /// use flight sql to execute statement query:
 ///
 /// e.g.
-/// ```
+///
 /// 1. do_handshake: basic auth -> baerar token
 /// 4. get_flight_info_statement: sql(baerar token) -> address of resut set
 /// 5. do_get_statement: address of resut set(baerar token) -> resut set stream
-/// ```
+///
 #[tonic::async_trait]
 impl<T> FlightSqlService for FlightSqlServiceImpl<T>
 where
@@ -343,7 +342,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_catalogs(
         &self,
         query: CommandGetCatalogs,
@@ -360,7 +359,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_schemas(
         &self,
         query: CommandGetDbSchemas,
@@ -377,7 +376,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_tables(
         &self,
         query: CommandGetTables,
@@ -394,7 +393,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_table_types(
         &self,
         query: CommandGetTableTypes,
@@ -539,7 +538,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn do_get_catalogs(
         &self,
         query: CommandGetCatalogs,
@@ -554,7 +553,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn do_get_schemas(
         &self,
         query: CommandGetDbSchemas,
@@ -566,7 +565,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for `<https://github.com/cnosdb/cnosdb/issues/642>`
     async fn do_get_tables(
         &self,
         query: CommandGetTables,
@@ -578,7 +577,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn do_get_table_types(
         &self,
         query: CommandGetTableTypes,
@@ -748,7 +747,7 @@ where
         // get result metadata
         let output = query_result.result();
         let schema = output.schema();
-        let total_records = output.num_rows();
+        let _total_records = output.num_rows();
 
         // cache result wait cli fetching
         self.result_cache.insert(result_ident.clone(), output);
@@ -906,7 +905,7 @@ mod test {
                             )
                             .expect("dictionary_from_message");
                         }
-                        t => {
+                        _t => {
                             panic!("Reading types other than record batches not yet supported");
                         }
                     }
