@@ -439,7 +439,7 @@ impl TsKv {
         let (cb, rx) = oneshot::channel();
         let mut enc_points = Vec::with_capacity(points.len() / 2);
         get_str_codec(Encoding::Zstd)
-            .encode(&[&points], &mut enc_points)
+            .encode(&[points], &mut enc_points)
             .map_err(|_| Error::Send)?;
         self.wal_sender
             .send(WalTask::Write {
@@ -790,6 +790,7 @@ impl Engine for TsKv {
         let version_set = self.version_set.read().await;
         if let Some(db) = version_set.get_db(tenant, database) {
             let db = db.read().await;
+            // TODO: Send file_metas to the destination node.
             let mut file_metas = HashMap::new();
             if let Some(tsf) = db.get_tsfamily(vnode_id) {
                 let ve = tsf.read().await.snapshot(
@@ -818,7 +819,7 @@ impl Engine for TsKv {
         tenant: &str,
         database: &str,
         vnode_id: u32,
-        mut summary: VersionEdit,
+        summary: VersionEdit,
     ) -> Result<()> {
         info!("apply tsfamily summary: {:?}", summary);
         // It should be a version edit that add a vnode.
@@ -826,7 +827,6 @@ impl Engine for TsKv {
             return Ok(());
         }
 
-        summary.tsf_id = vnode_id;
         let db = self.get_db_or_else_create(tenant, database).await?;
         self.get_ts_index_or_else_create(db.clone(), vnode_id)
             .await?;
@@ -914,13 +914,11 @@ impl Engine for TsKv {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some((version_edit, file_metas))) => {
                             let (summary_tx, summary_rx) = oneshot::channel();
-                            let ret =
-                                self.summary_task_sender
-                                    .send(SummaryTask::new_column_file_task(
-                                        file_metas,
-                                        vec![version_edit],
-                                        summary_tx,
-                                    ));
+                            let ret = self.summary_task_sender.send(SummaryTask::new(
+                                vec![version_edit],
+                                Some(file_metas),
+                                summary_tx,
+                            ));
 
                             // let _ = summary_rx.await;
                         }
