@@ -14,26 +14,36 @@ enum FieldType: int {
 }
 
 table Tag {
-    key: [ubyte];
     value: [ubyte];
 }
 
 table Field {
-    name: [ubyte];
-    type: FieldType;
     value: [ubyte];
 }
 
+table Schema {
+    tag_name: [string];
+    // field column 1, name field_name[1], type field_type[1]
+    field_name: [string];
+    field_type: [FieldType];
+}
+
 table Point {
-    db: [ubyte];
-    tab: [ubyte];
-    tags: [Tag];
-    fields: [Field];
     timestamp: int64;
+    tags: [Tag];
+    tags_nullbit: [ubyte];
+    fields: [Field];
+    fields_nullbit: [ubyte];
+}
+
+table Table {
+    tab: [ubyte];
+    schema: Schema;
+    points: [Point];
+    num_rows: uint64;
 }
 
 table Points {
     db: [ubyte];
-    points: [Point];
+    tables: [Table];
 }
-

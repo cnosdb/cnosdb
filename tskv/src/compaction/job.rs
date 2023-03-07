@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{oneshot, RwLock, Semaphore};
-use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use trace::{error, info};
 
@@ -20,7 +19,7 @@ pub fn run(
     ctx: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
     summary_task_sender: Sender<SummaryTask>,
-) -> JoinHandle<()> {
+) {
     let runtime_inner = runtime.clone();
 
     runtime.spawn(async move {
@@ -108,5 +107,5 @@ pub fn run(
                 }
             }
         }
-    })
+    });
 }

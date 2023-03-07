@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use models::schema::FieldValue;
 use utils::BkdrHasher;
 
 use crate::{Error, Result};
@@ -17,7 +18,8 @@ impl Parser {
     pub fn parse<'a>(&self, lines: &'a str) -> Result<Vec<Line<'a>>> {
         let mut ret: Vec<Line> = Vec::new();
         let mut pos = 0_usize;
-        while let Some((line, offset)) = self.next_line(lines, pos)? {
+        while let Some((mut line, offset)) = self.next_line(lines, pos)? {
+            line.sort_and_dedup();
             ret.push(line);
             pos += offset;
         }
@@ -88,15 +90,6 @@ impl Parser {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum FieldValue {
-    U64(u64),
-    I64(i64),
-    Str(Vec<u8>),
-    F64(f64),
-    Bool(bool),
-}
-
 #[derive(Debug, PartialEq)]
 pub struct Line<'a> {
     hash_id: u64,
@@ -140,6 +133,13 @@ impl<'a> Line<'_> {
         };
         res.hash_id = res.hash_id();
         res
+    }
+
+    pub fn sort_and_dedup(&mut self) {
+        self.tags.sort_by(|a, b| a.0.cmp(b.0));
+        self.fields.sort_by(|a, b| a.0.cmp(b.0));
+        self.tags.dedup_by(|a, b| a.0 == b.0);
+        self.fields.dedup_by(|a, b| a.0 == b.0);
     }
 }
 

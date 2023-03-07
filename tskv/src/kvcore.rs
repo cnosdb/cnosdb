@@ -12,8 +12,7 @@ use models::schema::{make_owner, DatabaseSchema, TableColumn};
 use models::utils::unite_id;
 use models::{ColumnId, SeriesId, SeriesKey, TimeRange};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
-use protos::models as fb_models;
-use protos::models_helper::get_db_from_fb_points;
+use protos::{get_db_from_fb_points, models as fb_models};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::broadcast::{self, Sender as BroadcastSender};
@@ -122,7 +121,7 @@ impl TsKv {
             summary_task_sender.clone(),
             compact_task_sender.clone(),
         );
-        let _ = compaction::job::run(
+        compaction::job::run(
             shared_options.storage.clone(),
             runtime,
             compact_task_receiver,
@@ -227,7 +226,7 @@ impl TsKv {
 
         info!("Job 'WAL' starting.");
         let mut close_receiver = self.close_sender.subscribe();
-        let _ = self.runtime.spawn(async move {
+        self.runtime.spawn(async move {
             info!("Job 'WAL' started.");
 
             let sync_interval = wal_manager.sync_interval();
@@ -449,16 +448,22 @@ impl Engine for TsKv {
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
-        let db_name = get_db_from_fb_points(fb_points);
+        let db_name = get_db_from_fb_points(&fb_points)?;
         let db = self.get_db_or_else_create(&tenant, &db_name).await?;
         let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
+
+        let tables = fb_points.tables().ok_or(Error::CommonError {
+            reason: "points missing table".to_string(),
+        })?;
+
         let write_group = db
             .read()
             .await
-            .build_write_group(fb_points.points().unwrap(), ts_index)
+            .build_write_group(&db_name, tables, ts_index)
             .await?;
 
         let seq = self.write_wal(id, &tenant, &points).await?;
+
         let tsf = self
             .get_tsfamily_or_else_create(seq, id, None, db.clone())
             .await?;
@@ -482,14 +487,20 @@ impl Engine for TsKv {
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
-        let db_name = get_db_from_fb_points(fb_points);
+        let db_name = get_db_from_fb_points(&fb_points)?;
         let db = self.get_db_or_else_create(&tenant, &db_name).await?;
         let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
 
         let write_group = db
             .read()
             .await
-            .build_write_group(fb_points.points().unwrap(), ts_index)
+            .build_write_group(
+                &db_name,
+                fb_points.tables().ok_or(Error::CommonError {
+                    reason: "points missing table".to_string(),
+                })?,
+                ts_index,
+            )
             .await?;
 
         let tsf = self
@@ -898,11 +909,14 @@ impl Engine for TsKv {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some((version_edit, file_metas))) => {
                             let (summary_tx, _summary_rx) = oneshot::channel();
-                            let _ = self.summary_task_sender.send(SummaryTask::new(
-                                vec![version_edit],
-                                Some(file_metas),
-                                summary_tx,
-                            ));
+                            let _ = self
+                                .summary_task_sender
+                                .send(SummaryTask::new(
+                                    vec![version_edit],
+                                    Some(file_metas),
+                                    summary_tx,
+                                ))
+                                .await;
 
                             // let _ = summary_rx.await;
                         }

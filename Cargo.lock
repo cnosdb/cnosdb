@@ -3164,6 +3164,7 @@ name = "line_protocol"
 version = "2.2.0"
 dependencies = [
  "flatbuffers 22.12.6",
+ "models",
  "protos",
  "snafu",
  "utils",
@@ -3543,6 +3544,7 @@ dependencies = [
  "openssl",
  "parking_lot 0.12.1",
  "protos",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "snafu",
@@ -4472,8 +4474,10 @@ dependencies = [
  "prost-build",
  "protobuf 3.2.0",
  "rand 0.8.5",
+ "snafu",
  "tonic",
  "tonic-build",
+ "utils",
 ]
 
 [[package]]
@@ -6527,6 +6531,7 @@ version = "2.2.0"
 dependencies = [
  "libc",
  "pprof",
+ "rand 0.8.5",
  "tikv-jemalloc-ctl",
  "tokio",
 ]

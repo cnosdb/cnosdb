@@ -46,6 +46,15 @@ pub const DEFAULT_DATABASE: &str = "public";
 pub const USAGE_SCHEMA: &str = "usage_schema";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum FieldValue {
+    U64(u64),
+    I64(i64),
+    Str(Vec<u8>),
+    F64(f64),
+    Bool(bool),
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TableSchema {
     TsKvTableSchema(Arc<TskvTableSchema>),
@@ -136,7 +145,7 @@ impl Default for TskvTableSchema {
         Self {
             tenant: "cnosdb".to_string(),
             db: "public".to_string(),
-            name: "".to_string(),
+            name: "template".to_string(),
             schema_id: 0,
             next_column_id: 0,
             columns: Default::default(),

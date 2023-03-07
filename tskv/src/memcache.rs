@@ -9,13 +9,14 @@ use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
 use models::schema::{TableColumn, TskvTableSchema};
 use models::utils::split_id;
-use models::{
-    utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TimeRange, Timestamp, ValueType,
-};
+use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TimeRange, Timestamp, ValueType};
 use parking_lot::RwLock;
 use protos::models as fb_models;
+use protos::models::FieldType;
+use utils::bitset::BitSet;
 
 use crate::error::Result;
+use crate::Error::CommonError;
 use crate::{byte_utils, Error, TseriesFamilyId};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,7 +103,12 @@ pub struct RowData {
 }
 
 impl RowData {
-    pub fn point_to_row_data(p: fb_models::Point, schema: &TskvTableSchema) -> RowData {
+    pub fn point_to_row_data(
+        p: fb_models::Point,
+        schema: &TskvTableSchema,
+        field_names: &[&str],
+        field_type: &[FieldType],
+    ) -> Result<RowData> {
         let fields = match p.fields() {
             None => {
                 let mut fields = Vec::with_capacity(schema.field_num());
@@ -112,24 +118,39 @@ impl RowData {
                 fields
             }
             Some(fields_inner) => {
+                let field_nullbit_buffer = p.fields_nullbit().ok_or(Error::CommonError {
+                    reason: "field nullbit missing in point".to_string(),
+                })?;
+                let len = fields_inner.len();
+                let field_nullbit = BitSet::new_without_check(len, field_nullbit_buffer.bytes());
                 let fields_id = schema.fields_id();
                 let mut fields: Vec<Option<FieldVal>> = Vec::with_capacity(fields_id.len());
                 for _i in 0..fields.capacity() {
                     fields.push(None);
                 }
-                for (_i, f) in fields_inner.into_iter().enumerate() {
-                    let vtype = f.type_().into();
-                    let val = MiniVec::from(f.value().unwrap().bytes());
-                    match schema.column(
-                        String::from_utf8(f.name().unwrap().bytes().to_vec())
-                            .unwrap()
-                            .as_str(),
-                    ) {
+                for (idx, ((field, field_name), field_type)) in fields_inner
+                    .into_iter()
+                    .zip(field_names)
+                    .zip(field_type)
+                    .enumerate()
+                {
+                    let val = MiniVec::from(
+                        field
+                            .value()
+                            .ok_or(CommonError {
+                                reason: "field missing value".to_string(),
+                            })?
+                            .bytes(),
+                    );
+                    match schema.column(field_name) {
                         None => {}
                         Some(field) => match fields_id.get(&field.id) {
                             None => {}
                             Some(index) => {
-                                fields[*index] = Some(FieldVal::new(val, vtype));
+                                if !field_nullbit.get(idx) {
+                                    continue;
+                                }
+                                fields[*index] = Some(FieldVal::new(val, (*field_type).into()));
                             }
                         },
                     }
@@ -138,7 +159,7 @@ impl RowData {
             }
         };
         let ts = p.timestamp();
-        RowData { ts, fields }
+        Ok(RowData { ts, fields })
     }
 
     pub fn size(&self) -> usize {
@@ -156,26 +177,6 @@ impl RowData {
         size += size_of_val(&self.ts);
         size += size_of_val(&self.fields);
         size
-    }
-}
-
-impl From<fb_models::Point<'_>> for RowData {
-    fn from(p: fb_models::Point<'_>) -> Self {
-        let fields = match p.fields() {
-            Some(fields_inner) => {
-                let mut fields = Vec::with_capacity(fields_inner.len());
-                for f in fields_inner.into_iter() {
-                    let vtype = f.type_().into();
-                    let val = MiniVec::from(f.value().unwrap().bytes());
-                    fields.push(Some(FieldVal::new(val, vtype)));
-                }
-                fields
-            }
-            None => vec![],
-        };
-
-        let ts = p.timestamp();
-        Self { ts, fields }
     }
 }
 
@@ -429,7 +430,7 @@ impl MemCache {
 
     pub fn delete_columns(&self, field_ids: &[FieldId]) {
         for fid in field_ids {
-            let (column_id, sid) = utils::split_id(*fid);
+            let (column_id, sid) = split_id(*fid);
             let index = (sid as usize) % self.part_count;
             let part = self.partions[index].read();
             if let Some(data) = part.get(&sid) {

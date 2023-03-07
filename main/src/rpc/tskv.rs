@@ -463,7 +463,7 @@ impl TskvService for TskvServiceImpl {
         };
 
         let (mut iterator, record_batch_sender) = ReaderIterator::new();
-        let _ = tokio::spawn(TskvServiceImpl::query_record_batch_exec(
+        tokio::spawn(TskvServiceImpl::query_record_batch_exec(
             args,
             expr,
             self.coord.meta_manager(),
