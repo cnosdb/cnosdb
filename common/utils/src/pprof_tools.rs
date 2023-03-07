@@ -39,6 +39,7 @@ pub async fn gernate_pprof() -> Result<String, String> {
     }
 }
 
+const PROF_ACTIVE: &[u8] = b"prof.active\0";
 const PROF_DUMP: &[u8] = b"prof.dump\0";
 const OPT_PROF: &[u8] = b"opt.prof\0";
 
@@ -46,6 +47,9 @@ const OPT_PROF: &[u8] = b"opt.prof\0";
 // CARGO_FEATURE_PROFILING=true
 pub fn gernate_jeprof() -> Result<String, String> {
     // precheck
+
+    activate_prof()?;
+
     if !is_prof_enabled()? {
         return Err("opt.prof is not ON. Start server e.g. MALLOC_CONF=prof:true ".into());
     }
@@ -73,4 +77,26 @@ fn is_prof_enabled() -> Result<bool, String> {
         tikv_jemalloc_ctl::raw::read::<bool>(OPT_PROF)
             .map_err(|e| format!("read opt.prof failure: {}", e))?
     })
+}
+
+pub fn activate_prof() -> Result<(), String> {
+    unsafe {
+        if let Err(e) = tikv_jemalloc_ctl::raw::update(PROF_ACTIVE, true) {
+            return Err(format!("failed to activate profiling: {}", e));
+        }
+
+        // if let Err(e) = tikv_jemalloc_ctl::raw::update(OPT_PROF, true) {
+        //     return Err(format!("failed to activate opt profiling: {}", e));
+        // }
+    }
+    Ok(())
+}
+
+pub fn deactivate_prof() -> Result<(), String> {
+    unsafe {
+        if let Err(e) = tikv_jemalloc_ctl::raw::update(PROF_ACTIVE, false) {
+            return Err(format!("failed to deactivate profiling: {}", e));
+        }
+    }
+    Ok(())
 }
