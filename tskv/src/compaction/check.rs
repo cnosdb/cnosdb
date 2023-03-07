@@ -6,7 +6,7 @@ use std::sync::Arc;
 use blake3::Hasher;
 use chrono::{Duration, DurationRound, NaiveDateTime};
 use models::schema::ColumnType;
-use models::{utils, ColumnId, FieldId, Timestamp};
+use models::{utils, ColumnId, FieldId, TimeRange, Timestamp};
 use snafu::ResultExt;
 use trace::warn;
 
@@ -15,7 +15,7 @@ use crate::database::Database;
 use crate::error::{self, Error, Result};
 use crate::schema::schemas::DBschemas;
 use crate::tsm::{DataBlock, TsmReader};
-use crate::{TimeRange, TseriesFamilyId};
+use crate::TseriesFamilyId;
 
 pub type Hash = [u8; 32];
 
@@ -435,7 +435,7 @@ mod test {
         ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
         TskvTableSchema,
     };
-    use models::{Timestamp, ValueType};
+    use models::{TimeRange, Timestamp, ValueType};
     use protos::kv_service::{Meta, WritePointsRequest};
     use protos::models::{self as fb_models, FieldType};
     use protos::models_helper;
@@ -446,7 +446,7 @@ mod test {
     use crate::engine::Engine;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
-    use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
+    use crate::{Options, TsKv, TseriesFamilyId};
 
     fn parse_nanos(datetime: &str) -> Timestamp {
         NaiveDateTime::parse_from_str(datetime, "%Y-%m-%d %H:%M:%S")

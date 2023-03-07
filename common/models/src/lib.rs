@@ -17,6 +17,8 @@ pub mod duration;
 pub mod object_reference;
 pub mod oid;
 pub mod predicate;
+pub mod time_range;
+
 use std::sync::Arc;
 
 pub use error_code;
@@ -26,6 +28,7 @@ use parking_lot::RwLock;
 pub use points::*;
 pub use series_info::SeriesKey;
 pub use tag::Tag;
+pub use time_range::*;
 
 pub type ShardId = u64;
 pub type CatalogId = u64;

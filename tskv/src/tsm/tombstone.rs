@@ -14,13 +14,12 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use models::FieldId;
+use models::{FieldId, TimeRange};
 use trace::error;
 
 use super::DataBlock;
 use crate::file_system::file_manager;
 use crate::record_file::{self, RecordDataType, RecordDataVersion};
-use crate::tseries_family::TimeRange;
 use crate::{byte_utils, file_utils, Error, Result};
 
 const TOMBSTONE_FILE_SUFFIX: &str = ".tombstone";
@@ -208,9 +207,10 @@ impl TsmTombstone {
 mod test {
     use std::path::PathBuf;
 
+    use models::TimeRange;
+
     use super::TsmTombstone;
     use crate::file_system::file_manager;
-    use crate::tseries_family::TimeRange;
 
     #[tokio::test]
     async fn test_write_read_1() {

@@ -4,14 +4,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use models::predicate::domain::ColumnDomains;
 use models::schema::TableColumn;
-use models::{ColumnId, SeriesId, SeriesKey};
+use models::{ColumnId, SeriesId, SeriesKey, TimeRange};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 
 use crate::error::Result;
 use crate::index::IndexResult;
 use crate::kv_option::StorageOptions;
 use crate::tseries_family::SuperVersion;
-use crate::{TimeRange, TseriesFamilyId, VersionEdit};
+use crate::{TseriesFamilyId, VersionEdit};
 
 pub type EngineRef = Arc<dyn Engine>;
 

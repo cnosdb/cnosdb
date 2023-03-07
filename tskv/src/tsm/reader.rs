@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
 
-use models::{FieldId, ValueType};
+use models::{FieldId, TimeRange, ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
 use utils::BloomFilter;
@@ -11,7 +11,6 @@ use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u64};
 use crate::error::{self, Error, Result};
 use crate::file_system::{file_manager, AsyncFile, IFile};
 use crate::file_utils;
-use crate::tseries_family::TimeRange;
 use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
     get_u64_codec, DataBlockEncoding,
@@ -668,13 +667,12 @@ pub mod tsm_reader_tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
-    use models::{FieldId, Timestamp};
+    use models::{FieldId, TimeRange, Timestamp};
     use snafu::ResultExt;
 
     use crate::error::{self, Error, Result};
     use crate::file_system::file_manager::{self};
     use crate::file_utils;
-    use crate::tseries_family::TimeRange;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_writer_tests::write_to_tsm;
     use crate::tsm::{BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone};

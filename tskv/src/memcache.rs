@@ -9,12 +9,13 @@ use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
 use models::schema::{TableColumn, TskvTableSchema};
 use models::utils::split_id;
-use models::{utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
+use models::{
+    utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TimeRange, Timestamp, ValueType,
+};
 use parking_lot::RwLock;
 use protos::models as fb_models;
 
 use crate::error::Result;
-use crate::tseries_family::TimeRange;
 use crate::{byte_utils, Error, TseriesFamilyId};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -573,11 +574,10 @@ pub(crate) mod test {
     use std::sync::Arc;
 
     use models::schema::TskvTableSchema;
-    use models::{SchemaId, SeriesId, Timestamp};
+    use models::{SchemaId, SeriesId, TimeRange, Timestamp};
     use parking_lot::RwLock;
 
     use super::{FieldVal, MemCache, RowData, RowGroup};
-    use crate::TimeRange;
 
     pub(crate) fn put_rows_to_cache(
         cache: &mut MemCache,

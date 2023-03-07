@@ -5,7 +5,6 @@ pub use error::{Error, Result};
 pub use kv_option::Options;
 pub use kvcore::TsKv;
 pub use summary::{print_summary_statistics, Summary, VersionEdit};
-pub use tseries_family::TimeRange;
 pub use tsm::print_tsm_statistics;
 pub use wal::print_wal_statistics;
 

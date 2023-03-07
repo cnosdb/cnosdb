@@ -3,13 +3,13 @@ use std::fmt::Debug;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use models::Timestamp;
+use models::{TimeRange, Timestamp};
 use trace::{debug, error, info};
 
 use crate::compaction::CompactReq;
 use crate::kv_option::StorageOptions;
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
-use crate::{LevelId, TimeRange};
+use crate::LevelId;
 
 pub trait Picker: Send + Sync + Debug {
     fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq>;
@@ -405,6 +405,7 @@ mod test {
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use metrics::metric_register::MetricsRegister;
+    use models::TimeRange;
     use tokio::sync::mpsc;
 
     use crate::compaction::test::create_options;
@@ -414,7 +415,6 @@ mod test {
     use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
     use crate::memcache::MemCache;
     use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
-    use crate::TimeRange;
 
     type ColumnFilesSketch = (u64, i64, i64, u64, bool);
     type LevelsSketch = Vec<(u32, i64, i64, Vec<ColumnFilesSketch>)>;

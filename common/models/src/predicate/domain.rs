@@ -20,22 +20,6 @@ use crate::{Error, Result};
 
 pub type PredicateRef = Arc<Predicate>;
 
-#[derive(Default, Debug)]
-pub struct TimeRange {
-    pub max_ts: i64,
-    pub min_ts: i64,
-}
-
-impl TimeRange {
-    pub fn new(max_ts: i64, min_ts: i64) -> Self {
-        Self { max_ts, min_ts }
-    }
-
-    pub fn overlaps(&self, range: &TimeRange) -> bool {
-        !(self.min_ts > range.max_ts || self.max_ts < range.min_ts)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 enum Bound {
     /// lower than the value, but infinitesimally close to the value.

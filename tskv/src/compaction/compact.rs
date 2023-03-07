@@ -643,14 +643,14 @@ pub mod test {
 
     use lru_cache::asynchronous::ShardedCache;
     use minivec::MiniVec;
-    use models::{FieldId, Timestamp, ValueType};
+    use models::{FieldId, TimeRange, Timestamp, ValueType};
 
     use crate::compaction::{run_compaction_job, CompactReq};
     use crate::context::GlobalContext;
     use crate::file_system::file_manager;
     use crate::kv_option::Options;
     use crate::summary::VersionEdit;
-    use crate::tseries_family::{ColumnFile, LevelInfo, TimeRange, Version};
+    use crate::tseries_family::{ColumnFile, LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::{self, DataBlock, TsmReader, TsmTombstone};
     use crate::{file_utils, TseriesFamilyId};
