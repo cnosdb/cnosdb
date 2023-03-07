@@ -9,7 +9,8 @@ use metrics::metric_register::MetricsRegister;
 use models::schema::{DatabaseSchema, TskvTableSchema};
 use models::utils::unite_id;
 use models::{ColumnId, SchemaId, SeriesId, SeriesKey, TimeRange, Timestamp};
-use protos::models::Point;
+use protos::models::{FieldType, Point, Table};
+use protos::{fb_table_name, schema_field_name, schema_field_type, schema_tag_name};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
@@ -30,6 +31,7 @@ use crate::Error::{self, InvalidPoint};
 use crate::{ColumnFileId, TseriesFamilyId};
 
 pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>;
+pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>;
 
 #[derive(Debug)]
 pub struct Database {
@@ -200,43 +202,94 @@ impl Database {
 
     pub async fn build_write_group(
         &self,
-        points: FlatBufferPoint<'_>,
+        db_name: &str,
+        tables: FlatBufferTable<'_>,
         ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         if self.opt.storage.strict_write {
-            self.build_write_group_strict_mode(points, ts_index).await
+            self.build_write_group_strict_mode(db_name, tables, ts_index)
+                .await
         } else {
-            self.build_write_group_loose_mode(points, ts_index).await
+            self.build_write_group_loose_mode(db_name, tables, ts_index)
+                .await
         }
     }
 
     pub async fn build_write_group_strict_mode(
         &self,
-        points: FlatBufferPoint<'_>,
+        db_name: &str,
+        tables: FlatBufferTable<'_>,
         ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
-        for point in points {
-            let sid = Self::build_index(&point, ts_index.clone()).await?;
-            self.build_row_data(&mut map, point, sid)?
+        for table in tables {
+            let table_name = fb_table_name(&table)?;
+
+            let points = table.points().ok_or(Error::CommonError {
+                reason: "table missing points".to_string(),
+            })?;
+
+            for point in points {
+                let schema = table.schema().ok_or(Error::CommonError {
+                    reason: "table missing schema in point".to_string(),
+                })?;
+                let field_type = schema_field_type(&schema)?;
+                let field_names = schema_field_name(&schema)?;
+                let tag_names = schema_tag_name(&schema)?;
+
+                let sid =
+                    Self::build_index(db_name, &table_name, &point, &tag_names, ts_index.clone())
+                        .await?;
+                self.build_row_data(&mut map, &table_name, point, &field_names, &field_type, sid)?
+            }
         }
         Ok(map)
     }
 
     pub async fn build_write_group_loose_mode(
         &self,
-        points: FlatBufferPoint<'_>,
+        db_name: &str,
+        tables: FlatBufferTable<'_>,
         ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         let mut map = HashMap::new();
-        for point in points {
-            let sid = Self::build_index(&point, ts_index.clone()).await?;
-            if self.schemas.check_field_type_from_cache(&point).is_err() {
-                self.schemas.check_field_type_or_else_add(&point).await?;
-            }
+        for table in tables {
+            let table_name = fb_table_name(&table)?;
 
-            self.build_row_data(&mut map, point, sid)?
+            let points = table.points().ok_or(Error::CommonError {
+                reason: "table missing points".to_string(),
+            })?;
+
+            for point in points {
+                let schema = table.schema().ok_or(Error::CommonError {
+                    reason: "table missing schema in point".to_string(),
+                })?;
+                let tag_names = schema_tag_name(&schema)?;
+                let field_names = schema_field_name(&schema)?;
+                let field_type = schema_field_type(&schema)?;
+
+                let sid =
+                    Self::build_index(db_name, &table_name, &point, &tag_names, ts_index.clone())
+                        .await?;
+                if self
+                    .schemas
+                    .check_field_type_from_cache(&table_name, &tag_names, &field_names, &field_type)
+                    .is_err()
+                {
+                    self.schemas
+                        .check_field_type_or_else_add(
+                            db_name,
+                            &table_name,
+                            &tag_names,
+                            &field_names,
+                            &field_type,
+                        )
+                        .await?;
+                }
+
+                self.build_row_data(&mut map, &table_name, point, &field_names, &field_type, sid)?
+            }
         }
         Ok(map)
     }
@@ -244,17 +297,19 @@ impl Database {
     fn build_row_data(
         &self,
         map: &mut HashMap<(SeriesId, SchemaId), RowGroup>,
+        table_name: &str,
         point: Point,
+        field_names: &[&str],
+        field_type: &[FieldType],
         sid: u32,
     ) -> Result<()> {
-        let table_name = String::from_utf8(point.tab().unwrap().bytes().to_vec()).unwrap();
-        let table_schema = self.schemas.get_table_schema(&table_name)?;
+        let table_schema = self.schemas.get_table_schema(table_name)?;
         let table_schema = match table_schema {
             Some(v) => v,
             None => return Ok(()),
         };
 
-        let row = RowData::point_to_row_data(point, &table_schema);
+        let row = RowData::point_to_row_data(point, &table_schema, field_names, field_type)?;
         let schema_size = table_schema.size();
         let schema_id = table_schema.schema_id;
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
@@ -279,16 +334,21 @@ impl Database {
     }
 
     async fn build_index(
+        db_name: &str,
+        tab_name: &str,
         info: &Point<'_>,
+        tag_names: &[&str],
         ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
     ) -> Result<u32> {
-        if info.fields().ok_or(InvalidPoint)?.is_empty() {
+        let nullbits = info.fields_nullbit().ok_or(InvalidPoint)?.bytes();
+        if !nullbits.iter().any(|x| *x != 0) {
             return Err(InvalidPoint);
         }
 
-        let mut series_key = SeriesKey::from_flatbuffer(info).map_err(|e| Error::CommonError {
-            reason: e.to_string(),
-        })?;
+        let mut series_key = SeriesKey::build_series_key(db_name, tab_name, tag_names, info)
+            .map_err(|e| Error::CommonError {
+                reason: e.to_string(),
+            })?;
 
         if let Some(id) = ts_index.read().await.get_series_id(&series_key)? {
             return Ok(id);

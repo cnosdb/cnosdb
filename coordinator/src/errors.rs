@@ -5,6 +5,7 @@ use datafusion::arrow::error::ArrowError;
 use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
+use protos::PointsError;
 use snafu::Snafu;
 use tonic::Status;
 
@@ -129,10 +130,28 @@ pub enum CoordinatorError {
     GRPCRequest {
         msg: String,
     },
+
+    #[snafu(display("flatbuffer point miss field : {}", msg))]
+    #[error_code(code = 20)]
+    Points {
+        msg: String,
+    },
+
+    #[snafu(display("{}", source))]
+    #[error_code(code = 21)]
+    FBPoints {
+        source: PointsError,
+    },
 }
 
-impl From<meta::error::MetaError> for CoordinatorError {
-    fn from(err: meta::error::MetaError) -> Self {
+impl From<PointsError> for CoordinatorError {
+    fn from(value: PointsError) -> Self {
+        CoordinatorError::FBPoints { source: value }
+    }
+}
+
+impl From<MetaError> for CoordinatorError {
+    fn from(err: MetaError) -> Self {
         CoordinatorError::MetaRequest {
             msg: err.to_string(),
         }

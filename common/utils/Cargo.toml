@@ -10,3 +10,8 @@ libc = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tikv-jemalloc-ctl = { workspace = true }
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec","frame-pointer"] }
+
+
+
+[dev-dependencies]
+rand = {workspace = true}

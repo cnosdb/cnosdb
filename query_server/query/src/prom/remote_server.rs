@@ -1,19 +1,16 @@
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
-use flatbuffers::FlatBufferBuilder;
-use line_protocol::{line_to_point, FieldValue, Line};
+use line_protocol::{parse_lines_to_points, Line};
 use meta::error::MetaError;
 use meta::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
-use models::schema::{TskvTableSchema, TIME_FIELD_NAME};
+use models::schema::{FieldValue, TskvTableSchema, TIME_FIELD_NAME};
 use protos::kv_service::WritePointsRequest;
-use protos::models::{Points, PointsArgs};
 use protos::models_helper::{parse_proto_bytes, to_proto_bytes};
 use protos::prompb::remote::{
     Query as PromQuery, QueryResult, ReadRequest, ReadResponse, WriteRequest,
@@ -31,6 +28,7 @@ use trace::{debug, warn};
 
 use super::time_series::writer::WriterBuilder;
 use super::{METRIC_NAME_LABEL, METRIC_SAMPLE_COLUMN_NAME};
+use crate::prom::DEFAULT_PROM_TABLE_NAME;
 
 pub struct PromRemoteSqlServer {
     db: DBMSRef,
@@ -115,42 +113,29 @@ impl PromRemoteSqlServer {
         ctx: &Context,
         req: WriteRequest,
     ) -> Result<WritePointsRequest> {
-        let mut fbb = FlatBufferBuilder::new();
-        let mut point_offsets = Vec::new();
+        let mut lines = Vec::with_capacity(req.timeseries.len());
 
-        for ts in req.timeseries {
-            let mut table_name = METRIC_NAME_LABEL.to_string();
-
+        for ts in req.timeseries.iter() {
+            let mut table_name = DEFAULT_PROM_TABLE_NAME;
             let tags = ts
                 .labels
                 .iter()
                 .map(|label| {
                     if label.name.eq(METRIC_NAME_LABEL) {
-                        table_name = label.value.to_owned();
+                        table_name = label.value.as_ref()
                     }
-                    (label.name.deref(), label.value.deref())
+                    (label.name.as_ref(), label.value.as_ref())
                 })
-                .collect::<Vec<(&str, &str)>>();
+                .collect::<Vec<(_, _)>>();
 
-            for sample in ts.samples {
+            for sample in ts.samples.iter() {
                 let fields = vec![(METRIC_SAMPLE_COLUMN_NAME, FieldValue::F64(sample.value))];
                 let timestamp = sample.timestamp * 1000000;
-                let line = Line::new(&table_name, tags.clone(), fields, timestamp);
-                point_offsets.push(line_to_point(ctx.database(), &line, &mut fbb))
+                lines.push(Line::new(table_name, tags.clone(), fields, timestamp));
             }
         }
 
-        let fbb_db = fbb.create_vector(ctx.database().as_bytes());
-        let points_raw = fbb.create_vector(&point_offsets);
-        let points = Points::create(
-            &mut fbb,
-            &PointsArgs {
-                db: Some(fbb_db),
-                points: Some(points_raw),
-            },
-        );
-        fbb.finish(points, None);
-        let points = fbb.finished_data().to_vec();
+        let points = parse_lines_to_points(ctx.database(), &lines);
         let request = WritePointsRequest {
             version: 0,
             meta: None,

@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use flatbuffers::FlatBufferBuilder;
+use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use meta::{MetaClientRef, MetaRef};
 use models::meta_data::*;
 use models::utils::now_timestamp;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{Meta, WritePointsRequest, WriteVnodeRequest};
-use protos::models as fb_models;
-use protos::models::{FieldBuilder, PointArgs, Points, PointsArgs, TagBuilder};
+use protos::models::{
+    FieldBuilder, Point, PointBuilder, Points, PointsArgs, Schema, SchemaBuilder, TableBuilder,
+    TagBuilder,
+};
+use protos::{fb_table_name, get_db_from_fb_points, models as fb_models};
 use snafu::ResultExt;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
@@ -16,6 +19,8 @@ use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::{debug, info};
 use tskv::engine::EngineRef;
+use utils::bitset::BitSet;
+use utils::BkdrHasher;
 
 use crate::errors::*;
 use crate::hh_queue::{HintedOffBlock, HintedOffWriteReq};
@@ -24,7 +29,8 @@ use crate::{status_response_to_result, WriteRequest};
 pub struct VnodePoints<'a> {
     db: String,
     fbb: FlatBufferBuilder<'a>,
-    offset: Vec<flatbuffers::WIPOffset<fb_models::Point<'a>>>,
+    offset: HashMap<String, Vec<WIPOffset<Point<'a>>>>,
+    schema: HashMap<String, WIPOffset<Schema<'a>>>,
 
     pub data: Vec<u8>,
     pub repl_set: ReplicationSet,
@@ -36,62 +42,141 @@ impl VnodePoints<'_> {
             db,
             repl_set,
             fbb: FlatBufferBuilder::new(),
-            offset: Vec::new(),
+            offset: HashMap::new(),
+            schema: HashMap::new(),
             data: vec![],
         }
     }
 
-    pub fn add_point(&mut self, point: models::Point) {
-        let mut tags = Vec::with_capacity(point.tags.len());
-        for item in point.tags.iter() {
-            let fbk = self.fbb.create_vector(&item.key);
-            let fbv = self.fbb.create_vector(&item.value);
+    pub fn add_schema(&mut self, table_name: &str, schema: Schema) {
+        if self.schema.get(table_name).is_none() {
+            let tag_names_off = schema
+                .tag_name()
+                .unwrap_or_default()
+                .iter()
+                .map(|item| self.fbb.create_string(item))
+                .collect::<Vec<_>>();
+            let tag_names = self.fbb.create_vector(&tag_names_off);
+
+            let field_name_off = schema
+                .field_name()
+                .unwrap_or_default()
+                .iter()
+                .map(|item| self.fbb.create_string(item))
+                .collect::<Vec<_>>();
+            let field_names = self.fbb.create_vector(&field_name_off);
+            let field_type = self.fbb.create_vector(
+                &schema
+                    .field_type()
+                    .unwrap_or_default()
+                    .iter()
+                    .collect::<Vec<_>>(),
+            );
+
+            let mut schema_builder = SchemaBuilder::new(&mut self.fbb);
+            schema_builder.add_tag_name(tag_names);
+            schema_builder.add_field_name(field_names);
+            schema_builder.add_field_type(field_type);
+
+            let schema = schema_builder.finish();
+            self.schema.insert(table_name.to_string(), schema);
+        }
+    }
+
+    pub fn add_point(&mut self, table_name: &str, point: Point) {
+        let mut tags = Vec::with_capacity(point.tags().unwrap_or_default().len());
+        for tag in point.tags().unwrap_or_default().iter() {
+            let tags_value = self
+                .fbb
+                .create_vector(tag.value().unwrap_or_default().bytes());
+
             let mut tag_builder = TagBuilder::new(&mut self.fbb);
-            tag_builder.add_key(fbk);
-            tag_builder.add_value(fbv);
+            tag_builder.add_value(tags_value);
             tags.push(tag_builder.finish());
         }
 
-        let mut fields = Vec::with_capacity(point.fields.len());
-        for item in point.fields.iter() {
-            let fbk = self.fbb.create_vector(&item.name);
-            let fbv = self.fbb.create_vector(&item.value);
+        let tags = self.fbb.create_vector(&tags);
+        let tags_nullbit = self
+            .fbb
+            .create_vector(point.tags_nullbit().unwrap_or_default().bytes());
 
-            //fb_models::FieldType::Boolean,
+        let mut fields = Vec::with_capacity(point.fields().unwrap_or_default().len());
+        for field in point.fields().unwrap_or_default().iter() {
+            let field_value = self
+                .fbb
+                .create_vector(field.value().unwrap_or_default().bytes());
 
-            let vtype = item.value_type.to_fb_type();
             let mut field_builder = FieldBuilder::new(&mut self.fbb);
-            field_builder.add_name(fbk);
-            field_builder.add_type_(vtype);
-            field_builder.add_value(fbv);
+            field_builder.add_value(field_value);
             fields.push(field_builder.finish());
         }
 
-        let point_args = PointArgs {
-            db: Some(self.fbb.create_vector(point.db.as_bytes())),
-            tab: Some(self.fbb.create_vector(point.table.as_bytes())),
-            tags: Some(self.fbb.create_vector(&tags)),
-            fields: Some(self.fbb.create_vector(&fields)),
-            timestamp: point.timestamp,
-        };
+        let fields = self.fbb.create_vector(&fields);
+        let fields_nullbit = self
+            .fbb
+            .create_vector(point.fields_nullbit().unwrap_or_default().bytes());
 
-        self.offset
-            .push(fb_models::Point::create(&mut self.fbb, &point_args));
+        let mut point_builder = PointBuilder::new(&mut self.fbb);
+        point_builder.add_tags(tags);
+        point_builder.add_tags_nullbit(tags_nullbit);
+        point_builder.add_fields(fields);
+        point_builder.add_fields_nullbit(fields_nullbit);
+        point_builder.add_timestamp(point.timestamp());
+
+        let point = point_builder.finish();
+
+        match self.offset.get_mut(table_name) {
+            None => {
+                self.offset.insert(table_name.to_string(), vec![point]);
+            }
+            Some(points) => {
+                points.push(point);
+            }
+        }
     }
 
-    pub fn finish(&mut self) {
+    pub fn finish(&mut self) -> CoordinatorResult<()> {
         let fbb_db = self.fbb.create_vector(self.db.as_bytes());
-        let points_raw = self.fbb.create_vector(&self.offset);
+        let mut fbb_tables = Vec::with_capacity(self.offset.len());
+        let table_names = self.offset.iter().map(|item| item.0.as_str());
+
+        for table_name in table_names {
+            let table_points = self
+                .offset
+                .get(table_name)
+                .ok_or(CoordinatorError::Points {
+                    msg: format!("can not found points for {}", table_name),
+                })?;
+            let schema = self
+                .schema
+                .get(table_name)
+                .ok_or(CoordinatorError::Points {
+                    msg: format!("can not found schema for {}", table_name),
+                })?;
+            let num_rows = table_points.len();
+            let table_points = self.fbb.create_vector(table_points);
+            let table_name = self.fbb.create_vector(table_name.as_bytes());
+
+            let mut table_builder = TableBuilder::new(&mut self.fbb);
+            table_builder.add_tab(table_name);
+            table_builder.add_schema(*schema);
+            table_builder.add_points(table_points);
+            table_builder.add_num_rows(num_rows as u64);
+            fbb_tables.push(table_builder.finish())
+        }
+
+        let tables = self.fbb.create_vector(&fbb_tables);
 
         let points = Points::create(
             &mut self.fbb,
             &PointsArgs {
                 db: Some(fbb_db),
-                points: Some(points_raw),
+                tables: Some(tables),
             },
         );
         self.fbb.finish(points, None);
         self.data = self.fbb.finished_data().to_vec();
+        Ok(())
     }
 }
 
@@ -112,27 +197,65 @@ impl<'a> VnodeMapping<'a> {
     pub async fn map_point(
         &mut self,
         meta_client: MetaClientRef,
-        point: models::Point,
+        db_name: &str,
+        tab_name: &str,
+        schema: Schema<'_>,
+        point: Point<'_>,
     ) -> CoordinatorResult<()> {
-        if let Some(val) = meta_client.database_min_ts(&point.db) {
-            if point.timestamp < val {
+        if let Some(val) = meta_client.database_min_ts(db_name) {
+            if point.timestamp() < val {
                 return Err(CoordinatorError::CommonError {
                     msg: "write expired time data not permit".to_string(),
                 });
             }
         }
 
+        let hash_id = {
+            let mut hasher = BkdrHasher::new();
+            hasher.hash_with(tab_name.as_bytes());
+            if let Some(tag_name) = schema.tag_name() {
+                let tag_nullbit = point.tags_nullbit().ok_or(CoordinatorError::Points {
+                    msg: "point missing tag null bit".to_string(),
+                })?;
+                let len = tag_name.len();
+                let tag_nullbit = BitSet::new_without_check(len, tag_nullbit.bytes());
+                for (idx, (tag_key, tag_value)) in tag_name
+                    .iter()
+                    .zip(point.tags().ok_or(CoordinatorError::Points {
+                        msg: "point missing tag value".to_string(),
+                    })?)
+                    .enumerate()
+                {
+                    if !tag_nullbit.get(idx) {
+                        continue;
+                    }
+                    hasher.hash_with(tag_key.as_bytes());
+                    hasher.hash_with(
+                        tag_value
+                            .value()
+                            .ok_or(CoordinatorError::Points {
+                                msg: "point missing tag value".to_string(),
+                            })?
+                            .bytes(),
+                    );
+                }
+            }
+
+            hasher.number()
+        };
+
         //let full_name = format!("{}.{}", meta_client.tenant_name(), db);
         let info = meta_client
-            .locate_replcation_set_for_write(&point.db, point.hash_id, point.timestamp)
+            .locate_replcation_set_for_write(db_name, hash_id, point.timestamp())
             .await?;
         self.sets.entry(info.id).or_insert_with(|| info.clone());
         let entry = self
             .points
             .entry(info.id)
-            .or_insert_with(|| VnodePoints::new(point.db.clone(), info));
+            .or_insert_with(|| VnodePoints::new(db_name.to_string(), info));
 
-        entry.add_point(point);
+        entry.add_point(tab_name, point);
+        entry.add_schema(tab_name, schema);
 
         Ok(())
     }
@@ -180,21 +303,35 @@ impl PointWriter {
         let mut mapping = VnodeMapping::new();
         let fb_points = flatbuffers::root::<fb_models::Points>(&req.request.points)
             .context(InvalidFlatbufferSnafu)?;
-        let fb_points = fb_points.points().unwrap();
-        for item in fb_points {
-            let point = models::Point::from_flatbuffers(&item).map_err(|err| {
-                CoordinatorError::CommonError {
-                    msg: err.to_string(),
-                }
+        let database_name = get_db_from_fb_points(&fb_points)?;
+        for table in fb_points.tables().ok_or(CoordinatorError::Points {
+            msg: "point missing tables".to_string(),
+        })? {
+            let table_name = fb_table_name(&table)?;
+
+            let schema = table.schema().ok_or(CoordinatorError::Points {
+                msg: "points missing table schema".to_string(),
             })?;
 
-            mapping.map_point(meta_client.clone(), point).await?;
+            for item in table.points().ok_or(CoordinatorError::Points {
+                msg: "table missing table points".to_string(),
+            })? {
+                mapping
+                    .map_point(
+                        meta_client.clone(),
+                        &database_name,
+                        &table_name,
+                        schema,
+                        item,
+                    )
+                    .await?;
+            }
         }
 
         let mut requests = vec![];
         let now = tokio::time::Instant::now();
         for (_id, points) in mapping.points.iter_mut() {
-            points.finish();
+            points.finish()?;
 
             for vnode in points.repl_set.vnodes.iter() {
                 info!("write points on vnode {:?},  now: {:?}", vnode, now);

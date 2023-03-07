@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::hash::Hash;
 
-use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
 use utils::BkdrHasher;
 
@@ -35,24 +34,6 @@ pub struct Tag {
 impl Tag {
     pub fn new(key: TagKey, value: TagValue) -> Self {
         Self { key, value }
-    }
-
-    pub fn from_flatbuffers(tag: &fb_models::Tag) -> Result<Self> {
-        let key = tag
-            .key()
-            .ok_or(Error::InvalidFlatbufferMessage {
-                err: "Tag key cannot be empty".to_string(),
-            })?
-            .bytes()
-            .to_vec();
-        let value = tag
-            .value()
-            .ok_or(Error::InvalidFlatbufferMessage {
-                err: "Tag value cannot be empty".to_string(),
-            })?
-            .bytes()
-            .to_vec();
-        Ok(Self { key, value })
     }
 
     pub fn check(&self) -> Result<()> {
