@@ -199,7 +199,6 @@ impl TskvServiceImpl {
         let scan_metrics = TableScanMetrics::new(&plan_metrics, 0, None);
         let option = QueryOption::new(
             args.batch_size,
-            args.tenant.clone(),
             filter,
             None,
             expr.df_schema,

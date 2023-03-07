@@ -16,21 +16,23 @@ use datafusion::physical_plan::metrics::{
 };
 use datafusion::scalar::ScalarValue;
 use minivec::MiniVec;
-use models::predicate::domain::{ColumnDomains, Domain, PredicateRef, Range, ValueEntry};
+use models::meta_data::VnodeId;
+use models::predicate::domain::{
+    ColumnDomains, Domain, PredicateRef, QueryArgs, QueryExpr, Range, ValueEntry,
+};
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
 use models::utils::{min_num, unite_id};
 use models::{FieldId, SeriesId, TimeRange, ValueType};
 use parking_lot::RwLock;
-use snafu::ResultExt;
+use protos::kv_service::QueryRecordBatchRequest;
 use tokio::time::Instant;
 use trace::{debug, error, info};
 
 use super::engine::EngineRef;
-use super::error::IndexErrSnafu;
 use super::memcache::DataType;
 use super::tseries_family::{ColumnFile, SuperVersion};
 use super::tsm::{BlockMetaIterator, DataBlock, TsmReader};
-use super::{error, ColumnFileId, Error};
+use super::{ColumnFileId, Error};
 use crate::compute::count::count_column_non_null_values;
 use crate::tseries_family::Version;
 
@@ -162,7 +164,6 @@ impl TskvSourceMetrics {
 #[derive(Debug, Clone)]
 pub struct QueryOption {
     pub batch_size: usize,
-    pub tenant: String,
     pub filter: PredicateRef,
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchema,
@@ -178,7 +179,6 @@ impl QueryOption {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         batch_size: usize,
-        tenant: String,
         filter: PredicateRef,
         aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
         df_schema: SchemaRef,
@@ -207,7 +207,6 @@ impl QueryOption {
 
         Self {
             batch_size,
-            tenant,
             filter,
             table_schema,
             df_schema,
@@ -236,6 +235,30 @@ impl QueryOption {
         let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&time_filter);
 
         time_ranges
+    }
+
+    pub fn to_query_record_batch_request(
+        &self,
+        vnode_ids: Vec<VnodeId>,
+    ) -> Result<QueryRecordBatchRequest, models::Error> {
+        let args = QueryArgs {
+            vnode_ids,
+            limit: self.filter.limit(),
+            batch_size: self.batch_size,
+        };
+        let expr = QueryExpr {
+            filters: self.filter.exprs().to_vec(),
+            df_schema: self.df_schema.clone(),
+            table_schema: self.table_schema.clone(),
+        };
+
+        let args_bytes = QueryArgs::encode(&args)?;
+        let expr_bytes = QueryExpr::encode(&expr)?;
+
+        Ok(QueryRecordBatchRequest {
+            args: args_bytes,
+            expr: expr_bytes,
+        })
     }
 }
 
@@ -616,19 +639,22 @@ pub struct RowIterator {
 impl RowIterator {
     pub async fn new(engine: EngineRef, option: QueryOption, vnode_id: u32) -> Result<Self, Error> {
         let version = engine
-            .get_db_version(&option.tenant, &option.table_schema.db, vnode_id)
+            .get_db_version(
+                &option.table_schema.tenant,
+                &option.table_schema.db,
+                vnode_id,
+            )
             .await?;
 
         let series = engine
             .get_series_id_by_filter(
-                vnode_id,
-                &option.tenant,
+                &option.table_schema.tenant,
                 &option.table_schema.db,
                 &option.table_schema.name,
+                vnode_id,
                 &option.tags_filter,
             )
-            .await
-            .context(error::IndexErrSnafu)?;
+            .await?;
 
         info!("vnode_id: {}, series number: {}", vnode_id, series.len());
 
@@ -672,13 +698,12 @@ impl RowIterator {
         if let Some(key) = self
             .engine
             .get_series_key(
-                &self.option.tenant,
+                &self.option.table_schema.tenant,
                 &self.option.table_schema.db,
                 self.vnode_id,
                 id,
             )
-            .await
-            .context(IndexErrSnafu)?
+            .await?
         {
             self.columns.clear();
             let fields = self.option.table_schema.columns().to_vec();

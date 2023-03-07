@@ -954,7 +954,6 @@ impl Predicate {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct QueryArgs {
-    pub tenant: String,
     pub vnode_ids: Vec<u32>,
 
     pub limit: Option<usize>,

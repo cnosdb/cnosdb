@@ -226,7 +226,6 @@ impl TableScanStream {
 
         let option = QueryOption::new(
             batch_size,
-            table_schema.tenant.clone(),
             filter,
             None,
             proj_schema.clone(),
