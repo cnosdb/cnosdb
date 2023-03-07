@@ -8,7 +8,7 @@ use meta::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::codec::Encoding;
 use models::predicate::domain::ColumnDomains;
-use models::schema::{make_owner, DatabaseSchema, TableColumn, DEFAULT_CATALOG};
+use models::schema::{make_owner, DatabaseSchema, TableColumn};
 use models::utils::unite_id;
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
@@ -28,16 +28,16 @@ use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceT
 use crate::database::Database;
 use crate::engine::Engine;
 use crate::error::{self, Result};
-use crate::file_system::file_manager::{self};
-use crate::index::IndexResult;
+use crate::file_system::file_manager;
+use crate::index::{ts_index, IndexResult};
 use crate::kv_option::{Options, StorageOptions};
 use crate::schema::error::SchemaError;
 use crate::summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit};
-use crate::tseries_family::{SuperVersion, TimeRange};
+use crate::tseries_family::{SuperVersion, TimeRange, TseriesFamily};
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
 use crate::wal::{WalEntryType, WalManager, WalTask};
-use crate::{database, file_utils, Error, TseriesFamilyId};
+use crate::{database, file_utils, tenant_name_from_request, Error, TseriesFamilyId};
 
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 16;
 pub const SUMMARY_REQ_CHANNEL_CAP: usize = 16;
@@ -317,32 +317,63 @@ impl TsKv {
         Ok(db)
     }
 
-    pub(crate) async fn create_database(
+    pub(crate) async fn get_db_or_else_create(
         &self,
-        schema: &DatabaseSchema,
+        tenant: &str,
+        db_name: &str,
     ) -> Result<Arc<RwLock<Database>>> {
-        if self
-            .version_set
-            .read()
-            .await
-            .db_exists(schema.tenant_name(), schema.database_name())
-        {
-            return Err(SchemaError::DatabaseAlreadyExists {
-                database: schema.database_name().to_string(),
-            }
-            .into());
+        if let Some(db) = self.version_set.read().await.get_db(tenant, db_name) {
+            return Ok(db);
         }
+
         let db = self
             .version_set
             .write()
             .await
             .create_db(
-                schema.clone(),
+                DatabaseSchema::new(tenant, db_name),
                 self.meta_manager.clone(),
                 self.memory_pool.clone(),
             )
             .await?;
         Ok(db)
+    }
+
+    pub(crate) async fn get_ts_index_or_else_create(
+        &self,
+        db: Arc<RwLock<Database>>,
+        id: TseriesFamilyId,
+    ) -> Result<Arc<RwLock<ts_index::TSIndex>>> {
+        let opt_index = db.read().await.get_ts_index(id);
+        match opt_index {
+            Some(v) => Ok(v),
+            None => db.write().await.get_ts_index_or_add(id).await,
+        }
+    }
+
+    pub(crate) async fn get_tsfamily_or_else_create(
+        &self,
+        seq: u64,
+        id: TseriesFamilyId,
+        ve: Option<VersionEdit>,
+        db: Arc<RwLock<Database>>,
+    ) -> Result<Arc<RwLock<TseriesFamily>>> {
+        let opt_tsf = db.read().await.get_tsfamily(id);
+        match opt_tsf {
+            Some(v) => Ok(v),
+            None => Ok(db
+                .write()
+                .await
+                .add_tsfamily(
+                    id,
+                    seq,
+                    ve,
+                    self.summary_task_sender.clone(),
+                    self.flush_task_sender.clone(),
+                    self.compact_task_sender.clone(),
+                )
+                .await),
+        }
     }
 
     async fn delete_columns(
@@ -379,6 +410,30 @@ impl TsKv {
 
         Ok(())
     }
+
+    async fn write_wal(&self, id: TseriesFamilyId, tenant: &str, points: &[u8]) -> Result<u64> {
+        if !self.options.wal.enabled {
+            return Ok(0);
+        }
+
+        let (cb, rx) = oneshot::channel();
+        let mut enc_points = Vec::with_capacity(points.len() / 2);
+        get_str_codec(Encoding::Zstd)
+            .encode(&[points], &mut enc_points)
+            .map_err(|_| Error::Send)?;
+        self.wal_sender
+            .send(WalTask::Write {
+                id,
+                cb,
+                points: Arc::new(enc_points),
+                tenant: Arc::new(tenant.as_bytes().to_vec()),
+            })
+            .await
+            .map_err(|_| Error::Send)?;
+        let seq = rx.await.context(error::ReceiveSnafu)??.0;
+
+        Ok(seq)
+    }
 }
 
 #[async_trait::async_trait]
@@ -388,75 +443,24 @@ impl Engine for TsKv {
         id: TseriesFamilyId,
         write_batch: WritePointsRequest,
     ) -> Result<WritePointsResponse> {
-        let tenant_name = write_batch
-            .meta
-            .map(|meta| meta.tenant)
-            .ok_or(Error::CommonError {
-                reason: "Write data missing tenant".to_string(),
-            })?;
+        let tenant = tenant_name_from_request(&write_batch);
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = get_db_from_fb_points(fb_points);
-
-        let db_warp = self.version_set.read().await.get_db(&tenant_name, &db_name);
-        let db = match db_warp {
-            Some(database) => database,
-            None => {
-                self.create_database(&DatabaseSchema::new(&tenant_name, &db_name))
-                    .await?
-            }
-        };
-
-        let opt_index = db.read().await.get_ts_index(id);
-        let ts_index = match opt_index {
-            Some(v) => v,
-            None => db.write().await.get_ts_index_or_add(id).await?,
-        };
-
+        let db = self.get_db_or_else_create(&tenant, &db_name).await?;
+        let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
         let write_group = db
             .read()
             .await
             .build_write_group(fb_points.points().unwrap(), ts_index)
             .await?;
 
-        let mut seq = 0;
-        if self.options.wal.enabled {
-            let (cb, rx) = oneshot::channel();
-            let mut enc_points = Vec::with_capacity(points.len() / 2);
-            get_str_codec(Encoding::Zstd)
-                .encode(&[&points], &mut enc_points)
-                .map_err(|_| Error::Send)?;
-            self.wal_sender
-                .send(WalTask::Write {
-                    id,
-                    cb,
-                    points: Arc::new(enc_points),
-                    tenant: Arc::new(tenant_name.as_bytes().to_vec()),
-                })
-                .await
-                .map_err(|_err| Error::Send)?;
-            seq = rx.await.context(error::ReceiveSnafu)??.0;
-        }
-
-        let opt_tsf = db.read().await.get_tsfamily(id);
-        let tsf = match opt_tsf {
-            Some(v) => v,
-            None => {
-                db.write()
-                    .await
-                    .add_tsfamily(
-                        id,
-                        seq,
-                        None,
-                        self.summary_task_sender.clone(),
-                        self.flush_task_sender.clone(),
-                        self.compact_task_sender.clone(),
-                    )
-                    .await
-            }
-        };
+        let seq = self.write_wal(id, &tenant, &points).await?;
+        let tsf = self
+            .get_tsfamily_or_else_create(seq, id, None, db.clone())
+            .await?;
 
         let res = match tsf.read().await.put_points(seq, write_group) {
             Ok(points_number) => Ok(WritePointsResponse { points_number }),
@@ -472,32 +476,14 @@ impl Engine for TsKv {
         write_batch: WritePointsRequest,
         seq: u64,
     ) -> Result<()> {
-        let tenant_name = write_batch
-            .meta
-            .map(|meta| meta.tenant)
-            .unwrap_or_else(|| DEFAULT_CATALOG.to_string());
+        let tenant = tenant_name_from_request(&write_batch);
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = get_db_from_fb_points(fb_points);
-
-        let db = self
-            .version_set
-            .write()
-            .await
-            .create_db(
-                DatabaseSchema::new(&tenant_name, &db_name),
-                self.meta_manager.clone(),
-                self.memory_pool.clone(),
-            )
-            .await?;
-
-        let opt_index = db.read().await.get_ts_index(id);
-        let ts_index = match opt_index {
-            Some(v) => v,
-            None => db.write().await.get_ts_index_or_add(id).await?,
-        };
+        let db = self.get_db_or_else_create(&tenant, &db_name).await?;
+        let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
 
         let write_group = db
             .read()
@@ -505,23 +491,9 @@ impl Engine for TsKv {
             .build_write_group(fb_points.points().unwrap(), ts_index)
             .await?;
 
-        let opt_tsf = db.read().await.get_tsfamily(id);
-        let tsf = match opt_tsf {
-            Some(v) => v,
-            None => {
-                db.write()
-                    .await
-                    .add_tsfamily(
-                        id,
-                        seq,
-                        None,
-                        self.summary_task_sender.clone(),
-                        self.flush_task_sender.clone(),
-                        self.compact_task_sender.clone(),
-                    )
-                    .await
-            }
-        };
+        let tsf = self
+            .get_tsfamily_or_else_create(seq, id, None, db.clone())
+            .await?;
 
         tsf.read().await.put_points(seq, write_group)?;
         return Ok(());
@@ -607,6 +579,10 @@ impl Engine for TsKv {
                     .await
                     .unwrap()
                 }
+            }
+
+            if let Some(ts_index) = db.read().await.get_ts_index(id) {
+                let _ = ts_index.write().await.flush().await;
             }
         }
 
@@ -794,6 +770,7 @@ impl Engine for TsKv {
         let version_set = self.version_set.read().await;
         if let Some(db) = version_set.get_db(tenant, database) {
             let db = db.read().await;
+            // TODO: Send file_metas to the destination node.
             let mut file_metas = HashMap::new();
             if let Some(tsf) = db.get_tsfamily(vnode_id) {
                 let ve = tsf.read().await.snapshot(
@@ -822,7 +799,7 @@ impl Engine for TsKv {
         tenant: &str,
         database: &str,
         vnode_id: u32,
-        mut summary: VersionEdit,
+        summary: VersionEdit,
     ) -> Result<()> {
         info!("apply tsfamily summary: {:?}", summary);
         // It should be a version edit that add a vnode.
@@ -830,36 +807,29 @@ impl Engine for TsKv {
             return Ok(());
         }
 
-        summary.tsf_id = vnode_id;
-        let version_set = self.version_set.read().await;
-        if let Some(db) = version_set.get_db(tenant, database) {
-            let mut db_wlock = db.write().await;
-            // If there is a ts_family here, delete and re-build it.
-            if let Some(_tsf) = db_wlock.get_tsfamily(vnode_id) {
-                db_wlock
-                    .del_tsfamily(vnode_id, self.summary_task_sender.clone())
-                    .await;
-            }
+        let db = self.get_db_or_else_create(tenant, database).await?;
+        self.get_ts_index_or_else_create(db.clone(), vnode_id)
+            .await?;
 
-            db_wlock.get_ts_index_or_add(vnode_id).await?;
-
+        let mut db_wlock = db.write().await;
+        // If there is a ts_family here, delete and re-build it.
+        if db_wlock.get_tsfamily(vnode_id).is_some() {
             db_wlock
-                .add_tsfamily(
-                    vnode_id,
-                    0,
-                    Some(summary),
-                    self.summary_task_sender.clone(),
-                    self.flush_task_sender.clone(),
-                    self.compact_task_sender.clone(),
-                )
+                .del_tsfamily(vnode_id, self.summary_task_sender.clone())
                 .await;
-            Ok(())
-        } else {
-            return Err(SchemaError::DatabaseNotFound {
-                database: database.to_string(),
-            }
-            .into());
         }
+
+        db_wlock
+            .add_tsfamily(
+                vnode_id,
+                0,
+                Some(summary),
+                self.summary_task_sender.clone(),
+                self.flush_task_sender.clone(),
+                self.compact_task_sender.clone(),
+            )
+            .await;
+        Ok(())
     }
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
@@ -924,13 +894,11 @@ impl Engine for TsKv {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some((version_edit, file_metas))) => {
                             let (summary_tx, _summary_rx) = oneshot::channel();
-                            let _ret =
-                                self.summary_task_sender
-                                    .send(SummaryTask::new_column_file_task(
-                                        file_metas,
-                                        vec![version_edit],
-                                        summary_tx,
-                                    ));
+                            let _ = self.summary_task_sender.send(SummaryTask::new(
+                                vec![version_edit],
+                                Some(file_metas),
+                                summary_tx,
+                            ));
 
                             // let _ = summary_rx.await;
                         }

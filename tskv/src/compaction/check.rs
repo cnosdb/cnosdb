@@ -869,7 +869,7 @@ mod test {
             //rt.block_on(meta_client.drop_db(&database_name)).unwrap();
             let _ = rt.block_on(engine.drop_database(&tenant_name, &database_name));
             let database = rt
-                .block_on(engine.create_database(&database_schema))
+                .block_on(engine.get_db_or_else_create(&tenant_name, &database_name))
                 .unwrap();
             let mut db = rt.block_on(database.write());
             let ts_family = rt.block_on(db.add_tsfamily(

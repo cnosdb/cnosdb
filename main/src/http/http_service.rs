@@ -556,7 +556,7 @@ async fn construct_query(
     ))
 }
 
-fn construct_write_db_privilege(tenant_id: Oid, database: &str) -> Privilege<Oid> {
+fn _construct_write_db_privilege(tenant_id: Oid, database: &str) -> Privilege<Oid> {
     Privilege::TenantObject(
         TenantObjectPrivilege::Database(DatabasePrivilege::Write, Some(database.to_string())),
         Some(tenant_id),
