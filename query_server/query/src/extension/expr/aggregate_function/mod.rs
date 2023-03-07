@@ -13,9 +13,8 @@ pub fn register_udafs(_func_manager: &mut dyn FunctionMetadataManager) -> Result
 
 #[cfg(test)]
 mod tests {
-    use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
-
     use super::*;
+    use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 
     #[tokio::test]
     async fn test_example() {

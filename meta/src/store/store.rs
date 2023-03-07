@@ -23,9 +23,8 @@
 //         match &*self.current_snapshot.read().await {
 //             Some(snapshot) => {
 //                 let file_name = format!(
-//                     "{}/{}+{}+{}.bin",
+//                     "{}/{}+{}.bin",
 //                     self.config.snapshot_path,
-//                     self.config.instance_prefix,
 //                     self.node_id,
 //                     snapshot.meta.snapshot_id
 //                 );
@@ -81,16 +80,6 @@
 //             if ext.unwrap() == "bin" {
 //                 tracing::debug!("file: {:?}", file);
 //                 let mut s3 = file.unwrap().split('+');
-//                 let prefix = s3.next();
-//
-//                 match prefix {
-//                     Some(p) => {
-//                         if p != self.config.instance_prefix {
-//                             continue;
-//                         }
-//                     }
-//                     None => continue,
-//                 }
 //                 let node_id = s3.next().unwrap();
 //                 if node_id != self.node_id.to_string() {
 //                     continue;

@@ -2,10 +2,9 @@ use std::env::current_exe;
 use std::path::PathBuf;
 
 use clap::Parser;
+use groups::TestGroups;
 use lazy_static::lazy_static;
 use reqwest::Url;
-
-use groups::TestGroups;
 
 use crate::client::Client;
 use crate::error::{Error, Result};
@@ -13,6 +12,7 @@ use crate::error::{Error, Result};
 mod case;
 mod client;
 mod db_request;
+mod db_result;
 mod error;
 mod groups;
 

@@ -6,13 +6,12 @@ use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-
-use crate::service::protocol::Query;
-use crate::service::protocol::QueryId;
 use meta::MetaRef;
 
 use super::dispatcher::{QueryInfo, QueryStatus};
-use super::{logical_planner::Plan, session::IsiphoSessionCtx};
+use super::logical_planner::Plan;
+use super::session::SessionCtx;
+use crate::service::protocol::{Query, QueryId};
 use crate::Result;
 
 #[async_trait]
@@ -93,7 +92,7 @@ pub trait QueryExecutionFactory {
 pub type QueryStateMachineRef = Arc<QueryStateMachine>;
 
 pub struct QueryStateMachine {
-    pub session: IsiphoSessionCtx,
+    pub session: SessionCtx,
     pub query_id: QueryId,
     pub query: Query,
     pub meta: MetaRef,
@@ -107,7 +106,7 @@ impl QueryStateMachine {
     pub fn begin(
         query_id: QueryId,
         query: Query,
-        session: IsiphoSessionCtx,
+        session: SessionCtx,
         coord: CoordinatorRef,
     ) -> Self {
         let meta = coord.meta_manager();

@@ -2,15 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use datafusion::common::{DFField, DFSchema};
-use datafusion::{
-    datasource::source_as_provider,
-    logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder, TableScan},
-    optimizer::{OptimizerConfig, OptimizerRule},
-};
-
-use crate::{extension::logical::plan_node::tag_scan::TagScanPlanNode, table::ClusterTable};
-
+use datafusion::datasource::source_as_provider;
 use datafusion::error::Result;
+use datafusion::logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder, TableScan};
+use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
+
+use crate::data_source::table_provider::tskv::ClusterTable;
+use crate::extension::logical::plan_node::tag_scan::TagScanPlanNode;
 
 /// Convert query statement to query tag operation
 ///
@@ -19,11 +17,11 @@ use datafusion::error::Result;
 pub struct RewriteTagScan {}
 
 impl OptimizerRule for RewriteTagScan {
-    fn optimize(
+    fn try_optimize(
         &self,
         plan: &LogicalPlan,
-        optimizer_config: &mut OptimizerConfig,
-    ) -> Result<LogicalPlan> {
+        optimizer_config: &dyn OptimizerConfig,
+    ) -> Result<Option<LogicalPlan>> {
         if let LogicalPlan::TableScan(TableScan {
             table_name,
             source,
@@ -31,6 +29,7 @@ impl OptimizerRule for RewriteTagScan {
             projected_schema,
             filters,
             fetch,
+            agg_with_grouping,
         }) = plan
         {
             if let Some(cluster_table) = source_as_provider(source)?
@@ -88,8 +87,9 @@ impl OptimizerRule for RewriteTagScan {
                             projected_schema: Arc::new(new_df_schema),
                             filters: filters.clone(),
                             fetch: *fetch,
+                            agg_with_grouping: agg_with_grouping.clone(),
                         });
-                        return LogicalPlanBuilder::from(new_table_scan).build();
+                        return Ok(Some(LogicalPlanBuilder::from(new_table_scan).build()?));
                     }
 
                     if contain_tag && !contain_field && !contain_time {
@@ -105,7 +105,9 @@ impl OptimizerRule for RewriteTagScan {
                             }),
                         });
                         // The result of tag scan needs to be deduplicated
-                        return LogicalPlanBuilder::from(tag_plan).distinct()?.build();
+                        return Ok(Some(
+                            LogicalPlanBuilder::from(tag_plan).distinct()?.build()?,
+                        ));
                     }
                 }
             }

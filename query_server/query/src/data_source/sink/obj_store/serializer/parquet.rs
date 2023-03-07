@@ -1,18 +1,15 @@
-use std::{io::Write, sync::Arc};
+use std::io::Write;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use datafusion::{
-    parquet::{self, arrow::ArrowWriter},
-    physical_plan::SendableRecordBatchStream,
-};
-use futures::pin_mut;
-use futures::TryStreamExt;
+use datafusion::parquet::arrow::ArrowWriter;
+use datafusion::parquet::{self};
+use datafusion::physical_plan::SendableRecordBatchStream;
+use futures::{pin_mut, TryStreamExt};
 use snafu::ResultExt;
-use spi::{
-    query::datasource::WriteContext, BuildParquetArrowWriterSnafu, CloseParquetWriterSnafu, Result,
-    SerializeParquetSnafu,
-};
+use spi::query::datasource::WriteContext;
+use spi::{BuildParquetArrowWriterSnafu, CloseParquetWriterSnafu, Result, SerializeParquetSnafu};
 
 use crate::data_source::sink::RecordBatchSerializer;
 

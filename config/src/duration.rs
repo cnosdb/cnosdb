@@ -1,4 +1,5 @@
-use std::{error::Error, time::Duration};
+use std::error::Error;
+use std::time::Duration;
 
 use serde::{Deserialize, Deserializer, Serializer};
 
@@ -32,20 +33,24 @@ where
     parse_duration(&s).map_err(serde::de::Error::custom)
 }
 
-const NANOSECOND_CHARS: &[char] = &['n', 's'];
-const MICROSECOND_CHARS: &[char] = &['u', 's'];
-const MICROSECOND_GREEK_CHARS: &[char] = &['μ', 's'];
-const MILLISECOND_CHARS: &[char] = &['m', 's'];
-const SECOND_CHARS: &[char] = &['s'];
-const MINUTE_CHARS: &[char] = &['m'];
-const HOUR_CHARS: &[char] = &['h'];
-
-const NANOSECOND: u64 = 1;
-const MICROSECOND: u64 = NANOSECOND * 1000;
-const MILLISECOND: u64 = MICROSECOND * 1000;
-const SECOND: u64 = MILLISECOND * 1000;
-const MINUTE: u64 = SECOND * 60;
-const HOUR: u64 = MINUTE * 60;
+const UNITS_LIST: [&[char]; 7] = [
+    &['n', 's'],
+    &['u', 's'],
+    &['μ', 's'],
+    &['m', 's'],
+    &['s'],
+    &['m'],
+    &['h'],
+];
+const SCALES_LIST: [u64; 7] = [
+    1,
+    1_000,
+    1_000_000,
+    1_000_000,
+    1_000_000_000,
+    60_000_000_000,
+    60 * 60_000_000_000,
+];
 
 /// Parse ([0-9]+[a-z]+) to Duration.
 pub(crate) fn parse_duration(duration_str: &str) -> Result<Duration, Box<dyn Error>> {
@@ -53,7 +58,7 @@ pub(crate) fn parse_duration(duration_str: &str) -> Result<Duration, Box<dyn Err
         return Ok(Duration::from_nanos(0));
     }
     if duration_str.is_empty() {
-        return Err(From::from(format!("invalid duration '{}'", duration_str)));
+        return Err(From::from(format!("Invalid duration '{}'", duration_str)));
     }
 
     let chars: Vec<char> = duration_str.chars().collect();
@@ -85,23 +90,19 @@ pub(crate) fn parse_duration(duration_str: &str) -> Result<Duration, Box<dyn Err
             duration_str
         )));
     }
-
+    let mut unit = 0;
     let u = &s[..i];
-    let unit = match u {
-        NANOSECOND_CHARS => NANOSECOND,
-        MICROSECOND_CHARS => MICROSECOND,
-        MICROSECOND_GREEK_CHARS => MICROSECOND,
-        MILLISECOND_CHARS => MILLISECOND,
-        SECOND_CHARS => SECOND,
-        MINUTE_CHARS => MINUTE,
-        HOUR_CHARS => HOUR,
-        _ => {
-            return Err(From::from(format!(
-                "Unknown unit '{:?}' in duration '{}'",
-                u, duration_str
-            )))
+    for (ui, cu) in UNITS_LIST.into_iter().enumerate() {
+        if cu == u {
+            unit = SCALES_LIST[ui];
         }
-    };
+    }
+    if unit == 0 {
+        return Err(From::from(format!(
+            "Unknown unit '{:?}' in duration '{}'",
+            u, duration_str
+        )));
+    }
 
     if v > (1 << 63) / unit {
         return Err(From::from(format!(

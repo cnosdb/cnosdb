@@ -1,17 +1,14 @@
-use crate::{ClusterNode, ClusterNodeId, MetaApp, TypeConfig};
-use actix_web::get;
-use actix_web::post;
-use actix_web::web;
+use std::collections::{BTreeMap, BTreeSet};
+
 use actix_web::web::Data;
-use actix_web::Responder;
+use actix_web::{get, post, web, Responder};
 use openraft::error::Infallible;
-use openraft::raft::AppendEntriesRequest;
-use openraft::raft::InstallSnapshotRequest;
-use openraft::raft::VoteRequest;
+use openraft::raft::{AppendEntriesRequest, InstallSnapshotRequest, VoteRequest};
 use openraft::RaftMetrics;
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 use web::Json;
+
+use crate::service::init_meta;
+use crate::{ClusterNode, ClusterNodeId, MetaApp, TypeConfig};
 
 #[post("/raft-vote")]
 pub async fn vote(
@@ -75,6 +72,7 @@ pub async fn init(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
         },
     );
     let res = app.raft.initialize(nodes).await;
+    init_meta(&app).await;
     Ok(Json(res))
 }
 

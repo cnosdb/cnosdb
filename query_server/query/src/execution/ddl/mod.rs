@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::DDLPlan;
@@ -7,10 +6,12 @@ use spi::Result;
 
 use self::alter_tenant::AlterTenantTask;
 use self::alter_user::AlterUserTask;
+use self::create_external_table::CreateExternalTableTask;
 use self::create_role::CreateRoleTask;
 use self::create_table::CreateTableTask;
 use self::create_tenant::CreateTenantTask;
 use self::create_user::CreateUserTask;
+use self::drop_database_object::DropDatabaseObjectTask;
 use self::drop_global_object::DropGlobalObjectTask;
 use self::drop_tenant_object::DropTenantObjectTask;
 use self::grant_revoke::GrantRevokeTask;
@@ -26,9 +27,6 @@ use crate::execution::ddl::drop_vnode::DropVnodeTask;
 use crate::execution::ddl::move_node::MoveVnodeTask;
 use crate::execution::ddl::show_database::ShowDatabasesTask;
 use crate::execution::ddl::show_table::ShowTablesTask;
-
-use self::create_external_table::CreateExternalTableTask;
-use self::drop_database_object::DropDatabaseObjectTask;
 
 mod alter_database;
 mod alter_table;

@@ -180,9 +180,9 @@ false
 
 -- EXECUTE SQL: SELECT m3.f1 FROM m3 WHERE (-2.83773192E8) NOT IN (0.020683454803656076, 0.11688246493551957) UNION ALL SELECT m3.f1 FROM m3 WHERE NOT ((-2.83773192E8) NOT IN (0.020683454803656076, 0.11688246493551957)) UNION ALL SELECT ALL m3.f1 FROM m3 WHERE ((-2.83773192E8) NOT IN (0.020683454803656076, 0.11688246493551957)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
--- ERROR:  --
+200 OK
+f1
+false
 
 -- EXECUTE SQL: SELECT BIT_AND(-1155506580) FROM m2; --
 -- AFTER_SORT --
@@ -357,7 +357,7 @@ t0,f0
 -- EXECUTE SQL: SELECT m1.t0, m1.f0 FROM m1 WHERE ((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691))))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE NOT (((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691)))))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE (((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691)))))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '-1326988525' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '-1326988525' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
@@ -373,7 +373,7 @@ f1
 -- EXECUTE SQL: SELECT m0.f1 FROM m0 WHERE CAST(CAST(0.8194569637054474 AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.8194569637054474' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '0.8194569637054474' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(- (-1205285987)) FROM m2; --
@@ -674,7 +674,7 @@ t0,t1,false,0
 
 -- EXECUTE SQL: (SELECT m3.t0, m3.t1, m3.f1, m3.f0 FROM m3 WHERE ((((((((m3.t0)||(m3.f1)))||(NOT (FALSE))))||(NOT (CAST(m3.t0 AS BOOLEAN)))))>(CAST(CAST(- (m3.f0) AS BOOLEAN) AS STRING))) ORDER BY m3.time) UNION ALL (SELECT m3.t0, m3.t1, m3.f1, m3.f0 FROM m3 WHERE NOT (((((((((m3.t0)||(m3.f1)))||(NOT (FALSE))))||(NOT (CAST(m3.t0 AS BOOLEAN)))))>(CAST(CAST(- (m3.f0) AS BOOLEAN) AS STRING)))) ORDER BY m3.time) UNION ALL (SELECT m3.t0, m3.t1, m3.f1, m3.f0 FROM m3 WHERE (((((((((m3.t0)||(m3.f1)))||(NOT (FALSE))))||(NOT (CAST(m3.t0 AS BOOLEAN)))))>(CAST(CAST(- (m3.f0) AS BOOLEAN) AS STRING)))) IS NULL ORDER BY m3.time); --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Execution error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1 FROM m4; --
@@ -1228,7 +1228,7 @@ SUM(Int64(-996695851))
 -- EXECUTE SQL: SELECT m3.t1, m3.t0 FROM m3 WHERE (((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0') UNION ALL SELECT m3.t1, m3.t0 FROM m3 WHERE NOT ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) UNION ALL SELECT ALL m3.t1, m3.t0 FROM m3 WHERE ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Can not find compatible types to compare Boolean with [Boolean, Boolean, Utf8]. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nInternal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Can not find compatible types to compare Boolean with [Boolean, Boolean, Utf8]. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0 FROM m2; --
@@ -1263,7 +1263,7 @@ false
 -- EXECUTE SQL: SELECT ALL m3.f1 FROM m3 WHERE CAST(((CAST(CAST(FALSE AS BIGINT) AS STRING))||(CAST(((m3.t1)||(3.60976499E8)) AS BIGINT))) AS BOOLEAN) UNION ALL SELECT m3.f1 FROM m3 WHERE NOT (CAST(((CAST(CAST(FALSE AS BIGINT) AS STRING))||(CAST(((m3.t1)||(3.60976499E8)) AS BIGINT))) AS BOOLEAN)) UNION ALL SELECT m3.f1 FROM m3 WHERE (CAST(((CAST(CAST(FALSE AS BIGINT) AS STRING))||(CAST(((m3.t1)||(3.60976499E8)) AS BIGINT))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.f1 FROM m3; --
@@ -1383,7 +1383,7 @@ t1,0,t0,t2
 -- EXECUTE SQL: SELECT m4.t1, m4.f0, m4.t0, m4.t2 FROM m4 WHERE CAST(m4.t2 AS BOOLEAN) UNION ALL SELECT m4.t1, m4.f0, m4.t0, m4.t2 FROM m4 WHERE NOT (CAST(m4.t2 AS BOOLEAN)) UNION ALL SELECT ALL m4.t1, m4.f0, m4.t0, m4.t2 FROM m4 WHERE (CAST(m4.t2 AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't2' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 't2' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2; --
@@ -1435,7 +1435,7 @@ f1
 -- EXECUTE SQL: SELECT m0.f1 FROM m0 WHERE (-9.92966372E8) BETWEEN (0.13685450858041304) AND (1.624016699E9) UNION ALL SELECT m0.f1 FROM m0 WHERE NOT ((-9.92966372E8) BETWEEN (0.13685450858041304) AND (1.624016699E9)) UNION ALL SELECT ALL m0.f1 FROM m0 WHERE ((-9.92966372E8) BETWEEN (0.13685450858041304) AND (1.624016699E9)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 ORDER BY m2.t0 ASC; --
@@ -1447,7 +1447,7 @@ false
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 WHERE (((CAST(CAST(m2.f1 AS STRING) AS BOOLEAN)) IS FALSE)AND((CAST(m2.f0 AS BOOLEAN)) IS UNKNOWN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f1' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'f1' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR(TRUE) FROM m4; --
@@ -1512,14 +1512,14 @@ f1
 
 -- EXECUTE SQL: SELECT MAX(-4.88758559E8) FROM m3; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
--- ERROR:  --
+200 OK
+MAX(Float64(-488758559))
+-488758559.0
 
 -- EXECUTE SQL: SELECT MAX(agg0) FROM (SELECT ALL MAX(-4.88758559E8)  as agg0 FROM m3 WHERE (2.054705454E9) NOT IN (0.21952361206409599, 0.8148727002039817) UNION ALL SELECT MAX(-4.88758559E8)  as agg0 FROM m3 WHERE NOT ((2.054705454E9) NOT IN (0.21952361206409599, 0.8148727002039817)) UNION ALL SELECT MAX(-4.88758559E8)  as agg0 FROM m3 WHERE ((2.054705454E9) NOT IN (0.21952361206409599, 0.8148727002039817)) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: MAX"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
@@ -1574,7 +1574,7 @@ f0
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE (((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN UNION ALL SELECT m1.f0 FROM m1 WHERE NOT ((((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN) UNION ALL SELECT ALL m1.f0 FROM m1 WHERE ((((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E7"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f0 FROM m2; --
@@ -1621,7 +1621,7 @@ false,0
 -- EXECUTE SQL: SELECT ALL m3.f1, m3.f0 FROM m3 WHERE ((((CAST(CAST(m3.f0 AS STRING) AS STRING))||(FALSE)))LIKE(CAST(((CAST(6.94936525E8 AS BIGINT))^(+ (m3.f0))) AS STRING))) UNION ALL SELECT m3.f1, m3.f0 FROM m3 WHERE NOT (((((CAST(CAST(m3.f0 AS STRING) AS STRING))||(FALSE)))LIKE(CAST(((CAST(6.94936525E8 AS BIGINT))^(+ (m3.f0))) AS STRING)))) UNION ALL SELECT ALL m3.f1, m3.f0 FROM m3 WHERE (((((CAST(CAST(m3.f0 AS STRING) AS STRING))||(FALSE)))LIKE(CAST(((CAST(6.94936525E8 AS BIGINT))^(+ (m3.f0))) AS STRING)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E8"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MAX(((((CAST(CAST(FALSE AS STRING) AS STRING))||(CAST(((m4.t0)<=(m4.t2)) AS STRING))))IS DISTINCT FROM(((((CAST(TRUE AS STRING))||((('?X')||(m4.t1)))))||(m4.f0))))) FROM m4; --
@@ -1866,7 +1866,7 @@ SUM(asdf.agg0)
 -- EXECUTE SQL: SELECT COUNT(CAST(CAST(0.5224095978421741 AS STRING) AS BIGINT)) FROM m1 WHERE (NOT (((m1.t0)LIKE(m1.t0)))) IN (TRUE) GROUP BY CAST(- (CAST(CAST(m1.t0 AS STRING) AS BIGINT)) AS BIGINT); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.5224095978421741' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.5224095978421741' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1; --
@@ -1878,9 +1878,10 @@ false,f0,t0
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1 WHERE ((((CAST(- (416542755) AS STRING))||(((CAST(m1.f1 AS STRING))>=(CAST(m1.t0 AS STRING))))))LIKE(CAST(((CAST(-7.83616155E8 AS STRING))||(((m1.t0)=(m1.t0)))) AS STRING))) UNION ALL SELECT m1.f1, m1.f0, m1.t0 FROM m1 WHERE NOT (((((CAST(- (416542755) AS STRING))||(((CAST(m1.f1 AS STRING))>=(CAST(m1.t0 AS STRING))))))LIKE(CAST(((CAST(-7.83616155E8 AS STRING))||(((m1.t0)=(m1.t0)))) AS STRING)))) UNION ALL SELECT m1.f1, m1.f0, m1.t0 FROM m1 WHERE (((((CAST(- (416542755) AS STRING))||(((CAST(m1.f1 AS STRING))>=(CAST(m1.t0 AS STRING))))))LIKE(CAST(((CAST(-7.83616155E8 AS STRING))||(((m1.t0)=(m1.t0)))) AS STRING)))) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E8"}
--- ERROR:  --
+200 OK
+f1,f0,t0
+false,,
+false,f0,t0
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(- (CAST(CAST(0.10877241438849494 AS DOUBLE) AS BIGINT))) FROM m1; --
 -- AFTER_SORT --
@@ -2013,7 +2014,7 @@ false,f1,t0
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2 WHERE NOT (CAST(1.765622571E9 AS BOOLEAN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E9"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.t0 FROM m0 WHERE NOT (NOT (((CAST(m0.f1 AS STRING))LIKE(CAST(-1694794127 AS STRING))))); --
@@ -2036,7 +2037,7 @@ MAX(Float64(0.11902110991187975))
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t2 FROM m4 WHERE CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN) UNION ALL SELECT m4.t0, m4.t2 FROM m4 WHERE NOT (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) UNION ALL SELECT ALL m4.t0, m4.t2 FROM m4 WHERE (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string '11' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value '11' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m2; --
@@ -2170,21 +2171,25 @@ true
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE (m0.f0) IN (NULL, TRUE); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+f0
+true
+true
+true
+true
+true
+true
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE NOT ((m0.f0) IN (NULL, TRUE)); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 WHERE ((m0.f0) IN (NULL, TRUE)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+f0
+false
 
 -- EXECUTE SQL: SELECT - (AVG(((((((CAST(-631199003 AS BIGINT))-(- (26056234))))^(CAST(((-1384117880)+(-1715477248)) AS BIGINT))))-(- (- (- (-1568581974))))))) FROM m2 GROUP BY (CAST(m2.f0 AS BIGINT)) IN (-703875107); --
 -- AFTER_SORT --
@@ -2201,7 +2206,7 @@ false
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 WHERE NOT (CAST(CAST(CAST(m2.t0 AS STRING) AS STRING) AS BOOLEAN)) ORDER BY m2.time; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0 FROM m2; --
@@ -2299,7 +2304,7 @@ t0,0.0
 -- EXECUTE SQL: SELECT m0.t0, m0.f1 FROM m0 WHERE (- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280) UNION ALL SELECT ALL m0.t0, m0.f1 FROM m0 WHERE NOT ((- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280)) UNION ALL SELECT ALL m0.t0, m0.f1 FROM m0 WHERE ((- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '<{QdbO勌' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '<{QdbO勌' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1; --
@@ -2338,7 +2343,7 @@ f0,t2,t1
 -- EXECUTE SQL: SELECT ALL m4.t0 FROM m4 WHERE (3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604) UNION ALL SELECT ALL m4.t0 FROM m4 WHERE NOT ((3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604)) UNION ALL SELECT m4.t0 FROM m4 WHERE ((3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0 FROM m0 WHERE (((((m0.t0)||(m0.f0)))||(CAST(m0.t0 AS STRING)))) NOT IN ('Hp', ''); --
@@ -2385,9 +2390,9 @@ t2,0
 
 -- EXECUTE SQL: SELECT ALL m4.t2, m4.f0 FROM m4 WHERE ((CAST(CAST(((m4.t1)LIKE(m4.t1)) AS BOOLEAN) AS STRING))IS NOT DISTINCT FROM(CAST(-1.020629854E9 AS STRING))) UNION ALL SELECT ALL m4.t2, m4.f0 FROM m4 WHERE NOT (((CAST(CAST(((m4.t1)LIKE(m4.t1)) AS BOOLEAN) AS STRING))IS NOT DISTINCT FROM(CAST(-1.020629854E9 AS STRING)))) UNION ALL SELECT m4.t2, m4.f0 FROM m4 WHERE (((CAST(CAST(((m4.t1)LIKE(m4.t1)) AS BOOLEAN) AS STRING))IS NOT DISTINCT FROM(CAST(-1.020629854E9 AS STRING)))) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E9"}
--- ERROR:  --
+200 OK
+t2,f0
+t2,0
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t1, m3.f1, m3.t0 FROM m3; --
 -- AFTER_SORT --
@@ -3016,19 +3021,19 @@ f1,t0,false
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 WHERE (CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE NOT ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0; --
@@ -3417,7 +3422,7 @@ f1,false
 -- EXECUTE SQL: SELECT MIN(CAST(((CAST('Infinity' AS BIGINT))-(((((m4.f0)+(m4.f0)))%(CAST(m4.f0 AS BIGINT))))) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'Infinity' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'Infinity' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t1, m3.f0 FROM m3; --
@@ -3429,7 +3434,7 @@ t1,0
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.f0 FROM m3 WHERE CAST(((((((m3.t1)||(m3.t1)))||(CAST(m3.t0 AS STRING))))||(CAST(- (m3.f0) AS BIGINT))) AS BOOLEAN) UNION ALL SELECT ALL m3.t1, m3.f0 FROM m3 WHERE NOT (CAST(((((((m3.t1)||(m3.t1)))||(CAST(m3.t0 AS STRING))))||(CAST(- (m3.f0) AS BIGINT))) AS BOOLEAN)) UNION ALL SELECT ALL m3.t1, m3.f0 FROM m3 WHERE (CAST(((((((m3.t1)||(m3.t1)))||(CAST(m3.t0 AS STRING))))||(CAST(- (m3.f0) AS BIGINT))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't1t1t00' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 't1t1t00' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.f0, m2.t0 FROM m2 ORDER BY m2.f0 DESC; --
@@ -3441,7 +3446,7 @@ f1,false,t0
 -- EXECUTE SQL: SELECT m2.f1, m2.f0, m2.t0 FROM m2 WHERE ((NOT (CAST(1826216466 AS BOOLEAN)))AND(CAST(CAST(0.9464404925619687 AS STRING) AS BOOLEAN))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.9464404925619687' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '0.9464404925619687' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.t0 FROM m1 WHERE NOT (NOT ((m1.f1) IN (TRUE, TRUE))); --
@@ -3608,7 +3613,7 @@ t0,false
 -- EXECUTE SQL: SELECT m1.t0, m1.f1 FROM m1 WHERE ((((m1.f1)OR(NOT (CAST(((m1.t0)||(2038183158)) AS BOOLEAN)))))AND((- (-721725046)) NOT IN (0.5544287962532598, 0.6049615636568972))) UNION ALL SELECT m1.t0, m1.f1 FROM m1 WHERE NOT (((((m1.f1)OR(NOT (CAST(((m1.t0)||(2038183158)) AS BOOLEAN)))))AND((- (-721725046)) NOT IN (0.5544287962532598, 0.6049615636568972)))) UNION ALL SELECT m1.t0, m1.f1 FROM m1 WHERE (((((m1.f1)OR(NOT (CAST(((m1.t0)||(2038183158)) AS BOOLEAN)))))AND((- (-721725046)) NOT IN (0.5544287962532598, 0.6049615636568972)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't02038183158' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 't02038183158' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(0.5759978377746883 AS BIGINT)) FROM m0; --
@@ -3678,9 +3683,10 @@ t0,f0,false
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE ((m1.f1)!=((((m1.f1) IN (TRUE, TRUE, FALSE))AND(NOT ((-1.364967176E9) IN (0.8836829452216858, 0.804891941659314, 0.057194778779184774)))))) UNION ALL SELECT m1.t0, m1.f0, m1.f1 FROM m1 WHERE NOT (((m1.f1)!=((((m1.f1) IN (TRUE, TRUE, FALSE))AND(NOT ((-1.364967176E9) IN (0.8836829452216858, 0.804891941659314, 0.057194778779184774))))))) UNION ALL SELECT m1.t0, m1.f0, m1.f1 FROM m1 WHERE (((m1.f1)!=((((m1.f1) IN (TRUE, TRUE, FALSE))AND(NOT ((-1.364967176E9) IN (0.8836829452216858, 0.804891941659314, 0.057194778779184774))))))) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: E9"}
--- ERROR:  --
+200 OK
+t0,f0,f1
+,,false
+t0,f0,false
 
 -- EXECUTE SQL: SELECT m1.f0, m1.t0, m1.f1 FROM m1; --
 -- AFTER_SORT --
@@ -3692,7 +3698,7 @@ f0,t0,false
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.t0, m1.f1 FROM m1 WHERE CAST(CAST(2.070740056E9 AS BIGINT) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E9"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3; --
@@ -3732,7 +3738,7 @@ f1,false
 -- EXECUTE SQL: SELECT m2.f1, m2.f0 FROM m2 WHERE (CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE UNION ALL SELECT ALL m2.f1, m2.f0 FROM m2 WHERE NOT ((CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE) UNION ALL SELECT m2.f1, m2.f0 FROM m2 WHERE ((CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE NOT (NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL)) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE (NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL)) IS NULL; --
@@ -3854,21 +3860,19 @@ time,t0,f0,f1
 
 -- EXECUTE SQL: SELECT ALL * FROM m2 WHERE (-1.497906008E9) IN (0.277040821627761); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: E9"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT * FROM m2 WHERE NOT ((-1.497906008E9) IN (0.277040821627761)); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: E9"}
--- ERROR:  --
+200 OK
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,f1
 
 -- EXECUTE SQL: SELECT * FROM m2 WHERE ((-1.497906008E9) IN (0.277040821627761)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: E9"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m1.f0 FROM m1; --
 -- AFTER_SORT --
@@ -4036,7 +4040,7 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL m2.t0 FROM m2 WHERE NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN))) UNION ALL SELECT m2.t0 FROM m2 WHERE NOT (NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN)))) UNION ALL SELECT ALL m2.t0 FROM m2 WHERE (NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f10' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'f10' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(- (CAST(+ (- (1007863218)) AS BIGINT))) FROM m2; --
@@ -4060,7 +4064,7 @@ f1
 -- EXECUTE SQL: SELECT MAX(CAST(3.50532422E8 AS STRING)) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E8"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MIN((((((m4.f0)+(m4.f0)))*(- (m4.f0)))) IN (0.15344075890540054)) FROM m4; --
@@ -4368,7 +4372,7 @@ false
 -- EXECUTE SQL: SELECT ALL m2.f0 FROM m2 WHERE CAST(CAST(((((m2.f1)||(1876346506)))||(CAST(m2.f0 AS BIGINT))) AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f118763465060' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'f118763465060' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f1 FROM m0; --
@@ -4503,9 +4507,13 @@ f1
 
 -- EXECUTE SQL: SELECT m0.f1 FROM m0 WHERE (CAST(-4.36419271E8 AS BOOLEAN)) IS UNKNOWN UNION ALL SELECT m0.f1 FROM m0 WHERE NOT ((CAST(-4.36419271E8 AS BOOLEAN)) IS UNKNOWN) UNION ALL SELECT m0.f1 FROM m0 WHERE ((CAST(-4.36419271E8 AS BOOLEAN)) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E8"}
--- ERROR:  --
+200 OK
+f1
+0.0
+0.4131558313302025
+0.47166914414715877
+0.507623643211476
+0.5540439337463335
 
 -- EXECUTE SQL: SELECT * FROM m3; --
 -- AFTER_SORT --
@@ -4522,13 +4530,13 @@ time,t0,t1,f0,f1
 -- EXECUTE SQL: SELECT m4.t0 FROM m4 WHERE ((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING))) UNION ALL SELECT m4.t0 FROM m4 WHERE NOT (((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING)))) UNION ALL SELECT m4.t0 FROM m4 WHERE (((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected AS, found: E8"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(2.9910274E8) FROM m4 ORDER BY m4.f0 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: E8"}
+{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m1; --
@@ -4727,7 +4735,7 @@ f0,false,t0
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1 WHERE CAST(m1.f0 AS BOOLEAN) UNION ALL SELECT m1.t0 FROM m1 WHERE NOT (CAST(m1.f0 AS BOOLEAN)) UNION ALL SELECT ALL m1.t0 FROM m1 WHERE (CAST(m1.f0 AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f0' to value of Boolean type"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'f0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0; --
@@ -4946,20 +4954,20 @@ MAX(Float64(0.8380110533784965))
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(((CAST(((m2.f0)<(m2.f0)) AS BIGINT))*(CAST((('0.40560185446598973')||('0.5010374883053191')) AS BIGINT))) AS BIGINT)) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.405601854465989730.5010374883053191' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.405601854465989730.5010374883053191' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MIN(-1.281952729E9) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected ), found: E9"}
--- ERROR:  --
+200 OK
+MIN(Float64(-1281952729))
+-1281952729.0
 
 -- EXECUTE SQL: SELECT MIN(agg0) FROM (SELECT MIN(-1.281952729E9)  as agg0 FROM m4 WHERE TRUE UNION ALL SELECT ALL MIN(-1.281952729E9)  as agg0 FROM m4 WHERE NOT (TRUE) UNION ALL SELECT ALL MIN(-1.281952729E9)  as agg0 FROM m4 WHERE (TRUE) IS NULL) as asdf; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected identifier, found: -"}
--- ERROR:  --
+200 OK
+MIN(asdf.agg0)
+-1281952729.0
 
 -- EXECUTE SQL: SELECT BIT_AND(- (-898117395)) FROM m1; --
 -- AFTER_SORT --
@@ -4998,7 +5006,7 @@ f1,t0
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0 FROM m2 WHERE (((((((((((((((m2.f1) BETWEEN (m2.f1) AND (m2.f1))AND(((FALSE)OR(m2.f0)))))OR(NOT (m2.f0))))OR(((m2.f1)IS NOT DISTINCT FROM(m2.t0)))))OR(CAST(-2044174412 AS BOOLEAN))))OR(NOT (FALSE))))>(NOT (((((((m2.f0)AND(m2.f0)))OR(m2.f0)))AND(m2.f0))))))<=(CAST(CAST(- (64411633) AS STRING) AS BOOLEAN))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '-64411633' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '-64411633' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(CAST(0.871191940974261 AS BIGINT)) FROM m0; --
@@ -5182,7 +5190,7 @@ f0
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE CAST(CAST(0.5590183968399077 AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.5590183968399077' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '0.5590183968399077' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t1, m4.f0, m4.t2 FROM m4; --

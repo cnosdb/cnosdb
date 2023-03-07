@@ -1,19 +1,14 @@
-use crate::schema::error::{MetaSnafu, Result, SchemaError};
-use meta::error::MetaError;
-use meta::meta_manager::RemoteMetaManager;
+use std::sync::Arc;
+
+use meta::error::{MetaError, MetaResult};
 use meta::{MetaClientRef, MetaRef};
 use models::codec::Encoding;
-use models::schema::{
-    ColumnType, DatabaseSchema, TableColumn, TableSchema, TenantOptions, TskvTableSchema,
-};
-use models::{ColumnId, SeriesId};
-use parking_lot::RwLock;
+use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
+use models::ColumnId;
 use protos::models::Point;
-use snafu::ResultExt;
-use std::collections::HashMap;
+use trace::error;
 
-use crate::Error;
-use trace::{error, info, warn};
+use crate::schema::error::{Result, SchemaError};
 
 const TIME_STAMP_NAME: &str = "time";
 
@@ -26,7 +21,6 @@ pub struct DBschemas {
 
 impl DBschemas {
     pub async fn new(db_schema: DatabaseSchema, meta: MetaRef) -> Result<Self> {
-        let table_schemas: HashMap<String, TskvTableSchema> = HashMap::new();
         let client = meta
             .tenant_manager()
             .tenant_meta(db_schema.tenant_name())
@@ -46,11 +40,6 @@ impl DBschemas {
 
     pub fn database_name(&self) -> String {
         self.database_name.clone()
-    }
-
-    pub fn alter_db_schema(&self, db_schema: DatabaseSchema) -> Result<()> {
-        // todo: client need alter db action
-        Ok(())
     }
 
     pub fn check_field_type_from_cache(&self, info: &Point) -> Result<()> {
@@ -113,7 +102,7 @@ impl DBschemas {
                 schema.db = db_name;
                 schema.name = table_name;
                 new_schema = true;
-                schema
+                Arc::new(schema)
             }
             Some(schema) => schema,
         };
@@ -143,7 +132,9 @@ impl DBschemas {
                 None => {
                     schema_change = true;
                     field.id = schema.columns().len() as ColumnId;
-                    schema.add_column(field.clone());
+                    let mut schema_t = schema.as_ref().clone();
+                    schema_t.add_column(field.clone());
+                    schema = Arc::new(schema_t)
                 }
             }
             Ok(())
@@ -173,20 +164,72 @@ impl DBschemas {
 
         //schema changed store it
         if new_schema {
+            let mut schema = schema.as_ref().clone();
             schema.schema_id = 0;
-            self.client
+            let schema = Arc::new(schema);
+            let res = self
+                .client
                 .create_table(&TableSchema::TsKvTableSchema(schema.clone()))
-                .await?;
+                .await;
+            self.check_create_table_res(res, schema).await?;
         } else if schema_change {
+            let mut schema = schema.as_ref().clone();
             schema.schema_id += 1;
             self.client
-                .update_table(&TableSchema::TsKvTableSchema(schema.clone()))
+                .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
                 .await?;
         }
         Ok(())
     }
 
-    pub fn get_table_schema(&self, tab: &str) -> Result<Option<TskvTableSchema>> {
+    async fn check_create_table_res(
+        &self,
+        res: MetaResult<()>,
+        schema: Arc<TskvTableSchema>,
+    ) -> Result<()> {
+        match res {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                if let MetaError::TableAlreadyExists { .. } = e {
+                    let schema_get = self
+                        .client
+                        .get_tskv_table_schema(&schema.db, &schema.name)
+                        .map_err(|_| MetaError::Retry)?
+                        .ok_or(MetaError::Retry)?;
+                    if schema.tenant == schema_get.tenant
+                        && schema.db == schema_get.db
+                        && schema.columns() == schema_get.columns()
+                    {
+                        Ok(())
+                    } else {
+                        for _ in 0..3 {
+                            let schema_get = self
+                                .client
+                                .get_tskv_table_schema(&schema.db, &schema.name)
+                                .map_err(|_| MetaError::Retry)?
+                                .ok_or(MetaError::Retry)?;
+                            let mut schema = schema.as_ref().clone();
+                            schema.schema_id = schema_get.schema_id + 1;
+                            let schema = Arc::new(schema);
+                            if self
+                                .client
+                                .update_table(&TableSchema::TsKvTableSchema(schema))
+                                .await
+                                .is_ok()
+                            {
+                                return Ok(());
+                            }
+                        }
+                        Err(e.into())
+                    }
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
+    pub fn get_table_schema(&self, tab: &str) -> Result<Option<Arc<TskvTableSchema>>> {
         let schema = self
             .client
             .get_tskv_table_schema(&self.database_name, tab)?;

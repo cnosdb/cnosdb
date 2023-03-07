@@ -1,11 +1,11 @@
 use std::fmt;
 
+use datafusion::sql::parser::CreateExternalTable;
 use datafusion::sql::sqlparser::ast::{
-    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, Value,
+    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, SqlOption, Statement,
+    TableFactor, Value,
 };
-use datafusion::sql::sqlparser::ast::{SqlOption, TableFactor};
 use datafusion::sql::sqlparser::parser::ParserError;
-use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 
@@ -26,6 +26,10 @@ pub enum ExtStatement {
     CreateTenant(CreateTenant),
     CreateUser(CreateUser),
     CreateRole(CreateRole),
+
+    CreateStream(CreateStream),
+    DropStream(DropStream),
+    ShowStreams(ShowStreams),
 
     DropDatabaseObject(DropDatabaseObject),
     DropTenantObject(DropTenantObject),
@@ -361,6 +365,42 @@ pub struct ShowTagValues {
 pub enum ObjectType {
     Table,
     Database,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Trigger {
+    Once,
+    Interval(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum OutputMode {
+    Complete,
+    Append,
+    Update,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CreateStream {
+    pub if_not_exists: bool,
+    pub name: Ident,
+
+    pub trigger: Option<Trigger>,
+    pub watermark: Option<String>,
+    pub output_mode: Option<OutputMode>,
+
+    pub statement: Box<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DropStream {
+    pub if_exist: bool,
+    pub name: Ident,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ShowStreams {
+    pub verbose: bool,
 }
 
 impl fmt::Display for ObjectType {

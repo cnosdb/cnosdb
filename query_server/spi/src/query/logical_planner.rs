@@ -1,44 +1,63 @@
 use std::io::Write;
-
-use crate::service::protocol::QueryId;
-use crate::ParserSnafu;
-use crate::QueryError;
-use crate::Result;
-
-use super::{
-    ast::{parse_bool_value, parse_char_value, parse_string_value, ExtStatement},
-    datasource::{
-        azure::{AzblobStorageConfig, AzblobStorageConfigBuilder},
-        gcs::{GcsStorageConfig, ServiceAccountCredentials, ServiceAccountCredentialsBuilder},
-        s3::{S3StorageConfig, S3StorageConfigBuilder},
-        UriSchema,
-    },
-    session::IsiphoSessionCtx,
-    AFFECTED_ROWS,
-};
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use datafusion::arrow::array::ArrayRef;
+use datafusion::arrow::datatypes::DataType;
+use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
+use datafusion::logical_expr::expr::AggregateFunction as AggregateFunctionExpr;
+use datafusion::logical_expr::type_coercion::aggregates::{
+    DATES, NUMERICS, STRINGS, TIMES, TIMESTAMPS,
+};
+use datafusion::logical_expr::{
+    AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan, ReturnTypeFunction, ScalarUDF,
+    Signature, Volatility,
+};
+use datafusion::physical_plan::functions::make_scalar_function;
+use datafusion::prelude::{col, Expr};
+use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SqlOption};
 use datafusion::sql::sqlparser::parser::ParserError;
-use datafusion::{
-    datasource::file_format::file_type::{FileCompressionType, FileType},
-    logical_expr::{AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan},
-    prelude::{col, Expr},
-    sql::sqlparser::ast::{Ident, ObjectName, SqlOption},
-};
-
+use lazy_static::lazy_static;
+use models::auth::privilege::{DatabasePrivilege, Privilege};
+use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
+use models::auth::user::{UserOptions, UserOptionsBuilder};
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
-use models::schema::TableColumn;
-use models::{
-    auth::{
-        privilege::{DatabasePrivilege, Privilege},
-        role::{SystemTenantRole, TenantRoleIdentifier},
-        user::{UserOptions, UserOptionsBuilder},
-    },
-    oid::Oid,
-    schema::{DatabaseOptions, TenantOptions, TenantOptionsBuilder},
-};
+use models::object_reference::ResolvedTable;
+use models::oid::Oid;
+use models::schema::{DatabaseOptions, TableColumn, TenantOptions, TenantOptionsBuilder};
 use snafu::ResultExt;
 use tempfile::NamedTempFile;
+
+use super::ast::{parse_bool_value, parse_char_value, parse_string_value, ExtStatement};
+use super::datasource::azure::{AzblobStorageConfig, AzblobStorageConfigBuilder};
+use super::datasource::gcs::{
+    GcsStorageConfig, ServiceAccountCredentials, ServiceAccountCredentialsBuilder,
+};
+use super::datasource::s3::{S3StorageConfig, S3StorageConfigBuilder};
+use super::datasource::UriSchema;
+use super::session::SessionCtx;
+use super::AFFECTED_ROWS;
+use crate::service::protocol::QueryId;
+use crate::{ParserSnafu, QueryError, Result};
+
+lazy_static! {
+    static ref TABLE_WRITE_UDF: Arc<ScalarUDF> = Arc::new(ScalarUDF::new(
+        "not_exec_only_prevent_col_prune",
+        &Signature::variadic(
+            STRINGS
+                .iter()
+                .chain(NUMERICS)
+                .chain(TIMESTAMPS)
+                .chain(DATES)
+                .chain(TIMES)
+                .cloned()
+                .collect::<Vec<_>>(),
+            Volatility::Immutable
+        ),
+        &(Arc::new(move |_: &[DataType]| Ok(Arc::new(DataType::UInt64))) as ReturnTypeFunction),
+        &make_scalar_function(|args: &[ArrayRef]| Ok(Arc::clone(&args[0]))),
+    ));
+}
 
 #[derive(Clone)]
 pub struct PlanWithPrivileges {
@@ -149,7 +168,7 @@ pub enum SYSPlan {
 pub struct DropDatabaseObject {
     /// object name
     /// e.g. database_name.table_name
-    pub object_name: String,
+    pub object_name: ResolvedTable,
     /// If exists
     pub if_exist: bool,
     ///ObjectType
@@ -229,7 +248,7 @@ pub struct CreateTable {
     /// The table schema
     pub schema: Vec<TableColumn>,
     /// The table name
-    pub name: String,
+    pub name: ResolvedTable,
     /// Option to not error if table already exists
     pub if_not_exists: bool,
 }
@@ -330,7 +349,7 @@ pub struct DescribeDatabase {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeTable {
-    pub table_name: String,
+    pub table_name: ResolvedTable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -393,7 +412,7 @@ pub struct AlterDatabase {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterTable {
-    pub table_name: String,
+    pub table_name: ResolvedTable,
     pub alter_action: AlterTableAction,
 }
 
@@ -416,30 +435,27 @@ pub trait LogicalPlanner {
     async fn create_logical_plan(
         &self,
         statement: ExtStatement,
-        session: &IsiphoSessionCtx,
+        session: &SessionCtx,
     ) -> Result<Plan>;
 }
 
-/// TODO Additional output information
-pub fn affected_row_expr(arg: Expr) -> Expr {
-    // col(AFFECTED_ROWS.0)
-    Expr::AggregateFunction {
-        fun: AggregateFunction::Count,
-        args: vec![arg],
-        distinct: false,
-        filter: None,
+/// Additional output information
+pub fn affected_row_expr(args: Vec<Expr>) -> Expr {
+    Expr::ScalarUDF {
+        fun: TABLE_WRITE_UDF.clone(),
+        args,
     }
     .alias(AFFECTED_ROWS.0)
 }
 
 pub fn merge_affected_row_expr() -> Expr {
     // lit(ScalarValue::Null).alias("COUNT")
-    Expr::AggregateFunction {
+    Expr::AggregateFunction(AggregateFunctionExpr {
         fun: AggregateFunction::Sum,
         args: vec![col(AFFECTED_ROWS.0)],
         distinct: false,
         filter: None,
-    }
+    })
     .alias(AFFECTED_ROWS.0)
 }
 

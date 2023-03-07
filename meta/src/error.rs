@@ -1,10 +1,12 @@
-use crate::{client, ClusterNodeId};
-use error_code::ErrorCode;
-use error_code::ErrorCoder;
-use openraft::{AnyError, ErrorSubject, ErrorVerb, StorageError, StorageIOError};
-use snafu::Snafu;
 use std::error::Error;
 use std::io;
+
+use error_code::{ErrorCode, ErrorCoder};
+use openraft::{AnyError, ErrorSubject, ErrorVerb, StorageError, StorageIOError};
+use snafu::Snafu;
+
+use crate::limiter::limiter_kind::RequestLimiterKind;
+use crate::{client, ClusterNodeId};
 
 pub type StorageIOResult<T> = Result<T, StorageIOError<ClusterNodeId>>;
 pub type StorageResult<T> = Result<T, StorageError<ClusterNodeId>>;
@@ -115,16 +117,22 @@ pub enum MetaError {
     #[error_code(code = 23)]
     RaftConnect { source: tonic::transport::Error },
 
-    #[snafu(display("{} fail: {} reached limit, the maximum is {}", action, name, max))]
+    #[snafu(display("{} reached limit", kind))]
     #[error_code(code = 24)]
-    Limit {
-        action: String,
-        name: String,
-        max: String,
-    },
+    RequestLimit { kind: RequestLimiterKind },
+
+    #[snafu(display("An error occurred while processing the data. Please try again"))]
+    #[error_code(code = 25)]
+    Retry,
+
+    #[snafu(display("{}", msg))]
+    ObjectLimit { msg: String },
     // RaftRPC{
     //     source: RPCError<ClusterNodeId, ClusterNode, Err>
     // }
+    #[snafu(display("Connect to Meta error reason: {}", msg))]
+    #[error_code(code = 26)]
+    ConnectMetaError { msg: String },
 }
 impl MetaError {
     pub fn error_code(&self) -> &dyn ErrorCode {

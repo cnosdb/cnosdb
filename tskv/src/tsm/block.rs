@@ -1,18 +1,15 @@
-use minivec::MiniVec;
 use std::cmp::min;
-use std::{fmt::Display, mem::size_of, ops::Index};
+use std::fmt::Display;
 
+use minivec::MiniVec;
 use models::{Timestamp, ValueType};
-use protos::models::FieldType;
 use trace::error;
 
-use crate::{
-    memcache::DataType,
-    tseries_family::TimeRange,
-    tsm::codec::{
-        get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
-        DataBlockEncoding,
-    },
+use crate::memcache::DataType;
+use crate::tseries_family::TimeRange;
+use crate::tsm::codec::{
+    get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
+    DataBlockEncoding,
 };
 
 pub trait ByTimeRange {
@@ -544,7 +541,7 @@ impl DataBlock {
 impl Display for DataBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DataBlock::U64 { ts, val, .. } => {
+            DataBlock::U64 { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -557,7 +554,7 @@ impl Display for DataBlock {
                     write!(f, "U64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::I64 { ts, val, .. } => {
+            DataBlock::I64 { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -570,7 +567,7 @@ impl Display for DataBlock {
                     write!(f, "I64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::Str { ts, val, .. } => {
+            DataBlock::Str { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -583,7 +580,7 @@ impl Display for DataBlock {
                     write!(f, "Str {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::F64 { ts, val, .. } => {
+            DataBlock::F64 { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -596,7 +593,7 @@ impl Display for DataBlock {
                     write!(f, "F64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::Bool { ts, val, .. } => {
+            DataBlock::Bool { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -650,14 +647,13 @@ fn exclude_slow(v: &mut Vec<MiniVec<u8>>, min_idx: usize, max_idx: usize) {
 
 #[cfg(test)]
 pub mod test {
-    use minivec::mini_vec;
-    use std::mem::size_of;
 
-    use crate::{
-        memcache::DataType,
-        tseries_family::TimeRange,
-        tsm::{block::exclude_fast, codec::DataBlockEncoding, DataBlock},
-    };
+    use minivec::mini_vec;
+
+    use crate::memcache::DataType;
+    use crate::tseries_family::TimeRange;
+    use crate::tsm::codec::DataBlockEncoding;
+    use crate::tsm::DataBlock;
 
     pub(crate) fn check_data_block(block: &DataBlock, pattern: &[DataType]) {
         assert_eq!(block.len(), pattern.len());

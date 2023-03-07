@@ -1,37 +1,26 @@
-use models::auth::privilege::DatabasePrivilege;
-use models::auth::role::CustomTenantRole;
-use models::auth::role::SystemTenantRole;
-use models::auth::role::TenantRoleIdentifier;
-use models::auth::user::UserDesc;
-use models::auth::user::UserOptions;
-use models::oid::Identifier;
-use models::oid::Oid;
-use models::oid::UuidGenerator;
-use models::schema::DatabaseSchema;
-use models::schema::TableSchema;
-use models::schema::Tenant;
-use models::schema::TenantOptions;
-
-use crate::{ClusterNode, ClusterNodeId};
-use openraft::EffectiveMembership;
-use openraft::LogId;
-use serde::Deserialize;
-use serde::Serialize;
-use serde_json::{from_slice, from_str};
-use trace::debug;
-
-use sled::Db;
-use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
-use trace::info;
 
-use crate::error::{l_r_err, sm_r_err, sm_w_err, StorageIOResult};
-use crate::store::key_path::KeyPath;
-use models::{meta_data::*, utils};
+use models::auth::privilege::DatabasePrivilege;
+use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
+use models::auth::user::{UserDesc, UserOptions};
+use models::meta_data::*;
+use models::oid::{Identifier, Oid, UuidGenerator};
+use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
+use models::utils;
+use openraft::{EffectiveMembership, LogId};
+use serde::{Deserialize, Serialize};
+use serde_json::{from_slice, from_str};
+use sled::Db;
+use trace::{debug, error, info};
 
 use super::command::*;
 use super::key_path;
+use crate::error::{l_r_err, sm_r_err, sm_w_err, StorageIOResult};
+use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
+use crate::limiter::remote_request_limiter::RemoteRequestLimiter;
+use crate::store::key_path::KeyPath;
+use crate::{ClusterNode, ClusterNodeId};
 
 pub type CommandResp = String;
 
@@ -138,8 +127,9 @@ pub struct StateMachine {
     pub state_machine: sled::Tree,
     pub watch: Arc<Watch>,
 }
+
 impl StateMachine {
-    pub(crate) fn new(db: Arc<sled::Db>) -> StateMachine {
+    pub fn new(db: Arc<sled::Db>) -> StateMachine {
         let sm = Self {
             db: db.clone(),
             data_tree: db.open_tree("data").expect("data open failed"),
@@ -260,12 +250,29 @@ impl StateMachine {
 
     //********************************************************************************* */
     //todo: temp it will be removed
-    pub fn version(&self) -> u64 {
-        self.get_last_applied_log()
-            .ok()
-            .unwrap_or_default()
-            .unwrap_or_default()
-            .index
+    fn version(&self) -> u64 {
+        let key = KeyPath::version();
+
+        let mut ver_str = "0".to_string();
+        if let Some(val) = self.db.get(key).unwrap() {
+            unsafe { ver_str = String::from_utf8_unchecked((*val).to_owned()) };
+        }
+
+        from_str::<u64>(&ver_str).unwrap_or(0)
+    }
+
+    fn update_version(&self) -> StorageIOResult<u64> {
+        let key = KeyPath::version();
+
+        let mut ver_str = "0".to_string();
+        if let Some(val) = self.db.get(&key).unwrap() {
+            unsafe { ver_str = String::from_utf8_unchecked((*val).to_owned()) };
+        }
+        let ver = from_str::<u64>(&ver_str).unwrap_or(0) + 1;
+
+        self.db.insert(&key, &*(ver.to_string())).map_err(l_r_err)?;
+
+        Ok(ver)
     }
 
     fn fetch_and_add_incr_id(&self, cluster: &str, count: u32) -> u32 {
@@ -277,7 +284,9 @@ impl StateMachine {
         }
         let id_num = from_str::<u32>(&id_str).unwrap_or(1);
 
-        let _ = self.insert(&id_key, &(id_num + count).to_string());
+        self.db
+            .insert(&id_key, &*(id_num + count).to_string())
+            .unwrap();
 
         id_num
     }
@@ -294,11 +303,12 @@ impl StateMachine {
     }
 
     fn insert(&self, key: &str, val: &str) -> StorageIOResult<()> {
+        let version = self.update_version()?;
         self.db.insert(key, val).map_err(l_r_err)?;
 
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_SET,
-            ver: self.version(),
+            ver: version,
             key: key.to_string(),
             val: val.to_string(),
         };
@@ -309,11 +319,12 @@ impl StateMachine {
     }
 
     fn remove(&self, key: &str) -> StorageIOResult<()> {
+        let version = self.update_version()?;
         self.db.remove(key).map_err(l_r_err)?;
 
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_DEL,
-            ver: self.version(),
+            ver: version,
             key: key.to_string(),
             val: "".to_string(),
         };
@@ -322,7 +333,12 @@ impl StateMachine {
 
         Ok(())
     }
-    pub fn read_change_logs(&self, cluster: &str, tenant: &str, base_ver: u64) -> WatchData {
+    pub fn read_change_logs(
+        &self,
+        cluster: &str,
+        tenants: &HashSet<String>,
+        base_ver: u64,
+    ) -> WatchData {
         let mut data = WatchData {
             full_sync: false,
             entry_logs: vec![],
@@ -330,7 +346,7 @@ impl StateMachine {
             max_ver: self.watch.max_version().unwrap_or(0),
         };
 
-        let (logs, status) = self.watch.read_entry_logs(cluster, tenant, base_ver);
+        let (logs, status) = self.watch.read_entry_logs(cluster, tenants, base_ver);
         if status < 0 {
             data.full_sync = true;
         } else {
@@ -575,6 +591,11 @@ impl StateMachine {
             }
             WriteCommand::RetainID(cluster, count) => self.process_retain_id(cluster, *count),
             WriteCommand::UpdateVnodeReplSet(args) => self.process_update_vnode_repl_set(args),
+            WriteCommand::LimiterRequest {
+                cluster,
+                tenant,
+                request,
+            } => self.process_limiter_request(cluster, tenant, request),
         }
     }
 
@@ -625,7 +646,20 @@ impl StateMachine {
         serde_json::to_string(&status).unwrap()
     }
 
+    fn check_node_ip_address(&self, cluster: &str, node: &NodeInfo) {
+        for value in
+            children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone()).values()
+        {
+            if value.id != node.id
+                && (value.http_addr == node.http_addr || value.grpc_addr == node.grpc_addr)
+            {
+                error!("ip address has been added, the added node is : {:?}", value);
+            }
+        }
+    }
+
     fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> CommandResp {
+        self.check_node_ip_address(cluster, node);
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = serde_json::to_string(node).unwrap();
         let _ = self.insert(&key, &value);
@@ -1009,6 +1043,27 @@ impl StateMachine {
         CommonResp::Ok(success).to_string()
     }
 
+    fn set_tenant_limiter(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        limiter: Option<RemoteRequestLimiter>,
+    ) {
+        let key = KeyPath::limiter(cluster, tenant);
+
+        let limiter = match limiter {
+            Some(limiter) => limiter,
+            None => {
+                let _ = self.remove(&key);
+                return;
+            }
+        };
+
+        if let Ok(value) = serde_json::to_string(&limiter) {
+            let _ = self.insert(&key, &value);
+        }
+    }
+
     fn process_create_tenant(
         &self,
         cluster: &str,
@@ -1024,6 +1079,10 @@ impl StateMachine {
 
         let oid = UuidGenerator::default().next_id();
         let tenant = Tenant::new(oid, name.to_string(), options.clone());
+
+        let limiter = options.request_config().map(RemoteRequestLimiter::new);
+
+        self.set_tenant_limiter(cluster, name, limiter);
 
         match serde_json::to_string(&tenant) {
             Ok(value) => {
@@ -1054,6 +1113,10 @@ impl StateMachine {
                     let value = serde_json::to_string(&new_tenant).unwrap();
                     let _ = self.insert(&key, &value);
 
+                    let limiter = options.request_config().map(RemoteRequestLimiter::new);
+
+                    self.set_tenant_limiter(cluster, name, limiter);
+
                     CommonResp::Ok(new_tenant)
                 }
                 Err(err) => {
@@ -1082,8 +1145,9 @@ impl StateMachine {
 
     fn process_drop_tenant(&self, cluster: &str, name: &str) -> CommandResp {
         let key = KeyPath::tenant(cluster, name);
+        let limiter_key = KeyPath::limiter(cluster, name);
 
-        let success = self.remove(&key).is_ok();
+        let success = self.remove(&key).is_ok() && self.remove(&limiter_key).is_ok();
 
         CommonResp::Ok(success).to_string()
     }
@@ -1267,13 +1331,47 @@ impl StateMachine {
 
         CommonResp::Ok(()).to_string()
     }
+
+    fn process_limiter_request(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        requests: &LocalBucketRequest,
+    ) -> CommandResp {
+        let mut rsp = LocalBucketResponse {
+            kind: requests.kind,
+            alloc: requests.expected.max,
+        };
+        let key = KeyPath::limiter(cluster, tenant);
+
+        let limiter = match get_struct::<RemoteRequestLimiter>(&key, self.db.clone()) {
+            Some(b) => b,
+            None => {
+                return CommonResp::Ok(rsp).to_string();
+            }
+        };
+
+        let bucket = match limiter.buckets.get(&requests.kind) {
+            Some(bucket) => bucket,
+            None => {
+                return CommonResp::Ok(rsp).to_string();
+            }
+        };
+        let alloc = bucket.acquire_closed(requests.expected.max as usize);
+
+        self.set_tenant_limiter(cluster, tenant, Some(limiter));
+        rsp.alloc = alloc as i64;
+
+        CommonResp::Ok(rsp).to_string()
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
     use std::println;
+
+    use serde::{Deserialize, Serialize};
 
     #[tokio::test]
     async fn test_btree_map() {

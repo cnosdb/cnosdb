@@ -1,20 +1,16 @@
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, MetaClientRef};
-use models::{
-    auth::user::User,
-    oid::Identifier,
-    schema::{ColumnType, ExternalTableSchema, TableSchema, TskvTableSchema},
-    ValueType,
-};
+use meta::error::MetaError;
+use meta::MetaClientRef;
+use models::auth::user::User;
+use models::oid::Identifier;
+use models::schema::{ColumnType, ExternalTableSchema, TableSchema, TskvTableSchema};
+use models::ValueType;
 
-use crate::{
-    dispatcher::query_tracker::QueryTracker,
-    metadata::information_schema_provider::{
-        builder::columns::InformationSchemaColumnsBuilder, InformationSchemaTableFactory,
-    },
-};
+use crate::dispatcher::query_tracker::QueryTracker;
+use crate::metadata::information_schema_provider::builder::columns::InformationSchemaColumnsBuilder;
+use crate::metadata::information_schema_provider::InformationSchemaTableFactory;
 
 const INFORMATION_SCHEMA_COLUMNS: &str = "COLUMNS";
 
@@ -52,10 +48,10 @@ impl InformationSchemaTableFactory for ColumnsFactory {
                 if let Some(table) = metadata.get_table_schema(&db, &table)? {
                     match table {
                         TableSchema::TsKvTableSchema(t) => {
-                            append_tskv_table(tenant_name, &db, t, &mut builder);
+                            append_tskv_table(tenant_name, &db, t.clone(), &mut builder);
                         }
                         TableSchema::ExternalTableSchema(t) => {
-                            append_external_table(tenant_name, &db, t, &mut builder);
+                            append_external_table(tenant_name, &db, t.clone(), &mut builder);
                         }
                     }
                 }
@@ -71,7 +67,7 @@ impl InformationSchemaTableFactory for ColumnsFactory {
 fn append_tskv_table(
     tenant_name: &str,
     database_name: &str,
-    table: TskvTableSchema,
+    table: Arc<TskvTableSchema>,
     builder: &mut InformationSchemaColumnsBuilder,
 ) {
     for (idx, col) in table.columns().iter().enumerate() {
@@ -93,7 +89,7 @@ fn append_tskv_table(
 fn append_external_table(
     tenant_name: &str,
     database_name: &str,
-    table: ExternalTableSchema,
+    table: Arc<ExternalTableSchema>,
     builder: &mut InformationSchemaColumnsBuilder,
 ) {
     for (idx, col) in table.schema.all_fields().iter().enumerate() {

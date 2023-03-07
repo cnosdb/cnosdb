@@ -1,34 +1,30 @@
 #![allow(clippy::if_same_then_else)]
 
+use std::collections::HashSet;
+use std::fmt::Debug;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use config::ClusterConfig;
-use models::{
-    auth::{role::UserRole, user::User},
-    meta_data::*,
-    utils::min_num,
-};
-use std::{
-    fmt::Debug,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-};
-use tokio::sync::mpsc::{self, Receiver};
+use models::auth::role::{TenantRoleIdentifier, UserRole};
+use models::auth::user::User;
+use models::meta_data::*;
+use models::oid::Identifier;
+use models::utils::min_num;
+use parking_lot::RwLock;
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use trace::info;
 
-use models::auth::role::TenantRoleIdentifier;
-use models::oid::Identifier;
-
-use crate::{
-    client::MetaHttpClient,
-    error::{MetaError, MetaResult},
-    meta_admin::RemoteAdminMeta,
-    store::{command, key_path},
-    tenant_manager::RemoteTenantManager,
-    user_manager::RemoteUserManager,
-    AdminMetaRef, TenantManagerRef, UserManagerRef,
+use crate::client::MetaHttpClient;
+use crate::error::{MetaError, MetaResult};
+use crate::meta_admin::RemoteAdminMeta;
+use crate::store::{command, key_path};
+use crate::tenant_manager::{
+    RemoteTenantManager, UseTenantInfo, USE_TENANT_ACTION_ADD, USE_TENANT_ACTION_DEL,
 };
+use crate::user_manager::RemoteUserManager;
+use crate::{AdminMetaRef, TenantManagerRef, UserManagerRef};
 
 #[async_trait]
 pub trait MetaManager: Send + Sync + Debug {
@@ -36,6 +32,7 @@ pub trait MetaManager: Send + Sync + Debug {
     fn admin_meta(&self) -> AdminMetaRef;
     fn user_manager(&self) -> UserManagerRef;
     fn tenant_manager(&self) -> TenantManagerRef;
+    async fn use_tenant(&self, val: &str) -> MetaResult<()>;
     async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
     async fn user_with_privileges(
         &self,
@@ -49,6 +46,8 @@ pub struct RemoteMetaManager {
     config: ClusterConfig,
 
     watch_version: Arc<AtomicU64>,
+    tenant_change_sender: Sender<UseTenantInfo>,
+    watch_tenants: Arc<RwLock<HashSet<String>>>,
 
     admin: AdminMetaRef,
     user_manager: UserManagerRef,
@@ -57,20 +56,19 @@ pub struct RemoteMetaManager {
 
 impl RemoteMetaManager {
     pub async fn new(config: ClusterConfig) -> Arc<Self> {
-        let (ver_change_sender, ver_change_receiver) = mpsc::channel(1024);
+        let (tenant_change_sender, tenant_change_receiver) = mpsc::channel(1024);
 
-        let (admin, version) = RemoteAdminMeta::new(config.clone()).await.unwrap();
-        let admin: AdminMetaRef = Arc::new(admin);
-
+        let admin: AdminMetaRef = Arc::new(RemoteAdminMeta::new(config.clone()));
+        let base_ver = admin.sync_all().await.unwrap();
         let user_manager = Arc::new(RemoteUserManager::new(
             config.name.clone(),
-            config.meta.clone(),
+            config.meta_service_addr.clone(),
         ));
         let tenant_manager = Arc::new(RemoteTenantManager::new(
             config.name.clone(),
-            config.meta.clone(),
+            config.meta_service_addr.clone(),
             config.node_id,
-            ver_change_sender,
+            tenant_change_sender.clone(),
         ));
 
         let manager = Arc::new(Self {
@@ -78,18 +76,23 @@ impl RemoteMetaManager {
             admin,
             user_manager,
             tenant_manager,
-            watch_version: Arc::new(AtomicU64::new(version)),
+            tenant_change_sender,
+            watch_tenants: Arc::new(RwLock::new(HashSet::new())),
+            watch_version: Arc::new(AtomicU64::new(base_ver)),
         });
 
         tokio::spawn(RemoteMetaManager::watch_task_manager(
             manager.clone(),
-            ver_change_receiver,
+            tenant_change_receiver,
         ));
 
         manager
     }
 
-    pub async fn watch_task_manager(mgr: Arc<RemoteMetaManager>, mut recver: Receiver<u64>) {
+    pub async fn watch_task_manager(
+        mgr: Arc<RemoteMetaManager>,
+        mut tenant_change_receiver: Receiver<UseTenantInfo>,
+    ) {
         let mut base_ver = mgr.watch_version.load(Ordering::Relaxed);
         let mut task_handle: Option<tokio::task::JoinHandle<()>> = None;
         loop {
@@ -101,18 +104,25 @@ impl RemoteMetaManager {
             task_handle = Some(handle);
 
             //wait version change
-            let version = match recver.recv().await {
-                Some(val) => {
-                    let mut min_ver = val;
-                    while let Ok(val) = recver.try_recv() {
-                        min_ver = min_num(val, min_ver);
+            let version = match tenant_change_receiver.recv().await {
+                Some(info) => {
+                    let mut tenants = mgr.watch_tenants.write();
+                    if info.action == USE_TENANT_ACTION_ADD {
+                        if info.name.is_empty() {
+                            tenants.clear();
+                        }
+                        tenants.insert(info.name);
+                    } else if info.action == USE_TENANT_ACTION_DEL {
+                        if info.name.is_empty() {
+                            tenants.clear();
+                        }
+                        tenants.remove(&info.name);
                     }
-
-                    min_ver
+                    info.version
                 }
 
                 None => {
-                    trace::error!("watch task manager exit");
+                    trace::error!("version change channel closed, watch task manager exit");
                     break;
                 }
             };
@@ -123,16 +133,12 @@ impl RemoteMetaManager {
     }
 
     pub async fn watch_data_task(mgr: Arc<RemoteMetaManager>, base_ver: u64) {
-        let client_id = format!("{}.{}", mgr.config.tenant, mgr.config.node_id);
+        let tenants = mgr.watch_tenants.read().clone();
 
-        let mut request = (
-            client_id,
-            mgr.config.name.clone(),
-            mgr.config.tenant.clone(),
-            base_ver,
-        );
+        let client_id = format!("watch.{}", mgr.config.node_id);
+        let mut request = (client_id, mgr.config.name.clone(), tenants, base_ver);
 
-        let client = MetaHttpClient::new(1, mgr.config.meta.clone());
+        let client = MetaHttpClient::new(mgr.config.meta_service_addr.clone());
         loop {
             if let Ok(watch_data) = client.watch::<command::WatchData>(&request).await {
                 if watch_data.full_sync {
@@ -228,6 +234,40 @@ impl MetaManager for RemoteMetaManager {
 
     async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         self.tenant_manager.expired_bucket().await
+    }
+
+    async fn use_tenant(&self, name: &str) -> MetaResult<()> {
+        if self.watch_tenants.read().contains(name) {
+            return Ok(());
+        }
+
+        if self.watch_tenants.read().contains(&"".to_string()) {
+            return Ok(());
+        }
+
+        if !name.is_empty() {
+            self.tenant_manager()
+                .tenant_meta(name)
+                .await
+                .ok_or_else(|| MetaError::TenantNotFound {
+                    tenant: name.to_string(),
+                })?;
+
+            return Ok(());
+        }
+
+        let info = UseTenantInfo {
+            name: name.to_string(),
+            version: u64::MAX,
+            action: USE_TENANT_ACTION_ADD,
+        };
+
+        self.tenant_change_sender
+            .send(info)
+            .await
+            .expect("use tenant channel failed");
+
+        Ok(())
     }
 
     async fn user_with_privileges(

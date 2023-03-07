@@ -1,9 +1,12 @@
-use actix_web::get;
-use actix_web::post;
-use actix_web::web;
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::Write;
+use std::time::Duration;
+
 use actix_web::web::Data;
-use actix_web::Responder;
+use actix_web::{get, post, web, Responder};
 use openraft::error::Infallible;
+use pprof::protos::Message;
 use trace::info;
 use web::Json;
 
@@ -30,21 +33,63 @@ pub async fn write(
     Ok(Json(response))
 }
 
+// curl -XPOST http://127.0.0.1:21001/dump --o ./meta_dump.data
+// curl -XPOST http://127.0.0.1:21001/restore --data-binary "@./meta_dump.data"
+#[get("/dump")]
+pub async fn dump(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+    let sm = app.store.state_machine.read().await;
+    let mut response = "".to_string();
+    for res in sm.db.iter() {
+        let (k, v) = res.unwrap();
+        let k = String::from_utf8((*k).to_owned()).unwrap();
+        let v = String::from_utf8((*v).to_owned()).unwrap();
+        response = response + &format!("{}: {}\n", k, v);
+    }
+
+    Ok(response)
+}
+
+#[post("/restore")]
+pub async fn restore(app: Data<MetaApp>, data: String) -> actix_web::Result<impl Responder> {
+    info!("restore data length:{}", data.len());
+
+    let mut count = 0;
+    let lines: Vec<&str> = data.split('\n').collect();
+    for line in lines.iter() {
+        let strs: Vec<&str> = line.splitn(2, ": ").collect();
+        if strs.len() != 2 {
+            continue;
+        }
+
+        let command = WriteCommand::Set {
+            key: strs[0].to_string(),
+            value: strs[1].to_string(),
+        };
+        if let Err(err) = app.raft.client_write(command).await {
+            return Ok(err.to_string());
+        }
+
+        count += 1;
+    }
+
+    Ok(format!("Restore Data Success, Total: {} ", count))
+}
+
 #[post("/watch")]
 pub async fn watch(
     app: Data<MetaApp>,
-    req: Json<(String, String, String, u64)>, //client id, cluster,version
+    req: Json<(String, String, HashSet<String>, u64)>, //client id, cluster,version
 ) -> actix_web::Result<impl Responder> {
     info!("watch all  args: {:?}", req);
     let client = req.0 .0;
     let cluster = req.0 .1;
-    let tenant = req.0 .2;
+    let tenants = req.0 .2;
     let base_ver = req.0 .3;
     let mut follow_ver = base_ver;
 
-    let mut chan = {
+    let mut notify = {
         let sm = app.store.state_machine.read().await;
-        let watch_data = sm.read_change_logs(&cluster, &tenant, follow_ver);
+        let watch_data = sm.read_change_logs(&cluster, &tenants, follow_ver);
         info!(
             "{} {}.{}: change logs: {:?} ",
             client, base_ver, follow_ver, watch_data
@@ -58,14 +103,17 @@ pub async fn watch(
         sm.watch.subscribe()
     };
 
-    while (chan.recv().await).is_ok() {
+    let now = std::time::Instant::now();
+    loop {
+        let _ = tokio::time::timeout(tokio::time::Duration::from_secs(20), notify.recv()).await;
+
         let sm = app.store.state_machine.read().await;
-        let watch_data = sm.read_change_logs(&cluster, &tenant, follow_ver);
+        let watch_data = sm.read_change_logs(&cluster, &tenants, follow_ver);
         info!(
             "{} {}.{}: change logs: {:?} ",
             client, base_ver, follow_ver, watch_data
         );
-        if watch_data.need_return(base_ver) {
+        if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
             let data = serde_json::to_string(&watch_data).unwrap();
             let response: Result<CommandResp, Infallible> = Ok(data);
             return Ok(Json(response));
@@ -75,9 +123,6 @@ pub async fn watch(
             follow_ver = watch_data.max_ver;
         }
     }
-
-    let response: Result<CommandResp, Infallible> = Ok("notify channel closed".to_string());
-    Ok(Json(response))
 }
 
 #[get("/debug")]

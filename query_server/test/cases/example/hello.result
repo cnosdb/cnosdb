@@ -30,6 +30,6 @@ Hello World
 
 -- EXECUTE SQL: SELECT "Hello World"; --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Schema error: No field named 'Hello World'. Valid fields are ."}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named 'Hello World'."}
 -- ERROR:  --
 

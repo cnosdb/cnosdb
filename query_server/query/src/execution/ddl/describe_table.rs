@@ -1,16 +1,17 @@
-use crate::execution::ddl::DDLDefinitionTask;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use datafusion::arrow::array::StringBuilder;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::catalog::TableReference;
-use models::schema::TableSchema;
-use spi::Result;
-
 use meta::error::MetaError;
+use models::object_reference::ResolvedTable;
+use models::schema::TableSchema;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeTable;
-use std::sync::Arc;
+use spi::Result;
+
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct DescribeTableTask {
     stmt: DescribeTable,
@@ -25,14 +26,15 @@ impl DescribeTableTask {
 #[async_trait]
 impl DDLDefinitionTask for DescribeTableTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        describe_table(self.stmt.table_name.as_str(), query_state_machine).await
+        describe_table(&self.stmt.table_name, query_state_machine).await
     }
 }
 
-async fn describe_table(table_name: &str, machine: QueryStateMachineRef) -> Result<Output> {
-    let tenant = machine.session.tenant();
-    let table_name =
-        TableReference::from(table_name).resolve(tenant, machine.session.default_database());
+async fn describe_table(
+    table_name: &ResolvedTable,
+    machine: QueryStateMachineRef,
+) -> Result<Output> {
+    let tenant = table_name.tenant();
     let client = machine
         .meta
         .tenant_manager()
@@ -42,9 +44,9 @@ async fn describe_table(table_name: &str, machine: QueryStateMachineRef) -> Resu
             tenant: tenant.to_string(),
         })?;
     let table_schema = client
-        .get_table_schema(table_name.schema, table_name.table)?
+        .get_table_schema(table_name.database(), table_name.table())?
         .ok_or(MetaError::TableNotFound {
-            table: table_name.table.to_string(),
+            table: table_name.to_string(),
         })?;
 
     match table_schema {

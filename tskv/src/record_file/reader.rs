@@ -1,25 +1,9 @@
-use std::{
-    borrow::Borrow,
-    cmp::Ordering,
-    fmt::format,
-    fs,
-    io::{Error as IoError, Read},
-    path::{Path, PathBuf},
-};
+use std::cmp::Ordering;
+use std::path::{Path, PathBuf};
 
 use async_recursion::async_recursion;
-use bytes::{Buf, BufMut};
-use futures::future::ok;
 use num_traits::ToPrimitive;
-use parking_lot::Mutex;
 use snafu::ResultExt;
-use trace::{error, info};
-
-use crate::{
-    byte_utils::decode_be_u32,
-    error::{self, Error, Result},
-    file_system::{file_manager, AsyncFile, FileCursor, IFile},
-};
 
 use super::{
     file_crc_source_len, Record, FILE_FOOTER_CRC32_NUMBER_LEN, FILE_FOOTER_LEN,
@@ -27,6 +11,9 @@ use super::{
     RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN, RECORD_DATA_VERSION_LEN, RECORD_HEADER_LEN,
     RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
 };
+use crate::byte_utils::decode_be_u32;
+use crate::error::{self, Error, Result};
+use crate::file_system::{file_manager, AsyncFile, IFile};
 
 pub struct Reader {
     path: PathBuf,
@@ -146,7 +133,7 @@ impl Reader {
         // TODO: Check if data_size is too large.
         let data = match self.read_buf(data_size as usize).await {
             Ok((_, d)) => d.to_vec(),
-            Err(e) => {
+            Err(_e) => {
                 self.set_pos(origin_pos + 1).await?;
                 return self.read_record().await;
             }
@@ -258,18 +245,14 @@ pub(crate) mod test {
 
     use snafu::ResultExt;
 
-    use crate::{
-        byte_utils::decode_be_u32,
-        error::{self, Error, Result},
-        file_system::{file_manager, AsyncFile, FileCursor, IFile},
-        record_file::{
-            Record, RECORD_CRC32_NUMBER_LEN, RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN,
-            RECORD_DATA_VERSION_LEN, RECORD_HEADER_LEN, RECORD_MAGIC_NUMBER,
-            RECORD_MAGIC_NUMBER_LEN,
-        },
-    };
-
     use super::Reader;
+    use crate::byte_utils::decode_be_u32;
+    use crate::error::{self, Error, Result};
+    use crate::file_system::IFile;
+    use crate::record_file::{
+        Record, RECORD_CRC32_NUMBER_LEN, RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN,
+        RECORD_DATA_VERSION_LEN, RECORD_HEADER_LEN, RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
+    };
 
     impl Reader {
         pub(crate) async fn read_at(&mut self, pos: usize) -> Result<Record> {
@@ -301,7 +284,7 @@ pub(crate) mod test {
             p += RECORD_DATA_TYPE_LEN;
             let data_size = decode_be_u32(&record_header_buf[p..p + RECORD_DATA_SIZE_LEN]);
             p += RECORD_DATA_SIZE_LEN;
-            let data_crc = decode_be_u32(&record_header_buf[p..p + RECORD_CRC32_NUMBER_LEN]);
+            let _data_crc = decode_be_u32(&record_header_buf[p..p + RECORD_CRC32_NUMBER_LEN]);
             p += RECORD_CRC32_NUMBER_LEN;
 
             // TODO: Reuse data vector.

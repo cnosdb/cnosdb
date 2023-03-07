@@ -13,6 +13,7 @@ trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
 error_code = { path = "../common/error_code" }
 lru_cache = { path = "../common/lru_cache" }
+memory_pool = { path = "../common/memory_pool" }
 
 async-recursion = { workspace = true }
 async-trait = { workspace = true }

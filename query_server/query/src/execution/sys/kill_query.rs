@@ -1,16 +1,12 @@
-use spi::Result;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use spi::{
-    query::execution::{Output, QueryStateMachineRef},
-    service::protocol::QueryId,
-    QueryError,
-};
-
-use crate::dispatcher::query_tracker::QueryTracker;
+use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::service::protocol::QueryId;
+use spi::{QueryError, Result};
 
 use super::SystemTask;
+use crate::dispatcher::query_tracker::QueryTracker;
 
 pub struct KillQueryTask {
     query_tracker: Arc<QueryTracker>,

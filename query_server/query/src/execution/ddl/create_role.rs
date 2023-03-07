@@ -1,4 +1,3 @@
-use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::error::MetaError;
 use snafu::ResultExt;
@@ -7,11 +6,11 @@ use spi::query::execution::{
     Output,
     QueryStateMachineRef,
 };
-use spi::Result;
-
 use spi::query::logical_planner::CreateRole;
-use spi::QueryError;
+use spi::{QueryError, Result};
 use trace::debug;
+
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct CreateRoleTask {
     stmt: CreateRole,

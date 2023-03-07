@@ -1,25 +1,26 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code)]
+
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use coordinator::hh_queue::HintedOffManager;
-use coordinator::service::CoordService;
-use coordinator::writer::PointWriter;
-use meta::meta_manager::RemoteMetaManager;
-use meta::{MetaClientRef, MetaRef};
-use models::meta_data::NodeInfo;
+use mem_allocator::Jemalloc;
+use memory_pool::GreedyMemoryPool;
+use metrics::init_tskv_metrics_recorder;
+use metrics::metric_register::MetricsRegister;
 use once_cell::sync::Lazy;
-use query::instance::make_cnosdbms;
-use std::{net::SocketAddr, sync::Arc};
+use parking_lot::Mutex;
 use tokio::runtime::Runtime;
-use trace::{info, init_global_tracing};
-use tskv::TsKv;
+use trace::{info, init_process_global_tracing, WorkerGuard};
+
+use crate::report::ReportService;
+
 mod flight_sql;
 mod http;
+mod meta_single;
 mod report;
 mod rpc;
 pub mod server;
 mod signal;
-mod tcp;
 
 static VERSION: Lazy<String> = Lazy::new(|| {
     format!(
@@ -29,48 +30,22 @@ static VERSION: Lazy<String> = Lazy::new(|| {
     )
 });
 
+static GLOBAL_MAIN_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(None)));
+
 /// cli examples is here
-/// https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs
+/// <https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs>
 #[derive(Debug, clap::Parser)]
 #[clap(name = "cnosdb")]
 #[clap(version = & VERSION[..],
 about = "cnosdb command line tools",
 long_about = r#"cnosdb and command line tools
-                        Examples:
-                            # Run the cnosdb:
-                            cargo run -- run
+Examples:
+    # Run the cnosdb:
+    cargo run -- run
                         "#
 )]
 struct Cli {
-    #[clap(
-        short,
-        long,
-        global = true,
-        env = "server_tcp_addr",
-        default_value = "0.0.0.0:31005"
-    )]
-    tcp_host: String,
-
-    /// gRPC address
-    #[clap(
-        short,
-        long,
-        global = true,
-        env = "server_addr",
-        default_value = "0.0.0.0:31006"
-    )]
-    grpc_host: String,
-
-    /// http address
-    #[clap(
-        short,
-        long,
-        global = true,
-        env = "server_http_addr",
-        default_value = "0.0.0.0:31007"
-    )]
-    http_host: String,
-
     #[clap(short, long, global = true, default_value_t = 4)]
     /// the number of cores on the system
     cpu: usize,
@@ -80,8 +55,8 @@ struct Cli {
     memory: usize,
 
     /// configuration path
-    #[clap(long, global = true, default_value = "./config/config.toml")]
-    config: String,
+    #[clap(long, global = true)]
+    config: Option<String>,
 
     #[clap(subcommand)]
     subcmd: SubCommand,
@@ -89,27 +64,20 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum SubCommand {
-    /// debug mode
-    #[clap(arg_required_else_help = true)]
-    Debug { debug: String },
+    // #[clap(arg_required_else_help = true)]
+    // Debug { debug: String },
     /// run cnosdb server
     #[clap(arg_required_else_help = false)]
     Run {},
-    // /// run tskv
-    // #[clap(arg_required_else_help = true)]
-    // Tskv { debug: String },
-    // /// run query
-    // #[clap(arg_required_else_help = true)]
-    // Query {},
+    /// run tskv
+    #[clap(arg_required_else_help = true)]
+    Tskv {},
+    /// run query
+    #[clap(arg_required_else_help = true)]
+    Query {},
+    #[clap(arg_required_else_help = true)]
+    Singleton {},
 }
-
-use crate::flight_sql::FlightSqlServiceAdapter;
-use crate::http::http_service::HttpService;
-use crate::report::ReportService;
-use crate::rpc::grpc_service::GrpcService;
-use crate::tcp::tcp_service::TcpService;
-use mem_allocator::Jemalloc;
-use metrics::init_tskv_metrics_recorder;
 
 #[global_allocator]
 static A: Jemalloc = Jemalloc;
@@ -122,139 +90,66 @@ static A: Jemalloc = Jemalloc;
 fn main() -> Result<(), std::io::Error> {
     signal::install_crash_handler();
     let cli = Cli::parse();
-    let runtime = init_runtime(Some(cli.cpu))?;
-    let runtime = Arc::new(runtime);
-    println!(
-        "params: host:{}, http_host: {}, cpu:{:?}, memory:{:?}, config: {:?}, sub:{:?}",
-        cli.grpc_host, cli.http_host, cli.cpu, cli.memory, cli.config, cli.subcmd
-    );
-    let global_config = config::get_config(cli.config.as_str());
-    let mut _trace_guard = init_global_tracing(
-        &global_config.log.path,
+    let config = parse_config(&cli);
+
+    init_process_global_tracing(
+        &config.log.path,
+        &config.log.level,
         "tsdb.log",
-        &global_config.log.level,
+        config.log.tokio_trace.as_ref(),
+        &GLOBAL_MAIN_LOG_GUARD,
     );
-
-    // let grpc_host = cli
-    //     .grpc_host
-    //     .parse::<SocketAddr>()
-    //     .expect("Invalid grpc_host");
-    // let http_host = cli
-    //     .http_host
-    //     .parse::<SocketAddr>()
-    //     .expect("Invalid http_host");
-
-    // let tcp_host = cli
-    //     .tcp_host
-    //     .parse::<SocketAddr>()
-    //     .expect("Invalid http_host");
-
-    let grpc_host = global_config
-        .cluster
-        .grpc_server
-        .parse::<SocketAddr>()
-        .expect("Invalid grpc_host");
-    let flight_rpc_host = global_config
-        .cluster
-        .flight_rpc_server
-        .parse::<SocketAddr>()
-        .expect("Invalid flight_rpc_host");
-    let http_host = global_config
-        .cluster
-        .http_server
-        .parse::<SocketAddr>()
-        .expect("Invalid http_host");
-
-    let tcp_host = global_config
-        .cluster
-        .tcp_server
-        .parse::<SocketAddr>()
-        .expect("Invalid http_host");
-
     init_tskv_metrics_recorder();
 
+    let runtime = Arc::new(init_runtime(Some(cli.cpu))?);
+    let memory_size = cli.memory * 1024 * 1024 * 1024;
+    let memory_pool = Arc::new(GreedyMemoryPool::new(memory_size));
     runtime.clone().block_on(async move {
-        match &cli.subcmd {
-            SubCommand::Debug { debug: _ } => {
-                todo!()
-            }
-            SubCommand::Run {} => {
-                let meta_manager: MetaRef =
-                    RemoteMetaManager::new(global_config.cluster.clone()).await;
-                meta_manager.admin_meta().add_data_node().await.unwrap();
+        let builder = server::ServiceBuilder {
+            config: config.clone(),
+            runtime: runtime.clone(),
+            memory_pool: memory_pool.clone(),
+            metrics_register: Arc::new(MetricsRegister::new([(
+                "node_id",
+                config.cluster.node_id.to_string(),
+            )])),
+        };
 
-                let tskv_options = tskv::Options::from(&global_config);
-                let query_options = tskv::Options::from(&global_config);
-                let kv_inst = Arc::new(
-                    TsKv::open(meta_manager.clone(), tskv_options, runtime)
-                        .await
-                        .unwrap(),
-                );
-                let coord_service = CoordService::new(
-                    kv_inst.clone(),
-                    meta_manager,
-                    global_config.cluster.clone(),
-                    global_config.hintedoff.clone(),
-                )
-                .await;
-
-                let dbms = Arc::new(
-                    make_cnosdbms(kv_inst.clone(), coord_service.clone(), query_options)
-                        .await
-                        .expect("make dbms"),
-                );
-
-                let tcp_service = Box::new(TcpService::new(
-                    dbms.clone(),
-                    coord_service.clone(),
-                    tcp_host,
-                ));
-
-                let tls_config = global_config.security.tls_config;
-                let http_service = Box::new(HttpService::new(
-                    dbms.clone(),
-                    kv_inst.clone(),
-                    coord_service,
-                    http_host,
-                    tls_config.clone(),
-                    global_config.query.query_sql_limit,
-                    global_config.query.write_sql_limit,
-                ));
-                let grpc_service = Box::new(GrpcService::new(
-                    dbms.clone(),
-                    kv_inst.clone(),
-                    grpc_host,
-                    tls_config.clone(),
-                ));
-                let flight_sql_service = Box::new(FlightSqlServiceAdapter::new(
-                    dbms.clone(),
-                    flight_rpc_host,
-                    tls_config.clone(),
-                ));
-
-                let report_service = Box::new(ReportService::new());
-
-                let mut server_builder = server::Builder::default()
-                    .add_service(http_service)
-                    .add_service(grpc_service)
-                    .add_service(tcp_service)
-                    .add_service(flight_sql_service);
-
-                if !global_config.reporting_disabled.unwrap_or(false) {
-                    server_builder = server_builder.add_service(report_service);
-                }
-
-                let mut server = server_builder.build().expect("build server.");
-
-                server.start().expect("server start.");
-                signal::block_waiting_ctrl_c();
-                server.stop(true).await;
-                kv_inst.close().await;
-                println!("CnosDB is stopped.");
-            }
+        let mut server = server::Server::default();
+        if !config.reporting_disabled {
+            server.add_service(Box::new(ReportService::new()));
         }
+
+        let storage = match &cli.subcmd {
+            SubCommand::Tskv {} => builder.build_storage_server(&mut server).await,
+            SubCommand::Query {} => builder.build_query_server(&mut server).await,
+            SubCommand::Run {} => builder.build_query_storage(&mut server).await,
+            SubCommand::Singleton {} => builder.build_singleton(&mut server).await,
+        };
+
+        server.start().expect("CnosDB server start.");
+        signal::block_waiting_ctrl_c();
+        server.stop(true).await;
+        if let Some(tskv) = storage {
+            tskv.close().await;
+        }
+
+        println!("CnosDB is stopped.");
     });
     Ok(())
+}
+
+fn parse_config(cli: &Cli) -> config::Config {
+    let global_config = if let Some(cfg_path) = cli.config.clone() {
+        println!("----------\nStart with configuration:");
+        config::get_config(cfg_path)
+    } else {
+        println!("----------\nStart with default configuration:");
+        config::default_config()
+    };
+    println!("{}----------", global_config.to_string_pretty());
+
+    global_config
 }
 
 fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {

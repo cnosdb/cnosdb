@@ -1,12 +1,7 @@
-use lru::LruCache;
+use std::sync::Arc;
+
 use lru_cache::ShardedCache;
 use models::{SeriesId, SeriesKey};
-
-use std::{
-    num::NonZeroUsize,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
 
 pub struct SeriesKeyInfo {
     pub key: SeriesKey,

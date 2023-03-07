@@ -1,6 +1,6 @@
-use nom::branch::alt;
 use std::str::FromStr;
 
+use nom::branch::alt;
 use nom::bytes::complete::{tag, tag_no_case};
 use nom::character::complete::{alpha1, alphanumeric1, none_of, space0};
 use nom::combinator::{map_parser, map_res, recognize};

@@ -1,9 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
 use spi::query::function::*;
-use spi::QueryError;
-use spi::Result;
+use spi::{QueryError, Result};
 
 #[derive(Debug, Default)]
 pub struct SimpleFunctionMetadataManager {
@@ -44,7 +44,7 @@ impl FunctionMetadataManager for SimpleFunctionMetadataManager {
             })
     }
 
-    fn udfs(&self) -> Vec<Arc<ScalarUDF>> {
-        self.scalar_functions.values().cloned().collect()
+    fn udfs(&self) -> HashSet<String> {
+        self.scalar_functions.keys().cloned().collect()
     }
 }

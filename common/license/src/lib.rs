@@ -1,11 +1,12 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code)]
 
 mod rsa_aes;
 
-use rsa::{pkcs1, pkcs1v15, pkcs8::der::Encode};
+use std::{fs, io};
+
+use rsa::pkcs1;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
-use std::{fs, io, ops::Index, os};
 
 const AES_IV: &str = "HdeK5LOtDhdjh*9G";
 const AES_KEY: &str = "Co7f#ki&Y@xK!OLPOwiaAWP&(Jn9dfje";
@@ -75,7 +76,7 @@ impl LicenseConfig {
             serde_json::from_str(&data).expect("failed to parse config");
         let naive_datetime =
             chrono::NaiveDateTime::parse_from_str(&config.expire_time, "%Y-%m-%d %H:%M:%S")
-                .map_err(|err| LicenseError::CommonError {
+                .map_err(|_err| LicenseError::CommonError {
                     msg: "parse expire time failed".to_string(),
                 })?;
 
@@ -139,7 +140,6 @@ impl LicenseConfig {
 }
 
 mod test {
-    use chrono::DateTime;
 
     use crate::LicenseConfig;
 

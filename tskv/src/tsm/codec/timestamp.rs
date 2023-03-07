@@ -1,12 +1,11 @@
-use bytes::Buf;
 use std::error::Error;
 
-use crate::byte_utils::decode_be_i64;
-use crate::tsm::codec::Encoding;
 use integer_encoding::*;
 use q_compress::{auto_compress, auto_decompress, DEFAULT_COMPRESSION_LEVEL};
 
 use super::simple8b;
+use crate::byte_utils::decode_be_i64;
+use crate::tsm::codec::Encoding;
 
 // note: encode/decode adapted from influxdb_iox
 // https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders

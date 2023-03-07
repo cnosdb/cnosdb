@@ -1,24 +1,26 @@
 pub mod check;
 mod compact;
 mod flush;
+mod iterator;
 pub mod job;
 mod picker;
 
-pub use compact::*;
-pub use flush::*;
-pub use picker::*;
-
 use std::sync::Arc;
 
+pub use compact::*;
+pub use flush::*;
 use parking_lot::RwLock;
+pub use picker::*;
 
-use crate::{
-    kv_option::StorageOptions,
-    memcache::MemCache,
-    summary::VersionEdit,
-    tseries_family::{ColumnFile, Version},
-    LevelId, TseriesFamilyId,
-};
+use crate::kv_option::StorageOptions;
+use crate::memcache::MemCache;
+use crate::tseries_family::{ColumnFile, Version};
+use crate::{LevelId, TseriesFamilyId};
+
+pub enum CompactTask {
+    Vnode(TseriesFamilyId),
+    ColdVnode(TseriesFamilyId),
+}
 
 pub struct CompactReq {
     pub ts_family_id: TseriesFamilyId,

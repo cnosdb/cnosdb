@@ -1,19 +1,14 @@
 use async_trait::async_trait;
-
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::record_batch::RecordBatch;
-
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use models::consistency_level::ConsistencyLevel;
-
+use models::schema::TskvTableSchemaRef;
+use protos::kv_service::WritePointsRequest;
 use spi::Result;
 
-use models::schema::TskvTableSchemaRef;
-use protos::kv_service::WritePointsRpcRequest;
-
-use crate::utils::point_util::record_batch_to_points_flat_buffer;
-
 use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata};
+use crate::utils::point_util::record_batch_to_points_flat_buffer;
 
 pub struct TskvRecordBatchSink {
     coord: CoordinatorRef,
@@ -44,7 +39,7 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         // points write request
         let timer = self.metrics.elapsed_point_write().timer();
-        let req = WritePointsRpcRequest {
+        let req = WritePointsRequest {
             version: 0,
             meta: None,
             points,

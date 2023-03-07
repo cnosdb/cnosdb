@@ -1,22 +1,18 @@
-use crate::sql::planner::SqlPlaner;
 use std::sync::Arc;
 
-use datafusion::{
-    common::DFField,
-    error::DataFusionError,
-    logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder, Projection, TableSource},
-    prelude::{cast, lit, Expr},
-    scalar::ScalarValue,
+use datafusion::common::{DFField, Result as DFResult};
+use datafusion::error::DataFusionError;
+use datafusion::logical_expr::{
+    Extension, LogicalPlan, LogicalPlanBuilder, Projection, TableSource,
 };
-use spi::{
-    query::logical_planner::{affected_row_expr, merge_affected_row_expr},
-    QueryError,
-};
-
-use datafusion::common::Result as DFResult;
+use datafusion::prelude::{cast, lit, Expr};
+use datafusion::scalar::ScalarValue;
+use spi::query::logical_planner::{affected_row_expr, merge_affected_row_expr};
+use spi::QueryError;
 use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
+use crate::sql::planner::SqlPlaner;
 
 pub type DefaultLogicalPlanner<'a, S> = SqlPlaner<'a, S>;
 
@@ -64,6 +60,11 @@ impl TableWriteExt for LogicalPlanBuilder {
         )?;
 
         let plan = table_write_plan_node(table_name, target_table, final_source_logical_plan)?;
+
+        debug!(
+            "Build writer plan: final plan:\n{}",
+            plan.display_indent_schema(),
+        );
 
         Ok(Self::from(plan))
     }
@@ -182,7 +183,6 @@ fn add_projection_between_source_and_insert_node_if_necessary(
     Ok(LogicalPlan::Projection(Projection::try_new(
         assignments,
         Arc::new(source_plan),
-        None,
     )?))
 }
 
@@ -191,22 +191,13 @@ fn table_write_plan_node(
     target_table: Arc<dyn TableSource>,
     input: LogicalPlan,
 ) -> DFResult<LogicalPlan> {
-    // output variable for insert operation
-    let expr = input
+    let input_exprs = input
         .schema()
         .fields()
         .iter()
-        .last()
-        .map(|e| Expr::Column(e.qualified_column()));
-
-    debug_assert!(
-        expr.is_some(),
-        "invalid table write node's input logical plan"
-    );
-
-    let expr = unsafe { expr.unwrap_unchecked() };
-
-    let affected_row_expr = affected_row_expr(expr);
+        .map(|f| Expr::Column(f.qualified_column()))
+        .collect::<Vec<Expr>>();
+    let affected_row_expr = affected_row_expr(input_exprs);
 
     // construct table writer logical node
     let node = Arc::new(TableWriterPlanNode::try_new(

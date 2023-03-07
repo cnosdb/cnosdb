@@ -1,20 +1,16 @@
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
-use meta::{error::MetaError, MetaClientRef};
-use models::{
-    auth::{role::TenantRoleIdentifier, user::User},
-    oid::Identifier,
-};
+use meta::error::MetaError;
+use meta::MetaClientRef;
+use models::auth::role::TenantRoleIdentifier;
+use models::auth::user::User;
+use models::oid::Identifier;
 use trace::error;
 
-use crate::{
-    dispatcher::query_tracker::QueryTracker,
-    metadata::information_schema_provider::{
-        builder::database_privileges::InformationSchemaDatabasePrivilegesBuilder,
-        InformationSchemaTableFactory,
-    },
-};
+use crate::dispatcher::query_tracker::QueryTracker;
+use crate::metadata::information_schema_provider::builder::database_privileges::InformationSchemaDatabasePrivilegesBuilder;
+use crate::metadata::information_schema_provider::InformationSchemaTableFactory;
 
 const INFORMATION_SCHEMA_DATABASE_PRIVILEGES: &str = "DATABASE_PRIVILEGES";
 

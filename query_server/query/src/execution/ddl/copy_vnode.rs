@@ -1,13 +1,10 @@
 use async_trait::async_trait;
-
-use spi::query::{
-    execution::{Output, QueryStateMachineRef},
-    logical_planner::CopyVnode,
-};
+use coordinator::VnodeManagerCmdType;
+use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::query::logical_planner::CopyVnode;
+use spi::Result;
 
 use super::DDLDefinitionTask;
-
-use spi::Result;
 
 pub struct CopyVnodeTask {
     stmt: CopyVnode,
@@ -27,8 +24,8 @@ impl DDLDefinitionTask for CopyVnodeTask {
         let tenant = query_state_machine.session.tenant();
 
         let coord = query_state_machine.coord.clone();
-        let cmd_type = coordinator::command::VnodeManagerCmdType::Copy(node_id);
-        coord.vnode_manager(tenant, vnode_id, cmd_type).await?;
+        let cmd_type = VnodeManagerCmdType::Copy(vnode_id, node_id);
+        coord.vnode_manager(tenant, cmd_type).await?;
 
         Ok(Output::Nil(()))
     }

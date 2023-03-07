@@ -1,29 +1,15 @@
+use std::cmp::Ordering;
 use std::fmt::Debug;
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-    ops::{Add, Div},
-    sync::{
-        atomic::{self, AtomicBool},
-        Arc,
-    },
-};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-use chrono::{
-    DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc,
-};
-use lazy_static::lazy_static;
 use models::Timestamp;
-use parking_lot::RwLock;
-use trace::{error, info};
+use trace::{debug, error, info};
 
-use crate::{
-    compaction::CompactReq,
-    error::Result,
-    kv_option::{Options, StorageOptions},
-    tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
-    LevelId, TimeRange, TseriesFamilyId,
-};
+use crate::compaction::CompactReq;
+use crate::kv_option::StorageOptions;
+use crate::tseries_family::{ColumnFile, LevelInfo, Version};
+use crate::{LevelId, TimeRange};
 
 pub trait Picker: Send + Sync + Debug {
     fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq>;
@@ -48,7 +34,7 @@ impl Picker for LevelCompactionPicker {
         //!    max_compact_size.
         //! 5. Build CompactReq using **version**, picked level and picked files.
 
-        info!(
+        debug!(
             "Picker: Version info: [ {} ]",
             version
                 .levels_info()
@@ -278,7 +264,7 @@ impl LevelCompactionPicker {
     ) -> (u64, TimeRange) {
         let mut picking_file_size = 0_u64;
         let mut picking_time_range = TimeRange::from((Timestamp::MAX, Timestamp::MIN));
-        let mut prev_non_overlaped_idx = 0_usize;
+        let mut prev_non_overlapped_idx = 0_usize;
         for (i, file) in src_files.iter().enumerate() {
             // The first serial files may be in compaction
             if file.is_compacting() {
@@ -288,10 +274,10 @@ impl LevelCompactionPicker {
                 picking_time_range.merge(file.time_range());
             } else {
                 picking_time_range = *file.time_range();
-                prev_non_overlaped_idx = i;
+                prev_non_overlapped_idx = i;
             }
             picking_file_size += file.size();
-            if picking_file_size > max_compact_size && prev_non_overlaped_idx > 0 {
+            if picking_file_size > max_compact_size && prev_non_overlapped_idx > 0 {
                 break;
             }
             dst_files.push(file.clone());
@@ -299,7 +285,7 @@ impl LevelCompactionPicker {
         }
 
         let mut picked_time_range = *src_files[0].time_range();
-        picked_time_range.merge(src_files[prev_non_overlaped_idx].time_range());
+        picked_time_range.merge(src_files[prev_non_overlapped_idx].time_range());
         (picking_file_size, picked_time_range)
     }
 }
@@ -320,7 +306,6 @@ impl LevelCompatContext {
                 break;
             }
         }
-        let l0_size = storage_opt.base_file_size;
         let base_level = 0;
 
         if !level0_being_compact {
@@ -415,19 +400,21 @@ impl LevelCompatContext {
 
 #[cfg(test)]
 mod test {
-    use lru_cache::ShardedCache;
-    use parking_lot::RwLock;
     use std::sync::Arc;
+
+    use lru_cache::asynchronous::ShardedCache;
+    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
+    use metrics::metric_register::MetricsRegister;
     use tokio::sync::mpsc;
 
     use crate::compaction::test::create_options;
-    use crate::{
-        file_utils::make_tsm_file_name,
-        kv_option::{Options, StorageOptions},
-        memcache::MemCache,
-        tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
-        TimeRange,
-    };
+    use crate::compaction::{LevelCompactionPicker, Picker};
+    use crate::file_utils::make_tsm_file_name;
+    use crate::kv_option::Options;
+    use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
+    use crate::memcache::MemCache;
+    use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
+    use crate::TimeRange;
 
     type ColumnFilesSketch = (u64, i64, i64, u64, bool);
     type LevelsSketch = Vec<(u32, i64, i64, Vec<ColumnFilesSketch>)>;
@@ -485,7 +472,7 @@ mod test {
                 time_range: TimeRange::new(lvl_desc.1, lvl_desc.2),
             };
         }
-
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let version = Arc::new(Version::new(
             1,
             Arc::new("version_1".to_string()),
@@ -495,17 +482,19 @@ mod test {
             1000,
             Arc::new(ShardedCache::with_capacity(1)),
         ));
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let (compactt_task_sender, _) = mpsc::unbounded_channel();
+        let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
+        let (compactt_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         TseriesFamily::new(
             1,
             Arc::new("ts_family_1".to_string()),
-            MemCache::new(1, 1000, 1),
+            MemCache::new(1, 1000, 1, &memory_pool),
             version,
             opt.cache.clone(),
             opt.storage.clone(),
             flush_task_sender,
             compactt_task_sender,
+            memory_pool,
+            &Arc::new(MetricsRegister::default()),
         )
     }
 
@@ -518,7 +507,7 @@ mod test {
         let opt = create_options(dir.to_string());
 
         #[rustfmt::skip]
-        let levels_sketch: LevelsSketch = vec![
+            let levels_sketch: LevelsSketch = vec![
             // vec![( level, Timestamp_Begin, Timestamp_end, vec![(file_id, Timestamp_Begin, Timestamp_end, size, being_compact)] )]
             (0_u32, 1_i64, 1000_i64, vec![
                 (11_u64, 1_i64, 1000_i64, 1000_u64, false),
@@ -544,8 +533,10 @@ mod test {
             ]), // 0.00001
         ];
 
+        let storage_opt = opt.storage.clone();
         let tsf = create_tseries_family(Arc::new("dba".to_string()), opt, levels_sketch);
-        let compact_req = tsf.pick_compaction().unwrap();
+        let picker = LevelCompactionPicker::new(storage_opt);
+        let compact_req = picker.pick_compaction(tsf.version()).unwrap();
         assert_eq!(compact_req.out_level, 2);
         assert_eq!(compact_req.files.len(), 2);
     }

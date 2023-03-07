@@ -1,39 +1,28 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code, unused_variables)]
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use models::{
-    auth::{
-        privilege::DatabasePrivilege,
-        role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier},
-        user::UserDesc,
-    },
-    meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet},
-    oid::Oid,
-    schema::{
-        DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
-    },
+use models::auth::privilege::DatabasePrivilege;
+use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
+use models::meta_data::{
+    BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
 };
-use models::{limiter::LimiterConfig, meta_data::VnodeInfo};
-use models::{meta_data::VnodeAllInfo, oid::Identifier};
-use tokio::net::TcpStream;
+use models::oid::Oid;
+use models::schema::{
+    DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
+};
+use tonic::transport::Channel;
 
-use crate::{
-    error::{MetaError, MetaResult},
-    meta_admin::AdminMeta,
-    meta_manager::MetaManager,
-    store::command::EntryLog,
-    tenant_manager::TenantManager,
-    MetaClientRef, TenantManagerRef, UserManagerRef,
-};
-use crate::{
-    limiter::{Limiter, LimiterImpl},
-    AdminMetaRef,
-};
-use crate::{meta_client::MetaClient, user_manager::UserManagerMock};
+use crate::error::MetaResult;
+use crate::limiter::RequestLimiter;
+use crate::meta_admin::AdminMeta;
+use crate::meta_client::MetaClient;
+use crate::meta_manager::MetaManager;
+use crate::store::command::EntryLog;
+use crate::tenant_manager::TenantManager;
+use crate::user_manager_mock::UserManagerMock;
+use crate::{AdminMetaRef, MetaClientRef, TenantManagerRef, UserManagerRef};
 
 #[derive(Default, Debug)]
 pub struct MockAdminMeta {}
@@ -54,13 +43,9 @@ impl AdminMeta for MockAdminMeta {
         Ok(NodeInfo::default())
     }
 
-    async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream> {
-        Err(MetaError::CommonError {
-            msg: "mock not implement node conn".to_string(),
-        })
+    async fn get_node_conn(&self, node_id: u64) -> MetaResult<Channel> {
+        todo!()
     }
-
-    fn put_node_conn(&self, node_id: u64, conn: TcpStream) {}
 
     fn heartbeat(&self) {}
 
@@ -122,15 +107,19 @@ impl MetaClient for MockMetaClient {
         Ok(None)
     }
 
-    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
-        Ok(Some(TskvTableSchema::default()))
+    fn get_tskv_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
+        Ok(Some(Arc::new(TskvTableSchema::default())))
     }
 
     fn get_external_table_schema(
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<ExternalTableSchema>> {
+    ) -> MetaResult<Option<Arc<ExternalTableSchema>>> {
         Ok(None)
     }
 
@@ -267,10 +256,6 @@ impl MetaClient for MockMetaClient {
         None
     }
 
-    fn limiter(&self) -> Arc<dyn Limiter> {
-        todo!()
-    }
-
     fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
         todo!()
     }
@@ -283,6 +268,10 @@ pub struct MockMetaManager {}
 impl MetaManager for MockMetaManager {
     fn node_id(&self) -> u64 {
         0
+    }
+
+    async fn use_tenant(&self, val: &str) -> MetaResult<()> {
+        Ok(())
     }
 
     async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
@@ -352,11 +341,7 @@ impl TenantManager for TenantManagerMock {
         todo!()
     }
 
-    async fn tenant_set_limiter(
-        &self,
-        tenant_name: &str,
-        limiter_config: Option<LimiterConfig>,
-    ) -> MetaResult<()> {
+    async fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter> {
         todo!()
     }
 }

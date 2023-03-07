@@ -1,19 +1,11 @@
-use std::{
-    collections::HashMap,
-    io::SeekFrom,
-    marker::PhantomData,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::io::SeekFrom;
+use std::path::{Path, PathBuf};
 
+use trace::{debug, error};
+
+use super::{IndexError, IndexResult};
 use crate::file_system::{file_manager, AsyncFile, FileCursor, IFile};
 use crate::{byte_utils, file_utils};
-use parking_lot::RwLock;
-use snafu::prelude::*;
-
-use trace::{debug, error, info, warn};
-
-use super::{IndexEngine, IndexError, IndexResult};
 
 const SEGMENT_FILE_HEADER_SIZE: usize = 8;
 const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x02];
@@ -244,7 +236,7 @@ impl BinlogReader {
         let mut header_buf = [0_u8; SEGMENT_FILE_HEADER_SIZE];
 
         cursor.seek(SeekFrom::Start(0))?;
-        let read = cursor.read(&mut header_buf[..]).await?;
+        let _read = cursor.read(&mut header_buf[..]).await?;
 
         Ok(header_buf)
     }
@@ -293,7 +285,7 @@ impl BinlogReader {
         }
 
         let buf = &mut self.body_buf.as_mut_slice()[0..data_len as usize];
-        let read_bytes = match self.cursor.read(buf).await {
+        let _read_bytes = match self.cursor.read(buf).await {
             Ok(v) => v,
             Err(e) => {
                 error!("failed read body buf : {:?}", e);

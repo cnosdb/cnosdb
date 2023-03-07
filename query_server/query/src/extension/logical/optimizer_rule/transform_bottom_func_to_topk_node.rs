@@ -1,18 +1,12 @@
 use std::sync::Arc;
 
-use datafusion::{
-    error::DataFusionError,
-    logical_expr::{
-        LogicalPlan, {Projection, Sort},
-    },
-    optimizer::{OptimizerConfig, OptimizerRule},
-    prelude::Expr,
-    scalar::ScalarValue,
-};
+use datafusion::error::{DataFusionError, Result};
+use datafusion::logical_expr::{expr, LogicalPlan, Projection, Sort};
+use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
+use datafusion::prelude::Expr;
+use datafusion::scalar::ScalarValue;
 
-use crate::extension::expr::{expr_utils, selector_function::BOTTOM};
-
-use datafusion::error::Result;
+use crate::extension::expr::{expr_utils, BOTTOM};
 
 const INVALID_EXPRS: &str = "1. There cannot be nested selection functions. 2. There cannot be multiple selection functions.";
 const INVALID_ARGUMENTS: &str =
@@ -22,11 +16,11 @@ pub struct TransformBottomFuncToTopkNodeRule {}
 
 impl OptimizerRule for TransformBottomFuncToTopkNodeRule {
     // Example rewrite pass to insert a user defined LogicalPlanNode
-    fn optimize(
+    fn try_optimize(
         &self,
         plan: &LogicalPlan,
-        optimizer_config: &mut OptimizerConfig,
-    ) -> Result<LogicalPlan> {
+        optimizer_config: &dyn OptimizerConfig,
+    ) -> Result<Option<LogicalPlan>> {
         if let LogicalPlan::Projection(projection) = plan {
             // check exprs and then do transform
             if let (true, Some(bottom_function)) = (
@@ -35,7 +29,11 @@ impl OptimizerRule for TransformBottomFuncToTopkNodeRule {
                 // extract bottom function expr, If it does not exist, return None
                 extract_bottom_function(&projection.expr),
             ) {
-                return self.do_transform(&bottom_function, projection, optimizer_config);
+                return Ok(Some(self.do_transform(
+                    &bottom_function,
+                    projection,
+                    optimizer_config,
+                )?));
             };
         }
 
@@ -54,41 +52,43 @@ impl TransformBottomFuncToTopkNodeRule {
         &self,
         bottom_function: &Expr,
         projection: &Projection,
-        optimizer_config: &mut OptimizerConfig,
+        optimizer_config: &dyn OptimizerConfig,
     ) -> Result<LogicalPlan> {
         let Projection {
             expr,
             input,
             schema,
-            alias,
+            ..
         } = projection;
 
         let (field, k) = extract_args(bottom_function)?;
 
-        let sort_expr = Expr::Sort {
+        let sort_expr = Expr::Sort(expr::Sort {
             /// The expression to sort on
             expr: Box::new(field.clone()),
             /// The direction of the sort
             asc: true,
             /// Whether to put Nulls before all other data values
             nulls_first: false,
-        };
+        });
 
         let topk_node = LogicalPlan::Sort(Sort {
             expr: vec![sort_expr],
-            input: Arc::new(self.optimize(input.as_ref(), optimizer_config)?),
+            input: self
+                .try_optimize(input.as_ref(), optimizer_config)?
+                .map(Arc::new)
+                .unwrap_or_else(|| input.clone()),
             fetch: Some(k),
         });
 
         // 2. construct a new projection node
         // * replace bottom func expression with inner column expr
         // * not construct the new set of required columns
-        let new_projection = LogicalPlan::Projection(Projection {
-            expr: expr_utils::replace_expr_with(expr, bottom_function, &field),
-            input: Arc::new(topk_node),
-            schema: schema.clone(),
-            alias: alias.clone(),
-        });
+        let new_projection = LogicalPlan::Projection(Projection::try_new_with_schema(
+            expr_utils::replace_expr_with(expr, bottom_function, &field),
+            Arc::new(topk_node),
+            schema.clone(),
+        )?);
 
         // 3. Assemble the new execution plan return
         Ok(new_projection)

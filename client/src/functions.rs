@@ -1,11 +1,12 @@
 //! Functions that are query-able and searchable via the `\h` command
+use std::fmt;
+use std::str::FromStr;
+use std::sync::Arc;
+
 use datafusion::arrow::array::StringArray;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::util::pretty::pretty_format_batches;
-use std::fmt;
-use std::str::FromStr;
-use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum Function {

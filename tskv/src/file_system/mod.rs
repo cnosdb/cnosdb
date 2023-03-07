@@ -5,7 +5,7 @@
 
 mod file;
 pub mod file_manager;
+pub mod queue;
 
-pub use file::async_file::AsyncFile;
-pub use file::async_file::IFile;
+pub use file::async_file::{AsyncFile, IFile};
 pub use file::cursor::FileCursor;

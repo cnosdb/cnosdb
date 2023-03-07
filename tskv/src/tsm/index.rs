@@ -1,16 +1,14 @@
-use std::{cmp, fmt::Display, io::SeekFrom, sync::Arc};
+use std::cmp;
+use std::fmt::Display;
+use std::sync::Arc;
 
 use models::{FieldId, Timestamp, ValueType};
 use utils::BloomFilter;
 
-use crate::{
-    byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
-    error::{Error, Result},
-    tseries_family::TimeRange,
-    tsm::{
-        BlockMetaIterator, WriteTsmError, WriteTsmResult, BLOCK_META_SIZE, FOOTER_SIZE,
-        INDEX_META_SIZE,
-    },
+use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64};
+use crate::tseries_family::TimeRange;
+use crate::tsm::{
+    BlockMetaIterator, WriteTsmError, WriteTsmResult, BLOCK_META_SIZE, INDEX_META_SIZE,
 };
 
 #[derive(Debug, Clone)]
@@ -116,8 +114,7 @@ impl IndexMeta {
         if self.block_count == 0 {
             return (Timestamp::MIN, Timestamp::MIN);
         }
-        let first_blk_beg =
-            self.index_ref.field_id_offs()[self.index_idx].1 as usize + INDEX_META_SIZE;
+        let first_blk_beg = self.index_ref.field_id_offs()[self.index_idx].1 + INDEX_META_SIZE;
         let min_ts = decode_be_i64(&self.index_ref.data[first_blk_beg..first_blk_beg + 8]);
         let last_blk_beg = first_blk_beg + BLOCK_META_SIZE * (self.block_count as usize - 1);
         let max_ts = decode_be_i64(&self.index_ref.data[last_blk_beg + 8..last_blk_beg + 16]);
@@ -212,6 +209,11 @@ impl BlockMeta {
     #[inline(always)]
     pub fn max_ts(&self) -> Timestamp {
         self.max_ts
+    }
+
+    #[inline(always)]
+    pub fn time_range(&self) -> TimeRange {
+        (self.min_ts, self.max_ts).into()
     }
 
     #[inline(always)]

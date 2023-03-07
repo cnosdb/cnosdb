@@ -11,6 +11,8 @@ trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
 tskv = { path = "../tskv" }
 meta = { path = "../meta" }
+metrics = { path = "../common/metrics" }
+line_protocol = { path = "../common/line_protocol"}
 
 walkdir = { workspace = true }
 datafusion = { workspace = true }
@@ -30,3 +32,6 @@ tokio-util = { version = "0.7.0" }
 parking_lot = "0.12"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 rust-crypto = "0.2.36"
+tower = "0.4.13"
+tonic = { workspace = true }
+chrono = { workspace = true }

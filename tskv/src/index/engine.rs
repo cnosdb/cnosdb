@@ -1,19 +1,13 @@
-use std::cmp::Ordering;
-use std::default;
 use std::fs;
-use std::io;
-use std::ops::Range;
 use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use radixdb;
 use radixdb::store;
 use radixdb::store::BlobStore;
 use trace::debug;
 
-use super::IndexError;
-use super::IndexResult;
+use super::{IndexError, IndexResult};
 
 #[derive(Debug)]
 pub struct IndexEngine {
@@ -139,7 +133,7 @@ impl IndexEngine {
     }
 
     pub fn flush(&mut self) -> IndexResult<()> {
-        let id = self
+        let _id = self
             .db
             .try_reattach()
             .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
@@ -274,9 +268,10 @@ impl Iterator for RangeKeyValIter {
 }
 
 mod test {
+    use std::sync::atomic::AtomicU64;
+    use std::sync::{self, Arc};
+
     use models::utils::now_timestamp;
-    use parking_lot::RwLock;
-    use std::sync::{self, atomic::AtomicU64, Arc};
     use tokio::time::{self, Duration};
 
     use super::IndexEngine;
@@ -347,7 +342,7 @@ mod test {
     }
 
     fn random_read(engine: Arc<IndexEngine>, count: Arc<AtomicU64>) {
-        for i in 1..10000000 {
+        for _i in 1..10000000 {
             let random: i32 = rand::Rng::gen_range(&mut rand::thread_rng(), 1..=10000000);
 
             let key = format!("key012345678901234567890123456789_{}", random);

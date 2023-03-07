@@ -1,22 +1,22 @@
 #[cfg(test)]
 mod tests {
-
-    use meta::meta_manager::RemoteMetaManager;
-    use meta::MetaRef;
-    use serial_test::serial;
     use std::path::Path;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
-    use tokio::runtime;
-    use tokio::runtime::Runtime;
-    use tskv::engine::Engine;
 
     use config::get_config;
+    use datafusion::execution::memory_pool::GreedyMemoryPool;
+    use meta::meta_manager::RemoteMetaManager;
+    use meta::MetaRef;
+    use metrics::metric_register::MetricsRegister;
     use models::schema::TenantOptions;
-
     use protos::kv_service::Meta;
     use protos::{kv_service, models_helper};
+    use serial_test::serial;
+    use tokio::runtime;
+    use tokio::runtime::Runtime;
     use trace::{debug, error, info, init_default_global_tracing, warn};
+    use tskv::engine::Engine;
     use tskv::file_system::file_manager;
     use tskv::{kv_option, TsKv};
 
@@ -28,6 +28,7 @@ mod tests {
         global_config.cache.max_buffer_size = 128;
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
+        let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let meta_manager: MetaRef = rt.block_on(RemoteMetaManager::new(global_config.cluster));
         rt.block_on(meta_manager.admin_meta().add_data_node())
             .unwrap();
@@ -39,7 +40,15 @@ mod tests {
         rt.block_on(async {
             (
                 rt.clone(),
-                TsKv::open(meta_manager, opt, rt.clone()).await.unwrap(),
+                TsKv::open(
+                    meta_manager,
+                    opt,
+                    rt.clone(),
+                    memory,
+                    Arc::new(MetricsRegister::default()),
+                )
+                .await
+                .unwrap(),
             )
         })
     }
@@ -63,7 +72,7 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
+        let request = kv_service::WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: "cnosdb".to_string(),
@@ -89,7 +98,7 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 2000);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
+        let request = kv_service::WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: "cnosdb".to_string(),
@@ -132,7 +141,7 @@ mod tests {
             fbb.finish(points, None);
             let points = fbb.finished_data().to_vec();
 
-            let request = kv_service::WritePointsRpcRequest {
+            let request = kv_service::WritePointsRequest {
                 version: 1,
                 meta: Some(Meta {
                     tenant: "cnosdb".to_string(),
@@ -157,7 +166,7 @@ mod tests {
         let points = models_helper::create_random_points_include_delta(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
+        let request = kv_service::WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: "cnosdb".to_string(),
@@ -211,7 +220,7 @@ mod tests {
         let points = models_helper::create_random_points_include_delta(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
+        let request = kv_service::WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: "cnosdb".to_string(),
@@ -269,6 +278,7 @@ mod tests {
             async_func2().await;
         }
     }
+
     #[tokio::test]
     async fn compare() {
         let start = Instant::now();

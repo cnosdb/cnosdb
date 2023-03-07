@@ -1,32 +1,23 @@
-use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
-};
+use std::collections::HashMap;
+use std::sync::Arc;
 
+use memory_pool::MemoryPoolRef;
 use meta::MetaRef;
+use metrics::metric_register::MetricsRegister;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
-use parking_lot::RwLock as SyncRwLock;
 use snafu::ResultExt;
-use tokio::{
-    runtime::Runtime,
-    sync::{mpsc::UnboundedSender, oneshot, watch::Receiver, RwLock},
-};
-
-use trace::error;
+use tokio::runtime::Runtime;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::RwLock;
 use utils::BloomFilter;
 
-use crate::{
-    compaction::FlushReq,
-    context::GlobalSequenceContext,
-    database::Database,
-    error::MetaSnafu,
-    error::Result,
-    kv_option::StorageOptions,
-    memcache::MemCache,
-    summary::{VersionEdit, WriteSummaryRequest},
-    tseries_family::{LevelInfo, TseriesFamily, Version},
-    ColumnFileId, Options, TseriesFamilyId,
-};
+use crate::compaction::{CompactTask, FlushReq};
+use crate::context::GlobalSequenceContext;
+use crate::database::Database;
+use crate::error::{MetaSnafu, Result};
+use crate::summary::VersionEdit;
+use crate::tseries_family::{TseriesFamily, Version};
+use crate::{ColumnFileId, Options, TseriesFamilyId};
 
 #[derive(Debug)]
 pub struct VersionSet {
@@ -34,27 +25,39 @@ pub struct VersionSet {
     /// Maps DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
     runtime: Arc<Runtime>,
+    memory_pool: MemoryPoolRef,
+    metrics_register: Arc<MetricsRegister>,
 }
 
 impl VersionSet {
-    pub fn empty(opt: Arc<Options>, runtime: Arc<Runtime>) -> Self {
+    pub fn empty(
+        opt: Arc<Options>,
+        runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
+        metrics_register: Arc<MetricsRegister>,
+    ) -> Self {
         Self {
             opt,
             dbs: HashMap::new(),
             runtime,
+            memory_pool,
+            metrics_register,
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         meta: MetaRef,
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
-        flush_task_sender: UnboundedSender<FlushReq>,
-        compact_task_sender: UnboundedSender<TseriesFamilyId>,
+        flush_task_sender: Sender<FlushReq>,
+        compact_task_sender: Sender<CompactTask>,
+        metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
-        for (id, ver) in ver_set {
+        for (_id, ver) in ver_set {
             let owner = ver.database().to_string();
             let (tenant, database) = split_owner(&owner);
 
@@ -65,8 +68,17 @@ impl VersionSet {
                     Some(schema) => schema,
                 },
             };
+
             let db: &mut Arc<RwLock<Database>> = dbs.entry(owner).or_insert(Arc::new(RwLock::new(
-                Database::new(schema, opt.clone(), runtime.clone(), meta.clone()).await?,
+                Database::new(
+                    schema,
+                    opt.clone(),
+                    runtime.clone(),
+                    meta.clone(),
+                    memory_pool.clone(),
+                    metrics_register.clone(),
+                )
+                .await?,
             )));
 
             let tf_id = ver.tf_id();
@@ -78,7 +90,13 @@ impl VersionSet {
             db.write().await.get_ts_index_or_add(tf_id).await?;
         }
 
-        Ok(Self { dbs, opt, runtime })
+        Ok(Self {
+            dbs,
+            opt,
+            runtime,
+            memory_pool,
+            metrics_register,
+        })
     }
 
     pub fn options(&self) -> Arc<Options> {
@@ -89,12 +107,25 @@ impl VersionSet {
         &mut self,
         schema: DatabaseSchema,
         meta: MetaRef,
+        memory_pool: MemoryPoolRef,
     ) -> Result<Arc<RwLock<Database>>> {
+        let sub_register = self.metrics_register.sub_register([
+            ("tenant", schema.tenant_name()),
+            ("database", schema.database_name()),
+        ]);
         let db = self
             .dbs
             .entry(schema.owner())
             .or_insert(Arc::new(RwLock::new(
-                Database::new(schema, self.opt.clone(), self.runtime.clone(), meta.clone()).await?,
+                Database::new(
+                    schema,
+                    self.opt.clone(),
+                    self.runtime.clone(),
+                    meta.clone(),
+                    memory_pool,
+                    sub_register,
+                )
+                .await?,
             )))
             .clone();
         Ok(db)
@@ -145,10 +176,7 @@ impl VersionSet {
         size
     }
 
-    pub async fn get_tsfamily_by_tf_id(
-        &self,
-        tf_id: u32,
-    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
+    pub async fn get_tsfamily_by_tf_id(&self, tf_id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
         for db in self.dbs.values() {
             if let Some(v) = db.read().await.get_tsfamily(tf_id) {
                 return Some(v);
@@ -163,7 +191,7 @@ impl VersionSet {
         tenant: &str,
         database: &str,
         tf_id: u32,
-    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
+    ) -> Option<Arc<RwLock<TseriesFamily>>> {
         let owner = make_owner(tenant, database);
         if let Some(db) = self.dbs.get(&owner) {
             return db.read().await.get_tsfamily(tf_id);
@@ -177,7 +205,7 @@ impl VersionSet {
         &self,
         tenant: &str,
         database: &str,
-    ) -> Option<Arc<SyncRwLock<TseriesFamily>>> {
+    ) -> Option<Arc<RwLock<TseriesFamily>>> {
         let owner = make_owner(tenant, database);
         if let Some(db) = self.dbs.get(&owner) {
             return db.read().await.get_tsfamily_random();
@@ -197,10 +225,11 @@ impl VersionSet {
     ) -> (Vec<VersionEdit>, HashMap<ColumnFileId, Arc<BloomFilter>>) {
         let mut version_edits = vec![];
         let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
-        for (name, db) in self.dbs.iter() {
+        for (_name, db) in self.dbs.iter() {
             db.read()
                 .await
-                .snapshot(last_seq, None, &mut version_edits, &mut file_metas);
+                .snapshot(last_seq, None, &mut version_edits, &mut file_metas)
+                .await;
         }
         (version_edits, file_metas)
     }
@@ -214,7 +243,7 @@ impl VersionSet {
         let mut tsf_seq_map: HashMap<TseriesFamilyId, u64> = HashMap::new();
         for (_, database) in self.dbs.iter() {
             for (tsf_id, tsf) in database.read().await.ts_families().iter() {
-                let tsf = tsf.read();
+                let tsf = tsf.read().await;
                 min_seq = min_seq.min(tsf.seq_no());
                 tsf_seq_map.insert(*tsf_id, tsf.seq_no());
             }

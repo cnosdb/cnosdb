@@ -2,8 +2,9 @@ pub mod basic_call_header_authenticator;
 pub mod generated_bearer_token_authenticator;
 
 use async_trait::async_trait;
-use models::auth::user::{User, UserInfo};
-use tonic::{metadata::MetadataMap, service::Interceptor, Status};
+use models::auth::user::User;
+use tonic::metadata::MetadataMap;
+use tonic::Status;
 
 /// Interface for Server side authentication handlers.
 #[async_trait]
@@ -35,7 +36,7 @@ impl AuthResult for CommonAuthResult {
         self.user.clone()
     }
 
-    fn append_to_outgoing_headers(&self, resp_headers: &mut MetadataMap) -> Result<(), Status> {
+    fn append_to_outgoing_headers(&self, _resp_headers: &mut MetadataMap) -> Result<(), Status> {
         Ok(())
     }
 }

@@ -11,34 +11,17 @@
 //! +------------+---------------+---------------+
 //! ```
 
-use std::{
-    collections::HashMap,
-    fmt::write,
-    io::IoSlice,
-    path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
-use bytes::buf;
-use datafusion::parquet::record;
-use models::{FieldId, SeriesId, Timestamp, ValueType};
-use parking_lot::{Mutex, RwLock};
-use snafu::ResultExt;
+use models::FieldId;
 use trace::error;
 
-use crate::{
-    byte_utils, error,
-    file_system::{file_manager, AsyncFile, FileCursor, IFile},
-    file_utils,
-    record_file::{self, RecordDataType, RecordDataVersion},
-    tseries_family::TimeRange,
-    Error, Result,
-};
-
 use super::DataBlock;
+use crate::file_system::file_manager;
+use crate::record_file::{self, RecordDataType, RecordDataVersion};
+use crate::tseries_family::TimeRange;
+use crate::{byte_utils, file_utils, Error, Result};
 
 const TOMBSTONE_FILE_SUFFIX: &str = ".tombstone";
 const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'r', b'o', b'm', b'b']);
@@ -223,15 +206,11 @@ impl TsmTombstone {
 
 #[cfg(test)]
 mod test {
-    use std::{
-        path::{Path, PathBuf},
-        str::FromStr,
-        sync::Arc,
-    };
+    use std::path::PathBuf;
 
     use super::TsmTombstone;
     use crate::file_system::file_manager;
-    use crate::{byte_utils, file_utils, tseries_family::TimeRange};
+    use crate::tseries_family::TimeRange;
 
     #[tokio::test]
     async fn test_write_read_1() {

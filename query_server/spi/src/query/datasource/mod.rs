@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use object_store::{
-    aws::AmazonS3Builder, azure::MicrosoftAzureBuilder, gcp::GoogleCloudStorageBuilder, path::Path,
-    ObjectStore,
-};
+use object_store::aws::AmazonS3Builder;
+use object_store::azure::MicrosoftAzureBuilder;
+use object_store::gcp::GoogleCloudStorageBuilder;
+use object_store::path::Path;
+use object_store::ObjectStore;
 
 use super::logical_planner::ConnectionOptions;
 

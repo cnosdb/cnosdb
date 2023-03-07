@@ -78,6 +78,6 @@ f1,time,t0,t1,t2,f0,f1
 -- EXECUTE SQL: select topk(time, 2), topk(t0, 3) from m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'transform_bottom_func_to_topk_node' failed due to unexpected error: Error during planning: 1. There cannot be nested selection functions. 2. There cannot be multiple selection functions., found: [\n    TOPK(m2.time, Int64(2)),\n    TOPK(m2.t0, Int64(3)),\n]. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: transform_bottom_func_to_topk_node\ncaused by\nInternal error: Optimizer rule 'transform_bottom_func_to_topk_node' failed due to unexpected error: Error during planning: 1. There cannot be nested selection functions. 2. There cannot be multiple selection functions., found: [\n    TOPK(m2.time, Int64(2)),\n    TOPK(m2.t0, Int64(3)),\n]. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 

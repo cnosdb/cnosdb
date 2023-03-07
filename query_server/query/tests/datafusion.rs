@@ -1,26 +1,25 @@
-use std::{result, sync::Arc, time::Duration};
+use std::result;
+use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
-use datafusion::{
-    arrow::{
-        array::{ArrayRef, Float32Array, Int32Array, StringArray},
-        datatypes::{DataType, Field, Schema, SchemaRef},
-        error::ArrowError,
-        record_batch::RecordBatch,
-    },
-    common::{DFSchemaRef, DataFusionError, ToDFSchema},
-    datasource::{self, TableProvider},
-    execution::context::{SessionState, TaskContext},
-    logical_expr::TableType,
-    logical_expr::{LogicalPlan, LogicalPlanBuilder, UserDefinedLogicalNode},
-    physical_expr::{planner, PhysicalSortExpr},
-    physical_plan::{
-        filter::FilterExec, ExecutionPlan, Partitioning, RecordBatchStream,
-        SendableRecordBatchStream, Statistics,
-    },
-    prelude::*,
-    scalar::ScalarValue,
+use datafusion::arrow::array::{ArrayRef, Float32Array, Int32Array, StringArray};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::common::{DFSchemaRef, DataFusionError, ToDFSchema};
+use datafusion::datasource::{self, TableProvider};
+use datafusion::execution::context::{SessionState, TaskContext};
+use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::{
+    LogicalPlan, LogicalPlanBuilder, TableType, UserDefinedLogicalNode,
 };
+use datafusion::physical_expr::{planner, PhysicalSortExpr};
+use datafusion::physical_plan::filter::FilterExec;
+use datafusion::physical_plan::{
+    ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream, Statistics,
+};
+use datafusion::prelude::*;
+use datafusion::scalar::ScalarValue;
 use futures::Stream;
 use tokio::time;
 
@@ -98,8 +97,9 @@ impl TableProvider for Table {
     async fn scan(
         &self,
         ctx: &SessionState,
-        _projection: &Option<Vec<usize>>,
+        _projection: Option<&Vec<usize>>,
         filters: &[Expr],
+        _: Option<&AggWithGrouping>,
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let table_scan_exec = TableScanExec {
@@ -114,7 +114,7 @@ impl TableProvider for Table {
                 &filters[0],
                 df_schema.as_ref(),
                 schema.as_ref(),
-                &ctx.execution_props,
+                ctx.execution_props(),
             )?;
             let filter = FilterExec::try_new(predicate, Arc::new(table_scan_exec))?;
             Ok(Arc::new(filter))
@@ -140,10 +140,8 @@ impl TableScanStream {
     }
 }
 
-type ArrowResult<T> = result::Result<T, ArrowError>;
-
 impl Stream for TableScanStream {
-    type Item = ArrowResult<RecordBatch>;
+    type Item = Result<RecordBatch>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -371,7 +369,7 @@ async fn test_dataframe() {
     .build()
     .unwrap();
 
-    let dataframe = DataFrame::new(ctx.state, &logical_plan);
+    let dataframe = DataFrame::new(ctx.state(), logical_plan);
     // .select_columns(&["fa", "fb"])
     // .unwrap();
 

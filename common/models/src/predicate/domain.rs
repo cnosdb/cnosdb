@@ -1,24 +1,22 @@
-use std::{
-    cmp::{self, Ordering},
-    collections::{BTreeMap, HashMap, HashSet},
-    hash::Hash,
-    io::{BufReader, Read},
-    ops::RangeBounds,
-    sync::Arc,
-};
+use std::cmp::{self, Ordering};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash::Hash;
+use std::io::{BufReader, Read};
+use std::ops::RangeBounds;
+use std::sync::Arc;
 
-use crate::schema::TskvTableSchema;
-use crate::{Error, Result};
 use arrow_schema::{Schema, SchemaRef};
-use datafusion::{
-    arrow::datatypes::DataType, logical_expr::Expr, optimizer::utils::conjunction, prelude::Column,
-    scalar::ScalarValue,
-};
-
+use datafusion::arrow::datatypes::DataType;
+use datafusion::logical_expr::Expr;
+use datafusion::optimizer::utils::conjunction;
+use datafusion::prelude::Column;
+use datafusion::scalar::ScalarValue;
 use datafusion_proto::bytes::Serializeable;
 use serde::{Deserialize, Serialize};
 
 use super::transformation::RowExpressionToDomainsVisitor;
+use crate::schema::TskvTableSchema;
+use crate::{Error, Result};
 
 pub type PredicateRef = Arc<Predicate>;
 
@@ -979,6 +977,25 @@ pub struct QueryArgs {
     pub batch_size: usize,
 }
 
+impl QueryArgs {
+    pub fn encode(args: &QueryArgs) -> Result<Vec<u8>> {
+        let d = bincode::serialize(args).map_err(|err| Error::InvalidSerdeMessage {
+            err: err.to_string(),
+        })?;
+
+        Ok(d)
+    }
+
+    pub fn decode(buf: &[u8]) -> Result<QueryArgs> {
+        let args =
+            bincode::deserialize::<QueryArgs>(buf).map_err(|err| Error::InvalidSerdeMessage {
+                err: err.to_string(),
+            })?;
+
+        Ok(args)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct QueryExpr {
     pub filters: Vec<Expr>,
@@ -1021,7 +1038,7 @@ impl QueryExpr {
         Ok(buffer)
     }
 
-    pub fn decode(buf: Vec<u8>) -> Result<QueryExpr> {
+    pub fn decode(buf: &[u8]) -> Result<QueryExpr> {
         let decode_data_len_val = |reader: &mut BufReader<&[u8]>| -> Result<Vec<u8>> {
             let mut len_buf: [u8; 4] = [0; 4];
             reader.read_exact(&mut len_buf)?;
@@ -1033,7 +1050,7 @@ impl QueryExpr {
             Ok(data_buf)
         };
 
-        let mut buffer = BufReader::new(&*buf);
+        let mut buffer = BufReader::new(buf);
 
         let mut count_buf: [u8; 4] = [0; 4];
         buffer.read_exact(&mut count_buf)?;
@@ -1076,14 +1093,20 @@ impl QueryExpr {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PushedAggregateFunction {
+    Count(String),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_shchema_encode_decode() {
-        use arrow_schema::*;
         use std::collections::HashMap;
+
+        use arrow_schema::*;
 
         let field_a = Field::new("a", DataType::Int64, false);
         let field_b = Field::new("b", DataType::Boolean, false);

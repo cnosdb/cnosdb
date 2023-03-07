@@ -32,7 +32,7 @@ pub struct UserInfo {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct NodeInfo {
     pub id: NodeId,
-    pub tcp_addr: String,
+    pub grpc_addr: String,
     pub http_addr: String,
     pub status: u64,
 }
@@ -163,10 +163,17 @@ impl TenantMetaData {
 pub fn get_time_range(ts: i64, duration: i64) -> (i64, i64) {
     if duration <= 0 {
         (std::i64::MIN, std::i64::MAX)
-    } else {
+    } else if ts >= 0 {
+        let floor = ts / duration;
         (
-            (ts / duration) * duration,
-            (ts / duration) * duration + duration,
+            floor * duration,
+            (floor * duration).saturating_add(duration),
+        )
+    } else {
+        let floor = (ts + 1) / duration;
+        (
+            (floor * duration).saturating_sub(duration),
+            floor * duration,
         )
     }
 }

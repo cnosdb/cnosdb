@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use datafusion::arrow::array::{ArrayRef, PrimitiveArray, StringArray};
 use datafusion::arrow::datatypes::{
     DataType, Float16Type, Float32Type, Float64Type, SchemaRef, TimeUnit, TimestampMicrosecondType,
@@ -6,9 +8,7 @@ use datafusion::arrow::datatypes::{
 use datafusion::arrow::record_batch::RecordBatch;
 use models::schema::TIME_FIELD_NAME;
 use protos::prompb::types::{Label, Sample, TimeSeries};
-use spi::QueryError;
-use spi::Result;
-use std::collections::HashMap;
+use spi::{QueryError, Result};
 use trace::debug;
 
 use crate::prom::METRIC_SAMPLE_COLUMN_NAME;

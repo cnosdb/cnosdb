@@ -1,8 +1,9 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use datafusion::execution::FunctionRegistry;
-use datafusion::logical_expr::AggregateUDF;
-use datafusion::{logical_expr::ScalarUDF, prelude::SessionContext};
+use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
+use datafusion::prelude::SessionContext;
 use spi::query::function::*;
 use spi::{QueryError, Result};
 
@@ -47,12 +48,7 @@ impl<'a> FunctionMetadataManager for DFSessionContextFuncAdapter<'a> {
             .map_err(|e| QueryError::Datafusion { source: e })
     }
 
-    fn udfs(&self) -> Vec<Arc<ScalarUDF>> {
-        self.ctx
-            .state()
-            .scalar_functions
-            .values()
-            .cloned()
-            .collect()
+    fn udfs(&self) -> HashSet<String> {
+        self.ctx.udfs()
     }
 }

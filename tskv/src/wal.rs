@@ -20,42 +20,33 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
-use datafusion::parquet::data_type::AsBytes;
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    string::String,
-    sync::Arc,
-};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::string::String;
+use std::sync::Arc;
 
-use models::{
-    auth::user::{ROOT, ROOT_PWD},
-    codec::Encoding,
-};
-use protos::kv_service::{Meta, WritePointsRpcRequest};
+use models::codec::Encoding;
+use protos::kv_service::{Meta, WritePointsRequest};
 use snafu::ResultExt;
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::oneshot;
 use trace::{debug, error, info, warn};
 
-use crate::{
-    byte_utils::{decode_be_u32, decode_be_u64},
-    context::{GlobalContext, GlobalSequenceContext},
-    engine,
-    error::{self, Error, Result},
-    file_system::file_manager::{self, FileManager},
-    file_utils,
-    kv_option::WalOptions,
-    record_file::{self, Record, RecordDataType, RecordDataVersion},
-    tsm::{codec::get_str_codec, DecodeSnafu, EncodeSnafu},
-    version_set::VersionSet,
-    TseriesFamilyId,
-};
+use crate::byte_utils::{decode_be_f64, decode_be_i64, decode_be_u32, decode_be_u64};
+use crate::context::{GlobalContext, GlobalSequenceContext};
+use crate::error::{Error, Result};
+use crate::file_system::file_manager::{self};
+use crate::kv_option::WalOptions;
+use crate::record_file::{self, RecordDataType, RecordDataVersion};
+use crate::tsm::codec::get_str_codec;
+use crate::tsm::DecodeSnafu;
+use crate::{engine, file_utils, TseriesFamilyId};
 
 const ENTRY_TYPE_LEN: usize = 1;
 const ENTRY_SEQUENCE_LEN: usize = 8;
 const ENTRY_VNODE_LEN: usize = 4;
 const ENTRY_TENANT_LEN: usize = 8;
-const ENTRY_HEADER_LEN: usize = 21; // 1 + 8 + 4 + 8
+const ENTRY_HEADER_LEN: usize = 21;
+// 1 + 8 + 4 + 8
 const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'w', b'a', b'l', b'o']);
 const FOOTER_MAGIC_NUMBER_LEN: usize = 4;
 
@@ -199,7 +190,7 @@ impl WalWriter {
         id: TseriesFamilyId,
         tenant: Arc<Vec<u8>>,
     ) -> Result<(u64, usize)> {
-        let mut seq = self.max_sequence;
+        let seq = self.max_sequence;
         let tenant_len = tenant.len() as u64;
 
         let written_size = self
@@ -218,7 +209,6 @@ impl WalWriter {
                 .as_slice(),
             )
             .await?;
-        seq += 1;
 
         if self.config.sync {
             self.inner.sync().await?;
@@ -229,7 +219,15 @@ impl WalWriter {
         Ok((seq, written_size))
     }
 
+    pub async fn sync(&self) -> Result<()> {
+        self.inner.sync().await
+    }
+
     pub async fn close(mut self) -> Result<()> {
+        info!(
+            "Closing wal with sequence: [{}, {})",
+            self.min_sequence, self.max_sequence
+        );
         let footer = build_footer(self.min_sequence, self.max_sequence);
         self.inner.write_footer(footer).await?;
         self.inner.close().await
@@ -384,7 +382,7 @@ impl WalManager {
         let wal_files = file_manager::list_file_names(&self.current_dir);
         // TODO: Parallel get min_sequence at first.
         for file_name in wal_files {
-            let id = file_utils::get_wal_file_id(&file_name)?;
+            let _id = file_utils::get_wal_file_id(&file_name)?;
             let path = self.current_dir.join(file_name);
             if !file_manager::try_exists(&path) {
                 continue;
@@ -425,7 +423,7 @@ impl WalManager {
                             let id = e.vnode_id();
                             let tenant =
                                 unsafe { String::from_utf8_unchecked(e.tenant().to_vec()) };
-                            let req = WritePointsRpcRequest {
+                            let req = WritePointsRequest {
                                 version: 1,
                                 meta: Some(Meta {
                                     tenant,
@@ -460,8 +458,16 @@ impl WalManager {
         Ok(seq_gt_min_seq)
     }
 
+    pub async fn sync(&self) -> Result<()> {
+        self.current_file.sync().await
+    }
+
     pub async fn close(self) -> Result<()> {
         self.current_file.close().await
+    }
+
+    pub fn sync_interval(&self) -> std::time::Duration {
+        self.config.sync_interval
     }
 }
 
@@ -541,45 +547,160 @@ impl WalReader {
     }
 }
 
+pub async fn print_wal_statistics(path: impl AsRef<Path>) {
+    use protos::models as fb_models;
+
+    let mut reader = WalReader::open(path).await.unwrap();
+    let decoder = get_str_codec(Encoding::Zstd);
+    let mut i = 0_usize;
+    loop {
+        match reader.next_wal_entry().await {
+            Ok(Some(entry)) => {
+                i += 1;
+                println!("============================================================");
+                let ety_data = entry.data();
+                let mut data_buf = Vec::new();
+                decoder.decode(ety_data, &mut data_buf).unwrap();
+                match flatbuffers::root::<fb_models::Points>(&data_buf[0]) {
+                    Ok(points) => {
+                        if let Some(db) = points.db() {
+                            let database = String::from_utf8(db.bytes().into()).unwrap();
+                            println!("{} - Database: {}", i, database);
+                        }
+                        if let Some(points) = points.points() {
+                            for p in points {
+                                println!(
+                                    "------------------------------------------------------------"
+                                );
+                                println!("    Timestamp: {}", p.timestamp());
+                                let database = p
+                                    .db()
+                                    .map(|d| String::from_utf8(d.bytes().into()).unwrap())
+                                    .unwrap_or_default();
+                                println!("    Database: {}", database);
+                                let table = p
+                                    .tab()
+                                    .map(|t| String::from_utf8(t.bytes().into()).unwrap())
+                                    .unwrap();
+                                println!("    Table: {}", table);
+                                println!("    Tags:");
+                                if let Some(tags) = p.tags() {
+                                    for t in tags {
+                                        let key = t
+                                            .key()
+                                            .map(|k| String::from_utf8(k.bytes().into()).unwrap())
+                                            .unwrap();
+                                        let value = t
+                                            .value()
+                                            .map(|v| String::from_utf8(v.bytes().into()).unwrap())
+                                            .unwrap();
+                                        println!("    - '{}' : '{}'", key, value);
+                                    }
+                                }
+                                println!("    Fields:");
+                                if let Some(fields) = p.fields() {
+                                    for f in fields {
+                                        let name = f
+                                            .name()
+                                            .map(|n| String::from_utf8(n.bytes().into()).unwrap())
+                                            .unwrap();
+                                        let typ = f.type_();
+                                        let value = f.value();
+                                        let value = match typ {
+                                            fb_models::FieldType::Float => {
+                                                let v = value
+                                                    .map(|v| decode_be_f64(v.bytes()))
+                                                    .unwrap();
+                                                format!("{}", v)
+                                            }
+                                            fb_models::FieldType::Integer => {
+                                                let v = value
+                                                    .map(|v| decode_be_i64(v.bytes()))
+                                                    .unwrap();
+                                                format!("{}", v)
+                                            }
+                                            fb_models::FieldType::Unsigned => {
+                                                let v = value
+                                                    .map(|v| decode_be_u64(v.bytes()))
+                                                    .unwrap();
+                                                format!("{}", v)
+                                            }
+                                            fb_models::FieldType::Boolean => {
+                                                let v = value
+                                                    .map(|v| v.bytes().first().unwrap())
+                                                    .map(|b| *b != 0)
+                                                    .unwrap();
+                                                format!("{}", v)
+                                            }
+                                            fb_models::FieldType::String => value
+                                                .map(|v| {
+                                                    String::from_utf8(v.bytes().into()).unwrap()
+                                                })
+                                                .unwrap(),
+                                            _ => "Unknown Others Value".to_string(),
+                                        };
+                                        println!(
+                                            "    - '{}' ({}) : '{}'",
+                                            name,
+                                            typ.variant_name().unwrap_or("Unknown Others Type"),
+                                            value
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => panic!("unexpected data: '{:?}'", e),
+                }
+            }
+            Ok(None) => {
+                println!("============================================================");
+                break;
+            }
+            Err(Error::WalTruncated) => {
+                println!("============================================================");
+                println!("WAL file truncated");
+                break;
+            }
+            Err(e) => {
+                panic!("Failed to read wal file: {:?}", e);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use core::panic;
+    use std::collections::HashMap;
     use std::path::Path;
-    use std::time::Duration;
-    use std::{borrow::BorrowMut, path::PathBuf, sync::Arc};
-
-    use chrono::Utc;
-    use datafusion::parquet::data_type::AsBytes;
-    use flatbuffers::{self, Vector, WIPOffset};
-    use lazy_static::lazy_static;
-    use meta::meta_manager::RemoteMetaManager;
-    use meta::MetaRef;
-    use serial_test::serial;
-    use tokio::runtime;
-    use tokio::sync::RwLock;
-    use tokio::time::sleep;
+    use std::sync::Arc;
 
     use config::get_config;
-
+    use datafusion::execution::memory_pool::GreedyMemoryPool;
+    use flatbuffers::{self};
+    use meta::meta_manager::RemoteMetaManager;
+    use meta::MetaRef;
+    use metrics::metric_register::MetricsRegister;
+    use minivec::MiniVec;
     use models::codec::Encoding;
     use models::schema::TenantOptions;
+    use models::Timestamp;
+    use protos::models::FieldType;
     use protos::{models as fb_models, models_helper};
-    use trace::{info, init_default_global_tracing};
+    use serial_test::serial;
+    use tokio::runtime;
+    use trace::init_default_global_tracing;
 
-    use crate::{
-        context::GlobalSequenceContext,
-        engine::Engine,
-        file_system::{
-            file_manager::{self, list_file_names, FileManager},
-            FileCursor,
-        },
-        kv_option,
-        kv_option::WalOptions,
-        tsm::codec::get_str_codec,
-        version_set::VersionSet,
-        wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
-        Error, Options, Result, TsKv,
-    };
+    use crate::context::GlobalSequenceContext;
+    use crate::engine::Engine;
+    use crate::file_system::file_manager::list_file_names;
+    use crate::kv_option::WalOptions;
+    use crate::memcache::test::get_one_series_cache_data;
+    use crate::memcache::FieldVal;
+    use crate::tsm::codec::get_str_codec;
+    use crate::wal::{WalEntryType, WalManager, WalReader};
+    use crate::{kv_option, Error, Result, TsKv};
 
     fn random_write_data() -> Vec<u8> {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -588,11 +709,35 @@ mod test {
         fbb.finished_data().to_vec()
     }
 
-    fn const_write_data() -> Vec<u8> {
+    /// Generate flatbuffers data and memcache data
+    #[allow(clippy::type_complexity)]
+    fn const_write_data(
+        start_timestamp: i64,
+        num: usize,
+    ) -> (Vec<u8>, HashMap<String, Vec<(Timestamp, FieldVal)>>) {
+        let mut fa_data: Vec<(Timestamp, FieldVal)> = Vec::with_capacity(num);
+        let mut fb_data: Vec<(Timestamp, FieldVal)> = Vec::with_capacity(num);
+        for i in start_timestamp..start_timestamp + num as i64 {
+            fa_data.push((i, FieldVal::Integer(100)));
+            fb_data.push((i, FieldVal::Bytes(MiniVec::from("b"))));
+        }
+        let map = HashMap::from([("fa".to_string(), fa_data), ("fb".to_string(), fb_data)]);
+
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let ptr = models_helper::create_const_points(&mut fbb, 5);
+        let ptr = models_helper::create_const_points(
+            &mut fbb,
+            "dba",
+            "tba",
+            vec![("ta", "a"), ("tb", "b")],
+            vec![
+                ("fa", FieldType::Integer, &100_u64.to_be_bytes()),
+                ("fb", FieldType::String, b"b"),
+            ],
+            start_timestamp,
+            num,
+        );
         fbb.finish(ptr, None);
-        fbb.finished_data().to_vec()
+        (fbb.finished_data().to_vec(), map)
     }
 
     async fn check_wal_files(
@@ -658,20 +803,21 @@ mod test {
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir.clone();
-        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
         let mut mgr = WalManager::open(Arc::new(wal_config), GlobalSequenceContext::empty())
             .await
             .unwrap();
         let mut data_vec = Vec::new();
-        for _ in 0..10 {
+        for i in 1..=10_u64 {
             let data = Arc::new(b"hello".to_vec());
             data_vec.push(data.clone());
 
-            mgr.write(WalEntryType::Write, data, 0, Arc::new(b"cnosdb".to_vec()))
+            let (seq, _) = mgr
+                .write(WalEntryType::Write, data, 0, Arc::new(b"cnosdb".to_vec()))
                 .await
                 .unwrap();
+            assert_eq!(i, seq)
         }
         mgr.close().await.unwrap();
 
@@ -690,12 +836,9 @@ mod test {
         // Argument max_file_size is so small that there must a new wal file created.
         global_config.wal.max_file_size = 1;
         global_config.wal.sync = false;
-        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
         let tenant = Arc::new(b"cnosdb".to_vec());
-        let database = "test_db".to_string();
-        let table = "test_table".to_string();
         let min_seq_no = 6;
 
         let gcs = GlobalSequenceContext::empty();
@@ -703,16 +846,18 @@ mod test {
 
         let mut mgr = WalManager::open(Arc::new(wal_config), gcs).await.unwrap();
         let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
-        for seq in 1..11 {
+        for seq in 1..=10 {
             let data = Arc::new(format!("{}", seq).as_bytes().to_vec());
             if seq >= min_seq_no {
                 // Data in file_id taat less than version_set_min_seq_no will be deleted.
                 data_vec.push(data.clone());
             }
 
-            mgr.write(WalEntryType::Write, data.clone(), 0, tenant.clone())
+            let (write_seq, _) = mgr
+                .write(WalEntryType::Write, data.clone(), 0, tenant.clone())
                 .await
                 .unwrap();
+            assert_eq!(seq, write_seq)
         }
         mgr.close().await.unwrap();
 
@@ -726,7 +871,6 @@ mod test {
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir.clone();
-        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
         let mut mgr = WalManager::open(Arc::new(wal_config), GlobalSequenceContext::empty())
@@ -735,7 +879,7 @@ mod test {
         let coder = get_str_codec(Encoding::Zstd);
         let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
 
-        for i in 0..10 {
+        for _i in 0..10 {
             let data = Arc::new(random_write_data());
             data_vec.push(data.clone());
 
@@ -768,64 +912,76 @@ mod test {
         let mut global_config = get_config("../config/config_31001.toml");
         global_config.wal.path = dir.to_string();
         global_config.storage.path = "/tmp/test/wal/4".to_string();
-        let options = Options::from(&global_config);
         let wal_config = WalOptions::from(&global_config);
 
-        let mut mgr = rt
-            .block_on(WalManager::open(
-                Arc::new(wal_config),
-                GlobalSequenceContext::empty(),
-            ))
-            .unwrap();
-        let coder = get_str_codec(Encoding::Zstd);
-        let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
-
-        for _i in 0..10 {
-            let data = Arc::new(const_write_data());
-            data_vec.push(data.clone());
-
-            let mut enc_points = Vec::new();
-            coder
-                .encode(&[&data], &mut enc_points)
-                .map_err(|_| Error::Send)
+        let mut wrote_data: HashMap<String, Vec<(Timestamp, FieldVal)>> = HashMap::new();
+        rt.block_on(async {
+            let mut mgr = WalManager::open(Arc::new(wal_config), GlobalSequenceContext::empty())
+                .await
                 .unwrap();
-            rt.block_on(mgr.write(
-                WalEntryType::Write,
-                Arc::new(enc_points),
-                10,
-                Arc::new("cnosdb".as_bytes().to_vec()),
-            ))
-            .expect("write succeed");
-        }
-        rt.block_on(mgr.close()).unwrap();
-        rt.block_on(check_wal_files(dir, data_vec, true)).unwrap();
+            let coder = get_str_codec(Encoding::Zstd);
+            let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
 
-        let opt = kv_option::Options::from(&global_config);
-        let meta_manager: MetaRef = rt.block_on(RemoteMetaManager::new(global_config.cluster));
-        rt.block_on(meta_manager.admin_meta().add_data_node())
-            .unwrap();
-        let _ = rt.block_on(
-            meta_manager
+            for i in 1..=10 {
+                let (fb_data, mem_data) = const_write_data(i, 1);
+                let data = Arc::new(fb_data);
+                data_vec.push(data.clone());
+
+                for (col_name, values) in mem_data {
+                    wrote_data
+                        .entry(col_name)
+                        .or_default()
+                        .extend(values.into_iter());
+                }
+
+                let mut enc_points = Vec::new();
+                coder
+                    .encode(&[&data], &mut enc_points)
+                    .map_err(|_| Error::Send)
+                    .unwrap();
+                mgr.write(
+                    WalEntryType::Write,
+                    Arc::new(enc_points),
+                    10,
+                    Arc::new("cnosdb".as_bytes().to_vec()),
+                )
+                .await
+                .expect("write succeed");
+            }
+            mgr.close().await.unwrap();
+            check_wal_files(dir, data_vec, true).await.unwrap();
+        });
+        let rt_2 = rt.clone();
+        rt.block_on(async {
+            let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+            let opt = kv_option::Options::from(&global_config);
+            let meta_manager: MetaRef = RemoteMetaManager::new(global_config.cluster).await;
+            meta_manager.admin_meta().add_data_node().await.unwrap();
+            let _ = meta_manager
                 .tenant_manager()
-                .create_tenant("cnosdb".to_string(), TenantOptions::default()),
-        );
-        let tskv = rt
-            .block_on(TsKv::open(meta_manager, opt, rt.clone()))
+                .create_tenant("cnosdb".to_string(), TenantOptions::default())
+                .await;
+            let tskv = TsKv::open(
+                meta_manager,
+                opt,
+                rt_2,
+                memory_pool,
+                Arc::new(MetricsRegister::default()),
+            )
+            .await
             .unwrap();
-        let ver = rt
-            .block_on(tskv.get_db_version("cnosdb", "db0", 10))
-            .unwrap()
-            .unwrap();
-        assert_eq!(ver.ts_family_id, 10);
-        let expected = r#"[RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }]"#;
-        let ans = format!(
-            "{:?}",
-            ver.caches.mut_cache.read().read_series_data()[0]
-                .1
-                .read()
-                .groups[0]
-                .rows
-        );
-        assert_eq!(&ans, expected);
+            let ver = tskv
+                .get_db_version("cnosdb", "dba", 10)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(ver.ts_family_id, 10);
+
+            let cached_data = get_one_series_cache_data(ver.caches.mut_cache.clone());
+            // fa, fb
+            assert_eq!(cached_data.len(), 2);
+            assert_eq!(wrote_data.len(), 2);
+            assert_eq!(wrote_data, cached_data);
+        });
     }
 }

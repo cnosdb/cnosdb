@@ -4,4 +4,4 @@ disallowed-methods = []
 
 # max arguments
 # self and 5 normal arguments
-too-many-arguments-threshold=6
+too-many-arguments-threshold = 7

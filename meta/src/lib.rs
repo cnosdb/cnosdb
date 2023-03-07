@@ -1,16 +1,18 @@
-use crate::service::connection::Connections;
-use crate::store::command::WriteCommand;
-use crate::store::state_machine::CommandResp;
-use crate::store::Store;
+use std::fmt::Display;
+use std::sync::Arc;
+
 use meta_admin::AdminMeta;
 use meta_client::MetaClient;
 use meta_manager::MetaManager;
-use openraft::Config;
-use openraft::Raft;
-use std::fmt::Display;
-use std::sync::Arc;
+use openraft::{Config, Raft};
 use tenant_manager::TenantManager;
 use user_manager::UserManager;
+
+use crate::service::connection::Connections;
+use crate::store::command::WriteCommand;
+use crate::store::config::MetaInit;
+use crate::store::state_machine::CommandResp;
+use crate::store::Store;
 pub mod client;
 pub mod error;
 pub mod limiter;
@@ -22,6 +24,7 @@ pub mod service;
 pub mod store;
 pub mod tenant_manager;
 pub mod user_manager;
+pub mod user_manager_mock;
 
 pub type UserManagerRef = Arc<dyn UserManager>;
 pub type TenantManagerRef = Arc<dyn TenantManager>;
@@ -59,4 +62,6 @@ pub struct MetaApp {
     pub raft: RaftStore,
     pub store: Arc<Store>,
     pub config: Arc<Config>,
+    // todo: Maybe we can remove this configuration that's only used in init
+    pub meta_init: Arc<MetaInit>,
 }

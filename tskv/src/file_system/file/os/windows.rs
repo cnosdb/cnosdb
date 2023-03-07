@@ -1,16 +1,16 @@
-use std::{
-    convert::TryFrom,
-    fs::{File, OpenOptions},
-    io::{prelude::*, Error, Result},
-    mem::MaybeUninit,
-    os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
-    path::Path,
-};
+use std::convert::TryFrom;
+use std::fs::{File, OpenOptions};
+use std::io::prelude::*;
+use std::io::{Error, Result};
+use std::mem::MaybeUninit;
+use std::os::windows::fs::OpenOptionsExt;
+use std::os::windows::io::AsRawHandle;
+use std::path::Path;
 
-use winapi::{
-    shared::minwindef::*,
-    um::{fileapi::*, minwinbase::OVERLAPPED, winbase::FILE_FLAG_NO_BUFFERING},
-};
+use winapi::shared::minwindef::*;
+use winapi::um::fileapi::*;
+use winapi::um::minwinbase::OVERLAPPED;
+use winapi::um::winbase::FILE_FLAG_NO_BUFFERING;
 
 //todo:
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

@@ -1,27 +1,15 @@
-use std::{
-    borrow::Borrow,
-    fs,
-    io::{IoSlice, SeekFrom},
-    path::{Path, PathBuf},
-};
+use std::io::{IoSlice, SeekFrom};
+use std::path::{Path, PathBuf};
 
 use num_traits::ToPrimitive;
-use parking_lot::Mutex;
 use snafu::ResultExt;
-use trace::error;
-
-use crate::{
-    byte_utils::decode_be_u32,
-    error::{self, Error, Result},
-    file_system::{file_manager, AsyncFile, FileCursor, IFile},
-    record_file::RECORD_CRC32_NUMBER_LEN,
-};
 
 use super::{
-    file_crc_source_len, Reader, RecordDataType, BLOCK_SIZE, FILE_FOOTER_LEN,
-    FILE_FOOTER_MAGIC_NUMBER_LEN, FILE_MAGIC_NUMBER, FILE_MAGIC_NUMBER_LEN, RECORD_HEADER_LEN,
-    RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
+    file_crc_source_len, Reader, RecordDataType, FILE_FOOTER_LEN, FILE_MAGIC_NUMBER,
+    FILE_MAGIC_NUMBER_LEN, RECORD_MAGIC_NUMBER,
 };
+use crate::error::{self, Error, Result};
+use crate::file_system::{file_manager, FileCursor, IFile};
 
 pub struct Writer {
     path: PathBuf,
@@ -31,7 +19,7 @@ pub struct Writer {
 }
 
 impl Writer {
-    pub async fn open(path: impl AsRef<Path>, data_type: RecordDataType) -> Result<Self> {
+    pub async fn open(path: impl AsRef<Path>, _data_type: RecordDataType) -> Result<Self> {
         let path = path.as_ref();
         let mut cursor: FileCursor = file_manager::open_create_file(path).await?.into();
         let mut file_size = 0_u64;
@@ -171,20 +159,14 @@ impl Writer {
 
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
 
     use serial_test::serial;
 
-    use crate::{
-        error::Result,
-        file_system::file_manager,
-        record_file::{
-            reader::test::{test_reader, test_reader_read_one},
-            RecordDataType, FILE_FOOTER_LEN,
-        },
-    };
-
     use super::Writer;
+    use crate::error::Result;
+    use crate::file_system::file_manager;
+    use crate::record_file::reader::test::{test_reader, test_reader_read_one};
+    use crate::record_file::{RecordDataType, FILE_FOOTER_LEN};
 
     #[tokio::test]
     #[serial]

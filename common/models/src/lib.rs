@@ -1,6 +1,6 @@
 pub mod codec;
 pub mod consistency_level;
-mod errors;
+pub mod errors;
 mod field_info;
 pub mod meta_data;
 mod node_info;
@@ -13,17 +13,16 @@ pub mod utils;
 // pub mod error_code;
 pub mod arrow_array;
 pub mod auth;
-pub mod limiter;
+pub mod duration;
 pub mod object_reference;
 pub mod oid;
 pub mod predicate;
-pub use error_code;
-
-use parking_lot::RwLock;
 use std::sync::Arc;
 
+pub use error_code;
 pub use errors::{Error, Result};
 pub use field_info::{FieldInfo, ValueType};
+use parking_lot::RwLock;
 pub use points::*;
 pub use series_info::SeriesKey;
 pub use tag::Tag;

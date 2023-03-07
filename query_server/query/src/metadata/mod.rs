@@ -1,40 +1,38 @@
 mod cluster_schema_provider;
 mod information_schema_provider;
+mod usage_schema_provider;
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::DataType;
-use datafusion::sql::ResolvedTableReference;
-use datafusion::{
-    error::DataFusionError,
-    logical_expr::{AggregateUDF, ScalarUDF, TableSource},
-    sql::{planner::ContextProvider, TableReference},
-};
-
+use datafusion::config::ConfigOptions;
+use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
+use datafusion::datasource::provider_as_source;
+use datafusion::error::DataFusionError;
+use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
+use datafusion::sql::planner::ContextProvider;
+use datafusion::sql::{ResolvedTableReference, TableReference};
+use meta::error::MetaError;
 use meta::MetaClientRef;
 use models::auth::user::UserDesc;
 use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
-
 use parking_lot::RwLock;
-use spi::query::session::IsiphoSessionCtx;
-
-use crate::dispatcher::query_tracker::QueryTracker;
-use crate::table::ClusterTable;
-use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
-use datafusion::datasource::provider_as_source;
-
-use meta::error::MetaError;
 use spi::query::function::FuncMetaManagerRef;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-
-use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
+use spi::query::session::SessionCtx;
 
 use self::cluster_schema_provider::ClusterSchemaProvider;
 use self::information_schema_provider::InformationSchemaProvider;
+use crate::data_source::table_provider::tskv::ClusterTable;
+use crate::dispatcher::query_tracker::QueryTracker;
+use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
+use crate::metadata::usage_schema_provider::UsageSchemaProvider;
 
 pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
 pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
+pub use usage_schema_provider::{USAGE_SCHEMA, USAGE_SCHEMA_VNODE_DISK_STORAGE};
 
 /// remote meta
 pub struct RemoteCatalogMeta {}
@@ -52,12 +50,14 @@ pub trait ContextProviderExtension: ContextProvider {
 }
 
 pub struct MetadataProvider {
-    session: IsiphoSessionCtx,
+    session: SessionCtx,
+    config_options: ConfigOptions,
     coord: CoordinatorRef,
     meta_client: MetaClientRef,
     func_manager: FuncMetaManagerRef,
     information_schema_provider: InformationSchemaProvider,
     cluster_schema_provider: ClusterSchemaProvider,
+    usage_schema_provider: UsageSchemaProvider,
     access_databases: RwLock<DatabaseSet>,
 }
 
@@ -67,27 +67,29 @@ impl MetadataProvider {
         meta_client: MetaClientRef,
         func_manager: SimpleFunctionMetadataManager,
         query_tracker: Arc<QueryTracker>,
-        session: IsiphoSessionCtx,
+        session: SessionCtx,
+        default_meta: MetaClientRef,
     ) -> Self {
         Self {
             coord,
+            // TODO refactor
+            config_options: session.inner().state().config_options().clone(),
             session,
             meta_client,
             func_manager: Arc::new(func_manager),
             information_schema_provider: InformationSchemaProvider::new(query_tracker),
             cluster_schema_provider: ClusterSchemaProvider::new(),
+            usage_schema_provider: UsageSchemaProvider::new(default_meta),
             access_databases: Default::default(),
         }
     }
 
-    fn build_df_data_source(
+    fn process_system_table_source(
         &self,
-        name: ResolvedTableReference<'_>,
-    ) -> datafusion::common::Result<Arc<dyn TableSource>> {
-        let tenant_name = name.catalog;
-        let database_name = name.schema;
-        let table_name = name.table;
-
+        tenant_name: &str,
+        database_name: &str,
+        table_name: &str,
+    ) -> datafusion::common::Result<Option<Arc<dyn TableSource>>> {
         // process INFORMATION_SCHEMA
         if database_name.eq_ignore_ascii_case(self.information_schema_provider.name()) {
             let mem_table = futures::executor::block_on(self.information_schema_provider.table(
@@ -97,7 +99,21 @@ impl MetadataProvider {
             ))
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
-            return Ok(provider_as_source(mem_table));
+            return Ok(Some(provider_as_source(mem_table)));
+        }
+
+        // process USAGE_SCHEMA
+        if database_name.eq_ignore_ascii_case(self.usage_schema_provider.name()) {
+            let table_provider = self
+                .usage_schema_provider
+                .table(
+                    table_name,
+                    self.session.user(),
+                    self.coord.clone(),
+                    self.meta_client.clone(),
+                )
+                .map_err(|e| DataFusionError::External(Box::new(e)))?;
+            return Ok(Some(provider_as_source(table_provider)));
         }
 
         // process CNOSDB(sys tenant) -> CLUSTER_SCHEMA
@@ -111,12 +127,29 @@ impl MetadataProvider {
             ))
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
-            return Ok(provider_as_source(mem_table));
+            return Ok(Some(provider_as_source(mem_table)));
+        }
+
+        Ok(None)
+    }
+
+    fn build_df_data_source(
+        &self,
+        name: &ResolvedTableReference<'_>,
+    ) -> datafusion::common::Result<Arc<dyn TableSource>> {
+        let tenant_name = name.catalog.as_ref();
+        let database_name = name.schema.as_ref();
+        let table_name = name.table.as_ref();
+
+        if let Some(source) =
+            self.process_system_table_source(tenant_name, database_name, table_name)?
+        {
+            return Ok(source);
         }
 
         let df_table_source = match self
             .meta_client
-            .get_table_schema(name.schema, name.table)
+            .get_table_schema(database_name, table_name)
             .map_err(|e| DataFusionError::External(Box::new(e)))?
         {
             Some(table) => match table {
@@ -128,7 +161,7 @@ impl MetadataProvider {
                     let options = schema.table_options()?;
                     let config = ListingTableConfig::new(table_path)
                         .with_listing_options(options)
-                        .with_schema(Arc::new(schema.schema));
+                        .with_schema(Arc::new(schema.schema.clone()));
                     provider_as_source(Arc::new(ListingTable::try_new(config)?))
                 }
             },
@@ -181,9 +214,9 @@ impl ContextProviderExtension for MetadataProvider {
     ) -> datafusion::common::Result<TableSourceAdapter> {
         let name = name.resolve(self.session.tenant(), self.session.default_database());
 
-        let table_name = name.table;
-        let database_name = name.schema;
-        let tenant_name = name.catalog;
+        let table_name = name.table.as_ref();
+        let database_name = name.schema.as_ref();
+        let tenant_name = name.catalog.as_ref();
         let tenant_id = *self.session.tenant_id();
 
         // Cannot query across tenants
@@ -199,7 +232,7 @@ impl ContextProviderExtension for MetadataProvider {
             .write()
             .push_table(database_name, table_name);
 
-        let df_table_source = self.build_df_data_source(name)?;
+        let df_table_source = self.build_df_data_source(&name)?;
 
         Ok(TableSourceAdapter::new(
             df_table_source,
@@ -230,6 +263,11 @@ impl ContextProvider for MetadataProvider {
     fn get_variable_type(&self, _variable_names: &[String]) -> Option<DataType> {
         // TODO
         None
+    }
+
+    fn options(&self) -> &ConfigOptions {
+        // TODO refactor
+        &self.config_options
     }
 }
 

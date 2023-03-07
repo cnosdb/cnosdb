@@ -1,33 +1,21 @@
-use flatbuffers::{ForwardsUOffset, Push, Vector};
-use futures::future::ok;
-
-use models::{
-    utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TableId, Timestamp, ValueType,
-};
-use protos::models::{Field, FieldType, Point};
-
-use libc::time;
-use std::cmp::Ordering as CmpOrdering;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fmt::Display;
-use std::iter::{FromIterator, Peekable};
-use std::mem::size_of;
-use std::ops::Index;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::iter::FromIterator;
+use std::mem::size_of_val;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
 
+use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
-use trace::{error, info, warn};
-
-use crate::tsm::DataBlock;
-use crate::{byte_utils, error::Result, tseries_family::TimeRange, TseriesFamilyId};
 use models::schema::{TableColumn, TskvTableSchema};
-use models::utils::{split_id, unite_id};
-use parking_lot::{RwLock, RwLockReadGuard};
-use snafu::OptionExt;
-
+use models::utils::split_id;
+use models::{utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
+use parking_lot::RwLock;
 use protos::models as fb_models;
+
+use crate::error::Result;
+use crate::tseries_family::TimeRange;
+use crate::{byte_utils, Error, TseriesFamilyId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldVal {
@@ -117,7 +105,7 @@ impl RowData {
         let fields = match p.fields() {
             None => {
                 let mut fields = Vec::with_capacity(schema.field_num());
-                for i in 0..fields.capacity() {
+                for _i in 0..fields.capacity() {
                     fields.push(None);
                 }
                 fields
@@ -125,10 +113,10 @@ impl RowData {
             Some(fields_inner) => {
                 let fields_id = schema.fields_id();
                 let mut fields: Vec<Option<FieldVal>> = Vec::with_capacity(fields_id.len());
-                for i in 0..fields.capacity() {
+                for _i in 0..fields.capacity() {
                     fields.push(None);
                 }
-                for (i, f) in fields_inner.into_iter().enumerate() {
+                for (_i, f) in fields_inner.into_iter().enumerate() {
                     let vtype = f.type_().into();
                     let val = MiniVec::from(f.value().unwrap().bytes());
                     match schema.column(
@@ -192,7 +180,7 @@ impl From<fb_models::Point<'_>> for RowData {
 
 #[derive(Debug)]
 pub struct RowGroup {
-    pub schema: TskvTableSchema,
+    pub schema: Arc<TskvTableSchema>,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
     /// total size in stack and heap
@@ -201,11 +189,23 @@ pub struct RowGroup {
 
 #[derive(Debug)]
 pub struct SeriesData {
+    pub series_id: SeriesId,
     pub range: TimeRange,
     pub groups: Vec<RowGroup>,
 }
 
 impl SeriesData {
+    fn new(series_id: SeriesId) -> Self {
+        Self {
+            series_id,
+            range: TimeRange {
+                min_ts: i64::MAX,
+                max_ts: i64::MIN,
+            },
+            groups: Vec::with_capacity(4),
+        }
+    }
+
     pub fn write(&mut self, mut group: RowGroup) {
         self.range.merge(&group.range);
 
@@ -234,22 +234,28 @@ impl SeriesData {
             for row in item.rows.iter_mut() {
                 row.fields.remove(index);
             }
-            item.schema.drop_column(&name);
-            item.schema.schema_id += 1;
+            let mut schema_t = item.schema.as_ref().clone();
+            schema_t.drop_column(&name);
+            schema_t.schema_id += 1;
+            item.schema = Arc::new(schema_t)
         }
     }
 
     pub fn change_column(&mut self, column_name: &str, new_column: &TableColumn) {
         for item in self.groups.iter_mut() {
-            item.schema.change_column(column_name, new_column.clone());
-            item.schema.schema_id += 1;
+            let mut schema_t = item.schema.as_ref().clone();
+            schema_t.change_column(column_name, new_column.clone());
+            schema_t.schema_id += 1;
+            item.schema = Arc::new(schema_t)
         }
     }
 
     pub fn add_column(&mut self, new_column: &TableColumn) {
         for item in self.groups.iter_mut() {
-            item.schema.add_column(new_column.clone());
-            item.schema.schema_id += 1;
+            let mut schema_t = item.schema.as_ref().clone();
+            schema_t.add_column(new_column.clone());
+            schema_t.schema_id += 1;
+            item.schema = Arc::new(schema_t)
         }
     }
 
@@ -269,8 +275,8 @@ impl SeriesData {
         column_id: ColumnId,
         mut time_predicate: impl FnMut(Timestamp) -> bool,
         mut value_predicate: impl FnMut(&FieldVal) -> bool,
-    ) -> Vec<DataType> {
-        let mut res = Vec::new();
+        mut handle_data: impl FnMut(DataType),
+    ) {
         for group in self.groups.iter() {
             let field_index = group.schema.fields_id();
             let index = match field_index.get(&column_id) {
@@ -284,31 +290,32 @@ impl SeriesData {
                 .for_each(|row| {
                     if let Some(Some(field)) = row.fields.get(*index) {
                         if value_predicate(field) {
-                            res.push(field.data_value(row.ts));
+                            handle_data(field.data_value(row.ts))
                         }
                     }
                 });
         }
-        res
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, &TskvTableSchema, &Vec<RowData>)> {
+    pub fn read_timestamps(
+        &self,
+        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        mut handle_data: impl FnMut(Timestamp),
+    ) {
+        for group in self.groups.iter() {
+            group
+                .rows
+                .iter()
+                .filter(|row| time_predicate(row.ts))
+                .for_each(|row| handle_data(row.ts));
+        }
+    }
+
+    pub fn flat_groups(&self) -> Vec<(SchemaId, Arc<TskvTableSchema>, &Vec<RowData>)> {
         self.groups
             .iter()
-            .map(|g| (g.schema.schema_id, &g.schema, &g.rows))
+            .map(|g| (g.schema.schema_id, g.schema.clone(), &g.rows))
             .collect()
-    }
-}
-
-impl Default for SeriesData {
-    fn default() -> Self {
-        Self {
-            range: TimeRange {
-                min_ts: i64::MAX,
-                max_ts: i64::MIN,
-            },
-            groups: Vec::with_capacity(4),
-        }
     }
 }
 
@@ -324,7 +331,7 @@ pub struct MemCache {
 
     // wal seq number
     seq_no: AtomicU64,
-    cache_size: AtomicU64,
+    memory: RwLock<MemoryReservation>,
 
     part_count: usize,
     // This u64 comes from split_id(SeriesId) % part_count
@@ -332,13 +339,14 @@ pub struct MemCache {
 }
 
 impl MemCache {
-    pub fn new(tf_id: TseriesFamilyId, max_size: u64, seq: u64) -> Self {
+    pub fn new(tf_id: TseriesFamilyId, max_size: u64, seq: u64, pool: &MemoryPoolRef) -> Self {
         let parts = 16;
         let mut partions = Vec::with_capacity(parts);
         for _i in 0..parts {
             partions.push(RwLock::new(HashMap::new()));
         }
-
+        let res =
+            RwLock::new(MemoryConsumer::new(format!("memcache-{}-{}", tf_id, seq)).register(pool));
         Self {
             tf_id,
             partions,
@@ -351,40 +359,60 @@ impl MemCache {
             part_count: parts,
 
             seq_no: AtomicU64::new(seq),
-            cache_size: AtomicU64::new(0),
+            memory: res,
         }
     }
 
-    pub fn write_group(&self, sid: SeriesId, seq: u64, group: RowGroup) {
+    pub fn write_group(&self, sid: SeriesId, seq: u64, group: RowGroup) -> Result<()> {
         self.seq_no.store(seq, Ordering::Relaxed);
-        self.cache_size
-            .fetch_add(group.size as u64, Ordering::Relaxed);
-
+        self.memory
+            .write()
+            .try_grow(group.size)
+            .map_err(|_| Error::MemoryExhausted)?;
         let index = (sid as usize) % self.part_count;
         let entry = self.partions[index]
             .write()
             .entry(sid)
-            .or_insert_with(|| Arc::new(RwLock::new(SeriesData::default())))
+            .or_insert_with(|| Arc::new(RwLock::new(SeriesData::new(sid))))
             .clone();
 
         entry.write().write(group);
+        Ok(())
     }
 
-    pub fn get_data(
+    pub fn read_field_data(
         &self,
         field_id: FieldId,
         time_predicate: impl FnMut(Timestamp) -> bool,
         value_predicate: impl FnMut(&FieldVal) -> bool,
-    ) -> Vec<DataType> {
-        let (field_id, sid) = split_id(field_id);
+        handle_data: impl FnMut(DataType),
+    ) {
+        let (column_id, sid) = split_id(field_id);
         let index = (sid as usize) % self.part_count;
         let part = self.partions[index].read();
 
-        match part.get(&sid) {
-            Some(series) => series
+        if let Some(series) = part.get(&sid) {
+            series
                 .read()
-                .read_data(field_id, time_predicate, value_predicate),
-            None => Vec::new(),
+                .read_data(column_id, time_predicate, value_predicate, handle_data)
+        }
+    }
+
+    pub fn read_series_timestamps(
+        &self,
+        series_ids: &[SeriesId],
+        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        mut handle_data: impl FnMut(Timestamp),
+    ) {
+        for sid in series_ids.iter() {
+            let index = (*sid as usize) % self.part_count;
+            let part = self.partions[index].read();
+
+            if let Some(series) = part.get(sid) {
+                series
+                    .read()
+                    .read_timestamps(&mut time_predicate, &mut handle_data);
+            }
         }
     }
 
@@ -451,7 +479,7 @@ impl MemCache {
     }
 
     pub fn is_full(&self) -> bool {
-        self.cache_size.load(Ordering::Relaxed) >= self.max_size
+        self.memory.read().size() >= self.max_size as usize
     }
 
     pub fn tf_id(&self) -> TseriesFamilyId {
@@ -471,7 +499,7 @@ impl MemCache {
     }
 
     pub fn cache_size(&self) -> u64 {
-        self.cache_size.load(Ordering::Relaxed)
+        self.memory.read().size() as u64
     }
 }
 
@@ -540,14 +568,16 @@ impl Display for DataType {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use bytes::buf;
+    use std::collections::HashMap;
+    use std::mem::size_of;
+    use std::sync::Arc;
+
     use models::schema::TskvTableSchema;
     use models::{SchemaId, SeriesId, Timestamp};
-    use std::mem::{size_of, size_of_val};
+    use parking_lot::RwLock;
 
-    use crate::{tsm::DataBlock, TimeRange};
-
-    use super::{DataType, FieldVal, MemCache, RowData, RowGroup};
+    use super::{FieldVal, MemCache, RowData, RowGroup};
+    use crate::TimeRange;
 
     pub(crate) fn put_rows_to_cache(
         cache: &mut MemCache,
@@ -559,7 +589,7 @@ pub(crate) mod test {
     ) {
         let mut rows = Vec::new();
         let mut size: usize = schema.size();
-        for ts in time_range.0..time_range.1 + 1 {
+        for ts in time_range.0..=time_range.1 {
             let mut fields = Vec::new();
             for _ in 0..schema.columns().len() {
                 size += size_of::<Option<FieldVal>>();
@@ -576,11 +606,41 @@ pub(crate) mod test {
 
         schema.schema_id = schema_id;
         let row_group = RowGroup {
-            schema,
+            schema: schema.into(),
             range: TimeRange::from(time_range),
             rows,
             size: size_of::<RowGroup>() + size,
         };
-        cache.write_group(series_id, 1, row_group);
+        cache.write_group(series_id, 1, row_group).unwrap();
+    }
+
+    pub(crate) fn get_one_series_cache_data(
+        cache: Arc<RwLock<MemCache>>,
+    ) -> HashMap<String, Vec<(Timestamp, FieldVal)>> {
+        let mut fname_vals_map: HashMap<String, Vec<(Timestamp, FieldVal)>> = HashMap::new();
+        let series_data = cache.read().read_series_data();
+        for (_sid, sdata) in series_data {
+            let sdata_rlock = sdata.read();
+            let schema_groups = sdata_rlock.flat_groups();
+            for (_sch_id, sch, row) in schema_groups {
+                let fields = sch.fields();
+                for r in row {
+                    for (i, f) in r.fields.iter().enumerate() {
+                        if let Some(fv) = f {
+                            if let Some(c) = fields.get(i) {
+                                if &c.name != "time" {
+                                    fname_vals_map
+                                        .entry(c.name.clone())
+                                        .or_default()
+                                        .push((r.ts, fv.clone()))
+                                }
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        fname_vals_map
     }
 }

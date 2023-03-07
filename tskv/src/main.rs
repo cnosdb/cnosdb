@@ -4,10 +4,12 @@ const ARG_PRINT: &str = "print"; // To print something
 const ARG_TSM: &str = "--tsm"; // To print a .tsm file
 const ARG_TOMBSTONE: &str = "--tombstone"; // To print a .tsm file with tombsotne
 const ARG_SUMMARY: &str = "--summary"; // To print a summary file
+const ARG_WAL: &str = "--wal"; // To print a wal file
 
 /// # Example
 /// tskv print [--tsm <tsm_path>] [--tombstone]
 /// tskv print [--summary <summary_path>]
+/// tskv print [--wal <wal_path>]
 ///
 /// - --tsm <tsm_path> print statistics for .tsm file at <tsm_path> .
 /// - --tombstone also print tombstone for every field_id in .tsm file.
@@ -21,6 +23,9 @@ async fn main() {
 
     let mut show_summary = false;
     let mut summary_path: Option<String> = None;
+
+    let mut show_wal = false;
+    let mut wal_path: Option<String> = None;
 
     while let Some(arg) = args.peek() {
         // --print [--tsm <path>]
@@ -44,6 +49,13 @@ async fn main() {
                             println!("Invalid arguments: --summary <summary_path>")
                         }
                     }
+                    ARG_WAL => {
+                        show_wal = true;
+                        wal_path = args.next();
+                        if wal_path.is_none() {
+                            println!("Invalid arguments: --wal <wal_path>")
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -62,6 +74,13 @@ async fn main() {
         if let Some(p) = summary_path {
             println!("Summary Path: {}", p);
             tskv::print_summary_statistics(p).await;
+        }
+    }
+
+    if show_wal {
+        if let Some(p) = wal_path {
+            println!("Wal Path: {}", p);
+            tskv::print_wal_statistics(p).await;
         }
     }
 }
