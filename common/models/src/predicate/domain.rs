@@ -59,6 +59,11 @@ impl TimeRange {
     }
 
     #[inline(always)]
+    pub fn is_boundless(&self) -> bool {
+        self.min_ts == Timestamp::MIN && self.max_ts == Timestamp::MAX
+    }
+
+    #[inline(always)]
     pub fn overlaps(&self, range: &TimeRange) -> bool {
         !(self.min_ts > range.max_ts || self.max_ts < range.min_ts)
     }
@@ -66,6 +71,11 @@ impl TimeRange {
     #[inline(always)]
     pub fn includes(&self, other: &TimeRange) -> bool {
         self.min_ts <= other.min_ts && self.max_ts >= other.max_ts
+    }
+
+    #[inline(always)]
+    pub fn contains(&self, time_stamp: Timestamp) -> bool {
+        time_stamp >= self.min_ts && time_stamp <= self.max_ts
     }
 
     pub fn intersect(&self, other: &Self) -> Option<Self> {
@@ -80,24 +90,14 @@ impl TimeRange {
         None
     }
 
+    pub fn total_time(&self) -> i64 {
+        self.max_ts - self.min_ts
+    }
+
     #[inline(always)]
     pub fn merge(&mut self, other: &TimeRange) {
         self.min_ts = self.min_ts.min(other.min_ts);
         self.max_ts = self.max_ts.max(other.max_ts);
-    }
-
-    #[inline(always)]
-    pub fn is_boundless(&self) -> bool {
-        self.min_ts == Timestamp::MIN && self.max_ts == Timestamp::MAX
-    }
-
-    #[inline(always)]
-    pub fn contains(&self, time_stamp: Timestamp) -> bool {
-        time_stamp >= self.min_ts && time_stamp <= self.max_ts
-    }
-
-    pub fn total_time(&self) -> i64 {
-        self.max_ts - self.min_ts
     }
 }
 
@@ -1171,6 +1171,25 @@ pub struct QueryArgs {
     pub batch_size: usize,
 }
 
+impl QueryArgs {
+    pub fn encode(args: &QueryArgs) -> Result<Vec<u8>> {
+        let d = bincode::serialize(args).map_err(|err| Error::InvalidSerdeMessage {
+            err: err.to_string(),
+        })?;
+
+        Ok(d)
+    }
+
+    pub fn decode(buf: &[u8]) -> Result<QueryArgs> {
+        let args =
+            bincode::deserialize::<QueryArgs>(buf).map_err(|err| Error::InvalidSerdeMessage {
+                err: err.to_string(),
+            })?;
+
+        Ok(args)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryExpr {
     pub split: Split,
@@ -1192,6 +1211,11 @@ impl QueryExpr {
             err: err.to_string(),
         })
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PushedAggregateFunction {
+    Count(String),
 }
 
 #[cfg(test)]

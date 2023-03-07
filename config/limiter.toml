@@ -1,0 +1,26 @@
+[object_config]
+# add user limit
+max_users_number = 1
+# create database limit
+max_databases = 3
+max_shard_number = 2
+max_replicate_number = 2
+max_retention_time = 30
+
+
+[request_config.data_in]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
+
+
+[request_config.data_out.local_bucket]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
+
+[request_config.data_writes.local_bucket]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
+
+[request_config.data_queries.local_bucket]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}

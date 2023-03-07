@@ -1,38 +1,22 @@
-use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
-use std::hash::Hash;
-use std::mem::size_of;
-use std::ops::{BitAnd, BitOr, Bound, Index, RangeBounds};
-use std::path::{self, Path, PathBuf};
-use std::string::FromUtf8Error;
-use std::sync::Arc;
+use std::ops::{BitAnd, BitOr, Bound, RangeBounds};
+use std::path::{Path, PathBuf};
 
 use bytes::BufMut;
-use chrono::format::format;
-use config::Config;
-use datafusion::arrow::datatypes::{DataType, ToByteSlice};
-use datafusion::parquet::data_type::AsBytes;
-use datafusion::prelude::Column;
+use datafusion::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
-use fmt::Debug;
-use lazy_static::__Deref;
-use models::codec::Encoding;
-use models::predicate::domain::{utf8_from, Domain, Marker, Range, ValueEntry};
+use models::predicate::domain::{utf8_from, Domain, Range};
 use models::tag::TagFromParts;
-use models::{utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType};
-use once_cell::sync::OnceCell;
-use parking_lot::RwLock;
-use protos::models::Point;
-use sled::Error;
-use snafu::ResultExt;
-use trace::{debug, error, info, warn};
+use models::{utils, SeriesKey, Tag};
+use trace::{debug, info};
 
-use super::binlog::*;
+use super::binlog::{IndexBinlog, SeriesKeyBlock};
 use super::cache::{ForwardIndexCache, SeriesKeyInfo};
-use super::{errors, IndexEngine, IndexError, IndexResult, *};
+use super::{IndexEngine, IndexError, IndexResult};
 use crate::file_system::file_manager;
-use crate::Error::IndexErr;
+use crate::index::binlog::{BinlogReader, BinlogWriter};
+use crate::index::ts_index::fmt::Debug;
 use crate::{byte_utils, file_utils};
 
 const SERIES_ID_PREFIX: &str = "_id_";
@@ -47,7 +31,7 @@ pub struct TSIndex {
 
     binlog: IndexBinlog,
     storage: IndexEngine,
-    forward_cache: RwLock<ForwardIndexCache>,
+    forward_cache: ForwardIndexCache,
 }
 
 impl TSIndex {
@@ -68,7 +52,7 @@ impl TSIndex {
             incr_id,
             write_count: 0,
             path: path.into(),
-            forward_cache: RwLock::new(ForwardIndexCache::new(1_000_000)),
+            forward_cache: ForwardIndexCache::new(1_000_000),
         };
 
         ts_index.recover().await?;
@@ -158,7 +142,7 @@ impl TSIndex {
     }
 
     pub fn get_series_id(&self, series_key: &SeriesKey) -> IndexResult<Option<u32>> {
-        if let Some(id) = self.forward_cache.write().get_series_id_by_key(series_key) {
+        if let Some(id) = self.forward_cache.get_series_id_by_key(series_key) {
             return Ok(Some(id));
         }
 
@@ -171,7 +155,7 @@ impl TSIndex {
                 key: series_key.clone(),
                 hash: series_key.hash(),
             };
-            self.forward_cache.write().add(info);
+            self.forward_cache.add(info);
 
             return Ok(Some(id));
         }
@@ -221,7 +205,7 @@ impl TSIndex {
     }
 
     pub fn get_series_key(&self, sid: u32) -> IndexResult<Option<SeriesKey>> {
-        if let Some(key) = self.forward_cache.write().get_series_key_by_id(sid) {
+        if let Some(key) = self.forward_cache.get_series_key_by_id(sid) {
             return Ok(Some(key));
         }
 
@@ -234,7 +218,7 @@ impl TSIndex {
                 key: key.clone(),
                 hash: key.hash(),
             };
-            self.forward_cache.write().add(info);
+            self.forward_cache.add(info);
 
             return Ok(Some(key));
         }
@@ -264,7 +248,7 @@ impl TSIndex {
         let series_key = self.get_series_key(sid)?;
         let _ = self.storage.delete(&encode_series_id_key(sid));
         if let Some(series_key) = series_key {
-            self.forward_cache.write().del(sid, series_key.hash());
+            self.forward_cache.del(sid, series_key.hash());
             let key_buf = encode_series_key(series_key.table(), series_key.tags());
             let _ = self.storage.delete(&key_buf);
             for tag in series_key.tags() {
@@ -284,7 +268,7 @@ impl TSIndex {
         debug!("pushed tags: {:?}", tag_domains);
 
         let mut series_ids = Vec::with_capacity(tag_domains.len());
-        for (idx, (tag_key, v)) in tag_domains.iter().enumerate() {
+        for (_idx, (tag_key, v)) in tag_domains.iter().enumerate() {
             series_ids.push(self.get_series_ids_by_domain(tab, tag_key, v)?);
         }
 
@@ -440,7 +424,7 @@ impl TSIndex {
 }
 
 impl Debug for TSIndex {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Ok(())
     }
 }
@@ -590,10 +574,13 @@ pub fn encode_series_id_list(list: &[u32]) -> Vec<u8> {
 
 #[cfg(test)]
 mod test {
-    use std::path::{Path, PathBuf};
+    use std::num::NonZeroUsize;
+    use std::path::PathBuf;
 
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
+    use lru::LruCache;
     use models::schema::ExternalTableSchema;
+    use models::utils::now_timestamp;
     use models::{SeriesKey, Tag};
 
     use super::TSIndex;
@@ -686,7 +673,7 @@ mod test {
             file_type: "1".to_string(),
             location: "2".to_string(),
             target_partitions: 3,
-            table_partition_cols: vec!["4".to_string()],
+            table_partition_cols: vec![("4".to_string(), DataType::UInt8)],
             has_header: true,
             delimiter: 5,
             schema,
@@ -696,5 +683,26 @@ mod test {
         let ans = serde_json::from_str::<ExternalTableSchema>(&ans_inter).unwrap();
 
         assert_eq!(ans, schema);
+    }
+
+    #[test]
+    fn test_lru_cache() {
+        let mut cache = LruCache::new(NonZeroUsize::new(1000000).unwrap());
+        println!("{}", now_timestamp() / 1000000);
+        for i in 0..1000000 {
+            let key = format!("key___{}", i);
+            let val = format!("val___{}", i);
+            cache.put(key, val);
+        }
+
+        println!("{}", now_timestamp() / 1000000);
+        let mut count = 1000000 - 1;
+        while count > 0 {
+            let key = format!("key___{}", count);
+            cache.get(&key).unwrap();
+
+            count -= 1;
+        }
+        println!("{}", now_timestamp() / 1000000);
     }
 }

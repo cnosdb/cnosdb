@@ -40,6 +40,20 @@ pub enum QueryError {
         source: CoordinatorError,
     },
 
+    #[snafu(display(
+        "Internal error: {}. This was likely caused by a bug in Cnosdb's \
+    code and we would welcome that you file an bug report in our issue tracker",
+        reason
+    ))]
+    #[error_code(code = 9998)]
+    Internal {
+        reason: String,
+    },
+
+    Models {
+        source: models::Error,
+    },
+
     #[error_code(code = 9999)]
     Unimplement {
         msg: String,
@@ -378,8 +392,20 @@ pub enum QueryError {
         source: GenericError,
     },
 
-    #[snafu(display("Database {} not found.", name))]
     #[error_code(code = 57)]
+    #[snafu(display("Invalid prom remote write requeset, error: {}", source))]
+    InvalidRemoteWriteReq {
+        source: GenericError,
+    },
+
+    #[snafu(display("Invalid TimeWindow parameter : {}", reason))]
+    #[error_code(code = 58)]
+    InvalidTimeWindowParam {
+        reason: String,
+    },
+
+    #[snafu(display("Database {} not found.", name))]
+    #[error_code(code = 59)]
     DatabaseNotFound {
         name: String,
     },
@@ -436,6 +462,12 @@ impl From<CoordinatorError> for QueryError {
 impl From<tskv::Error> for QueryError {
     fn from(value: tskv::Error) -> Self {
         QueryError::TsKv { source: value }
+    }
+}
+
+impl From<models::Error> for QueryError {
+    fn from(value: models::Error) -> Self {
+        QueryError::Models { source: value }
     }
 }
 

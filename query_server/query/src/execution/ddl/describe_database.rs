@@ -24,20 +24,20 @@ impl DescribeDatabaseTask {
 #[async_trait]
 impl DDLDefinitionTask for DescribeDatabaseTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        describe_database(self.stmt.database_name.as_str(), query_state_machine)
+        describe_database(self.stmt.database_name.as_str(), query_state_machine).await
     }
 }
 
-fn describe_database(database_name: &str, machine: QueryStateMachineRef) -> Result<Output> {
+async fn describe_database(database_name: &str, machine: QueryStateMachineRef) -> Result<Output> {
     let tenant = machine.session.tenant();
-    let client =
-        machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .ok_or(MetaError::TenantNotFound {
-                tenant: tenant.to_string(),
-            })?;
+    let client = machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .await
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })?;
     let db_cfg = client
         .get_db_schema(database_name)?
         .ok_or(MetaError::DatabaseNotFound {

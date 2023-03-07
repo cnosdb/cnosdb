@@ -1,14 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use error_code::{ErrorCode, ErrorCoder};
 use meta::error::MetaError;
-use models::SeriesId;
 use snafu::Snafu;
 
 use crate::index::IndexError;
 use crate::schema::error::SchemaError;
 use crate::tsm::{ReadTsmError, WriteTsmError};
-use crate::wal;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -41,6 +39,10 @@ pub enum Error {
     Schema {
         source: SchemaError,
     },
+
+    #[snafu(display("Memory Exhausted Retry Later"))]
+    #[error_code(code = 5)]
+    MemoryExhausted,
 
     // Internal Error
     #[snafu(display("{}", source))]
@@ -159,6 +161,12 @@ impl From<SchemaError> for Error {
 impl From<IndexError> for Error {
     fn from(value: IndexError) -> Self {
         Error::IndexErr { source: value }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Error::IO { source: value }
     }
 }
 

@@ -17,9 +17,9 @@ logical_plan,"Projection: test_double_conv.time
   Filter: test_double_conv.fa = Float64(12345678865)
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa = Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=4096
+  CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 = 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8)
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
 
@@ -31,9 +31,9 @@ logical_plan,"Projection: test_double_conv.time
   Filter: test_double_conv.fa != Float64(12345678865)
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa != Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=4096
+  CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 != 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8)
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
 "
 
@@ -45,9 +45,9 @@ logical_plan,"Projection: test_double_conv.time
   Filter: test_double_conv.fa != Float64(12345678865)
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa != Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=4096
+  CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 != 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8)
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
 "
 
@@ -59,9 +59,9 @@ logical_plan,"Projection: test_double_conv.time
   Filter: test_double_conv.fa < Float64(12345678865)
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa < Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=4096
+  CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 < 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8)
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Above }: Range { low: Marker { data_type: Float64, value: None, bound: Above }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Below } }} })}) }, projection=[time,fa]
 "
 
@@ -73,9 +73,9 @@ logical_plan,"Projection: test_double_conv.time
   Filter: test_double_conv.fa <= Float64(12345678865)
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa <= Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=4096
+  CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 <= 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8)
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Above }: Range { low: Marker { data_type: Float64, value: None, bound: Above }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
 
@@ -87,9 +87,9 @@ logical_plan,"Projection: test_double_conv.time
   Filter: test_double_conv.fa > Float64(12345678865)
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa > Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=4096
+  CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 > 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8)
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Above }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Above }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
 "
 
@@ -101,9 +101,9 @@ logical_plan,"Projection: test_double_conv.time
   Filter: test_double_conv.fa >= Float64(12345678865)
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=4096
+  CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 >= 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8)
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
 "
 
@@ -115,22 +115,22 @@ logical_plan,"Projection: test_double_conv.time
   Filter: test_double_conv.fa >= Float64(12345678865)
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=4096
+  CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 >= 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8)
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
 "
 
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= '1997-01-31'; --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '1997-01-31' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+plan_type,plan
+
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= 'xxx'; --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'xxx' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+plan_type,plan
+
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa between '12345678865' and 12345678869; --
 200 OK
@@ -139,9 +139,9 @@ logical_plan,"Projection: test_double_conv.time
   Filter: test_double_conv.fa >= Float64(12345678865) AND test_double_conv.fa <= Float64(12345678869)
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865), test_double_conv.fa <= Float64(12345678869)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=4096
+  CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 >= 12345678865 AND fa@1 <= 12345678869
-      RepartitionExec: partitioning=RoundRobinBatch(8)
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
 
@@ -153,17 +153,17 @@ logical_plan,"Projection: test_double_conv.time
   Filter: test_double_conv.fa >= Float64(12345678865) AND test_double_conv.fa <= Float64(12345678869)
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865), test_double_conv.fa <= Float64(12345678869)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=4096
+  CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 >= 12345678865 AND fa@1 <= 12345678869
-      RepartitionExec: partitioning=RoundRobinBatch(8)
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
 
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa between 12345678865 and 'xxx'; --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'xxx' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+plan_type,plan
+
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa in (12345678865, '12345678869'); --
 200 OK
@@ -172,15 +172,15 @@ logical_plan,"Projection: test_double_conv.time
   Filter: test_double_conv.fa = Float64(12345678869) OR test_double_conv.fa = Float64(12345678865)
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa = Float64(12345678869) OR test_double_conv.fa = Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=4096
+  CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 = 12345678869 OR fa@1 = 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8)
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }, Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
 
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa in (12345678865, 'xx'); --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'xx' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+plan_type,plan
+
 

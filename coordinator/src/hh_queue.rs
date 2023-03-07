@@ -1,45 +1,24 @@
 use std::collections::HashMap;
-use std::io::SeekFrom;
-use std::marker::PhantomData;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use config::HintedOffConfig;
-use protos::models as fb_models;
-use snafu::prelude::*;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::oneshot::{self, Sender};
+use tokio::sync::oneshot::Sender;
 use tokio::sync::RwLock;
 use tokio::time::{self, Duration};
-use trace::{debug, error, info, warn};
-use tskv::file_system::file_manager::{self, list_dir_names, FileManager};
-use tskv::file_system::{AsyncFile, FileCursor, IFile};
-use tskv::{byte_utils, file_utils};
+use trace::{debug, info};
+use tskv::byte_utils;
+use tskv::file_system::file_manager::list_dir_names;
+use tskv::file_system::queue::{DataBlock, Queue, QueueConfig};
 
 use crate::errors::*;
 use crate::writer::PointWriter;
 
-const SEGMENT_FILE_HEADER_SIZE: usize = 8;
-const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x54];
+const SEGMENT_FILE_SUFFIX: &str = "hh";
 const SEGMENT_FILE_MAX_SIZE: u64 = 1073741824; // 1 GiB
 const HINTEDOFF_BLOCK_HEADER_SIZE: usize = 20; // 8 + 4 + 4 + 4
-
-#[derive(Debug)]
-pub struct HintedOffOption {
-    pub enable: bool,
-    pub path: String,
-    pub node_id: u64,
-}
-
-impl HintedOffOption {
-    pub fn new(config: &HintedOffConfig, node_id: u64) -> Self {
-        Self {
-            node_id,
-            enable: config.enable,
-            path: format!("{}/{}", config.path, node_id),
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct HintedOffWriteReq {
@@ -53,8 +32,9 @@ pub struct HintedOffBlock {
     pub ts: i64,
     pub vnode_id: u32,
     pub tenant_len: u32,
-    pub tenant: String,
     pub data_len: u32,
+
+    pub tenant: String,
     pub data: Vec<u8>,
 }
 
@@ -78,18 +58,50 @@ impl HintedOffBlock {
             String::from_utf8(self.data.clone()).unwrap()
         )
     }
+}
 
-    pub fn size(&self) -> u32 {
-        self.data_len + HINTEDOFF_BLOCK_HEADER_SIZE as u32
+#[async_trait::async_trait]
+impl DataBlock for HintedOffBlock {
+    async fn write(&self, file: &mut tokio::fs::File) -> tskv::Result<usize> {
+        let mut written_size = 0;
+        written_size += file.write(&self.ts.to_be_bytes()).await?;
+        written_size += file.write(&self.vnode_id.to_be_bytes()).await?;
+        written_size += file.write(&self.tenant_len.to_be_bytes()).await?;
+        written_size += file.write(&self.data_len.to_be_bytes()).await?;
+
+        written_size += file.write(self.tenant.as_bytes()).await?;
+        written_size += file.write(&self.data).await?;
+
+        Ok(written_size)
+    }
+
+    async fn read(&mut self, file: &mut tokio::fs::File) -> tskv::Result<usize> {
+        let mut read_size = 0;
+        let mut header_buf = [0_u8; HINTEDOFF_BLOCK_HEADER_SIZE];
+        read_size += file.read_exact(&mut header_buf).await?;
+
+        self.ts = byte_utils::decode_be_i64(header_buf[0..8].into());
+        self.vnode_id = byte_utils::decode_be_u32(header_buf[8..12].into());
+        self.tenant_len = byte_utils::decode_be_u32(header_buf[12..16].into());
+        self.data_len = byte_utils::decode_be_u32(header_buf[16..20].into());
+
+        let mut buf = Vec::new();
+        buf.resize((self.data_len + self.tenant_len) as usize, 0);
+        read_size += file.read_exact(&mut buf).await?;
+
+        self.tenant =
+            unsafe { String::from_utf8_unchecked(buf[0..self.tenant_len as usize].to_vec()) };
+        self.data =
+            buf[self.tenant_len as usize..(self.tenant_len + self.data_len) as usize].to_vec();
+
+        Ok(read_size)
     }
 }
 
 pub struct HintedOffManager {
     config: HintedOffConfig,
-
     writer: Arc<PointWriter>,
-
-    nodes: RwLock<HashMap<u64, Arc<RwLock<HintedOffQueue>>>>,
+    nodes: RwLock<HashMap<u64, Arc<RwLock<Queue>>>>,
 }
 
 impl HintedOffManager {
@@ -115,8 +127,19 @@ impl HintedOffManager {
         mut hh_receiver: Receiver<HintedOffWriteReq>,
     ) {
         while let Some(request) = hh_receiver.recv().await {
+            if !manager.config.enable {
+                request.sender.send(Ok(())).expect("successful");
+                continue;
+            }
+
             let result = match manager.get_or_create_queue(request.node_id).await {
-                Ok(queue) => queue.write().await.write(&request.block).await,
+                Ok(queue) => queue
+                    .write()
+                    .await
+                    .write(&request.block)
+                    .await
+                    .map_err(CoordinatorError::from),
+
                 Err(err) => Err(err),
             };
 
@@ -124,13 +147,20 @@ impl HintedOffManager {
         }
     }
 
-    async fn get_or_create_queue(&self, id: u64) -> CoordinatorResult<Arc<RwLock<HintedOffQueue>>> {
+    async fn get_or_create_queue(&self, id: u64) -> CoordinatorResult<Arc<RwLock<Queue>>> {
         let mut nodes = self.nodes.write().await;
         if let Some(val) = nodes.get(&id) {
             return Ok(val.clone());
         }
 
-        let queue = HintedOffQueue::new(HintedOffOption::new(&self.config, id)).await?;
+        let dir = PathBuf::from(self.config.path.clone()).join(id.to_string());
+        let config = QueueConfig {
+            data_path: dir.to_string_lossy().to_string(),
+            file_suffix: SEGMENT_FILE_SUFFIX.to_string(),
+            max_file_size: SEGMENT_FILE_MAX_SIZE,
+        };
+
+        let queue = Queue::new(config).await?;
         let queue = Arc::new(RwLock::new(queue));
         nodes.insert(id, queue.clone());
 
@@ -143,338 +173,45 @@ impl HintedOffManager {
         Ok(queue)
     }
 
-    async fn hinted_off_service(
-        node_id: u64,
-        writer: Arc<PointWriter>,
-        queue: Arc<RwLock<HintedOffQueue>>,
-    ) {
+    async fn hinted_off_service(node_id: u64, writer: Arc<PointWriter>, queue: Arc<RwLock<Queue>>) {
         debug!("hinted_off_service started for node: {}", node_id);
 
+        let mut block = HintedOffBlock::new(0, 0, "".to_string(), vec![]);
         loop {
-            let block_data = queue.write().await.read().await;
-            match block_data {
-                Ok(block) => {
-                    loop {
-                        if writer
-                            .write_to_remote_node(
-                                block.vnode_id,
-                                node_id,
-                                &block.tenant,
-                                block.data.clone(),
-                            )
-                            .await
-                            .is_ok()
-                        {
-                            break;
-                        } else {
-                            info!("hinted_off write data to node {} failed", node_id);
-                            time::sleep(Duration::from_secs(3)).await;
-                        }
-                    }
-
-                    if let Err(err) = queue.write().await.advance_read_offset(0).await {
-                        info!("advance offset {}", err.to_string());
-                    }
+            let read_result = queue.write().await.read(&mut block).await;
+            match read_result {
+                Ok(_) => {
+                    HintedOffManager::write_until_success(writer.clone(), &block, node_id).await;
+                    let _ = queue.write().await.commit().await;
                 }
 
                 Err(err) => {
-                    info!("read hindoff data: {}", err.to_string());
+                    debug!("read hindoff data: {}", err.to_string());
                     time::sleep(Duration::from_secs(3)).await;
                 }
+            }
+        }
+    }
+
+    async fn write_until_success(writer: Arc<PointWriter>, block: &HintedOffBlock, node_id: u64) {
+        loop {
+            if writer
+                .write_to_remote_node(block.vnode_id, node_id, &block.tenant, block.data.clone())
+                .await
+                .is_ok()
+            {
+                break;
+            } else {
+                info!("hinted_off write data to node {} failed", node_id);
+                time::sleep(Duration::from_secs(3)).await;
             }
         }
     }
 }
 
 impl std::fmt::Debug for HintedOffManager {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Ok(())
-    }
-}
-
-pub struct HintedOffQueue {
-    option: HintedOffOption,
-
-    writer_file: HintedOffWriter,
-    reader_file: HintedOffReader,
-}
-
-impl HintedOffQueue {
-    pub async fn new(option: HintedOffOption) -> CoordinatorResult<Self> {
-        let data_dir = PathBuf::from(option.path.clone());
-        let (last, seq) = match file_utils::get_max_sequence_file_name(
-            data_dir.clone(),
-            file_utils::get_hinted_off_file_id,
-        ) {
-            Some((file, seq)) => (data_dir.join(file), seq),
-            None => {
-                let seq = 1;
-                (file_utils::make_hinted_off_file(data_dir.clone(), seq), seq)
-            }
-        };
-
-        if !file_manager::try_exists(&data_dir) {
-            std::fs::create_dir_all(&data_dir)?;
-        }
-
-        let writer_file = HintedOffWriter::open(seq, last).await?;
-
-        let hh_files = file_manager::list_file_names(&data_dir);
-        let read_filename = hh_files[0].clone();
-        let read_fileid = file_utils::get_hinted_off_file_id(&read_filename)?;
-        let tmp_file = HintedOffWriter::open(read_fileid, data_dir.join(read_filename)).await?;
-        let reader_file = HintedOffReader::new(read_fileid, tmp_file.file.into()).await?;
-
-        Ok(HintedOffQueue {
-            option,
-            writer_file,
-            reader_file,
-        })
-    }
-
-    async fn roll_hinted_off_write_file(&mut self) -> CoordinatorResult<()> {
-        if self.writer_file.size > SEGMENT_FILE_MAX_SIZE {
-            debug!(
-                "Write Hinted Off '{}' is full , begin rolling.",
-                self.writer_file.id
-            );
-
-            let new_file_id = self.writer_file.id + 1;
-            let new_file_name = file_utils::make_hinted_off_file(&self.option.path, new_file_id);
-            let new_file = HintedOffWriter::open(new_file_id, new_file_name).await?;
-            let mut old_file = std::mem::replace(&mut self.writer_file, new_file);
-            old_file.flush().await?;
-
-            debug!("Write Hinted Off  '{}' starts write", self.writer_file.id);
-        }
-        Ok(())
-    }
-
-    async fn roll_hinted_off_read_file(&mut self) -> CoordinatorResult<()> {
-        if self.reader_file.read_over() {
-            debug!("Read Hinted Off is read over '{}'", self.reader_file.id);
-
-            let new_file_id = self.reader_file.id + 1;
-            let new_file_name = file_utils::make_hinted_off_file(&self.option.path, new_file_id);
-            if !file_manager::try_exists(&new_file_name) {
-                return Ok(());
-            }
-
-            let new_file = HintedOffWriter::open(new_file_id, new_file_name).await?;
-            self.reader_file = HintedOffReader::new(new_file_id, new_file.file.into()).await?;
-        }
-
-        Ok(())
-    }
-
-    pub async fn write(&mut self, block: &HintedOffBlock) -> CoordinatorResult<()> {
-        if !self.option.enable {
-            return Ok(());
-        }
-
-        self.roll_hinted_off_write_file().await?;
-
-        self.writer_file.write(block).await?;
-
-        Ok(())
-    }
-
-    pub async fn advance_read_offset(&mut self, offset: u32) -> CoordinatorResult<()> {
-        self.reader_file.advance_read_offset(offset).await
-    }
-
-    pub async fn read(&mut self) -> CoordinatorResult<HintedOffBlock> {
-        self.roll_hinted_off_read_file().await?;
-
-        if let Some(val) = self.reader_file.next_hinted_off_block().await {
-            Ok(val)
-        } else {
-            Err(CoordinatorError::IOErrors {
-                msg: "no data to read".to_string(),
-            })
-        }
-    }
-
-    pub async fn close(&mut self) -> CoordinatorResult<()> {
-        self.writer_file.flush().await
-    }
-}
-
-struct HintedOffWriter {
-    id: u64,
-
-    file: AsyncFile,
-    size: u64,
-}
-
-impl HintedOffWriter {
-    pub async fn open(id: u64, path: impl AsRef<Path>) -> CoordinatorResult<Self> {
-        let path = path.as_ref();
-
-        // Get file and check if new file
-        let mut new_file = false;
-        let file = if file_manager::try_exists(path) {
-            let f = file_manager::get_file_manager().open_file(path).await?;
-            if f.is_empty() {
-                new_file = true;
-            }
-            f
-        } else {
-            new_file = true;
-            file_manager::get_file_manager().create_file(path).await?
-        };
-
-        let mut size = file.len();
-        if new_file {
-            size = 8;
-            HintedOffWriter::write_header(&file, SEGMENT_FILE_HEADER_SIZE as u32).await?;
-        }
-
-        Ok(Self { id, file, size })
-    }
-
-    pub async fn write_header(file: &AsyncFile, offset: u32) -> CoordinatorResult<()> {
-        let mut header_buf = [0_u8; SEGMENT_FILE_HEADER_SIZE];
-        header_buf[..4].copy_from_slice(SEGMENT_FILE_MAGIC.as_slice());
-        header_buf[4..].copy_from_slice(&offset.to_be_bytes());
-
-        file.write_at(0, &header_buf).await?;
-        file.sync_data().await?;
-
-        Ok(())
-    }
-
-    async fn reade_header(
-        cursor: &mut FileCursor,
-    ) -> CoordinatorResult<[u8; SEGMENT_FILE_HEADER_SIZE]> {
-        let mut header_buf = [0_u8; SEGMENT_FILE_HEADER_SIZE];
-
-        cursor.seek(SeekFrom::Start(0))?;
-        let read = cursor.read(&mut header_buf[..]).await?;
-
-        Ok(header_buf)
-    }
-
-    pub async fn write(&mut self, block: &HintedOffBlock) -> CoordinatorResult<usize> {
-        let mut pos = self.size;
-
-        pos += self.file.write_at(pos, &block.ts.to_be_bytes()).await? as u64;
-        pos += self
-            .file
-            .write_at(pos, &block.vnode_id.to_be_bytes())
-            .await? as u64;
-        pos += self
-            .file
-            .write_at(pos, &block.tenant_len.to_be_bytes())
-            .await? as u64;
-        pos += self
-            .file
-            .write_at(pos, &block.data_len.to_be_bytes())
-            .await? as u64;
-        pos += self.file.write_at(pos, block.tenant.as_bytes()).await? as u64;
-        pos += self.file.write_at(pos, &block.data).await? as u64;
-
-        debug!(
-            "Write hinted off data pos: {}, len: {}",
-            self.size,
-            (pos - self.size)
-        );
-
-        let written_size = (pos - self.size) as usize;
-        self.size = pos;
-
-        Ok(written_size)
-    }
-
-    pub async fn flush(&mut self) -> CoordinatorResult<()> {
-        // Do fsync
-        self.file.sync_data().await?;
-
-        Ok(())
-    }
-}
-
-pub struct HintedOffReader {
-    id: u64,
-    cursor: FileCursor,
-
-    body_buf: Vec<u8>,
-    header_buf: [u8; HINTEDOFF_BLOCK_HEADER_SIZE],
-}
-
-impl HintedOffReader {
-    pub async fn new(id: u64, mut cursor: FileCursor) -> CoordinatorResult<Self> {
-        let header_buf = HintedOffWriter::reade_header(&mut cursor).await?;
-        let offset = byte_utils::decode_be_u32(&header_buf[4..8]);
-
-        debug!("Read hinted off begin read offset: {}", offset);
-
-        cursor.set_pos(offset as u64);
-
-        Ok(Self {
-            id,
-            cursor,
-            header_buf: [0_u8; HINTEDOFF_BLOCK_HEADER_SIZE],
-            body_buf: vec![],
-        })
-    }
-
-    pub fn read_over(&mut self) -> bool {
-        self.cursor.pos() >= self.cursor.len()
-    }
-
-    pub async fn advance_read_offset(&mut self, mut offset: u32) -> CoordinatorResult<()> {
-        if offset == 0 {
-            offset = self.cursor.pos() as u32;
-        }
-
-        HintedOffWriter::write_header(self.cursor.file_ref(), offset).await
-    }
-
-    pub async fn next_hinted_off_block(&mut self) -> Option<HintedOffBlock> {
-        debug!("Read hinted off Reader: cursor.pos={}", self.cursor.pos());
-
-        let read_bytes = match self.cursor.read(&mut self.header_buf[..]).await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("failed read block header buf : {:?}", e);
-                return None;
-            }
-        };
-        if read_bytes < HINTEDOFF_BLOCK_HEADER_SIZE {
-            return None;
-        }
-
-        let ts = byte_utils::decode_be_i64(self.header_buf[0..8].into());
-        let id = byte_utils::decode_be_u32(self.header_buf[8..12].into());
-        let tenant_len = byte_utils::decode_be_u32(self.header_buf[12..16].into());
-        let data_len = byte_utils::decode_be_u32(self.header_buf[16..20].into());
-        if data_len == 0 {
-            return None;
-        }
-        debug!("Read hinted off Reader: data_len={}", data_len);
-
-        if (data_len + tenant_len) as usize > self.body_buf.len() {
-            self.body_buf.resize((data_len + tenant_len) as usize, 0);
-        }
-
-        let buf = &mut self.body_buf.as_mut_slice()[0..(data_len + tenant_len) as usize];
-        let read_bytes = match self.cursor.read(buf).await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("failed read body buf : {:?}", e);
-                return None;
-            }
-        };
-
-        Some(HintedOffBlock {
-            ts,
-            vnode_id: id,
-            tenant_len,
-            data_len,
-            tenant: unsafe { String::from_utf8_unchecked(buf[0..tenant_len as usize].to_vec()) },
-            data: buf[tenant_len as usize..(tenant_len + data_len) as usize].to_vec(),
-        })
     }
 }
 
@@ -482,32 +219,34 @@ impl HintedOffReader {
 mod test {
     use std::sync::Arc;
 
+    use tokio::io::AsyncSeekExt;
     use tokio::sync::RwLock;
     use tokio::time::{self, Duration};
     use trace::init_default_global_tracing;
 
     use super::*;
 
+    #[tokio::test]
+    #[ignore]
     async fn test_hinted_off_file() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
 
-        let dir = "/tmp/cnosdb/hh".to_string();
+        let dir = "/tmp/cnosdb/hh_test".to_string();
         //let _ = std::fs::remove_dir_all(dir.clone());
 
-        let option = HintedOffOption::new(
-            &HintedOffConfig {
-                enable: true,
-                path: dir,
-            },
-            1,
-        );
-        let queue = HintedOffQueue::new(option).await.unwrap();
+        let config = QueueConfig {
+            data_path: dir,
+            file_suffix: "hh".to_string(),
+            max_file_size: 256,
+        };
+
+        let queue = Queue::new(config).await.unwrap();
         let queue = Arc::new(RwLock::new(queue));
 
         tokio::spawn(read_hinted_off_file(queue.clone()));
 
         for i in 1..100 {
-            let data = format!("aaa-datadfdsag{}ffdffdfedata-aaa", i);
+            let data = format!("aaa-datadfdsag-{}-ffdffdfedata-aaa", i);
             let block = HintedOffBlock::new(
                 1000 + i,
                 123,
@@ -515,32 +254,50 @@ mod test {
                 data.as_bytes().to_vec(),
             );
             queue.write().await.write(&block).await.unwrap();
+            info!("========  write data: {}", block.debug());
 
-            //time::sleep(Duration::from_secs(3)).await;
+            time::sleep(Duration::from_secs(10)).await;
         }
 
-        time::sleep(Duration::from_secs(3)).await;
+        time::sleep(Duration::from_secs(3000)).await;
     }
 
-    async fn read_hinted_off_file(queue: Arc<RwLock<HintedOffQueue>>) {
+    async fn read_hinted_off_file(queue: Arc<RwLock<Queue>>) {
         debug!("read file started.");
-        time::sleep(Duration::from_secs(1)).await;
-        let mut count = 0;
+        let mut block = HintedOffBlock::new(0, 0, "".to_string(), vec![]);
         loop {
-            match queue.write().await.read().await {
-                Ok(block) => {
-                    count += 1;
+            match queue.write().await.read(&mut block).await {
+                Ok(_) => {
+                    info!("======== read block data: {}", block.debug());
                 }
 
                 Err(err) => {
-                    break;
+                    info!("======== read block err: {}", err);
                 }
             }
-            let _ = queue.write().await.advance_read_offset(0);
-        }
+            let _ = queue.write().await.commit().await;
 
-        if count != 100 {
-            panic!("hinted off read write wrong");
+            time::sleep(Duration::from_secs(8)).await;
         }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_read_write_file() {
+        use std::io::SeekFrom;
+
+        let file_name =
+            "/Users/adminliu/github.com/cnosdb/cnosdb_main/coordinator/src/file.test".to_string();
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            //.append(true)
+            .open(file_name)
+            .await
+            .unwrap();
+
+        file.write_all(b"abc_123456").await.unwrap();
+        file.seek(SeekFrom::Start(4)).await.unwrap();
+        file.write_all(b"efg").await.unwrap();
     }
 }

@@ -17,12 +17,14 @@ use datafusion::physical_plan::{
     DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream,
     Statistics,
 };
+use futures::executor::block_on;
 use futures::Stream;
 use meta::error::MetaError;
 use models::arrow_array::{build_arrow_array_builders, WriteArrow};
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{ColumnType, TskvTableSchemaRef};
 use models::{SeriesKey, TagValue};
+use spi::QueryError;
 use trace::debug;
 
 #[derive(Debug, Clone)]
@@ -120,14 +122,14 @@ impl ExecutionPlan for TagScanExec {
                 _ => None,
             });
 
-        do_tag_scan(
+        block_on(do_tag_scan(
             self.table_schema.clone(),
             self.schema(),
             tags_filter,
             self.coord.clone(),
             metrics,
             batch_size,
-        )
+        ))
     }
 
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -176,7 +178,7 @@ impl<'a> Display for PredicateDisplay<'a> {
     }
 }
 
-fn do_tag_scan(
+async fn do_tag_scan(
     table_schema: TskvTableSchemaRef,
     proj_schema: SchemaRef,
     tags_filter: ColumnDomains<String>,
@@ -193,13 +195,17 @@ fn do_tag_scan(
     let _db = &table_schema.db;
     let tenant = &table_schema.tenant;
 
-    let _client = coord.tenant_meta(tenant).ok_or_else(|| {
+    let _client = coord.tenant_meta(tenant).await.ok_or_else(|| {
         DataFusionError::External(Box::new(MetaError::TenantNotFound {
             tenant: tenant.to_string(),
         }))
     })?;
 
-    todo!("meta need get_series_id_by_filter")
+    Err(DataFusionError::External(Box::new(
+        QueryError::NotImplemented {
+            err: "meta need get_series_id_by_filter".to_string(),
+        },
+    )))
     // let series_keys = coord
     //     .get_series_id_by_filter(tenant, db, &table_schema.name, &tags_filter)
     //     .map_err(|e| ArrowError::ExternalError(Box::new(e)))?
@@ -230,13 +236,13 @@ struct TagRecordBatchStream {
 }
 
 impl Stream for TagRecordBatchStream {
-    type Item = ArrowResult<RecordBatch>;
+    type Item = Result<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.columns
             .take()
             .map(|e| {
-                let batch = RecordBatch::try_new(self.schema.clone(), e);
+                let batch = RecordBatch::try_new(self.schema.clone(), e).map_err(Into::into);
                 Poll::Ready(Some(batch))
             })
             .unwrap_or_else(|| Poll::Ready(None))

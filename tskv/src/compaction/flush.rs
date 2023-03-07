@@ -1,42 +1,30 @@
-use std::cmp::max;
 use std::collections::HashMap;
-use std::iter::Peekable;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::slice;
 use std::sync::Arc;
+use std::time::Duration;
 
 use models::codec::Encoding;
 use models::schema::TskvTableSchema;
 use models::utils::split_id;
-use models::{
-    utils as model_utils, ColumnId, FieldId, FieldInfo, RwLockRef, SeriesId, SeriesKey, Timestamp,
-    ValueType,
-};
-use parking_lot::{Mutex, RwLock};
-use regex::internal::Input;
-use snafu::{NoneError, OptionExt, ResultExt};
-use tokio::select;
-use tokio::sync::mpsc::{self, UnboundedSender};
+use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp, ValueType};
+use parking_lot::RwLock;
+use snafu::ResultExt;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
-use tokio::sync::oneshot::Sender;
-use trace::{debug, error, info, log_error, warn};
+use tokio::time::timeout;
+use trace::{error, info, warn};
+use utils::BloomFilter;
 
-use crate::compaction::FlushReq;
+use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalContext;
-use crate::database::Database;
-use crate::error::{self, Error, Result};
-use crate::index::IndexResult;
-use crate::kv_option::Options;
-use crate::memcache::{DataType, FieldVal, MemCache, SeriesData};
-use crate::summary::{
-    CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit, WriteSummaryRequest,
-};
-use crate::tseries_family::{LevelInfo, Version};
+use crate::error::{self, Result};
+use crate::memcache::{FieldVal, MemCache, SeriesData};
+use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
+use crate::tseries_family::Version;
 use crate::tsm::codec::DataBlockEncoding;
 use crate::tsm::{self, DataBlock, TsmWriter};
 use crate::version_set::VersionSet;
-use crate::TseriesFamilyId;
+use crate::{ColumnFileId, TseriesFamilyId};
 
 struct FlushingBlock {
     pub field_id: FieldId,
@@ -73,6 +61,7 @@ impl FlushTask {
         self,
         version: Arc<Version>,
         version_edits: &mut Vec<VersionEdit>,
+        file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     ) -> Result<()> {
         info!(
             "Flush: Running flush job on ts_family: {} with {} MemCaches, collecting informations.",
@@ -108,7 +97,7 @@ impl FlushTask {
         }
 
         let mut max_level_ts = version.max_level_ts;
-        let mut compact_metas = self
+        let mut column_file_metas = self
             .flush_mem_caches(
                 flushing_mems_data,
                 max_level_ts,
@@ -116,19 +105,16 @@ impl FlushTask {
             )
             .await?;
         let mut edit = VersionEdit::new(self.ts_family_id);
-        for cm in compact_metas.iter_mut() {
+        for (cm, _) in column_file_metas.iter_mut() {
             cm.low_seq = low_seq;
             cm.high_seq = high_seq;
             max_level_ts = max_level_ts.max(cm.max_ts);
         }
-        for cm in compact_metas {
+        for (cm, field_filter) in column_file_metas {
+            file_metas.insert(cm.file_id, field_filter);
             edit.add_file(cm, max_level_ts);
         }
         version_edits.push(edit);
-
-        for mem in self.mem_caches.iter() {
-            mem.write().flushed = true;
-        }
 
         Ok(())
     }
@@ -140,7 +126,7 @@ impl FlushTask {
         mut caches_data: HashMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>>,
         max_level_ts: Timestamp,
         data_block_size: usize,
-    ) -> Result<Vec<CompactMeta>> {
+    ) -> Result<Vec<(CompactMeta, Arc<BloomFilter>)>> {
         let mut delta_writer: Option<TsmWriter> = None;
         let mut tsm_writer: Option<TsmWriter> = None;
 
@@ -153,8 +139,8 @@ impl FlushTask {
             // Iterates [ MemCache ] -> next_series_id -> [ SeriesData ]
             for series_data in series_datas.iter_mut() {
                 // Iterates SeriesData -> [ RowGroups{ schema_id, schema, [ RowData ] } ]
-                for (sch_id, sch_cols, rows) in series_data.read().flat_groups() {
-                    self.build_codec_map(sch_cols, &mut field_id_code_type_map);
+                for (_sch_id, sch_cols, rows) in series_data.read().flat_groups() {
+                    self.build_codec_map(sch_cols.clone(), &mut field_id_code_type_map);
                     // Iterates [ RowData ]
                     for row in rows.iter() {
                         // Iterates RowData -> [ Option<FieldVal>, column_id ]
@@ -230,7 +216,7 @@ impl FlushTask {
         self.finish_flush_mem_caches(delta_writer, tsm_writer).await
     }
 
-    fn build_codec_map(&self, schema: &TskvTableSchema, map: &mut HashMap<ColumnId, Encoding>) {
+    fn build_codec_map(&self, schema: Arc<TskvTableSchema>, map: &mut HashMap<ColumnId, Encoding>) {
         for i in schema.columns().iter() {
             map.insert(i.id, i.encoding);
         }
@@ -297,12 +283,13 @@ impl FlushTask {
         tsm::new_tsm_writer(dir, self.global_context.file_id_next(), is_delta, 0).await
     }
 
-    /// Flush writers (if it exists) and then generate `CompactMeta`s.
+    /// Flush writers (if they exists) and then generate (`CompactMeta`, `Arc<BloomFilter>`)s
+    /// using writers (if they exists).
     async fn finish_flush_mem_caches(
         &self,
         mut delta_writer: Option<TsmWriter>,
         mut tsm_writer: Option<TsmWriter>,
-    ) -> Result<Vec<CompactMeta>> {
+    ) -> Result<Vec<(CompactMeta, Arc<BloomFilter>)>> {
         let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
         if let Some(writer) = tsm_writer.as_mut() {
             writer.write_index().await.context(error::WriteTsmSnafu)?;
@@ -323,30 +310,36 @@ impl FlushTask {
             );
         }
 
-        let mut compact_metas = vec![];
+        let mut column_file_metas = vec![];
         if let Some(writer) = tsm_writer {
-            compact_metas.push(compact_meta_builder.build_tsm(
-                writer.sequence(),
-                writer.size(),
-                1,
-                writer.min_ts(),
-                writer.max_ts(),
+            column_file_metas.push((
+                compact_meta_builder.build_tsm(
+                    writer.sequence(),
+                    writer.size(),
+                    1,
+                    writer.min_ts(),
+                    writer.max_ts(),
+                ),
+                Arc::new(writer.bloom_filter_cloned()),
             ));
         }
         if let Some(writer) = delta_writer {
-            compact_metas.push(compact_meta_builder.build_delta(
-                writer.sequence(),
-                writer.size(),
-                1,
-                writer.min_ts(),
-                writer.max_ts(),
+            column_file_metas.push((
+                compact_meta_builder.build_delta(
+                    writer.sequence(),
+                    writer.size(),
+                    1,
+                    writer.min_ts(),
+                    writer.max_ts(),
+                ),
+                Arc::new(writer.bloom_filter_cloned()),
             ));
         }
 
         // Sort by File id.
-        compact_metas.sort_by_key(|c| c.file_id);
+        column_file_metas.sort_by_key(|c| c.0.file_id);
 
-        Ok(compact_metas)
+        Ok(column_file_metas)
     }
 }
 
@@ -354,10 +347,12 @@ pub async fn run_flush_memtable_job(
     req: FlushReq,
     global_context: Arc<GlobalContext>,
     version_set: Arc<tokio::sync::RwLock<VersionSet>>,
-    summary_task_sender: UnboundedSender<SummaryTask>,
-    compact_task_sender: UnboundedSender<TseriesFamilyId>,
+    summary_task_sender: Sender<SummaryTask>,
+    compact_task_sender: Option<Sender<CompactTask>>,
 ) -> Result<()> {
-    let mut tsf_caches: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> = HashMap::new();
+    let mut all_mems = vec![];
+    let mut tsf_caches: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> =
+        HashMap::with_capacity(req.mems.len());
     {
         info!("Flush: Running flush job on {} MemCaches", req.mems.len());
         if req.mems.is_empty() {
@@ -368,7 +363,8 @@ pub async fn run_flush_memtable_job(
         }
     }
 
-    let mut edits: Vec<VersionEdit> = vec![];
+    let mut version_edits: Vec<VersionEdit> = vec![];
+    let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
     for (tsf_id, caches) in tsf_caches.into_iter() {
         if caches.is_empty() {
             continue;
@@ -377,7 +373,8 @@ pub async fn run_flush_memtable_job(
         if let Some(tsf) = tsf_warp {
             // todo: build path by vnode data
             let (storage_opt, version, database) = {
-                let tsf_rlock = tsf.read();
+                let tsf_rlock = tsf.read().await;
+                tsf_rlock.update_last_modfied().await;
                 (
                     tsf_rlock.storage_opt(),
                     tsf_rlock.version(),
@@ -388,57 +385,72 @@ pub async fn run_flush_memtable_job(
             let path_tsm = storage_opt.tsm_dir(&database, tsf_id);
             let path_delta = storage_opt.delta_dir(&database, tsf_id);
 
-            FlushTask::new(caches, tsf_id, global_context.clone(), path_tsm, path_delta)
-                .run(version, &mut edits)
+            let flush_task =
+                FlushTask::new(caches, tsf_id, global_context.clone(), path_tsm, path_delta);
+            all_mems.extend(flush_task.mem_caches.clone());
+
+            flush_task
+                .run(version, &mut version_edits, &mut file_metas)
                 .await?;
 
-            if let Err(e) = compact_task_sender.send(tsf_id) {
-                warn!("failed to send compact task, {}", e);
+            tsf.read().await.update_last_modfied().await;
+
+            if let Some(sender) = compact_task_sender.as_ref() {
+                if let Err(e) = sender.send(CompactTask::Vnode(tsf_id)).await {
+                    warn!("failed to send compact task({}), {}", tsf_id, e);
+                }
             }
         }
     }
 
-    info!("Flush: Flush finished, version edits: {:?}", edits);
+    info!("Flush: Flush finished, version edits: {:?}", version_edits);
 
     let (task_state_sender, task_state_receiver) = oneshot::channel();
-    let task = SummaryTask::new_append_task(edits, task_state_sender);
+    let task = SummaryTask::new_column_file_task(file_metas, version_edits, task_state_sender);
 
-    if let Err(e) = summary_task_sender.send(task) {
+    if let Err(e) = summary_task_sender.send(task).await {
         warn!("failed to send Summary task, {}", e);
     }
+
+    if timeout(Duration::from_secs(10), task_state_receiver)
+        .await
+        .is_ok()
+    {
+        all_mems.iter().for_each(|mem| mem.write().flushed = true)
+    } else {
+        error!("Failed recv summary call back, may case inconsistency of data temporarily");
+        all_mems.iter().for_each(|mem| mem.write().flushed = true)
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 pub mod flush_tests {
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::HashMap;
     use std::path::PathBuf;
-    use std::str::FromStr;
     use std::sync::Arc;
 
-    use lru_cache::ShardedCache;
+    use lru_cache::asynchronous::ShardedCache;
+    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use models::codec::Encoding;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::{utils as model_utils, ColumnId, FieldId, Timestamp, ValueType};
+    use models::{utils as model_utils, ColumnId, FieldId, ValueType};
     use parking_lot::RwLock;
     use utils::dedup_front_by_key;
 
     use super::FlushTask;
-    use crate::compaction::FlushReq;
     use crate::context::GlobalContext;
-    use crate::file_system::file_manager;
+    use crate::file_utils;
     use crate::kv_option::Options;
     use crate::memcache::test::put_rows_to_cache;
-    use crate::memcache::{DataType, FieldVal, MemCache};
-    use crate::summary::{CompactMeta, VersionEdit};
-    use crate::tseries_family::{LevelInfo, Version, FLUSH_REQ};
+    use crate::memcache::MemCache;
+    use crate::tseries_family::{LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_reader_tests::read_and_check;
     use crate::tsm::{DataBlock, TsmReader};
-    use crate::version_set::VersionSet;
-    use crate::{file_utils, tseries_family};
 
-    pub fn default_with_field_id(ids: Vec<ColumnId>) -> TskvTableSchema {
+    pub fn default_table_schema(ids: Vec<ColumnId>) -> TskvTableSchema {
         let fields = ids
             .iter()
             .map(|i| TableColumn {
@@ -460,8 +472,8 @@ pub mod flush_tests {
     #[test]
     fn test_sort_dedup() {
         #[rustfmt::skip]
-        let mut data = vec![
-            (1, 11), (1, 12), (2, 21), (3, 3), (2, 22), (4, 41), (4, 42)
+            let mut data = vec![
+            (1, 11), (1, 12), (2, 21), (3, 3), (2, 22), (4, 41), (4, 42),
         ];
         data.sort_by_key(|a| a.0);
         println!("{:?}", &data);
@@ -486,27 +498,27 @@ pub mod flush_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let tsm_dir = dir.join("tsm");
         let delta_dir = dir.join("delta");
-
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let mut caches = vec![
-            MemCache::new(1, 16, 0),
-            MemCache::new(1, 16, 0),
-            MemCache::new(1, 16, 0),
+            MemCache::new(1, 16, 0, &memory_pool),
+            MemCache::new(1, 16, 0, &memory_pool),
+            MemCache::new(1, 16, 0, &memory_pool),
         ];
 
         #[rustfmt::skip]
-        let _skip_fmt = {
-            put_rows_to_cache(&mut caches[0], 1, 1, default_with_field_id(vec![0, 1, 2]), (3, 4), false);
-            put_rows_to_cache(&mut caches[0], 1, 2, default_with_field_id(vec![0, 1, 3]), (1, 2), false);
-            put_rows_to_cache(&mut caches[0], 1, 3, default_with_field_id(vec![0, 1, 2, 3]), (5, 5), true);
-            put_rows_to_cache(&mut caches[0], 1, 3, default_with_field_id(vec![0, 1, 2, 3]), (5, 6), false);
-            put_rows_to_cache(&mut caches[1], 2, 1, default_with_field_id(vec![0, 1, 2]), (9, 10), false);
-            put_rows_to_cache(&mut caches[1], 2, 2, default_with_field_id(vec![0, 1, 3]), (7, 8), false);
-            put_rows_to_cache(&mut caches[1], 2, 3, default_with_field_id(vec![0, 1, 2, 3]), (11, 11), true);
-            put_rows_to_cache(&mut caches[1], 2, 3, default_with_field_id(vec![0, 1, 2, 3]), (11, 12), false);
-            put_rows_to_cache(&mut caches[2], 3, 1, default_with_field_id(vec![0, 1, 2]), (15, 16), false);
-            put_rows_to_cache(&mut caches[2], 3, 2, default_with_field_id(vec![0, 1, 3]), (13, 14), false);
-            put_rows_to_cache(&mut caches[2], 3, 3, default_with_field_id(vec![0, 1, 2, 3]), (17, 17), true);
-            put_rows_to_cache(&mut caches[2], 3, 3, default_with_field_id(vec![0, 1, 2, 3]), (17, 18), false);
+            let _skip_fmt = {
+            put_rows_to_cache(&mut caches[0], 1, 1, default_table_schema(vec![0, 1, 2]), (3, 4), false);
+            put_rows_to_cache(&mut caches[0], 1, 2, default_table_schema(vec![0, 1, 3]), (1, 2), false);
+            put_rows_to_cache(&mut caches[0], 1, 3, default_table_schema(vec![0, 1, 2, 3]), (5, 5), true);
+            put_rows_to_cache(&mut caches[0], 1, 3, default_table_schema(vec![0, 1, 2, 3]), (5, 6), false);
+            put_rows_to_cache(&mut caches[1], 2, 1, default_table_schema(vec![0, 1, 2]), (9, 10), false);
+            put_rows_to_cache(&mut caches[1], 2, 2, default_table_schema(vec![0, 1, 3]), (7, 8), false);
+            put_rows_to_cache(&mut caches[1], 2, 3, default_table_schema(vec![0, 1, 2, 3]), (11, 11), true);
+            put_rows_to_cache(&mut caches[1], 2, 3, default_table_schema(vec![0, 1, 2, 3]), (11, 12), false);
+            put_rows_to_cache(&mut caches[2], 3, 1, default_table_schema(vec![0, 1, 2]), (15, 16), false);
+            put_rows_to_cache(&mut caches[2], 3, 2, default_table_schema(vec![0, 1, 3]), (13, 14), false);
+            put_rows_to_cache(&mut caches[2], 3, 3, default_table_schema(vec![0, 1, 2, 3]), (17, 17), true);
+            put_rows_to_cache(&mut caches[2], 3, 3, default_table_schema(vec![0, 1, 2, 3]), (17, 18), false);
             "skip_fmt"
         };
 
@@ -525,15 +537,15 @@ pub mod flush_tests {
         // Col_2: None, None, 9,    10
         // Col_3: 7,    8,    None, None
         #[rustfmt::skip]
-        let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (model_utils::unite_id(0, 1), vec![DataBlock::F64{ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(1, 1), vec![DataBlock::F64{ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(2, 1), vec![DataBlock::F64{ts: vec![3, 4, 5, 6], val: vec![3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(3, 1), vec![DataBlock::F64{ts: vec![1, 2, 5, 6], val: vec![1.0, 2.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(0, 2), vec![DataBlock::F64{ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(1, 2), vec![DataBlock::F64{ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(2, 2), vec![DataBlock::F64{ts: vec![9, 10], val: vec![9.0, 10.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(3, 2), vec![DataBlock::F64{ts: vec![7, 8], val: vec![7.0, 8.0], enc: DataBlockEncoding::default()}]),
+            let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+            (model_utils::unite_id(0, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(1, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(2, 1), vec![DataBlock::F64 { ts: vec![3, 4, 5, 6], val: vec![3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(3, 1), vec![DataBlock::F64 { ts: vec![1, 2, 5, 6], val: vec![1.0, 2.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(0, 2), vec![DataBlock::F64 { ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(1, 2), vec![DataBlock::F64 { ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(2, 2), vec![DataBlock::F64 { ts: vec![9, 10], val: vec![9.0, 10.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(3, 2), vec![DataBlock::F64 { ts: vec![7, 8], val: vec![7.0, 8.0], enc: DataBlockEncoding::default() }]),
         ]);
 
         // | === SeriesId: 2 === |
@@ -549,19 +561,19 @@ pub mod flush_tests {
         // Col_2: None, None, 15,   16,   None, 17, 18
         // Col_3: 13,   14,   None, None, None, 17, 18
         #[rustfmt::skip]
-        let expected_tsm_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (model_utils::unite_id(0, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(1, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(2, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(3, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(0, 3), vec![DataBlock::F64{ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(1, 3), vec![DataBlock::F64{ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(2, 3), vec![DataBlock::F64{ts: vec![15, 16, 17, 18], val: vec![15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
-            (model_utils::unite_id(3, 3), vec![DataBlock::F64{ts: vec![13, 14, 17, 18], val: vec![13.0, 14.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
+            let expected_tsm_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+            (model_utils::unite_id(0, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(1, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(2, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(3, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(0, 3), vec![DataBlock::F64 { ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(1, 3), vec![DataBlock::F64 { ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(2, 3), vec![DataBlock::F64 { ts: vec![15, 16, 17, 18], val: vec![15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(3, 3), vec![DataBlock::F64 { ts: vec![13, 14, 17, 18], val: vec![13.0, 14.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
         ]);
 
         let ts_family_id = 1;
-        let database = "test_db".to_string();
+        let database = Arc::new("test_db".to_string());
 
         let caches = caches
             .into_iter()
@@ -570,15 +582,22 @@ pub mod flush_tests {
         let global_context = Arc::new(GlobalContext::new());
         let options = Options::from(&config);
         #[rustfmt::skip]
-        let version = Arc::new(Version {
-            ts_family_id, database: database.clone(), storage_opt: options.storage.clone(),
-            last_seq: 1, max_level_ts,
+            let version = Arc::new(Version {
+            ts_family_id,
+            database: database.clone(),
+            storage_opt: options.storage.clone(),
+            last_seq: 1,
+            max_level_ts,
             levels_info: LevelInfo::init_levels(database, 0, options.storage),
             tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
         });
         let flush_task = FlushTask::new(caches, 1, global_context, &tsm_dir, &delta_dir);
         let mut version_edits = vec![];
-        flush_task.run(version, &mut version_edits).await.unwrap();
+        let mut file_metas = HashMap::new();
+        flush_task
+            .run(version, &mut version_edits, &mut file_metas)
+            .await
+            .unwrap();
 
         assert_eq!(version_edits.len(), 1);
         let ve = version_edits.get(0).unwrap();
@@ -603,7 +622,11 @@ pub mod flush_tests {
             }
         }
 
-        read_and_check(tsm_reader.as_ref().unwrap(), expected_tsm_data).await;
-        read_and_check(dlt_reader.as_ref().unwrap(), expected_delta_data).await;
+        read_and_check(tsm_reader.as_ref().unwrap(), expected_tsm_data)
+            .await
+            .unwrap();
+        read_and_check(dlt_reader.as_ref().unwrap(), expected_delta_data)
+            .await
+            .unwrap();
     }
 }

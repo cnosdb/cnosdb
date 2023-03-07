@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
 use meta::error::MetaError;
-use meta::meta_client::MetaClientRef;
+use meta::MetaClientRef;
 use models::auth::role::TenantRoleIdentifier;
 use models::auth::user::User;
 use models::oid::Identifier;
@@ -21,12 +21,13 @@ const INFORMATION_SCHEMA_DATABASE_PRIVILEGES: &str = "DATABASE_PRIVILEGES";
 /// For non-Owner members, only the records corresponding to the role are displayed.
 pub struct DatabasePrivilegesFactory {}
 
+#[async_trait::async_trait]
 impl InformationSchemaTableFactory for DatabasePrivilegesFactory {
     fn table_name(&self) -> &'static str {
         INFORMATION_SCHEMA_DATABASE_PRIVILEGES
     }
 
-    fn create(
+    async fn create(
         &self,
         user: &User,
         metadata: MetaClientRef,
@@ -42,20 +43,20 @@ impl InformationSchemaTableFactory for DatabasePrivilegesFactory {
 
         if user.can_access_role(*tenant_id) {
             // All records of this view are visible to the Owner of the current tenant.
-            for role in metadata.custom_roles()? {
+            for role in metadata.custom_roles().await? {
                 for (database_name, privilege) in role.additiona_privileges() {
                     builder.append_row(tenant_name, database_name, privilege.as_str(), role.name())
                 }
             }
         } else {
             // For non-Owner members, only records corresponding to own role are accessed
-            if let Some(role) = metadata.member_role(user_id)? {
+            if let Some(role) = metadata.member_role(user_id).await? {
                 match role {
                     TenantRoleIdentifier::System(_) => {
                         // not show system roles
                     }
                     TenantRoleIdentifier::Custom(ref role_name) => {
-                        if let Some(role) = metadata.custom_role(role_name)? {
+                        if let Some(role) = metadata.custom_role(role_name).await? {
                             for (database_name, privilege) in role.additiona_privileges() {
                                 builder.append_row(
                                     tenant_name,

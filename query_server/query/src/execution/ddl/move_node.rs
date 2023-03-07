@@ -23,8 +23,8 @@ impl DDLDefinitionTask for MoveVnodeTask {
         let tenant = query_state_machine.session.tenant();
 
         let coord = query_state_machine.coord.clone();
-        let cmd_type = coordinator::command::VnodeManagerCmdType::Move(node_id);
-        coord.vnode_manager(tenant, vnode_id, cmd_type).await?;
+        let cmd_type = coordinator::VnodeManagerCmdType::Move(vnode_id, node_id);
+        coord.vnode_manager(tenant, cmd_type).await?;
 
         Ok(Output::Nil(()))
     }

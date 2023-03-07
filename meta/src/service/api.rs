@@ -1,11 +1,17 @@
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::Write;
+use std::time::Duration;
+
 use actix_web::web::Data;
 use actix_web::{get, post, web, Responder};
 use openraft::error::Infallible;
-use tokio::sync::mpsc;
+use pprof::protos::Message;
+use trace::info;
 use web::Json;
 
 use crate::store::command::*;
-use crate::store::state_machine::{CommandResp, WatchTenantMetaData};
+use crate::store::state_machine::CommandResp;
 use crate::MetaApp;
 
 #[post("/read")]
@@ -27,77 +33,54 @@ pub async fn write(
     Ok(Json(response))
 }
 
-#[post("/watch_tenant")]
-pub async fn watch_tenant(
+#[post("/watch")]
+pub async fn watch(
     app: Data<MetaApp>,
-    req: Json<(String, String, String, u64)>, //client_id, cluster, tenant,version
+    req: Json<(String, String, HashSet<String>, u64)>, //client id, cluster,version
 ) -> actix_web::Result<impl Responder> {
-    let client_id = req.0 .0;
+    info!("watch all  args: {:?}", req);
+    let client = req.0 .0;
     let cluster = req.0 .1;
-    let tenant = req.0 .2;
-    let version = req.0 .3;
+    let tenants = req.0 .2;
+    let base_ver = req.0 .3;
+    let mut follow_ver = base_ver;
 
-    let (sender, mut receiver) = mpsc::channel(1);
-    {
-        let mut watch_data = WatchTenantMetaData {
-            sender,
-            cluster: cluster.clone(),
-            tenant: tenant.clone(),
-            delta: TenantMetaDataDelta::default(),
-        };
-
-        let mut watch = app.store.watch.write().await;
+    let mut notify = {
         let sm = app.store.state_machine.read().await;
-        if let Some(item) = watch.get_mut(&client_id) {
-            item.sender.closed().await;
-            watch_data.delta = item.delta.clone();
-        }
-
-        let delta_min_ver = watch_data.delta.ver_range.0;
-        if sm.version() > version && (version < delta_min_ver || delta_min_ver == 0) {
-            watch_data.delta = TenantMetaDataDelta::default();
-            watch_data.delta.update_version(sm.version());
-            watch.insert(client_id.clone(), watch_data);
-
-            let data = TenantMetaDataDelta {
-                full_load: true,
-                update: sm.to_tenant_meta_data(&cluster, &tenant).unwrap(),
-                ..Default::default()
-            };
-
-            let res = serde_json::to_string(&data).unwrap();
-            let response: Result<CommandResp, Infallible> = Ok(res);
-
+        let watch_data = sm.read_change_logs(&cluster, &tenants, follow_ver);
+        info!(
+            "{} {}.{}: change logs: {:?} ",
+            client, base_ver, follow_ver, watch_data
+        );
+        if watch_data.need_return(base_ver) {
+            let data = serde_json::to_string(&watch_data).unwrap();
+            let response: Result<CommandResp, Infallible> = Ok(data);
             return Ok(Json(response));
         }
 
-        let delta_max_ver = watch_data.delta.ver_range.1;
-        if version < delta_max_ver {
-            let _ = watch_data.sender.try_send(true);
+        sm.watch.subscribe()
+    };
+
+    let now = std::time::Instant::now();
+    loop {
+        let _ = tokio::time::timeout(tokio::time::Duration::from_secs(20), notify.recv()).await;
+
+        let sm = app.store.state_machine.read().await;
+        let watch_data = sm.read_change_logs(&cluster, &tenants, follow_ver);
+        info!(
+            "{} {}.{}: change logs: {:?} ",
+            client, base_ver, follow_ver, watch_data
+        );
+        if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
+            let data = serde_json::to_string(&watch_data).unwrap();
+            let response: Result<CommandResp, Infallible> = Ok(data);
+            return Ok(Json(response));
         }
 
-        watch.insert(client_id.clone(), watch_data);
+        if follow_ver < watch_data.max_ver {
+            follow_ver = watch_data.max_ver;
+        }
     }
-
-    if receiver.recv().await.is_none() {
-        let response: Result<CommandResp, Infallible> = Ok("watch channel closed!".to_string());
-        return Ok(Json(response));
-    }
-
-    let mut watch = app.store.watch.write().await;
-    if let Some(item) = watch.get_mut(&client_id) {
-        let res = serde_json::to_string(&item.delta).unwrap();
-
-        let delta_max_ver = item.delta.ver_range.0;
-        item.delta = TenantMetaDataDelta::default();
-        item.delta.update_version(delta_max_ver);
-
-        let response: Result<CommandResp, Infallible> = Ok(res);
-        return Ok(Json(response));
-    }
-
-    let response: Result<CommandResp, Infallible> = Ok("can't found watch info".to_string());
-    Ok(Json(response))
 }
 
 #[get("/debug")]
@@ -113,4 +96,29 @@ pub async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     response += "******----------------------------------------------******\n";
 
     Ok(response)
+}
+
+#[get("/pprof")]
+pub async fn pprof_test(_app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+    let guard = pprof::ProfilerGuardBuilder::default()
+        .frequency(1000)
+        .blocklist(&["libc", "libgcc", "pthread", "vdso"])
+        .build()
+        .unwrap();
+
+    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+
+    if let Ok(report) = guard.report().build() {
+        info!("====== write pprof file");
+        let mut file = File::create("/tmp/cnosdb/profile.pb").unwrap();
+        let profile = report.pprof().unwrap();
+        let mut content = Vec::new();
+        profile.write_to_vec(&mut content).unwrap();
+        file.write_all(&content).unwrap();
+
+        let file = File::create("/tmp/cnosdb/flamegraph.svg").unwrap();
+        report.flamegraph(file).unwrap();
+    };
+
+    Ok("".to_string())
 }

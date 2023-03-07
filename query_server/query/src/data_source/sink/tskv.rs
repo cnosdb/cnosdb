@@ -4,7 +4,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use models::consistency_level::ConsistencyLevel;
 use models::schema::TskvTableSchemaRef;
-use protos::kv_service::WritePointsRpcRequest;
+use protos::kv_service::WritePointsRequest;
 use spi::Result;
 
 use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata};
@@ -39,7 +39,7 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         // points write request
         let timer = self.metrics.elapsed_point_write().timer();
-        let req = WritePointsRpcRequest {
+        let req = WritePointsRequest {
             version: 0,
             meta: None,
             points,

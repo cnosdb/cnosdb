@@ -255,7 +255,7 @@ mod test {
     async fn test_v1_write_path() {
         let path = "/api/v1/write";
         let param = &[("db", "public")];
-        let username = "cnosdb";
+        let username = "root";
 
         let client = client();
 
@@ -281,6 +281,7 @@ mod test {
             .unwrap();
         assert_eq!(resp.status(), status_code::BAD_REQUEST);
 
+        // method error
         let resp: Response = client
             .get(path)
             .query(param)

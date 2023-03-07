@@ -31,6 +31,7 @@ impl DDLDefinitionTask for GrantRevokeTask {
             .meta
             .tenant_manager()
             .tenant_meta(tenant_name)
+            .await
             .ok_or_else(|| QueryError::Meta {
                 source: MetaError::TenantNotFound {
                     tenant: tenant_name.to_string(),
@@ -54,7 +55,8 @@ impl DDLDefinitionTask for GrantRevokeTask {
                 role_name, tenant_name
             );
 
-            meta.grant_privilege_to_custom_role(database_privileges.clone(), role_name)?;
+            meta.grant_privilege_to_custom_role(database_privileges.clone(), role_name)
+                .await?;
         } else {
             // 给租户下的自定义角色撤销若干权限
             // fn revoke_privilege_from_custom_role_of_tenant(
@@ -69,7 +71,8 @@ impl DDLDefinitionTask for GrantRevokeTask {
                 role_name, tenant_name
             );
 
-            meta.revoke_privilege_from_custom_role(database_privileges.clone(), role_name)?;
+            meta.revoke_privilege_from_custom_role(database_privileges.clone(), role_name)
+                .await?;
         }
 
         return Ok(Output::Nil(()));

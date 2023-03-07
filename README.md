@@ -1,5 +1,5 @@
 <div align="center">
-  <img  src="docs/source/_static/img/cnosdb_logo_new_year.gif" width="500" alt="CnodSB Logo">
+  <img  src="docs/source/_static/img/cnosdb_logo_white.svg" width="500" alt="CnodSB Logo">
 </div>
 
 <p align="center">
@@ -269,3 +269,4 @@ Please refer to [Contribution Guide](./CONTRIBUTING_EN.md) to contribute to Cnos
 
 - CnosDB 2.0 uses [Apache Arrow](https://github.com/apache/arrow) as the memory model.
 - CnosDB 2.0's query engine is powered by [Apache Arrow DataFusion](https://github.com/apache/arrow-datafusion).
+- CnosDB 2.0's bug detection is powered by [SQLancer](https://github.com/sqlancer/sqlancer).

@@ -1,57 +1,60 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code, unused_variables)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use models::auth::privilege::DatabasePrivilege;
-use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier};
-use models::auth::user::UserDesc;
-use models::limiter::LimiterConfig;
+use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::meta_data::{
     BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
 };
-use models::oid::{Identifier, Oid};
+use models::oid::Oid;
 use models::schema::{
     DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
 };
-use tokio::net::TcpStream;
+use tonic::transport::Channel;
 
-use crate::error::{MetaError, MetaResult};
-use crate::limiter::{Limiter, LimiterImpl};
-use crate::meta_client::{
-    AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaManager, TenantManager,
-    TenantManagerRef, UserManagerRef,
-};
-use crate::user_manager::UserManagerMock;
+use crate::error::MetaResult;
+use crate::limiter::RequestLimiter;
+use crate::meta_admin::AdminMeta;
+use crate::meta_client::MetaClient;
+use crate::meta_manager::MetaManager;
+use crate::store::command::EntryLog;
+use crate::tenant_manager::TenantManager;
+use crate::user_manager_mock::UserManagerMock;
+use crate::{AdminMetaRef, MetaClientRef, TenantManagerRef, UserManagerRef};
 
 #[derive(Default, Debug)]
 pub struct MockAdminMeta {}
 #[async_trait::async_trait]
 impl AdminMeta for MockAdminMeta {
-    fn add_data_node(&self, node: &NodeInfo) -> MetaResult<()> {
+    async fn sync_all(&self) -> MetaResult<u64> {
+        Ok(0)
+    }
+    async fn add_data_node(&self) -> MetaResult<()> {
         Ok(())
     }
 
-    fn data_nodes(&self) -> Vec<NodeInfo> {
+    async fn data_nodes(&self) -> Vec<NodeInfo> {
         vec![]
     }
 
-    fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {
+    async fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {
         Ok(NodeInfo::default())
     }
 
-    async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream> {
-        Err(MetaError::CommonError {
-            msg: "mock not implement node conn".to_string(),
-        })
+    async fn get_node_conn(&self, node_id: u64) -> MetaResult<Channel> {
+        todo!()
     }
-
-    fn put_node_conn(&self, node_id: u64, conn: TcpStream) {}
 
     fn heartbeat(&self) {}
 
-    fn retain_id(&self, count: u32) -> MetaResult<u32> {
+    async fn retain_id(&self, count: u32) -> MetaResult<u32> {
         Ok(0)
+    }
+
+    async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()> {
+        Ok(())
     }
 }
 
@@ -67,15 +70,16 @@ impl Default for MockMetaClient {
     }
 }
 
+#[async_trait::async_trait]
 impl MetaClient for MockMetaClient {
     fn tenant(&self) -> &Tenant {
         &self.tenant
     }
 
-    fn create_db(&self, info: DatabaseSchema) -> MetaResult<()> {
+    async fn create_db(&self, info: DatabaseSchema) -> MetaResult<()> {
         Ok(())
     }
-    fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
+    async fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
         Ok(())
     }
 
@@ -87,15 +91,15 @@ impl MetaClient for MockMetaClient {
         Ok(vec![])
     }
 
-    fn drop_db(&self, name: &str) -> MetaResult<bool> {
+    async fn drop_db(&self, name: &str) -> MetaResult<bool> {
         Ok(false)
     }
 
-    fn create_table(&self, schema: &TableSchema) -> MetaResult<()> {
+    async fn create_table(&self, schema: &TableSchema) -> MetaResult<()> {
         Ok(())
     }
 
-    fn update_table(&self, schema: &TableSchema) -> MetaResult<()> {
+    async fn update_table(&self, schema: &TableSchema) -> MetaResult<()> {
         Ok(())
     }
 
@@ -103,15 +107,19 @@ impl MetaClient for MockMetaClient {
         Ok(None)
     }
 
-    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
-        Ok(Some(TskvTableSchema::default()))
+    fn get_tskv_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
+        Ok(Some(Arc::new(TskvTableSchema::default())))
     }
 
     fn get_external_table_schema(
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<ExternalTableSchema>> {
+    ) -> MetaResult<Option<Arc<ExternalTableSchema>>> {
         Ok(None)
     }
 
@@ -119,15 +127,15 @@ impl MetaClient for MockMetaClient {
         Ok(vec![])
     }
 
-    fn drop_table(&self, db: &str, table: &str) -> MetaResult<()> {
+    async fn drop_table(&self, db: &str, table: &str) -> MetaResult<()> {
         Ok(())
     }
 
-    fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo> {
+    async fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo> {
         Ok(BucketInfo::default())
     }
 
-    fn delete_bucket(&self, db: &str, id: u32) -> MetaResult<()> {
+    async fn delete_bucket(&self, db: &str, id: u32) -> MetaResult<()> {
         Ok(())
     }
 
@@ -135,7 +143,7 @@ impl MetaClient for MockMetaClient {
         Some(0)
     }
 
-    fn locate_replcation_set_for_write(
+    async fn locate_replcation_set_for_write(
         &self,
         db: &str,
         hash_id: u64,
@@ -152,27 +160,35 @@ impl MetaClient for MockMetaClient {
         "".to_string()
     }
 
-    fn add_member_with_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
+    async fn add_member_with_role(
+        &self,
+        user_id: Oid,
+        role: TenantRoleIdentifier,
+    ) -> MetaResult<()> {
         todo!()
     }
 
-    fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>> {
+    async fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>> {
         todo!()
     }
 
-    fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>> {
+    async fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>> {
         todo!()
     }
 
-    fn reasign_member_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
+    async fn reasign_member_role(
+        &self,
+        user_id: Oid,
+        role: TenantRoleIdentifier,
+    ) -> MetaResult<()> {
         todo!()
     }
 
-    fn remove_member(&self, user_id: Oid) -> MetaResult<()> {
+    async fn remove_member(&self, user_id: Oid) -> MetaResult<()> {
         todo!()
     }
 
-    fn create_custom_role(
+    async fn create_custom_role(
         &self,
         role_name: String,
         system_role: SystemTenantRole,
@@ -181,15 +197,15 @@ impl MetaClient for MockMetaClient {
         todo!()
     }
 
-    fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>> {
+    async fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>> {
         todo!()
     }
 
-    fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>> {
+    async fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>> {
         todo!()
     }
 
-    fn grant_privilege_to_custom_role(
+    async fn grant_privilege_to_custom_role(
         &self,
         database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
@@ -197,7 +213,7 @@ impl MetaClient for MockMetaClient {
         todo!()
     }
 
-    fn revoke_privilege_from_custom_role(
+    async fn revoke_privilege_from_custom_role(
         &self,
         database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
@@ -205,7 +221,7 @@ impl MetaClient for MockMetaClient {
         todo!()
     }
 
-    fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool> {
+    async fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool> {
         todo!()
     }
 
@@ -213,7 +229,7 @@ impl MetaClient for MockMetaClient {
         vec![]
     }
 
-    fn update_replication_set(
+    async fn update_replication_set(
         &self,
         db: &str,
         bucket_id: u32,
@@ -224,12 +240,20 @@ impl MetaClient for MockMetaClient {
         Ok(())
     }
 
+    async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()> {
+        Ok(())
+    }
+
+    async fn version(&self) -> u64 {
+        0
+    }
+
     fn get_vnode_all_info(&self, id: u32) -> Option<VnodeAllInfo> {
         None
     }
 
-    fn limiter(&self) -> Arc<dyn Limiter> {
-        todo!()
+    fn get_vnode_repl_set(&self, id: u32) -> Option<ReplicationSet> {
+        None
     }
 
     fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
@@ -240,12 +264,17 @@ impl MetaClient for MockMetaClient {
 #[derive(Default, Debug)]
 pub struct MockMetaManager {}
 
+#[async_trait::async_trait]
 impl MetaManager for MockMetaManager {
     fn node_id(&self) -> u64 {
         0
     }
 
-    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
+    async fn use_tenant(&self, val: &str) -> MetaResult<()> {
+        Ok(())
+    }
+
+    async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         vec![]
     }
 
@@ -261,7 +290,7 @@ impl MetaManager for MockMetaManager {
         Arc::new(TenantManagerMock::default())
     }
 
-    fn user_with_privileges(
+    async fn user_with_privileges(
         &self,
         user_name: &str,
         tenant_name: Option<&str>,
@@ -273,40 +302,46 @@ impl MetaManager for MockMetaManager {
 #[derive(Debug, Default)]
 pub struct TenantManagerMock {}
 
+#[async_trait::async_trait]
 impl TenantManager for TenantManagerMock {
-    fn create_tenant(&self, name: String, options: TenantOptions) -> MetaResult<MetaClientRef> {
+    async fn clear(&self) {}
+    async fn create_tenant(
+        &self,
+        name: String,
+        options: TenantOptions,
+    ) -> MetaResult<MetaClientRef> {
         todo!()
     }
 
-    fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>> {
+    async fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>> {
         todo!()
     }
 
-    fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
+    async fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
         todo!()
     }
 
-    fn drop_tenant(&self, name: &str) -> MetaResult<bool> {
+    async fn drop_tenant(&self, name: &str) -> MetaResult<bool> {
         todo!()
     }
 
-    fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
+    async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
         todo!()
     }
 
-    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
+    async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         vec![]
     }
 
-    fn tenants(&self) -> MetaResult<Vec<Tenant>> {
+    async fn tenants(&self) -> MetaResult<Vec<Tenant>> {
         todo!()
     }
 
-    fn tenant_set_limiter(
-        &self,
-        tenant_name: &str,
-        limiter_config: Option<LimiterConfig>,
-    ) -> MetaResult<()> {
+    async fn get_tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
+        todo!()
+    }
+
+    async fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter> {
         todo!()
     }
 }

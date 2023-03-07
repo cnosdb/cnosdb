@@ -1,49 +1,38 @@
-use std::collections::HashMap;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::time::Duration;
 
-use arrow_flight::flight_service_server::{FlightService, FlightServiceServer};
+use arrow_flight::flight_service_server::FlightService;
 use arrow_flight::sql::server::FlightSqlService;
 use arrow_flight::sql::{
     ActionClosePreparedStatementRequest, ActionCreatePreparedStatementRequest,
     ActionCreatePreparedStatementResult, CommandGetCatalogs, CommandGetCrossReference,
     CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys, CommandGetPrimaryKeys,
     CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables, CommandPreparedStatementQuery,
-    CommandPreparedStatementUpdate, CommandStatementQuery, CommandStatementUpdate, ProstAnyExt,
-    SqlInfo, TicketStatementQuery,
+    CommandPreparedStatementUpdate, CommandStatementQuery, CommandStatementUpdate, SqlInfo,
+    TicketStatementQuery,
 };
 use arrow_flight::{
-    flight_service_server, utils as flight_utils, Action, FlightData, FlightDescriptor,
-    FlightEndpoint, FlightInfo, HandshakeRequest, HandshakeResponse, IpcMessage, SchemaAsIpc,
-    Ticket,
+    utils as flight_utils, Action, FlightData, FlightDescriptor, FlightInfo, HandshakeRequest,
+    HandshakeResponse, IpcMessage, SchemaAsIpc, Ticket,
 };
-use chrono::format::Item;
-use dashmap::DashMap;
-use datafusion::arrow::datatypes::Schema;
-use datafusion::arrow::ipc::writer::{DictionaryTracker, IpcDataGenerator, IpcWriteOptions};
+use datafusion::arrow::datatypes::{Schema, ToByteSlice};
+use datafusion::arrow::ipc::writer::IpcWriteOptions;
 use futures::Stream;
-use http_protocol::header::{AUTHORIZATION, BASIC_PREFIX, BEARER_PREFIX, DB, TENANT};
-use models::auth::user::{User, UserInfo};
-use models::oid::{MemoryOidGenerator, Oid, OidGenerator, UuidGenerator};
+use http_protocol::header::{DB, TENANT};
+use models::auth::user::User;
+use models::oid::UuidGenerator;
 use moka::sync::Cache;
-use prost::Message;
-use prost_types::Any;
-use query::dispatcher::manager::SimpleQueryDispatcher;
-use query::instance::Cnosdbms;
-use spi::query::dispatcher::QueryDispatcher;
+use prost::bytes::Bytes;
 use spi::query::execution::Output;
-use spi::server::dbms::{DBMSRef, DatabaseManagerSystem, DatabaseManagerSystemMock};
-use spi::service::protocol::{Context, ContextBuilder, Query, QueryHandle, QueryId};
-use tonic::metadata::{AsciiMetadataValue, MetadataMap};
-use tonic::transport::Server;
+use spi::server::dbms::DBMSRef;
+use spi::service::protocol::{Context, ContextBuilder, Query, QueryHandle};
+use tonic::metadata::MetadataMap;
 use tonic::{Request, Response, Status, Streaming};
 use trace::debug;
 
 use super::auth_middleware::CallHeaderAuthenticator;
 use crate::flight_sql::auth_middleware::AuthResult;
 use crate::flight_sql::utils;
-use crate::http::header::Header;
 
 pub struct FlightSqlServiceImpl<T> {
     instance: DBMSRef,
@@ -56,6 +45,7 @@ pub struct FlightSqlServiceImpl<T> {
 impl<T> FlightSqlServiceImpl<T> {
     pub fn new(instance: DBMSRef, authenticator: T) -> Self {
         let result_cache = Cache::builder()
+            .thread_pool_enabled(false)
             // Time to live (TTL): 2 minutes
             // The query results are only cached for 2 minutes and expire after 2 minutes
             .time_to_live(Duration::from_secs(2 * 60))
@@ -107,7 +97,7 @@ where
         sql: String,
         metadata: &MetadataMap,
     ) -> Result<(Vec<u8>, QueryHandle), Status> {
-        let auth_result = self.authenticator.authenticate(metadata)?;
+        let auth_result = self.authenticator.authenticate(metadata).await?;
         let user = auth_result.identity();
 
         // construct context by user_info and headers(parse tenant & default database)
@@ -124,7 +114,7 @@ where
 
     fn construct_flight_info(
         &self,
-        result_ident: impl Into<Vec<u8>>,
+        result_ident: impl Into<Bytes>,
         schema: &Schema,
         total_records: i64,
         flight_descriptor: FlightDescriptor,
@@ -179,7 +169,7 @@ where
     fn fetch_result_set(
         &self,
         statement_handle: &[u8],
-    ) -> Result<Vec<Result<FlightData, Status>>, Status> {
+    ) -> Result<<Self as FlightService>::DoGetStream, Status> {
         let output = self.result_cache.get(statement_handle).ok_or_else(|| {
             Status::internal(format!(
                 "The result of query({:?}) does not exist or has expired",
@@ -187,33 +177,17 @@ where
             ))
         })?;
 
-        let options = IpcWriteOptions::default();
+        let schema = (*output.schema()).clone();
+        let batches = output.chunk_result().to_owned();
 
-        let schema = std::iter::once(Ok(
-            SchemaAsIpc::new(output.schema().as_ref(), &options).into()
-        ));
+        let flight_data = flight_utils::batches_to_flight_data(schema, batches)
+            .map_err(|e| Status::internal(format!("Could not convert batches, error: {}", e)))?
+            .into_iter()
+            .map(Ok);
+        let stream: Pin<Box<dyn Stream<Item = Result<FlightData, Status>> + Send>> =
+            Box::pin(futures::stream::iter(flight_data));
 
-        let batches = output
-            .chunk_result()
-            .iter()
-            .enumerate()
-            .flat_map(|(counter, batch)| {
-                let (dictionary_flight_data, mut batch_flight_data) =
-                    flight_utils::flight_data_from_arrow_batch(batch, &options);
-
-                // Only the record batch's FlightData gets app_metadata
-                let metadata = counter.to_string().into_bytes();
-                batch_flight_data.app_metadata = metadata;
-
-                dictionary_flight_data
-                    .into_iter()
-                    .chain(std::iter::once(batch_flight_data))
-                    .map(Ok)
-            });
-
-        let result = schema.chain(batches).collect::<Vec<_>>();
-
-        Ok(result)
+        Ok(stream)
     }
 
     fn fetch_affected_rows_count(&self, statement_handle: &[u8]) -> Result<i64, Status> {
@@ -272,11 +246,11 @@ where
 /// use flight sql to execute statement query:
 ///
 /// e.g.
-/// ```
+///
 /// 1. do_handshake: basic auth -> baerar token
 /// 4. get_flight_info_statement: sql(baerar token) -> address of resut set
 /// 5. do_get_statement: address of resut set(baerar token) -> resut set stream
-/// ```
+///
 #[tonic::async_trait]
 impl<T> FlightSqlService for FlightSqlServiceImpl<T>
 where
@@ -294,7 +268,8 @@ where
     > {
         debug!("do_handshake: {:?}", request);
 
-        let auth_result = self.authenticator.authenticate(request.metadata())?;
+        let meta_data = request.metadata();
+        let auth_result = self.authenticator.authenticate(meta_data).await?;
 
         let output: Pin<Box<dyn Stream<Item = Result<HandshakeResponse, Status>> + Send>> =
             Box::pin(futures::stream::empty());
@@ -341,6 +316,7 @@ where
         let CommandPreparedStatementQuery {
             prepared_statement_handle,
         } = query;
+        let prepared_statement_handle = prepared_statement_handle.to_byte_slice().to_owned();
 
         // get metadata of result from cache
         let output = self
@@ -367,7 +343,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_catalogs(
         &self,
         query: CommandGetCatalogs,
@@ -384,7 +360,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_schemas(
         &self,
         query: CommandGetDbSchemas,
@@ -401,7 +377,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_tables(
         &self,
         query: CommandGetTables,
@@ -418,7 +394,7 @@ where
     }
 
     /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_table_types(
         &self,
         query: CommandGetTableTypes,
@@ -431,242 +407,6 @@ where
 
         Err(Status::unimplemented(
             "get_flight_info_table_types not implemented",
-        ))
-    }
-
-    /// Fetch the ad-hoc SQL query's result set
-    ///
-    /// [`TicketStatementQuery`] is the result obtained after calling [`Self::get_flight_info_statement`]
-    async fn do_get_statement(
-        &self,
-        ticket: TicketStatementQuery,
-        request: Request<Ticket>,
-    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!(
-            "do_get_statement: query: {:?}, request: {:?}",
-            ticket, request
-        );
-
-        let TicketStatementQuery { statement_handle } = ticket;
-
-        let batches = self.fetch_result_set(&statement_handle)?;
-
-        let output = futures::stream::iter(batches);
-
-        // clear cache of this query
-        self.result_cache.invalidate(&statement_handle);
-
-        Ok(Response::new(
-            Box::pin(output) as <Self as FlightService>::DoGetStream
-        ))
-    }
-
-    /// Fetch the prepared SQL query's result set
-    ///
-    /// [`CommandPreparedStatementQuery`] is the result obtained after calling [`Self::get_flight_info_prepared_statement`]
-    async fn do_get_prepared_statement(
-        &self,
-        query: CommandPreparedStatementQuery,
-        request: Request<Ticket>,
-    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!(
-            "do_get_prepared_statement: query: {:?}, request: {:?}",
-            query, request
-        );
-
-        let CommandPreparedStatementQuery {
-            prepared_statement_handle,
-        } = query;
-
-        let batches = self.fetch_result_set(&prepared_statement_handle)?;
-
-        let output = futures::stream::iter(batches);
-
-        // clear cache of this query
-        self.result_cache.invalidate(&prepared_statement_handle);
-
-        Ok(Response::new(
-            Box::pin(output) as <Self as FlightService>::DoGetStream
-        ))
-    }
-
-    /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
-    async fn do_get_catalogs(
-        &self,
-        query: CommandGetCatalogs,
-        request: Request<Ticket>,
-    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!(
-            "do_get_catalogs: query: {:?}, request: {:?}",
-            query, request
-        );
-
-        Err(Status::unimplemented("do_get_catalogs not implemented"))
-    }
-
-    /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
-    async fn do_get_schemas(
-        &self,
-        query: CommandGetDbSchemas,
-        request: Request<Ticket>,
-    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_schemas: query: {:?}, request: {:?}", query, request);
-
-        Err(Status::unimplemented("do_get_schemas not implemented"))
-    }
-
-    /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
-    async fn do_get_tables(
-        &self,
-        query: CommandGetTables,
-        request: Request<Ticket>,
-    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_tables: query: {:?}, request: {:?}", query, request);
-
-        Err(Status::unimplemented("do_get_tables not implemented"))
-    }
-
-    /// TODO support
-    /// wait for https://github.com/cnosdb/cnosdb/issues/642
-    async fn do_get_table_types(
-        &self,
-        query: CommandGetTableTypes,
-        request: Request<Ticket>,
-    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!(
-            "do_get_table_types: query: {:?}, request: {:?}",
-            query, request
-        );
-
-        Err(Status::unimplemented("do_get_table_types not implemented"))
-    }
-
-    /// Execute an ad-hoc SQL query and return the number of affected rows.
-    async fn do_put_statement_update(
-        &self,
-        ticket: CommandStatementUpdate,
-        request: Request<Streaming<FlightData>>,
-    ) -> Result<i64, Status> {
-        debug!(
-            "do_put_statement_update: query: {:?}, request: {:?}",
-            ticket, request
-        );
-
-        let CommandStatementUpdate { query } = ticket;
-
-        let metadata = request.metadata();
-
-        let (_, query_result) = self.auth_and_execute(query, metadata).await?;
-
-        let affected_rows = query_result.result().affected_rows();
-
-        Ok(affected_rows)
-    }
-
-    /// Execute the query and return the number of affected rows.
-    /// The prepared statement can be reused afterwards.
-    ///
-    /// Prepared statement is not supported,
-    /// because ad-hoc statement of flight jdbc needs to call this interface, so it is simple to implement
-    async fn do_put_prepared_statement_update(
-        &self,
-        query: CommandPreparedStatementUpdate,
-        request: Request<Streaming<FlightData>>,
-    ) -> Result<i64, Status> {
-        debug!(
-            "do_put_prepared_statement_update: query: {:?}, request: {:?}",
-            query, request
-        );
-
-        let CommandPreparedStatementUpdate {
-            ref prepared_statement_handle,
-        } = query;
-
-        let rows_count = self.fetch_affected_rows_count(prepared_statement_handle)?;
-
-        Ok(rows_count)
-    }
-
-    /// Prepared statement is not supported,
-    /// because ad-hoc statement of flight jdbc needs to call this interface,
-    /// so directly return the sql as the result.
-    async fn do_action_create_prepared_statement(
-        &self,
-        query: ActionCreatePreparedStatementRequest,
-        request: Request<Action>,
-    ) -> Result<ActionCreatePreparedStatementResult, Status> {
-        debug!(
-            "do_action_create_prepared_statement: query: {:?}, request: {:?}",
-            query, request
-        );
-
-        let ActionCreatePreparedStatementRequest { query: sql } = query;
-        let metadata = request.metadata();
-
-        let user_info = self.authenticator.authenticate(metadata)?.identity();
-
-        // construct context by user_info and headers(parse tenant & default database)
-        let ctx = self.construct_context(user_info, metadata)?;
-
-        // execute sql
-        let query_result = self.execute(sql, ctx).await?;
-
-        // generate result identifier
-        let result_ident = self.id_generator.next_id().to_le_bytes().to_vec();
-
-        // get result metadata
-        let output = query_result.result();
-        let schema = output.schema();
-        let total_records = output.num_rows();
-
-        // cache result wait cli fetching
-        self.result_cache.insert(result_ident.clone(), output);
-
-        // construct response start
-        let IpcMessage(dataset_schema) = IpcMessage::try_from(SchemaAsIpc::new(
-            schema.as_ref(),
-            &IpcWriteOptions::default(),
-        ))
-        .map_err(|e| Status::internal(format!("{}", e)))?;
-        let result = ActionCreatePreparedStatementResult {
-            prepared_statement_handle: result_ident,
-            dataset_schema,
-            ..Default::default()
-        };
-
-        Ok(result)
-    }
-
-    /// Close a previously created prepared statement.
-    ///
-    /// Empty logic, because we not save created prepared statement.
-    async fn do_action_close_prepared_statement(
-        &self,
-        query: ActionClosePreparedStatementRequest,
-        request: Request<Action>,
-    ) {
-        debug!(
-            "do_action_close_prepared_statement: query: {:?}, request: {:?}",
-            query, request
-        );
-    }
-
-    /// not support
-    async fn do_put_prepared_statement_query(
-        &self,
-        query: CommandPreparedStatementQuery,
-        request: Request<Streaming<FlightData>>,
-    ) -> Result<Response<<Self as FlightService>::DoPutStream>, Status> {
-        debug!(
-            "do_put_prepared_statement_query: query: {:?}, request: {:?}",
-            query, request
-        );
-
-        Err(Status::unimplemented(
-            "do_put_prepared_statement_query not implemented",
         ))
     }
 
@@ -750,6 +490,108 @@ where
         ))
     }
 
+    /// Fetch the ad-hoc SQL query's result set
+    ///
+    /// [`TicketStatementQuery`] is the result obtained after calling [`Self::get_flight_info_statement`]
+    async fn do_get_statement(
+        &self,
+        ticket: TicketStatementQuery,
+        request: Request<Ticket>,
+    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        debug!(
+            "do_get_statement: query: {:?}, request: {:?}",
+            ticket, request
+        );
+
+        let TicketStatementQuery { statement_handle } = ticket;
+
+        let output = self.fetch_result_set(&statement_handle)?;
+
+        // clear cache of this query
+        self.result_cache
+            .invalidate(statement_handle.to_byte_slice());
+
+        Ok(Response::new(output))
+    }
+
+    /// Fetch the prepared SQL query's result set
+    ///
+    /// [`CommandPreparedStatementQuery`] is the result obtained after calling [`Self::get_flight_info_prepared_statement`]
+    async fn do_get_prepared_statement(
+        &self,
+        query: CommandPreparedStatementQuery,
+        request: Request<Ticket>,
+    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        debug!(
+            "do_get_prepared_statement: query: {:?}, request: {:?}",
+            query, request
+        );
+
+        let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
+
+        let output = self.fetch_result_set(prepared_statement_handle)?;
+
+        // clear cache of this query
+        self.result_cache
+            .invalidate(prepared_statement_handle.to_byte_slice());
+
+        Ok(Response::new(output))
+    }
+
+    /// TODO support
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
+    async fn do_get_catalogs(
+        &self,
+        query: CommandGetCatalogs,
+        request: Request<Ticket>,
+    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        debug!(
+            "do_get_catalogs: query: {:?}, request: {:?}",
+            query, request
+        );
+
+        Err(Status::unimplemented("do_get_catalogs not implemented"))
+    }
+
+    /// TODO support
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
+    async fn do_get_schemas(
+        &self,
+        query: CommandGetDbSchemas,
+        request: Request<Ticket>,
+    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        debug!("do_get_schemas: query: {:?}, request: {:?}", query, request);
+
+        Err(Status::unimplemented("do_get_schemas not implemented"))
+    }
+
+    /// TODO support
+    /// wait for `<https://github.com/cnosdb/cnosdb/issues/642>`
+    async fn do_get_tables(
+        &self,
+        query: CommandGetTables,
+        request: Request<Ticket>,
+    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        debug!("do_get_tables: query: {:?}, request: {:?}", query, request);
+
+        Err(Status::unimplemented("do_get_tables not implemented"))
+    }
+
+    /// TODO support
+    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
+    async fn do_get_table_types(
+        &self,
+        query: CommandGetTableTypes,
+        request: Request<Ticket>,
+    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        debug!(
+            "do_get_table_types: query: {:?}, request: {:?}",
+            query, request
+        );
+
+        Err(Status::unimplemented("do_get_table_types not implemented"))
+    }
+
     /// not support
     async fn do_get_sql_info(
         &self,
@@ -816,6 +658,130 @@ where
         ))
     }
 
+    /// Execute an ad-hoc SQL query and return the number of affected rows.
+    async fn do_put_statement_update(
+        &self,
+        ticket: CommandStatementUpdate,
+        request: Request<Streaming<FlightData>>,
+    ) -> Result<i64, Status> {
+        debug!(
+            "do_put_statement_update: query: {:?}, request: {:?}",
+            ticket, request
+        );
+
+        let CommandStatementUpdate { query } = ticket;
+
+        let metadata = request.metadata();
+
+        let (_, query_result) = self.auth_and_execute(query, metadata).await?;
+
+        let affected_rows = query_result.result().affected_rows();
+
+        Ok(affected_rows)
+    }
+
+    /// not support
+    async fn do_put_prepared_statement_query(
+        &self,
+        query: CommandPreparedStatementQuery,
+        request: Request<Streaming<FlightData>>,
+    ) -> Result<Response<<Self as FlightService>::DoPutStream>, Status> {
+        debug!(
+            "do_put_prepared_statement_query: query: {:?}, request: {:?}",
+            query, request
+        );
+
+        Err(Status::unimplemented(
+            "do_put_prepared_statement_query not implemented",
+        ))
+    }
+
+    /// Execute the query and return the number of affected rows.
+    /// The prepared statement can be reused afterwards.
+    ///
+    /// Prepared statement is not supported,
+    /// because ad-hoc statement of flight jdbc needs to call this interface, so it is simple to implement
+    async fn do_put_prepared_statement_update(
+        &self,
+        query: CommandPreparedStatementUpdate,
+        request: Request<Streaming<FlightData>>,
+    ) -> Result<i64, Status> {
+        debug!(
+            "do_put_prepared_statement_update: query: {:?}, request: {:?}",
+            query, request
+        );
+
+        let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
+
+        let rows_count = self.fetch_affected_rows_count(prepared_statement_handle)?;
+
+        Ok(rows_count)
+    }
+
+    /// Prepared statement is not supported,
+    /// because ad-hoc statement of flight jdbc needs to call this interface,
+    /// so directly return the sql as the result.
+    async fn do_action_create_prepared_statement(
+        &self,
+        query: ActionCreatePreparedStatementRequest,
+        request: Request<Action>,
+    ) -> Result<ActionCreatePreparedStatementResult, Status> {
+        debug!(
+            "do_action_create_prepared_statement: query: {:?}, request: {:?}",
+            query, request
+        );
+
+        let ActionCreatePreparedStatementRequest { query: sql } = query;
+        let metadata = request.metadata();
+
+        let user_info = self.authenticator.authenticate(metadata).await?.identity();
+
+        // construct context by user_info and headers(parse tenant & default database)
+        let ctx = self.construct_context(user_info, metadata)?;
+
+        // execute sql
+        let query_result = self.execute(sql, ctx).await?;
+
+        // generate result identifier
+        let result_ident = self.id_generator.next_id().to_le_bytes().to_vec();
+
+        // get result metadata
+        let output = query_result.result();
+        let schema = output.schema();
+        let _total_records = output.num_rows();
+
+        // cache result wait cli fetching
+        self.result_cache.insert(result_ident.clone(), output);
+
+        // construct response start
+        let IpcMessage(dataset_schema) = IpcMessage::try_from(SchemaAsIpc::new(
+            schema.as_ref(),
+            &IpcWriteOptions::default(),
+        ))
+        .map_err(|e| Status::internal(format!("{}", e)))?;
+        let result = ActionCreatePreparedStatementResult {
+            prepared_statement_handle: result_ident.into(),
+            dataset_schema,
+            ..Default::default()
+        };
+
+        Ok(result)
+    }
+
+    /// Close a previously created prepared statement.
+    ///
+    /// Empty logic, because we not save created prepared statement.
+    async fn do_action_close_prepared_statement(
+        &self,
+        query: ActionClosePreparedStatementRequest,
+        request: Request<Action>,
+    ) {
+        debug!(
+            "do_action_close_prepared_statement: query: {:?}, request: {:?}",
+            query, request
+        );
+    }
+
     /// not support
     async fn register_sql_info(&self, _id: i32, _result: &SqlInfo) {
         debug!("register_sql_info: _id: {:?}, request: {:?}", _id, _result);
@@ -826,28 +792,21 @@ where
 mod test {
     use std::collections::HashMap;
     use std::sync::Arc;
-    use std::time::Duration;
 
     use arrow_flight::flight_service_client::FlightServiceClient;
     use arrow_flight::flight_service_server::FlightServiceServer;
-    use arrow_flight::sql::{CommandStatementQuery, ProstAnyExt};
-    use arrow_flight::{
-        utils as flight_utils, FlightData, FlightDescriptor, HandshakeRequest, IpcMessage,
-    };
+    use arrow_flight::sql::{Any, CommandStatementQuery};
+    use arrow_flight::{FlightDescriptor, HandshakeRequest, IpcMessage};
     use datafusion::arrow::buffer::Buffer;
     use datafusion::arrow::datatypes::Schema;
     use datafusion::arrow::{self, ipc};
-    use futures::{StreamExt, TryStreamExt};
+    use futures::StreamExt;
     use http_protocol::header::AUTHORIZATION;
-    use moka::sync::{Cache, CacheBuilder};
     use prost::Message;
     use spi::server::dbms::DatabaseManagerSystemMock;
-    use tokio::time;
-    use tonic::client::Grpc;
-    use tonic::metadata::{AsciiMetadataValue, KeyAndValueRef, MetadataValue};
-    use tonic::service::Interceptor;
-    use tonic::transport::{Channel, Endpoint, Server};
-    use tonic::{Code, Request, Status, Streaming};
+    use tonic::metadata::MetadataValue;
+    use tonic::transport::{Endpoint, Server};
+    use tonic::Request;
 
     use crate::flight_sql::auth_middleware::basic_call_header_authenticator::BasicCallHeaderAuthenticator;
     use crate::flight_sql::auth_middleware::generated_bearer_token_authenticator::GeneratedBearerTokenAuthenticator;
@@ -895,7 +854,7 @@ mod test {
         let cmd = CommandStatementQuery {
             query: "select 1;".to_string(),
         };
-        let any = prost_types::Any::pack(&cmd).expect("pack");
+        let any = Any::pack(&cmd).expect("pack");
         let fd = FlightDescriptor::new_cmd(any.encode_to_vec());
         let mut req = Request::new(fd);
         req.metadata_mut().insert(
@@ -947,7 +906,7 @@ mod test {
                             )
                             .expect("dictionary_from_message");
                         }
-                        t => {
+                        _t => {
                             panic!("Reading types other than record batches not yet supported");
                         }
                     }

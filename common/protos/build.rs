@@ -12,7 +12,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .join("mod.rs");
     let mut generated_mod_rs_file = fs::File::create(generated_mod_rs_path)?;
     generated_mod_rs_file.write_all(
-        b"mod protobuf_generated;
+        b"#![allow(unused_imports)]
+#![allow(clippy::all)]
+mod protobuf_generated;
 pub use protobuf_generated::*;
 
 mod flatbuffers_generated;
@@ -21,11 +23,8 @@ mod flatbuffers_generated;
 
     // build .proto files
     {
-        let proto_file_paths = &[
-            proto_files_dir.join("kv_service.proto"),
-            proto_files_dir.join("schema_service.proto"),
-        ];
-        let rust_mod_names = &["kv_service".to_string(), "schema_service".to_string()];
+        let proto_file_paths = &[proto_files_dir.join("kv_service.proto")];
+        let rust_mod_names = &["kv_service".to_string()];
 
         // src/generated/protobuf_generated/
         let output_dir_final = env::current_dir()

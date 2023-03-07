@@ -1,13 +1,10 @@
 use std::cmp::min;
 use std::fmt::Display;
-use std::mem::size_of;
-use std::ops::Index;
 
 use minivec::MiniVec;
 use models::predicate::domain::TimeRange;
 use models::{Timestamp, ValueType};
-use protos::models::FieldType;
-use trace::{error, info};
+use trace::error;
 
 use crate::memcache::DataType;
 use crate::tsm::codec::{
@@ -456,6 +453,7 @@ impl DataBlock {
             return None;
         }
         let TimeRange { min_ts, max_ts } = *time_range;
+
         /// Returns possible position of ts in sli,
         /// and if ts is not found, and position is at the bounds of sli, return (pos, false).
         fn binary_search(sli: &[i64], ts: &i64) -> (usize, bool) {
@@ -483,6 +481,7 @@ impl DataBlock {
         max_idx = min(max_idx, ts_sli.len() - 1);
         Some((min_idx, max_idx))
     }
+
     /// Extract `DataBlock`s to `DataType`s,
     /// returns the minimum timestamp in a series of `DataBlock`s
     fn next_min(
@@ -556,7 +555,7 @@ impl DataBlock {
 impl Display for DataBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DataBlock::U64 { ts, val, .. } => {
+            DataBlock::U64 { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -569,7 +568,7 @@ impl Display for DataBlock {
                     write!(f, "U64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::I64 { ts, val, .. } => {
+            DataBlock::I64 { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -582,7 +581,7 @@ impl Display for DataBlock {
                     write!(f, "I64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::Str { ts, val, .. } => {
+            DataBlock::Str { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -595,7 +594,7 @@ impl Display for DataBlock {
                     write!(f, "Str {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::F64 { ts, val, .. } => {
+            DataBlock::F64 { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -608,7 +607,7 @@ impl Display for DataBlock {
                     write!(f, "F64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::Bool { ts, val, .. } => {
+            DataBlock::Bool { ts, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -662,13 +661,11 @@ fn exclude_slow(v: &mut Vec<MiniVec<u8>>, min_idx: usize, max_idx: usize) {
 
 #[cfg(test)]
 pub mod test {
-    use std::mem::size_of;
 
     use minivec::mini_vec;
     use models::predicate::domain::TimeRange;
 
     use crate::memcache::DataType;
-    use crate::tsm::block::exclude_fast;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
 
@@ -683,7 +680,7 @@ pub mod test {
     #[test]
     fn test_merge_blocks() {
         #[rustfmt::skip]
-            let res = DataBlock::merge_blocks(
+        let res = DataBlock::merge_blocks(
             vec![
                 DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50], enc: DataBlockEncoding::default() },
                 DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() },
@@ -700,7 +697,7 @@ pub mod test {
     #[test]
     fn test_data_block_exclude_1() {
         #[rustfmt::skip]
-            let mut blk = DataBlock::U64 {
+        let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
             enc: DataBlockEncoding::default(),
@@ -716,7 +713,7 @@ pub mod test {
         );
 
         #[rustfmt::skip]
-            let mut blk = DataBlock::U64 {
+        let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
             enc: DataBlockEncoding::default(),
@@ -732,7 +729,7 @@ pub mod test {
         );
 
         #[rustfmt::skip]
-            let mut blk = DataBlock::Str {
+        let mut blk = DataBlock::Str {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![mini_vec![10], mini_vec![11], mini_vec![12], mini_vec![13], mini_vec![14],
                       mini_vec![15], mini_vec![16], mini_vec![17], mini_vec![18], mini_vec![19]],
@@ -758,7 +755,7 @@ pub mod test {
         );
 
         #[rustfmt::skip]
-            let mut blk = DataBlock::Str {
+        let mut blk = DataBlock::Str {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![mini_vec![10], mini_vec![11], mini_vec![12], mini_vec![13], mini_vec![14],
                       mini_vec![15], mini_vec![16], mini_vec![17], mini_vec![18], mini_vec![19]],
@@ -777,27 +774,25 @@ pub mod test {
 
     #[test]
     fn test_data_block_exclude_2() {
-        // #[rustfmt::skip]
-        //     let mut blk = DataBlock::U64 {
-        //     ts: vec![0, 1, 2, 3],
-        //     val: vec![10, 11, 12, 13],
-        //     enc: DataBlockEncoding::default(),
-        // };
-        // blk.exclude(&TimeRange::from((-2, 0)));
-        // assert_eq!(
-        //     blk,
-        //     DataBlock::U64 {
-        //         ts: vec![1, 2, 3],
-        //         val: vec![11, 12, 13],
-        //         enc: DataBlockEncoding::default(),
-        //     }
-        // );
+        #[rustfmt::skip]
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
+            enc: DataBlockEncoding::default()
+        };
+        blk.exclude(&TimeRange::from((-2, 0)));
+        assert_eq!(
+            blk,
+            DataBlock::U64 {
+                ts: vec![1, 2, 3],
+                val: vec![11, 12, 13],
+                enc: DataBlockEncoding::default()
+            }
+        );
 
         #[rustfmt::skip]
-            let mut blk = DataBlock::U64 {
-            ts: vec![0, 1, 2, 3],
-            val: vec![10, 11, 12, 13],
-            enc: DataBlockEncoding::default(),
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((3, 5)));
         assert_eq!(
@@ -810,10 +805,9 @@ pub mod test {
         );
 
         #[rustfmt::skip]
-            let mut blk = DataBlock::U64 {
-            ts: vec![0, 1, 2, 3],
-            val: vec![10, 11, 12, 13],
-            enc: DataBlockEncoding::default(),
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((-3, -1)));
         assert_eq!(
@@ -826,10 +820,9 @@ pub mod test {
         );
 
         #[rustfmt::skip]
-            let mut blk = DataBlock::U64 {
-            ts: vec![0, 1, 2, 3],
-            val: vec![10, 11, 12, 13],
-            enc: DataBlockEncoding::default(),
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((5, 7)));
         assert_eq!(
@@ -842,10 +835,9 @@ pub mod test {
         );
 
         #[rustfmt::skip]
-            let mut blk = DataBlock::U64 {
-            ts: vec![0, 1, 2, 3, 7, 8, 9, 10],
-            val: vec![10, 11, 12, 13, 17, 18, 19, 20],
-            enc: DataBlockEncoding::default(),
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3, 7, 8, 9, 10], val: vec![10, 11, 12, 13, 17, 18, 19, 20],
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((5, 6)));
         assert_eq!(

@@ -6,5 +6,7 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-snafu = { workspace = true }
+protos = {path = "../protos"}
 utils = { path = "../utils" }
+snafu = { workspace = true }
+flatbuffers = {workspace = true}

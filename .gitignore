@@ -4,7 +4,6 @@
 
 # Cargo
 **/target
-Cargo.lock
 
 # OS
 .DS_Store
@@ -24,3 +23,6 @@ test_*.log
 **/protos/src/generated/
 common/license/private.rsa
 common/license/public.rsa
+
+# Jupyter Notebook
+.ipynb_checkpoints

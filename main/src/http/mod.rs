@@ -1,15 +1,10 @@
-use std::net::AddrParseError;
-
 use coordinator::errors::CoordinatorError;
 use http_protocol::response::ErrorResponse;
 use http_protocol::status_code::UNPROCESSABLE_ENTITY;
 use meta::error::MetaError;
-use models::error_code::{ErrorCode, ErrorCoder, UnknownCode};
+use models::error_code::{ErrorCode, ErrorCoder};
 use snafu::Snafu;
 use spi::QueryError;
-use tokio::sync::mpsc::error::SendError;
-use tokio::sync::oneshot::error::RecvError;
-use tskv::TsKv;
 use warp::reject;
 use warp::reply::Response;
 
@@ -17,6 +12,7 @@ use self::response::ResponseBuilder;
 
 pub mod header;
 pub mod http_service;
+mod metrics;
 mod response;
 mod result_format;
 

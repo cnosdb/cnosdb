@@ -25,6 +25,7 @@ impl DDLDefinitionTask for AlterDatabaseTask {
             .meta
             .tenant_manager()
             .tenant_meta(tenant)
+            .await
             .ok_or(MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
             })?;
@@ -41,7 +42,7 @@ impl DDLDefinitionTask for AlterDatabaseTask {
         //     .alter_database(schema)
         //     .context(spi::MetaSnafu)?;
 
-        client.alter_db_schema(&schema)?;
+        client.alter_db_schema(&schema).await?;
         // .context(spi::MetaSnafu)?;
         return Ok(Output::Nil(()));
     }

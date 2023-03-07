@@ -34,7 +34,7 @@ pub struct UserInfo {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct NodeInfo {
     pub id: NodeId,
-    pub tcp_addr: String,
+    pub grpc_addr: String,
     pub http_addr: String,
     pub status: u64,
 }
@@ -129,61 +129,6 @@ impl TenantMetaData {
         }
     }
 
-    pub fn merge_into(&mut self, update: &TenantMetaData) {
-        for (key, val) in update.users.iter() {
-            self.users.insert(key.clone(), val.clone());
-        }
-
-        for (key, val) in update.dbs.iter() {
-            let info = self
-                .dbs
-                .entry(key.clone())
-                .or_insert_with(DatabaseInfo::default);
-
-            if !val.schema.is_empty() {
-                info.schema = val.schema.clone();
-            }
-
-            for item in val.buckets.iter() {
-                match info.buckets.binary_search_by(|v| v.id.cmp(&item.id)) {
-                    Ok(index) => info.buckets[index] = item.clone(),
-                    Err(index) => info.buckets.insert(index, item.clone()),
-                }
-            }
-
-            for (name, item) in val.tables.iter() {
-                info.tables.insert(name.clone(), item.clone());
-            }
-        }
-    }
-
-    pub fn delete_from(&mut self, delete: &TenantMetaData) {
-        for (key, _) in delete.users.iter() {
-            self.users.remove(key);
-        }
-
-        for (key, val) in delete.dbs.iter() {
-            if val.schema.is_empty() && val.buckets.is_empty() && val.tables.is_empty() {
-                self.dbs.remove(key);
-                continue;
-            }
-
-            let info = self
-                .dbs
-                .entry(key.clone())
-                .or_insert_with(DatabaseInfo::default);
-            for item in val.buckets.iter() {
-                if let Ok(index) = info.buckets.binary_search_by(|v| v.id.cmp(&item.id)) {
-                    info.buckets.remove(index);
-                }
-            }
-
-            for (name, _) in val.tables.iter() {
-                info.tables.remove(name);
-            }
-        }
-    }
-
     pub fn table_schema(&self, db: &str, tab: &str) -> Option<TableSchema> {
         if let Some(info) = self.dbs.get(db) {
             if let Some(schema) = info.tables.get(tab) {
@@ -240,10 +185,17 @@ impl TenantMetaData {
 pub fn get_time_range(ts: i64, duration: i64) -> (i64, i64) {
     if duration <= 0 {
         (std::i64::MIN, std::i64::MAX)
-    } else {
+    } else if ts >= 0 {
+        let floor = ts / duration;
         (
-            (ts / duration) * duration,
-            (ts / duration) * duration + duration,
+            floor * duration,
+            (floor * duration).saturating_add(duration),
+        )
+    } else {
+        let floor = (ts + 1) / duration;
+        (
+            (floor * duration).saturating_sub(duration),
+            floor * duration,
         )
     }
 }

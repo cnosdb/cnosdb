@@ -7,16 +7,16 @@
 //!         - Column #3
 //!         - Column #4
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::mem::size_of_val;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use arrow_schema::Field as DFField;
+use arrow_schema::{DataType, Field as DFField};
+use config::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
 use datafusion::arrow::datatypes::{
-    DataType as DFDataType, DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef,
-    TimeUnit,
+    DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
 };
 use datafusion::datasource::file_format::avro::AvroFormat;
 use datafusion::datasource::file_format::csv::CsvFormat;
@@ -25,16 +25,15 @@ use datafusion::datasource::file_format::json::JsonFormat;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::ListingOptions;
-use datafusion::error::{DataFusionError, Result as DataFusionResult};
+use datafusion::error::Result as DataFusionResult;
 use datafusion::logical_expr::TableSource;
 use datafusion::scalar::ScalarValue;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use crate::codec::Encoding;
-pub use crate::limiter::LimiterConfig;
 use crate::oid::{Identifier, Oid};
-use crate::{ColumnId, SchemaId, ValueType};
+use crate::{ColumnId, Error, SchemaId, ValueType};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
@@ -45,12 +44,13 @@ pub const TAG: &str = "_tag";
 pub const TIME_FIELD: &str = "time";
 
 pub const DEFAULT_DATABASE: &str = "public";
+pub const USAGE_SCHEMA: &str = "usage_schema";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TableSchema {
-    TsKvTableSchema(TskvTableSchema),
-    ExternalTableSchema(ExternalTableSchema),
+    TsKvTableSchema(Arc<TskvTableSchema>),
+    ExternalTableSchema(Arc<ExternalTableSchema>),
 }
 
 impl TableSchema {
@@ -85,7 +85,7 @@ pub struct ExternalTableSchema {
     pub file_type: String,
     pub location: String,
     pub target_partitions: usize,
-    pub table_partition_cols: Vec<String>,
+    pub table_partition_cols: Vec<(String, DataType)>,
     pub has_header: bool,
     pub delimiter: u8,
     pub schema: Schema,
@@ -93,37 +93,29 @@ pub struct ExternalTableSchema {
 
 impl ExternalTableSchema {
     pub fn table_options(&self) -> DataFusionResult<ListingOptions> {
-        let file_format: Arc<dyn FileFormat> = match FileType::from_str(&self.file_type)? {
+        let file_compression_type = FileCompressionType::from_str(&self.file_compression_type)?;
+        let file_type = FileType::from_str(&self.file_type)?;
+        let file_extension =
+            file_type.get_ext_with_compression(self.file_compression_type.to_owned().parse()?)?;
+        let file_format: Arc<dyn FileFormat> = match file_type {
             FileType::CSV => Arc::new(
                 CsvFormat::default()
                     .with_has_header(self.has_header)
                     .with_delimiter(self.delimiter)
-                    .with_file_compression_type(
-                        FileCompressionType::from_str(&self.file_compression_type).map_err(
-                            |_| {
-                                DataFusionError::Execution(
-                                    "Only known FileCompressionTypes can be ListingTables!"
-                                        .to_string(),
-                                )
-                            },
-                        )?,
-                    ),
+                    .with_file_compression_type(file_compression_type),
             ),
             FileType::PARQUET => Arc::new(ParquetFormat::default()),
             FileType::AVRO => Arc::new(AvroFormat::default()),
-            FileType::JSON => Arc::new(JsonFormat::default().with_file_compression_type(
-                FileCompressionType::from_str(&self.file_compression_type)?,
-            )),
+            FileType::JSON => {
+                Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
+            }
         };
 
-        Ok(ListingOptions {
-            format: file_format,
-            collect_stat: false,
-            file_extension: FileType::from_str(&self.file_type)?
-                .get_ext_with_compression(self.file_compression_type.to_owned().parse()?)?,
-            target_partitions: self.target_partitions,
-            table_partition_cols: self.table_partition_cols.clone(),
-        })
+        let options = ListingOptions::new(file_format)
+            .with_file_extension(file_extension)
+            .with_target_partitions(self.target_partitions);
+
+        Ok(options)
     }
 }
 
@@ -298,9 +290,9 @@ impl TskvTableSchema {
     pub fn size(&self) -> usize {
         let mut size = 0;
         for i in self.columns.iter() {
-            size += size_of_val(&i);
+            size += size_of_val(i);
         }
-        size += size_of_val(&self);
+        size += size_of_val(self);
         size
     }
 
@@ -324,10 +316,10 @@ pub struct TableColumn {
 impl From<&TableColumn> for ArrowField {
     fn from(column: &TableColumn) -> Self {
         let mut f = ArrowField::new(&column.name, column.column_type.into(), column.nullable());
-        let mut map = BTreeMap::new();
+        let mut map = HashMap::new();
         map.insert(FIELD_ID.to_string(), column.id.to_string());
         map.insert(TAG.to_string(), column.column_type.is_tag().to_string());
-        f.set_metadata(Some(map));
+        f.set_metadata(map);
         f
     }
 }
@@ -377,6 +369,20 @@ impl TableColumn {
     pub fn nullable(&self) -> bool {
         // The time column cannot be empty
         !matches!(self.column_type, ColumnType::Time)
+    }
+
+    pub fn encode(&self) -> crate::errors::Result<Vec<u8>> {
+        let buf = bincode::serialize(&self)
+            .map_err(|e| Error::InvalidSerdeMessage { err: e.to_string() })?;
+
+        Ok(buf)
+    }
+
+    pub fn decode(buf: &[u8]) -> crate::errors::Result<Self> {
+        let column = bincode::deserialize::<TableColumn>(buf)
+            .map_err(|e| Error::InvalidSerdeMessage { err: e.to_string() })?;
+
+        Ok(column)
     }
 }
 
@@ -748,9 +754,9 @@ impl Duration {
 
     pub fn to_nanoseconds(&self) -> i64 {
         match self.unit {
-            DurationUnit::Minutes => self.time_num as i64 * 60 * 1000000000,
-            DurationUnit::Hour => self.time_num as i64 * 3600 * 1000000000,
-            DurationUnit::Day => self.time_num as i64 * 24 * 3600 * 1000000000,
+            DurationUnit::Minutes => (self.time_num as i64).saturating_mul(60 * 1000000000),
+            DurationUnit::Hour => (self.time_num as i64).saturating_mul(3600 * 1000000000),
+            DurationUnit::Day => (self.time_num as i64).saturating_mul(24 * 3600 * 1000000000),
         }
     }
 }
@@ -786,12 +792,26 @@ impl Tenant {
 #[builder(setter(into, strip_option), default)]
 pub struct TenantOptions {
     pub comment: Option<String>,
-    pub limiter_config: Option<LimiterConfig>,
+    pub limiter_config: Option<TenantLimiterConfig>,
 }
 
 impl TenantOptions {
-    pub fn set_limiter(&mut self, limiter_config: Option<LimiterConfig>) {
+    pub fn set_limiter(&mut self, limiter_config: Option<TenantLimiterConfig>) {
         self.limiter_config = limiter_config;
+    }
+
+    pub fn object_config(&self) -> Option<&TenantObjectLimiterConfig> {
+        match self.limiter_config {
+            Some(ref limit_config) => limit_config.object_config.as_ref(),
+            None => None,
+        }
+    }
+
+    pub fn request_config(&self) -> Option<&RequestLimiterConfig> {
+        match self.limiter_config {
+            Some(ref limit_config) => limit_config.request_config.as_ref(),
+            None => None,
+        }
     }
 }
 
@@ -801,13 +821,18 @@ impl Display for TenantOptions {
             write!(f, "comment={},", e)?;
         }
 
+        if let Some(ref e) = self.limiter_config {
+            write!(f, "limiter={e:?},")?;
+        } else {
+            write!(f, "limiter=None,")?;
+        }
+
         Ok(())
     }
 }
 
 pub struct TableSourceAdapter {
     source: Arc<dyn TableSource>,
-
     tenant_id: Oid,
     tenant_name: String,
     database_name: String,
@@ -918,7 +943,7 @@ pub enum ScalarValueForkDF {
     /// struct of nested ScalarValue
     Struct(Option<Vec<ScalarValueForkDF>>, Box<Vec<DFField>>),
     /// Dictionary type: index type and value
-    Dictionary(Box<DFDataType>, Box<ScalarValueForkDF>),
+    Dictionary(Box<ArrowDataType>, Box<ScalarValueForkDF>),
 }
 
 impl From<ScalarValue> for ScalarValueForkDF {

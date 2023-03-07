@@ -1,31 +1,20 @@
-use std::borrow::BorrowMut;
 use std::fs::{File as StdFile, OpenOptions};
-use std::io::{Bytes, Error, ErrorKind, IoSlice, Result, SeekFrom};
+use std::io::{Error, ErrorKind, IoSlice, Result};
 use std::mem::MaybeUninit;
 use std::ops::Deref;
-use std::os::unix::fs::MetadataExt;
-use std::os::unix::io::{FromRawFd, OwnedFd, RawFd};
+use std::os::unix::io::RawFd;
 use std::os::unix::prelude::AsRawFd;
 use std::path::Path;
-use std::ptr::null;
-use std::rc::Rc;
 use std::sync::Arc;
-use std::{io, slice, thread};
 
 use async_trait::async_trait;
-use futures::{AsyncSeekExt, AsyncWriteExt};
-use libc::{send, time};
 #[cfg(feature = "io_uring")]
 use rio::Rio;
 #[cfg(feature = "io_uring")]
 use snafu::ResultExt;
-use tokio::fs::File;
-use tokio::spawn;
 use tokio::task::spawn_blocking;
-use trace::{error, info};
 
-use crate::file_system::file::os::{check_err, open, pread, pwrite, FileId};
-use crate::Options;
+use crate::file_system::file::os::{check_err, pread, pwrite};
 
 #[derive(Debug)]
 #[cfg(not(feature = "io_uring"))]
@@ -65,11 +54,10 @@ impl RawFile {
         }
         #[cfg(not(feature = "io_uring"))]
         {
-            let contents = data.to_owned();
             let file = self.0.as_raw_fd();
             let len = data.len();
             let ptr = data.as_mut_ptr() as u64;
-            let buf = asyncify(move || pread(file, pos, len, ptr)).await?;
+            let _buf = asyncify(move || pread(file, pos, len, ptr)).await?;
             Ok(len)
         }
     }

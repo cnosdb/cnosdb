@@ -8,10 +8,6 @@ use client::print_format::PrintFormat;
 use client::print_options::PrintOptions;
 use client::{exec, CNOSDB_CLI_VERSION};
 use datafusion::error::Result;
-use mimalloc::MiMalloc;
-
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
 
 #[derive(Debug, Parser, PartialEq)]
 #[clap(author, version, about, long_about= None)]
@@ -29,7 +25,7 @@ struct Args {
         short = 'P',
         long,
         help = "CnosDB server http api port",
-        default_value = "31007",
+        default_value = "31001",
         validator(is_valid_port)
     )]
     port: usize,

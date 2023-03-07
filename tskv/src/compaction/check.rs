@@ -15,7 +15,6 @@ use crate::compaction::{CompactIterator, CompactingBlock};
 use crate::database::Database;
 use crate::error::{self, Error, Result};
 use crate::schema::schemas::DBschemas;
-use crate::tseries_family::{ColumnFile, TseriesFamily};
 use crate::tsm::{DataBlock, TsmReader};
 use crate::TseriesFamilyId;
 
@@ -133,7 +132,7 @@ pub(crate) async fn get_ts_family_hash_tree(
         None => {
             return Err(Error::InvalidParam {
                 reason: format!("can not find ts_family '{}'", ts_family_id),
-            })
+            });
         }
     };
 
@@ -158,21 +157,17 @@ pub(crate) async fn get_ts_family_hash_tree(
     }
     let time_range_nanosec = get_default_time_range(schemas)?;
 
-    // let ts_family_rlock = ts_family.read();
-    // let version = ts_family_rlock.version();
-    // let ts_family_id = ts_family_rlock.tf_id();
-    // drop(ts_family_rlock);
     let (version, ts_family_id) = {
-        let ts_family_rlock = ts_family.read();
+        let ts_family_rlock = ts_family.read().await;
         (ts_family_rlock.version(), ts_family_rlock.tf_id())
     };
-    let mut readers: Vec<TsmReader> = Vec::new();
+    let mut readers: Vec<Arc<TsmReader>> = Vec::new();
     for path in version
         .levels_info()
         .iter()
         .flat_map(|l| l.files.iter().map(|f| f.file_path()))
     {
-        let r = TsmReader::open(path).await?;
+        let r = version.get_tsm_reader(path).await?;
         readers.push(r);
     }
 
@@ -228,15 +223,14 @@ pub(crate) async fn get_ts_family_hash_tree(
     }
 
     Ok(hash_tree_builder
-        .into_iter()
-        .map(|(k, v)| v)
+        .into_values()
         .collect::<Vec<TableHashTreeNode>>())
 }
 
 fn get_default_time_range(db_schemas: Arc<DBschemas>) -> Result<i64> {
     let db_schema = db_schemas.db_schema().context(error::SchemaSnafu)?;
-    let tenant_name = db_schema.tenant_name();
-    let database_name = db_schema.database_name();
+    let _tenant_name = db_schema.tenant_name();
+    let _database_name = db_schema.database_name();
     Ok(db_schema
         .config
         .ttl()
@@ -259,7 +253,7 @@ fn calc_block_partial_time_range(
                 Err(e) => {
                     return Err(Error::Transform {
                         reason: format!("error truncing timestamp {}: {:?}", datetime, e),
-                    })
+                    });
                 }
             };
             let max_ts = min_ts + time_range_nanosecs;
@@ -291,35 +285,35 @@ fn hash_partial_datablock(
     match data_block {
         DataBlock::U64 { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
+            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
                 hasher.update(v.to_be_bytes().as_slice());
             }
             limit
         }
         DataBlock::I64 { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
+            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
                 hasher.update(v.to_be_bytes().as_slice());
             }
             limit
         }
         DataBlock::F64 { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
+            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
                 hasher.update(v.to_be_bytes().as_slice());
             }
             limit
         }
         DataBlock::Str { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
+            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
                 hasher.update(v.as_slice());
             }
             limit
         }
         DataBlock::Bool { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
+            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
                 hasher.update(if *v { &[1_u8] } else { &[0_u8] });
             }
             limit
@@ -428,41 +422,32 @@ async fn read_from_compact_iterator(
 
 #[cfg(test)]
 mod test {
-    use std::collections::{BTreeMap, HashMap};
-    use std::default;
-    use std::rc::Rc;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use blake3::Hasher;
     use chrono::{Duration, NaiveDateTime};
-    use meta::meta_client::{MetaRef, RemoteMetaManager};
+    use datafusion::execution::memory_pool::GreedyMemoryPool;
+    use meta::meta_manager::RemoteMetaManager;
+    use meta::MetaRef;
+    use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
-    use models::codec::Encoding;
-    use models::predicate::domain::TimeRange;
     use models::schema::{
         ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
         TskvTableSchema,
     };
     use models::{Timestamp, ValueType};
-    use protos::kv_service::{Meta, WritePointsRpcRequest};
+    use protos::kv_service::{Meta, WritePointsRequest};
     use protos::models::{self as fb_models, FieldType};
     use protos::models_helper;
     use tokio::runtime;
-    use tokio::sync::mpsc;
 
-    use super::{
-        calc_block_partial_time_range, find_timestamp, hash_partial_datablock, Hash,
-        TableHashTreeNode,
-    };
-    use crate::compaction::check::{
-        get_default_time_range, hash_to_string, ColumnHashTreeNode, TimeRangeHashTreeNode,
-    };
-    use crate::compaction::FlushReq;
+    use super::{calc_block_partial_time_range, find_timestamp, hash_partial_datablock, Hash};
+    use crate::compaction::check::{get_default_time_range, TimeRangeHashTreeNode};
     use crate::engine::Engine;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
-    use crate::version_set::VersionSet;
-    use crate::{Options, TsKv, TseriesFamilyId};
+    use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
 
     fn parse_nanos(datetime: &str) -> Timestamp {
         NaiveDateTime::parse_from_str(datetime, "%Y-%m-%d %H:%M:%S")
@@ -550,13 +535,15 @@ mod test {
             parse_nanos("2023-01-01 00:06:00"),
         ];
         #[rustfmt::skip]
-        let data_blocks = vec![
+            let data_blocks = vec![
             DataBlock::U64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::I64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
-            DataBlock::Str { ts: timestamps.clone(),
+            DataBlock::Str {
+                ts: timestamps.clone(),
                 val: vec![
-                    MiniVec::from("1"), MiniVec::from("2"), MiniVec::from("3"), MiniVec::from("4"), MiniVec::from("5"), MiniVec::from("6")
-                ], enc: DataBlockEncoding::default()
+                    MiniVec::from("1"), MiniVec::from("2"), MiniVec::from("3"), MiniVec::from("4"), MiniVec::from("5"), MiniVec::from("6"),
+                ],
+                enc: DataBlockEncoding::default(),
             },
             DataBlock::F64 { ts: timestamps.clone(), val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() },
             DataBlock::Bool { ts: timestamps, val: vec![true, false, true, false, true, false], enc: DataBlockEncoding::default() },
@@ -678,7 +665,7 @@ mod test {
         database: &str,
         table: &str,
         rows: Vec<Vec<(&str, FieldType, Vec<u8>)>>,
-    ) -> WritePointsRpcRequest {
+    ) -> WritePointsRequest {
         let mut rows_ref = Vec::with_capacity(rows.len());
         for cols in rows.iter() {
             let mut cols_ref = Vec::with_capacity(cols.len());
@@ -693,8 +680,8 @@ mod test {
         for (timestamp, v) in timestamps.into_iter().zip(rows_ref.into_iter()) {
             let db = fbb.create_vector(database.as_bytes());
             let table = fbb.create_vector(table.as_bytes());
-            let tags = models_helper::create_tags(&mut fbb, vec![("ta", "a1"), ("tb", "b1")]);
-            let fields = models_helper::create_fields(&mut fbb, v);
+            let tags = models_helper::create_tags(&mut fbb, &[("ta", "a1"), ("tb", "b1")]);
+            let fields = models_helper::create_fields(&mut fbb, &v);
             let point = models_helper::create_point(&mut fbb, timestamp, db, table, tags, fields);
             points.push(point);
         }
@@ -709,7 +696,7 @@ mod test {
         );
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        WritePointsRpcRequest {
+        WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: tenant.to_string(),
@@ -797,19 +784,21 @@ mod test {
             parse_nanos("2023-02-01 00:03:00"),
         ];
         #[rustfmt::skip]
-        let data_blocks = vec![
+            let data_blocks = vec![
             DataBlock::U64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::I64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::F64 { ts: timestamps.clone(), val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() },
-            DataBlock::Str { ts: timestamps.clone(),
+            DataBlock::Str {
+                ts: timestamps.clone(),
                 val: vec![
-                    MiniVec::from("1"), MiniVec::from("2"), MiniVec::from("3"), MiniVec::from("4"), MiniVec::from("5"), MiniVec::from("6")
-                ], enc: DataBlockEncoding::default()
+                    MiniVec::from("1"), MiniVec::from("2"), MiniVec::from("3"), MiniVec::from("4"), MiniVec::from("5"), MiniVec::from("6"),
+                ],
+                enc: DataBlockEncoding::default(),
             },
             DataBlock::Bool { ts: timestamps, val: vec![true, false, true, false, true, false], enc: DataBlockEncoding::default() },
         ];
         #[rustfmt::skip]
-        let columns = vec![
+            let columns = vec![
             TableColumn::new(0, TIME_COL_NAME.to_string(), ColumnType::Time, Default::default()),
             TableColumn::new(1, U64_COL_NAME.to_string(), ColumnType::Field(ValueType::Unsigned), Default::default()),
             TableColumn::new(2, I64_COL_NAME.to_string(), ColumnType::Field(ValueType::Integer), Default::default()),
@@ -831,13 +820,24 @@ mod test {
         config.wal.sync = true;
         config.log.path = log_dir;
         let opt = Options::from(&config);
-        let meta: MetaRef = Arc::new(RemoteMetaManager::new(config.cluster.clone()));
-        let _ = meta
-            .tenant_manager()
-            .create_tenant(tenant_name.clone(), TenantOptions::default());
-        let meta_client = meta.tenant_manager().tenant_meta(&tenant_name).unwrap();
+        let meta: MetaRef = rt.block_on(RemoteMetaManager::new(config.cluster));
+        rt.block_on(meta.admin_meta().add_data_node()).unwrap();
+        let _ = rt.block_on(
+            meta.tenant_manager()
+                .create_tenant(tenant_name.clone(), TenantOptions::default()),
+        );
+        let meta_client = rt
+            .block_on(meta.tenant_manager().tenant_meta(&tenant_name))
+            .unwrap();
+        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let engine = rt
-            .block_on(TsKv::open(config.cluster, opt, rt.clone()))
+            .block_on(TsKv::open(
+                meta,
+                opt,
+                rt.clone(),
+                memory_pool,
+                Arc::new(MetricsRegister::default()),
+            ))
             .unwrap();
 
         // Create database and ts_family
@@ -846,35 +846,43 @@ mod test {
             database_schema
                 .config
                 .with_ttl(DatabaseOptions::DEFAULT_TTL);
-            if let Err(e) = meta_client.drop_db(&database_name) {
+            if let Err(e) = rt.block_on(meta_client.drop_db(&database_name)) {
                 println!(
                     "Repair: failed to drop database '{}': {:?}",
                     &database_name, e
                 );
             }
-            meta_client.create_db(database_schema.clone()).unwrap();
-            meta_client
-                .create_table(&TableSchema::TsKvTableSchema(TskvTableSchema::new(
-                    tenant_name.clone(),
-                    database_name.clone(),
-                    table_name.clone(),
-                    columns,
-                )))
+            rt.block_on(meta_client.create_db(database_schema.clone()))
                 .unwrap();
+            rt.block_on(
+                meta_client.create_table(&TableSchema::TsKvTableSchema(
+                    TskvTableSchema::new(
+                        tenant_name.clone(),
+                        database_name.clone(),
+                        table_name.clone(),
+                        columns,
+                    )
+                    .into(),
+                )),
+            )
+            .unwrap();
 
-            meta_client.drop_db(&database_name).unwrap();
-            let _ = engine.drop_database(&tenant_name, &database_name);
+            //rt.block_on(meta_client.drop_db(&database_name)).unwrap();
+            let _ = rt.block_on(engine.drop_database(&tenant_name, &database_name));
             let database = rt
                 .block_on(engine.create_database(&database_schema))
                 .unwrap();
-            let ts_family = rt.block_on(database.write()).add_tsfamily(
+            let mut db = rt.block_on(database.write());
+            let ts_family = rt.block_on(db.add_tsfamily(
                 ts_family_id,
                 1,
                 None,
                 engine.summary_task_sender(),
                 engine.flush_task_sender(),
-            );
-            assert_eq!(1, ts_family.read().tf_id());
+                engine.compact_task_sender(),
+            ));
+            let tsf_r = rt.block_on(ts_family.read());
+            assert_eq!(1, tsf_r.tf_id());
         }
 
         // Get created database and ts_family
@@ -907,7 +915,7 @@ mod test {
             rt.block_on(engine.write(ts_family_id, write_batch))
                 .unwrap();
 
-            let mut ts_family_wlock = ts_family_ref.write();
+            let mut ts_family_wlock = rt.block_on(ts_family_ref.write());
             ts_family_wlock.switch_to_immutable();
             let immut_cache_ref = ts_family_wlock
                 .super_version()
@@ -916,7 +924,7 @@ mod test {
                 .first()
                 .expect("translated immutable memory cache exist")
                 .clone();
-            ts_family_wlock.wrap_flush_req(true);
+            rt.block_on(ts_family_wlock.wrap_flush_req(true));
             drop(ts_family_wlock);
 
             let mut check_num = 0;

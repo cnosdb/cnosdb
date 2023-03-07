@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::task::Poll;
 
@@ -7,25 +6,23 @@ use datafusion::arrow::array::{
     ArrayBuilder, BooleanBuilder, Float64Builder, Int64Builder, StringBuilder,
     TimestampNanosecondBuilder, UInt64Builder,
 };
-use datafusion::arrow::datatypes::{DataType as ArrowDataType, SchemaRef};
-use datafusion::arrow::error::ArrowError;
+use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::error::DataFusionError;
+use datafusion::execution::memory_pool::{MemoryConsumer, MemoryPool, MemoryReservation};
 use datafusion::physical_plan::metrics::{
     self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
 };
-use datafusion::scalar::ScalarValue;
 use minivec::MiniVec;
-use models::predicate::domain::{
-    ColumnDomains, Domain, PredicateRef, Range, TimeRange, ValueEntry,
-};
-use models::predicate::utils::filter_to_time_ranges;
+use models::predicate::domain::TimeRange;
 use models::predicate::Split;
-use models::schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
+use models::schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD};
 use models::utils::{min_num, unite_id};
 use models::{FieldId, SeriesId, ValueType};
+use parking_lot::RwLock;
 use snafu::ResultExt;
 use tokio::time::Instant;
-use trace::{debug, info};
+use trace::{debug, error};
 
 use super::engine::EngineRef;
 use super::error::IndexErrSnafu;
@@ -33,7 +30,7 @@ use super::memcache::DataType;
 use super::tseries_family::{ColumnFile, SuperVersion};
 use super::tsm::{BlockMetaIterator, DataBlock, TsmReader};
 use super::{error, ColumnFileId, Error};
-use crate::schema::error::SchemaError;
+use crate::compute::count::count_column_non_null_values;
 use crate::tseries_family::Version;
 
 pub type CursorPtr = Box<dyn Cursor>;
@@ -43,19 +40,34 @@ pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
 #[derive(Debug)]
 pub struct TableScanMetrics {
     baseline_metrics: BaselineMetrics,
-
     partition: usize,
     metrics: ExecutionPlanMetricsSet,
+    reservation: Option<RwLock<MemoryReservation>>,
 }
 
 impl TableScanMetrics {
     /// Create new metrics
-    pub fn new(metrics: &ExecutionPlanMetricsSet, partition: usize) -> Self {
+    pub fn new(
+        metrics: &ExecutionPlanMetricsSet,
+        partition: usize,
+        pool: Option<&Arc<dyn MemoryPool>>,
+    ) -> Self {
         let baseline_metrics = BaselineMetrics::new(metrics, partition);
+        let reservation = match pool {
+            None => None,
+            Some(pool) => {
+                let reservation = RwLock::new(
+                    MemoryConsumer::new(format!("TableScanMetrics[{partition}]")).register(pool),
+                );
+                Some(reservation)
+            }
+        };
+
         Self {
             baseline_metrics,
             partition,
             metrics: metrics.clone(),
+            reservation,
         }
     }
 
@@ -73,9 +85,16 @@ impl TableScanMetrics {
     /// returning the same poll result
     pub fn record_poll(
         &self,
-        poll: Poll<Option<std::result::Result<RecordBatch, ArrowError>>>,
-    ) -> Poll<Option<std::result::Result<RecordBatch, ArrowError>>> {
+        poll: Poll<Option<std::result::Result<RecordBatch, DataFusionError>>>,
+    ) -> Poll<Option<std::result::Result<RecordBatch, DataFusionError>>> {
         self.baseline_metrics.record_poll(poll)
+    }
+
+    pub fn record_memory(&self, rb: &RecordBatch) -> Result<(), DataFusionError> {
+        if let Some(res) = &self.reservation {
+            res.write().try_grow(rb.get_array_memory_size())?
+        }
+        Ok(())
     }
 
     /// Records the fact that this operator's execution is complete
@@ -125,37 +144,39 @@ impl TskvSourceMetrics {
     }
 }
 
-// 1.Tsm文件遍历： KeyCursor
+// 1. Tsm文件遍历： KeyCursor
 //  功能：根据输入参数遍历Tsm文件
 //  输入参数： SeriesKey、FieldName、StartTime、EndTime、Ascending
 //  功能函数：调用Peek()—>(value, timestamp)得到一个值；调用Next()方法游标移到下一个值。
-// 2.Field遍历： FiledCursor
+// 2. Field遍历： FiledCursor
 //  功能：一个Field特定SeriesKey的遍历
 //  输入输出参数同KeyCursor，区别是需要读取缓存数据，并按照特定顺序返回
-// 3.Fields->行转换器
+// 3. Fields->行转换器
 //  一行数据是由同一个时间点的多个Field得到。借助上面的FieldCursor按照时间点对齐多个Field-Value拼接成一行数据。其过程类似于多路归并排序。
-// 4.Iterator接口抽象层
+// 4. Iterator接口抽象层
 //  调用Next接口返回一行数据，并且屏蔽查询是本机节点数据还是其他节点数据
-// 5.行数据到DataFusion的RecordBatch转换器
+// 5. 行数据到DataFusion的RecordBatch转换器
 //  调用Iterator.Next得到行数据，然后转换行数据为RecordBatch结构
 
 #[derive(Debug, Clone)]
 pub struct QueryOption {
     pub batch_size: usize,
     pub tenant: String,
-    // pub filter: PredicateRef,
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchema,
     pub metrics: TskvSourceMetrics,
+    pub aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
 
     pub split: Split,
 }
 
 impl QueryOption {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         batch_size: usize,
         tenant: String,
         split: Split,
+        aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
         df_schema: SchemaRef,
         table_schema: TskvTableSchema,
         metrics: TskvSourceMetrics,
@@ -163,11 +184,11 @@ impl QueryOption {
         Self {
             batch_size,
             tenant,
-            table_schema,
-            df_schema,
-            metrics,
-
             split,
+            aggregates,
+            df_schema,
+            table_schema,
+            metrics,
         }
     }
 }
@@ -349,30 +370,20 @@ impl FieldCursor {
         );
 
         // get data from im_memcache and memcache
-        let mut mem_data: Vec<DataType> = Vec::new();
-
         let time_predicate = |ts| {
             time_ranges
                 .iter()
                 .any(|time_range| time_range.is_boundless() || time_range.contains(ts))
         };
 
-        // TODO filter memcache by time_range
-        super_version
-            .caches
-            .immut_cache
-            .iter()
-            .filter(|m| !m.read().flushed)
-            .for_each(|m| {
-                mem_data.append(&mut m.read().get_data(field_id, time_predicate, |_| true))
-            });
-
-        mem_data.append(&mut super_version.caches.mut_cache.read().get_data(
+        // get data from im_memcache and memcache
+        let mut mem_data: Vec<DataType> = Vec::new();
+        super_version.caches.read_field_data(
             field_id,
             time_predicate,
             |_| true,
-        ));
-
+            |d| mem_data.push(d),
+        );
         mem_data.sort_by_key(|data| data.timestamp());
 
         trace::trace!(
@@ -386,6 +397,9 @@ impl FieldCursor {
         for level in super_version.version.levels_info.iter().rev() {
             for file in level.files.iter() {
                 if file.is_deleted() {
+                    continue;
+                }
+                if !file.contains_field_id(field_id) {
                     continue;
                 }
 
@@ -512,11 +526,13 @@ pub struct RowIterator {
     batch_size: usize,
     vnode_id: u32,
     metrics: TskvSourceMetrics,
+
+    finished: bool,
 }
 
 impl RowIterator {
     pub async fn new(engine: EngineRef, option: QueryOption, vnode_id: u32) -> Result<Self, Error> {
-        trace::debug!("QueryOption: {:?}\nvnode_id: {}", option.split, vnode_id);
+        debug!("QueryOption: {:?}\nvnode_id: {}", option.split, vnode_id);
 
         let version = engine
             .get_db_version(&option.tenant, &option.table_schema.db, vnode_id)
@@ -550,6 +566,7 @@ impl RowIterator {
 
             batch_size,
             metrics,
+            finished: false,
         })
     }
 
@@ -602,7 +619,10 @@ impl RowIterator {
                     }
 
                     ColumnType::Field(vtype) => match vtype {
-                        ValueType::Unknown => todo!(),
+                        ValueType::Unknown => {
+                            error!("Unknown field type for column {}", &field_name);
+                            todo!()
+                        }
                         _ => {
                             let cursor =
                                 FieldCursor::new(unite_id(item.id, id), field_name, vtype, self)
@@ -767,19 +787,95 @@ impl RowIterator {
         Ok(Some(()))
     }
 
-    async fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
-        loop {
-            if self.columns.is_empty() && self.next_series().await?.is_none() {
-                return Ok(None);
+    async fn collect_aggregate_row_data(
+        &mut self,
+        builder: &mut [ArrayBuilderPtr],
+    ) -> Result<Option<()>, Error> {
+        if self.is_finish() {
+            return Ok(None);
+        }
+        self.finished = true;
+        debug!("======collect_aggregate_row_data=========");
+        let time_ranges = vec![*self.option.split.time_range()];
+        let time_ranges = Arc::new(time_ranges);
+        if self.version.is_none() {
+            return Ok(None);
+        }
+        let version = self.version.clone().unwrap();
+        if let Some(aggregates) = self.option.aggregates.as_ref() {
+            for (i, item) in aggregates.iter().enumerate() {
+                match item.column_type {
+                    ColumnType::Tag => todo!(),
+                    ColumnType::Time => {
+                        let agg_ret = count_column_non_null_values(
+                            version.clone(),
+                            &self.series,
+                            None,
+                            time_ranges.clone(),
+                        )
+                        .await?;
+                        let field_builder = builder[i]
+                            .as_any_mut()
+                            .downcast_mut::<Int64Builder>()
+                            .unwrap();
+                        field_builder.append_value(agg_ret as i64);
+                    }
+                    ColumnType::Field(vtype) => match vtype {
+                        ValueType::Unknown => {
+                            return Err(Error::CommonError {
+                                reason: format!("unknown type of {}", self.columns[i].name()),
+                            });
+                        }
+                        _ => {
+                            let agg_ret = count_column_non_null_values(
+                                version.clone(),
+                                &self.series,
+                                Some(item.id),
+                                time_ranges.clone(),
+                            )
+                            .await?;
+                            let field_builder = builder[i]
+                                .as_any_mut()
+                                .downcast_mut::<Int64Builder>()
+                                .unwrap();
+                            field_builder.append_value(agg_ret as i64);
+                            // field_builder.append_null();
+                        }
+                    },
+                };
             }
 
-            if self.collect_row_data(builder).await?.is_some() {
-                return Ok(Some(()));
+            Ok(Some(()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
+        if self.option.aggregates.is_some() {
+            self.collect_aggregate_row_data(builder).await
+        } else {
+            loop {
+                if self.columns.is_empty() && self.next_series().await?.is_none() {
+                    return Ok(None);
+                }
+
+                if self.collect_row_data(builder).await?.is_some() {
+                    return Ok(Some(()));
+                }
             }
         }
     }
 
     fn record_builder(&self) -> Vec<ArrayBuilderPtr> {
+        if let Some(aggregates) = self.option.aggregates.as_ref() {
+            // TODO: Correct the aggregate columns order.
+            let mut builders: Vec<ArrayBuilderPtr> = Vec::with_capacity(aggregates.len());
+            for _agg in self.option.aggregates.iter() {
+                builders.push(Box::new(Int64Builder::with_capacity(self.batch_size)));
+            }
+            return builders;
+        }
         let mut builders: Vec<ArrayBuilderPtr> =
             Vec::with_capacity(self.option.table_schema.columns().len());
         for item in self.option.table_schema.columns().iter() {
@@ -819,6 +915,9 @@ impl RowIterator {
     }
 
     fn is_finish(&self) -> bool {
+        if self.finished {
+            return true;
+        }
         if self.series_index == usize::MAX {
             return false;
         }

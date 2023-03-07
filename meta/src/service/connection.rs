@@ -14,6 +14,7 @@ use crate::{ClusterNode, ClusterNodeId, TypeConfig};
 
 pub struct Connections {
     // pub inner: Arc<HashMap<String,Channel>>,
+    inner: reqwest::Client,
 }
 // impl Connections {
 //     pub async fn add_conn(&mut self, url: &String) -> MetaResult<Channel>{
@@ -32,7 +33,19 @@ pub struct Connections {
 //     }
 // }
 
+impl Default for Connections {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Connections {
+    pub fn new() -> Self {
+        Self {
+            inner: reqwest::Client::new(),
+        }
+    }
+
     pub async fn send_req<Req, Resp, Err>(
         &mut self,
         target: ClusterNodeId,
@@ -46,8 +59,8 @@ impl Connections {
         Resp: DeserializeOwned,
     {
         let url = format!("http://{}/{}", node.rpc_addr, uri);
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self
+            .inner
             .post(url)
             .json(&req)
             .send()
@@ -75,7 +88,7 @@ impl RaftNetworkFactory<TypeConfig> for Connections {
     ) -> Result<Self::Network, Self::ConnectionError> {
         Ok(ConnManager {
             //todo: use grpc
-            owner: Connections {},
+            owner: Connections::new(),
             target,
             target_node: node.clone(),
         })

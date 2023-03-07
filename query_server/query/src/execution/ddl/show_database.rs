@@ -27,20 +27,20 @@ impl ShowDatabasesTask {
 #[async_trait]
 impl DDLDefinitionTask for ShowDatabasesTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        show_databases(query_state_machine)
+        show_databases(query_state_machine).await
     }
 }
 
-fn show_databases(machine: QueryStateMachineRef) -> Result<Output> {
+async fn show_databases(machine: QueryStateMachineRef) -> Result<Output> {
     let tenant = machine.session.tenant();
-    let client =
-        machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .ok_or(MetaError::TenantNotFound {
-                tenant: tenant.to_string(),
-            })?;
+    let client = machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .await
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })?;
     let databases = client.list_databases()?;
     let schema = Arc::new(Schema::new(vec![Field::new(
         "Database",

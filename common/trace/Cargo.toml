@@ -6,9 +6,12 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+config = {path = "../../config"}
+parking_lot = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["parking_lot", "registry", "env-filter"] }
 tracing-appender = { workspace = true }
 tracing-error = { workspace = true }
 color-eyre = { workspace = true }
 once_cell = { workspace = true }
+console-subscriber = { workspace = true }

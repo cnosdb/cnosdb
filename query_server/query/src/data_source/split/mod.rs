@@ -13,6 +13,10 @@ pub mod tskv;
 
 pub type SplitManagerRef = Arc<SplitManager>;
 
+pub fn default_split_manager_ref() -> SplitManagerRef {
+    Arc::new(SplitManager::default())
+}
+
 #[derive(Default)]
 pub struct SplitManager {}
 
@@ -30,7 +34,7 @@ impl SplitManager {
 
         let time_ranges = filter_to_time_ranges(&time_filter);
         let db_time_range = db.time_range();
-        let target_partitions = ctx.config.target_partitions;
+        let target_partitions = ctx.config().target_partitions();
 
         debug!("Get table {}'s splits, filter time ranges: {:?}, db time range: {}, target_partitions: {}", table.name, time_ranges, db_time_range, target_partitions);
 

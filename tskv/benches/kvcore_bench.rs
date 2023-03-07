@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
+use datafusion::execution::memory_pool::GreedyMemoryPool;
+use meta::meta_manager::RemoteMetaManager;
+use meta::MetaRef;
+use metrics::metric_register::MetricsRegister;
 use parking_lot::Mutex;
-use protos::kv_service::WritePointsRpcRequest;
+use protos::kv_service::WritePointsRequest;
 use protos::models_helper;
 use tokio::runtime::{self, Runtime};
 use tskv::engine::Engine;
@@ -20,12 +24,21 @@ async fn get_tskv() -> TsKv {
             .unwrap(),
     );
 
-    TsKv::open(global_config.cluster, opt, runtime)
-        .await
-        .unwrap()
+    let meta_manager: MetaRef = RemoteMetaManager::new(global_config.cluster.clone()).await;
+    meta_manager.admin_meta().add_data_node().await.unwrap();
+    let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+    TsKv::open(
+        meta_manager,
+        opt,
+        runtime,
+        memory,
+        Arc::new(MetricsRegister::default()),
+    )
+    .await
+    .unwrap()
 }
 
-fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRpcRequest) {
+fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRequest) {
     let rt = Runtime::new().unwrap();
     rt.block_on(tskv.lock().write(0, request)).unwrap();
 }
@@ -57,7 +70,7 @@ fn big_write(c: &mut Criterion) {
                 fbb.finish(points, None);
                 let points = fbb.finished_data().to_vec();
 
-                let request = WritePointsRpcRequest {
+                let request = WritePointsRequest {
                     version: 1,
                     meta: None,
                     points,
@@ -78,7 +91,7 @@ fn run(c: &mut Criterion) {
     fbb.finish(points, None);
     let points_str = fbb.finished_data();
     let points = points_str.to_vec();
-    let request = WritePointsRpcRequest {
+    let request = WritePointsRequest {
         version: 1,
         meta: None,
         points,

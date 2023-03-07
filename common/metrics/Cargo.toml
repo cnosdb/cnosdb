@@ -7,5 +7,8 @@ edition.workspace = true
 
 [dependencies]
 trace = { path = "../trace" }
+protos = { path = "../protos" }
 prometheus = { version = "0.13.2", default-features = false }
 once_cell = { workspace = true }
+chrono = { workspace = true }
+parking_lot = { workspace = true }

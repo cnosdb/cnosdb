@@ -1,56 +1,94 @@
-use clap::Parser;
+use std::fs::File;
+use std::io::prelude::Read;
+use std::path::Path;
 
-#[derive(Clone, Debug, Parser)]
-pub struct Opt {
-    #[clap(long, long, default_value = "0")]
-    pub id: u64,
+use config::LogConfig;
+use serde::{Deserialize, Serialize};
 
-    #[clap(
-        long,
-        global = true,
-        env = "http_addr",
-        default_value = "0.0.0.0:31005"
-    )]
-    pub http_addr: String,
-
-    #[clap(
-        long,
-        global = true,
-        env = "http_addr",
-        default_value = "0.0.0.0:31005"
-    )]
-    pub rpc_addr: String,
-
-    /// The application specific name of this Raft cluster
-    #[clap(
-        long,
-        env = "RAFT_SNAPSHOT_PATH",
-        default_value = "/tmp/cnosdb/meta/snapshot"
-    )]
-    pub snapshot_path: String,
-
-    #[clap(long, env = "RAFT_INSTANCE_PREFIX", default_value = "meta_node")]
-    pub instance_prefix: String,
-
-    #[clap(
-        long,
-        env = "RAFT_JOURNAL_PATH",
-        default_value = "/tmp/cnosdb/meta/journal"
-    )]
-    pub journal_path: String,
-
-    #[clap(long, env = "RAFT_SNAPSHOT_PER_EVENTS", default_value = "500")]
-    pub snapshot_per_events: u32,
-
-    #[clap(long, env = "META_LOGS_PATH", default_value = "/tmp/cnosdb/logs")]
-    pub logs_path: String,
-
-    #[clap(long, env = "META_LOGS_LEVEL", default_value = "info")]
-    pub logs_level: String,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MetaInit {
+    pub cluster_name: String,
+    pub admin_user: String,
+    pub system_tenant: String,
+    pub default_database: Vec<String>,
 }
 
-impl Default for Opt {
-    fn default() -> Self {
-        <Self as Parser>::parse_from(Vec::<&'static str>::new())
+impl MetaInit {
+    pub fn default_db_config(tenant: &str, db: &str) -> String {
+        format!(
+            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null}}}}",
+            tenant, db
+        )
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Opt {
+    pub id: u64,
+    pub http_addr: String,
+    pub snapshot_path: String,
+    pub journal_path: String,
+    pub snapshot_per_events: u32,
+    pub log: LogConfig,
+    pub meta_init: MetaInit,
+}
+
+pub fn get_opt(path: impl AsRef<Path>) -> Opt {
+    let path = path.as_ref();
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(err) => panic!(
+            "Failed to open configurtion file '{}': {}",
+            path.display(),
+            err
+        ),
+    };
+    let mut content = String::new();
+    if let Err(err) = file.read_to_string(&mut content) {
+        panic!(
+            "Failed to read configurtion file '{}': {}",
+            path.display(),
+            err
+        );
+    }
+    let config: Opt = match toml::from_str(&content) {
+        Ok(config) => config,
+        Err(err) => panic!(
+            "Failed to parse configurtion file '{}': {}",
+            path.display(),
+            err
+        ),
+    };
+    config
+}
+
+#[cfg(test)]
+mod test {
+    use crate::store::config::Opt;
+
+    #[test]
+    fn test() {
+        let config_str = r#"
+id = 1
+http_addr = "127.0.0.1:21001"
+
+snapshot_path = "/tmp/cnosdb/meta/snapshot"
+journal_path = "/tmp/cnosdb/meta/journal"
+snapshot_per_events = 500
+
+[log]
+logs_level = "warn"
+logs_path = "/tmp/cnosdb/logs"
+
+[meta_init]
+cluster_name = "cluster_xxx"
+admin_user = "root"
+system_tenant = "cnosdb"
+default_database = ["public", "usage_schema"]
+"#;
+
+        let config: Opt = toml::from_str(config_str).unwrap();
+        assert!(toml::to_string_pretty(&config).is_ok());
+        dbg!(config);
     }
 }

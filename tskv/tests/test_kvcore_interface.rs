@@ -1,12 +1,14 @@
 #[cfg(test)]
 mod tests {
-
     use std::path::Path;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     use config::get_config;
-    use meta::meta_client::{MetaRef, RemoteMetaManager};
+    use datafusion::execution::memory_pool::GreedyMemoryPool;
+    use meta::meta_manager::RemoteMetaManager;
+    use meta::MetaRef;
+    use metrics::metric_register::MetricsRegister;
     use models::schema::TenantOptions;
     use protos::kv_service::Meta;
     use protos::{kv_service, models_helper};
@@ -26,16 +28,27 @@ mod tests {
         global_config.cache.max_buffer_size = 128;
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
-        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(global_config.cluster.clone()));
-        let _ = meta_manager
-            .tenant_manager()
-            .create_tenant("cnosdb".to_string(), TenantOptions::default());
+        let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let meta_manager: MetaRef = rt.block_on(RemoteMetaManager::new(global_config.cluster));
+        rt.block_on(meta_manager.admin_meta().add_data_node())
+            .unwrap();
+        let _ = rt.block_on(
+            meta_manager
+                .tenant_manager()
+                .create_tenant("cnosdb".to_string(), TenantOptions::default()),
+        );
         rt.block_on(async {
             (
                 rt.clone(),
-                TsKv::open(global_config.cluster.clone(), opt, rt.clone())
-                    .await
-                    .unwrap(),
+                TsKv::open(
+                    meta_manager,
+                    opt,
+                    rt.clone(),
+                    memory,
+                    Arc::new(MetricsRegister::default()),
+                )
+                .await
+                .unwrap(),
             )
         })
     }
@@ -59,7 +72,7 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
+        let request = kv_service::WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: "cnosdb".to_string(),
@@ -85,7 +98,7 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 2000);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
+        let request = kv_service::WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: "cnosdb".to_string(),
@@ -128,7 +141,7 @@ mod tests {
             fbb.finish(points, None);
             let points = fbb.finished_data().to_vec();
 
-            let request = kv_service::WritePointsRpcRequest {
+            let request = kv_service::WritePointsRequest {
                 version: 1,
                 meta: Some(Meta {
                     tenant: "cnosdb".to_string(),
@@ -153,7 +166,7 @@ mod tests {
         let points = models_helper::create_random_points_include_delta(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
+        let request = kv_service::WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: "cnosdb".to_string(),
@@ -207,7 +220,7 @@ mod tests {
         let points = models_helper::create_random_points_include_delta(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
+        let request = kv_service::WritePointsRequest {
             version: 1,
             meta: Some(Meta {
                 tenant: "cnosdb".to_string(),
@@ -265,6 +278,7 @@ mod tests {
             async_func2().await;
         }
     }
+
     #[tokio::test]
     async fn compare() {
         let start = Instant::now();

@@ -10,6 +10,7 @@ protos = { path = "../protos" }
 utils = { path = "../utils" }
 trace = { path = "../trace" }
 error_code = {path = "../error_code"}
+config = { path = "../../config"}
 
 arrow-schema = { workspace = true,  features = ["serde"] }
 async-trait = { workspace = true }

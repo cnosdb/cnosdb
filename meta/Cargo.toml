@@ -14,9 +14,12 @@ config = { path = "../config" }
 trace = { path = "../common/trace" }
 models = { path = "../common/models" }
 error_code = {path = "../common/error_code"}
+limiter_bucket = {path = "../common/limiter_bucket"}
 
+toml = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
+once_cell = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -32,14 +35,16 @@ dashmap = { workspace = true }
 #openraft = { git = "https://github.com/datafuselabs/openraft", rev = "2262c79f5195307402e7a0994771b4152c0d10b2" }
 #openraft = "0.7.3"
 #openraft = { git = "https://github.com/datafuselabs/openraft", rev = "229bb5060cb20ca940cc461d9774e9d4650f7340", features = ["serde"] }
-openraft = { git = "https://github.com/datafuselabs/openraft", rev = "914fcb4dad32a2f187b808298048e9e8b912977f", features = ["serde"] }
-actix-web = "4.0.0"
-byteorder = "1.4.3"
-sled = "0.34.7"
-tracing-futures = "0.2"
-ureq = { version = "2.5.0", features = ["json", "charset"] }
-backoff = "0.4"
-sys-info = "0.9.1"
+openraft = { workspace = true, features = ["serde"] }
+actix-web = {workspace = true}
+byteorder = {workspace = true}
+sled = {workspace = true}
+tracing-futures = {workspace = true}
+ureq = { workspace = true, features = ["json", "charset"] }
+backoff = {workspace = true}
+sys-info = {workspace = true}
+surf = { workspace = true, features = ["curl-client", "encoding"], default-features=false }
+pprof = { workspace = true, features = ["flamegraph", "protobuf-codec","frame-pointer"] }
 
 [dev-dependencies]
 anyhow = "1.0.32"

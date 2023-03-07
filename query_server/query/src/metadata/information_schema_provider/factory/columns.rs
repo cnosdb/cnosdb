@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
 use meta::error::MetaError;
-use meta::meta_client::MetaClientRef;
+use meta::MetaClientRef;
 use models::auth::user::User;
 use models::oid::Identifier;
 use models::schema::{ColumnType, ExternalTableSchema, TableSchema, TskvTableSchema};
@@ -17,12 +17,13 @@ const INFORMATION_SCHEMA_COLUMNS: &str = "COLUMNS";
 /// This view only displays the column information of tables under the database that the current user has Read permission or higher.
 pub struct ColumnsFactory {}
 
+#[async_trait::async_trait]
 impl InformationSchemaTableFactory for ColumnsFactory {
     fn table_name(&self) -> &'static str {
         INFORMATION_SCHEMA_COLUMNS
     }
 
-    fn create(
+    async fn create(
         &self,
         user: &User,
         metadata: MetaClientRef,
@@ -47,10 +48,10 @@ impl InformationSchemaTableFactory for ColumnsFactory {
                 if let Some(table) = metadata.get_table_schema(&db, &table)? {
                     match table {
                         TableSchema::TsKvTableSchema(t) => {
-                            append_tskv_table(tenant_name, &db, t, &mut builder);
+                            append_tskv_table(tenant_name, &db, t.clone(), &mut builder);
                         }
                         TableSchema::ExternalTableSchema(t) => {
-                            append_external_table(tenant_name, &db, t, &mut builder);
+                            append_external_table(tenant_name, &db, t.clone(), &mut builder);
                         }
                     }
                 }
@@ -66,7 +67,7 @@ impl InformationSchemaTableFactory for ColumnsFactory {
 fn append_tskv_table(
     tenant_name: &str,
     database_name: &str,
-    table: TskvTableSchema,
+    table: Arc<TskvTableSchema>,
     builder: &mut InformationSchemaColumnsBuilder,
 ) {
     for (idx, col) in table.columns().iter().enumerate() {
@@ -88,7 +89,7 @@ fn append_tskv_table(
 fn append_external_table(
     tenant_name: &str,
     database_name: &str,
-    table: ExternalTableSchema,
+    table: Arc<ExternalTableSchema>,
     builder: &mut InformationSchemaColumnsBuilder,
 ) {
     for (idx, col) in table.schema.all_fields().iter().enumerate() {

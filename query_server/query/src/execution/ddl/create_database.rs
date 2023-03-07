@@ -31,6 +31,7 @@ impl DDLDefinitionTask for CreateDatabaseTask {
             .meta
             .tenant_manager()
             .tenant_meta(tenant)
+            .await
             .ok_or(MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
             })?;
@@ -50,23 +51,23 @@ impl DDLDefinitionTask for CreateDatabaseTask {
             // .context(spi::MetaSnafu),
             // does not exist, create
             (_, false) => {
-                create_database(&self.stmt, query_state_machine)?;
+                create_database(&self.stmt, query_state_machine).await?;
                 Ok(Output::Nil(()))
             }
         }
     }
 }
 
-fn create_database(stmt: &CreateDatabase, machine: QueryStateMachineRef) -> Result<()> {
+async fn create_database(stmt: &CreateDatabase, machine: QueryStateMachineRef) -> Result<()> {
     let tenant = machine.session.tenant();
-    let client =
-        machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .ok_or(MetaError::TenantNotFound {
-                tenant: tenant.to_string(),
-            })?;
+    let client = machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .await
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })?;
     // .context(MetaSnafu)?;
     let CreateDatabase {
         ref name,
@@ -76,7 +77,7 @@ fn create_database(stmt: &CreateDatabase, machine: QueryStateMachineRef) -> Resu
 
     let mut database_schema = DatabaseSchema::new(machine.session.tenant(), name);
     database_schema.config = options.clone();
-    client.create_db(database_schema)?;
+    client.create_db(database_schema).await?;
     // .context(spi::MetaSnafu)?;
     Ok(())
 }

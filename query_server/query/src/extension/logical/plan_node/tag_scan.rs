@@ -6,7 +6,7 @@ use datafusion::common::DFSchemaRef;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
 use datafusion::prelude::Expr;
 
-use crate::table::ClusterTable;
+use crate::data_source::table_provider::tskv::ClusterTable;
 
 #[derive(Clone)]
 pub struct TagScanPlanNode {

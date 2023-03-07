@@ -82,4 +82,29 @@ jobs:
         shell: bash
         run: |
           bash ./query_server/test/script/start_and_test.sh
+          
+
+  integration-test-singleton:
+    name: "Integration Test Singleton"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Setup timezone
+        uses: zcong1993/setup-timezone@master
+        with:
+          timezone: Asia/Shanghai
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+        with:
+          rust-version: ${{ matrix.rust }}
+
+      - name: Test
+        shell: bash
+        run: |
+          bash ./query_server/test/script/start_and_test.sh --singleton
 

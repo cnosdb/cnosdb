@@ -19,10 +19,11 @@ impl BasicCallHeaderAuthenticator {
     }
 }
 
+#[async_trait::async_trait]
 impl CallHeaderAuthenticator for BasicCallHeaderAuthenticator {
     type AuthResult = CommonAuthResult;
 
-    fn authenticate(&self, req_headers: &MetadataMap) -> Result<Self::AuthResult, Status> {
+    async fn authenticate(&self, req_headers: &MetadataMap) -> Result<Self::AuthResult, Status> {
         debug!("authenticate, request headers: {:?}", req_headers);
 
         let authorization = utils::get_value_from_auth_header(req_headers, "")
@@ -37,6 +38,7 @@ impl CallHeaderAuthenticator for BasicCallHeaderAuthenticator {
         let user = self
             .instance
             .authenticate(&user_info, tenant.as_deref())
+            .await
             .map_err(|e| Status::unauthenticated(e.to_string()))?;
 
         debug!("authenticate success, user: {}", user_info.user);
@@ -56,14 +58,14 @@ mod test {
     use super::BasicCallHeaderAuthenticator;
     use crate::flight_sql::auth_middleware::{AuthResult, CallHeaderAuthenticator};
 
-    #[test]
-    fn test() {
+    #[tokio::test]
+    async fn test() {
         let instance = Arc::new(DatabaseManagerSystemMock {});
         let authenticator = BasicCallHeaderAuthenticator::new(instance);
 
         let mut req_headers = MetadataMap::default();
 
-        assert!(authenticator.authenticate(&req_headers).is_err());
+        assert!(authenticator.authenticate(&req_headers).await.is_err());
 
         let val = AsciiMetadataValue::from_static("Basic eHg6eHgK");
 
@@ -71,6 +73,7 @@ mod test {
 
         let auth_result = authenticator
             .authenticate(&req_headers)
+            .await
             .expect("authenticate");
 
         auth_result

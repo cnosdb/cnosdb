@@ -108,6 +108,15 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &mut PrintO
                     eprintln!("'\\{}' is not a valid command", &line[1..]);
                 }
             }
+
+            Ok(line) if use_database(&line).is_some() => {
+                if let Some(db) = use_database(&line) {
+                    if connect_database(&db, ctx).await.is_err() {
+                        println!("Cannot connect to database {}.", db);
+                    }
+                }
+            }
+
             Ok(line) => {
                 rl.add_history_entry(line.trim_end());
                 match exec_and_print(ctx, &print_options, line).await {
@@ -150,4 +159,40 @@ async fn exec_and_print(
     }
 
     Ok(())
+}
+
+fn use_database(sql: &str) -> Option<String> {
+    let sql = sql.trim().trim_end_matches(';');
+    if !sql[0..3].to_ascii_lowercase().eq("use") {
+        return None;
+    }
+
+    let sql = sql[3..].trim();
+
+    if sql.starts_with('"') && sql.ends_with('"') {
+        Some(sql[1..sql.len() - 1].to_string())
+    } else {
+        Some(sql.to_string())
+    }
+}
+
+pub fn is_system_table_db(db: &str) -> bool {
+    let db = db.to_ascii_lowercase();
+    db.eq("cluster_schema") || db.eq("information_schema")
+}
+
+pub async fn connect_database(database: &str, ctx: &mut SessionContext) -> Result<(), String> {
+    if is_system_table_db(database) {
+        ctx.set_database(database);
+        return Ok(());
+    }
+    let old_database = ctx.get_database().to_string();
+    ctx.set_database(database);
+    match ctx.sql(format!("DESCRIBE DATABASE {}", database)).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            ctx.set_database(old_database.as_str());
+            Err(e)
+        }
+    }
 }

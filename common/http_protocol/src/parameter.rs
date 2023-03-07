@@ -10,7 +10,7 @@ pub struct SqlParam {
     pub target_partitions: Option<usize>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct WriteParam {
     pub tenant: Option<String>,

@@ -105,8 +105,8 @@ pub fn record_batch_to_points_flat_buffer(
         columns_wip_offset_without_time_col.push(wip_offset_array?)
     }
     // must contain the time column
-    let time_col_array = time_col_array.ok_or_else(|| QueryError::CommonError {
-        msg: "Column {} Not Found".to_string(),
+    let time_col_array = time_col_array.ok_or_else(|| QueryError::ColumnNotFound {
+        col: "time".to_string(),
     })?;
 
     trace::trace!(
@@ -146,9 +146,11 @@ fn construct_row_based_points(
         for (col_idx, df_field) in column_schemas.iter().enumerate() {
             let name = df_field.name();
 
-            let field = schema.column(name).ok_or_else(|| QueryError::CommonError {
-                msg: "Column {} not found.".to_string(),
-            })?;
+            let field = schema
+                .column(name)
+                .ok_or_else(|| QueryError::ColumnNotFound {
+                    col: name.to_string(),
+                })?;
 
             let value = unsafe { columns_datum.get_unchecked(col_idx).get_unchecked(row_idx) };
 
@@ -187,8 +189,8 @@ fn construct_row_based_points(
             }
         }
 
-        let time = time.ok_or_else(|| QueryError::CommonError {
-            msg: format!("Column {} Not Found", TIME_FIELD_NAME),
+        let time = time.ok_or_else(|| QueryError::ColumnNotFound {
+            col: TIME_FIELD_NAME.to_string(),
         })?;
 
         let point_args = PointArgs {

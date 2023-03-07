@@ -2,10 +2,9 @@ use std::path::{Path, PathBuf};
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use snafu::ResultExt;
 
 use crate::file_system::file_manager;
-use crate::{error, Error, Result};
+use crate::{Error, Result};
 
 lazy_static! {
     static ref SUMMARY_FILE_NAME_PATTERN: Regex = Regex::new(r"summary-\d{6}").unwrap();
@@ -45,33 +44,6 @@ pub fn get_summary_file_id(file_name: &str) -> Result<u64> {
         .map_err(|_| Error::InvalidFileName {
             file_name: file_name.to_string(),
             message: "summary file name contains an invalid id".to_string(),
-        })
-}
-
-// hinted off files.
-
-pub fn make_hinted_off_file(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
-    let p = format!("_{:06}.hh", sequence);
-    path.as_ref().join(p)
-}
-
-pub fn check_hinted_off_file_name(file_name: &str) -> bool {
-    HINTEDOFF_FILE_NAME_PATTERN.is_match(file_name)
-}
-
-pub fn get_hinted_off_file_id(file_name: &str) -> Result<u64> {
-    if !check_hinted_off_file_name(file_name) {
-        return Err(Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "hh file name does not contain an id".to_string(),
-        });
-    }
-    let file_number = &file_name[1..7];
-    file_number
-        .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "hh file name contains an invalid id".to_string(),
         })
 }
 
@@ -239,13 +211,66 @@ where
     Some((PathBuf::from(max_file_name), max_id))
 }
 
+/* -------------------------------------------------------------------------------------- */
+
+pub fn make_file_name(path: impl AsRef<Path>, id: u64, suffix: &str) -> PathBuf {
+    let p = format!("_{:06}.{}", id, suffix);
+    path.as_ref().join(p)
+}
+
+pub fn get_file_id_range(dir: impl AsRef<Path>, suffix: &str) -> Option<(u64, u64)> {
+    let file_names = file_manager::list_file_names(dir);
+    if file_names.is_empty() {
+        return None;
+    }
+
+    let pattern = Regex::new(&(r"_\d{6}\.".to_string() + suffix)).unwrap();
+    let get_file_id = |file_name: &str| -> Result<u64> {
+        if !pattern.is_match(file_name) {
+            return Err(Error::InvalidFileName {
+                file_name: file_name.to_string(),
+                message: "index binlog file name does not contain an id".to_string(),
+            });
+        }
+
+        let file_number = &file_name[1..7];
+        file_number
+            .parse::<u64>()
+            .map_err(|_| Error::InvalidFileName {
+                file_name: file_name.to_string(),
+                message: "index binlog file name contains an invalid id".to_string(),
+            })
+    };
+
+    let mut max_id = 0;
+    let mut min_id = u64::MAX;
+    let mut is_found = false;
+    for (_i, file_name) in file_names.iter().enumerate() {
+        if let Ok(id) = get_file_id(file_name) {
+            is_found = true;
+            if max_id < id {
+                max_id = id;
+            }
+
+            if min_id > id {
+                min_id = id;
+            }
+        }
+    }
+
+    if !is_found {
+        return None;
+    }
+
+    Some((min_id, max_id))
+}
 #[cfg(test)]
 mod test {
     use std::path::PathBuf;
 
     use super::{check_summary_file_name, make_summary_file};
     use crate::file_utils::{
-        self, check_schema_file, check_wal_file_name, get_schema_file_id, get_summary_file_id,
+        check_schema_file, check_wal_file_name, get_schema_file_id, get_summary_file_id,
         get_wal_file_id, make_schema_file, make_wal_file,
     };
 

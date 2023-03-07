@@ -29,20 +29,23 @@ impl ShowTablesTask {
 #[async_trait]
 impl DDLDefinitionTask for ShowTablesTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        show_tables(&self.database_name, query_state_machine)
+        show_tables(&self.database_name, query_state_machine).await
     }
 }
 
-fn show_tables(database_name: &Option<String>, machine: QueryStateMachineRef) -> Result<Output> {
+async fn show_tables(
+    database_name: &Option<String>,
+    machine: QueryStateMachineRef,
+) -> Result<Output> {
     let tenant = machine.session.tenant();
-    let client =
-        machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .ok_or(MetaError::TenantNotFound {
-                tenant: tenant.to_string(),
-            })?;
+    let client = machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .await
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })?;
     let database_name = match database_name {
         None => machine.session.default_database(),
         Some(v) => v.as_str(),

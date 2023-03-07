@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
 use meta::error::MetaError;
-use meta::meta_client::MetaClientRef;
+use meta::MetaClientRef;
 use models::auth::user::User;
 use models::oid::Identifier;
 
@@ -15,12 +15,13 @@ const INFORMATION_SCHEMA_DATABASES: &str = "DATABASES";
 /// This view only displays database information for which the current user has Read permission or higher.
 pub struct DatabasesFactory {}
 
+#[async_trait::async_trait]
 impl InformationSchemaTableFactory for DatabasesFactory {
     fn table_name(&self) -> &'static str {
         INFORMATION_SCHEMA_DATABASES
     }
 
-    fn create(
+    async fn create(
         &self,
         user: &User,
         metadata: MetaClientRef,

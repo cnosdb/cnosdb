@@ -11,6 +11,7 @@ harness = false
 
 [dependencies]
 parking_lot = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 utils = { path = "../utils" }
 
 [dev-dependencies]

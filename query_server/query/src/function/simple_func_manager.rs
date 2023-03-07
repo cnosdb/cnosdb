@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
@@ -44,7 +44,7 @@ impl FunctionMetadataManager for SimpleFunctionMetadataManager {
             })
     }
 
-    fn udfs(&self) -> Vec<Arc<ScalarUDF>> {
-        self.scalar_functions.values().cloned().collect()
+    fn udfs(&self) -> HashSet<String> {
+        self.scalar_functions.keys().cloned().collect()
     }
 }

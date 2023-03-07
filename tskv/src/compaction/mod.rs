@@ -1,6 +1,8 @@
 pub mod check;
 mod compact;
 mod flush;
+mod iterator;
+pub mod job;
 mod picker;
 
 use std::sync::Arc;
@@ -12,13 +14,17 @@ pub use picker::*;
 
 use crate::kv_option::StorageOptions;
 use crate::memcache::MemCache;
-use crate::summary::VersionEdit;
 use crate::tseries_family::{ColumnFile, Version};
 use crate::{LevelId, TseriesFamilyId};
 
+pub enum CompactTask {
+    Vnode(TseriesFamilyId),
+    ColdVnode(TseriesFamilyId),
+}
+
 pub struct CompactReq {
     pub ts_family_id: TseriesFamilyId,
-    pub database: String,
+    pub database: Arc<String>,
     storage_opt: Arc<StorageOptions>,
 
     files: Vec<Arc<ColumnFile>>,

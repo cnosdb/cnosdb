@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
 use meta::error::MetaError;
-use meta::meta_client::MetaClientRef;
+use meta::MetaClientRef;
 use models::auth::user::User;
 
 use crate::dispatcher::query_tracker::QueryTracker;
@@ -16,12 +16,13 @@ const INFORMATION_SCHEMA_MEMBERS: &str = "MEMBERS";
 /// All records for this view are visible to all members of the current tenant.
 pub struct MembersFactory {}
 
+#[async_trait::async_trait]
 impl InformationSchemaTableFactory for MembersFactory {
     fn table_name(&self) -> &'static str {
         INFORMATION_SCHEMA_MEMBERS
     }
 
-    fn create(
+    async fn create(
         &self,
         _user: &User,
         metadata: MetaClientRef,
@@ -29,7 +30,7 @@ impl InformationSchemaTableFactory for MembersFactory {
     ) -> std::result::Result<Arc<MemTable>, MetaError> {
         let mut builder = InformationSchemaMembersBuilder::default();
 
-        for (user_name, role) in metadata.members()? {
+        for (user_name, role) in metadata.members().await? {
             builder.append_row(user_name, role.name());
         }
 

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
-use coordinator::command;
 use meta::error::MetaError;
+use protos::kv_service::admin_command_request::Command::DropDb;
+use protos::kv_service::{AdminCommandRequest, DropDbRequest};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropTenantObject, TenantObjectType};
 use spi::{QueryError, Result};
@@ -33,6 +34,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
             .meta
             .tenant_manager()
             .tenant_meta(tenant_name)
+            .await
             .ok_or_else(|| QueryError::Meta {
                 source: MetaError::TenantNotFound {
                     tenant: tenant_name.to_string(),
@@ -50,7 +52,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 //     tenant_id: &Oid
                 // ) -> Result<bool>;
                 debug!("Drop role {} of tenant {}", name, tenant_name);
-                let success = meta.drop_custom_role(name)?;
+                let success = meta.drop_custom_role(name).await?;
 
                 if let (false, false) = (if_exist, success) {
                     return Err(QueryError::Meta {
@@ -68,18 +70,15 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 // tenant_id
                 // database_name
 
-                let req = command::AdminStatementRequest {
+                let req = AdminCommandRequest {
                     tenant: tenant_name.to_string(),
-                    stmt: command::AdminStatementType::DropDB { db: name.clone() },
+                    command: Some(DropDb(DropDbRequest { db: name.clone() })),
                 };
 
-                query_state_machine
-                    .coord
-                    .exec_admin_stat_on_all_node(req)
-                    .await?;
+                query_state_machine.coord.broadcast_command(req).await?;
 
                 debug!("Drop database {} of tenant {}", name, tenant_name);
-                let success = meta.drop_db(name)?;
+                let success = meta.drop_db(name).await?;
 
                 if let (false, false) = (if_exist, success) {
                     return Err(QueryError::Meta {
