@@ -6,13 +6,39 @@ export HTTP_HOST=${HTTP_HOST:-"127.0.0.1:31001"}
 export URL="http://${HTTP_HOST}/api/v1/ping"
 source "$HOME/.cargo/env"
 
-SINGLETON=0
+function usage() {
+  echo "Start CnosDB Server and run tests, you may need to start CnosDB Meta Server first."
+  echo
+  echo "USAGE:"
+  echo "    ${0} [OPTIONS]"
+  echo
+  echo "OPTIONS:"
+  echo "    --singleton          Run singleton CnosDB Server (with Meta Service)"
+  echo
+}
+
+CFG_PATH="./config/config_31001.toml"
+EXE_PATH="./target/test-ci/cnosdb"
+
+TEST_DATA_DIR="/tmp/cnosdb"
+DB_DIR=${TEST_DATA_DIR}"/1001"
+LOG_DIR=${TEST_DATA_DIR}"/logs"
+LOG_PATH=${LOG_DIR}"/start_and_test.data_node.31001.log"
+
+EXE_RUN_CMD=${EXE_PATH}" run"
+CARGO_RUN_CMD="cargo run --profile test-ci -- run"
+
 while [[ $# -gt 0 ]]; do
   key=${1}
   case ${key} in
   --singleton)
-    SINGLETON=1
+    EXE_RUN_CMD=${EXE_RUN_CMD}" singleton"
+    CARGO_RUN_CMD=${CARGO_RUN_CMD}" singleton"
     shift 1
+    ;;
+  -h | --help)
+    usage
+    exit 0
     ;;
   *)
     usage
@@ -22,24 +48,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 function start_cnosdb() {
-    rm -rf ./data
-    if [ -e "./target/test-ci/cnosdb" ];then
-      nohup ./target/test-ci/cnosdb run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
-    else
-      nohup cargo run --profile test-ci -- run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
-    fi
-    echo $!
-}
-
-function start_cnosdb_singleton() {
-    rm -rf ./data
-    mkdir -p /tmp/cnosdb/logs/
-    if [ -e "./target/release/cnosdb" ];then
-      nohup ./target/release/cnosdb singleton --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
-    else
-      nohup cargo run --release -- singleton --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
-    fi
-    echo $!
+  if [ -e ${EXE_PATH} ];then
+    # nohup ./target/test-ci/cnosdb run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
+    nohup ${EXE_RUN_CMD} --config ${CFG_PATH} > ${LOG_PATH} 2>&1&
+  else
+    # nohup cargo run --profile test-ci -- run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
+    nohup ${CARGO_RUN_CMD} --config ${CFG_PATH} > ${LOG_PATH} 2>&1&
+  fi
+  echo $!
 }
 
 function wait_start() {
@@ -57,18 +73,17 @@ function test() {
 
 echo "Starting cnosdb"
 
-PID=0
-if [ ${SINGLETON} -eq 0 ]; then
-    PID=$(start_cnosdb)
-else
-    PID=$(start_cnosdb_singleton)
-fi
+rm -rf ${DB_DIR}
+mkdir -p ${LOG_DIR}
 
-echo "Wait for pid=${PID} startup to complete"
+PID=$(start_cnosdb)
+
+echo "Wait for CnosDB Server(pid=${PID}) startup to complete"
+trap "echo 'Received Ctrl+C, stopping.'" SIGINT
 
 (wait_start && test) || EXIT_CODE=$?
 
-echo "Test complete, killing ${PID}"
+echo "Test complete, killing CnosDB Server(pid=${PID})"
 
 kill ${PID}
 
