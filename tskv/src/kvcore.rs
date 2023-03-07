@@ -29,7 +29,7 @@ use crate::database::Database;
 use crate::engine::Engine;
 use crate::error::{self, Result};
 use crate::file_system::file_manager;
-use crate::index::{ts_index, IndexResult};
+use crate::index::ts_index;
 use crate::kv_option::{Options, StorageOptions};
 use crate::schema::error::SchemaError;
 use crate::summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit};
@@ -686,36 +686,39 @@ impl Engine for TsKv {
 
     async fn get_series_id_by_filter(
         &self,
-        id: u32,
         tenant: &str,
         database: &str,
         tab: &str,
+        id: SeriesId,
         filter: &ColumnDomains<String>,
-    ) -> IndexResult<Vec<u32>> {
-        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            let opt_index = db.read().await.get_ts_index(id);
-            if let Some(ts_index) = opt_index {
-                if filter.is_all() {
-                    // Match all records
-                    debug!("pushed tags filter is All.");
-                    return ts_index.read().await.get_series_id_list(tab, &[]);
-                } else if filter.is_none() {
-                    // Does not match any record, return null
-                    debug!("pushed tags filter is None.");
-                    return Ok(vec![]);
-                } else {
-                    // No error will be reported here
-                    debug!("pushed tags filter is {:?}.", filter);
-                    let domains = unsafe { filter.domains_unsafe() };
-                    return ts_index
-                        .read()
-                        .await
-                        .get_series_ids_by_domains(tab, domains);
-                }
-            }
-        }
+    ) -> Result<Vec<SeriesId>> {
+        let ts_index = match self.version_set.read().await.get_db(tenant, database) {
+            Some(db) => match db.read().await.get_ts_index(id) {
+                Some(ts_index) => ts_index,
+                None => return Ok(vec![]),
+            },
+            None => return Ok(vec![]),
+        };
 
-        Ok(vec![])
+        let res = if filter.is_all() {
+            // Match all records
+            debug!("pushed tags filter is All.");
+            ts_index.read().await.get_series_id_list(tab, &[])?
+        } else if filter.is_none() {
+            // Does not match any record, return null
+            debug!("pushed tags filter is None.");
+            vec![]
+        } else {
+            // No error will be reported here
+            debug!("pushed tags filter is {:?}.", filter);
+            let domains = unsafe { filter.domains_unsafe() };
+            ts_index
+                .read()
+                .await
+                .get_series_ids_by_domains(tab, domains)?
+        };
+
+        Ok(res)
     }
 
     async fn get_series_key(
@@ -724,9 +727,9 @@ impl Engine for TsKv {
         database: &str,
         vnode_id: u32,
         sid: u32,
-    ) -> IndexResult<Option<SeriesKey>> {
+    ) -> Result<Option<SeriesKey>> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            return db.read().await.get_series_key(vnode_id, sid).await;
+            return Ok(db.read().await.get_series_key(vnode_id, sid).await?);
         }
 
         Ok(None)

@@ -202,7 +202,7 @@ impl CoordService {
         option: QueryOption,
         sender: Sender<CoordinatorResult<RecordBatch>>,
     ) {
-        let tenant = option.tenant.as_str();
+        let tenant = option.table_schema.tenant.as_str();
 
         if let Err(e) = self
             .meta
