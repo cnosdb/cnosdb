@@ -2,11 +2,13 @@ use std::sync::{Arc, Mutex, Once};
 
 use once_cell::sync::Lazy;
 pub use tracing::{debug, error, info, instrument, trace, warn};
-use tracing_appender::{non_blocking, non_blocking::WorkerGuard, rolling};
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::{non_blocking, rolling};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{
-    filter::EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt, Registry,
-};
+use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{fmt, Registry};
 
 /// only use for unit test
 /// parameter only use for first call

@@ -1,16 +1,17 @@
 #![allow(clippy::too_many_arguments)]
-use coordinator::{reader::ReaderIterator, service::CoordinatorRef};
 use std::task::Poll;
 
-use datafusion::{
-    arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
-    physical_plan::RecordBatchStream,
-};
-use futures::{executor::block_on, FutureExt, Stream};
-use models::schema::TskvTableSchemaRef;
-use models::schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD};
-use models::{codec::Encoding, predicate::Split};
-
+use coordinator::reader::ReaderIterator;
+use coordinator::service::CoordinatorRef;
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::error::ArrowError;
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::physical_plan::RecordBatchStream;
+use futures::executor::block_on;
+use futures::{FutureExt, Stream};
+use models::codec::Encoding;
+use models::predicate::Split;
+use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD};
 use spi::{QueryError, Result};
 use tskv::iterator::{QueryOption, TableScanMetrics};
 

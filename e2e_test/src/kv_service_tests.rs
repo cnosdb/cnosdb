@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod test {
     use protos::kv_service::tskv_service_client::TskvServiceClient;
-    use protos::{self, kv_service::*, models::*, models_helper};
+    use protos::kv_service::*;
+    use protos::models::*;
+    use protos::{self, models_helper};
     use tokio::sync::mpsc;
     use tokio_stream::wrappers::ReceiverStream;
     use tonic::transport::{Certificate, Channel, ClientTlsConfig};

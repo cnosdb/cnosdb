@@ -1,11 +1,12 @@
+use std::fmt::Display;
+use std::sync::Arc;
+
+use openraft::{Config, Raft};
+
 use crate::service::connection::Connections;
 use crate::store::command::WriteCommand;
 use crate::store::state_machine::CommandResp;
 use crate::store::Store;
-use openraft::Config;
-use openraft::Raft;
-use std::fmt::Display;
-use std::sync::Arc;
 pub mod client;
 pub mod error;
 pub mod limiter;

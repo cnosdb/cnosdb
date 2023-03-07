@@ -1,6 +1,6 @@
-use models::{
-    meta_data::DatabaseInfoRef, predicate::domain::PredicateRef, schema::TskvTableSchemaRef,
-};
+use models::meta_data::DatabaseInfoRef;
+use models::predicate::domain::PredicateRef;
+use models::schema::TskvTableSchemaRef;
 
 pub struct TableLayoutHandle {
     pub db: DatabaseInfoRef,

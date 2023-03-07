@@ -1,11 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    predicate::domain::TimeRange,
-    schema::{DatabaseSchema, TableSchema},
-};
+use crate::predicate::domain::TimeRange;
+use crate::schema::{DatabaseSchema, TableSchema};
 
 pub type VnodeId = u32;
 pub type NodeId = u64;

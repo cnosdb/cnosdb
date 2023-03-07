@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use config::Config;
 use serde::{Deserialize, Serialize};

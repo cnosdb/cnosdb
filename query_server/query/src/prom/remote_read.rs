@@ -8,18 +8,15 @@ use meta::meta_client::{MetaClientRef, MetaRef};
 use models::schema::{TskvTableSchema, TIME_FIELD_NAME};
 use protos::models_helper::{parse_proto_bytes, to_proto_bytes};
 use protos::prompb::remote::{Query as PromQuery, QueryResult, ReadRequest, ReadResponse};
-
 use protos::prompb::types::label_matcher::Type;
 use protos::prompb::types::TimeSeries;
 use regex::Regex;
 use snap::raw::{decompress_len, max_compress_len, Decoder, Encoder};
 use snap::Result as SnapResult;
-use spi::service::protocol::{Query, QueryHandle};
-use spi::{
-    server::{dbms::DBMSRef, prom::PromRemoteServer},
-    service::protocol::Context,
-    QueryError, Result,
-};
+use spi::server::dbms::DBMSRef;
+use spi::server::prom::PromRemoteServer;
+use spi::service::protocol::{Context, Query, QueryHandle};
+use spi::{QueryError, Result};
 use tokio::sync::Mutex;
 use trace::{debug, warn};
 
@@ -344,22 +341,17 @@ impl SnappyCodec {
 
 #[cfg(test)]
 mod test {
-    use std::{sync::Arc, vec};
+    use std::sync::Arc;
+    use std::vec;
 
-    use datafusion::{
-        arrow::{
-            array::{Float64Array, StringArray, TimestampNanosecondArray},
-            datatypes::{DataType, Field, Schema, TimeUnit},
-            record_batch::RecordBatch,
-        },
-        from_slice::FromSlice,
-    };
+    use datafusion::arrow::array::{Float64Array, StringArray, TimestampNanosecondArray};
+    use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+    use datafusion::arrow::record_batch::RecordBatch;
+    use datafusion::from_slice::FromSlice;
     use models::auth::user::{User, UserDesc, UserOptions};
     use protos::prompb::types::{Label, Sample, TimeSeries};
-    use spi::{
-        query::execution::Output,
-        service::protocol::{ContextBuilder, Query, QueryHandle, QueryId},
-    };
+    use spi::query::execution::Output;
+    use spi::service::protocol::{ContextBuilder, Query, QueryHandle, QueryId};
 
     use crate::prom::remote_read::transform_time_series;
 

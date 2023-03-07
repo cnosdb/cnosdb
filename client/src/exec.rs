@@ -1,17 +1,17 @@
 //! Execution functions
 
-use crate::{
-    command::{Command, OutputFormat},
-    ctx::SessionContext,
-    helper::CliHelper,
-    print_options::PrintOptions,
-};
-use rustyline::error::ReadlineError;
-use rustyline::Editor;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::time::Instant;
+
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
+
+use crate::command::{Command, OutputFormat};
+use crate::ctx::SessionContext;
+use crate::helper::CliHelper;
+use crate::print_options::PrintOptions;
 
 /// run and execute SQL statements and commands from a file, against a context with the given print options
 pub async fn exec_from_lines(

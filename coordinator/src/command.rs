@@ -1,26 +1,24 @@
 #![allow(clippy::large_enum_variant)]
 use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::arrow::ipc::{reader::StreamReader, writer::StreamWriter};
+use datafusion::arrow::ipc::reader::StreamReader;
+use datafusion::arrow::ipc::writer::StreamWriter;
+use datafusion::arrow::record_batch::RecordBatch;
+// use std::net::{TcpListener, TcpStream};
+use models::meta_data::VnodeId;
 use models::predicate::domain::{PredicateRef, QueryArgs, QueryExpr};
 use models::schema::{TableColumn, TskvTableSchema};
 use protos::kv_service::WritePointsRpcRequest;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::Sender as MpscSender;
 use tokio::sync::oneshot::Sender as OneShotSender;
-
-use datafusion::arrow::record_batch::RecordBatch;
-
-// use std::net::{TcpListener, TcpStream};
-use models::meta_data::VnodeId;
-use tokio::net::{TcpListener, TcpStream};
 use trace::info;
-use tskv::{byte_utils, iterator::QueryOption};
+use tskv::byte_utils;
+use tskv::iterator::QueryOption;
 
-use crate::errors::{
-    CoordinatorError::{self, *},
-    CoordinatorResult,
-};
+use crate::errors::CoordinatorError::{self, *};
+use crate::errors::CoordinatorResult;
 
 /* **************************************************************************************** */
 /* ************************* tcp service command ****************************************** */

@@ -1,43 +1,37 @@
-use std::{
-    collections::HashMap,
-    mem::size_of,
-    path::{self, Path},
-    sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
-};
+use std::collections::HashMap;
+use std::mem::size_of;
+use std::path::{self, Path};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 
 use datafusion::sql::sqlparser::test_utils::table;
 use lru_cache::ShardedCache;
 use meta::meta_client::MetaRef;
+use models::predicate::domain::TimeRange;
+use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
+use models::utils::{split_id, unite_id};
 use models::{
-    predicate::domain::TimeRange,
-    schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema},
-    utils::{split_id, unite_id},
     ColumnId, FieldInfo, InMemPoint, SchemaId, SeriesId, SeriesKey, Tag, Timestamp, ValueType,
 };
 use parking_lot::RwLock as SyncRwLock;
 use protos::models::{Point, Points};
 use snafu::ResultExt;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch::Receiver;
-use tokio::sync::RwLock;
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info};
 
-use crate::error::SchemaSnafu;
+use crate::compaction::{check, FlushReq};
+use crate::error::{self, IndexErrSnafu, Result, SchemaSnafu};
 use crate::index::{self, IndexError, IndexResult};
+use crate::kv_option::Options;
+use crate::memcache::{MemCache, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
-use crate::tseries_family::LevelInfo;
+use crate::summary::{CompactMeta, SummaryTask, VersionEdit, WriteSummaryRequest};
+use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
+use crate::version_set::VersionSet;
 use crate::Error::{IndexErr, InvalidPoint};
-use crate::{
-    compaction::{check, FlushReq},
-    error::{self, IndexErrSnafu, Result},
-    kv_option::Options,
-    memcache::MemCache,
-    memcache::{RowData, RowGroup},
-    summary::{CompactMeta, SummaryTask, VersionEdit, WriteSummaryRequest},
-    tseries_family::{TseriesFamily, Version},
-    version_set::VersionSet,
-    Error, TseriesFamilyId,
-};
+use crate::{Error, TseriesFamilyId};
 
 pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>;
 

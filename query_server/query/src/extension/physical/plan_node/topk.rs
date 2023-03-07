@@ -1,40 +1,33 @@
-use std::{
-    any::Any,
-    cmp::Ordering,
-    collections::{BinaryHeap, HashMap, HashSet},
-    fmt::Debug,
-    sync::Arc,
-};
+use std::any::Any;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::fmt::Debug;
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{
-    arrow::{
-        array::{build_compare, make_array, ArrayData, ArrayRef, MutableArrayData},
-        datatypes::SchemaRef,
-        record_batch::RecordBatch,
-    },
-    error::DataFusionError,
-    execution::{
-        context::TaskContext, memory_manager::ConsumerType, runtime_env::RuntimeEnv,
-        MemoryConsumer, MemoryConsumerId, MemoryManager,
-    },
-    physical_expr::PhysicalSortExpr,
-    physical_plan::{
-        common::{batch_byte_size, SizedRecordBatchStream},
-        metrics::{BaselineMetrics, CompositeMetricsSet, MemTrackingMetrics, MetricsSet},
-        stream::RecordBatchStreamAdapter,
-        DisplayFormatType, Distribution, EmptyRecordBatchStream, ExecutionPlan, Partitioning,
-        SendableRecordBatchStream, Statistics,
-    },
+use datafusion::arrow::array::{build_compare, make_array, ArrayData, ArrayRef, MutableArrayData};
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::error::{DataFusionError, Result};
+use datafusion::execution::context::TaskContext;
+use datafusion::execution::memory_manager::ConsumerType;
+use datafusion::execution::runtime_env::RuntimeEnv;
+use datafusion::execution::{MemoryConsumer, MemoryConsumerId, MemoryManager};
+use datafusion::physical_expr::PhysicalSortExpr;
+use datafusion::physical_plan::common::{batch_byte_size, SizedRecordBatchStream};
+use datafusion::physical_plan::metrics::{
+    BaselineMetrics, CompositeMetricsSet, MemTrackingMetrics, MetricsSet,
 };
-
-use datafusion::error::Result;
+use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
+use datafusion::physical_plan::{
+    DisplayFormatType, Distribution, EmptyRecordBatchStream, ExecutionPlan, Partitioning,
+    SendableRecordBatchStream, Statistics,
+};
 use futures::{StreamExt, TryStreamExt};
 use trace::debug;
 
-use crate::extension::logical::plan_node::topk::{TopKOptions, TopKStep};
-
 use self::internal::{RecordBatchReference, Row};
+use crate::extension::logical::plan_node::topk::{TopKOptions, TopKStep};
 
 const NOT_FOUND_MAX_ROW: &str = "max row not found.";
 
@@ -608,13 +601,14 @@ impl RecordBatchWithPositionComparator for SimpleRecordBatchWithPositionComparat
 }
 
 mod internal {
-    use datafusion::error::Result;
-    use std::{cmp::Ordering, sync::Arc};
-    use trace::error;
+    use std::cmp::Ordering;
+    use std::sync::Arc;
 
-    use datafusion::arrow::{
-        array::BooleanArray, compute::filter_record_batch, record_batch::RecordBatch,
-    };
+    use datafusion::arrow::array::BooleanArray;
+    use datafusion::arrow::compute::filter_record_batch;
+    use datafusion::arrow::record_batch::RecordBatch;
+    use datafusion::error::Result;
+    use trace::error;
 
     use super::RecordBatchWithPositionComparator;
 

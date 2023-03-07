@@ -1,9 +1,10 @@
+use std::borrow::Borrow;
 use std::cmp::max;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::fs::{remove_file, rename};
 use std::path::Path;
-use std::{borrow::Borrow, collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use config::get_config;
 use futures::TryFutureExt;
@@ -13,24 +14,21 @@ use meta::meta_client::MetaRef;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot::Sender;
 use tokio::sync::watch::Receiver;
 use tokio::sync::RwLock;
-use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
 use trace::{debug, error, info};
 
 use crate::compaction::FlushReq;
+use crate::context::{GlobalContext, GlobalSequenceTask};
+use crate::error::{Error, Result};
 use crate::file_system::file_manager::try_exists;
-use crate::{
-    byte_utils,
-    context::{GlobalContext, GlobalSequenceTask},
-    error::{Error, Result},
-    file_utils,
-    kv_option::{Options, StorageOptions},
-    record_file::{Reader, RecordDataType, RecordDataVersion, Writer},
-    tseries_family::{ColumnFile, LevelInfo, Version},
-    version_set::VersionSet,
-    LevelId, TseriesFamilyId,
-};
+use crate::kv_option::{Options, StorageOptions};
+use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
+use crate::tseries_family::{ColumnFile, LevelInfo, Version};
+use crate::version_set::VersionSet;
+use crate::{byte_utils, file_utils, LevelId, TseriesFamilyId};
 
 const MAX_BATCH_SIZE: usize = 64;
 
@@ -694,25 +692,21 @@ mod test {
     use std::fs;
     use std::sync::Arc;
 
+    use config::{get_config, ClusterConfig, Config};
+    use meta::meta_client::{MetaRef, RemoteMetaManager};
+    use models::schema::{make_owner, DatabaseSchema, TenantOptions};
     use snafu::ResultExt;
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::UnboundedSender;
     use trace::debug;
 
-    use config::{get_config, ClusterConfig, Config};
-    use meta::meta_client::{MetaRef, RemoteMetaManager};
-    use models::schema::{make_owner, DatabaseSchema, TenantOptions};
-
+    use crate::compaction::FlushReq;
     use crate::context::GlobalSequenceTask;
+    use crate::error;
     use crate::file_system::file_manager;
-    use crate::summary::SummaryTask;
+    use crate::kv_option::{Options, StorageOptions};
+    use crate::summary::{CompactMeta, Summary, SummaryTask, VersionEdit, WriteSummaryRequest};
     use crate::tseries_family::LevelInfo;
-    use crate::{
-        compaction::FlushReq,
-        error,
-        kv_option::{Options, StorageOptions},
-        summary::{CompactMeta, Summary, VersionEdit, WriteSummaryRequest},
-    };
 
     #[test]
     fn test_version_edit() {

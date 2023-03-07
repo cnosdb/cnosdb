@@ -1,5 +1,8 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 
+use std::net::SocketAddr;
+use std::sync::Arc;
+
 use clap::{Parser, Subcommand};
 use coordinator::hh_queue::HintedOffManager;
 use coordinator::service::CoordService;
@@ -8,7 +11,6 @@ use meta::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
 use models::meta_data::NodeInfo;
 use once_cell::sync::Lazy;
 use query::instance::make_cnosdbms;
-use std::{net::SocketAddr, sync::Arc};
 use tokio::runtime::Runtime;
 use trace::{info, init_global_tracing};
 use tskv::TsKv;
@@ -102,13 +104,14 @@ enum SubCommand {
     // Query {},
 }
 
+use mem_allocator::Jemalloc;
+use metrics::init_tskv_metrics_recorder;
+
 use crate::flight_sql::FlightSqlServiceAdapter;
 use crate::http::http_service::HttpService;
 use crate::report::ReportService;
 use crate::rpc::grpc_service::GrpcService;
 use crate::tcp::tcp_service::TcpService;
-use mem_allocator::Jemalloc;
-use metrics::init_tskv_metrics_recorder;
 
 #[global_allocator]
 static A: Jemalloc = Jemalloc;

@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-use protos::schema_service::{
-    schema_service_server::SchemaService, Database, GetDatabaseRequest, GetDatabaseResponse,
-};
+use protos::schema_service::schema_service_server::SchemaService;
+use protos::schema_service::{Database, GetDatabaseRequest, GetDatabaseResponse};
 // use query::schema::SchemaStore;
 use tonic::{Request, Response, Status};
 

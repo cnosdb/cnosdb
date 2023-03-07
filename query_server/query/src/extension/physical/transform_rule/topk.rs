@@ -1,21 +1,16 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{
-    arrow::compute::SortOptions,
-    error::DataFusionError,
-    execution::context::SessionState,
-    logical_expr::{LogicalPlan, UserDefinedLogicalNode},
-    physical_plan::{
-        planner::{create_physical_sort_expr, ExtensionPlanner},
-        ExecutionPlan, PhysicalPlanner,
-    },
-    prelude::Expr,
-};
+use datafusion::arrow::compute::SortOptions;
+use datafusion::error::{DataFusionError, Result};
+use datafusion::execution::context::SessionState;
+use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
+use datafusion::physical_plan::planner::{create_physical_sort_expr, ExtensionPlanner};
+use datafusion::physical_plan::{ExecutionPlan, PhysicalPlanner};
+use datafusion::prelude::Expr;
 
-use super::super::{super::logical::plan_node::topk::TopKPlanNode, plan_node::topk::TopKExec};
-
-use datafusion::error::Result;
+use super::super::super::logical::plan_node::topk::TopKPlanNode;
+use super::super::plan_node::topk::TopKExec;
 
 /// Physical planner for TopK nodes
 pub struct TopKPlanner {}

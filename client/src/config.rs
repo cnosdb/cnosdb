@@ -1,9 +1,10 @@
 //! Cnosdb Configuration Options
 
-use datafusion::arrow::datatypes::DataType;
-use datafusion::scalar::ScalarValue;
 use std::collections::HashMap;
 use std::env;
+
+use datafusion::arrow::datatypes::DataType;
+use datafusion::scalar::ScalarValue;
 
 pub const TARGET_PARTITIONS: &str = "target_partitions";
 

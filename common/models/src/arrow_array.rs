@@ -1,14 +1,13 @@
-use crate::Error;
 use arrow_schema::Field;
-use datafusion::arrow::{
-    array::{
-        ArrayBuilder, BooleanBuilder, Float64Builder, Int64Builder, StringBuilder,
-        TimestampMicrosecondBuilder, TimestampMillisecondBuilder, TimestampNanosecondBuilder,
-        TimestampSecondBuilder, UInt64Builder,
-    },
-    datatypes::{DataType, SchemaRef, TimeUnit},
-    error::ArrowError,
+use datafusion::arrow::array::{
+    ArrayBuilder, BooleanBuilder, Float64Builder, Int64Builder, StringBuilder,
+    TimestampMicrosecondBuilder, TimestampMillisecondBuilder, TimestampNanosecondBuilder,
+    TimestampSecondBuilder, UInt64Builder,
 };
+use datafusion::arrow::datatypes::{DataType, SchemaRef, TimeUnit};
+use datafusion::arrow::error::ArrowError;
+
+use crate::Error;
 
 pub trait WriteArrow {
     fn write(self, builder: &mut Box<dyn ArrayBuilder>) -> Result<(), ArrowError>;

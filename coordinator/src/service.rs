@@ -3,26 +3,22 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use config::{ClusterConfig, HintedOffConfig};
+use datafusion::arrow::datatypes::SchemaRef;
+use meta::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
+use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
 use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo, VnodeAllInfo};
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
 use models::*;
-
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
-
 use trace::{debug, info, warn};
 use tskv::engine::{EngineRef, MockEngine};
-
-use meta::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
-use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
-
-use datafusion::arrow::datatypes::SchemaRef;
 use tskv::iterator::QueryOption;
 
 use crate::command::*;

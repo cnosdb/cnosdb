@@ -1,35 +1,25 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{
-    datasource::{
-        file_format::{csv::CsvFormat, json::JsonFormat, parquet::ParquetFormat, FileFormat},
-        listing::ListingTable,
-    },
-    error::DataFusionError,
-    execution::context::SessionState,
-    physical_plan::ExecutionPlan,
-};
+use datafusion::datasource::file_format::csv::CsvFormat;
+use datafusion::datasource::file_format::json::JsonFormat;
+use datafusion::datasource::file_format::parquet::ParquetFormat;
+use datafusion::datasource::file_format::FileFormat;
+use datafusion::datasource::listing::ListingTable;
+use datafusion::error::DataFusionError;
+use datafusion::execution::context::SessionState;
+use datafusion::physical_plan::ExecutionPlan;
 use object_store::path::Path;
 use trace::debug;
 use url::Url;
 
-use crate::{
-    data_source::{
-        sink::{
-            obj_store::{
-                serializer::{
-                    csv::CsvRecordBatchSerializer, json::NdJsonRecordBatchSerializer,
-                    parquet::ParquetRecordBatchSerializer,
-                },
-                ObjectStoreSinkProvider,
-            },
-            DynRecordBatchSerializer,
-        },
-        WriteExecExt,
-    },
-    extension::physical::plan_node::table_writer::TableWriterExec,
-};
+use crate::data_source::sink::obj_store::serializer::csv::CsvRecordBatchSerializer;
+use crate::data_source::sink::obj_store::serializer::json::NdJsonRecordBatchSerializer;
+use crate::data_source::sink::obj_store::serializer::parquet::ParquetRecordBatchSerializer;
+use crate::data_source::sink::obj_store::ObjectStoreSinkProvider;
+use crate::data_source::sink::DynRecordBatchSerializer;
+use crate::data_source::WriteExecExt;
+use crate::extension::physical::plan_node::table_writer::TableWriterExec;
 
 #[async_trait]
 impl WriteExecExt for ListingTable {
@@ -104,16 +94,14 @@ mod tests {
     use std::io::Write;
 
     use bytes::Bytes;
-    use object_store::{
-        aws::AmazonS3Builder, azure::MicrosoftAzureBuilder, gcp::GoogleCloudStorageBuilder,
-        path::Path, ObjectStore,
-    };
-
-    use spi::query::datasource::{
-        azure::AzblobStorageConfig,
-        gcs::{GcsStorageConfig, ServiceAccountCredentialsBuilder},
-        s3::S3StorageConfig,
-    };
+    use object_store::aws::AmazonS3Builder;
+    use object_store::azure::MicrosoftAzureBuilder;
+    use object_store::gcp::GoogleCloudStorageBuilder;
+    use object_store::path::Path;
+    use object_store::ObjectStore;
+    use spi::query::datasource::azure::AzblobStorageConfig;
+    use spi::query::datasource::gcs::{GcsStorageConfig, ServiceAccountCredentialsBuilder};
+    use spi::query::datasource::s3::S3StorageConfig;
 
     #[tokio::test]
     #[ignore = "no environment"]

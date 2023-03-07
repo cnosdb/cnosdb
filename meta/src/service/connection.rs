@@ -1,21 +1,16 @@
-use crate::{ClusterNode, ClusterNodeId, TypeConfig};
 use async_trait::async_trait;
-use openraft::error::AppendEntriesError;
-use openraft::error::InstallSnapshotError;
-use openraft::error::NetworkError;
-use openraft::error::RPCError;
-use openraft::error::RemoteError;
-use openraft::error::VoteError;
-use openraft::raft::AppendEntriesRequest;
-use openraft::raft::AppendEntriesResponse;
-use openraft::raft::InstallSnapshotRequest;
-use openraft::raft::InstallSnapshotResponse;
-use openraft::raft::VoteRequest;
-use openraft::raft::VoteResponse;
-use openraft::RaftNetwork;
-use openraft::RaftNetworkFactory;
+use openraft::error::{
+    AppendEntriesError, InstallSnapshotError, NetworkError, RPCError, RemoteError, VoteError,
+};
+use openraft::raft::{
+    AppendEntriesRequest, AppendEntriesResponse, InstallSnapshotRequest, InstallSnapshotResponse,
+    VoteRequest, VoteResponse,
+};
+use openraft::{RaftNetwork, RaftNetworkFactory};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+
+use crate::{ClusterNode, ClusterNodeId, TypeConfig};
 
 pub struct Connections {
     // pub inner: Arc<HashMap<String,Channel>>,

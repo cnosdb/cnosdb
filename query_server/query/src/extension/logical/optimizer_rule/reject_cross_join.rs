@@ -1,10 +1,6 @@
-use datafusion::{
-    error::DataFusionError,
-    logical_expr::LogicalPlan,
-    optimizer::{OptimizerConfig, OptimizerRule},
-};
-
-use datafusion::error::Result;
+use datafusion::error::{DataFusionError, Result};
+use datafusion::logical_expr::LogicalPlan;
+use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 
 pub struct RejectCrossJoin {}
 

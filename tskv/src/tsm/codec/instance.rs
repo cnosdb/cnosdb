@@ -1,3 +1,10 @@
+use std::error::Error;
+
+use datafusion::physical_plan::expressions::Min;
+use libc::max_align_t;
+use minivec::MiniVec;
+use models::codec::Encoding;
+
 use crate::tsm::codec::boolean::{
     bool_bitpack_decode, bool_bitpack_encode, bool_without_compress_decode,
     bool_without_compress_encode,
@@ -24,11 +31,6 @@ use crate::tsm::codec::unsigned::{
     u64_q_compress_decode, u64_q_compress_encode, u64_without_compress_decode,
     u64_without_compress_encode, u64_zigzag_simple8b_decode, u64_zigzag_simple8b_encode,
 };
-use datafusion::physical_plan::expressions::Min;
-use libc::max_align_t;
-use minivec::MiniVec;
-use models::codec::Encoding;
-use std::error::Error;
 
 pub trait TimestampCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>>;

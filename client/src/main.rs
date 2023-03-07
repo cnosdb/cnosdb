@@ -1,11 +1,14 @@
-use clap::Parser;
-use client::ctx::{SessionConfig, SessionContext};
-use client::{exec, print_format::PrintFormat, print_options::PrintOptions, CNOSDB_CLI_VERSION};
-use datafusion::error::Result;
-use mimalloc::MiMalloc;
 use std::env;
 use std::net::IpAddr;
 use std::path::Path;
+
+use clap::Parser;
+use client::ctx::{SessionConfig, SessionContext};
+use client::print_format::PrintFormat;
+use client::print_options::PrintOptions;
+use client::{exec, CNOSDB_CLI_VERSION};
+use datafusion::error::Result;
+use mimalloc::MiMalloc;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;

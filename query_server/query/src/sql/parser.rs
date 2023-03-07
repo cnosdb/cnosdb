@@ -1,36 +1,26 @@
 use std::collections::VecDeque;
 use std::ops::Not;
-
 use std::str::FromStr;
 
 use datafusion::sql::parser::CreateExternalTable;
-use datafusion::sql::sqlparser::ast::Expr;
-use datafusion::sql::sqlparser::ast::Ident;
-use datafusion::sql::sqlparser::ast::SqlOption;
-use datafusion::sql::sqlparser::ast::TableFactor;
-use datafusion::sql::sqlparser::ast::{Offset, OrderByExpr};
-use datafusion::sql::sqlparser::parser::IsOptional;
-use datafusion::sql::sqlparser::{
-    ast::{DataType, ObjectName},
-    dialect::{keywords::Keyword, Dialect, GenericDialect},
-    parser::{Parser, ParserError},
-    tokenizer::{Token, Tokenizer},
+use datafusion::sql::sqlparser::ast::{
+    DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, SqlOption, TableFactor,
 };
+use datafusion::sql::sqlparser::dialect::keywords::Keyword;
+use datafusion::sql::sqlparser::dialect::{Dialect, GenericDialect};
+use datafusion::sql::sqlparser::parser::{IsOptional, Parser, ParserError};
+use datafusion::sql::sqlparser::tokenizer::{Token, Tokenizer};
 use models::codec::Encoding;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use snafu::ResultExt;
 use spi::query::ast;
-use spi::query::ast::CopyIntoLocation;
-use spi::query::ast::CopyIntoTable;
-use spi::query::ast::CopyTarget;
-use spi::query::ast::UriLocation;
 use spi::query::ast::{
     parse_string_value, Action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
     AlterTenantOperation, AlterUser, AlterUserOperation, ChecksumGroup, ColumnOption, CompactVnode,
-    CopyVnode, CreateDatabase, CreateRole, CreateTable, CreateTenant, CreateUser, DatabaseOptions,
-    DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject,
-    DropVnode, Explain, ExtStatement, GrantRevoke, MoveVnode, Privilege, ShowSeries, ShowTagBody,
-    ShowTagValues, With,
+    CopyIntoLocation, CopyIntoTable, CopyTarget, CopyVnode, CreateDatabase, CreateRole,
+    CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase, DescribeTable,
+    DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode, Explain, ExtStatement,
+    GrantRevoke, MoveVnode, Privilege, ShowSeries, ShowTagBody, ShowTagValues, UriLocation, With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -1498,8 +1488,7 @@ mod tests {
     use datafusion::sql::sqlparser::ast::{
         Ident, ObjectName, SetExpr, Statement, TableFactor, Value,
     };
-    use spi::query::ast::{AlterTable, UriLocation};
-    use spi::query::ast::{DropDatabaseObject, ExtStatement};
+    use spi::query::ast::{AlterTable, DropDatabaseObject, ExtStatement, UriLocation};
     use spi::query::logical_planner::{DatabaseObjectType, TenantObjectType};
 
     use super::*;

@@ -1,44 +1,31 @@
 use std::io::Write;
 
-use crate::service::protocol::QueryId;
-use crate::ParserSnafu;
-use crate::QueryError;
-use crate::Result;
-
-use super::{
-    ast::{parse_bool_value, parse_char_value, parse_string_value, ExtStatement},
-    datasource::{
-        azure::{AzblobStorageConfig, AzblobStorageConfigBuilder},
-        gcs::{GcsStorageConfig, ServiceAccountCredentials, ServiceAccountCredentialsBuilder},
-        s3::{S3StorageConfig, S3StorageConfigBuilder},
-        UriSchema,
-    },
-    session::IsiphoSessionCtx,
-    AFFECTED_ROWS,
-};
-
 use async_trait::async_trait;
+use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
+use datafusion::logical_expr::{AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan};
+use datafusion::prelude::{col, Expr};
+use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SqlOption};
 use datafusion::sql::sqlparser::parser::ParserError;
-use datafusion::{
-    datasource::file_format::file_type::{FileCompressionType, FileType},
-    logical_expr::{AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan},
-    prelude::{col, Expr},
-    sql::sqlparser::ast::{Ident, ObjectName, SqlOption},
-};
-
+use models::auth::privilege::{DatabasePrivilege, Privilege};
+use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
+use models::auth::user::{UserOptions, UserOptionsBuilder};
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
-use models::schema::TableColumn;
-use models::{
-    auth::{
-        privilege::{DatabasePrivilege, Privilege},
-        role::{SystemTenantRole, TenantRoleIdentifier},
-        user::{UserOptions, UserOptionsBuilder},
-    },
-    oid::Oid,
-    schema::{DatabaseOptions, TenantOptions, TenantOptionsBuilder},
-};
+use models::oid::Oid;
+use models::schema::{DatabaseOptions, TableColumn, TenantOptions, TenantOptionsBuilder};
 use snafu::ResultExt;
 use tempfile::NamedTempFile;
+
+use super::ast::{parse_bool_value, parse_char_value, parse_string_value, ExtStatement};
+use super::datasource::azure::{AzblobStorageConfig, AzblobStorageConfigBuilder};
+use super::datasource::gcs::{
+    GcsStorageConfig, ServiceAccountCredentials, ServiceAccountCredentialsBuilder,
+};
+use super::datasource::s3::{S3StorageConfig, S3StorageConfigBuilder};
+use super::datasource::UriSchema;
+use super::session::IsiphoSessionCtx;
+use super::AFFECTED_ROWS;
+use crate::service::protocol::QueryId;
+use crate::{ParserSnafu, QueryError, Result};
 
 #[derive(Clone)]
 pub struct PlanWithPrivileges {

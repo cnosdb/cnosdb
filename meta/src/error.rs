@@ -1,10 +1,11 @@
-use crate::{client, ClusterNodeId};
-use error_code::ErrorCode;
-use error_code::ErrorCoder;
-use openraft::{AnyError, ErrorSubject, ErrorVerb, StorageError, StorageIOError};
-use snafu::Snafu;
 use std::error::Error;
 use std::io;
+
+use error_code::{ErrorCode, ErrorCoder};
+use openraft::{AnyError, ErrorSubject, ErrorVerb, StorageError, StorageIOError};
+use snafu::Snafu;
+
+use crate::{client, ClusterNodeId};
 
 pub type StorageIOResult<T> = Result<T, StorageIOError<ClusterNodeId>>;
 pub type StorageResult<T> = Result<T, StorageError<ClusterNodeId>>;

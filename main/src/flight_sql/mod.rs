@@ -1,4 +1,5 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 use arrow_flight::flight_service_server::FlightServiceServer;
 use config::TLSConfig;
@@ -8,15 +9,10 @@ use tonic::transport::{Identity, Server, ServerTlsConfig};
 use trace::info;
 use warp::trace::Info;
 
-use crate::{
-    flight_sql::auth_middleware::{
-        basic_call_header_authenticator::BasicCallHeaderAuthenticator,
-        generated_bearer_token_authenticator::GeneratedBearerTokenAuthenticator,
-    },
-    server::{Service, ServiceHandle},
-};
-
 use self::flight_sql_server::FlightSqlServiceImpl;
+use crate::flight_sql::auth_middleware::basic_call_header_authenticator::BasicCallHeaderAuthenticator;
+use crate::flight_sql::auth_middleware::generated_bearer_token_authenticator::GeneratedBearerTokenAuthenticator;
+use crate::server::{Service, ServiceHandle};
 
 mod auth_middleware;
 pub mod flight_sql_server;

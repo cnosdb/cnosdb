@@ -1,7 +1,6 @@
+use datafusion::error::Result;
 use datafusion::logical_expr::expr_visitor::{ExprVisitable, ExpressionVisitor, Recursion};
 use datafusion::prelude::Expr;
-
-use datafusion::error::Result;
 
 use super::selector_function::{BOTTOM, TOPK};
 

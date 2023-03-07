@@ -1,5 +1,6 @@
 extern crate core;
 use core::alloc::{GlobalAlloc, Layout};
+
 use libc::{c_int, c_void};
 use tikv_jemalloc_sys as ffi;
 
@@ -99,8 +100,9 @@ unsafe impl GlobalAlloc for Jemalloc {
 
 #[cfg(test)]
 mod tests {
-    use crate::Jemalloc;
     use chrono::Utc;
+
+    use crate::Jemalloc;
     #[global_allocator]
     static A: Jemalloc = Jemalloc;
     #[test]

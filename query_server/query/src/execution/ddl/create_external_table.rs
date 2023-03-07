@@ -19,8 +19,7 @@ use meta::error::MetaError;
 use models::schema::{ExternalTableSchema, TableSchema};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::DatafusionSnafu;
-use spi::Result;
+use spi::{DatafusionSnafu, Result};
 
 use super::DDLDefinitionTask;
 

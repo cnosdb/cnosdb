@@ -3,45 +3,38 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::task::Poll;
 
-use datafusion::arrow::{
-    array::{BooleanBuilder, Float64Builder, Int64Builder, StringBuilder, UInt64Builder},
-    datatypes::SchemaRef,
-    record_batch::RecordBatch,
+use datafusion::arrow::array::{
+    ArrayBuilder, BooleanBuilder, Float64Builder, Int64Builder, StringBuilder,
+    TimestampNanosecondBuilder, UInt64Builder,
 };
-use datafusion::arrow::array::{ArrayBuilder, TimestampNanosecondBuilder};
-use datafusion::arrow::datatypes::DataType as ArrowDataType;
+use datafusion::arrow::datatypes::{DataType as ArrowDataType, SchemaRef};
 use datafusion::arrow::error::ArrowError;
+use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::{
     self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
 };
 use datafusion::scalar::ScalarValue;
 use minivec::MiniVec;
+use models::predicate::domain::{
+    ColumnDomains, Domain, PredicateRef, Range, TimeRange, ValueEntry,
+};
+use models::predicate::utils::filter_to_time_ranges;
+use models::predicate::Split;
+use models::schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
+use models::utils::{min_num, unite_id};
+use models::{FieldId, SeriesId, ValueType};
 use snafu::ResultExt;
 use tokio::time::Instant;
-
-use models::{
-    FieldId,
-    predicate::domain::{ColumnDomains, Domain, PredicateRef, Range, ValueEntry},
-    schema::{ColumnType, TIME_FIELD, TIME_FIELD_NAME, TskvTableSchema},
-    SeriesId, utils::{min_num, unite_id}, ValueType,
-};
-use models::predicate::domain::TimeRange;
-use models::predicate::Split;
-use models::predicate::utils::filter_to_time_ranges;
 use trace::{debug, info};
 
+use super::engine::EngineRef;
+use super::error::IndexErrSnafu;
+use super::memcache::DataType;
+use super::tseries_family::{ColumnFile, SuperVersion};
+use super::tsm::{BlockMetaIterator, DataBlock, TsmReader};
+use super::{error, ColumnFileId, Error};
 use crate::schema::error::SchemaError;
 use crate::tseries_family::Version;
-
-use super::{
-    ColumnFileId,
-    engine::EngineRef,
-    error,
-    Error,
-    error::IndexErrSnafu,
-    memcache::DataType,
-    tseries_family::{ColumnFile, SuperVersion}, tsm::{BlockMetaIterator, DataBlock, TsmReader},
-};
 
 pub type CursorPtr = Box<dyn Cursor>;
 pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;

@@ -1,3 +1,18 @@
+use std::collections::{BTreeMap, HashMap};
+use std::fmt::Debug;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use datafusion::prelude::Column;
+use models::codec::Encoding;
+use models::predicate::domain::{ColumnDomains, PredicateRef, TimeRange};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
+use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
+use parking_lot::RwLock;
+use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest};
+use protos::models as fb_models;
+use trace::{debug, info};
+
 use crate::database::Database;
 use crate::error::Result;
 use crate::index::IndexResult;
@@ -6,21 +21,6 @@ use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TsKv, TseriesFamilyId};
-use async_trait::async_trait;
-use datafusion::prelude::Column;
-use models::codec::Encoding;
-use models::predicate::domain::{ColumnDomains, PredicateRef, TimeRange};
-use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
-use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
-use parking_lot::RwLock;
-use protos::{
-    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
-    models as fb_models,
-};
-use std::collections::{BTreeMap, HashMap};
-use std::fmt::Debug;
-use std::sync::Arc;
-use trace::{debug, info};
 
 pub type EngineRef = Arc<dyn Engine>;
 

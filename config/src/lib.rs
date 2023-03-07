@@ -1,4 +1,5 @@
-use std::{fs::File, io::prelude::Read};
+use std::fs::File;
+use std::io::prelude::Read;
 
 use serde::{Deserialize, Serialize};
 use trace::info;

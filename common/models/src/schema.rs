@@ -7,21 +7,16 @@
 //!         - Column #3
 //!         - Column #4
 
-use arrow_schema::Field as DFField;
-use datafusion::arrow::datatypes::DataType as DFDataType;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::{self, Display};
 use std::mem::size_of_val;
 use std::str::FromStr;
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
-use datafusion::logical_expr::TableSource;
-use datafusion::scalar::ScalarValue;
-use derive_builder::Builder;
-use serde::{Deserialize, Serialize};
-
+use arrow_schema::Field as DFField;
 use datafusion::arrow::datatypes::{
-    DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
+    DataType as DFDataType, DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef,
+    TimeUnit,
 };
 use datafusion::datasource::file_format::avro::AvroFormat;
 use datafusion::datasource::file_format::csv::CsvFormat;
@@ -31,6 +26,10 @@ use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::ListingOptions;
 use datafusion::error::{DataFusionError, Result as DataFusionResult};
+use datafusion::logical_expr::TableSource;
+use datafusion::scalar::ScalarValue;
+use derive_builder::Builder;
+use serde::{Deserialize, Serialize};
 
 use crate::codec::Encoding;
 pub use crate::limiter::LimiterConfig;

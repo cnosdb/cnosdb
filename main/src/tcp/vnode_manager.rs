@@ -1,12 +1,8 @@
 use std::path::Path;
 
 use coordinator::command::*;
-use coordinator::file_info::get_file_info;
-use coordinator::{
-    errors::{CoordinatorError, CoordinatorResult},
-    file_info::PathFilesMeta,
-};
-
+use coordinator::errors::{CoordinatorError, CoordinatorResult};
+use coordinator::file_info::{get_file_info, PathFilesMeta};
 use http_protocol::status_code::OK;
 use models::meta_data::{VnodeAllInfo, VnodeInfo};
 use models::schema;

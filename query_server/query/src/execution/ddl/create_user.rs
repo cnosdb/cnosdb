@@ -1,13 +1,12 @@
-use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::error::MetaError;
 use snafu::ResultExt;
-use spi::MetaSnafu;
-use spi::Result;
-
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateUser;
+use spi::{MetaSnafu, Result};
 use trace::debug;
+
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct CreateUserTask {
     stmt: CreateUser,

@@ -1,12 +1,8 @@
 use std::sync::Arc;
 
-use models::{
-    auth::{
-        user::{User, UserInfo},
-        AuthError,
-    },
-    oid::Oid,
-};
+use models::auth::user::{User, UserInfo};
+use models::auth::AuthError;
+use models::oid::Oid;
 
 pub type Result<T> = std::result::Result<T, AuthError>;
 

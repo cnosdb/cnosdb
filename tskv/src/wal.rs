@@ -20,36 +20,29 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
-use datafusion::parquet::data_type::AsBytes;
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    string::String,
-    sync::Arc,
-};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::string::String;
+use std::sync::Arc;
 
-use models::{
-    auth::user::{ROOT, ROOT_PWD},
-    codec::Encoding,
-};
+use datafusion::parquet::data_type::AsBytes;
+use models::auth::user::{ROOT, ROOT_PWD};
+use models::codec::Encoding;
 use protos::kv_service::{Meta, WritePointsRpcRequest};
 use snafu::ResultExt;
 use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn};
 
-use crate::{
-    byte_utils::{decode_be_u32, decode_be_u64},
-    context::{GlobalContext, GlobalSequenceContext},
-    engine,
-    error::{self, Error, Result},
-    file_system::file_manager::{self, FileManager},
-    file_utils,
-    kv_option::WalOptions,
-    record_file::{self, Record, RecordDataType, RecordDataVersion},
-    tsm::{codec::get_str_codec, DecodeSnafu, EncodeSnafu},
-    version_set::VersionSet,
-    TseriesFamilyId,
-};
+use crate::byte_utils::{decode_be_u32, decode_be_u64};
+use crate::context::{GlobalContext, GlobalSequenceContext};
+use crate::error::{self, Error, Result};
+use crate::file_system::file_manager::{self, FileManager};
+use crate::kv_option::WalOptions;
+use crate::record_file::{self, Record, RecordDataType, RecordDataVersion};
+use crate::tsm::codec::get_str_codec;
+use crate::tsm::{DecodeSnafu, EncodeSnafu};
+use crate::version_set::VersionSet;
+use crate::{engine, file_utils, TseriesFamilyId};
 
 const ENTRY_TYPE_LEN: usize = 1;
 const ENTRY_SEQUENCE_LEN: usize = 8;
@@ -544,40 +537,35 @@ impl WalReader {
 #[cfg(test)]
 mod test {
     use core::panic;
-    use std::path::Path;
+    use std::borrow::BorrowMut;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
     use std::time::Duration;
-    use std::{borrow::BorrowMut, path::PathBuf, sync::Arc};
 
     use chrono::Utc;
+    use config::get_config;
     use datafusion::parquet::data_type::AsBytes;
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
-    use serial_test::serial;
-    use tokio::runtime;
-    use tokio::sync::RwLock;
-    use tokio::time::sleep;
-
-    use config::get_config;
     use meta::meta_client::{MetaRef, RemoteMetaManager};
     use models::codec::Encoding;
     use models::schema::TenantOptions;
     use protos::{models as fb_models, models_helper};
+    use serial_test::serial;
+    use tokio::runtime;
+    use tokio::sync::RwLock;
+    use tokio::time::sleep;
     use trace::{info, init_default_global_tracing};
 
-    use crate::{
-        context::GlobalSequenceContext,
-        engine::Engine,
-        file_system::{
-            file_manager::{self, list_file_names, FileManager},
-            FileCursor,
-        },
-        kv_option,
-        kv_option::WalOptions,
-        tsm::codec::get_str_codec,
-        version_set::VersionSet,
-        wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
-        Error, Options, Result, TsKv,
-    };
+    use crate::context::GlobalSequenceContext;
+    use crate::engine::Engine;
+    use crate::file_system::file_manager::{self, list_file_names, FileManager};
+    use crate::file_system::FileCursor;
+    use crate::kv_option::WalOptions;
+    use crate::tsm::codec::get_str_codec;
+    use crate::version_set::VersionSet;
+    use crate::wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader};
+    use crate::{kv_option, Error, Options, Result, TsKv};
 
     fn random_write_data() -> Vec<u8> {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();

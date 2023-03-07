@@ -1,4 +1,5 @@
-use crate::schema::error::{MetaSnafu, Result, SchemaError};
+use std::collections::HashMap;
+
 use meta::error::MetaError;
 use meta::meta_client::{MetaClientRef, MetaRef};
 use models::codec::Encoding;
@@ -9,10 +10,10 @@ use models::{ColumnId, SeriesId};
 use parking_lot::RwLock;
 use protos::models::Point;
 use snafu::ResultExt;
-use std::collections::HashMap;
-
-use crate::Error;
 use trace::{error, info, warn};
+
+use crate::schema::error::{MetaSnafu, Result, SchemaError};
+use crate::Error;
 
 const TIME_STAMP_NAME: &str = "time";
 

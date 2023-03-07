@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use datafusion::{
-    common::Result,
-    execution::context::TaskContext,
-    physical_plan::{coalesce_partitions::CoalescePartitionsExec, ExecutionPlan},
-};
+use datafusion::common::Result;
+use datafusion::execution::context::TaskContext;
+use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
+use datafusion::physical_plan::ExecutionPlan;
 use spi::query::scheduler::{ExecutionResults, Scheduler};
 
 pub struct LocalScheduler {}

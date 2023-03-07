@@ -1,13 +1,9 @@
 use async_trait::async_trait;
-
-use spi::query::{
-    execution::{Output, QueryStateMachineRef},
-    logical_planner::DropVnode,
-};
+use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::query::logical_planner::DropVnode;
+use spi::Result;
 
 use super::DDLDefinitionTask;
-
-use spi::Result;
 
 pub struct DropVnodeTask {
     stmt: DropVnode,

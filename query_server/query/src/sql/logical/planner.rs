@@ -1,22 +1,18 @@
-use crate::sql::planner::SqlPlaner;
 use std::sync::Arc;
 
-use datafusion::{
-    common::DFField,
-    error::DataFusionError,
-    logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder, Projection, TableSource},
-    prelude::{cast, lit, Expr},
-    scalar::ScalarValue,
+use datafusion::common::{DFField, Result as DFResult};
+use datafusion::error::DataFusionError;
+use datafusion::logical_expr::{
+    Extension, LogicalPlan, LogicalPlanBuilder, Projection, TableSource,
 };
-use spi::{
-    query::logical_planner::{affected_row_expr, merge_affected_row_expr},
-    QueryError,
-};
-
-use datafusion::common::Result as DFResult;
+use datafusion::prelude::{cast, lit, Expr};
+use datafusion::scalar::ScalarValue;
+use spi::query::logical_planner::{affected_row_expr, merge_affected_row_expr};
+use spi::QueryError;
 use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
+use crate::sql::planner::SqlPlaner;
 
 pub type DefaultLogicalPlanner<'a, S> = SqlPlaner<'a, S>;
 

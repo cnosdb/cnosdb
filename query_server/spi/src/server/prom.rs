@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use meta::meta_client::MetaRef;
 
-use crate::{service::protocol::Context, Result};
+use crate::service::protocol::Context;
+use crate::Result;
 
 pub type PromRemoteServerRef = Arc<dyn PromRemoteServer + Send + Sync>;
 

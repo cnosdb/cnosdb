@@ -1,7 +1,10 @@
-use std::{cmp, convert::TryInto, error::Error};
+use std::cmp;
+use std::convert::TryInto;
+use std::error::Error;
+
+use integer_encoding::VarInt;
 
 use crate::tsm::codec::Encoding;
-use integer_encoding::VarInt;
 // note: encode/decode adapted from influxdb_iox
 // https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
 

@@ -1,16 +1,11 @@
 use async_trait::async_trait;
-use spi::query::{
-    execution::{Output, QueryStateMachineRef},
-    logical_planner::{DropGlobalObject, GlobalObjectType},
-};
-use spi::Result;
-
+use meta::error::MetaError;
+use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::query::logical_planner::{DropGlobalObject, GlobalObjectType};
+use spi::{QueryError, Result};
 use trace::debug;
 
 use super::DDLDefinitionTask;
-
-use meta::error::MetaError;
-use spi::QueryError;
 
 pub struct DropGlobalObjectTask {
     stmt: DropGlobalObject,

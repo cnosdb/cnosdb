@@ -1,5 +1,8 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 
+use std::sync::Arc;
+use std::time::Duration;
+
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{middleware, App, HttpServer};
@@ -11,8 +14,6 @@ use meta::store::Store;
 use meta::{store, MetaApp, RaftStore};
 use openraft::{Config, Raft};
 use sled::Db;
-use std::sync::Arc;
-use std::time::Duration;
 use trace::init_global_tracing;
 
 #[actix_web::main]

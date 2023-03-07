@@ -1,10 +1,6 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::{
-        atomic::{AtomicU32, AtomicU64, Ordering},
-        Arc,
-    },
-};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
 
 use parking_lot::RwLock;
 use tokio::runtime::Runtime;

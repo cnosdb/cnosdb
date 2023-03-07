@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod test {
-    use protos::{self, schema_service::*};
+    use protos::schema_service::*;
+    use protos::{self};
     use tonic::Request;
 
     #[tokio::test]

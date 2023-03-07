@@ -1,11 +1,11 @@
-use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::error::MetaError;
-use spi::Result;
-
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateTenant;
+use spi::Result;
 use trace::debug;
+
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct CreateTenantTask {
     stmt: CreateTenant,

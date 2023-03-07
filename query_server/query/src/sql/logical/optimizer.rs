@@ -1,32 +1,33 @@
 use std::sync::Arc;
 
-use datafusion::{
-    logical_expr::LogicalPlan,
-    optimizer::{
-        common_subexpr_eliminate::CommonSubexprEliminate,
-        decorrelate_where_exists::DecorrelateWhereExists, decorrelate_where_in::DecorrelateWhereIn,
-        eliminate_filter::EliminateFilter, eliminate_limit::EliminateLimit,
-        filter_null_join_keys::FilterNullJoinKeys, filter_push_down::FilterPushDown,
-        limit_push_down::LimitPushDown, reduce_cross_join::ReduceCrossJoin,
-        reduce_outer_join::ReduceOuterJoin,
-        rewrite_disjunctive_predicate::RewriteDisjunctivePredicate,
-        scalar_subquery_to_join::ScalarSubqueryToJoin, simplify_expressions::SimplifyExpressions,
-        single_distinct_to_groupby::SingleDistinctToGroupBy,
-        subquery_filter_to_join::SubqueryFilterToJoin, type_coercion::TypeCoercion,
-        unwrap_cast_in_comparison::UnwrapCastInComparison, OptimizerRule,
-    },
-};
-
+use datafusion::logical_expr::LogicalPlan;
+use datafusion::optimizer::common_subexpr_eliminate::CommonSubexprEliminate;
+use datafusion::optimizer::decorrelate_where_exists::DecorrelateWhereExists;
+use datafusion::optimizer::decorrelate_where_in::DecorrelateWhereIn;
+use datafusion::optimizer::eliminate_filter::EliminateFilter;
+use datafusion::optimizer::eliminate_limit::EliminateLimit;
+use datafusion::optimizer::filter_null_join_keys::FilterNullJoinKeys;
+use datafusion::optimizer::filter_push_down::FilterPushDown;
+use datafusion::optimizer::limit_push_down::LimitPushDown;
+use datafusion::optimizer::reduce_cross_join::ReduceCrossJoin;
+use datafusion::optimizer::reduce_outer_join::ReduceOuterJoin;
+use datafusion::optimizer::rewrite_disjunctive_predicate::RewriteDisjunctivePredicate;
+use datafusion::optimizer::scalar_subquery_to_join::ScalarSubqueryToJoin;
+use datafusion::optimizer::simplify_expressions::SimplifyExpressions;
+use datafusion::optimizer::single_distinct_to_groupby::SingleDistinctToGroupBy;
+use datafusion::optimizer::subquery_filter_to_join::SubqueryFilterToJoin;
+use datafusion::optimizer::type_coercion::TypeCoercion;
+use datafusion::optimizer::unwrap_cast_in_comparison::UnwrapCastInComparison;
+use datafusion::optimizer::OptimizerRule;
 use spi::query::session::IsiphoSessionCtx;
 use spi::Result;
 
-use crate::extension::logical::optimizer_rule::{
-    implicit_type_conversion::ImplicitTypeConversion,
-    projection_push_down::ProjectionPushDownAdapter, reject_cross_join::RejectCrossJoin,
-    rewrite_tag_scan::RewriteTagScan,
-    transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule,
-    transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule,
-};
+use crate::extension::logical::optimizer_rule::implicit_type_conversion::ImplicitTypeConversion;
+use crate::extension::logical::optimizer_rule::projection_push_down::ProjectionPushDownAdapter;
+use crate::extension::logical::optimizer_rule::reject_cross_join::RejectCrossJoin;
+use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
+use crate::extension::logical::optimizer_rule::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
+use crate::extension::logical::optimizer_rule::transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule;
 
 pub trait LogicalOptimizer: Send + Sync {
     fn optimize(&self, plan: &LogicalPlan, session: &IsiphoSessionCtx) -> Result<LogicalPlan>;

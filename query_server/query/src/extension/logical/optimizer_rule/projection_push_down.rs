@@ -1,28 +1,24 @@
 //! Projection Push Down optimizer rule ensures that only referenced columns are
 //! loaded into memory
 
+use std::collections::{BTreeSet, HashSet};
+use std::sync::Arc;
+
 use datafusion::arrow::datatypes::Field;
 use datafusion::arrow::error::Result as ArrowResult;
 use datafusion::common::{
     Column, DFField, DFSchema, DFSchemaRef, DataFusionError, Result, ToDFSchema,
 };
-use datafusion::datasource::source_as_provider;
-use datafusion::datasource::TableProvider;
-use datafusion::logical_expr::utils::grouping_set_to_exprlist;
-use datafusion::logical_expr::Extension;
-use datafusion::logical_expr::{
-    logical_plan::{
-        builder::{build_join_schema, LogicalPlanBuilder},
-        Aggregate, Analyze, Join, LogicalPlan, Projection, SubqueryAlias, TableScan, Union, Window,
-    },
-    utils::{expr_to_columns, exprlist_to_columns, find_sort_exprs, from_plan},
-    Expr,
+use datafusion::datasource::{source_as_provider, TableProvider};
+use datafusion::logical_expr::logical_plan::builder::{build_join_schema, LogicalPlanBuilder};
+use datafusion::logical_expr::logical_plan::{
+    Aggregate, Analyze, Join, LogicalPlan, Projection, SubqueryAlias, TableScan, Union, Window,
 };
+use datafusion::logical_expr::utils::{
+    expr_to_columns, exprlist_to_columns, find_sort_exprs, from_plan, grouping_set_to_exprlist,
+};
+use datafusion::logical_expr::{Expr, Extension};
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
-use std::{
-    collections::{BTreeSet, HashSet},
-    sync::Arc,
-};
 
 use crate::extension::logical::plan_node::table_writer::{
     as_table_writer_plan_node, TableWriterPlanNode,

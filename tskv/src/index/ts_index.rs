@@ -1,40 +1,36 @@
-use fmt::Debug;
 use std::borrow::Borrow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::Hash;
 use std::mem::size_of;
 use std::ops::{BitAnd, BitOr, Bound, Index, RangeBounds};
 use std::path::{self, Path, PathBuf};
 use std::string::FromUtf8Error;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use bytes::BufMut;
 use chrono::format::format;
-use datafusion::prelude::Column;
-use datafusion::scalar::ScalarValue;
-use lazy_static::__Deref;
-use models::predicate::domain::{utf8_from, Domain, Marker, Range, ValueEntry};
-use once_cell::sync::OnceCell;
-use parking_lot::RwLock;
-use sled::Error;
-use snafu::ResultExt;
-
 use config::Config;
 use datafusion::arrow::datatypes::{DataType, ToByteSlice};
 use datafusion::parquet::data_type::AsBytes;
+use datafusion::prelude::Column;
+use datafusion::scalar::ScalarValue;
+use fmt::Debug;
+use lazy_static::__Deref;
 use models::codec::Encoding;
-use models::{
-    tag::TagFromParts, utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType,
-};
+use models::predicate::domain::{utf8_from, Domain, Marker, Range, ValueEntry};
+use models::tag::TagFromParts;
+use models::{utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType};
+use once_cell::sync::OnceCell;
+use parking_lot::RwLock;
 use protos::models::Point;
+use sled::Error;
+use snafu::ResultExt;
 use trace::{debug, error, info, warn};
 
 use super::binlog::*;
 use super::cache::{ForwardIndexCache, SeriesKeyInfo};
-use super::*;
-use super::{errors, IndexEngine, IndexError, IndexResult};
-
+use super::{errors, IndexEngine, IndexError, IndexResult, *};
 use crate::file_system::file_manager;
 use crate::Error::IndexErr;
 use crate::{byte_utils, file_utils};
@@ -597,7 +593,8 @@ mod test {
     use std::path::{Path, PathBuf};
 
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
-    use models::{schema::ExternalTableSchema, SeriesKey, Tag};
+    use models::schema::ExternalTableSchema;
+    use models::{SeriesKey, Tag};
 
     use super::TSIndex;
 

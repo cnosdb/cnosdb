@@ -1,13 +1,9 @@
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fmt::Debug;
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-    ops::{Add, Div},
-    sync::{
-        atomic::{self, AtomicBool},
-        Arc,
-    },
-};
+use std::ops::{Add, Div};
+use std::sync::atomic::{self, AtomicBool};
+use std::sync::Arc;
 
 use chrono::{
     DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc,
@@ -18,13 +14,11 @@ use models::Timestamp;
 use parking_lot::RwLock;
 use trace::{error, info};
 
-use crate::{
-    compaction::CompactReq,
-    error::Result,
-    kv_option::{Options, StorageOptions},
-    tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
-    LevelId, TseriesFamilyId,
-};
+use crate::compaction::CompactReq;
+use crate::error::Result;
+use crate::kv_option::{Options, StorageOptions};
+use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
+use crate::{LevelId, TseriesFamilyId};
 
 pub trait Picker: Send + Sync + Debug {
     fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq>;
@@ -397,18 +391,17 @@ impl LevelCompatContext {
 }
 
 mod test {
+    use std::sync::Arc;
+
     use lru_cache::ShardedCache;
     use models::predicate::domain::TimeRange;
     use parking_lot::RwLock;
-    use std::sync::Arc;
     use tokio::sync::mpsc;
 
-    use crate::{
-        file_utils::make_tsm_file_name,
-        kv_option::{Options, StorageOptions},
-        memcache::MemCache,
-        tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
-    };
+    use crate::file_utils::make_tsm_file_name;
+    use crate::kv_option::{Options, StorageOptions};
+    use crate::memcache::MemCache;
+    use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
 
     fn create_options(base_dir: String) -> Arc<Options> {
         let dir = "../config/config.toml";

@@ -1,5 +1,14 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 
+use std::borrow::BorrowMut;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Debug;
+use std::io;
+use std::ops::DerefMut;
+use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
+
 use client::MetaHttpClient;
 use config::ClusterConfig;
 use models::auth::privilege::DatabasePrivilege;
@@ -9,28 +18,18 @@ use models::auth::role::{
 use models::auth::user::{User, UserDesc};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
-use parking_lot::RwLock;
-use rand::distributions::{Alphanumeric, DistString};
-use snafu::Snafu;
-
-use std::borrow::BorrowMut;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::ops::DerefMut;
-use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
-use std::{fmt::Debug, io};
-use store::command;
-use tokio::net::TcpStream;
-
-use trace::{debug, info, warn};
-
-use crate::error::{MetaError, MetaResult};
 use models::schema::{
     DatabaseSchema, ExternalTableSchema, LimiterConfig, TableColumn, TableSchema, Tenant,
     TenantOptions, TskvTableSchema,
 };
+use parking_lot::RwLock;
+use rand::distributions::{Alphanumeric, DistString};
+use snafu::Snafu;
+use store::command;
+use tokio::net::TcpStream;
+use trace::{debug, info, warn};
 
+use crate::error::{MetaError, MetaResult};
 use crate::limiter::{Limiter, LimiterImpl, NoneLimiter};
 use crate::store::command::{
     META_REQUEST_FAILED, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,

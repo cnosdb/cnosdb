@@ -1,14 +1,14 @@
-use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use datafusion::sql::TableReference;
 use meta::error::MetaError;
 use models::schema::{TableSchema, TskvTableSchema};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::Result;
-
 use spi::query::logical_planner::CreateTable;
 use spi::query::session::IsiphoSessionCtx;
+use spi::Result;
+
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct CreateTableTask {
     stmt: CreateTable,

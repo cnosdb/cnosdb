@@ -1,19 +1,18 @@
-use std::{fmt::Display, mem::size_of, ops::Index};
 use std::cmp::min;
+use std::fmt::Display;
+use std::mem::size_of;
+use std::ops::Index;
 
 use minivec::MiniVec;
-
-use models::{Timestamp, ValueType};
 use models::predicate::domain::TimeRange;
+use models::{Timestamp, ValueType};
 use protos::models::FieldType;
 use trace::{error, info};
 
-use crate::{
-    memcache::DataType,
-    tsm::codec::{
-        DataBlockEncoding, get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
-        get_u64_codec,
-    },
+use crate::memcache::DataType;
+use crate::tsm::codec::{
+    get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
+    DataBlockEncoding,
 };
 
 pub trait ByTimeRange {
@@ -663,14 +662,15 @@ fn exclude_slow(v: &mut Vec<MiniVec<u8>>, min_idx: usize, max_idx: usize) {
 
 #[cfg(test)]
 pub mod test {
-    use minivec::mini_vec;
-    use models::predicate::domain::TimeRange;
     use std::mem::size_of;
 
-    use crate::{
-        memcache::DataType,
-        tsm::{block::exclude_fast, codec::DataBlockEncoding, DataBlock},
-    };
+    use minivec::mini_vec;
+    use models::predicate::domain::TimeRange;
+
+    use crate::memcache::DataType;
+    use crate::tsm::block::exclude_fast;
+    use crate::tsm::codec::DataBlockEncoding;
+    use crate::tsm::DataBlock;
 
     pub(crate) fn check_data_block(block: &DataBlock, pattern: &[DataType]) {
         assert_eq!(block.len(), pattern.len());

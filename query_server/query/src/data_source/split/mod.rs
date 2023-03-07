@@ -1,7 +1,10 @@
-use std::{cmp, sync::Arc};
+use std::cmp;
+use std::sync::Arc;
 
 use datafusion::execution::context::SessionState;
-use models::predicate::{domain::TimeRange, utils::filter_to_time_ranges, Split};
+use models::predicate::domain::TimeRange;
+use models::predicate::utils::filter_to_time_ranges;
+use models::predicate::Split;
 use trace::debug;
 
 use self::tskv::TableLayoutHandle;

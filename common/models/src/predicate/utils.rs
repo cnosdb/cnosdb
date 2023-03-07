@@ -1,14 +1,11 @@
 use std::ops::{Bound, RangeBounds};
 
+use datafusion::arrow::datatypes::DataType as ArrowDataType;
 use datafusion::scalar::ScalarValue;
 
-use crate::{
-    predicate::domain::{Domain, Range, ValueEntry},
-    schema::TIME_FIELD_NAME,
-};
-use datafusion::arrow::datatypes::DataType as ArrowDataType;
-
 use super::domain::{ColumnDomains, TimeRange};
+use crate::predicate::domain::{Domain, Range, ValueEntry};
+use crate::schema::TIME_FIELD_NAME;
 
 pub fn filter_to_time_ranges(time_domain: &ColumnDomains<String>) -> Vec<TimeRange> {
     if time_domain.is_none() {

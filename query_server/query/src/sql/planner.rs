@@ -1,7 +1,13 @@
+use std::collections::{HashMap, HashSet};
+use std::iter;
+use std::option::Option;
+use std::sync::Arc;
+
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::{DataType, SchemaRef};
 use datafusion::arrow::error::ArrowError;
+use datafusion::common::{Column, DFField, DFSchema, Result as DFResult, ToDFSchema};
 use datafusion::datasource::file_format::avro::AvroFormat;
 use datafusion::datasource::file_format::csv::CsvFormat;
 use datafusion::datasource::file_format::file_type::FileType;
@@ -11,28 +17,18 @@ use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
+use datafusion::datasource::{provider_as_source, source_as_provider, TableProvider};
+use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion::logical_expr::logical_plan::builder::project_with_alias;
-use datafusion::prelude::{col, SessionConfig};
-use lazy_static::__Deref;
-use object_store::ObjectStore;
-use spi::query::datasource::{self, UriSchema};
-use std::collections::{HashMap, HashSet};
-use std::iter;
-use std::option::Option;
-use std::sync::Arc;
-use url::Url;
-
-use datafusion::common::{Column, DFField, DFSchema, Result as DFResult, ToDFSchema};
-use datafusion::datasource::{provider_as_source, source_as_provider, TableProvider};
-use datafusion::error::DataFusionError;
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
     lit, BinaryExpr, BuiltinScalarFunction, Case, EmptyRelation, Explain, Expr, LogicalPlan,
     LogicalPlanBuilder, Operator, PlanType, TableSource, ToStringifiedPlan, Union,
 };
+use datafusion::prelude::{col, SessionConfig};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::SqlToRel;
@@ -42,6 +38,7 @@ use datafusion::sql::sqlparser::ast::{
 };
 use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::sql::TableReference;
+use lazy_static::__Deref;
 use meta::error::MetaError;
 use models::auth::privilege::{
     DatabasePrivilege, GlobalPrivilege, Privilege, TenantObjectPrivilege,
@@ -50,10 +47,12 @@ use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::object_reference::ObjectReference;
 use models::oid::{Identifier, Oid};
 use models::schema::{
-    ColumnType, TableColumn, TableSourceAdapter, TskvTableSchema, TskvTableSchemaRef,
+    ColumnType, DatabaseOptions, Duration, Precision, TableColumn, TableSourceAdapter,
+    TskvTableSchema, TskvTableSchemaRef,
 };
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
+use object_store::ObjectStore;
 use spi::query::ast::{
     AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
     AlterTableAction as ASTAlterTableAction, AlterTenantOperation, AlterUserOperation,
@@ -64,6 +63,7 @@ use spi::query::ast::{
     DropVnode as ASTDropVnode, ExtStatement, MoveVnode as ASTMoveVnode,
     ShowSeries as ASTShowSeries, ShowTagBody, ShowTagValues as ASTShowTagValues, UriLocation, With,
 };
+use spi::query::datasource::{self, UriSchema};
 use spi::query::logical_planner::{
     parse_connection_options, sql_options_to_tenant_options, sql_options_to_user_options,
     AlterDatabase, AlterTable, AlterTableAction, AlterTenant, AlterTenantAction,
@@ -75,12 +75,10 @@ use spi::query::logical_planner::{
     MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan, TenantObjectType,
 };
 use spi::query::session::IsiphoSessionCtx;
-use spi::QueryError;
-
-use models::schema::{DatabaseOptions, Duration, Precision};
 use spi::query::{ast, UNEXPECTED_EXTERNAL_PLAN};
-use spi::Result;
+use spi::{QueryError, Result};
 use trace::{debug, warn};
+use url::Url;
 
 use crate::metadata::{ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
 use crate::sql::logical::planner::TableWriteExt;
@@ -2029,24 +2027,25 @@ fn extract_database_table_name(full_name: &str, session: &IsiphoSessionCtx) -> (
 
 #[cfg(test)]
 mod tests {
-    use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
-    use crate::sql::parser::ExtParser;
+    use std::any::Any;
+    use std::sync::Arc;
+
     use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+    use datafusion::error::Result;
     use datafusion::logical_expr::{Aggregate, AggregateUDF, Extension, ScalarUDF, TableSource};
     use datafusion::sql::planner::ContextProvider;
     use datafusion::sql::TableReference;
     use lazy_static::__Deref;
+    use meta::error::MetaError;
     use models::auth::user::{User, UserDesc, UserOptions};
+    use models::codec::Encoding;
     use models::schema::{TableSourceAdapter, Tenant};
     use spi::query::session::IsiphoSessionCtxFactory;
     use spi::service::protocol::ContextBuilder;
-    use std::any::Any;
-    use std::sync::Arc;
 
     use super::*;
-    use datafusion::error::Result;
-    use meta::error::MetaError;
-    use models::codec::Encoding;
+    use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
+    use crate::sql::parser::ExtParser;
 
     #[derive(Debug)]
     struct MockContext {}

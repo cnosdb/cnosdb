@@ -1,31 +1,22 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::{collections::HashMap, convert::Infallible, net::SocketAddr, sync::Arc};
+use std::collections::HashMap;
+use std::convert::Infallible;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Instant;
 
-use coordinator::service::CoordinatorRef;
-use http_protocol::header::{ACCEPT, AUTHORIZATION};
-use http_protocol::parameter::{SqlParam, WriteParam};
-use http_protocol::response::ErrorResponse;
-use query::prom::remote_read::PromRemoteSqlServer;
-use spi::server::prom::PromRemoteServerRef;
-
-use super::header::Header;
-use super::Error as HttpError;
-use crate::http::response::ResponseBuilder;
-use crate::http::result_format::fetch_record_batches;
-use crate::http::result_format::ResultFormat;
-use crate::http::Error;
-use crate::http::ParseLineProtocolSnafu;
-use crate::http::QuerySnafu;
-use crate::server;
-use crate::server::{Service, ServiceHandle};
 use chrono::Local;
 use config::TLSConfig;
 use coordinator::hh_queue::HintedOffManager;
+use coordinator::service::CoordinatorRef;
 use coordinator::writer::{PointWriter, VnodeMapping};
 use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
+use http_protocol::header::{ACCEPT, AUTHORIZATION};
+use http_protocol::parameter::{SqlParam, WriteParam};
+use http_protocol::response::ErrorResponse;
 use line_protocol::{line_protocol_to_lines, Line};
 use meta::meta_client::MetaClientRef;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
@@ -35,24 +26,27 @@ use models::schema::DEFAULT_CATALOG;
 use protos::kv_service::{Meta, WritePointsRpcRequest};
 use protos::models as fb_models;
 use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
+use query::prom::remote_read::PromRemoteSqlServer;
 use snafu::ResultExt;
 use spi::server::dbms::DBMSRef;
-use spi::service::protocol::ContextBuilder;
-use spi::service::protocol::Query;
-use std::time::Instant;
+use spi::server::prom::PromRemoteServerRef;
+use spi::service::protocol::{ContextBuilder, Query};
 use tokio::sync::oneshot;
-use trace::debug;
-use trace::info;
+use trace::{debug, info};
 use tskv::engine::EngineRef;
 use warp::hyper::body::Bytes;
 use warp::hyper::Body;
-use warp::reject::MethodNotAllowed;
-use warp::reject::MissingHeader;
-use warp::reject::PayloadTooLarge;
+use warp::reject::{MethodNotAllowed, MissingHeader, PayloadTooLarge};
 use warp::reply::Response;
-use warp::Rejection;
-use warp::Reply;
-use warp::{header, reject, Filter};
+use warp::{header, reject, Filter, Rejection, Reply};
+
+use super::header::Header;
+use super::Error as HttpError;
+use crate::http::response::ResponseBuilder;
+use crate::http::result_format::{fetch_record_batches, ResultFormat};
+use crate::http::{Error, ParseLineProtocolSnafu, QuerySnafu};
+use crate::server;
+use crate::server::{Service, ServiceHandle};
 
 pub struct HttpService {
     tls_config: Option<TLSConfig>,
@@ -515,9 +509,9 @@ mod test {
 
     #[tokio::test]
     async fn test1() {
-        use warp::Filter;
         // use futures_util::future::TryFutureExt;
         use tokio::sync::oneshot;
+        use warp::Filter;
 
         let routes = warp::any().map(|| "Hello, World!");
 

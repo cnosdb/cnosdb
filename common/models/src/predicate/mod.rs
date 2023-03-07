@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::schema::{ColumnType, TskvTableSchemaRef};
-
 use self::domain::{ColumnDomains, PredicateRef, TimeRange};
+use crate::schema::{ColumnType, TskvTableSchemaRef};
 
 pub mod domain;
 pub mod transformation;

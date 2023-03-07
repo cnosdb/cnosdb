@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use parking_lot::Mutex;
-
+use protos::kv_service::WritePointsRpcRequest;
+use protos::models_helper;
 use tokio::runtime::{self, Runtime};
-
-use protos::{kv_service::WritePointsRpcRequest, models_helper};
-use tskv::{engine::Engine, TsKv};
+use tskv::engine::Engine;
+use tskv::TsKv;
 
 async fn get_tskv() -> TsKv {
     let mut global_config = config::get_config("../config/config.toml");

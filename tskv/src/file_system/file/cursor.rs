@@ -1,8 +1,5 @@
-use std::io::{ErrorKind, IoSlice};
-use std::{
-    io::{Error, Result, SeekFrom},
-    ops::Deref,
-};
+use std::io::{Error, ErrorKind, IoSlice, Result, SeekFrom};
+use std::ops::Deref;
 
 use crate::file_system::file::async_file::{AsyncFile, IFile};
 

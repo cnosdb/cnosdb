@@ -1,25 +1,22 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 
-use crypto::{
-    aes,
-    aes::KeySize::KeySize256,
-    blockmodes::PkcsPadding,
-    buffer::{
-        BufferResult::BufferUnderflow, ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer,
-    },
-    digest::Digest,
-    md5::Md5,
-    symmetriccipher::SymmetricCipherError,
-};
-use rand::{rngs::OsRng, RngCore};
+use std::fs;
+
+use crypto::aes;
+use crypto::aes::KeySize::KeySize256;
+use crypto::blockmodes::PkcsPadding;
+use crypto::buffer::BufferResult::BufferUnderflow;
+use crypto::buffer::{ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer};
+use crypto::digest::Digest;
+use crypto::md5::Md5;
+use crypto::symmetriccipher::SymmetricCipherError;
+use rand::rngs::OsRng;
+use rand::RngCore;
+use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPrivateKey, EncodeRsaPublicKey};
+use rsa::pkcs8::LineEnding;
+use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
 
 use crate::LicenseResult;
-use rsa::{
-    pkcs1::{DecodeRsaPublicKey, EncodeRsaPrivateKey, EncodeRsaPublicKey},
-    pkcs8::LineEnding,
-    PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey,
-};
-use std::fs;
 
 pub const PUBLIC_RSA_FILENAME: &str = "public.rsa";
 pub const PRIVATE_RSA_FILENAME: &str = "private.rsa";
@@ -167,8 +164,10 @@ impl RsaAes {
 }
 
 mod test {
+    use rand::rngs::OsRng;
+    use rand::RngCore;
+
     use crate::rsa_aes::RsaAes;
-    use rand::{rngs::OsRng, RngCore};
 
     #[test]
     fn test_aes256() {

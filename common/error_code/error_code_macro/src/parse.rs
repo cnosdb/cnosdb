@@ -1,10 +1,12 @@
-use crate::{default_mode_code, MultiSynResult};
-use proc_macro2::Span;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
+
+use proc_macro2::Span;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{custom_keyword, token, Attribute, Field, Fields, LitInt, LitStr};
+
+use crate::{default_mode_code, MultiSynResult};
 
 #[derive(Clone)]
 pub struct Code {

@@ -1,9 +1,9 @@
 // mod test_cluster;
 
-use meta::store::Store;
-
-use openraft::Config;
 use std::sync::Arc;
+
+use meta::store::Store;
+use openraft::Config;
 
 pub async fn new_async() -> Arc<Store> {
     let db_path = format!("{}/{}-{}.binlog", "./meta/journal", "test", "1");

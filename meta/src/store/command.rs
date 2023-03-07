@@ -3,17 +3,12 @@
 use std::collections::HashMap;
 
 use models::auth::privilege::DatabasePrivilege;
-use models::auth::role::SystemTenantRole;
-use models::auth::role::TenantRoleIdentifier;
+use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::UserOptions;
 use models::meta_data::*;
 use models::oid::Oid;
-use models::schema::TenantOptions;
-use models::schema::TskvTableSchema;
-use models::schema::{DatabaseSchema, TableSchema};
-
-use serde::Deserialize;
-use serde::Serialize;
+use models::schema::{DatabaseSchema, TableSchema, TenantOptions, TskvTableSchema};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UpdateVnodeReplSetArgs {

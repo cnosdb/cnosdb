@@ -1,27 +1,25 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{
-    logical_expr::LogicalPlan,
-    physical_optimizer::{
-        aggregate_statistics::AggregateStatistics, coalesce_batches::CoalesceBatches,
-        hash_build_probe_order::HashBuildProbeOrder, merge_exec::AddCoalescePartitionsExec,
-        repartition::Repartition, PhysicalOptimizerRule,
-    },
-    physical_plan::{
-        planner::{DefaultPhysicalPlanner as DFDefaultPhysicalPlanner, ExtensionPlanner},
-        ExecutionPlan, PhysicalPlanner as DFPhysicalPlanner,
-    },
+use datafusion::logical_expr::LogicalPlan;
+use datafusion::physical_optimizer::aggregate_statistics::AggregateStatistics;
+use datafusion::physical_optimizer::coalesce_batches::CoalesceBatches;
+use datafusion::physical_optimizer::hash_build_probe_order::HashBuildProbeOrder;
+use datafusion::physical_optimizer::merge_exec::AddCoalescePartitionsExec;
+use datafusion::physical_optimizer::repartition::Repartition;
+use datafusion::physical_optimizer::PhysicalOptimizerRule;
+use datafusion::physical_plan::planner::{
+    DefaultPhysicalPlanner as DFDefaultPhysicalPlanner, ExtensionPlanner,
 };
+use datafusion::physical_plan::{ExecutionPlan, PhysicalPlanner as DFPhysicalPlanner};
 use spi::query::physical_planner::PhysicalPlanner;
 use spi::query::session::IsiphoSessionCtx;
 use spi::Result;
 
-use crate::extension::physical::transform_rule::{
-    table_writer::TableWriterPlanner, tag_scan::TagScanPlanner, topk::TopKPlanner,
-};
-
 use super::optimizer::PhysicalOptimizer;
+use crate::extension::physical::transform_rule::table_writer::TableWriterPlanner;
+use crate::extension::physical::transform_rule::tag_scan::TagScanPlanner;
+use crate::extension::physical::transform_rule::topk::TopKPlanner;
 
 pub struct DefaultPhysicalPlanner {
     ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,

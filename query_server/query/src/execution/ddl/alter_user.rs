@@ -1,4 +1,3 @@
-use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use spi::query::execution::{
     // ExecutionError, MetaSnafu,
@@ -8,6 +7,8 @@ use spi::query::execution::{
 use spi::query::logical_planner::{AlterUser, AlterUserAction};
 use spi::Result;
 use trace::debug;
+
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct AlterUserTask {
     stmt: AlterUser,

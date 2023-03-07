@@ -3,38 +3,28 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use derive_builder::Builder;
-use models::{
-    auth::{
-        role::{SystemTenantRole, TenantRoleIdentifier},
-        user::{User, UserInfo, UserOptionsBuilder, ROOT},
-    },
-    oid::Identifier,
-    schema::TenantOptionsBuilder,
-};
-use spi::AuthSnafu;
-use spi::{
-    query::{
-        auth::AccessControlRef, dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory,
-    },
-    server::dbms::DatabaseManagerSystem,
-    service::protocol::{Query, QueryHandle, QueryId},
-    QueryError,
-};
+use meta::error::MetaError;
+use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
+use models::auth::user::{User, UserInfo, UserOptionsBuilder, ROOT};
+use models::oid::Identifier;
+use models::schema::{DatabaseSchema, TenantOptionsBuilder, DEFAULT_CATALOG, DEFAULT_DATABASE};
+use snafu::ResultExt;
+use spi::query::auth::AccessControlRef;
+use spi::query::dispatcher::QueryDispatcher;
+use spi::query::session::IsiphoSessionCtxFactory;
+use spi::server::dbms::DatabaseManagerSystem;
+use spi::service::protocol::{Query, QueryHandle, QueryId};
+use spi::{AuthSnafu, QueryError, Result};
 use trace::{debug, info};
+use tskv::engine::EngineRef;
 use tskv::kv_option::Options;
 
+use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
+use crate::data_source::split::SplitManager;
+use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
+use crate::execution::scheduler::LocalScheduler;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
-use crate::{
-    auth::auth_control::{AccessControlImpl, AccessControlNoCheck},
-    execution::scheduler::LocalScheduler,
-};
-use crate::{data_source::split::SplitManager, dispatcher::manager::SimpleQueryDispatcherBuilder};
-use meta::error::MetaError;
-use models::schema::{DatabaseSchema, DEFAULT_CATALOG, DEFAULT_DATABASE};
-use snafu::ResultExt;
-use spi::Result;
-use tskv::engine::EngineRef;
 
 #[derive(Builder)]
 pub struct Cnosdbms<D> {
@@ -218,18 +208,20 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::DerefMut;
+
     use chrono::Utc;
     use config::get_config;
     use coordinator::service::MockCoordinator;
+    use datafusion::arrow::record_batch::RecordBatch;
+    use datafusion::arrow::util::pretty::pretty_format_batches;
     use models::auth::user::UserInfo;
-    use std::ops::DerefMut;
-    use trace::debug;
-
-    use super::*;
-    use datafusion::arrow::{record_batch::RecordBatch, util::pretty::pretty_format_batches};
     use models::schema::DEFAULT_CATALOG;
     use spi::service::protocol::ContextBuilder;
+    use trace::debug;
     use tskv::engine::MockEngine;
+
+    use super::*;
 
     #[macro_export]
     macro_rules! assert_batches_eq {

@@ -1,10 +1,11 @@
-use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::error::MetaError;
 use models::schema::DatabaseOptions;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::AlterDatabase;
 use spi::Result;
+
+use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct AlterDatabaseTask {
     stmt: AlterDatabase,

@@ -1,13 +1,13 @@
 use std::error::Error;
 
+use integer_encoding::*;
+
+use super::simple8b;
 use crate::tsm::codec::timestamp::{
     ts_q_compress_decode, ts_q_compress_encode, ts_without_compress_decode,
     ts_without_compress_encode,
 };
 use crate::tsm::codec::Encoding;
-use integer_encoding::*;
-
-use super::simple8b;
 
 // note: encode/decode adapted from influxdb_iox
 // https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders

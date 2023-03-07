@@ -1,24 +1,15 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{
-    arrow::{
-        array::{Float32Array, Float64Array},
-        datatypes::{DataType, Field, Schema},
-        record_batch::RecordBatch,
-    },
-    from_slice::FromSlice,
-};
-use models::auth::{
-    role::UserRole,
-    user::{User, UserDesc, UserInfo, UserOptionsBuilder},
-};
+use datafusion::arrow::array::{Float32Array, Float64Array};
+use datafusion::arrow::datatypes::{DataType, Field, Schema};
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::from_slice::FromSlice;
+use models::auth::role::UserRole;
+use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
 
-use crate::{
-    query::execution::Output,
-    service::protocol::{Query, QueryHandle, QueryId},
-};
-
+use crate::query::execution::Output;
+use crate::service::protocol::{Query, QueryHandle, QueryId};
 use crate::Result;
 
 pub type DBMSRef = Arc<dyn DatabaseManagerSystem + Send + Sync>;

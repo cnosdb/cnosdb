@@ -1,19 +1,11 @@
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use openraft::error::ClientWriteError;
-use openraft::error::ForwardToLeader;
-
-use openraft::error::NetworkError;
-use openraft::error::RPCError;
-use openraft::error::RemoteError;
+use openraft::error::{ClientWriteError, ForwardToLeader, NetworkError, RPCError, RemoteError};
 use openraft::raft::ClientWriteResponse;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{MetaError, MetaResult};
-use serde::de::DeserializeOwned;
-use serde::Deserialize;
-use serde::Serialize;
-
 use crate::store::command::*;
 use crate::store::state_machine::CommandResp;
 use crate::{ClusterNode, ClusterNodeId, TypeConfig};
@@ -159,16 +151,13 @@ impl MetaHttpClient {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        client::MetaHttpClient,
-        store::command::{self, UpdateVnodeReplSetArgs},
-    };
     use std::{thread, time};
 
-    use models::{
-        meta_data::{NodeInfo, VnodeInfo},
-        schema::DatabaseSchema,
-    };
+    use models::meta_data::{NodeInfo, VnodeInfo};
+    use models::schema::DatabaseSchema;
+
+    use crate::client::MetaHttpClient;
+    use crate::store::command::{self, UpdateVnodeReplSetArgs};
 
     pub async fn watch_tenant(cluster: &str, tenant: &str) {
         println!("=== begin ================...");

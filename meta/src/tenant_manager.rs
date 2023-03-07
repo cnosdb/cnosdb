@@ -1,22 +1,18 @@
 #![allow(dead_code, unused_imports, unused_variables)]
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use models::schema::LimiterConfig;
-use models::{
-    meta_data::ExpiredBucketInfo,
-    oid::{Identifier, Oid},
-    schema::{Tenant, TenantOptions},
-};
+use models::meta_data::ExpiredBucketInfo;
+use models::oid::{Identifier, Oid};
+use models::schema::{LimiterConfig, Tenant, TenantOptions};
 use parking_lot::RwLock;
 
+use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::{Limiter, LimiterImpl, NoneLimiter};
-use crate::{
-    client::MetaHttpClient,
-    meta_client::{MetaClient, MetaClientRef, RemoteMetaClient, TenantManager},
-    store::command::{
-        self, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND,
-    },
+use crate::meta_client::{MetaClient, MetaClientRef, RemoteMetaClient, TenantManager};
+use crate::store::command::{
+    self, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND,
 };
 
 #[derive(Debug)]

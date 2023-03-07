@@ -1,10 +1,8 @@
+use std::collections::HashMap;
+use std::panic;
+use std::sync::Arc;
 use std::time::Duration;
-use std::{collections::HashMap, panic, sync::Arc};
 
-use crate::context::{self, GlobalSequenceContext, GlobalSequenceTask};
-use crate::error::MetaSnafu;
-use crate::kv_option::StorageOptions;
-use crate::tsm::codec::get_str_codec;
 use config::ClusterConfig;
 use datafusion::prelude::Column;
 use flatbuffers::FlatBufferBuilder;
@@ -12,61 +10,47 @@ use futures::stream::SelectNextSome;
 use futures::FutureExt;
 use libc::printf;
 use meta::meta_client::{MetaRef, RemoteMetaManager};
-use models::predicate::domain::{ColumnDomains, PredicateRef, TimeRange};
-use snafu::{OptionExt, ResultExt};
-use tokio::sync::watch;
-use tokio::sync::watch::{Receiver, Sender};
-use tokio::sync::RwLock;
-use tokio::{
-    runtime::Runtime,
-    sync::{
-        broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender},
-        mpsc::{self, UnboundedReceiver, UnboundedSender},
-        oneshot,
-    },
-    time::Instant,
-};
-
-use crate::error::SendSnafu;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::codec::Encoding;
+use models::predicate::domain::{ColumnDomains, PredicateRef, TimeRange};
 use models::schema::{
     make_owner, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema, DEFAULT_CATALOG,
 };
+use models::utils::unite_id;
 use models::{
-    utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
-    ValueType,
+    ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp, ValueType,
 };
-use protos::{
-    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
-    models as fb_models,
-};
+use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest};
+use protos::models as fb_models;
+use snafu::{OptionExt, ResultExt};
+use tokio::runtime::Runtime;
+use tokio::sync::broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::watch::{Receiver, Sender};
+use tokio::sync::{oneshot, watch, RwLock};
+use tokio::time::Instant;
 use trace::{debug, error, info, trace, warn};
 
+use crate::compaction::{self, run_flush_memtable_job, CompactReq, FlushReq};
+use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
 use crate::database::Database;
-use crate::error::SchemaSnafu;
+use crate::engine::Engine;
+use crate::error::{self, IndexErrSnafu, MetaSnafu, Result, SchemaSnafu, SendSnafu};
 use crate::file_system::file_manager::{self, FileManager};
+use crate::index::IndexResult;
+use crate::kv_option::{Options, StorageOptions};
+use crate::memcache::{DataType, MemCache};
+use crate::record_file::Reader;
 use crate::schema::error::SchemaError;
-use crate::tseries_family::TseriesFamily;
-use crate::{
-    compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
-    context::GlobalContext,
-    database,
-    engine::Engine,
-    error::{self, IndexErrSnafu, Result},
-    file_utils,
-    index::IndexResult,
-    kv_option::Options,
-    memcache::{DataType, MemCache},
-    record_file::Reader,
-    summary::{self, Summary, SummaryProcessor, SummaryTask, VersionEdit, WriteSummaryRequest},
-    tseries_family::{SuperVersion, Version},
-    tsm::{DataBlock, TsmTombstone, MAX_BLOCK_VALUES},
-    version_set,
-    version_set::VersionSet,
-    wal::{self, WalEntryType, WalManager, WalTask},
-    Error, Task, TseriesFamilyId,
+use crate::summary::{
+    self, Summary, SummaryProcessor, SummaryTask, VersionEdit, WriteSummaryRequest,
 };
+use crate::tseries_family::{SuperVersion, TseriesFamily, Version};
+use crate::tsm::codec::get_str_codec;
+use crate::tsm::{DataBlock, TsmTombstone, MAX_BLOCK_VALUES};
+use crate::version_set::VersionSet;
+use crate::wal::{self, WalEntryType, WalManager, WalTask};
+use crate::{database, file_utils, version_set, Error, Task, TseriesFamilyId};
 
 #[derive(Debug)]
 pub struct TsKv {
@@ -963,18 +947,22 @@ impl TsKv {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicI64, Ordering};
+    use std::sync::{atomic, Arc};
+
     use config::get_config;
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
     use models::utils::now_timestamp;
     use models::{ColumnId, InMemPoint, SeriesId, SeriesKey, Timestamp};
-    use protos::{models::Points, models_helper};
-    use std::collections::HashMap;
-    use std::sync::{atomic, Arc};
+    use protos::models::Points;
+    use protos::models_helper;
     use tokio::runtime::{self, Runtime};
-
-    use crate::{engine::Engine, error, tsm::DataBlock, Options, TsKv};
-    use std::sync::atomic::{AtomicI64, Ordering};
     use tokio::sync::watch;
+
+    use crate::engine::Engine;
+    use crate::tsm::DataBlock;
+    use crate::{error, Options, TsKv};
 
     #[tokio::test]
     #[ignore]

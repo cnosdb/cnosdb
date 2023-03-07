@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+
+use serde::{Deserialize, Serialize};
 
 pub const BIGINT_CODEC: [Encoding; 4] = [
     Encoding::Default,

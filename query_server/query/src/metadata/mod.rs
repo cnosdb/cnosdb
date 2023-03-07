@@ -1,37 +1,32 @@
 mod cluster_schema_provider;
 mod information_schema_provider;
 
-use coordinator::service::CoordinatorRef;
-use datafusion::arrow::datatypes::DataType;
-use datafusion::sql::ResolvedTableReference;
-use datafusion::{
-    error::DataFusionError,
-    logical_expr::{AggregateUDF, ScalarUDF, TableSource},
-    sql::{planner::ContextProvider, TableReference},
-};
-use meta::meta_client::MetaClientRef;
-use models::auth::user::UserDesc;
-use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
-
-use parking_lot::RwLock;
-use spi::query::session::IsiphoSessionCtx;
-use spi::QueryError;
-
-use crate::data_source::split::SplitManagerRef;
-use crate::dispatcher::query_tracker::QueryTracker;
-use crate::table::ClusterTable;
-use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
-use datafusion::datasource::provider_as_source;
-
-use meta::error::MetaError;
-use spi::query::function::FuncMetaManagerRef;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
+use coordinator::service::CoordinatorRef;
+use datafusion::arrow::datatypes::DataType;
+use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
+use datafusion::datasource::provider_as_source;
+use datafusion::error::DataFusionError;
+use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
+use datafusion::sql::planner::ContextProvider;
+use datafusion::sql::{ResolvedTableReference, TableReference};
+use meta::error::MetaError;
+use meta::meta_client::MetaClientRef;
+use models::auth::user::UserDesc;
+use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
+use parking_lot::RwLock;
+use spi::query::function::FuncMetaManagerRef;
+use spi::query::session::IsiphoSessionCtx;
+use spi::QueryError;
 
 use self::cluster_schema_provider::ClusterSchemaProvider;
 use self::information_schema_provider::InformationSchemaProvider;
+use crate::data_source::split::SplitManagerRef;
+use crate::dispatcher::query_tracker::QueryTracker;
+use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
+use crate::table::ClusterTable;
 
 pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
 pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";

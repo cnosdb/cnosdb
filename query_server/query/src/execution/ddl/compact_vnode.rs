@@ -1,13 +1,10 @@
 use async_trait::async_trait;
-
+use meta::error::MetaError;
 use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::query::logical_planner::CompactVnode;
+use spi::{QueryError, Result};
 
 use super::DDLDefinitionTask;
-use meta::error::MetaError;
-
-use spi::query::logical_planner::CompactVnode;
-use spi::QueryError;
-use spi::Result;
 
 pub struct CompactVnodeTask {
     stmt: CompactVnode,

@@ -1,9 +1,8 @@
-use datafusion::{
-    config::OPT_OPTIMIZER_SKIP_FAILED_RULES,
-    execution::context,
-    prelude::{SessionConfig, SessionContext},
-};
-use models::{auth::user::User, oid::Oid};
+use datafusion::config::OPT_OPTIMIZER_SKIP_FAILED_RULES;
+use datafusion::execution::context;
+use datafusion::prelude::{SessionConfig, SessionContext};
+use models::auth::user::User;
+use models::oid::Oid;
 
 use crate::service::protocol::Context;
 

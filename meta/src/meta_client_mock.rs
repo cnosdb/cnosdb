@@ -1,35 +1,28 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use models::{
-    auth::{
-        privilege::DatabasePrivilege,
-        role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier},
-        user::UserDesc,
-    },
-    meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet},
-    oid::Oid,
-    schema::{
-        DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
-    },
+use models::auth::privilege::DatabasePrivilege;
+use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier};
+use models::auth::user::UserDesc;
+use models::limiter::LimiterConfig;
+use models::meta_data::{
+    BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
 };
-use models::{limiter::LimiterConfig, meta_data::VnodeInfo};
-use models::{meta_data::VnodeAllInfo, oid::Identifier};
+use models::oid::{Identifier, Oid};
+use models::schema::{
+    DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
+};
 use tokio::net::TcpStream;
 
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::{Limiter, LimiterImpl};
-use crate::{
-    meta_client::{
-        AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaManager, TenantManager,
-        TenantManagerRef, UserManagerRef,
-    },
-    user_manager::UserManagerMock,
+use crate::meta_client::{
+    AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaManager, TenantManager,
+    TenantManagerRef, UserManagerRef,
 };
+use crate::user_manager::UserManagerMock;
 
 #[derive(Default, Debug)]
 pub struct MockAdminMeta {}

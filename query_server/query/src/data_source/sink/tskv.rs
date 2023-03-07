@@ -1,19 +1,14 @@
 use async_trait::async_trait;
-
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::record_batch::RecordBatch;
-
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use models::consistency_level::ConsistencyLevel;
-
-use spi::Result;
-
 use models::schema::TskvTableSchemaRef;
 use protos::kv_service::WritePointsRpcRequest;
-
-use crate::utils::point_util::record_batch_to_points_flat_buffer;
+use spi::Result;
 
 use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata};
+use crate::utils::point_util::record_batch_to_points_flat_buffer;
 
 pub struct TskvRecordBatchSink {
     coord: CoordinatorRef,

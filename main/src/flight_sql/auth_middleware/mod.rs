@@ -2,7 +2,9 @@ pub mod basic_call_header_authenticator;
 pub mod generated_bearer_token_authenticator;
 
 use models::auth::user::{User, UserInfo};
-use tonic::{metadata::MetadataMap, service::Interceptor, Status};
+use tonic::metadata::MetadataMap;
+use tonic::service::Interceptor;
+use tonic::Status;
 
 /// Interface for Server side authentication handlers.
 pub trait CallHeaderAuthenticator {

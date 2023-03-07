@@ -1,15 +1,11 @@
-use actix_web::get;
-use actix_web::post;
-use actix_web::web;
 use actix_web::web::Data;
-use actix_web::Responder;
+use actix_web::{get, post, web, Responder};
 use openraft::error::Infallible;
 use tokio::sync::mpsc;
 use web::Json;
 
 use crate::store::command::*;
-use crate::store::state_machine::CommandResp;
-use crate::store::state_machine::WatchTenantMetaData;
+use crate::store::state_machine::{CommandResp, WatchTenantMetaData};
 use crate::MetaApp;
 
 #[post("/read")]
