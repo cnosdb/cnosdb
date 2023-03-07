@@ -2,11 +2,10 @@ use std::cmp::min;
 use std::fmt::Display;
 
 use minivec::MiniVec;
-use models::{Timestamp, ValueType};
+use models::{TimeRange, Timestamp, ValueType};
 use trace::error;
 
 use crate::memcache::DataType;
-use crate::tseries_family::TimeRange;
 use crate::tsm::codec::{
     get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
     DataBlockEncoding,
@@ -649,9 +648,9 @@ fn exclude_slow(v: &mut Vec<MiniVec<u8>>, min_idx: usize, max_idx: usize) {
 pub mod test {
 
     use minivec::mini_vec;
+    use models::TimeRange;
 
     use crate::memcache::DataType;
-    use crate::tseries_family::TimeRange;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
 

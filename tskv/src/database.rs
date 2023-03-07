@@ -8,7 +8,7 @@ use meta::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::schema::{DatabaseSchema, TskvTableSchema};
 use models::utils::unite_id;
-use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
+use models::{ColumnId, SchemaId, SeriesId, SeriesKey, TimeRange, Timestamp};
 use protos::models::Point;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
@@ -27,7 +27,7 @@ use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
 use crate::version_set::VersionSet;
 use crate::Error::{self, InvalidPoint};
-use crate::{ColumnFileId, TimeRange, TseriesFamilyId};
+use crate::{ColumnFileId, TseriesFamilyId};
 
 pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>;
 

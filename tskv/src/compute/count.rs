@@ -1,12 +1,14 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
+use models::{
+    utils as model_utils, ColumnId, FieldId, SeriesId, TimeRange, TimeRangeCmp, Timestamp,
+};
 use trace::trace;
 
-use crate::tseries_family::{ColumnFile, SuperVersion, TimeRangeCmp};
+use crate::tseries_family::{ColumnFile, SuperVersion};
 use crate::tsm::{BlockMeta, TsmReader};
-use crate::{Error, Result, TimeRange};
+use crate::{Error, Result};
 
 /// Compute pushed down aggregate:
 ///

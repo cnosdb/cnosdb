@@ -6,7 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use models::predicate::domain::ColumnDomains;
 use models::schema::TableColumn;
-use models::{ColumnId, SeriesId, SeriesKey};
+use models::{ColumnId, SeriesId, SeriesKey, TimeRange};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
 use trace::debug;
@@ -17,7 +17,7 @@ use crate::index::IndexResult;
 use crate::kv_option::StorageOptions;
 use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
-use crate::{TimeRange, TseriesFamilyId};
+use crate::TseriesFamilyId;
 
 #[derive(Debug, Default)]
 pub struct MockEngine {}
