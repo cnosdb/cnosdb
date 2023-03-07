@@ -1,5 +1,5 @@
 <div align="center">
-  <img  src="docs/source/_static/img/cnosdb_logo_new_year.gif" width="500" alt="CnodSB Logo">
+  <img  src="docs/source/_static/img/cnosdb_logo_white.svg" width="500" alt="CnodSB Logo">
 </div>
 
 <p align="center">
