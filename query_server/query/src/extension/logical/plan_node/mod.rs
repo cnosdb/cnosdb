@@ -8,6 +8,7 @@ use datafusion::prelude::{Expr, Partitioning};
 use crate::extension::expr::expr_rewriter::ExprReplacer;
 
 pub mod expand;
+pub mod stream_scan;
 pub mod table_writer;
 pub mod tag_scan;
 pub mod topk;

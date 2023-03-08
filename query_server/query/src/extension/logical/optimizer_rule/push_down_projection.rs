@@ -21,7 +21,7 @@ use datafusion::logical_expr::{
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::prelude::Expr;
 
-use crate::data_source::table_provider::tskv::ClusterTable;
+use crate::data_source::batch::tskv::ClusterTable;
 
 /// Optimizer that removes unused projections and aggregations from plans
 /// This reduces both scans and

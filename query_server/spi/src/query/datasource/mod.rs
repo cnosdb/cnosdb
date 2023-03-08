@@ -11,6 +11,7 @@ use super::logical_planner::ConnectionOptions;
 pub mod azure;
 pub mod gcs;
 pub mod s3;
+pub mod stream;
 
 pub struct WriteContext {
     location: Path,

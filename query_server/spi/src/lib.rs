@@ -403,6 +403,24 @@ pub enum QueryError {
     InvalidTimeWindowParam {
         reason: String,
     },
+
+    #[snafu(display("Unsupported stream type: {}", stream_type))]
+    #[error_code(code = 59)]
+    UnsupportedStreamType {
+        stream_type: String,
+    },
+
+    #[snafu(display("Stream source factory already exists: {}", stream_type))]
+    #[error_code(code = 60)]
+    StreamSourceFactoryAlreadyExists {
+        stream_type: String,
+    },
+
+    #[snafu(display("Event time column not specified of table {}", name))]
+    #[error_code(code = 61)]
+    EventTimeColumnNotSpecified {
+        name: String,
+    },
 }
 
 impl From<ParserError> for QueryError {
