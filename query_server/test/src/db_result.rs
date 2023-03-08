@@ -42,6 +42,7 @@ impl DBResult {
                 resp_buf.clear();
                 is_ok = true;
                 is_sorted = false;
+                is_line_protocol = false;
             } else if parsing_header {
                 if line.starts_with("-- EXECUTE SQL:") {
                     parsing = true;
@@ -75,6 +76,16 @@ impl DBResult {
                 resp_buf.push('\n');
             }
         }
+        if parsing {
+            results.push(DBResult {
+                case_name,
+                request: req_buf.trim_end().to_string(),
+                response: resp_buf.trim_end().to_string(),
+                is_ok,
+                is_sorted,
+                is_line_protocol,
+            });
+        }
 
         results
     }
@@ -94,10 +105,9 @@ impl Display for DBResult {
         }
 
         if self.is_ok {
-            writeln!(f, "{}\n", self.response)?;
+            writeln!(f, "{}", self.response)?;
         } else {
-            writeln!(f, "-- ERROR: --")?;
-            writeln!(f, "{}\n", self.response)?;
+            writeln!(f, "{}\n-- ERROR:  --", self.response)?;
         }
         Ok(())
     }
