@@ -7,6 +7,7 @@ use memory_pool::MemoryPoolRef;
 use models::auth::user::{User, UserInfo};
 use snafu::ResultExt;
 use spi::query::auth::AccessControlRef;
+use spi::query::datasource::stream::StreamProviderManager;
 use spi::query::dispatcher::QueryDispatcher;
 use spi::query::session::SessionCtxFactory;
 use spi::server::dbms::DatabaseManagerSystem;
@@ -16,8 +17,11 @@ use trace::debug;
 use tskv::kv_option::Options;
 
 use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
+use crate::data_source::stream::tskv::factory::{TskvStreamProviderFactory, TSKV_STREAM_PROVIDER};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::execution::scheduler::LocalScheduler;
+use crate::extension::expr::load_all_functions;
+use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
 
@@ -94,6 +98,17 @@ pub async fn make_cnosdbms(
     // TODO wrap, and num_threads configurable
     let scheduler = Arc::new(LocalScheduler {});
 
+    // init Function Manager
+    let mut func_manager = SimpleFunctionMetadataManager::default();
+    load_all_functions(&mut func_manager)?;
+
+    // init stream provider manager
+    let mut stream_provider_manager = StreamProviderManager::default();
+    // stream provider factory of tskv
+    let tskv_stream_provider_factory = Arc::new(TskvStreamProviderFactory::new(coord.clone()));
+    stream_provider_manager
+        .register_stream_provider_factory(TSKV_STREAM_PROVIDER, tskv_stream_provider_factory)?;
+
     let queries_limit = options.query.max_server_connections;
 
     let meta_manager = coord.meta_manager();
@@ -106,6 +121,8 @@ pub async fn make_cnosdbms(
         .with_scheduler(scheduler)
         .with_queries_limit(queries_limit)
         .with_memory_pool(memory_pool)
+        .with_func_manager(Arc::new(func_manager))
+        .with_stream_provider_manager(Arc::new(stream_provider_manager))
         .build()?;
 
     let mut builder = CnosdbmsBuilder::default();

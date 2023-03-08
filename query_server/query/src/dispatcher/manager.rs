@@ -7,8 +7,10 @@ use meta::error::MetaError;
 use models::oid::Oid;
 use models::schema::DEFAULT_CATALOG;
 use spi::query::ast::ExtStatement;
+use spi::query::datasource::stream::StreamProviderManagerRef;
 use spi::query::dispatcher::{QueryDispatcher, QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecutionFactory, QueryStateMachine};
+use spi::query::function::FuncMetaManagerRef;
 use spi::query::logical_planner::LogicalPlanner;
 use spi::query::optimizer::Optimizer;
 use spi::query::parser::Parser;
@@ -19,8 +21,6 @@ use spi::{QueryError, Result};
 
 use super::query_tracker::QueryTracker;
 use crate::execution::factory::SqlQueryExecutionFactory;
-use crate::extension::expr::load_all_functions;
-use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::metadata::{ContextProviderExtension, MetadataProvider};
 use crate::sql::logical::planner::DefaultLogicalPlanner;
 
@@ -36,6 +36,8 @@ pub struct SimpleQueryDispatcher {
     parser: Arc<dyn Parser + Send + Sync>,
     // get query execution factory
     query_execution_factory: Arc<dyn QueryExecutionFactory + Send + Sync>,
+    func_manager: FuncMetaManagerRef,
+    stream_provider_manager: StreamProviderManagerRef,
 }
 
 #[async_trait]
@@ -78,9 +80,6 @@ impl QueryDispatcher for SimpleQueryDispatcher {
                 tenant: query.context().tenant().to_string(),
             })?;
 
-        let mut func_manager = SimpleFunctionMetadataManager::default();
-        load_all_functions(&mut func_manager)?;
-
         let default_catalog_meta_client = self
             .coord
             .tenant_meta(DEFAULT_CATALOG)
@@ -92,7 +91,8 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         let scheme_provider = MetadataProvider::new(
             self.coord.clone(),
             meta_client,
-            func_manager,
+            self.func_manager.clone(),
+            self.stream_provider_manager.clone(),
             self.query_tracker.clone(),
             session.clone(),
             default_catalog_meta_client,
@@ -187,6 +187,9 @@ pub struct SimpleQueryDispatcherBuilder {
 
     queries_limit: usize,
     memory_pool: Option<MemoryPoolRef>, // memory
+
+    func_manager: Option<FuncMetaManagerRef>,
+    stream_provider_manager: Option<StreamProviderManagerRef>,
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -225,6 +228,19 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
+    pub fn with_func_manager(mut self, func_manager: FuncMetaManagerRef) -> Self {
+        self.func_manager = Some(func_manager);
+        self
+    }
+
+    pub fn with_stream_provider_manager(
+        mut self,
+        stream_provider_manager: StreamProviderManagerRef,
+    ) -> Self {
+        self.stream_provider_manager = Some(stream_provider_manager);
+        self
+    }
+
     pub fn build(self) -> Result<SimpleQueryDispatcher> {
         let coord = self.coord.ok_or_else(|| QueryError::BuildQueryDispatcher {
             err: "lost of coord".to_string(),
@@ -253,6 +269,18 @@ impl SimpleQueryDispatcherBuilder {
                 err: "lost of scheduler".to_string(),
             })?;
 
+        let func_manager = self
+            .func_manager
+            .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                err: "lost of func_manager".to_string(),
+            })?;
+
+        let stream_provider_manager =
+            self.stream_provider_manager
+                .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                    err: "lost of stream_provider_manager".to_string(),
+                })?;
+
         let query_tracker = Arc::new(QueryTracker::new(self.queries_limit));
 
         let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(
@@ -272,6 +300,8 @@ impl SimpleQueryDispatcherBuilder {
             parser,
             query_execution_factory,
             query_tracker,
+            func_manager,
+            stream_provider_manager,
         })
     }
 }

@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::datasource::source_as_provider;
-use datafusion::error::Result;
+use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
 use datafusion::physical_plan::planner::ExtensionPlanner;
 use datafusion::physical_plan::{displayable, ExecutionPlan, PhysicalPlanner};
 use trace::{debug, trace};
 
-use crate::data_source::WriteExecExt;
+use crate::data_source::{source_downcast_adapter, WriteExecExt};
 use crate::extension::logical::plan_node::table_writer::{
     as_table_writer_plan_node, TableWriterPlanNode,
 };
@@ -45,7 +44,8 @@ impl ExtensionPlanner for TableWriterPlanner {
                 );
                 let physical_input = physical_inputs[0].clone();
 
-                let table_provider = source_as_provider(target_table)?;
+                let table_provider = source_downcast_adapter(target_table)
+                    .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
                 let result = table_provider.write(session_state, physical_input).await?;
 

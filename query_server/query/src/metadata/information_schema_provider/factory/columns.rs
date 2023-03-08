@@ -5,7 +5,7 @@ use meta::error::MetaError;
 use meta::MetaClientRef;
 use models::auth::user::User;
 use models::oid::Identifier;
-use models::schema::{ColumnType, ExternalTableSchema, TableSchema, TskvTableSchema};
+use models::schema::{ColumnType, ExternalTableSchema, StreamTable, TableSchema, TskvTableSchema};
 use models::ValueType;
 
 use crate::dispatcher::query_tracker::QueryTracker;
@@ -52,6 +52,9 @@ impl InformationSchemaTableFactory for ColumnsFactory {
                         }
                         TableSchema::ExternalTableSchema(t) => {
                             append_external_table(tenant_name, &db, t.clone(), &mut builder);
+                        }
+                        TableSchema::StreamTableSchema(t) => {
+                            append_stream_table(tenant_name, &db, t.clone(), &mut builder);
                         }
                     }
                 }
@@ -102,6 +105,29 @@ fn append_external_table(
             ColumnType::Field(ValueType::Unknown).as_column_type_str(),
             idx as u64,
             "NULL",
+            col.is_nullable(),
+            col.data_type().to_string(),
+            None::<String>,
+        );
+    }
+}
+
+fn append_stream_table(
+    tenant_name: &str,
+    database_name: &str,
+    table: Arc<StreamTable>,
+    builder: &mut InformationSchemaColumnsBuilder,
+) {
+    for (idx, col) in table.schema().all_fields().iter().enumerate() {
+        builder.append_row(
+            tenant_name,
+            database_name,
+            table.name(),
+            col.name(),
+            // The fields of the external table are all type FIELD
+            ColumnType::Field(ValueType::Unknown).as_column_type_str(),
+            idx as u64,
+            "UNKNOWN",
             col.is_nullable(),
             col.data_type().to_string(),
             None::<String>,

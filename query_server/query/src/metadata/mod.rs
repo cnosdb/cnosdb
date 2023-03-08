@@ -10,7 +10,7 @@ use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::config::ConfigOptions;
 use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
-use datafusion::datasource::provider_as_source;
+use datafusion::datasource::TableProvider;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
 use datafusion::sql::planner::ContextProvider;
@@ -18,16 +18,17 @@ use datafusion::sql::{ResolvedTableReference, TableReference};
 use meta::error::MetaError;
 use meta::MetaClientRef;
 use models::auth::user::UserDesc;
-use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
+use models::schema::{TableSchema, Tenant, DEFAULT_CATALOG};
 use parking_lot::RwLock;
+use spi::query::datasource::stream::StreamProviderManagerRef;
 use spi::query::function::FuncMetaManagerRef;
 use spi::query::session::SessionCtx;
 
 use self::cluster_schema_provider::ClusterSchemaProvider;
 use self::information_schema_provider::InformationSchemaProvider;
-use crate::data_source::table_provider::tskv::ClusterTable;
+use crate::data_source::batch::tskv::ClusterTable;
+use crate::data_source::table_source::{TableHandle, TableSourceAdapter};
 use crate::dispatcher::query_tracker::QueryTracker;
-use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::metadata::usage_schema_provider::UsageSchemaProvider;
 
 pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
@@ -46,7 +47,7 @@ pub trait ContextProviderExtension: ContextProvider {
     fn get_table_source(
         &self,
         name: TableReference,
-    ) -> datafusion::common::Result<TableSourceAdapter>;
+    ) -> datafusion::common::Result<Arc<TableSourceAdapter>>;
 }
 
 pub struct MetadataProvider {
@@ -55,6 +56,7 @@ pub struct MetadataProvider {
     coord: CoordinatorRef,
     meta_client: MetaClientRef,
     func_manager: FuncMetaManagerRef,
+    stream_provider_manager: StreamProviderManagerRef,
     information_schema_provider: InformationSchemaProvider,
     cluster_schema_provider: ClusterSchemaProvider,
     usage_schema_provider: UsageSchemaProvider,
@@ -65,7 +67,8 @@ impl MetadataProvider {
     pub fn new(
         coord: CoordinatorRef,
         meta_client: MetaClientRef,
-        func_manager: SimpleFunctionMetadataManager,
+        func_manager: FuncMetaManagerRef,
+        stream_provider_manager: StreamProviderManagerRef,
         query_tracker: Arc<QueryTracker>,
         session: SessionCtx,
         default_meta: MetaClientRef,
@@ -76,7 +79,8 @@ impl MetadataProvider {
             config_options: session.inner().state().config_options().clone(),
             session,
             meta_client,
-            func_manager: Arc::new(func_manager),
+            func_manager,
+            stream_provider_manager,
             information_schema_provider: InformationSchemaProvider::new(query_tracker),
             cluster_schema_provider: ClusterSchemaProvider::new(),
             usage_schema_provider: UsageSchemaProvider::new(default_meta),
@@ -89,7 +93,7 @@ impl MetadataProvider {
         tenant_name: &str,
         database_name: &str,
         table_name: &str,
-    ) -> datafusion::common::Result<Option<Arc<dyn TableSource>>> {
+    ) -> datafusion::common::Result<Option<Arc<dyn TableProvider>>> {
         // process INFORMATION_SCHEMA
         if database_name.eq_ignore_ascii_case(self.information_schema_provider.name()) {
             let mem_table = futures::executor::block_on(self.information_schema_provider.table(
@@ -99,7 +103,7 @@ impl MetadataProvider {
             ))
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
-            return Ok(Some(provider_as_source(mem_table)));
+            return Ok(Some(mem_table));
         }
 
         // process USAGE_SCHEMA
@@ -113,7 +117,7 @@ impl MetadataProvider {
                     self.meta_client.clone(),
                 )
                 .map_err(|e| DataFusionError::External(Box::new(e)))?;
-            return Ok(Some(provider_as_source(table_provider)));
+            return Ok(Some(table_provider));
         }
 
         // process CNOSDB(sys tenant) -> CLUSTER_SCHEMA
@@ -127,16 +131,16 @@ impl MetadataProvider {
             ))
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
-            return Ok(Some(provider_as_source(mem_table)));
+            return Ok(Some(mem_table));
         }
 
         Ok(None)
     }
 
-    fn build_df_data_source(
+    fn build_table_handle(
         &self,
         name: &ResolvedTableReference<'_>,
-    ) -> datafusion::common::Result<Arc<dyn TableSource>> {
+    ) -> datafusion::common::Result<TableHandle> {
         let tenant_name = name.catalog.as_ref();
         let database_name = name.schema.as_ref();
         let table_name = name.table.as_ref();
@@ -144,17 +148,17 @@ impl MetadataProvider {
         if let Some(source) =
             self.process_system_table_source(tenant_name, database_name, table_name)?
         {
-            return Ok(source);
+            return Ok(source.into());
         }
 
-        let df_table_source = match self
+        let table_handle: TableHandle = match self
             .meta_client
             .get_table_schema(database_name, table_name)
             .map_err(|e| DataFusionError::External(Box::new(e)))?
         {
             Some(table) => match table {
                 TableSchema::TsKvTableSchema(schema) => {
-                    provider_as_source(Arc::new(ClusterTable::new(self.coord.clone(), schema)))
+                    Arc::new(ClusterTable::new(self.coord.clone(), schema)).into()
                 }
                 TableSchema::ExternalTableSchema(schema) => {
                     let table_path = ListingTableUrl::parse(&schema.location)?;
@@ -162,19 +166,23 @@ impl MetadataProvider {
                     let config = ListingTableConfig::new(table_path)
                         .with_listing_options(options)
                         .with_schema(Arc::new(schema.schema.clone()));
-                    provider_as_source(Arc::new(ListingTable::try_new(config)?))
+                    Arc::new(ListingTable::try_new(config)?).into()
                 }
+                TableSchema::StreamTableSchema(table) => self
+                    .stream_provider_manager
+                    .create_provider(self.meta_client.clone(), table.as_ref())
+                    .map_err(|e| DataFusionError::External(Box::new(e)))?
+                    .into(),
             },
-
             None => {
                 return Err(DataFusionError::Plan(format!(
                     "failed to resolve tenant:{}  db: {}, table: {}",
                     name.catalog, name.schema, name.table
-                )))
+                )));
             }
         };
 
-        Ok(df_table_source)
+        Ok(table_handle)
     }
 }
 
@@ -211,7 +219,7 @@ impl ContextProviderExtension for MetadataProvider {
     fn get_table_source(
         &self,
         name: TableReference,
-    ) -> datafusion::common::Result<TableSourceAdapter> {
+    ) -> datafusion::common::Result<Arc<TableSourceAdapter>> {
         let name = name.resolve(self.session.tenant(), self.session.default_database());
 
         let table_name = name.table.as_ref();
@@ -232,15 +240,15 @@ impl ContextProviderExtension for MetadataProvider {
             .write()
             .push_table(database_name, table_name);
 
-        let df_table_source = self.build_df_data_source(&name)?;
+        let table_handle = self.build_table_handle(&name)?;
 
-        Ok(TableSourceAdapter::new(
-            df_table_source,
+        Ok(Arc::new(TableSourceAdapter::try_new(
             tenant_id,
             tenant_name,
             database_name,
             table_name,
-        ))
+            table_handle,
+        )?))
     }
 }
 
@@ -249,7 +257,7 @@ impl ContextProvider for MetadataProvider {
         &self,
         name: TableReference,
     ) -> datafusion::error::Result<Arc<dyn TableSource>> {
-        Ok(self.get_table_source(name)?.inner())
+        Ok(self.get_table_source(name)?)
     }
 
     fn get_function_meta(&self, name: &str) -> Option<Arc<ScalarUDF>> {

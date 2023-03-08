@@ -3,21 +3,20 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
-use datafusion::datasource::listing::ListingTable;
-use datafusion::datasource::TableProvider;
-use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
+use datafusion::logical_expr::TableSource;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::{ExecutionPlan, SendableRecordBatchStream};
 use futures::StreamExt;
-use spi::Result;
-use trace::warn;
+use spi::{QueryError, Result};
 
-use self::table_provider::tskv::ClusterTable;
+use self::table_source::TableSourceAdapter;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
 
+pub mod batch;
 pub mod sink;
-pub mod table_provider;
+pub mod stream;
+pub mod table_source;
 pub mod write_exec_ext;
 
 #[async_trait]
@@ -27,31 +26,6 @@ pub trait WriteExecExt: Send + Sync {
         state: &SessionState,
         input: Arc<dyn ExecutionPlan>,
     ) -> DFResult<Arc<TableWriterExec>>;
-}
-
-#[async_trait]
-impl WriteExecExt for dyn TableProvider {
-    async fn write(
-        &self,
-        state: &SessionState,
-        input: Arc<dyn ExecutionPlan>,
-    ) -> DFResult<Arc<TableWriterExec>> {
-        let table_write: &dyn WriteExecExt =
-            if let Some(table) = self.as_any().downcast_ref::<ClusterTable>() {
-                table as _
-            } else if let Some(table) = self.as_any().downcast_ref::<ListingTable>() {
-                table as _
-            } else {
-                warn!("Table not support write.");
-                return Err(DataFusionError::Plan(
-                    "Table not support write.".to_string(),
-                ));
-            };
-
-        let result = table_write.write(state, input).await?;
-
-        Ok(result)
-    }
 }
 
 #[async_trait]
@@ -111,5 +85,18 @@ impl SinkMetadata {
 
     pub fn bytes_writed(&self) -> usize {
         self.bytes_writed
+    }
+}
+
+/// Attempt to downcast a TableSource to DefaultTableSource and access the
+/// TableProvider. \
+/// Then attempt to downcast a TableProvider to TableProviderAdapter and access the
+/// TableProviderAdapter.
+pub fn source_downcast_adapter(source: &Arc<dyn TableSource>) -> Result<&TableSourceAdapter> {
+    match source.as_any().downcast_ref::<TableSourceAdapter>() {
+        Some(adapter) => Ok(adapter),
+        _ => Err(QueryError::Internal {
+            reason: "TableProvider was not TableProviderAdapter".to_string(),
+        }),
     }
 }
