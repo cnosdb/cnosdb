@@ -690,20 +690,19 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_has_file_compression_type(&mut self) -> bool {
-        self.consume_token(&Token::make_keyword("COMPRESSION"))
-            & self.consume_token(&Token::make_keyword("TYPE"))
+        self.parser
+            .parse_keywords(&[Keyword::COMPRESSION, Keyword::TYPE])
     }
 
     /// This is a copy of the equivalent implementation in Datafusion.
     fn parse_csv_has_header(&mut self) -> bool {
-        self.consume_token(&Token::make_keyword("WITH"))
-            & self.consume_token(&Token::make_keyword("HEADER"))
-            & self.consume_token(&Token::make_keyword("ROW"))
+        self.parser
+            .parse_keywords(&[Keyword::WITH, Keyword::HEADER, Keyword::ROW])
     }
 
     /// This is a copy of the equivalent implementation in Datafusion.
     fn parse_has_delimiter(&mut self) -> bool {
-        self.consume_token(&Token::make_keyword("DELIMITER"))
+        self.parser.parse_keyword(Keyword::DELIMITER)
     }
 
     /// This is a copy of the equivalent implementation in Datafusion.
