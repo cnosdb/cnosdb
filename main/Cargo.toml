@@ -68,8 +68,7 @@ backoff = {workspace = true}
 sys-info = {workspace = true}
 surf = { workspace = true, features = ["curl-client", "encoding"], default-features=false }
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec","frame-pointer"] }
-jemallocator = {workspace = true}
-
+tikv-jemallocator = {workspace = true}
 
 [dev-dependencies]
 reqwest = "0.11"
