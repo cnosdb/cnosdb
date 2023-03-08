@@ -11,13 +11,14 @@ use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
 use trace::debug;
 
-use crate::engine::Engine;
+use crate::engine::{Engine, EngineRef};
 use crate::error::Result;
 use crate::index::IndexResult;
+use crate::iterator::RowIterator;
 use crate::kv_option::StorageOptions;
 use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
-use crate::TseriesFamilyId;
+use crate::{iterator, TseriesFamilyId};
 
 #[derive(Debug, Default)]
 pub struct MockEngine {}
@@ -186,6 +187,15 @@ impl Engine for MockEngine {
     }
 
     async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()> {
+        todo!()
+    }
+
+    async fn create_row_iterator(
+        &self,
+        engine: EngineRef,
+        query_option: iterator::QueryOption,
+        vnode_id: u32,
+    ) -> Result<RowIterator> {
         todo!()
     }
 

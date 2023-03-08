@@ -406,6 +406,7 @@ mod test {
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use metrics::metric_register::MetricsRegister;
+    use models::predicate::domain::TimeRange;
     use tokio::sync::mpsc;
 
     use crate::compaction::test::create_options;
@@ -415,7 +416,6 @@ mod test {
     use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
     use crate::memcache::MemCache;
     use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
-    use crate::TimeRange;
 
     type ColumnFilesSketch = (u64, i64, i64, u64, bool);
     type LevelsSketch = Vec<(u32, i64, i64, Vec<ColumnFilesSketch>)>;

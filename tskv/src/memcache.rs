@@ -572,12 +572,12 @@ pub(crate) mod test {
     use std::mem::size_of;
     use std::sync::Arc;
 
+    use models::predicate::domain::TimeRange;
     use models::schema::TskvTableSchema;
     use models::{SchemaId, SeriesId, Timestamp};
     use parking_lot::RwLock;
 
     use super::{FieldVal, MemCache, RowData, RowGroup};
-    use crate::TimeRange;
 
     pub(crate) fn put_rows_to_cache(
         cache: &mut MemCache,

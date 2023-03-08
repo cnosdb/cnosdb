@@ -26,10 +26,11 @@ use crate::compaction::{
 };
 use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
 use crate::database::Database;
-use crate::engine::Engine;
+use crate::engine::{Engine, EngineRef};
 use crate::error::{self, Result};
 use crate::file_system::file_manager::{self};
 use crate::index::IndexResult;
+use crate::iterator::{self, RowIterator};
 use crate::kv_option::{Options, StorageOptions};
 use crate::schema::error::SchemaError;
 use crate::summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit};
@@ -946,6 +947,15 @@ impl Engine for TsKv {
         }
 
         Ok(())
+    }
+
+    async fn create_row_iterator(
+        &self,
+        engine: EngineRef,
+        query_option: iterator::QueryOption,
+        vnode_id: u32,
+    ) -> Result<RowIterator> {
+        RowIterator::new(self.runtime.clone(), engine, query_option, vnode_id).await
     }
 
     async fn close(&self) {

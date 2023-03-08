@@ -432,6 +432,7 @@ mod test {
     use meta::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
+    use models::predicate::domain::TimeRange;
     use models::schema::{
         ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
         TskvTableSchema,
@@ -447,7 +448,7 @@ mod test {
     use crate::engine::Engine;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
-    use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
+    use crate::{Options, TsKv, TseriesFamilyId};
 
     fn parse_nanos(datetime: &str) -> Timestamp {
         NaiveDateTime::parse_from_str(datetime, "%Y-%m-%d %H:%M:%S")

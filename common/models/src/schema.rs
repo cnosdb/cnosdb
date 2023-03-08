@@ -505,6 +505,12 @@ impl ColumnType {
     }
 }
 
+impl From<ValueType> for ColumnType {
+    fn from(value: ValueType) -> Self {
+        Self::Field(value)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct DatabaseSchema {
     tenant: String,

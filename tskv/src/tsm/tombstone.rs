@@ -208,9 +208,10 @@ impl TsmTombstone {
 mod test {
     use std::path::PathBuf;
 
+    use models::predicate::domain::TimeRange;
+
     use super::TsmTombstone;
     use crate::file_system::file_manager;
-    use crate::tseries_family::TimeRange;
 
     #[tokio::test]
     async fn test_write_read_1() {

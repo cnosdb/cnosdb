@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
+use tokio::runtime::Runtime;
 use trace::trace;
 
 use crate::tseries_family::{ColumnFile, SuperVersion};
@@ -23,6 +24,7 @@ pub enum TimeRangeCmp {
 ///
 /// `SELECT count(<column>) FROM <table> WHERE <time_range_predicates>`
 pub async fn count_column_non_null_values(
+    runtime: Arc<Runtime>,
     super_version: Arc<SuperVersion>,
     series_ids: &[SeriesId],
     column_id: Option<ColumnId>,
@@ -41,7 +43,7 @@ pub async fn count_column_non_null_values(
             let cfs_inner = column_files.clone();
             let trs_inner = time_ranges.clone();
 
-            jh_vec.push(tokio::spawn(async move {
+            jh_vec.push(runtime.spawn(async move {
                 count_non_null_values_inner(
                     sv_inner,
                     CountingObject::Field(field_id),
@@ -377,8 +379,10 @@ mod test {
 
     use config::get_config;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use models::utils as model_utils;
+    use models::predicate::domain::TimeRange;
+    use models::{utils as model_utils, ColumnId, SeriesId};
     use parking_lot::RwLock;
+    use tokio::runtime::Runtime;
 
     use crate::compaction::flush_tests::default_table_schema;
     use crate::compaction::test::write_data_blocks_to_column_file;
@@ -389,10 +393,33 @@ mod test {
     use crate::tseries_family::{CacheGroup, SuperVersion};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
-    use crate::Options;
+    use crate::{Options, Result};
 
-    #[tokio::test]
-    async fn test_super_version_count_file() {
+    struct TestHelper {
+        runtime: Arc<Runtime>,
+        super_version: Arc<SuperVersion>,
+    }
+
+    impl TestHelper {
+        fn run(
+            &self,
+            series_ids: &[SeriesId],
+            column_id: Option<ColumnId>,
+            time_ranges: Vec<impl Into<TimeRange>>,
+        ) -> Result<u64> {
+            let time_ranges: Vec<TimeRange> = time_ranges.into_iter().map(|tr| tr.into()).collect();
+            self.runtime.block_on(count_column_non_null_values(
+                self.runtime.clone(),
+                self.super_version.clone(),
+                series_ids,
+                column_id,
+                Arc::new(time_ranges),
+            ))
+        }
+    }
+
+    #[test]
+    fn test_super_version_count_file() {
         let dir = "/tmp/test/ts_family/super_version_count_file";
         let mut global_config = get_config("../config/config.toml");
         global_config.storage.path = dir.to_string();
@@ -417,63 +444,67 @@ mod test {
         let database = Arc::new("dba".to_string());
         let ts_family_id = 1;
         let dir = opt.storage.tsm_dir(&database, 1);
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
 
-        let (_, files) =
-            write_data_blocks_to_column_file(&dir, data, ts_family_id, opt.clone()).await;
+        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(
+            &dir,
+            data,
+            ts_family_id,
+            opt.clone(),
+        ));
         let version =
             build_version_by_column_files(opt.storage.clone(), database, ts_family_id, files);
         let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let super_version = Arc::new(SuperVersion::new(
-            ts_family_id,
-            opt.storage.clone(),
-            CacheGroup {
-                mut_cache: Arc::new(RwLock::new(MemCache::new(ts_family_id, 1, 1, &pool))),
-                immut_cache: vec![],
-            },
-            Arc::new(version),
-            1,
-        ));
+        let test_helper = TestHelper {
+            runtime,
+            super_version: Arc::new(SuperVersion::new(
+                ts_family_id,
+                opt.storage.clone(),
+                CacheGroup {
+                    mut_cache: Arc::new(RwLock::new(MemCache::new(ts_family_id, 1, 1, &pool))),
+                    immut_cache: vec![],
+                },
+                Arc::new(version),
+                1,
+            )),
+        };
 
         #[rustfmt::skip]
         let _skip_fmt = {
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], None, Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 9);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1, 2], None, Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 18);
+            assert_eq!(test_helper.run(&[1], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 9);
+            assert_eq!(test_helper.run(&[1, 2], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 18);
 
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 9);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1, 2], Some(1), Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 18);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 9);
+            assert_eq!(test_helper.run(&[1, 2], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 18);
 
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(0, 0).into()])).await.unwrap(), 0);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(1, 1).into()])).await.unwrap(), 1);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(1, 4).into()])).await.unwrap(), 4);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(1, 5).into()])).await.unwrap(), 5);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(4, 4).into()])).await.unwrap(), 1);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(4, 5).into()])).await.unwrap(), 2);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(4, 7).into()])).await.unwrap(), 4);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(10, 10).into()])).await.unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(0, 0)]).unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 1)]).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 4)]).unwrap(), 4);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 5)]).unwrap(), 5);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 4)]).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 5)]).unwrap(), 2);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 7)]).unwrap(), 4);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(10, 10)]).unwrap(), 0);
 
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[2], Some(1), Arc::new(vec![(10, 40).into()])).await.unwrap(), 4);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[2], Some(1), Arc::new(vec![(40, 50).into()])).await.unwrap(), 2);
+            assert_eq!(test_helper.run(&[2], Some(1), vec![(10, 40)]).unwrap(), 4);
+            assert_eq!(test_helper.run(&[2], Some(1), vec![(40, 50)]).unwrap(), 2);
 
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(
-                vec![(2, 3).into(), (5, 5).into(), (8, 8).into()]
-            )).await.unwrap(), 4);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(
-                vec![(4, 5).into(), (6, 8).into()]
-            )).await.unwrap(), 5);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(
-                vec![(1, 3).into(), (2, 4).into(), (3, 7).into()]
-            )).await.unwrap(), 7);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(2, 3), (5, 5), (8, 8)]).unwrap(), 4);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 5), (6, 8)]).unwrap(), 5);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 3), (2, 4), (3, 7)]).unwrap(), 7);
 
-            assert_eq!(count_column_non_null_values(super_version, &[1, 2], Some(1), Arc::new(
-                vec![(1, 3).into(), (2, 4).into(), (3, 7).into(),
-                     (10, 30).into(), (20, 40).into(), (30, 70).into()]
-            )).await.unwrap(), 14);
+            assert_eq!(test_helper.run(&[1, 2], Some(1), vec![(1, 3), (2, 4), (3, 7), (10, 30), (20, 40), (30, 70)]).unwrap(), 14);
             "skip_fmt"
         };
     }
 
-    #[tokio::test]
-    async fn test_super_version_count_memcache() {
+    #[test]
+    fn test_super_version_count_memcache() {
         let dir = "/tmp/test/ts_family/super_version_count_memcache";
         let mut global_config = get_config("../config/config.toml");
         global_config.storage.path = dir.to_string();
@@ -504,53 +535,54 @@ mod test {
 
         let version =
             build_version_by_column_files(opt.storage.clone(), database, ts_family_id, vec![]);
-        let super_version = Arc::new(SuperVersion::new(
-            ts_family_id,
-            opt.storage.clone(),
-            cache_group,
-            Arc::new(version),
-            1,
-        ));
+        let test_helper = TestHelper {
+            runtime: Arc::new(
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap(),
+            ),
+            super_version: Arc::new(SuperVersion::new(
+                ts_family_id,
+                opt.storage.clone(),
+                cache_group,
+                Arc::new(version),
+                1,
+            )),
+        };
 
         #[rustfmt::skip]
         let _skip_fmt = {
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], None, Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 14);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], None, Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 14);
+            assert_eq!(test_helper.run(&[1], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 14);
+            assert_eq!(test_helper.run(&[1], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 14);
 
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 14);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1, 2], Some(1), Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 28);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(0, 0).into()])).await.unwrap(), 0);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(1, 1).into()])).await.unwrap(), 1);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(1, 4).into()])).await.unwrap(), 4);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(1, 5).into()])).await.unwrap(), 5);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(4, 4).into()])).await.unwrap(), 1);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(4, 5).into()])).await.unwrap(), 2);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(4, 7).into()])).await.unwrap(), 4);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(10, 10).into()])).await.unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 14);
+            assert_eq!(test_helper.run(&[1, 2], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 28);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(0, 0)]).unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 1)]).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 4)]).unwrap(), 4);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 5)]).unwrap(), 5);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 4)]).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 5)]).unwrap(), 2);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 7)]).unwrap(), 4);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(10, 10)]).unwrap(), 0);
 
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[2], Some(1), Arc::new(vec![(101, 104).into()])).await.unwrap(), 4);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[2], Some(1), Arc::new(vec![(104, 105).into()])).await.unwrap(), 2);
+            assert_eq!(test_helper.run(&[2], Some(1), vec![(101, 104)]).unwrap(), 4);
+            assert_eq!(test_helper.run(&[2], Some(1), vec![(104, 105)]).unwrap(), 2);
 
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(
-                vec![(2, 3).into(), (5, 5).into(), (8, 8).into()]
-            )).await.unwrap(), 4);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(
-                vec![(4, 5).into(), (6, 8).into()]
-            )).await.unwrap(), 5);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(
-                vec![(1, 3).into(), (2, 4).into(), (3, 7).into()]
-            )).await.unwrap(), 7);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(2, 3), (5, 5), (8, 8)]).unwrap(), 4);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 5), (6, 8)]).unwrap(), 5);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 3), (2, 4), (3, 7)]).unwrap(), 7);
 
-            assert_eq!(count_column_non_null_values(super_version, &[1, 2], Some(1), Arc::new(
-                vec![(1, 3).into(), (2, 4).into(), (3, 7).into(),
-                     (101, 103).into(), (102, 104).into(), (103, 107).into()]
-            )).await.unwrap(), 14);
+            assert_eq!(test_helper.run(&[1, 2], Some(1),
+                vec![(1, 3), (2, 4), (3, 7), (101, 103), (102, 104), (103, 107)]
+            ).unwrap(), 14);
             "skip_fmt"
         };
     }
 
-    #[tokio::test]
-    async fn test_super_version_count() {
+    #[test]
+    fn test_super_version_count() {
         let dir = "/tmp/test/ts_family/super_version_count";
         let mut global_config = get_config("../config/config.toml");
         global_config.storage.path = dir.to_string();
@@ -595,39 +627,52 @@ mod test {
         let database = Arc::new("dba".to_string());
         let ts_family_id = 1;
         let dir = opt.storage.tsm_dir(&database, 1);
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
 
-        let (_, files) =
-            write_data_blocks_to_column_file(&dir, data, ts_family_id, opt.clone()).await;
+        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(
+            &dir,
+            data,
+            ts_family_id,
+            opt.clone(),
+        ));
         let version =
             build_version_by_column_files(opt.storage.clone(), database, ts_family_id, files);
-        let super_version = Arc::new(SuperVersion::new(
-            ts_family_id,
-            opt.storage.clone(),
-            cache_group,
-            Arc::new(version),
-            1,
-        ));
+        let test_helper = TestHelper {
+            runtime,
+            super_version: Arc::new(SuperVersion::new(
+                ts_family_id,
+                opt.storage.clone(),
+                cache_group,
+                Arc::new(version),
+                1,
+            )),
+        };
 
         #[rustfmt::skip]
         let _skip_fmt = {
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1], None, Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 29);
-            assert_eq!(count_column_non_null_values(super_version.clone(), &[1, 2], None, Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 58);
+            assert_eq!(test_helper.run(&[1], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 29);
+            assert_eq!(test_helper.run(&[1, 2], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 58);
 
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 29);
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1, 2], Some(1), Arc::new(vec![(i64::MIN, i64::MAX).into()])).await.unwrap(), 58);
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(0, 0).into()])).await.unwrap(), 0);
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(1, 1).into()])).await.unwrap(), 1);
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(1, 10).into()])).await.unwrap(), 9);
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(1, 50).into()])).await.unwrap(), 29);
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(10, 20).into()])).await.unwrap(), 5);
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(10, 50).into()])).await.unwrap(), 20);
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(15, 21).into()])).await.unwrap(), 2);
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(40, 40).into()])).await.unwrap(), 1);
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[1], Some(1), Arc::new(vec![(41, 41).into()])).await.unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 29);
+            assert_eq!(test_helper.run(&[1, 2], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 58);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(0, 0)]).unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 1)]).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 10)]).unwrap(), 9);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 50)]).unwrap(), 29);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(10, 20)]).unwrap(), 5);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(10, 50)]).unwrap(), 20);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(15, 21)]).unwrap(), 2);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(40, 40)]).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), vec![(41, 41)]).unwrap(), 0);
 
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[2], Some(1), Arc::new(vec![(105, 110).into()])).await.unwrap(), 5);
-            // assert_eq!(count_column_non_null_values(super_version.clone(), &[2], Some(1), Arc::new(vec![(105, 121).into()])).await.unwrap(), 11);
-            // assert_eq!(count_column_non_null_values(super_version, &[2], Some(1), Arc::new(vec![(115, 125).into()])).await.unwrap(), 6);
+            assert_eq!(test_helper.run(&[2], Some(1), vec![(105, 110)]).unwrap(), 5);
+            assert_eq!(test_helper.run(&[2], Some(1), vec![(105, 121)]).unwrap(), 11);
+            assert_eq!(test_helper.run(&[2], Some(1), vec![(115, 125)]).unwrap(), 6);
             "skip_fmt"
         };
     }

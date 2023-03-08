@@ -668,13 +668,13 @@ pub mod tsm_reader_tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
+    use models::predicate::domain::TimeRange;
     use models::{FieldId, Timestamp};
     use snafu::ResultExt;
 
     use crate::error::{self, Error, Result};
     use crate::file_system::file_manager::{self};
     use crate::file_utils;
-    use crate::tseries_family::TimeRange;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_writer_tests::write_to_tsm;
     use crate::tsm::{BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone};

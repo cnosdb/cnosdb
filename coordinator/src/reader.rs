@@ -18,7 +18,7 @@ use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::info;
 use tskv::engine::EngineRef;
-use tskv::iterator::{QueryOption, RowIterator};
+use tskv::iterator::QueryOption;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::service::CoordServiceMetrics;
@@ -256,7 +256,10 @@ impl QueryExecutor {
             })?
             .clone();
 
-        let mut iterator = RowIterator::new(kv_inst, self.option.clone(), vnode.id).await?;
+        let mut iterator = kv_inst
+            .clone()
+            .create_row_iterator(kv_inst, self.option.clone(), vnode.id)
+            .await?;
 
         while let Some(data) = iterator.next().await {
             match data {
