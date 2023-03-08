@@ -1,8 +1,8 @@
-use std::{fs::File, time::SystemTime};
-
-use pprof::protos::Message;
+use std::fs::File;
+use std::time::SystemTime;
 
 use libc::c_char;
+use pprof::protos::Message;
 
 pub async fn gernate_pprof() -> Result<String, String> {
     let guard = pprof::ProfilerGuardBuilder::default()

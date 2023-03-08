@@ -80,7 +80,8 @@ enum SubCommand {
 }
 
 #[global_allocator]
-static A: Jemalloc = Jemalloc;
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+// static A: Jemalloc = Jemalloc;
 
 /// To run cnosdb-cli:
 ///
