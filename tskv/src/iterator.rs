@@ -371,7 +371,7 @@ impl FieldFileLocation {
         }
     }
 
-    pub async fn peek(&mut self) -> Result<Option<DataType>, Error> {
+    pub async fn peek(&mut self) -> Result<Option<DataType>> {
         while self.read_index > self.end_index {
             // let data = self.data_block.get(self.read_index);
             if let Some(meta) = self.block_it.next() {
@@ -437,7 +437,7 @@ impl Cursor for TimeCursor {
 
     async fn next(&mut self, _ts: i64) {}
 
-    async fn peek(&mut self) -> Result<Option<DataType>, Error> {
+    async fn peek(&mut self) -> Result<Option<DataType>> {
         let data = DataType::I64(self.ts, self.ts);
 
         Ok(Some(data))
@@ -472,7 +472,7 @@ impl Cursor for TagCursor {
 
     async fn next(&mut self, _ts: i64) {}
 
-    async fn peek(&mut self) -> Result<Option<DataType>, Error> {
+    async fn peek(&mut self) -> Result<Option<DataType>> {
         match &self.value {
             Some(value) => Ok(Some(DataType::Str(0, MiniVec::from(value.as_slice())))),
             None => Ok(None),
@@ -527,7 +527,7 @@ impl Cursor for FieldCursor {
         &self.name
     }
 
-    async fn peek(&mut self) -> Result<Option<DataType>, Error> {
+    async fn peek(&mut self) -> Result<Option<DataType>> {
         let mut data = DataType::new(self.value_type, i64::MAX);
         for loc in self.locations.iter_mut() {
             if let Some(val) = loc.peek().await? {
@@ -581,10 +581,15 @@ pub struct RowIterator {
     vnode_id: u32,
     metrics: TskvSourceMetrics,
 
+    /// Super version of vnode_id, maybe None.
     super_version: Option<Arc<SuperVersion>>,
-    series_ids: Arc<Vec<SeriesId>>,
-    seires_group_row_iters: Vec<SeriesGroupRowIterator>,
-    finished_series_group_row_iters: usize,
+    /// List of series id filtered from engine.
+    series_ids: Vec<SeriesId>,
+    /// The index of series_ids.
+    i: usize,
+    /// The temporary columns of the series_id.
+    columns: Vec<CursorPtr>,
+    /// Whether this iterator was finsihed.
     is_finished: bool,
 }
 
@@ -594,7 +599,7 @@ impl RowIterator {
         engine: EngineRef,
         query_option: QueryOption,
         vnode_id: u32,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         let super_version = engine
             .get_db_version(
                 &query_option.tenant,
@@ -621,80 +626,23 @@ impl RowIterator {
         );
         let query_option = Arc::new(query_option);
         let metrics = query_option.metrics.clone();
-        let series_len = series_ids.len();
-        if query_option.aggregates.is_some() {
-            // TODO: Correct the aggregate columns order.
-            let mut row_iterator = Self {
-                runtime,
-                engine,
-                query_option,
-                vnode_id,
-                metrics,
-                super_version,
-                series_ids: Arc::new(series_ids),
-                seires_group_row_iters: Vec::with_capacity(1),
-                finished_series_group_row_iters: 0,
-                is_finished: false,
-            };
-            row_iterator.push_series_group_iterator(0, series_len);
 
-            Ok(row_iterator)
-        } else {
-            // TODO：get series_group_size more intelligent
-            let series_group_size = 10;
-            // `usize::div_ceil(self, Self)` is now unstable, so do it by-hand.
-            let series_group_num = series_len / series_group_size
-                + if series_len % series_group_size == 0 {
-                    0
-                } else {
-                    1
-                };
-
-            let mut row_iterator = Self {
-                runtime,
-                engine,
-                query_option,
-                vnode_id,
-                metrics,
-                super_version,
-                series_ids: Arc::new(series_ids),
-                seires_group_row_iters: Vec::with_capacity(series_group_num),
-                finished_series_group_row_iters: 0,
-                is_finished: false,
-            };
-
-            for i in 0..series_group_num {
-                let start = series_group_size * i;
-                let mut end = start + series_group_size;
-                if end > series_len {
-                    end = series_len
-                }
-                row_iterator.push_series_group_iterator(start, end);
-            }
-
-            Ok(row_iterator)
-        }
-    }
-
-    fn push_series_group_iterator(&mut self, start: usize, end: usize) {
-        self.seires_group_row_iters.push(SeriesGroupRowIterator {
-            runtime: self.runtime.clone(),
-            engine: self.engine.clone(),
-            query_option: self.query_option.clone(),
-            vnode_id: self.vnode_id,
-            metrics: self.metrics.clone(),
-            super_version: self.super_version.clone(),
-            series_ids: self.series_ids.clone(),
-            start,
-            end,
-            batch_size: self.query_option.batch_size,
-            i: start,
-            columns: Vec::with_capacity(self.query_option.table_schema.columns().len()),
+        Ok(Self {
+            runtime,
+            engine,
+            query_option,
+            vnode_id,
+            metrics,
+            super_version,
+            series_ids,
+            i: 0_usize,
+            columns: Vec::<CursorPtr>::new(),
             is_finished: false,
-        });
+        })
     }
 
     fn build_record_builders(query_option: &QueryOption) -> Vec<ArrayBuilderPtr> {
+        // Get builders for aggregating.
         if let Some(aggregates) = query_option.aggregates.as_ref() {
             let mut builders: Vec<ArrayBuilderPtr> = Vec::with_capacity(aggregates.len());
             for _ in 0..aggregates.len() {
@@ -706,6 +654,7 @@ impl RowIterator {
             return builders;
         }
 
+        // Get builders for table scan.
         let mut builders: Vec<ArrayBuilderPtr> =
             Vec::with_capacity(query_option.table_schema.columns().len());
         for item in query_option.table_schema.columns().iter() {
@@ -756,115 +705,8 @@ impl RowIterator {
 
         builders
     }
-}
 
-impl RowIterator {
-    pub async fn next(&mut self) -> Option<Result<RecordBatch>> {
-        if self.is_finished {
-            return None;
-        }
-
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
-        let mut builders = Self::build_record_builders(self.query_option.as_ref());
-        timer.done();
-
-        let mut finished = vec![false; self.seires_group_row_iters.len()];
-        if self.finished_series_group_row_iters >= finished.len() {
-            self.is_finished = true;
-        } else {
-            for (i, iter) in self.seires_group_row_iters.iter_mut().enumerate() {
-                if finished[i] {
-                    continue;
-                }
-                match iter.next().await {
-                    Some(Ok(cols)) => {
-                        for (builder, col) in builders.iter_mut().zip(cols) {
-                            builder.append_column_data(col);
-                        }
-                    }
-                    Some(Err(e)) => {
-                        error!("Series group iterator error: {:?}", e);
-                    }
-                    None => {
-                        debug!("Series group iterator finished.");
-                        finished[i] = true;
-                        self.finished_series_group_row_iters += 1;
-                    }
-                }
-            }
-        }
-
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
-        let result = {
-            let mut cols = vec![];
-            for item in builders.iter_mut() {
-                cols.push(item.ptr.finish())
-            }
-
-            match RecordBatch::try_new(self.query_option.df_schema.clone(), cols) {
-                Ok(batch) => Some(Ok(batch)),
-                Err(err) => Some(Err(Error::CommonError {
-                    reason: format!("iterator fail, {}", err),
-                })),
-            }
-        };
-        timer.done();
-
-        result
-    }
-}
-
-struct SeriesGroupRowIterator {
-    runtime: Arc<Runtime>,
-    engine: EngineRef,
-    query_option: Arc<QueryOption>,
-    vnode_id: u32,
-    metrics: TskvSourceMetrics,
-    super_version: Option<Arc<SuperVersion>>,
-    series_ids: Arc<Vec<u32>>,
-    start: usize,
-    end: usize,
-    batch_size: usize,
-
-    i: usize,
-    columns: Vec<CursorPtr>,
-    is_finished: bool,
-}
-
-impl SeriesGroupRowIterator {
-    pub async fn next(&mut self) -> Option<Result<Vec<ArrayRef>>> {
-        if self.is_finished {
-            return None;
-        }
-
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
-        let mut builders = RowIterator::build_record_builders(self.query_option.as_ref());
-        timer.done();
-
-        for _ in 0..self.batch_size {
-            match self.next_row(&mut builders).await {
-                Ok(Some(_)) => {}
-                Ok(None) => {
-                    self.is_finished = true;
-                    break;
-                }
-                Err(err) => return Some(Err(err)),
-            };
-        }
-
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
-        let mut cols = Vec::with_capacity(builders.len());
-        for item in builders.iter_mut() {
-            cols.push(item.ptr.finish())
-        }
-        timer.done();
-
-        Some(Ok(cols))
-    }
-}
-
-impl SeriesGroupRowIterator {
-    async fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
+    async fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
         if self.query_option.aggregates.is_some() {
             self.collect_aggregate_row_data(builder).await
         } else {
@@ -881,7 +723,7 @@ impl SeriesGroupRowIterator {
     }
 
     async fn next_series(&mut self) -> Result<Option<()>> {
-        if self.i >= self.end {
+        if self.i >= self.series_ids.len() {
             return Ok(None);
         }
         self.build_series_columns(self.series_ids[self.i]).await?;
@@ -1018,10 +860,7 @@ impl SeriesGroupRowIterator {
         })
     }
 
-    async fn collect_row_data(
-        &mut self,
-        builder: &mut [ArrayBuilderPtr],
-    ) -> Result<Option<()>, Error> {
+    async fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
         trace::trace!("======collect_row_data=========");
         let timer = self.metrics.elapsed_field_scan().timer();
 
@@ -1123,7 +962,7 @@ impl SeriesGroupRowIterator {
     async fn collect_aggregate_row_data(
         &mut self,
         builder: &mut [ArrayBuilderPtr],
-    ) -> Result<Option<()>, Error> {
+    ) -> Result<Option<()>> {
         if self.is_finished {
             return Ok(None);
         }
@@ -1174,5 +1013,46 @@ impl SeriesGroupRowIterator {
             }
             _ => Ok(None),
         }
+    }
+}
+
+impl RowIterator {
+    pub async fn next(&mut self) -> Option<Result<RecordBatch>> {
+        if self.is_finished {
+            return None;
+        }
+
+        let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        let mut builders = Self::build_record_builders(self.query_option.as_ref());
+        timer.done();
+
+        for _ in 0..self.query_option.batch_size {
+            match self.next_row(&mut builders).await {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    self.is_finished = true;
+                    break;
+                }
+                Err(err) => return Some(Err(err)),
+            };
+        }
+
+        let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        let result = {
+            let mut cols = Vec::with_capacity(builders.len());
+            for item in builders.iter_mut() {
+                cols.push(item.ptr.finish())
+            }
+
+            match RecordBatch::try_new(self.query_option.df_schema.clone(), cols) {
+                Ok(batch) => Some(Ok(batch)),
+                Err(err) => Some(Err(Error::CommonError {
+                    reason: format!("iterator fail, {}", err),
+                })),
+            }
+        };
+        timer.done();
+
+        result
     }
 }
