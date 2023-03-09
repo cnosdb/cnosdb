@@ -10,7 +10,8 @@ use models::meta_data::{
 };
 use models::oid::Oid;
 use models::schema::{
-    DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
+    DatabaseSchema, ExternalTableSchema, TableColumn, TableSchema, Tenant, TenantOptions,
+    TskvTableSchema,
 };
 use tonic::transport::Channel;
 
@@ -112,7 +113,12 @@ impl MetaClient for MockMetaClient {
         db: &str,
         table: &str,
     ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
-        Ok(Some(Arc::new(TskvTableSchema::default())))
+        Ok(Some(Arc::new(TskvTableSchema::new(
+            "cnosdb".into(),
+            "public".into(),
+            "test".into(),
+            vec![TableColumn::new_time_column(0)],
+        ))))
     }
 
     fn get_external_table_schema(

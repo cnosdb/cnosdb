@@ -70,14 +70,15 @@ use spi::query::ast::{
 };
 use spi::query::datasource::{self, UriSchema};
 use spi::query::logical_planner::{
-    parse_connection_options, sql_options_to_tenant_options, sql_options_to_user_options,
-    AlterDatabase, AlterTable, AlterTableAction, AlterTenant, AlterTenantAction,
-    AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction, ChecksumGroup,
-    CompactVnode, CopyOptions, CopyOptionsBuilder, CopyVnode, CreateDatabase, CreateRole,
-    CreateTable, CreateTenant, CreateUser, DDLPlan, DatabaseObjectType, DescribeDatabase,
-    DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode,
-    FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType, GrantRevoke, LogicalPlanner,
-    MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan, TenantObjectType,
+    parse_connection_options, sql_options_to_map, sql_options_to_tenant_options,
+    sql_options_to_user_options, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
+    AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction,
+    ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder, CopyVnode, CreateDatabase,
+    CreateRole, CreateStreamTable, CreateTable, CreateTenant, CreateUser, DDLPlan,
+    DatabaseObjectType, DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject,
+    DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
+    GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan,
+    TenantObjectType,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -168,6 +169,9 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             ExtStatement::ShowStreams(_) => Err(QueryError::NotImplemented {
                 err: "ShowStreams Planner.".to_string(),
             }),
+            ExtStatement::CreateStreamTable(stmt) => {
+                self.create_stream_table_to_plan(stmt, session)
+            }
         }
     }
 
@@ -1424,6 +1428,56 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         Ok(PlanWithPrivileges {
             plan,
             privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
+    fn create_stream_table_to_plan(
+        &self,
+        stmt: Statement,
+        session: &SessionCtx,
+    ) -> Result<PlanWithPrivileges> {
+        if let Statement::CreateTable {
+            if_not_exists,
+            name,
+            columns,
+            with_options,
+            engine,
+            ..
+        } = stmt
+        {
+            let stream_type = engine
+                .ok_or_else(|| QueryError::Analyzer {
+                    err: "Engine not found.".to_string(),
+                })?
+                .to_ascii_lowercase();
+
+            let resolved_table = object_name_to_resolved_table(session, name)?;
+            let database_name = resolved_table.database().to_string();
+
+            let extra_options = sql_options_to_map(&with_options);
+
+            let schema = self.df_planner.build_schema(columns)?;
+
+            let plan = Plan::DDL(DDLPlan::CreateStreamTable(CreateStreamTable {
+                if_not_exists,
+                name: resolved_table,
+                schema,
+                stream_type,
+                extra_options,
+            }));
+
+            // privilege
+            return Ok(PlanWithPrivileges {
+                plan,
+                privileges: vec![Privilege::TenantObject(
+                    TenantObjectPrivilege::Database(DatabasePrivilege::Full, Some(database_name)),
+                    Some(*session.tenant_id()),
+                )],
+            });
+        }
+
+        Err(QueryError::Internal {
+            reason: format!("CreateStreamTable: {stmt}"),
         })
     }
 

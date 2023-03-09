@@ -22,6 +22,7 @@ pub enum ExtStatement {
 
     CreateExternalTable(CreateExternalTable),
     CreateTable(CreateTable),
+    CreateStreamTable(Statement),
     CreateDatabase(CreateDatabase),
     CreateTenant(CreateTenant),
     CreateUser(CreateUser),

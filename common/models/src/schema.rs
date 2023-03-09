@@ -58,7 +58,7 @@ impl TableSchema {
         match self {
             TableSchema::TsKvTableSchema(schema) => schema.name.clone(),
             TableSchema::ExternalTableSchema(schema) => schema.name.clone(),
-            TableSchema::StreamTableSchema(schema) => schema.tenant().into(),
+            TableSchema::StreamTableSchema(schema) => schema.name().into(),
         }
     }
 
