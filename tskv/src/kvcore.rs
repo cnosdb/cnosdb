@@ -28,7 +28,7 @@ use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceT
 use crate::database::Database;
 use crate::engine::{Engine, EngineRef};
 use crate::error::{self, Result};
-use crate::file_system::file_manager::{self};
+use crate::file_system::file_manager;
 use crate::index::ts_index;
 use crate::iterator::{self, RowIterator};
 use crate::kv_option::{Options, StorageOptions};
@@ -163,6 +163,7 @@ impl TsKv {
                 meta,
                 opt,
                 runtime,
+                memory_pool,
                 flush_task_sender,
                 global_seq_task_sender,
                 compact_task_sender,

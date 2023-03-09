@@ -10,7 +10,7 @@ use minivec::{mini_vec, MiniVec};
 use models::predicate::domain::TimeRange;
 use models::schema::{TableColumn, TskvTableSchema};
 use models::utils::split_id;
-use models::{utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
+use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use protos::models as fb_models;
 
@@ -428,7 +428,7 @@ impl MemCache {
 
     pub fn delete_columns(&self, field_ids: &[FieldId]) {
         for fid in field_ids {
-            let (column_id, sid) = utils::split_id(*fid);
+            let (column_id, sid) = split_id(*fid);
             let index = (sid as usize) % self.part_count;
             let part = self.partions[index].read();
             if let Some(data) = part.get(&sid) {
