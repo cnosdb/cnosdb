@@ -162,6 +162,7 @@ impl TsKv {
                 meta,
                 opt,
                 runtime,
+                memory_pool,
                 flush_task_sender,
                 global_seq_task_sender,
                 compact_task_sender,
