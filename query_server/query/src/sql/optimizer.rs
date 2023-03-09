@@ -135,6 +135,7 @@ mod test {
     }
 
     fn test_table_scan(with_nonempty_database: bool) -> Result<LogicalPlan> {
+        #[allow(clippy::inconsistent_digit_grouping)]
         let db_info = if with_nonempty_database {
             DatabaseInfo {
                 buckets: vec![

@@ -93,7 +93,6 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         let metrics = TableScanMetrics::new(&metrics, partition, Some(context.memory_pool()));
         let query_opt = QueryOption::new(
             100_usize,
-            self.table_schema.tenant.clone(),
             Split::new(
                 0,
                 self.table_schema.clone(),

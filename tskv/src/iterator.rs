@@ -16,13 +16,14 @@ use datafusion::physical_plan::metrics::{
     self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
 };
 use minivec::MiniVec;
-use models::predicate::domain::TimeRange;
+use models::meta_data::VnodeId;
+use models::predicate::domain::{QueryArgs, QueryExpr, TimeRange};
 use models::predicate::Split;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD};
 use models::utils::{min_num, unite_id};
 use models::{FieldId, SeriesId, ValueType};
 use parking_lot::RwLock;
-use snafu::ResultExt;
+use protos::kv_service::QueryRecordBatchRequest;
 use tokio::runtime::Runtime;
 use tokio::time::Instant;
 use trace::{debug, error};
@@ -33,7 +34,7 @@ use crate::error::Result;
 use crate::memcache::DataType;
 use crate::tseries_family::SuperVersion;
 use crate::tsm::{BlockMetaIterator, DataBlock, TsmReader};
-use crate::{error, Error};
+use crate::Error;
 
 pub type CursorPtr = Box<dyn Cursor>;
 
@@ -312,20 +313,17 @@ impl TskvSourceMetrics {
 #[derive(Debug, Clone)]
 pub struct QueryOption {
     pub batch_size: usize,
-    pub tenant: String,
+    pub split: Split,
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchema,
     pub metrics: TskvSourceMetrics,
     pub aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
-
-    pub split: Split,
 }
 
 impl QueryOption {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         batch_size: usize,
-        tenant: String,
         split: Split,
         aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
         df_schema: SchemaRef,
@@ -334,13 +332,36 @@ impl QueryOption {
     ) -> Self {
         Self {
             batch_size,
-            tenant,
             split,
             aggregates,
             df_schema,
             table_schema,
             metrics,
         }
+    }
+
+    pub fn to_query_record_batch_request(
+        &self,
+        vnode_ids: Vec<VnodeId>,
+    ) -> Result<QueryRecordBatchRequest, models::Error> {
+        let args = QueryArgs {
+            vnode_ids,
+            limit: self.split.limit(),
+            batch_size: self.batch_size,
+        };
+        let expr = QueryExpr {
+            split: self.split.clone(),
+            df_schema: self.df_schema.as_ref().clone(),
+            table_schema: self.table_schema.clone(),
+        };
+
+        let args_bytes = QueryArgs::encode(&args)?;
+        let expr_bytes = QueryExpr::encode(&expr)?;
+
+        Ok(QueryRecordBatchRequest {
+            args: args_bytes,
+            expr: expr_bytes,
+        })
     }
 }
 
@@ -578,7 +599,7 @@ pub struct RowIterator {
     runtime: Arc<Runtime>,
     engine: EngineRef,
     query_option: Arc<QueryOption>,
-    vnode_id: u32,
+    vnode_id: VnodeId,
     metrics: TskvSourceMetrics,
 
     /// Super version of vnode_id, maybe None.
@@ -598,11 +619,11 @@ impl RowIterator {
         runtime: Arc<Runtime>,
         engine: EngineRef,
         query_option: QueryOption,
-        vnode_id: u32,
+        vnode_id: VnodeId,
     ) -> Result<Self> {
         let super_version = engine
             .get_db_version(
-                &query_option.tenant,
+                &query_option.table_schema.tenant,
                 &query_option.table_schema.db,
                 vnode_id,
             )
@@ -610,14 +631,13 @@ impl RowIterator {
 
         let series_ids = engine
             .get_series_id_by_filter(
-                vnode_id,
-                &query_option.tenant,
+                &query_option.table_schema.tenant,
                 &query_option.table_schema.db,
                 &query_option.table_schema.name,
-                &query_option.split.tags_filter(),
+                vnode_id,
+                query_option.split.tags_filter(),
             )
-            .await
-            .context(error::IndexErrSnafu)?;
+            .await?;
 
         debug!(
             "Iterating rows: vnode_id={}, serie_ids_count={}",
@@ -738,13 +758,12 @@ impl RowIterator {
         if let Some(key) = self
             .engine
             .get_series_key(
-                &self.query_option.tenant,
+                &self.query_option.table_schema.tenant,
                 &self.query_option.table_schema.db,
                 self.vnode_id,
                 series_id,
             )
-            .await
-            .context(error::IndexErrSnafu)?
+            .await?
         {
             self.columns.clear();
             for item in self.query_option.table_schema.columns() {

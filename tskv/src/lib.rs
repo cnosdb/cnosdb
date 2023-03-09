@@ -34,3 +34,10 @@ mod wal;
 pub type ColumnFileId = u64;
 type TseriesFamilyId = u32;
 type LevelId = u32;
+
+pub fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) -> String {
+    match &req.meta {
+        Some(meta) => meta.tenant.clone(),
+        None => models::schema::DEFAULT_CATALOG.to_string(),
+    }
+}

@@ -94,6 +94,8 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
             .service(raft_api::metrics)
             .service(api::write)
             .service(api::read)
+            .service(api::dump)
+            .service(api::restore)
             .service(api::debug)
             .service(api::watch)
             .service(api::pprof_test)

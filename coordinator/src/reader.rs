@@ -8,10 +8,8 @@ use datafusion::arrow::record_batch::RecordBatch;
 use meta::MetaRef;
 use metrics::count::U64Counter;
 use models::meta_data::VnodeInfo;
-use models::predicate::domain::{QueryArgs, QueryExpr};
 use models::utils::now_timestamp;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
-use protos::kv_service::QueryRecordBatchRequest;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -73,7 +71,10 @@ impl QueryExecutor {
         sender: Sender<CoordinatorResult<RecordBatch>>,
         metrics: Arc<CoordServiceMetrics>,
     ) -> Self {
-        let data_out = metrics.data_out(option.tenant.as_str(), option.table_schema.db.as_str());
+        let data_out = metrics.data_out(
+            option.table_schema.tenant.as_str(),
+            option.table_schema.db.as_str(),
+        );
         Self {
             option,
             kv_inst,
@@ -82,6 +83,7 @@ impl QueryExecutor {
             data_out,
         }
     }
+
     pub async fn execute(&self) -> CoordinatorResult<()> {
         let mut routines = vec![];
         let mapping = self.map_vnode().await?;
@@ -164,30 +166,12 @@ impl QueryExecutor {
         node_id: u64,
         vnodes: Vec<VnodeInfo>,
     ) -> CoordinatorResult<()> {
-        let mut vnode_ids = Vec::with_capacity(vnodes.len());
-        for item in vnodes.iter() {
-            vnode_ids.push(item.id);
-        }
-        let args = QueryArgs {
-            vnode_ids,
-            tenant: self.option.tenant.clone(),
-            limit: self.option.split.limit(),
-            batch_size: self.option.batch_size,
-        };
-        let expr = QueryExpr {
-            split: self.option.split.clone(),
-            df_schema: self.option.df_schema.as_ref().clone(),
-            table_schema: self.option.table_schema.clone(),
+        let cmd = {
+            let vnode_ids = vnodes.iter().map(|v| v.id).collect::<Vec<_>>();
+            let req = self.option.to_query_record_batch_request(vnode_ids)?;
+            tonic::Request::new(req)
         };
 
-        let args_bytes = QueryArgs::encode(&args)?;
-        let expr_bytes = QueryExpr::encode(&expr)?;
-        let cmd = tonic::Request::new(QueryRecordBatchRequest {
-            args: args_bytes,
-            expr: expr_bytes,
-        });
-
-        // .map_err(|e| CoordinatorError::FailoverNode { id: node_id })?;
         let channel = self
             .meta_manager
             .admin_meta()
@@ -215,7 +199,7 @@ impl QueryExecutor {
 
             self.meta_manager
                 .tenant_manager()
-                .limiter(self.option.tenant.as_str())
+                .limiter(self.option.table_schema.tenant.as_str())
                 .await
                 .check_data_out(record.get_array_memory_size())
                 .await?;
@@ -280,10 +264,10 @@ impl QueryExecutor {
         let meta = self
             .meta_manager
             .tenant_manager()
-            .tenant_meta(&self.option.tenant)
+            .tenant_meta(&self.option.table_schema.tenant)
             .await
             .ok_or(CoordinatorError::TenantNotFound {
-                name: self.option.tenant.clone(),
+                name: self.option.table_schema.tenant.clone(),
             })?;
 
         let mut vnode_mapping: HashMap<u64, Vec<VnodeInfo>> = HashMap::new();
@@ -320,10 +304,10 @@ impl QueryExecutor {
         let meta = self
             .meta_manager
             .tenant_manager()
-            .tenant_meta(&self.option.tenant)
+            .tenant_meta(&self.option.table_schema.tenant)
             .await
             .ok_or(CoordinatorError::TenantNotFound {
-                name: self.option.tenant.clone(),
+                name: self.option.table_schema.tenant.clone(),
             })?;
 
         let mut vnode_mapping: HashMap<u64, Vec<VnodeInfo>> = HashMap::new();

@@ -102,5 +102,5 @@ pub fn split_time_range(
         })
         .collect::<Vec<_>>();
 
-    return final_time_ranges;
+    final_time_ranges
 }

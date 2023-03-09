@@ -13,7 +13,6 @@ use trace::debug;
 
 use crate::engine::{Engine, EngineRef};
 use crate::error::Result;
-use crate::index::IndexResult;
 use crate::iterator::RowIterator;
 use crate::kv_option::StorageOptions;
 use crate::summary::VersionEdit;
@@ -96,12 +95,12 @@ impl Engine for MockEngine {
 
     async fn get_series_id_by_filter(
         &self,
-        id: u32,
         tenant: &str,
         db: &str,
         tab: &str,
+        id: SeriesId,
         filter: &ColumnDomains<String>,
-    ) -> IndexResult<Vec<u32>> {
+    ) -> Result<Vec<SeriesId>> {
         Ok(vec![])
     }
 
@@ -111,7 +110,7 @@ impl Engine for MockEngine {
         db: &str,
         vnode_id: u32,
         sid: u32,
-    ) -> IndexResult<Option<SeriesKey>> {
+    ) -> Result<Option<SeriesKey>> {
         Ok(None)
     }
 

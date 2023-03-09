@@ -94,7 +94,6 @@ impl Case {
 
         let mut no_diff = true;
         let mut diff_buf = String::with_capacity(512);
-        let mut all_diff_outs = vec![];
         for (i, (l, r)) in origins.iter().zip(outs.iter()).enumerate() {
             let (mut ll, mut rl) = (1, 1);
             let mut is_diff = false;
@@ -119,7 +118,6 @@ impl Case {
             }
             if is_diff {
                 no_diff = false;
-                all_diff_outs.push(i);
                 println!(
                     r#"====================
 Case: {} [{}]
@@ -135,16 +133,19 @@ Case: {} [{}]
                 );
             }
         }
-        if !all_diff_outs.is_empty() {
-            diff_buf.clear();
-            for i in all_diff_outs {
-                diff_buf.push_str("====================\n");
-                diff_buf.push_str(format!("Query [{}]\n--------------------\n", i + 1).as_str());
-                diff_buf.push_str(format!("{}", outs[i]).as_str());
-            }
-            diff_buf.push_str("====================");
-            fs::write(&self.out_file_path, diff_buf).await.unwrap();
+
+        if !no_diff {
+            let out_put = outs
+                .iter()
+                .map(|r| r.to_string())
+                .collect::<Vec<String>>()
+                .join("\n");
+
+            fs::write(&self.out_file_path, out_put.as_bytes())
+                .await
+                .expect("write out_file_path error");
         }
+
         no_diff
     }
 

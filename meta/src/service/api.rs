@@ -33,6 +33,48 @@ pub async fn write(
     Ok(Json(response))
 }
 
+// curl -XPOST http://127.0.0.1:21001/dump --o ./meta_dump.data
+// curl -XPOST http://127.0.0.1:21001/restore --data-binary "@./meta_dump.data"
+#[get("/dump")]
+pub async fn dump(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+    let sm = app.store.state_machine.read().await;
+    let mut response = "".to_string();
+    for res in sm.db.iter() {
+        let (k, v) = res.unwrap();
+        let k = String::from_utf8((*k).to_owned()).unwrap();
+        let v = String::from_utf8((*v).to_owned()).unwrap();
+        response = response + &format!("{}: {}\n", k, v);
+    }
+
+    Ok(response)
+}
+
+#[post("/restore")]
+pub async fn restore(app: Data<MetaApp>, data: String) -> actix_web::Result<impl Responder> {
+    info!("restore data length:{}", data.len());
+
+    let mut count = 0;
+    let lines: Vec<&str> = data.split('\n').collect();
+    for line in lines.iter() {
+        let strs: Vec<&str> = line.splitn(2, ": ").collect();
+        if strs.len() != 2 {
+            continue;
+        }
+
+        let command = WriteCommand::Set {
+            key: strs[0].to_string(),
+            value: strs[1].to_string(),
+        };
+        if let Err(err) = app.raft.client_write(command).await {
+            return Ok(err.to_string());
+        }
+
+        count += 1;
+    }
+
+    Ok(format!("Restore Data Success, Total: {} ", count))
+}
+
 #[post("/watch")]
 pub async fn watch(
     app: Data<MetaApp>,

@@ -8,7 +8,6 @@ use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 
 use crate::error::Result;
-use crate::index::IndexResult;
 use crate::iterator::{self, RowIterator};
 use crate::kv_option::StorageOptions;
 use crate::tseries_family::SuperVersion;
@@ -71,12 +70,12 @@ pub trait Engine: Send + Sync + Debug {
 
     async fn get_series_id_by_filter(
         &self,
-        id: u32,
         tenant: &str,
         db: &str,
         tab: &str,
+        vnode_id: SeriesId,
         filter: &ColumnDomains<String>,
-    ) -> IndexResult<Vec<u32>>;
+    ) -> Result<Vec<SeriesId>>;
 
     async fn get_series_key(
         &self,
@@ -84,7 +83,7 @@ pub trait Engine: Send + Sync + Debug {
         db: &str,
         vnode_id: u32,
         sid: SeriesId,
-    ) -> IndexResult<Option<SeriesKey>>;
+    ) -> Result<Option<SeriesKey>>;
 
     async fn get_db_version(
         &self,
@@ -107,7 +106,7 @@ pub trait Engine: Send + Sync + Debug {
         tenant: &str,
         database: &str,
         vnode_id: u32,
-        mut summary: VersionEdit,
+        summary: VersionEdit,
     ) -> Result<()>;
 
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;

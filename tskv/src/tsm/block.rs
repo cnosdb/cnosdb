@@ -475,7 +475,7 @@ impl DataBlock {
             return None;
         }
         if !has_max {
-            max_idx = max_idx - 1;
+            max_idx -= 1;
         }
         min_idx = min(min_idx, ts_sli.len() - 1);
         max_idx = min(max_idx, ts_sli.len() - 1);
