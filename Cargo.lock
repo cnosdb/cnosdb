@@ -3309,7 +3309,6 @@ dependencies = [
  "libc",
  "license",
  "line_protocol",
- "mem_allocator",
  "memory_pool",
  "meta",
  "metrics",
@@ -3334,6 +3333,7 @@ dependencies = [
  "spi",
  "surf",
  "sys-info",
+ "tikv-jemallocator",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -3341,6 +3341,7 @@ dependencies = [
  "tracing-futures",
  "tskv",
  "ureq",
+ "utils",
  "warp",
 ]
 
@@ -3372,16 +3373,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6365506850d44bff6e2fbcb5176cf63650e48bd45ef2fe2665ae1570e0f4b9ca"
 dependencies = [
  "digest 0.10.6",
-]
-
-[[package]]
-name = "mem_allocator"
-version = "2.2.0"
-dependencies = [
- "chrono",
- "libc",
- "tikv-jemalloc-ctl",
- "tikv-jemalloc-sys",
 ]
 
 [[package]]
@@ -3469,6 +3460,7 @@ dependencies = [
  "tracing",
  "tracing-futures",
  "ureq",
+ "utils",
  "uuid",
  "walkdir",
 ]
@@ -5835,6 +5827,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tikv-jemallocator"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20612db8a13a6c06d57ec83953694185a367e16945f66565e8028d2c0bd76979"
+dependencies = [
+ "libc",
+ "tikv-jemalloc-sys",
+]
+
+[[package]]
 name = "time"
 version = "0.1.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6522,6 +6524,12 @@ checksum = "936e4b492acfd135421d8dca4b1aa80a7bfc26e702ef3af710e0752684df5372"
 [[package]]
 name = "utils"
 version = "2.2.0"
+dependencies = [
+ "libc",
+ "pprof",
+ "tikv-jemalloc-ctl",
+ "tokio",
+]
 
 [[package]]
 name = "uuid"

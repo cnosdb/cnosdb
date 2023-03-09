@@ -13,6 +13,7 @@ path = "src/bin/main.rs"
 config = { path = "../config" }
 trace = { path = "../common/trace" }
 models = { path = "../common/models" }
+utils = { path = "../common/utils" }
 error_code = {path = "../common/error_code"}
 limiter_bucket = {path = "../common/limiter_bucket"}
 
