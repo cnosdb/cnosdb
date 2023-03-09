@@ -3,8 +3,9 @@
 --#SLEEP=100
 DROP DATABASE IF EXISTS createtable;
 CREATE DATABASE createtable WITH TTL '100000d';
-CREATE TABLE createtable."tesT";
+CREATE TABLE createtable."tesT"(column1 BIGINT,);
 CREATE TABLE createtable.tesT;
+CREATE TABLE createtable.tesT(column1 BIGINT,);
 SHOW TABLES;
 
 CREATE TABLE test0(
