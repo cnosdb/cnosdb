@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use mem_allocator::Jemalloc;
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
@@ -80,7 +79,7 @@ enum SubCommand {
 }
 
 #[global_allocator]
-static A: Jemalloc = Jemalloc;
+static A: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 /// To run cnosdb-cli:
 ///
