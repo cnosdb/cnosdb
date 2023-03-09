@@ -337,7 +337,7 @@ impl HttpService {
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("debug" / "jeprof").and_then(|| async move {
-            let res = utils::pprof_tools::gernate_jeprof();
+            let res = utils::pprof_tools::gernate_jeprof().await;
             info!("debug jeprof: {:?}", res);
             match res {
                 Ok(v) => Ok(v),

@@ -79,8 +79,8 @@ enum SubCommand {
 }
 
 #[global_allocator]
-static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-// static A: Jemalloc = Jemalloc;
+//static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+static A: mem_allocator::Jemalloc = mem_allocator::Jemalloc;
 
 /// To run cnosdb-cli:
 ///

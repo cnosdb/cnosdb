@@ -17,7 +17,7 @@ pub async fn gernate_pprof() -> Result<String, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("get current time")
         .as_millis();
-    let profile_name = format!("/tmp/profile_{}.pb", now_time);
+    let profile_name = format!("/tmp/cpu_profile_{}.pb", now_time);
     let flamegraph_name = format!("/tmp/flamegraph_{}.svg", now_time);
     if let Ok(report) = guard.report().build() {
         let profile = report.pprof().map_err(|e| e.to_string())?;
@@ -43,15 +43,20 @@ pub async fn gernate_pprof() -> Result<String, String> {
 // CARGO_FEATURE_PROFILING=true
 const PROF_ACTIVE: &[u8] = b"prof.active\0";
 const PROF_DUMP: &[u8] = b"prof.dump\0";
-const PROFILE_OUTPUT_FILE_OS_PATH: &[u8] = b"/tmp/mem_profile.out\0";
+const PROFILE_OUTPUT_FILE: &[u8] = b"/tmp/mem_profile.out\0";
+const PROFILE_OUTPUT_FILE_STR: &str = "/tmp/mem_profile.out";
 
-pub fn gernate_jeprof() -> Result<String, String> {
+pub async fn gernate_jeprof() -> Result<String, String> {
     set_prof_active(true)?;
-    std::thread::sleep(std::time::Duration::from_secs(10));
+    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+    let _ = tokio::fs::remove_file(PROFILE_OUTPUT_FILE_STR).await;
     dump_profile()?;
     set_prof_active(false)?;
 
-    Ok(format!("gernate memory profile in /tmp/mem_profile.out"))
+    Ok(format!(
+        "gernate memory profile in: {}",
+        PROFILE_OUTPUT_FILE_STR
+    ))
 }
 
 fn set_prof_active(active: bool) -> Result<(), String> {
@@ -62,7 +67,6 @@ fn set_prof_active(active: bool) -> Result<(), String> {
 
 fn dump_profile() -> Result<(), String> {
     let name = PROF_DUMP.name();
-    name.write(PROFILE_OUTPUT_FILE_OS_PATH)
-        .map_err(|e| e.to_string())?;
+    name.write(PROFILE_OUTPUT_FILE).map_err(|e| e.to_string())?;
     Ok(())
 }
