@@ -968,6 +968,30 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_create_stream(&mut self) -> Result<ExtStatement> {
+        if self.parser.parse_keyword(Keyword::TABLE) {
+            self.parse_create_stream_table()
+        } else {
+            self.parse_create_stream_query()
+        }
+    }
+
+    /// e.g.
+    /// CREATE STREAM TABLE TskvTable (
+    ///   time TIMESTAMP
+    ///   name STRING,
+    ///   driver STRING,
+    ///   load_capacity DOUBLE,
+    /// ) WITH (
+    ///   'db' = 'public',
+    ///   'table' = 'test_stream',
+    /// ) engine = tskv;
+    fn parse_create_stream_table(&mut self) -> Result<ExtStatement> {
+        Ok(ExtStatement::CreateStreamTable(
+            self.parser.parse_create_table(false, false, None)?,
+        ))
+    }
+
+    fn parse_create_stream_query(&mut self) -> Result<ExtStatement> {
         let if_not_exists =
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
@@ -1545,7 +1569,7 @@ mod tests {
     use std::ops::Deref;
 
     use datafusion::sql::sqlparser::ast::{
-        Ident, ObjectName, SetExpr, Statement, TableFactor, Value,
+        ColumnDef, Ident, ObjectName, SetExpr, Statement, TableFactor, TimezoneInfo, Value,
     };
     use spi::query::ast::{AlterTable, DropDatabaseObject, ExtStatement, ShowStreams, UriLocation};
     use spi::query::logical_planner::{DatabaseObjectType, TenantObjectType};
@@ -1558,6 +1582,18 @@ mod tests {
             .into_iter()
             .last()
             .unwrap()
+    }
+
+    fn make_column_def(name: impl Into<String>, data_type: DataType) -> ColumnDef {
+        ColumnDef {
+            name: Ident {
+                value: name.into(),
+                quote_style: None,
+            },
+            data_type,
+            collation: None,
+            options: vec![],
+        }
     }
 
     #[test]
@@ -2111,5 +2147,67 @@ mod tests {
         let expected = ExtStatement::ShowStreams(ShowStreams { verbose: true });
 
         assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn test_create_stream_table() {
+        let statement = parse_sql(
+            "CREATE STREAM TABLE TskvTable (
+            time TIMESTAMP,
+            name STRING,
+            driver STRING,
+            load_capacity DOUBLE
+          ) WITH (
+            db = 'public',
+            table = 'readings_kv',
+            event_time_column = 'time'
+          ) engine = tskv;",
+        );
+
+        match statement {
+            ExtStatement::CreateStreamTable(s) => {
+                if let Statement::CreateTable {
+                    if_not_exists,
+                    name,
+                    columns,
+                    with_options,
+                    engine,
+                    ..
+                } = s
+                {
+                    let columns_expected = vec![
+                        make_column_def("time", DataType::Timestamp(None, TimezoneInfo::None)),
+                        make_column_def("name", DataType::String),
+                        make_column_def("driver", DataType::String),
+                        make_column_def("load_capacity", DataType::Double),
+                    ];
+                    let with_options_expected = vec![
+                        SqlOption {
+                            name: "db".into(),
+                            value: Value::SingleQuotedString("public".into()),
+                        },
+                        SqlOption {
+                            name: "table".into(),
+                            value: Value::SingleQuotedString("readings_kv".into()),
+                        },
+                        SqlOption {
+                            name: "event_time_column".into(),
+                            value: Value::SingleQuotedString("time".into()),
+                        },
+                    ];
+
+                    assert!(!if_not_exists);
+                    assert_eq!("TskvTable", &name.to_string());
+                    assert_eq!(columns_expected, columns);
+                    assert_eq!(with_options_expected, with_options);
+                    assert_eq!(Some("tskv".into()), engine);
+
+                    return;
+                }
+
+                panic!("expect CreateStreamTable")
+            }
+            _ => panic!("expect CreateStream"),
+        }
     }
 }

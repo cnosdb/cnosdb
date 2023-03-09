@@ -421,6 +421,13 @@ pub enum QueryError {
     EventTimeColumnNotSpecified {
         name: String,
     },
+
+    #[snafu(display("Missing option {} of table {}", option_name, table_name))]
+    #[error_code(code = 62)]
+    MissingTableOptions {
+        option_name: String,
+        table_name: String,
+    },
 }
 
 impl From<ParserError> for QueryError {

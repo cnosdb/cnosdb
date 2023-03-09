@@ -8,12 +8,14 @@ use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::{SessionState, TaskContext};
 use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::TableProviderFilterPushDown;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
-use datafusion::physical_plan::SendableRecordBatchStream;
+use datafusion::physical_plan::{project_schema, SendableRecordBatchStream};
 use datafusion::prelude::{col, lit_timestamp_nano, Column, Expr};
 use models::predicate::domain::{Predicate, PredicateRef};
 use models::schema::TskvTableSchemaRef;
 use spi::query::datasource::stream::{PartitionStream, PartitionStreamFactory, StreamProvider};
+use spi::QueryError;
 use trace::debug;
 use tskv::iterator::TableScanMetrics;
 
@@ -25,21 +27,34 @@ pub struct TskvStreamProvider {
 
     event_time_column: Column,
     table_schema: TskvTableSchemaRef,
-    schema: SchemaRef,
+    used_schema: SchemaRef,
 }
 
 impl TskvStreamProvider {
-    pub fn new(
+    pub fn try_new(
         client: CoordinatorRef,
         event_time_column: Column,
         table_schema: TskvTableSchemaRef,
-    ) -> Self {
-        Self {
+        used_schema: SchemaRef,
+    ) -> Result<Self, QueryError> {
+        // Check whether table_schema & used_schema are consistent
+        for f in used_schema.fields() {
+            if !table_schema.contains_column(f.name()) {
+                return Err(QueryError::ColumnNotExists {
+                    table: table_schema.name.clone(),
+                    column: f.name().into(),
+                });
+            }
+        }
+        // Make sure event_time_column exists
+        let _ = used_schema.index_of(&event_time_column.name)?;
+
+        Ok(Self {
             client,
             event_time_column,
-            schema: table_schema.to_arrow_schema(),
+            used_schema,
             table_schema,
-        }
+        })
     }
 }
 
@@ -62,7 +77,7 @@ impl StreamProvider for TskvStreamProvider {
     async fn create_reader_factory(
         &self,
         _state: &SessionState,
-        _projection: Option<&Vec<usize>>,
+        projection: Option<&Vec<usize>>,
         filters: &[Expr],
         agg_with_grouping: Option<&AggWithGrouping>,
         range: (Option<Self::Offset>, Self::Offset),
@@ -97,10 +112,13 @@ impl StreamProvider for TskvStreamProvider {
             ));
         }
 
+        let proj_schema = project_schema(&self.used_schema, projection)?;
+
         Ok(Arc::new(TskvPartitionStreamFactory {
             client: self.client.clone(),
             metrics: ExecutionPlanMetricsSet::default(),
             table_schema: self.table_schema.clone(),
+            proj_schema,
             filter,
         }))
     }
@@ -114,7 +132,11 @@ impl StreamProvider for TskvStreamProvider {
     }
 
     fn schema(&self) -> SchemaRef {
-        self.schema.clone()
+        self.used_schema.clone()
+    }
+
+    fn supports_filter_pushdown(&self, _filter: &Expr) -> DFResult<TableProviderFilterPushDown> {
+        Ok(TableProviderFilterPushDown::Inexact)
     }
 }
 
@@ -123,6 +145,7 @@ struct TskvPartitionStreamFactory {
     metrics: ExecutionPlanMetricsSet,
 
     table_schema: TskvTableSchemaRef,
+    proj_schema: SchemaRef,
     filter: PredicateRef,
 }
 
@@ -142,7 +165,7 @@ impl PartitionStreamFactory for TskvPartitionStreamFactory {
             client: self.client.clone(),
             metrics: self.metrics.clone(),
             table_schema: self.table_schema.clone(),
-            arrow_schema: self.table_schema.to_arrow_schema(),
+            proj_schema: self.proj_schema.clone(),
             filter: self.filter.clone(),
         }))
     }
@@ -153,13 +176,13 @@ struct TskvPartitionStream {
     metrics: ExecutionPlanMetricsSet,
 
     table_schema: TskvTableSchemaRef,
-    arrow_schema: SchemaRef,
+    proj_schema: SchemaRef,
     filter: PredicateRef,
 }
 
 impl PartitionStream for TskvPartitionStream {
     fn schema(&self) -> &SchemaRef {
-        &self.arrow_schema
+        &self.proj_schema
     }
 
     fn execute(&self, context: Arc<TaskContext>) -> DFResult<SendableRecordBatchStream> {
@@ -169,7 +192,7 @@ impl PartitionStream for TskvPartitionStream {
 
         let table_stream = TableScanStream::new(
             self.table_schema.clone(),
-            self.arrow_schema.clone(),
+            self.proj_schema.clone(),
             self.client.clone(),
             self.filter.clone(),
             batch_size,

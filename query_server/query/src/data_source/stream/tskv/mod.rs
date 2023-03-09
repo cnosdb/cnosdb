@@ -1,5 +1,29 @@
+use std::collections::HashMap;
+
+use spi::QueryError;
+
 pub mod factory;
 pub mod provider;
+
+const STREAM_DB_KEY: &str = "db";
+const STREAM_TABLE_KEY: &str = "table";
+
+pub fn get_target_db_name(options: &HashMap<String, String>) -> Option<&str> {
+    options.get(STREAM_DB_KEY).map(|e| e.as_ref())
+}
+
+pub fn get_target_table_name<'a>(
+    table: &'a str,
+    options: &'a HashMap<String, String>,
+) -> Result<&'a str, QueryError> {
+    options
+        .get(STREAM_TABLE_KEY)
+        .ok_or_else(|| QueryError::MissingTableOptions {
+            option_name: STREAM_TABLE_KEY.into(),
+            table_name: table.into(),
+        })
+        .map(|e| e.as_ref())
+}
 
 #[cfg(test)]
 mod tests {
@@ -7,7 +31,7 @@ mod tests {
     use std::sync::Arc;
 
     use coordinator::service_mock::MockCoordinator;
-    use datafusion::arrow::datatypes::Schema;
+    use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
     use datafusion::logical_expr::{Extension, LogicalPlan, TableSource};
     use datafusion::prelude::Column;
     use meta::meta_client_mock::MockMetaClient;
@@ -16,6 +40,7 @@ mod tests {
     use spi::QueryError;
 
     use crate::data_source::stream::tskv::factory::TskvStreamProviderFactory;
+    use crate::data_source::stream::tskv::{STREAM_DB_KEY, STREAM_TABLE_KEY};
     use crate::data_source::table_source::TableSourceAdapter;
     use crate::extension::logical::plan_node::stream_scan::StreamScanPlanNode;
     use crate::extension::EVENT_TIME_COLUMN;
@@ -40,21 +65,31 @@ mod tests {
         let provider = manager.create_provider(meta.clone(), &table);
         assert!(matches!(
             provider,
-            Err(QueryError::EventTimeColumnNotSpecified { .. })
+            Err(QueryError::MissingTableOptions { .. })
         ));
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "time",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            false,
+        )]));
 
         let table = StreamTable::new(
             "tenant",
             "db",
             "name",
-            Arc::new(Schema::empty()),
+            schema.clone(),
             "tskv",
-            HashMap::from_iter([(EVENT_TIME_COLUMN.into(), "time".into())]),
+            HashMap::from_iter([
+                (EVENT_TIME_COLUMN.into(), "time".into()),
+                (STREAM_DB_KEY.into(), "db".into()),
+                (STREAM_TABLE_KEY.into(), "name".into()),
+            ]),
         );
         let provider = manager.create_provider(meta, &table)?;
 
         assert_eq!(provider.event_time_column(), &Column::from_name("time"));
-        assert_eq!(provider.schema(), Arc::new(Schema::empty()));
+        assert_eq!(provider.schema(), schema);
 
         let source = TableSourceAdapter::try_new(1, "tenant", "db", "name", provider)?;
 
