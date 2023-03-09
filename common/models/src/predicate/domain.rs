@@ -90,8 +90,11 @@ impl TimeRange {
         None
     }
 
-    pub fn total_time(&self) -> i64 {
-        self.max_ts - self.min_ts
+    pub fn total_time(&self) -> u64 {
+        if self.max_ts < self.min_ts {
+            return 0;
+        }
+        (self.max_ts as i128 - self.min_ts as i128) as u64
     }
 
     #[inline(always)]

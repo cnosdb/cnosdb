@@ -15,6 +15,7 @@ use datafusion::logical_expr::{
     aggregate_function, Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
 };
 use datafusion::optimizer::utils::split_conjunction;
+use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use meta::error::MetaError;
 use models::meta_data::DatabaseInfo;
@@ -55,6 +56,9 @@ impl ClusterTable {
             predicate: predicate.clone(),
         };
         let splits = self.split_manager.splits(ctx, table_layout);
+        if splits.is_empty() {
+            return Ok(Arc::new(EmptyExec::new(false, proj_schema)));
+        }
 
         Ok(Arc::new(TskvExec::new(
             self.schema.clone(),

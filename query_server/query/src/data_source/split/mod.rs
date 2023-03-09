@@ -67,40 +67,40 @@ pub fn split_time_range(
 
     let total_time = time_ranges
         .iter()
-        .map(|e| e.total_time() as usize)
-        .reduce(|l, r| l + r);
+        .map(|e| e.total_time())
+        .reduce(|l, r| l + r)
+        .unwrap_or(0);
 
     debug!(
         "time_ranges: {:?}\ntotal_time: {:?}",
         time_ranges, total_time
     );
 
-    if let Some(total_time) = total_time {
-        let actual_partitions = cmp::min(total_time, target_partitions);
-        let range_per_partition = (total_time / actual_partitions) as i64;
-
-        debug!("range_per_partition: {}", range_per_partition);
-
-        let final_time_ranges = time_ranges
-            .iter()
-            .flat_map(|tr| {
-                let mut time_ranges = vec![];
-                let mut current_ts = tr.min_ts;
-                while current_ts < tr.max_ts - range_per_partition {
-                    let time_range =
-                        TimeRange::new(current_ts, current_ts + (range_per_partition - 1));
-                    time_ranges.push(time_range);
-                    current_ts += range_per_partition;
-                }
-
-                let time_range = TimeRange::new(current_ts, tr.max_ts);
-                time_ranges.push(time_range);
-                time_ranges
-            })
-            .collect::<Vec<_>>();
-
-        return final_time_ranges;
+    if total_time == 0 {
+        return vec![];
     }
 
-    vec![]
+    let actual_partitions = cmp::min(total_time, target_partitions as u64);
+    let range_per_partition = (total_time / actual_partitions) as i64;
+
+    debug!("range_per_partition: {}", range_per_partition);
+
+    let final_time_ranges = time_ranges
+        .iter()
+        .flat_map(|tr| {
+            let mut time_ranges = vec![];
+            let mut current_ts = tr.min_ts;
+            while current_ts < tr.max_ts - range_per_partition {
+                let time_range = TimeRange::new(current_ts, current_ts + (range_per_partition - 1));
+                time_ranges.push(time_range);
+                current_ts += range_per_partition;
+            }
+
+            let time_range = TimeRange::new(current_ts, tr.max_ts);
+            time_ranges.push(time_range);
+            time_ranges
+        })
+        .collect::<Vec<_>>();
+
+    return final_time_ranges;
 }
