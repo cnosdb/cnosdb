@@ -1,0 +1,50 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS explain_stream_query; --
+200 OK
+
+-- EXECUTE SQL: CREATE DATABASE explain_stream_query; --
+200 OK
+
+-- EXECUTE SQL: CREATE TABLE test0( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
+200 OK
+
+-- EXECUTE SQL: CREATE STREAM TABLE TskvTable ( time TIMESTAMP, column1 STRING, column6 STRING ) WITH ( db = 'explain_stream_query', table = 'test0', event_time_column = 'time' ) engine = tskv; --
+200 OK
+
+-- EXECUTE SQL: CREATE STREAM TABLE TskvTableWithoutSchema WITH ( db = 'explain_stream_query', table = 'test0', event_time_column = 'time' ) engine = tskv; --
+200 OK
+
+-- EXECUTE SQL: CREATE STREAM TABLE TskvTableWithoutDB WITH ( table = 'test0', event_time_column = 'time' ) engine = tskv; --
+200 OK
+
+-- EXECUTE SQL: CREATE STREAM TABLE TskvTableWithoutTable WITH ( db = 'explain_stream_query', event_time_column = 'time' ) engine = tskv; --
+200 OK
+
+-- EXECUTE SQL: CREATE STREAM TABLE TskvTableWithoutWM WITH ( db = 'explain_stream_query', table = 'test0' ) engine = tskv; --
+422 Unprocessable Entity
+{"error_code":"010062","error_message":"Missing option event_time_column of table tskvtablewithoutwm"}
+-- ERROR:  --
+
+-- EXECUTE SQL: select * from information_schema.tables where table_database = 'explain_stream_query' order by table_name; --
+200 OK
+table_tenant,table_database,table_name,table_type,table_engine,table_options
+cnosdb,explain_stream_query,test0,BASE TABLE,TSKV,TODO
+cnosdb,explain_stream_query,tskvtable,BASE TABLE,STREAM,TODO
+cnosdb,explain_stream_query,tskvtablewithoutdb,BASE TABLE,STREAM,TODO
+cnosdb,explain_stream_query,tskvtablewithoutschema,BASE TABLE,STREAM,TODO
+cnosdb,explain_stream_query,tskvtablewithouttable,BASE TABLE,STREAM,TODO
+
+-- EXECUTE SQL: explain select * from TskvTable; --
+200 OK
+plan_type,plan
+logical_plan,"Projection: tskvtable.time, tskvtable.column1, tskvtable.column6
+  SubqueryAlias: tskvtable
+    Watermark: event_time=time, delay=0ms
+      StreamScan: [tskvtable.time,tskvtable.column1,tskvtable.column6]"
+
+-- EXECUTE SQL: explain select * from TskvTableWithoutSchema; --
+200 OK
+plan_type,plan
+logical_plan,"Projection: tskvtablewithoutschema.time, tskvtablewithoutschema.column6, tskvtablewithoutschema.column7, tskvtablewithoutschema.column1, tskvtablewithoutschema.column2, tskvtablewithoutschema.column3, tskvtablewithoutschema.column4, tskvtablewithoutschema.column5
+  SubqueryAlias: tskvtablewithoutschema
+    Watermark: event_time=time, delay=0ms
+      StreamScan: [tskvtablewithoutschema.time,tskvtablewithoutschema.column6,tskvtablewithoutschema.column7,tskvtablewithoutschema.column1,tskvtablewithoutschema.column2,tskvtablewithoutschema.column3,tskvtablewithoutschema.column4,tskvtablewithoutschema.column5]"

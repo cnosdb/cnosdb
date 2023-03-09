@@ -29,21 +29,19 @@ pub fn get_target_table_name<'a>(
 mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
+    use std::time::Duration;
 
     use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
-    use datafusion::logical_expr::{Extension, LogicalPlan, TableSource};
-    use datafusion::prelude::Column;
+    use datafusion::logical_expr::TableSource;
     use meta::meta_client_mock::MockMetaClient;
-    use models::schema::StreamTable;
+    use models::schema::{StreamTable, Watermark};
     use spi::query::datasource::stream::StreamProviderManager;
     use spi::QueryError;
 
     use crate::data_source::stream::tskv::factory::TskvStreamProviderFactory;
     use crate::data_source::stream::tskv::{STREAM_DB_KEY, STREAM_TABLE_KEY};
     use crate::data_source::table_source::TableSourceAdapter;
-    use crate::extension::logical::plan_node::stream_scan::StreamScanPlanNode;
-    use crate::extension::EVENT_TIME_COLUMN;
 
     #[test]
     fn test_tskv() -> Result<(), QueryError> {
@@ -59,6 +57,10 @@ mod tests {
             "name",
             Arc::new(Schema::empty()),
             "tskv",
+            Watermark {
+                column: "time".into(),
+                delay: Duration::default(),
+            },
             Default::default(),
         );
         // error EventTimeColumnNotSpecified
@@ -80,43 +82,31 @@ mod tests {
             "name",
             schema.clone(),
             "tskv",
+            Watermark {
+                column: "time".into(),
+                delay: Duration::default(),
+            },
             HashMap::from_iter([
-                (EVENT_TIME_COLUMN.into(), "time".into()),
                 (STREAM_DB_KEY.into(), "db".into()),
                 (STREAM_TABLE_KEY.into(), "name".into()),
             ]),
         );
         let provider = manager.create_provider(meta, &table)?;
 
-        assert_eq!(provider.event_time_column(), &Column::from_name("time"));
+        assert_eq!(&provider.watermark().column, "time");
         assert_eq!(provider.schema(), schema);
 
         let source = TableSourceAdapter::try_new(1, "tenant", "db", "name", provider)?;
 
         let plan = source.get_logical_plan().unwrap();
 
-        match plan {
-            LogicalPlan::Extension(Extension { node }) => {
-                let StreamScanPlanNode {
-                    table_name,
-                    projection,
-                    projected_schema,
-                    filters,
-                    agg_with_grouping,
-                    fetch,
-                    ..
-                } = node.as_any().downcast_ref::<StreamScanPlanNode>().unwrap();
+        let result = format!("{}", plan.display_indent());
 
-                assert_eq!(table_name, "name");
-                assert_eq!(projection, &None);
-                assert_eq!(filters, &vec![]);
-                assert!(agg_with_grouping.is_none());
-                assert!(fetch.is_none());
-
-                println!("{:?}", projected_schema);
-            }
-            _ => panic!("unexpected plan: {}", plan.display_indent()),
-        }
+        assert_eq!(
+            "Watermark: event_time=time, delay=0ms\
+            \n  StreamScan: [name.time]",
+            result
+        );
 
         Ok(())
     }

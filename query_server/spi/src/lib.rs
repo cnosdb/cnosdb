@@ -428,6 +428,14 @@ pub enum QueryError {
         option_name: String,
         table_name: String,
     },
+
+    #[snafu(display("Invalid option {} of table {}: {}", option_name, table_name, reason))]
+    #[error_code(code = 63)]
+    InvalidTableOption {
+        option_name: String,
+        table_name: String,
+        reason: String,
+    },
 }
 
 impl From<ParserError> for QueryError {

@@ -25,7 +25,9 @@ use models::auth::user::{UserOptions, UserOptionsBuilder};
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use models::object_reference::ResolvedTable;
 use models::oid::Oid;
-use models::schema::{DatabaseOptions, TableColumn, TenantOptions, TenantOptionsBuilder};
+use models::schema::{
+    DatabaseOptions, TableColumn, TenantOptions, TenantOptionsBuilder, Watermark,
+};
 use snafu::ResultExt;
 use tempfile::NamedTempFile;
 
@@ -263,6 +265,7 @@ pub struct CreateStreamTable {
     /// The table name
     pub name: ResolvedTable,
     pub schema: Schema,
+    pub watermark: Watermark,
     pub stream_type: String,
     pub extra_options: HashMap<String, String>,
 }

@@ -11,9 +11,9 @@ use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::logical_expr::TableProviderFilterPushDown;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::{project_schema, SendableRecordBatchStream};
-use datafusion::prelude::{col, lit_timestamp_nano, Column, Expr};
+use datafusion::prelude::{col, lit_timestamp_nano, Expr};
 use models::predicate::domain::{Predicate, PredicateRef};
-use models::schema::TskvTableSchemaRef;
+use models::schema::{TskvTableSchemaRef, Watermark};
 use spi::query::datasource::stream::{PartitionStream, PartitionStreamFactory, StreamProvider};
 use spi::QueryError;
 use trace::debug;
@@ -25,7 +25,7 @@ use crate::extension::physical::plan_node::tskv_exec::TableScanStream;
 pub struct TskvStreamProvider {
     client: CoordinatorRef,
 
-    event_time_column: Column,
+    watermark: Watermark,
     table_schema: TskvTableSchemaRef,
     used_schema: SchemaRef,
 }
@@ -33,7 +33,7 @@ pub struct TskvStreamProvider {
 impl TskvStreamProvider {
     pub fn try_new(
         client: CoordinatorRef,
-        event_time_column: Column,
+        watermark: Watermark,
         table_schema: TskvTableSchemaRef,
         used_schema: SchemaRef,
     ) -> Result<Self, QueryError> {
@@ -47,11 +47,11 @@ impl TskvStreamProvider {
             }
         }
         // Make sure event_time_column exists
-        let _ = used_schema.index_of(&event_time_column.name)?;
+        let _ = used_schema.index_of(&watermark.column)?;
 
         Ok(Self {
             client,
-            event_time_column,
+            watermark,
             used_schema,
             table_schema,
         })
@@ -63,8 +63,8 @@ impl StreamProvider for TskvStreamProvider {
     type Offset = i64;
 
     /// Event time column of stream table
-    fn event_time_column(&self) -> &Column {
-        &self.event_time_column
+    fn watermark(&self) -> &Watermark {
+        &self.watermark
     }
 
     /// Returns the latest (highest) available offsets
@@ -84,7 +84,7 @@ impl StreamProvider for TskvStreamProvider {
     ) -> DFResult<Arc<dyn PartitionStreamFactory>> {
         let (start, end) = range;
 
-        let col = col(self.event_time_column.clone());
+        let col = col(self.watermark.column.clone());
 
         // time < end
         let lt_expr = lt(col.clone(), lit_timestamp_nano(end));

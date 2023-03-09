@@ -7,13 +7,13 @@ use std::time::Duration;
 use datafusion::common::{DFSchema, DFSchemaRef};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
-use datafusion::prelude::{col, Column, Expr};
+use datafusion::prelude::{col, Expr};
 
 use crate::extension::{EVENT_TIME_COLUMN, WATERMARK_DELAY_MS};
 
 #[derive(Clone)]
 pub struct WatermarkNode {
-    pub event_time: Column,
+    pub event_time: String,
     pub delay: Duration,
     pub input: Arc<LogicalPlan>,
     pub expressions: Vec<Expr>,
@@ -24,13 +24,13 @@ pub struct WatermarkNode {
 impl WatermarkNode {
     /// Create a new WatermarkNode
     pub fn try_new(
-        event_time: Column,
+        event_time: String,
         delay: Duration,
         input: Arc<LogicalPlan>,
     ) -> Result<Self, DataFusionError> {
         let schema = input.schema();
         // find event time column
-        let idx = schema.index_of_column(&event_time)?;
+        let idx = schema.index_of_column_by_name(None, &event_time)?;
         let mut metadata = input.schema().metadata().clone();
         // It will be used when the aggregate node is transferred to a physical node
         let _ = metadata.insert(EVENT_TIME_COLUMN.into(), idx.to_string());

@@ -63,7 +63,9 @@ impl TableSourceAdapter {
             }
             // StreamScan
             TableHandle::StreamProvider(s) => {
-                LogicalPlanBuilder::stream_scan(&table_name, s.clone())?.build()?
+                LogicalPlanBuilder::stream_scan(&table_name, s.clone())?
+                    .watermark(s.watermark().clone())?
+                    .build()?
             }
         };
 

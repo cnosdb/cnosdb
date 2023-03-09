@@ -52,7 +52,7 @@ use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
 use models::schema::{
     ColumnType, DatabaseOptions, Duration, Precision, TableColumn, TskvTableSchema,
-    TskvTableSchemaRef,
+    TskvTableSchemaRef, Watermark,
 };
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
@@ -86,6 +86,7 @@ use trace::{debug, warn};
 use url::Url;
 
 use crate::data_source::source_downcast_adapter;
+use crate::data_source::stream::{get_event_time_column, get_watermark_delay};
 use crate::data_source::table_source::{TableHandle, TableSourceAdapter, TEMP_LOCATION_TABLE_NAME};
 use crate::metadata::{ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
 use crate::sql::logical::planner::TableWriteExt;
@@ -1456,6 +1457,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
 
             let extra_options = sql_options_to_map(&with_options);
 
+            let watermark = Watermark {
+                column: get_event_time_column(resolved_table.table(), &extra_options)?.into(),
+                delay: get_watermark_delay(resolved_table.table(), &extra_options)?
+                    .unwrap_or_default(),
+            };
+
             let schema = self.df_planner.build_schema(columns)?;
 
             let plan = Plan::DDL(DDLPlan::CreateStreamTable(CreateStreamTable {
@@ -1463,6 +1470,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 name: resolved_table,
                 schema,
                 stream_type,
+                watermark,
                 extra_options,
             }));
 

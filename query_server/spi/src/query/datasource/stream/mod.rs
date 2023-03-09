@@ -8,9 +8,9 @@ use datafusion::execution::context::{SessionState, TaskContext};
 use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::logical_expr::{TableProviderAggregationPushDown, TableProviderFilterPushDown};
 use datafusion::physical_plan::SendableRecordBatchStream;
-use datafusion::prelude::{Column, Expr};
+use datafusion::prelude::Expr;
 use meta::MetaClientRef;
-use models::schema::StreamTable;
+use models::schema::{StreamTable, Watermark};
 
 use crate::QueryError;
 
@@ -76,7 +76,7 @@ pub trait StreamProvider {
     type Offset;
 
     /// Event time column of stream table
-    fn event_time_column(&self) -> &Column;
+    fn watermark(&self) -> &Watermark;
 
     /// Returns the latest (highest) available offsets
     async fn latest_available_offset(&self) -> Result<Option<Self::Offset>>;

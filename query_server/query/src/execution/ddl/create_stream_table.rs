@@ -76,6 +76,7 @@ fn build_table(stmt: &CreateStreamTable) -> StreamTable {
         schema,
         name,
         stream_type,
+        watermark,
         extra_options,
         ..
     } = stmt;
@@ -86,6 +87,7 @@ fn build_table(stmt: &CreateStreamTable) -> StreamTable {
         name.table(),
         Arc::new(schema.to_owned()),
         stream_type.to_owned(),
+        watermark.to_owned(),
         extra_options.to_owned(),
     )
 }

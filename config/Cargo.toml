@@ -4,5 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+utils = { path = "../common/utils" }
 serde = { workspace = true }
 toml = { workspace = true }

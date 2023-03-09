@@ -12,6 +12,7 @@ use std::fmt::{self, Display};
 use std::mem::size_of_val;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration as StdDuration;
 
 use arrow_schema::DataType;
 use config::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
@@ -864,12 +865,19 @@ impl Display for TenantOptions {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Watermark {
+    pub column: String,
+    pub delay: StdDuration,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamTable {
     tenant: String,
     db: String,
     name: String,
     schema: SchemaRef,
     stream_type: String,
+    watermark: Watermark,
     extra_options: HashMap<String, String>,
 }
 
@@ -880,6 +888,7 @@ impl StreamTable {
         name: impl Into<String>,
         schema: SchemaRef,
         stream_type: impl Into<String>,
+        watermark: Watermark,
         extra_options: HashMap<String, String>,
     ) -> Self {
         Self {
@@ -888,6 +897,7 @@ impl StreamTable {
             name: name.into(),
             schema,
             stream_type: stream_type.into(),
+            watermark,
             extra_options,
         }
     }
@@ -910,6 +920,10 @@ impl StreamTable {
 
     pub fn schema(&self) -> SchemaRef {
         self.schema.clone()
+    }
+
+    pub fn watermark(&self) -> &Watermark {
+        &self.watermark
     }
 
     pub fn extra_options(&self) -> &HashMap<String, String> {

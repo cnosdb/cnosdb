@@ -5,6 +5,7 @@ use std::time::Duration;
 
 pub use limiter_config::*;
 use serde::{Deserialize, Serialize};
+use utils::duration::parse_duration;
 
 mod bytes_num;
 mod duration;
@@ -228,7 +229,7 @@ impl StorageConfig {
             self.compact_trigger_file_num = size.parse::<u32>().unwrap();
         }
         if let Ok(dur) = std::env::var("CNOSDB_STORAGE_compact_trigger_cold_duration") {
-            self.compact_trigger_cold_duration = duration::parse_duration(&dur).unwrap();
+            self.compact_trigger_cold_duration = parse_duration(&dur).unwrap();
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_COMPACT_SIZE") {
             self.max_compact_size = size.parse::<u64>().unwrap();

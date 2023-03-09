@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
-use datafusion::prelude::Column;
 use meta::error::MetaError;
 use meta::MetaClientRef;
 use models::schema::StreamTable;
@@ -10,7 +9,6 @@ use spi::QueryError;
 
 use super::provider::TskvStreamProvider;
 use super::{get_target_db_name, get_target_table_name};
-use crate::extension::EVENT_TIME_COLUMN;
 
 pub const TSKV_STREAM_PROVIDER: &str = "tskv";
 
@@ -31,13 +29,7 @@ impl StreamProviderFactory for TskvStreamProviderFactory {
         table: &StreamTable,
     ) -> Result<StreamProviderRef, QueryError> {
         let options = table.extra_options();
-        let event_time_column =
-            options
-                .get(EVENT_TIME_COLUMN)
-                .ok_or_else(|| QueryError::MissingTableOptions {
-                    option_name: EVENT_TIME_COLUMN.into(),
-                    table_name: table.name().into(),
-                })?;
+        let watermark = table.watermark();
 
         let target_db = get_target_db_name(options).unwrap_or_else(|| table.db());
         let target_table = get_target_table_name(table.name(), options)?;
@@ -56,7 +48,7 @@ impl StreamProviderFactory for TskvStreamProviderFactory {
 
         Ok(Arc::new(TskvStreamProvider::try_new(
             self.client.clone(),
-            Column::from_qualified_name(event_time_column),
+            watermark.clone(),
             table_schema,
             used_schema,
         )?))

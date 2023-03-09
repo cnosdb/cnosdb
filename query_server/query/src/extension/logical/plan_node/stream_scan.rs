@@ -72,7 +72,7 @@ impl UserDefinedLogicalNode for StreamScanPlanNode {
 
     fn prevent_predicate_push_down_columns(&self) -> std::collections::HashSet<String> {
         // default (safe) is all columns in the schema.
-        let name = self.source.event_time_column().name.clone();
+        let name = self.source.watermark().column.clone();
         HashSet::from_iter([name])
     }
 }
