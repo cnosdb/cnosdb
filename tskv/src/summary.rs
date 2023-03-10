@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use lru_cache::asynchronous::ShardedCache;
-use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
+use memory_pool::MemoryPoolRef;
 use meta::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::Timestamp;
@@ -334,6 +334,7 @@ impl Summary {
         meta: MetaRef,
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
         flush_task_sender: Sender<FlushReq>,
         sequence_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
@@ -355,6 +356,7 @@ impl Summary {
             &ctx,
             opt.clone(),
             runtime.clone(),
+            memory_pool,
             flush_task_sender,
             compact_task_sender,
             load_field_filter,
@@ -385,6 +387,7 @@ impl Summary {
         ctx: &GlobalContext,
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
+        memory_pool: MemoryPoolRef,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
         load_field_filter: bool,
@@ -483,7 +486,6 @@ impl Summary {
         if has_file_id {
             ctx.set_file_id(file_id + 1);
         }
-        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let vs = VersionSet::new(
             meta,
             opt,
@@ -957,7 +959,7 @@ mod test {
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
-            memory_pool,
+            memory_pool.clone(),
             global_seq_task_sender.clone(),
             Arc::new(MetricsRegister::default()),
         )
@@ -972,6 +974,7 @@ mod test {
             meta_manager,
             opt.clone(),
             runtime.clone(),
+            memory_pool,
             flush_task_sender,
             global_seq_task_sender,
             compact_task_sender,
@@ -1004,7 +1007,7 @@ mod test {
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
-            memory_pool,
+            memory_pool.clone(),
             global_seq_task_sender.clone(),
             Arc::new(MetricsRegister::default()),
         )
@@ -1020,6 +1023,7 @@ mod test {
             meta_manager.clone(),
             opt.clone(),
             runtime.clone(),
+            memory_pool.clone(),
             flush_task_sender.clone(),
             global_seq_task_sender.clone(),
             compact_task_sender.clone(),
@@ -1038,6 +1042,7 @@ mod test {
             meta_manager,
             opt.clone(),
             runtime,
+            memory_pool.clone(),
             flush_task_sender,
             global_seq_task_sender,
             compact_task_sender,
@@ -1090,7 +1095,7 @@ mod test {
             .create_db(
                 DatabaseSchema::new("cnosdb", &database),
                 meta_manager.clone(),
-                memory_pool,
+                memory_pool.clone(),
             )
             .await
             .unwrap();
@@ -1128,6 +1133,7 @@ mod test {
             meta_manager.clone(),
             opt.clone(),
             runtime,
+            memory_pool.clone(),
             flush_task_sender.clone(),
             global_seq_task_sender.clone(),
             compact_task_sender,
@@ -1179,7 +1185,7 @@ mod test {
             .create_db(
                 DatabaseSchema::new("cnosdb", &database),
                 meta_manager.clone(),
-                memory_pool,
+                memory_pool.clone(),
             )
             .await
             .unwrap();
@@ -1245,6 +1251,7 @@ mod test {
             meta_manager,
             opt,
             runtime,
+            memory_pool.clone(),
             flush_task_sender,
             global_seq_task_sender,
             compact_task_sender,

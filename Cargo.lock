@@ -3150,7 +3150,7 @@ dependencies = [
 
 [[package]]
 name = "limiter_bucket"
-version = "0.1.0"
+version = "2.2.0"
 dependencies = [
  "bincode",
  "chrono",
