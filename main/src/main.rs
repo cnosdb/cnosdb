@@ -148,6 +148,7 @@ fn main() -> Result<(), std::io::Error> {
     let memory_pool = Arc::new(GreedyMemoryPool::new(memory_size));
     runtime.clone().block_on(async move {
         let builder = server::ServiceBuilder {
+            cpu: run_args.cpu,
             config: config.clone(),
             runtime: runtime.clone(),
             memory_pool: memory_pool.clone(),
