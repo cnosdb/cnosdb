@@ -105,7 +105,10 @@ impl Display for DBResult {
         }
 
         if self.is_ok {
-            writeln!(f, "{}", self.response)?;
+            writeln!(f, "{}", self.response.trim())?;
+            if self.response.ends_with("200 OK") {
+                writeln!(f)?;
+            }
         } else {
             writeln!(f, "{}\n-- ERROR:  --", self.response)?;
         }
