@@ -422,7 +422,7 @@ async fn read_from_compact_iterator(
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
     use std::sync::Arc;
 
     use blake3::Hasher;
@@ -439,8 +439,8 @@ mod test {
     };
     use models::{Timestamp, ValueType};
     use protos::kv_service::{Meta, WritePointsRequest};
-    use protos::models::{self as fb_models, FieldType};
-    use protos::models_helper;
+    use protos::models::{self as fb_models, FieldType, Points, PointsArgs, TableBuilder};
+    use protos::{build_fb_schema_offset, models_helper, FbSchema};
     use tokio::runtime;
 
     use super::{calc_block_partial_time_range, find_timestamp, hash_partial_datablock, Hash};
@@ -591,7 +591,7 @@ mod test {
     fn create_write_batch_args(
         data_blocks: &[DataBlock],
         timestamps: &mut Vec<Timestamp>,
-        fields: &mut Vec<Vec<(&str, FieldType, Vec<u8>)>>,
+        fields: &mut Vec<Vec<(&str, Vec<u8>)>>,
     ) {
         let mut u64_vec = vec![];
         let mut i64_vec = vec![];
@@ -638,21 +638,20 @@ mod test {
         fn write_vec_into_map(
             vec: Vec<(i64, Vec<u8>)>,
             col_name: &'static str,
-            field_type: FieldType,
-            map: &mut BTreeMap<Timestamp, Vec<(&str, FieldType, Vec<u8>)>>,
+            map: &mut BTreeMap<Timestamp, Vec<(&str, Vec<u8>)>>,
         ) {
             vec.into_iter().for_each(|(t, v)| {
                 let entry = map.entry(t).or_default();
-                entry.push((col_name, field_type, v));
+                entry.push((col_name, v));
             });
         }
         #[allow(clippy::type_complexity)]
-        let mut map: BTreeMap<Timestamp, Vec<(&str, FieldType, Vec<u8>)>> = BTreeMap::new();
-        write_vec_into_map(u64_vec, U64_COL_NAME, FieldType::Unsigned, &mut map);
-        write_vec_into_map(i64_vec, I64_COL_NAME, FieldType::Integer, &mut map);
-        write_vec_into_map(f64_vec, F64_COL_NAME, FieldType::Float, &mut map);
-        write_vec_into_map(str_vec, STR_COL_NAME, FieldType::String, &mut map);
-        write_vec_into_map(bool_vec, BOOL_COL_NAME, FieldType::Boolean, &mut map);
+        let mut map: BTreeMap<Timestamp, Vec<(&str, Vec<u8>)>> = BTreeMap::new();
+        write_vec_into_map(u64_vec, U64_COL_NAME, &mut map);
+        write_vec_into_map(i64_vec, I64_COL_NAME, &mut map);
+        write_vec_into_map(f64_vec, F64_COL_NAME, &mut map);
+        write_vec_into_map(str_vec, STR_COL_NAME, &mut map);
+        write_vec_into_map(bool_vec, BOOL_COL_NAME, &mut map);
 
         map.into_iter().for_each(|(t, v)| {
             timestamps.push(t);
@@ -665,34 +664,80 @@ mod test {
         tenant: &str,
         database: &str,
         table: &str,
-        rows: Vec<Vec<(&str, FieldType, Vec<u8>)>>,
+        rows: Vec<Vec<(&str, Vec<u8>)>>,
     ) -> WritePointsRequest {
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+
+        let db = fbb.create_vector(database.as_bytes());
+
         let mut rows_ref = Vec::with_capacity(rows.len());
         for cols in rows.iter() {
             let mut cols_ref = Vec::with_capacity(cols.len());
-            for (col, ft, v) in cols.iter() {
-                cols_ref.push((*col, *ft, v.as_slice()));
+            for (col, v) in cols.iter() {
+                cols_ref.push((*col, v.as_slice()));
             }
             rows_ref.push(cols_ref);
         }
 
         let mut points = vec![];
-        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+
+        let mut tags_names: HashMap<&str, usize> = HashMap::new();
+        tags_names.insert("ta", 0);
+        tags_names.insert("tb", 1);
+
+        let mut fields: HashMap<&str, usize> = HashMap::new();
+        fields.insert(U64_COL_NAME, 0);
+        fields.insert(I64_COL_NAME, 1);
+        fields.insert(F64_COL_NAME, 2);
+        fields.insert(STR_COL_NAME, 3);
+        fields.insert(BOOL_COL_NAME, 4);
+
+        let schema = FbSchema::new(
+            tags_names,
+            fields,
+            vec![
+                FieldType::Unsigned,
+                FieldType::Integer,
+                FieldType::Float,
+                FieldType::String,
+                FieldType::Boolean,
+            ],
+        );
+
         for (timestamp, v) in timestamps.into_iter().zip(rows_ref.into_iter()) {
-            let db = fbb.create_vector(database.as_bytes());
-            let table = fbb.create_vector(table.as_bytes());
-            let tags = models_helper::create_tags(&mut fbb, &[("ta", "a1"), ("tb", "b1")]);
-            let fields = models_helper::create_fields(&mut fbb, &v);
-            let point = models_helper::create_point(&mut fbb, timestamp, db, table, tags, fields);
+            let (tags, tags_nullbit) =
+                models_helper::create_tags(&mut fbb, &[("ta", "a1"), ("tb", "b1")], &schema);
+            let (fields, fields_nullbits) = models_helper::create_fields(&mut fbb, &v, &schema);
+            let point = models_helper::create_point(
+                &mut fbb,
+                timestamp,
+                tags,
+                tags_nullbit,
+                fields,
+                fields_nullbits,
+            );
             points.push(point);
         }
-        let point_vec = fbb.create_vector(&points);
-        let db = fbb.create_vector(database.as_bytes());
-        let points = fb_models::Points::create(
+        let fb_schema = build_fb_schema_offset(&mut fbb, &schema);
+
+        let point = fbb.create_vector(&points);
+        let tab = fbb.create_vector(table.as_bytes());
+
+        let mut table_builder = TableBuilder::new(&mut fbb);
+
+        table_builder.add_points(point);
+        table_builder.add_schema(fb_schema);
+        table_builder.add_tab(tab);
+        table_builder.add_num_rows(rows.len() as u64);
+
+        let table = table_builder.finish();
+        let table_offsets = fbb.create_vector(&[table]);
+
+        let points = Points::create(
             &mut fbb,
-            &fb_models::PointsArgs {
+            &PointsArgs {
                 db: Some(db),
-                points: Some(point_vec),
+                tables: Some(table_offsets),
             },
         );
         fbb.finish(points, None);
@@ -902,7 +947,7 @@ mod test {
         // Write data to database and ts_family
         {
             let mut timestamps: Vec<Timestamp> = Vec::new();
-            let mut fields: Vec<Vec<(&str, FieldType, Vec<u8>)>> = Vec::new();
+            let mut fields: Vec<Vec<(&str, Vec<u8>)>> = Vec::new();
             create_write_batch_args(&data_blocks, &mut timestamps, &mut fields);
             let write_batch = create_write_batch(
                 timestamps,

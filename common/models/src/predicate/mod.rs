@@ -62,7 +62,7 @@ impl Split {
     }
 
     pub fn fields_filter(&self) -> &ColumnDomains<String> {
-        &self.tags_filter
+        &self.fields_filter
     }
 
     pub fn limit(&self) -> Option<usize> {

@@ -27,11 +27,12 @@ use std::sync::Arc;
 
 use models::codec::Encoding;
 use protos::kv_service::{Meta, WritePointsRequest};
+use protos::models_helper::print_points;
 use snafu::ResultExt;
 use tokio::sync::oneshot;
 use trace::{debug, error, info, warn};
 
-use crate::byte_utils::{decode_be_f64, decode_be_i64, decode_be_u32, decode_be_u64};
+use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::context::{GlobalContext, GlobalSequenceContext};
 use crate::error::{Error, Result};
 use crate::file_system::file_manager::{self};
@@ -552,103 +553,16 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
 
     let mut reader = WalReader::open(path).await.unwrap();
     let decoder = get_str_codec(Encoding::Zstd);
-    let mut i = 0_usize;
     loop {
         match reader.next_wal_entry().await {
             Ok(Some(entry)) => {
-                i += 1;
                 println!("============================================================");
                 let ety_data = entry.data();
                 let mut data_buf = Vec::new();
                 decoder.decode(ety_data, &mut data_buf).unwrap();
                 match flatbuffers::root::<fb_models::Points>(&data_buf[0]) {
                     Ok(points) => {
-                        if let Some(db) = points.db() {
-                            let database = String::from_utf8(db.bytes().into()).unwrap();
-                            println!("{} - Database: {}", i, database);
-                        }
-                        if let Some(points) = points.points() {
-                            for p in points {
-                                println!(
-                                    "------------------------------------------------------------"
-                                );
-                                println!("    Timestamp: {}", p.timestamp());
-                                let database = p
-                                    .db()
-                                    .map(|d| String::from_utf8(d.bytes().into()).unwrap())
-                                    .unwrap_or_default();
-                                println!("    Database: {}", database);
-                                let table = p
-                                    .tab()
-                                    .map(|t| String::from_utf8(t.bytes().into()).unwrap())
-                                    .unwrap();
-                                println!("    Table: {}", table);
-                                println!("    Tags:");
-                                if let Some(tags) = p.tags() {
-                                    for t in tags {
-                                        let key = t
-                                            .key()
-                                            .map(|k| String::from_utf8(k.bytes().into()).unwrap())
-                                            .unwrap();
-                                        let value = t
-                                            .value()
-                                            .map(|v| String::from_utf8(v.bytes().into()).unwrap())
-                                            .unwrap();
-                                        println!("    - '{}' : '{}'", key, value);
-                                    }
-                                }
-                                println!("    Fields:");
-                                if let Some(fields) = p.fields() {
-                                    for f in fields {
-                                        let name = f
-                                            .name()
-                                            .map(|n| String::from_utf8(n.bytes().into()).unwrap())
-                                            .unwrap();
-                                        let typ = f.type_();
-                                        let value = f.value();
-                                        let value = match typ {
-                                            fb_models::FieldType::Float => {
-                                                let v = value
-                                                    .map(|v| decode_be_f64(v.bytes()))
-                                                    .unwrap();
-                                                format!("{}", v)
-                                            }
-                                            fb_models::FieldType::Integer => {
-                                                let v = value
-                                                    .map(|v| decode_be_i64(v.bytes()))
-                                                    .unwrap();
-                                                format!("{}", v)
-                                            }
-                                            fb_models::FieldType::Unsigned => {
-                                                let v = value
-                                                    .map(|v| decode_be_u64(v.bytes()))
-                                                    .unwrap();
-                                                format!("{}", v)
-                                            }
-                                            fb_models::FieldType::Boolean => {
-                                                let v = value
-                                                    .map(|v| v.bytes().first().unwrap())
-                                                    .map(|b| *b != 0)
-                                                    .unwrap();
-                                                format!("{}", v)
-                                            }
-                                            fb_models::FieldType::String => value
-                                                .map(|v| {
-                                                    String::from_utf8(v.bytes().into()).unwrap()
-                                                })
-                                                .unwrap(),
-                                            _ => "Unknown Others Value".to_string(),
-                                        };
-                                        println!(
-                                            "    - '{}' ({}) : '{}'",
-                                            name,
-                                            typ.variant_name().unwrap_or("Unknown Others Type"),
-                                            value
-                                        );
-                                    }
-                                }
-                            }
-                        }
+                        print_points(points);
                     }
                     Err(e) => panic!("unexpected data: '{:?}'", e),
                 }
@@ -687,7 +601,7 @@ mod test {
     use models::schema::TenantOptions;
     use models::Timestamp;
     use protos::models::FieldType;
-    use protos::{models as fb_models, models_helper};
+    use protos::{models as fb_models, models_helper, FbSchema};
     use serial_test::serial;
     use tokio::runtime;
     use trace::init_default_global_tracing;
@@ -723,16 +637,28 @@ mod test {
         }
         let map = HashMap::from([("fa".to_string(), fa_data), ("fb".to_string(), fb_data)]);
 
+        let mut tags_names: HashMap<&str, usize> = HashMap::new();
+        tags_names.insert("ta", 0);
+        tags_names.insert("tb", 1);
+
+        let mut fields: HashMap<&str, usize> = HashMap::new();
+        fields.insert("fa", 0);
+        fields.insert("fb", 1);
+
+        let schema = FbSchema::new(
+            tags_names,
+            fields,
+            vec![FieldType::Integer, FieldType::String],
+        );
+
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let ptr = models_helper::create_const_points(
             &mut fbb,
+            schema,
             "dba",
             "tba",
             vec![("ta", "a"), ("tb", "b")],
-            vec![
-                ("fa", FieldType::Integer, &100_u64.to_be_bytes()),
-                ("fb", FieldType::String, b"b"),
-            ],
+            vec![("fa", &100_u64.to_be_bytes()), ("fb", b"b")],
             start_timestamp,
             num,
         );

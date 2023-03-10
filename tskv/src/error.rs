@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use error_code::{ErrorCode, ErrorCoder};
 use meta::error::MetaError;
+use protos::PointsError;
 use snafu::Snafu;
 
 use crate::index::IndexError;
@@ -147,6 +148,17 @@ pub enum Error {
     Transform {
         reason: String,
     },
+
+    #[snafu(display("invalid points : '{}'", source))]
+    Points {
+        source: PointsError,
+    },
+}
+
+impl From<PointsError> for Error {
+    fn from(value: PointsError) -> Self {
+        Error::Points { source: value }
+    }
 }
 
 impl From<SchemaError> for Error {

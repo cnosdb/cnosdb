@@ -13,10 +13,11 @@ use metrics::metric_register::MetricsRegister;
 use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{ExpiredBucketInfo, VnodeAllInfo};
 use models::schema::DEFAULT_CATALOG;
+use protos::get_db_from_fb_points;
 use protos::kv_service::admin_command_request::Command::*;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{WritePointsRequest, *};
-use protos::models_helper::get_db_from_flatbuffers;
+use protos::models::Points;
 use tokio::sync::mpsc::{self, Sender};
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
@@ -283,12 +284,14 @@ impl Coordinator for CoordService {
     ) -> CoordinatorResult<()> {
         let limiter = self.meta.tenant_manager().limiter(&tenant).await;
         let points = request.points.as_slice();
+
+        let fb_points = flatbuffers::root::<Points>(points)?;
+        let db = get_db_from_fb_points(&fb_points)?;
+
         let write_size = points.len();
 
         limiter.check_write().await?;
         limiter.check_data_in(write_size).await?;
-
-        let db = get_db_from_flatbuffers(points)?;
 
         self.metrics
             .data_in(tenant.as_str(), db.as_str())

@@ -1,16 +1,17 @@
 use std::fmt::Debug;
 
-use line_protocol::{parse_lines_to_points, FieldValue, Line};
+use line_protocol::{parse_lines_to_points, Line};
 use metrics::label::Labels;
 use metrics::metric_type::MetricType;
 use metrics::metric_value::MetricValue;
 use metrics::reporter::Reporter;
+use models::schema::FieldValue;
 
 #[derive(Debug)]
 struct LPLine {
     measure: &'static str,
     labels: Labels,
-    value: line_protocol::FieldValue,
+    value: FieldValue,
 }
 impl LPLine {
     pub fn to_line(&self) -> Line {

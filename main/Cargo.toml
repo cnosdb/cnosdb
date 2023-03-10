@@ -20,11 +20,11 @@ tskv = { path = "../tskv" }
 meta = { path = "../meta" }
 coordinator = { path = "../coordinator" }
 spi = { path = "../query_server/spi" }
-mem_allocator = { path = "../common/mem_allocator" }
 metrics = { path = "../common/metrics" }
 http_protocol = { path = "../common/http_protocol" }
 memory_pool = { path = "../common/memory_pool" }
 license = { path = "../common/license" }
+utils = { path = "../common/utils" }
 
 async-stream = { workspace = true }
 async-trait = { workspace = true }
@@ -67,7 +67,7 @@ backoff = {workspace = true}
 sys-info = {workspace = true}
 surf = { workspace = true, features = ["curl-client", "encoding"], default-features=false }
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec","frame-pointer"] }
-
+tikv-jemallocator = { workspace = true }
 
 [dev-dependencies]
 reqwest = "0.11"
