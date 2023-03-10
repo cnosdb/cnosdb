@@ -2,7 +2,8 @@ use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
 
-use models::{FieldId, TimeRange, ValueType};
+use models::predicate::domain::TimeRange;
+use models::{FieldId, ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
 use utils::BloomFilter;
@@ -667,7 +668,8 @@ pub mod tsm_reader_tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
-    use models::{FieldId, TimeRange, Timestamp};
+    use models::predicate::domain::TimeRange;
+    use models::{FieldId, Timestamp};
     use snafu::ResultExt;
 
     use crate::error::{self, Error, Result};

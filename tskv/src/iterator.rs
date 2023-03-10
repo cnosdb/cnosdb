@@ -1,43 +1,192 @@
-use std::collections::HashMap;
-use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::task::Poll;
 
 use datafusion::arrow::array::{
-    ArrayBuilder, BooleanBuilder, Float64Builder, Int64Builder, StringBuilder,
-    TimestampNanosecondBuilder, UInt64Builder,
+    ArrayBuilder, ArrayRef, BooleanArray, BooleanBuilder, Float64Builder, Int64Builder,
+    PrimitiveArray, PrimitiveBuilder, StringArray, StringBuilder, TimestampNanosecondBuilder,
+    UInt64Builder,
 };
-use datafusion::arrow::datatypes::{DataType as ArrowDataType, SchemaRef};
+use datafusion::arrow::datatypes::{
+    ArrowPrimitiveType, Float64Type, Int64Type, SchemaRef, TimestampNanosecondType, UInt64Type,
+};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use datafusion::execution::memory_pool::{MemoryConsumer, MemoryPool, MemoryReservation};
 use datafusion::physical_plan::metrics::{
     self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
 };
-use datafusion::scalar::ScalarValue;
 use minivec::MiniVec;
 use models::meta_data::VnodeId;
-use models::predicate::domain::{
-    ColumnDomains, Domain, PredicateRef, QueryArgs, QueryExpr, Range, ValueEntry,
-};
-use models::schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
+use models::predicate::domain::{QueryArgs, QueryExpr, TimeRange};
+use models::predicate::Split;
+use models::schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD};
 use models::utils::{min_num, unite_id};
-use models::{FieldId, SeriesId, TimeRange, ValueType};
+use models::{FieldId, SeriesId, ValueType};
 use parking_lot::RwLock;
 use protos::kv_service::QueryRecordBatchRequest;
+use tokio::runtime::Runtime;
 use tokio::time::Instant;
-use trace::{debug, error, info};
+use trace::{debug, error};
 
-use super::engine::EngineRef;
-use super::memcache::DataType;
-use super::tseries_family::{ColumnFile, SuperVersion};
-use super::tsm::{BlockMetaIterator, DataBlock, TsmReader};
-use super::{ColumnFileId, Error};
 use crate::compute::count::count_column_non_null_values;
-use crate::tseries_family::Version;
+use crate::engine::EngineRef;
+use crate::error::Result;
+use crate::memcache::DataType;
+use crate::tseries_family::SuperVersion;
+use crate::tsm::{BlockMetaIterator, DataBlock, TsmReader};
+use crate::Error;
 
 pub type CursorPtr = Box<dyn Cursor>;
-pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
+
+pub struct ArrayBuilderPtr {
+    pub ptr: Box<dyn ArrayBuilder>,
+    pub column_type: ColumnType,
+}
+
+impl ArrayBuilderPtr {
+    pub fn new(ptr: impl ArrayBuilder, column_type: ColumnType) -> Self {
+        Self {
+            ptr: Box::new(ptr),
+            column_type,
+        }
+    }
+
+    #[inline(always)]
+    fn builder<T: ArrowPrimitiveType>(&mut self) -> Option<&mut PrimitiveBuilder<T>> {
+        self.ptr.as_any_mut().downcast_mut::<PrimitiveBuilder<T>>()
+    }
+
+    pub fn append_primitive<T: ArrowPrimitiveType>(&mut self, t: T::Native) {
+        if let Some(b) = self.builder::<T>() {
+            b.append_value(t);
+        } else {
+            error!(
+                "Failed to get primitive-type array builder to insert {:?} array",
+                self.column_type
+            );
+        }
+    }
+
+    pub fn append_primitive_null<T: ArrowPrimitiveType>(&mut self) {
+        if let Some(b) = self.builder::<T>() {
+            b.append_null();
+        } else {
+            error!(
+                "Failed to get primitive-type array builder to insert {:?} array",
+                self.column_type
+            );
+        }
+    }
+
+    pub fn append_bool(&mut self, data: bool) {
+        if let Some(b) = self.ptr.as_any_mut().downcast_mut::<BooleanBuilder>() {
+            b.append_value(data);
+        } else {
+            error!(
+                "Failed to get boolean array builder to insert {:?} array",
+                self.column_type
+            );
+        }
+    }
+
+    pub fn append_null_bool(&mut self) {
+        if let Some(b) = self.ptr.as_any_mut().downcast_mut::<BooleanBuilder>() {
+            b.append_null();
+        } else {
+            error!(
+                "Failed to get boolean array builder to insert {:?} array",
+                self.column_type
+            );
+        }
+    }
+
+    pub fn append_string(&mut self, data: String) {
+        if let Some(b) = self.ptr.as_any_mut().downcast_mut::<StringBuilder>() {
+            b.append_value(data);
+        } else {
+            error!(
+                "Failed to get string array builder to insert {:?} array",
+                self.column_type
+            );
+        }
+    }
+
+    pub fn append_null_string(&mut self) {
+        if let Some(b) = self.ptr.as_any_mut().downcast_mut::<StringBuilder>() {
+            b.append_null();
+        } else {
+            error!(
+                "Failed to get string array builder to insert {:?} array",
+                self.column_type
+            );
+        }
+    }
+
+    fn extend_primitive_array<T: ArrowPrimitiveType>(&mut self, array: ArrayRef) {
+        let builder = self.builder::<T>();
+        let array = array.as_any().downcast_ref::<PrimitiveArray<T>>();
+        if let (Some(b), Some(a)) = (builder, array) {
+            b.extend(a.iter())
+        } else {
+            error!(
+                "Failed to get primitive-type array and array builder to insert {:?} array",
+                self.column_type
+            );
+        }
+    }
+
+    fn extend_bool_array(&mut self, array: ArrayRef) {
+        let builder = self.ptr.as_any_mut().downcast_mut::<BooleanBuilder>();
+        let array = array.as_any().downcast_ref::<BooleanArray>();
+        if let (Some(b), Some(a)) = (builder, array) {
+            b.extend(a.iter())
+        } else {
+            error!(
+                "Failed to get boolean array and array builder to insert {:?} array",
+                self.column_type
+            );
+        }
+    }
+
+    fn extend_string_array(&mut self, array: ArrayRef) {
+        let builder = self.ptr.as_any_mut().downcast_mut::<StringBuilder>();
+        let array = array.as_any().downcast_ref::<StringArray>();
+        if let (Some(b), Some(a)) = (builder, array) {
+            b.extend(a.into_iter())
+        } else {
+            error!(
+                "Failed to get string array and array builder to insert {:?} array",
+                self.column_type
+            );
+        }
+    }
+
+    pub fn append_column_data(&mut self, column: ArrayRef) {
+        match self.column_type {
+            ColumnType::Tag | ColumnType::Field(ValueType::String) => {
+                self.extend_string_array(column);
+            }
+            ColumnType::Time => {
+                self.extend_primitive_array::<TimestampNanosecondType>(column);
+            }
+            ColumnType::Field(ValueType::Float) => {
+                self.extend_primitive_array::<Float64Type>(column);
+            }
+            ColumnType::Field(ValueType::Integer) => {
+                self.extend_primitive_array::<Int64Type>(column);
+            }
+            ColumnType::Field(ValueType::Unsigned) => {
+                self.extend_primitive_array::<UInt64Type>(column);
+            }
+            ColumnType::Field(ValueType::Boolean) => {
+                self.extend_bool_array(column);
+            }
+            _ => {
+                error!("Trying to get unknown-type array builder");
+            }
+        }
+    }
+}
 
 /// Stores metrics about the table writer execution.
 #[derive(Debug)]
@@ -147,94 +296,48 @@ impl TskvSourceMetrics {
     }
 }
 
-// 1. Tsm文件遍历： KeyCursor
+// 1. Tsm文件遍历： KeyCursor
 //  功能：根据输入参数遍历Tsm文件
 //  输入参数： SeriesKey、FieldName、StartTime、EndTime、Ascending
 //  功能函数：调用Peek()—>(value, timestamp)得到一个值；调用Next()方法游标移到下一个值。
-// 2. Field遍历： FiledCursor
+// 2. Field遍历： FiledCursor
 //  功能：一个Field特定SeriesKey的遍历
 //  输入输出参数同KeyCursor，区别是需要读取缓存数据，并按照特定顺序返回
-// 3. Fields->行  转换器
+// 3. Fields->行转换器
 //  一行数据是由同一个时间点的多个Field得到。借助上面的FieldCursor按照时间点对齐多个Field-Value拼接成一行数据。其过程类似于多路归并排序。
-// 4. Iterator接口抽象层
+// 4. Iterator接口抽象层
 //  调用Next接口返回一行数据，并且屏蔽查询是本机节点数据还是其他节点数据
-// 5. 行数据到DataFusion的RecordBatch转换器
+// 5. 行数据到DataFusion的RecordBatch转换器
 //  调用Iterator.Next得到行数据，然后转换行数据为RecordBatch结构
 
 #[derive(Debug, Clone)]
 pub struct QueryOption {
     pub batch_size: usize,
-    pub filter: PredicateRef,
+    pub split: Split,
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchema,
     pub metrics: TskvSourceMetrics,
     pub aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
-
-    pub time_filter: ColumnDomains<String>,
-    pub tags_filter: ColumnDomains<String>,
-    pub fields_filter: ColumnDomains<String>,
 }
 
 impl QueryOption {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         batch_size: usize,
-        filter: PredicateRef,
+        split: Split,
         aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
         df_schema: SchemaRef,
         table_schema: TskvTableSchema,
         metrics: TskvSourceMetrics,
     ) -> Self {
-        let domains_filter = filter
-            .filter()
-            .translate_column(|c| table_schema.column(&c.name).cloned());
-
-        // 提取过滤条件
-        let time_filter = domains_filter.translate_column(|e| match e.column_type {
-            ColumnType::Time => Some(e.name.clone()),
-            _ => None,
-        });
-
-        let tags_filter = domains_filter.translate_column(|e| match e.column_type {
-            ColumnType::Tag => Some(e.name.clone()),
-            _ => None,
-        });
-
-        let fields_filter = domains_filter.translate_column(|e| match e.column_type {
-            ColumnType::Field(_) => Some(e.name.clone()),
-            _ => None,
-        });
-
         Self {
             batch_size,
-            filter,
-            table_schema,
-            df_schema,
-            metrics,
+            split,
             aggregates,
-
-            time_filter,
-            tags_filter,
-            fields_filter,
+            df_schema,
+            table_schema,
+            metrics,
         }
-    }
-
-    pub fn parse_time_ranges(
-        filter: PredicateRef,
-        table_schema: TskvTableSchema,
-    ) -> Vec<TimeRange> {
-        let filter = filter
-            .filter()
-            .translate_column(|c| table_schema.column(&c.name).cloned());
-
-        let time_filter = filter.translate_column(|e| match e.column_type {
-            ColumnType::Time => Some(e.name.clone()),
-            _ => None,
-        });
-
-        let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&time_filter);
-
-        time_ranges
     }
 
     pub fn to_query_record_batch_request(
@@ -243,12 +346,12 @@ impl QueryOption {
     ) -> Result<QueryRecordBatchRequest, models::Error> {
         let args = QueryArgs {
             vnode_ids,
-            limit: self.filter.limit(),
+            limit: self.split.limit(),
             batch_size: self.batch_size,
         };
         let expr = QueryExpr {
-            filters: self.filter.exprs().to_vec(),
-            df_schema: self.df_schema.clone(),
+            split: self.split.clone(),
+            df_schema: self.df_schema.as_ref().clone(),
             table_schema: self.table_schema.clone(),
         };
 
@@ -265,26 +368,44 @@ impl QueryOption {
 pub struct FieldFileLocation {
     reader: Arc<TsmReader>,
     block_it: BlockMetaIterator,
-
+    time_range: TimeRange,
     read_index: usize,
+    end_index: usize,
     data_block: DataBlock,
 }
 
 impl FieldFileLocation {
-    pub fn new(reader: Arc<TsmReader>, block_it: BlockMetaIterator, vtype: ValueType) -> Self {
+    pub fn new(
+        reader: Arc<TsmReader>,
+        time_range: TimeRange,
+        block_it: BlockMetaIterator,
+        vtype: ValueType,
+    ) -> Self {
         Self {
             reader,
             block_it,
-            read_index: 0,
+            time_range,
+            // make read_index > end_index,  when init
+            read_index: 1,
+            end_index: 0,
             data_block: DataBlock::new(0, vtype),
         }
     }
 
-    pub async fn peek(&mut self) -> Result<Option<DataType>, Error> {
-        if self.read_index >= self.data_block.len() {
+    pub async fn peek(&mut self) -> Result<Option<DataType>> {
+        while self.read_index > self.end_index {
+            // let data = self.data_block.get(self.read_index);
             if let Some(meta) = self.block_it.next() {
-                self.read_index = 0;
                 self.data_block = self.reader.get_data_block(&meta).await?;
+                if let Some(time_range) = self.data_block.time_range() {
+                    let tr = TimeRange::from(time_range);
+                    let ts = self.time_range.intersect(&tr).unwrap();
+                    if let Some((min, max)) = self.data_block.index_range(&ts) {
+                        self.read_index = min;
+                        self.end_index = max;
+                        break;
+                    }
+                }
             } else {
                 return Ok(None);
             }
@@ -337,7 +458,7 @@ impl Cursor for TimeCursor {
 
     async fn next(&mut self, _ts: i64) {}
 
-    async fn peek(&mut self) -> Result<Option<DataType>, Error> {
+    async fn peek(&mut self) -> Result<Option<DataType>> {
         let data = DataType::I64(self.ts, self.ts);
 
         Ok(Some(data))
@@ -347,11 +468,11 @@ impl Cursor for TimeCursor {
 //-----------Tag Cursor----------------
 pub struct TagCursor {
     name: String,
-    value: Option<String>,
+    value: Option<Vec<u8>>,
 }
 
 impl TagCursor {
-    pub fn new(name: String, value: Option<String>) -> Self {
+    pub fn new(name: String, value: Option<Vec<u8>>) -> Self {
         Self { name, value }
     }
 }
@@ -372,9 +493,9 @@ impl Cursor for TagCursor {
 
     async fn next(&mut self, _ts: i64) {}
 
-    async fn peek(&mut self) -> Result<Option<DataType>, Error> {
+    async fn peek(&mut self) -> Result<Option<DataType>> {
         match &self.value {
-            Some(value) => Ok(Some(DataType::Str(0, MiniVec::from(value.as_bytes())))),
+            Some(value) => Ok(Some(DataType::Str(0, MiniVec::from(value.as_slice())))),
             None => Ok(None),
         }
     }
@@ -399,84 +520,6 @@ impl FieldCursor {
             cache_data: Vec::new(),
             locations: Vec::new(),
         }
-    }
-
-    pub async fn new(
-        field_id: FieldId,
-        name: String,
-        vtype: ValueType,
-        iterator: &mut RowIterator,
-    ) -> Result<Self, Error> {
-        let super_version = match iterator.version.clone() {
-            Some(v) => v,
-            None => return Ok(Self::empty(vtype, name)),
-        };
-
-        let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&iterator.option.time_filter);
-        debug!("Pushed time range filter: {:?}", time_ranges);
-        let time_predicate = |ts| {
-            time_ranges
-                .iter()
-                .any(|time_range| time_range.is_boundless() || time_range.contains(ts))
-        };
-
-        // get data from im_memcache and memcache
-        let mut mem_data: Vec<DataType> = Vec::new();
-        super_version.caches.read_field_data(
-            field_id,
-            time_predicate,
-            |_| true,
-            |d| mem_data.push(d),
-        );
-        mem_data.sort_by_key(|data| data.timestamp());
-
-        debug!(
-            "build memcache data id: {:02X}, len: {}",
-            field_id,
-            mem_data.len()
-        );
-
-        // get data from levelinfo
-        let mut locations = vec![];
-        for level in super_version.version.levels_info.iter().rev() {
-            for file in level.files.iter() {
-                if file.is_deleted() {
-                    continue;
-                }
-                if !file.contains_field_id(field_id) {
-                    continue;
-                }
-
-                for time_range in time_ranges.iter() {
-                    if !file.overlap(time_range) {
-                        continue;
-                    }
-
-                    debug!(
-                        "build file data block id: {:02X}, len: {}",
-                        field_id,
-                        file.file_path().display()
-                    );
-
-                    let tsm_reader = iterator
-                        .get_tsm_reader(super_version.version.clone(), file.clone())
-                        .await?;
-                    for idx in tsm_reader.index_iterator_opt(field_id) {
-                        let block_it = idx.block_iterator_opt(time_range);
-                        let location = FieldFileLocation::new(tsm_reader.clone(), block_it, vtype);
-                        locations.push(location);
-                    }
-                }
-            }
-        }
-
-        Ok(Self {
-            name,
-            value_type: vtype,
-            cache_index: 0,
-            cache_data: mem_data,
-            locations,
-        })
     }
 
     fn peek_cache(&mut self) -> Option<&DataType> {
@@ -505,7 +548,7 @@ impl Cursor for FieldCursor {
         &self.name
     }
 
-    async fn peek(&mut self) -> Result<Option<DataType>, Error> {
+    async fn peek(&mut self) -> Result<Option<DataType>> {
         let mut data = DataType::new(self.value_type, i64::MAX);
         for loc in self.locations.iter_mut() {
             if let Some(val) = loc.peek().await? {
@@ -552,187 +595,203 @@ impl Cursor for FieldCursor {
     }
 }
 
-pub fn filter_to_time_ranges(time_domain: &ColumnDomains<String>) -> Vec<TimeRange> {
-    if time_domain.is_none() {
-        // Does not contain any data, and returns an empty array directly
-        return vec![];
-    }
-
-    if time_domain.is_all() {
-        // Include all data
-        return vec![TimeRange::all()];
-    }
-
-    let mut time_ranges: Vec<TimeRange> = Vec::new();
-
-    if let Some(time_domain) = time_domain.domains() {
-        assert!(time_domain.contains_key(TIME_FIELD_NAME));
-
-        let domain = unsafe { time_domain.get(TIME_FIELD_NAME).unwrap_unchecked() };
-
-        // Convert ScalarValue value to nanosecond timestamp
-        let valid_and_generate_index_key = |v: &ScalarValue| {
-            // Time can only be of type Timestamp
-            assert!(matches!(v.get_datatype(), ArrowDataType::Timestamp(_, _)));
-            unsafe { i64::try_from(v.clone()).unwrap_unchecked() }
-        };
-
-        match domain {
-            Domain::Range(range_set) => {
-                for (_, range) in range_set.low_indexed_ranges().into_iter() {
-                    let range: &Range = range;
-
-                    let start_bound = range.start_bound();
-                    let end_bound = range.end_bound();
-
-                    // Convert the time value in Bound to timestamp
-                    let translate_bound = |bound: Bound<&ScalarValue>| match bound {
-                        Bound::Unbounded => Bound::Unbounded,
-                        Bound::Included(v) => Bound::Included(valid_and_generate_index_key(v)),
-                        Bound::Excluded(v) => Bound::Excluded(valid_and_generate_index_key(v)),
-                    };
-
-                    let range = (translate_bound(start_bound), translate_bound(end_bound));
-                    time_ranges.push(range.into());
-                }
-            }
-            Domain::Equtable(vals) => {
-                if !vals.is_white_list() {
-                    // eg. time != xxx
-                    time_ranges.push(TimeRange::all());
-                } else {
-                    // Contains the given value
-                    for entry in vals.entries().into_iter() {
-                        let entry: &ValueEntry = entry;
-
-                        let ts = valid_and_generate_index_key(entry.value());
-
-                        time_ranges.push(TimeRange::new(ts, ts));
-                    }
-                }
-            }
-            Domain::All => time_ranges.push(TimeRange::all()),
-            Domain::None => return vec![],
-        }
-    }
-
-    time_ranges
-}
-
 pub struct RowIterator {
-    series_index: usize,
-    series: Vec<u32>,
+    runtime: Arc<Runtime>,
     engine: EngineRef,
-    option: QueryOption,
-    columns: Vec<CursorPtr>,
-    version: Option<Arc<SuperVersion>>,
-
-    open_files: HashMap<ColumnFileId, Arc<TsmReader>>,
-
-    batch_size: usize,
-    vnode_id: u32,
+    query_option: Arc<QueryOption>,
+    vnode_id: VnodeId,
     metrics: TskvSourceMetrics,
 
-    finished: bool,
+    /// Super version of vnode_id, maybe None.
+    super_version: Option<Arc<SuperVersion>>,
+    /// List of series id filtered from engine.
+    series_ids: Vec<SeriesId>,
+    /// The index of series_ids.
+    i: usize,
+    /// The temporary columns of the series_id.
+    columns: Vec<CursorPtr>,
+    /// Whether this iterator was finsihed.
+    is_finished: bool,
 }
 
 impl RowIterator {
-    pub async fn new(engine: EngineRef, option: QueryOption, vnode_id: u32) -> Result<Self, Error> {
-        let version = engine
+    pub async fn new(
+        runtime: Arc<Runtime>,
+        engine: EngineRef,
+        query_option: QueryOption,
+        vnode_id: VnodeId,
+    ) -> Result<Self> {
+        let super_version = engine
             .get_db_version(
-                &option.table_schema.tenant,
-                &option.table_schema.db,
+                &query_option.table_schema.tenant,
+                &query_option.table_schema.db,
                 vnode_id,
             )
             .await?;
 
-        let series = engine
+        let series_ids = engine
             .get_series_id_by_filter(
-                &option.table_schema.tenant,
-                &option.table_schema.db,
-                &option.table_schema.name,
+                &query_option.table_schema.tenant,
+                &query_option.table_schema.db,
+                &query_option.table_schema.name,
                 vnode_id,
-                &option.tags_filter,
+                query_option.split.tags_filter(),
             )
             .await?;
 
-        info!("vnode_id: {}, series number: {}", vnode_id, series.len());
-
-        let metrics = option.metrics.clone();
-        let batch_size = option.batch_size;
-        Ok(Self {
-            series,
-            engine,
-            option,
-            version,
+        debug!(
+            "Iterating rows: vnode_id={}, serie_ids_count={}",
             vnode_id,
+            series_ids.len()
+        );
+        let query_option = Arc::new(query_option);
+        let metrics = query_option.metrics.clone();
 
-            columns: vec![],
-            series_index: usize::MAX,
-            open_files: HashMap::new(),
-
-            batch_size,
+        Ok(Self {
+            runtime,
+            engine,
+            query_option,
+            vnode_id,
             metrics,
-            finished: false,
+            super_version,
+            series_ids,
+            i: 0_usize,
+            columns: Vec::<CursorPtr>::new(),
+            is_finished: false,
         })
     }
 
-    pub async fn get_tsm_reader(
-        &mut self,
-        version: Arc<Version>,
-        file: Arc<ColumnFile>,
-    ) -> Result<Arc<TsmReader>, Error> {
-        if let Some(val) = self.open_files.get(&file.file_id()) {
-            return Ok(val.clone());
+    fn build_record_builders(query_option: &QueryOption) -> Vec<ArrayBuilderPtr> {
+        // Get builders for aggregating.
+        if let Some(aggregates) = query_option.aggregates.as_ref() {
+            let mut builders: Vec<ArrayBuilderPtr> = Vec::with_capacity(aggregates.len());
+            for _ in 0..aggregates.len() {
+                builders.push(ArrayBuilderPtr::new(
+                    Int64Builder::with_capacity(query_option.batch_size),
+                    ColumnType::Field(ValueType::Integer),
+                ));
+            }
+            return builders;
         }
-        // let tsm_reader = TsmReader::open(file.file_path()).await?;
-        let tsm_reader = version.get_tsm_reader(file.file_path()).await?;
-        self.open_files.insert(file.file_id(), tsm_reader.clone());
 
-        Ok(tsm_reader)
+        // Get builders for table scan.
+        let mut builders: Vec<ArrayBuilderPtr> =
+            Vec::with_capacity(query_option.table_schema.columns().len());
+        for item in query_option.table_schema.columns().iter() {
+            debug!("schema info {:02X} {}", item.id, item.name);
+
+            match item.column_type {
+                ColumnType::Tag => builders.push(ArrayBuilderPtr::new(
+                    StringBuilder::with_capacity(
+                        query_option.batch_size,
+                        query_option.batch_size * 32,
+                    ),
+                    ColumnType::Tag,
+                )),
+                ColumnType::Time => builders.push(ArrayBuilderPtr::new(
+                    TimestampNanosecondBuilder::with_capacity(query_option.batch_size),
+                    ColumnType::Time,
+                )),
+                ColumnType::Field(t) => match t {
+                    ValueType::Float => builders.push(ArrayBuilderPtr::new(
+                        Float64Builder::with_capacity(query_option.batch_size),
+                        t.into(),
+                    )),
+                    ValueType::Integer => builders.push(ArrayBuilderPtr::new(
+                        Int64Builder::with_capacity(query_option.batch_size),
+                        t.into(),
+                    )),
+                    ValueType::Unsigned => builders.push(ArrayBuilderPtr::new(
+                        UInt64Builder::with_capacity(query_option.batch_size),
+                        t.into(),
+                    )),
+                    ValueType::Boolean => builders.push(ArrayBuilderPtr::new(
+                        BooleanBuilder::with_capacity(query_option.batch_size),
+                        t.into(),
+                    )),
+                    ValueType::String => builders.push(ArrayBuilderPtr::new(
+                        StringBuilder::with_capacity(
+                            query_option.batch_size,
+                            query_option.batch_size * 32,
+                        ),
+                        t.into(),
+                    )),
+                    ValueType::Unknown => {
+                        error!("Unknown field type of column {}", &item.name);
+                    }
+                },
+            }
+        }
+
+        builders
     }
 
-    async fn build_series_columns(&mut self, id: SeriesId) -> Result<(), Error> {
+    async fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
+        if self.query_option.aggregates.is_some() {
+            self.collect_aggregate_row_data(builder).await
+        } else {
+            loop {
+                if self.columns.is_empty() && self.next_series().await?.is_none() {
+                    return Ok(None);
+                }
+
+                if self.collect_row_data(builder).await?.is_some() {
+                    return Ok(Some(()));
+                }
+            }
+        }
+    }
+
+    async fn next_series(&mut self) -> Result<Option<()>> {
+        if self.i >= self.series_ids.len() {
+            return Ok(None);
+        }
+        self.build_series_columns(self.series_ids[self.i]).await?;
+        self.i += 1;
+
+        Ok(Some(()))
+    }
+
+    async fn build_series_columns(&mut self, series_id: SeriesId) -> Result<()> {
         let start = Instant::now();
 
         if let Some(key) = self
             .engine
             .get_series_key(
-                &self.option.table_schema.tenant,
-                &self.option.table_schema.db,
+                &self.query_option.table_schema.tenant,
+                &self.query_option.table_schema.db,
                 self.vnode_id,
-                id,
+                series_id,
             )
             .await?
         {
             self.columns.clear();
-            let fields = self.option.table_schema.columns().to_vec();
-            for item in fields {
-                let field_name = item.name.clone();
-                debug!("build series columns id:{:02X}, {:?}", id, item);
+            for item in self.query_option.table_schema.columns() {
+                debug!(
+                    "Building series columns: sid={:02X}, column={:?}",
+                    series_id, item
+                );
                 let column: CursorPtr = match item.column_type {
-                    ColumnType::Time => Box::new(TimeCursor::new(0, field_name)),
+                    ColumnType::Time => Box::new(TimeCursor::new(0, item.name.clone())),
 
                     ColumnType::Tag => {
-                        let tag_val = match key.tag_val(&item.name) {
-                            Some(val) => {
-                                Some(String::from_utf8(val).map_err(|_| Error::ErrCharacterSet)?)
-                            }
-                            None => None,
-                        };
-
-                        Box::new(TagCursor::new(field_name, tag_val))
+                        let tag_val = key.tag_val(&item.name);
+                        Box::new(TagCursor::new(item.name.clone(), tag_val))
                     }
 
                     ColumnType::Field(vtype) => match vtype {
                         ValueType::Unknown => {
-                            error!("Unknown field type for column {}", &field_name);
-                            todo!()
+                            error!("Unknown field type of column {}", &item.name);
+                            todo!("return an empty-cursor for unknown type field");
                         }
                         _ => {
-                            let cursor =
-                                FieldCursor::new(unite_id(item.id, id), field_name, vtype, self)
-                                    .await?;
+                            let cursor = self
+                                .build_field_cursor(
+                                    unite_id(item.id, series_id),
+                                    item.name.clone(),
+                                    vtype,
+                                )
+                                .await?;
                             Box::new(cursor)
                         }
                     },
@@ -744,33 +803,84 @@ impl RowIterator {
 
         self.metrics
             .elapsed_series_scan()
-            .add_duration(Instant::now() - start);
+            .add_duration(start.elapsed());
 
         Ok(())
     }
 
-    async fn next_series(&mut self) -> Result<Option<()>, Error> {
-        if self.series_index == usize::MAX {
-            self.series_index = 0;
-        } else {
-            self.series_index += 1;
+    async fn build_field_cursor(
+        &self,
+        field_id: FieldId,
+        field_name: String,
+        field_type: ValueType,
+    ) -> Result<FieldCursor> {
+        let super_version = match self.super_version {
+            Some(ref v) => v.clone(),
+            None => return Ok(FieldCursor::empty(field_type, field_name)),
+        };
+
+        let time_range = *self.query_option.split.time_range();
+        let time_predicate = |ts| time_range.is_boundless() || time_range.contains(ts);
+        debug!("Pushed time range filter: {:?}", time_range);
+
+        // get data from im_memcache and memcache
+        let mut cache_data: Vec<DataType> = Vec::new();
+        super_version.caches.read_field_data(
+            field_id,
+            time_predicate,
+            |_| true,
+            |d| cache_data.push(d),
+        );
+        cache_data.sort_by_key(|data| data.timestamp());
+
+        debug!(
+            "build memcache data id: {:02X}, len: {}",
+            field_id,
+            cache_data.len()
+        );
+
+        // get data from levelinfo
+        // TODO: Init locations in parallel with other fields.
+        let mut locations = vec![];
+        for lv in super_version.version.levels_info.iter().rev() {
+            if !lv.time_range.overlaps(&time_range) {
+                continue;
+            }
+            for cf in lv.files.iter() {
+                if !cf.overlap(&time_range) || !cf.contains_field_id(field_id) {
+                    continue;
+                }
+                let path = cf.file_path();
+                debug!(
+                    "building FieldCursor({:02X}) at '{}'",
+                    field_id,
+                    path.display()
+                );
+
+                let tsm_reader = super_version.version.get_tsm_reader(path).await?;
+                for idx in tsm_reader.index_iterator_opt(field_id) {
+                    let location = FieldFileLocation::new(
+                        tsm_reader.clone(),
+                        time_range,
+                        idx.block_iterator_opt(&time_range),
+                        field_type,
+                    );
+                    locations.push(location);
+                }
+            }
         }
 
-        if self.series_index >= self.series.len() {
-            return Ok(None);
-        }
-
-        self.build_series_columns(self.series[self.series_index])
-            .await?;
-
-        Ok(Some(()))
+        Ok(FieldCursor {
+            name: field_name,
+            value_type: field_type,
+            cache_index: 0,
+            cache_data,
+            locations,
+        })
     }
 
-    async fn collect_row_data(
-        &mut self,
-        builder: &mut [ArrayBuilderPtr],
-    ) -> Result<Option<()>, Error> {
-        debug!("======collect_row_data=========");
+    async fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
+        trace::trace!("======collect_row_data=========");
         let timer = self.metrics.elapsed_field_scan().timer();
 
         let mut min_time = i64::MAX;
@@ -786,7 +896,7 @@ impl RowIterator {
         }
 
         for (column, value) in self.columns.iter_mut().zip(values.iter_mut()) {
-            debug!("field: {} value {:?}", column.name(), value);
+            trace::trace!("field: {}, value: {:?}", column.name(), value);
             if !column.is_field() {
                 continue;
             }
@@ -803,7 +913,7 @@ impl RowIterator {
 
         timer.done();
 
-        debug!("min time {}", min_time);
+        trace::trace!("min time: {}", min_time);
         if min_time == i64::MAX {
             self.columns.clear();
             return Ok(None);
@@ -813,76 +923,51 @@ impl RowIterator {
 
         for (i, value) in values.into_iter().enumerate() {
             if self.columns[i].name() == TIME_FIELD {
-                let field_builder = builder[i]
-                    .as_any_mut()
-                    .downcast_mut::<TimestampNanosecondBuilder>()
-                    .unwrap();
-                field_builder.append_value(min_time);
-
+                builder[i].append_primitive::<TimestampNanosecondType>(min_time);
                 continue;
             }
 
             match self.columns[i].val_type() {
                 ValueType::Unknown => {
                     return Err(Error::CommonError {
-                        reason: format!("unknown type of {}", self.columns[i].name()),
+                        reason: format!("unknown type of column '{}'", self.columns[i].name()),
                     });
                 }
                 ValueType::Float => {
-                    let field_builder = builder[i]
-                        .as_any_mut()
-                        .downcast_mut::<Float64Builder>()
-                        .unwrap();
                     if let Some(DataType::F64(_, val)) = value {
-                        field_builder.append_value(val);
+                        builder[i].append_primitive::<Float64Type>(val);
                     } else {
-                        field_builder.append_null();
+                        builder[i].append_primitive_null::<Float64Type>();
                     }
                 }
                 ValueType::Integer => {
-                    let field_builder = builder[i]
-                        .as_any_mut()
-                        .downcast_mut::<Int64Builder>()
-                        .unwrap();
                     if let Some(DataType::I64(_, val)) = value {
-                        field_builder.append_value(val);
+                        builder[i].append_primitive::<Int64Type>(val);
                     } else {
-                        field_builder.append_null();
+                        builder[i].append_primitive_null::<Int64Type>();
                     }
                 }
                 ValueType::Unsigned => {
-                    let field_builder = builder[i]
-                        .as_any_mut()
-                        .downcast_mut::<UInt64Builder>()
-                        .unwrap();
                     if let Some(DataType::U64(_, val)) = value {
-                        field_builder.append_value(val);
+                        builder[i].append_primitive::<UInt64Type>(val);
                     } else {
-                        field_builder.append_null();
+                        builder[i].append_primitive_null::<UInt64Type>();
                     }
                 }
                 ValueType::Boolean => {
-                    let field_builder = builder[i]
-                        .as_any_mut()
-                        .downcast_mut::<BooleanBuilder>()
-                        .unwrap();
                     if let Some(DataType::Bool(_, val)) = value {
-                        field_builder.append_value(val);
+                        builder[i].append_bool(val);
                     } else {
-                        field_builder.append_null();
+                        builder[i].append_null_bool();
                     }
                 }
                 ValueType::String => {
-                    let field_builder = builder[i]
-                        .as_any_mut()
-                        .downcast_mut::<StringBuilder>()
-                        .unwrap();
                     if let Some(DataType::Str(_, val)) = value {
-                        field_builder.append_value(
-                            String::from_utf8(val.to_vec()).map_err(|_| Error::ErrCharacterSet)?,
-                        );
+                        let data =
+                            String::from_utf8(val.to_vec()).map_err(|_| Error::ErrCharacterSet)?;
+                        builder[i].append_string(data);
                     } else {
-                        field_builder.append_null();
+                        builder[i].append_null_string();
                     }
                 }
             }
@@ -896,168 +981,89 @@ impl RowIterator {
     async fn collect_aggregate_row_data(
         &mut self,
         builder: &mut [ArrayBuilderPtr],
-    ) -> Result<Option<()>, Error> {
-        if self.is_finish() {
+    ) -> Result<Option<()>> {
+        if self.is_finished {
             return Ok(None);
         }
-        self.finished = true;
-        debug!("======collect_aggregate_row_data=========");
-        let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&self.option.time_filter);
-        let time_ranges = Arc::new(time_ranges);
-        if self.version.is_none() {
-            return Ok(None);
-        }
-        let version = self.version.clone().unwrap();
-        if let Some(aggregates) = self.option.aggregates.as_ref() {
-            for (i, item) in aggregates.iter().enumerate() {
-                match item.column_type {
-                    ColumnType::Tag => todo!(),
-                    ColumnType::Time => {
-                        let agg_ret = count_column_non_null_values(
-                            version.clone(),
-                            &self.series,
-                            None,
-                            time_ranges.clone(),
-                        )
-                        .await?;
-                        let field_builder = builder[i]
-                            .as_any_mut()
-                            .downcast_mut::<Int64Builder>()
-                            .unwrap();
-                        field_builder.append_value(agg_ret as i64);
-                    }
-                    ColumnType::Field(vtype) => match vtype {
-                        ValueType::Unknown => {
-                            return Err(Error::CommonError {
-                                reason: format!("unknown type of {}", self.columns[i].name()),
-                            });
-                        }
-                        _ => {
+        self.is_finished = true;
+        trace::trace!("======collect_aggregate_row_data=========");
+        match (
+            self.super_version.as_ref(),
+            self.query_option.aggregates.as_ref(),
+        ) {
+            (Some(version), Some(aggregates)) => {
+                let time_ranges = Arc::new(vec![*self.query_option.split.time_range()]);
+                for (i, item) in aggregates.iter().enumerate() {
+                    match item.column_type {
+                        ColumnType::Tag => todo!("collect count for tag"),
+                        ColumnType::Time => {
                             let agg_ret = count_column_non_null_values(
+                                self.runtime.clone(),
                                 version.clone(),
-                                &self.series,
-                                Some(item.id),
+                                &self.series_ids,
+                                None,
                                 time_ranges.clone(),
                             )
                             .await?;
-                            let field_builder = builder[i]
-                                .as_any_mut()
-                                .downcast_mut::<Int64Builder>()
-                                .unwrap();
-                            field_builder.append_value(agg_ret as i64);
-                            // field_builder.append_null();
+                            builder[i].append_primitive::<Int64Type>(agg_ret as i64);
                         }
-                    },
-                };
-            }
-
-            Ok(Some(()))
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
-        if self.option.aggregates.is_some() {
-            self.collect_aggregate_row_data(builder).await
-        } else {
-            loop {
-                if self.columns.is_empty() && self.next_series().await?.is_none() {
-                    return Ok(None);
+                        ColumnType::Field(vtype) => match vtype {
+                            ValueType::Unknown => {
+                                return Err(Error::CommonError {
+                                    reason: format!("unknown type of {}", item.name),
+                                });
+                            }
+                            _ => {
+                                let agg_ret = count_column_non_null_values(
+                                    self.runtime.clone(),
+                                    version.clone(),
+                                    &self.series_ids,
+                                    Some(item.id),
+                                    time_ranges.clone(),
+                                )
+                                .await?;
+                                builder[i].append_primitive::<Int64Type>(agg_ret as i64);
+                            }
+                        },
+                    };
                 }
 
-                if self.collect_row_data(builder).await?.is_some() {
-                    return Ok(Some(()));
-                }
+                Ok(Some(()))
             }
+            _ => Ok(None),
         }
-    }
-
-    fn record_builder(&self) -> Vec<ArrayBuilderPtr> {
-        if let Some(aggregates) = self.option.aggregates.as_ref() {
-            // TODO: Correct the aggregate columns order.
-            let mut builders: Vec<ArrayBuilderPtr> = Vec::with_capacity(aggregates.len());
-            for _agg in self.option.aggregates.iter() {
-                builders.push(Box::new(Int64Builder::with_capacity(self.batch_size)));
-            }
-            return builders;
-        }
-        let mut builders: Vec<ArrayBuilderPtr> =
-            Vec::with_capacity(self.option.table_schema.columns().len());
-        for item in self.option.table_schema.columns().iter() {
-            debug!("schema info {:02X} {}", item.id, item.name);
-
-            match item.column_type {
-                ColumnType::Tag => builders.push(Box::new(StringBuilder::with_capacity(
-                    self.batch_size,
-                    self.batch_size * 32,
-                ))),
-                ColumnType::Time => builders.push(Box::new(
-                    TimestampNanosecondBuilder::with_capacity(self.batch_size),
-                )),
-                ColumnType::Field(t) => match t {
-                    ValueType::Unknown => todo!(),
-                    ValueType::Float => {
-                        builders.push(Box::new(Float64Builder::with_capacity(self.batch_size)))
-                    }
-                    ValueType::Integer => {
-                        builders.push(Box::new(Int64Builder::with_capacity(self.batch_size)))
-                    }
-                    ValueType::Unsigned => {
-                        builders.push(Box::new(UInt64Builder::with_capacity(self.batch_size)))
-                    }
-                    ValueType::Boolean => {
-                        builders.push(Box::new(BooleanBuilder::with_capacity(self.batch_size)))
-                    }
-                    ValueType::String => builders.push(Box::new(StringBuilder::with_capacity(
-                        self.batch_size,
-                        self.batch_size * 32,
-                    ))),
-                },
-            }
-        }
-
-        builders
-    }
-
-    fn is_finish(&self) -> bool {
-        if self.finished {
-            return true;
-        }
-        if self.series_index == usize::MAX {
-            return false;
-        }
-
-        self.series_index >= self.series.len()
     }
 }
 
 impl RowIterator {
-    pub async fn next(&mut self) -> Option<Result<RecordBatch, Error>> {
-        if self.is_finish() {
+    pub async fn next(&mut self) -> Option<Result<RecordBatch>> {
+        if self.is_finished {
             return None;
         }
 
         let timer = self.metrics.elapsed_point_to_record_batch().timer();
-        let mut builder = self.record_builder();
+        let mut builders = Self::build_record_builders(self.query_option.as_ref());
         timer.done();
 
-        for _ in 0..self.batch_size {
-            match self.next_row(&mut builder).await {
+        for _ in 0..self.query_option.batch_size {
+            match self.next_row(&mut builders).await {
                 Ok(Some(_)) => {}
-                Ok(None) => break,
+                Ok(None) => {
+                    self.is_finished = true;
+                    break;
+                }
                 Err(err) => return Some(Err(err)),
             };
         }
 
         let timer = self.metrics.elapsed_point_to_record_batch().timer();
         let result = {
-            let mut cols = vec![];
-            for item in builder.iter_mut() {
-                cols.push(item.finish())
+            let mut cols = Vec::with_capacity(builders.len());
+            for item in builders.iter_mut() {
+                cols.push(item.ptr.finish())
             }
 
-            match RecordBatch::try_new(self.option.df_schema.clone(), cols) {
+            match RecordBatch::try_new(self.query_option.df_schema.clone(), cols) {
                 Ok(batch) => Some(Ok(batch)),
                 Err(err) => Some(Err(Error::CommonError {
                     reason: format!("iterator fail, {}", err),

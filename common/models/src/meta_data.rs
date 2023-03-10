@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::predicate::domain::TimeRange;
 use crate::schema::{DatabaseSchema, TableSchema};
 
 pub type VnodeId = u32;
@@ -78,6 +80,8 @@ pub struct VnodeAllInfo {
     pub end_time: i64,
 }
 
+pub type DatabaseInfoRef = Arc<DatabaseInfo>;
+
 // CREATE DATABASE <database_name>
 // [WITH [TTL <duration>]
 // [SHARD <n>]
@@ -89,6 +93,24 @@ pub struct DatabaseInfo {
     pub schema: DatabaseSchema,
     pub buckets: Vec<BucketInfo>,
     pub tables: HashMap<String, TableSchema>,
+}
+
+impl DatabaseInfo {
+    pub fn time_range(&self) -> TimeRange {
+        let mut min_ts = i64::MAX;
+        let mut max_ts = i64::MIN;
+        for BucketInfo {
+            start_time,
+            end_time,
+            ..
+        } in &self.buckets
+        {
+            (*start_time < min_ts).then(|| min_ts = *start_time);
+            (*end_time > max_ts).then(|| max_ts = *end_time);
+        }
+
+        TimeRange::new(min_ts, max_ts)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

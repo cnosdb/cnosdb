@@ -10,6 +10,7 @@ use metrics::count::U64Counter;
 use models::meta_data::VnodeInfo;
 use models::utils::now_timestamp;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
+use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -56,6 +57,7 @@ impl ReaderIterator {
 pub struct QueryExecutor {
     option: QueryOption,
 
+    runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
     meta_manager: MetaRef,
 
@@ -66,6 +68,7 @@ pub struct QueryExecutor {
 impl QueryExecutor {
     pub fn new(
         option: QueryOption,
+        runtime: Arc<Runtime>,
         kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
         sender: Sender<CoordinatorResult<RecordBatch>>,
@@ -77,12 +80,14 @@ impl QueryExecutor {
         );
         Self {
             option,
+            runtime,
             kv_inst,
             meta_manager,
             sender,
             data_out,
         }
     }
+
     pub async fn execute(&self) -> CoordinatorResult<()> {
         let mut routines = vec![];
         let mapping = self.map_vnode().await?;
@@ -239,7 +244,8 @@ impl QueryExecutor {
             })?
             .clone();
 
-        let mut iterator = RowIterator::new(kv_inst, self.option.clone(), vnode.id).await?;
+        let mut iterator =
+            RowIterator::new(self.runtime.clone(), kv_inst, self.option.clone(), vnode.id).await?;
 
         while let Some(data) = iterator.next().await {
             match data {
@@ -267,26 +273,23 @@ impl QueryExecutor {
             })?;
 
         let mut vnode_mapping: HashMap<u64, Vec<VnodeInfo>> = HashMap::new();
-        for item in QueryOption::parse_time_ranges(
-            self.option.filter.clone(),
-            self.option.table_schema.clone(),
-        )
-        .iter()
-        {
-            let buckets =
-                meta.mapping_bucket(&self.option.table_schema.db, item.min_ts, item.max_ts)?;
-            for bucket in buckets.iter() {
-                for repl in bucket.shard_group.iter() {
-                    if repl.vnodes.is_empty() {
-                        continue;
-                    }
-
-                    let random = now_timestamp() as usize % repl.vnodes.len();
-                    let vnode = repl.vnodes[random].clone();
-
-                    let list = vnode_mapping.entry(vnode.node_id).or_default();
-                    list.push(vnode);
+        let time_range = self.option.split.time_range();
+        let buckets = meta.mapping_bucket(
+            &self.option.table_schema.db,
+            time_range.min_ts,
+            time_range.max_ts,
+        )?;
+        for bucket in buckets.iter() {
+            for repl in bucket.shard_group.iter() {
+                if repl.vnodes.is_empty() {
+                    continue;
                 }
+
+                let random = now_timestamp() as usize % repl.vnodes.len();
+                let vnode = repl.vnodes[random].clone();
+
+                let list = vnode_mapping.entry(vnode.node_id).or_default();
+                list.push(vnode);
             }
         }
         for (_, list) in vnode_mapping.iter_mut() {

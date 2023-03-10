@@ -13,6 +13,7 @@ use models::schema::DEFAULT_CATALOG;
 use spi::Result;
 pub use vnode_disk_storage::USAGE_SCHEMA_VNODE_DISK_STORAGE;
 
+use crate::data_source::split;
 use crate::data_source::table_provider::tskv::ClusterTable;
 use crate::metadata::usage_schema_provider::coord_data_in::CoordDataIn;
 use crate::metadata::usage_schema_provider::coord_data_out::CoordDataOut;
@@ -95,12 +96,22 @@ pub fn create_usage_schema_view_table(
     view_table_name: &str,
     default_catalog_meta_client: MetaClientRef,
 ) -> spi::Result<Arc<dyn TableProvider>> {
-    let tskv = default_catalog_meta_client
+    let database_info = default_catalog_meta_client
+        .get_db_info(USAGE_SCHEMA)?
+        .ok_or_else(|| MetaError::DatabaseNotFound {
+            database: USAGE_SCHEMA.into(),
+        })?;
+    let table_schema = default_catalog_meta_client
         .get_tskv_table_schema(USAGE_SCHEMA, view_table_name)?
         .ok_or_else(|| MetaError::TableNotFound {
             table: view_table_name.into(),
         })?;
-    let cluster_table = Arc::new(ClusterTable::new(coord.clone(), tskv));
+    let cluster_table = Arc::new(ClusterTable::new(
+        coord.clone(),
+        split::default_split_manager_ref(),
+        Arc::new(database_info),
+        table_schema,
+    ));
     if user.desc().is_admin() && meta.tenant_name().eq(DEFAULT_CATALOG) {
         return Ok(cluster_table);
     }

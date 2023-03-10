@@ -12,7 +12,8 @@ use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::{
     DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics,
 };
-use models::predicate::domain::{PredicateRef, PushedAggregateFunction};
+use models::predicate::domain::{PredicateRef, PushedAggregateFunction, TimeRange};
+use models::predicate::Split;
 use models::schema::TskvTableSchemaRef;
 use tskv::iterator::{QueryOption, TableScanMetrics};
 
@@ -92,7 +93,12 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         let metrics = TableScanMetrics::new(&metrics, partition, Some(context.memory_pool()));
         let query_opt = QueryOption::new(
             100_usize,
-            self.filter.clone(),
+            Split::new(
+                0,
+                self.table_schema.clone(),
+                TimeRange::all(),
+                self.filter.clone(),
+            ),
             Some(agg_columns),
             self.schema.clone(),
             (*self.table_schema).clone(),

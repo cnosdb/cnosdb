@@ -2,9 +2,9 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use models::predicate::domain::ColumnDomains;
+use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::TableColumn;
-use models::{ColumnId, SeriesId, SeriesKey, TimeRange};
+use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 
 use crate::error::Result;
@@ -111,5 +111,6 @@ pub trait Engine: Send + Sync + Debug {
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
 
     async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()>;
+
     async fn close(&self);
 }

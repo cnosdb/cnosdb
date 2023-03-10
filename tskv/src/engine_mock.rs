@@ -4,9 +4,9 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use models::predicate::domain::ColumnDomains;
+use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::TableColumn;
-use models::{ColumnId, SeriesId, SeriesKey, TimeRange};
+use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
 use trace::debug;

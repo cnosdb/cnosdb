@@ -1,26 +1,146 @@
 use std::cmp::{self, Ordering};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Display;
 use std::hash::Hash;
-use std::io::{BufReader, Read};
-use std::ops::RangeBounds;
+use std::ops::{Bound as StdBound, RangeBounds};
 use std::sync::Arc;
 
-use arrow_schema::{Schema, SchemaRef};
+use arrow_schema::Schema;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::logical_expr::Expr;
 use datafusion::optimizer::utils::conjunction;
 use datafusion::prelude::Column;
 use datafusion::scalar::ScalarValue;
-use datafusion_proto::bytes::Serializeable;
+use datafusion_proto::protobuf;
+use protos::models_helper::to_prost_bytes;
+use serde::de::Visitor;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 
 use super::transformation::RowExpressionToDomainsVisitor;
-use crate::schema::TskvTableSchema;
-use crate::{Error, Result};
+use super::Split;
+use crate::schema::{ScalarValueForkDF, TskvTableSchema};
+use crate::{Error, Result, Timestamp};
 
 pub type PredicateRef = Arc<Predicate>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TimeRange {
+    pub min_ts: i64,
+    pub max_ts: i64,
+}
+
+impl From<(StdBound<i64>, StdBound<i64>)> for TimeRange {
+    /// TODO 目前TimeRange只支持闭区间
+    fn from(range: (StdBound<i64>, StdBound<i64>)) -> Self {
+        let min_ts = match range.0 {
+            StdBound::Excluded(v) | StdBound::Included(v) => v,
+            _ => Timestamp::MIN,
+        };
+        let max_ts = match range.1 {
+            StdBound::Excluded(v) | StdBound::Included(v) => v,
+            _ => Timestamp::MAX,
+        };
+
+        TimeRange { min_ts, max_ts }
+    }
+}
+
+impl TimeRange {
+    pub fn new(min_ts: i64, max_ts: i64) -> Self {
+        Self { min_ts, max_ts }
+    }
+
+    pub fn all() -> Self {
+        Self {
+            min_ts: Timestamp::MIN,
+            max_ts: Timestamp::MAX,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_boundless(&self) -> bool {
+        self.min_ts == Timestamp::MIN && self.max_ts == Timestamp::MAX
+    }
+
+    #[inline(always)]
+    pub fn overlaps(&self, range: &TimeRange) -> bool {
+        !(self.min_ts > range.max_ts || self.max_ts < range.min_ts)
+    }
+
+    #[inline(always)]
+    pub fn includes(&self, other: &TimeRange) -> bool {
+        self.min_ts <= other.min_ts && self.max_ts >= other.max_ts
+    }
+
+    #[inline(always)]
+    pub fn contains(&self, time_stamp: Timestamp) -> bool {
+        time_stamp >= self.min_ts && time_stamp <= self.max_ts
+    }
+
+    pub fn intersect(&self, other: &Self) -> Option<Self> {
+        if self.overlaps(other) {
+            // There is overlap, calculate the intersection
+            let min_ts = cmp::max(self.min_ts, other.min_ts);
+            let max_ts = cmp::min(self.max_ts, other.max_ts);
+
+            return Some(Self { min_ts, max_ts });
+        }
+
+        None
+    }
+
+    pub fn total_time(&self) -> u64 {
+        if self.max_ts < self.min_ts {
+            return 0;
+        }
+        (self.max_ts as i128 - self.min_ts as i128) as u64 + 1_u64
+    }
+
+    #[inline(always)]
+    pub fn merge(&mut self, other: &TimeRange) {
+        self.min_ts = self.min_ts.min(other.min_ts);
+        self.max_ts = self.max_ts.max(other.max_ts);
+    }
+}
+
+impl From<(Timestamp, Timestamp)> for TimeRange {
+    fn from(time_range: (Timestamp, Timestamp)) -> Self {
+        Self {
+            min_ts: time_range.0,
+            max_ts: time_range.1,
+        }
+    }
+}
+
+impl From<TimeRange> for (Timestamp, Timestamp) {
+    fn from(t: TimeRange) -> Self {
+        (t.min_ts, t.max_ts)
+    }
+}
+
+impl PartialOrd for TimeRange {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TimeRange {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        match self.min_ts.cmp(&other.min_ts) {
+            cmp::Ordering::Equal => self.max_ts.cmp(&other.max_ts),
+            other => other,
+        }
+    }
+}
+
+impl Display for TimeRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}, {}]", self.min_ts, self.max_ts)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 enum Bound {
     /// lower than the value, but infinitesimally close to the value.
     Below,
@@ -38,6 +158,68 @@ pub struct Marker {
     data_type: DataType,
     value: Option<ScalarValue>,
     bound: Bound,
+}
+
+impl Serialize for Marker {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let value: Option<ScalarValueForkDF> = self.value.clone().map(|e| e.into());
+
+        let mut ve = serializer.serialize_struct("Marker", 3)?;
+        ve.serialize_field("data_type", &self.data_type)?;
+        ve.serialize_field("value", &value)?;
+        ve.serialize_field("bound", &self.bound)?;
+        ve.end()
+    }
+}
+
+impl<'a> Deserialize<'a> for Marker {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let mark = deserializer.deserialize_struct(
+            "ValueEntry",
+            &["data_type", "value", "bound"],
+            MarkerVisitor,
+        )?;
+
+        Ok(mark.into())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct MarkerSerialize {
+    data_type: DataType,
+    value: Option<ScalarValueForkDF>,
+    bound: Bound,
+}
+
+impl From<MarkerSerialize> for Marker {
+    fn from(mark: MarkerSerialize) -> Self {
+        let MarkerSerialize {
+            data_type,
+            value,
+            bound,
+        } = mark;
+        Self {
+            data_type,
+            value: value.map(|e| e.into()),
+            bound,
+        }
+    }
+}
+
+struct MarkerVisitor;
+
+impl<'de> Visitor<'de> for MarkerVisitor {
+    type Value = MarkerSerialize;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("This Visitor expects to receive Marker")
+    }
 }
 
 impl<'a> From<&'a Marker> for std::ops::Bound<&'a ScalarValue> {
@@ -182,7 +364,7 @@ impl Ord for Marker {
 }
 
 /// A Range of values across the continuous space defined by the types of the Markers.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Range {
     low: Marker,
     high: Marker,
@@ -387,6 +569,43 @@ pub struct ValueEntry {
     value: ScalarValue,
 }
 
+impl Serialize for ValueEntry {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let value: protobuf::ScalarValue = (&self.value)
+            .try_into()
+            .map_err(serde::ser::Error::custom)?;
+
+        let value_buf = to_prost_bytes(value);
+
+        let mut ve = serializer.serialize_struct("ValueEntry", 2)?;
+        ve.serialize_field("data_type", &self.data_type)?;
+        ve.serialize_field("value", &value_buf)?;
+        ve.end()
+    }
+}
+
+impl<'a> Deserialize<'a> for ValueEntry {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        deserializer.deserialize_struct("ValueEntry", &["data_type", "value"], ValueEntryVisitor)
+    }
+}
+
+struct ValueEntryVisitor;
+
+impl<'de> Visitor<'de> for ValueEntryVisitor {
+    type Value = ValueEntry;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("This Visitor expects to receive ValueEntry")
+    }
+}
+
 impl ValueEntry {
     pub fn value(&self) -> &ScalarValue {
         &self.value
@@ -406,7 +625,7 @@ pub fn utf8_from(val: &ScalarValue) -> Option<&str> {
 /// Ranges are coalesced into the most compact representation of non-overlapping Ranges.
 ///
 /// This structure allows iteration across these compacted Ranges in increasing order, as well as other common set-related operation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RangeValueSet {
     // data_type: DataType,
     low_indexed_ranges: BTreeMap<Marker, Range>,
@@ -422,7 +641,7 @@ impl RangeValueSet {
 ///
 /// Assumes an infinite number of possible values.
 /// The values may be collectively included (aka whitelist) or collectively excluded (aka !whitelist).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EqutableValueSet {
     data_type: DataType,
     white_list: bool,
@@ -439,7 +658,7 @@ impl EqutableValueSet {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Domain {
     Range(RangeValueSet),
     Equtable(EqutableValueSet),
@@ -743,7 +962,7 @@ impl Domain {
 /// respective allowable value domain(ValueSet). Conceptually, these ValueSet can be thought of
 ///
 /// as being AND'ed together to form the representative predicate.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColumnDomains<T>
 where
     T: Eq + Hash + Clone,
@@ -912,7 +1131,6 @@ impl<T: Eq + Hash + Clone> ColumnDomains<T> {
 
 #[derive(Debug, Default)]
 pub struct Predicate {
-    exprs: Vec<Expr>,
     pushed_down_domains: ColumnDomains<Column>,
     limit: Option<usize>,
 }
@@ -920,10 +1138,6 @@ pub struct Predicate {
 impl Predicate {
     pub fn limit(&self) -> Option<usize> {
         self.limit
-    }
-
-    pub fn exprs(&self) -> &[Expr] {
-        &self.exprs
     }
 
     pub fn filter(&self) -> &ColumnDomains<Column> {
@@ -942,7 +1156,6 @@ impl Predicate {
         filters: &[Expr],
         _table_schema: &TskvTableSchema,
     ) -> Predicate {
-        self.exprs = filters.to_vec();
         if let Some(ref expr) = conjunction(filters.to_vec()) {
             if let Ok(domains) = RowExpressionToDomainsVisitor::expr_to_column_domains(expr) {
                 self.pushed_down_domains = domains;
@@ -979,99 +1192,25 @@ impl QueryArgs {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryExpr {
-    pub filters: Vec<Expr>,
-    pub df_schema: SchemaRef,
+    pub split: Split,
+    pub df_schema: Schema,
     pub table_schema: TskvTableSchema,
 }
 
 impl QueryExpr {
     pub fn encode(option: &QueryExpr) -> Result<Vec<u8>> {
-        let mut buffer = vec![];
-
-        buffer.append(&mut (option.filters.len() as u32).to_be_bytes().to_vec());
-        for item in option.filters.iter() {
-            let mut tmp = item
-                .to_bytes()
-                .map_err(|err| Error::InvalidQueryExprMsg {
-                    err: err.to_string(),
-                })?
-                .to_vec();
-            buffer.append(&mut (tmp.len() as u32).to_be_bytes().to_vec());
-            buffer.append(&mut tmp);
-        }
-
-        let tmp = serde_json::to_string(option.df_schema.as_ref()).map_err(|err| {
-            Error::InvalidQueryExprMsg {
-                err: err.to_string(),
-            }
+        let bytes = serde_json::to_vec(option).map_err(|err| Error::InvalidQueryExprMsg {
+            err: err.to_string(),
         })?;
-        buffer.append(&mut (tmp.len() as u32).to_be_bytes().to_vec());
-        buffer.append(&mut tmp.into_bytes());
 
-        let tmp = serde_json::to_string(&option.table_schema).map_err(|err| {
-            Error::InvalidQueryExprMsg {
-                err: err.to_string(),
-            }
-        })?;
-        buffer.append(&mut (tmp.len() as u32).to_be_bytes().to_vec());
-        buffer.append(&mut tmp.into_bytes());
-
-        Ok(buffer)
+        Ok(bytes)
     }
 
     pub fn decode(buf: &[u8]) -> Result<QueryExpr> {
-        let decode_data_len_val = |reader: &mut BufReader<&[u8]>| -> Result<Vec<u8>> {
-            let mut len_buf: [u8; 4] = [0; 4];
-            reader.read_exact(&mut len_buf)?;
-
-            let mut data_buf = vec![];
-            data_buf.resize(u32::from_be_bytes(len_buf) as usize, 0);
-            reader.read_exact(&mut data_buf)?;
-
-            Ok(data_buf)
-        };
-
-        let mut buffer = BufReader::new(buf);
-
-        let mut count_buf: [u8; 4] = [0; 4];
-        buffer.read_exact(&mut count_buf)?;
-        let count = u32::from_be_bytes(count_buf);
-        let mut filters = Vec::with_capacity(count as usize);
-        for _i in 0..count {
-            let data_buf = decode_data_len_val(&mut buffer)?;
-            let expr = Expr::from_bytes(&data_buf).map_err(|err| Error::InvalidQueryExprMsg {
-                err: err.to_string(),
-            })?;
-
-            filters.push(expr);
-        }
-
-        let data_buf = decode_data_len_val(&mut buffer)?;
-        let data = String::from_utf8(data_buf).map_err(|err| Error::InvalidQueryExprMsg {
+        serde_json::from_slice::<QueryExpr>(buf).map_err(|err| Error::InvalidQueryExprMsg {
             err: err.to_string(),
-        })?;
-        let df_schema =
-            serde_json::from_str::<Schema>(&data).map_err(|err| Error::InvalidQueryExprMsg {
-                err: err.to_string(),
-            })?;
-        let df_schema = Arc::new(df_schema);
-
-        let data_buf = decode_data_len_val(&mut buffer)?;
-        let data = String::from_utf8(data_buf).map_err(|err| Error::InvalidQueryExprMsg {
-            err: err.to_string(),
-        })?;
-        let table_schema = serde_json::from_str::<TskvTableSchema>(&data).map_err(|err| {
-            Error::InvalidQueryExprMsg {
-                err: err.to_string(),
-            }
-        })?;
-
-        Ok(QueryExpr {
-            filters,
-            df_schema,
-            table_schema,
         })
     }
 }

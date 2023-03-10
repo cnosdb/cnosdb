@@ -15,13 +15,17 @@ use datafusion::logical_expr::{
     aggregate_function, Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
 };
 use datafusion::optimizer::utils::split_conjunction;
+use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use meta::error::MetaError;
+use models::meta_data::DatabaseInfo;
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 use trace::debug;
 
 use crate::data_source::sink::tskv::TskvRecordBatchSinkProvider;
+use crate::data_source::split::tskv::TableLayoutHandle;
+use crate::data_source::split::SplitManagerRef;
 use crate::data_source::WriteExecExt;
 use crate::extension::expr::expr_utils;
 use crate::extension::physical::plan_node::aggregate_filter_scan::AggregateFilterTskvExec;
@@ -32,27 +36,51 @@ use crate::extension::physical::plan_node::tskv_exec::TskvExec;
 #[derive(Clone)]
 pub struct ClusterTable {
     coord: CoordinatorRef,
+    split_manager: SplitManagerRef,
+    database_info: Arc<DatabaseInfo>,
     schema: TskvTableSchemaRef,
 }
 
 impl ClusterTable {
     async fn create_physical_plan(
         &self,
+        ctx: &SessionState,
         projection: Option<&Vec<usize>>,
         predicate: PredicateRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let proj_schema = self.project_schema(projection)?;
+
+        let table_layout = TableLayoutHandle {
+            db: self.database_info.clone(),
+            table: self.schema.clone(),
+            predicate: predicate.clone(),
+        };
+        let splits = self.split_manager.splits(ctx, table_layout);
+        if splits.is_empty() {
+            return Ok(Arc::new(EmptyExec::new(false, proj_schema)));
+        }
 
         Ok(Arc::new(TskvExec::new(
             self.schema.clone(),
             proj_schema,
             predicate,
             self.coord.clone(),
+            splits,
         )))
     }
 
-    pub fn new(coord: CoordinatorRef, schema: TskvTableSchemaRef) -> Self {
-        ClusterTable { coord, schema }
+    pub fn new(
+        coord: CoordinatorRef,
+        split_manager: SplitManagerRef,
+        database_info: Arc<DatabaseInfo>,
+        schema: TskvTableSchemaRef,
+    ) -> Self {
+        ClusterTable {
+            coord,
+            split_manager,
+            database_info,
+            schema,
+        }
     }
 
     pub async fn tag_scan(
@@ -104,7 +132,7 @@ impl TableProvider for ClusterTable {
 
     async fn scan(
         &self,
-        _state: &SessionState,
+        ctx: &SessionState,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
         agg_with_grouping: Option<&AggWithGrouping>,
@@ -130,7 +158,7 @@ impl TableProvider for ClusterTable {
             );
         }
 
-        return self.create_physical_plan(projection, filter).await;
+        return self.create_physical_plan(ctx, projection, filter).await;
     }
 
     fn supports_filter_pushdown(&self, expr: &Expr) -> Result<TableProviderFilterPushDown> {
@@ -176,7 +204,7 @@ impl TableProvider for ClusterTable {
                     support_agg_func
                         && args.len() == 1
                         && matches!(args[0], Expr::Column(_))
-                        && !distinct
+                        && !*distinct
                         && filter.is_none()
                 }
                 _ => false,

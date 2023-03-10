@@ -2,7 +2,8 @@ use std::cmp::min;
 use std::fmt::Display;
 
 use minivec::MiniVec;
-use models::{TimeRange, Timestamp, ValueType};
+use models::predicate::domain::TimeRange;
+use models::{Timestamp, ValueType};
 use trace::error;
 
 use crate::memcache::DataType;
@@ -442,6 +443,15 @@ impl DataBlock {
         if self.is_empty() {
             return;
         }
+        if let Some((min_idx, max_idx)) = self.index_range(time_range) {
+            self.exclude_by_index(min_idx, max_idx + 1);
+        }
+    }
+
+    pub fn index_range(&self, time_range: &TimeRange) -> Option<(usize, usize)> {
+        if self.is_empty() {
+            return None;
+        }
         let TimeRange { min_ts, max_ts } = *time_range;
 
         /// Returns possible position of ts in sli,
@@ -454,17 +464,22 @@ impl DataBlock {
         }
 
         let ts_sli = self.ts();
-        let (min_idx, has_min) = binary_search(ts_sli, &min_ts);
+        let (mut min_idx, has_min) = binary_search(ts_sli, &min_ts);
         let (mut max_idx, has_max) = binary_search(ts_sli, &max_ts);
         // If ts_sli doesn't contain supported time range then return.
-        if min_idx > max_idx || min_idx == max_idx && !has_min && !has_max {
-            return;
+        if min_idx > max_idx
+            || max_idx == 0 && !has_max
+            || min_idx == ts_sli.len()
+            || max_idx == min_idx && !has_max && !has_min
+        {
+            return None;
         }
-        if max_idx < ts_sli.len() {
-            max_idx += 1;
+        if !has_max {
+            max_idx -= 1;
         }
-
-        self.exclude_by_index(min_idx, max_idx);
+        min_idx = min(min_idx, ts_sli.len() - 1);
+        max_idx = min(max_idx, ts_sli.len() - 1);
+        Some((min_idx, max_idx))
     }
 
     /// Extract `DataBlock`s to `DataType`s,
@@ -648,7 +663,7 @@ fn exclude_slow(v: &mut Vec<MiniVec<u8>>, min_idx: usize, max_idx: usize) {
 pub mod test {
 
     use minivec::mini_vec;
-    use models::TimeRange;
+    use models::predicate::domain::TimeRange;
 
     use crate::memcache::DataType;
     use crate::tsm::codec::DataBlockEncoding;
@@ -669,9 +684,8 @@ pub mod test {
             vec![
                 DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50], enc: DataBlockEncoding::default() },
                 DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() },
-
             ],
-            0
+            0,
         );
 
         #[rustfmt::skip]
@@ -686,7 +700,7 @@ pub mod test {
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
-            enc: DataBlockEncoding::default()
+            enc: DataBlockEncoding::default(),
         };
         blk.exclude(&TimeRange::from((2, 3)));
         assert_eq!(
@@ -694,7 +708,7 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
                 val: vec![10, 11, 14, 15, 16, 17, 18, 19],
-                enc: DataBlockEncoding::default()
+                enc: DataBlockEncoding::default(),
             }
         );
 
@@ -702,7 +716,7 @@ pub mod test {
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
-            enc: DataBlockEncoding::default()
+            enc: DataBlockEncoding::default(),
         };
         blk.exclude(&TimeRange::from((2, 8)));
         assert_eq!(
@@ -710,7 +724,7 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 9],
                 val: vec![10, 11, 19],
-                enc: DataBlockEncoding::default()
+                enc: DataBlockEncoding::default(),
             }
         );
 
@@ -719,7 +733,7 @@ pub mod test {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![mini_vec![10], mini_vec![11], mini_vec![12], mini_vec![13], mini_vec![14],
                       mini_vec![15], mini_vec![16], mini_vec![17], mini_vec![18], mini_vec![19]],
-            enc: DataBlockEncoding::default()
+            enc: DataBlockEncoding::default(),
         };
         blk.exclude(&TimeRange::from((2, 3)));
         assert_eq!(
@@ -734,9 +748,9 @@ pub mod test {
                     mini_vec![16],
                     mini_vec![17],
                     mini_vec![18],
-                    mini_vec![19]
+                    mini_vec![19],
                 ],
-                enc: DataBlockEncoding::default()
+                enc: DataBlockEncoding::default(),
             }
         );
 
@@ -745,7 +759,7 @@ pub mod test {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![mini_vec![10], mini_vec![11], mini_vec![12], mini_vec![13], mini_vec![14],
                       mini_vec![15], mini_vec![16], mini_vec![17], mini_vec![18], mini_vec![19]],
-            enc: DataBlockEncoding::default()
+            enc: DataBlockEncoding::default(),
         };
         blk.exclude(&TimeRange::from((2, 8)));
         assert_eq!(
@@ -753,7 +767,7 @@ pub mod test {
             DataBlock::Str {
                 ts: vec![0, 1, 9],
                 val: vec![mini_vec![10], mini_vec![11], mini_vec![19]],
-                enc: DataBlockEncoding::default()
+                enc: DataBlockEncoding::default(),
             }
         )
     }
@@ -786,7 +800,7 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 2],
                 val: vec![10, 11, 12],
-                enc: DataBlockEncoding::default()
+                enc: DataBlockEncoding::default(),
             }
         );
 
@@ -801,7 +815,7 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 2, 3],
                 val: vec![10, 11, 12, 13],
-                enc: DataBlockEncoding::default()
+                enc: DataBlockEncoding::default(),
             }
         );
 
@@ -816,7 +830,7 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 2, 3],
                 val: vec![10, 11, 12, 13],
-                enc: DataBlockEncoding::default()
+                enc: DataBlockEncoding::default(),
             }
         );
 
@@ -831,7 +845,7 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 2, 3, 7, 8, 9, 10],
                 val: vec![10, 11, 12, 13, 17, 18, 19, 20],
-                enc: DataBlockEncoding::default()
+                enc: DataBlockEncoding::default(),
             }
         );
     }

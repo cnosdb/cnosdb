@@ -25,6 +25,7 @@ use spi::query::session::SessionCtx;
 
 use self::cluster_schema_provider::ClusterSchemaProvider;
 use self::information_schema_provider::InformationSchemaProvider;
+use crate::data_source::split::SplitManagerRef;
 use crate::data_source::table_provider::tskv::ClusterTable;
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
@@ -53,6 +54,7 @@ pub struct MetadataProvider {
     session: SessionCtx,
     config_options: ConfigOptions,
     coord: CoordinatorRef,
+    split_manager: SplitManagerRef,
     meta_client: MetaClientRef,
     func_manager: FuncMetaManagerRef,
     information_schema_provider: InformationSchemaProvider,
@@ -64,6 +66,7 @@ pub struct MetadataProvider {
 impl MetadataProvider {
     pub fn new(
         coord: CoordinatorRef,
+        split_manager: SplitManagerRef,
         meta_client: MetaClientRef,
         func_manager: SimpleFunctionMetadataManager,
         query_tracker: Arc<QueryTracker>,
@@ -72,6 +75,7 @@ impl MetadataProvider {
     ) -> Self {
         Self {
             coord,
+            split_manager,
             // TODO refactor
             config_options: session.inner().state().config_options().clone(),
             session,
@@ -147,6 +151,17 @@ impl MetadataProvider {
             return Ok(source);
         }
 
+        let database_info = self
+            .meta_client
+            .get_db_info(database_name)
+            .map_err(|e| DataFusionError::External(Box::new(e)))?
+            .ok_or_else(|| {
+                DataFusionError::External(Box::new(MetaError::DatabaseNotFound {
+                    database: database_name.into(),
+                }))
+            })?;
+        let database_info = Arc::new(database_info);
+
         let df_table_source = match self
             .meta_client
             .get_table_schema(database_name, table_name)
@@ -154,7 +169,12 @@ impl MetadataProvider {
         {
             Some(table) => match table {
                 TableSchema::TsKvTableSchema(schema) => {
-                    provider_as_source(Arc::new(ClusterTable::new(self.coord.clone(), schema)))
+                    provider_as_source(Arc::new(ClusterTable::new(
+                        self.coord.clone(),
+                        self.split_manager.clone(),
+                        database_info,
+                        schema,
+                    )))
                 }
                 TableSchema::ExternalTableSchema(schema) => {
                     let table_path = ListingTableUrl::parse(&schema.location)?;

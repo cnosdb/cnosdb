@@ -118,9 +118,11 @@ mod test {
     use datafusion::physical_plan::planner::DefaultPhysicalPlanner;
     use datafusion::physical_plan::{displayable, PhysicalPlanner};
     use datafusion::prelude::{col, count, max, min, sum, Expr, SessionConfig};
+    use models::meta_data::{BucketInfo, DatabaseInfo};
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::ValueType;
 
+    use crate::data_source::split;
     use crate::data_source::table_provider::tskv::ClusterTable;
 
     fn observe(_plan: &LogicalPlan, _rule: &dyn OptimizerRule) {}
@@ -132,7 +134,33 @@ mod test {
         opt.optimize(plan, &config, &observe)
     }
 
-    fn test_table_scan() -> Result<LogicalPlan> {
+    fn test_table_scan(with_nonempty_database: bool) -> Result<LogicalPlan> {
+        #[allow(clippy::inconsistent_digit_grouping)]
+        let db_info = if with_nonempty_database {
+            DatabaseInfo {
+                buckets: vec![
+                    BucketInfo {
+                        id: 1,
+                        // 2023-01-01 00:00:00.000000000
+                        start_time: 1672502400_000_000_000_i64,
+                        // 2023-07-01 00:00:00.000000000
+                        end_time: 1688140800_000_000_000_i64,
+                        ..Default::default()
+                    },
+                    BucketInfo {
+                        id: 2,
+                        // 2023-07-01 00:00:00.000000000
+                        start_time: 1688140800_000_000_000_i64,
+                        // 2024-01-01 00:00:00.000000000
+                        end_time: 1704038400_000_000_000_i64,
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }
+        } else {
+            DatabaseInfo::default()
+        };
         let mut schema = TskvTableSchema::default();
         schema.add_column(TableColumn::new_with_default(
             "flag".to_string(),
@@ -145,6 +173,8 @@ mod test {
 
         let provider = Arc::new(ClusterTable::new(
             Arc::new(MockCoordinator::default()),
+            split::default_split_manager_ref(),
+            Arc::new(db_info),
             Arc::new(schema),
         ));
 
@@ -177,7 +207,27 @@ mod test {
 
     #[tokio::test]
     async fn test_count_with_group() -> Result<()> {
-        let plan = LogicalPlanBuilder::from(test_table_scan()?)
+        {
+            let plan = LogicalPlanBuilder::from(test_table_scan(false)?)
+                .aggregate(vec![col("flag")], vec![count(col("value"))])?
+                .build()?;
+
+            test_plan(
+                plan,
+                "\
+                Aggregate: groupBy=[[?table?.flag]], aggr=[[COUNT(?table?.value)]]\
+                \n  TableScan: ?table? projection=[flag, value]",
+                "\
+                AggregateExec: mode=FinalPartitioned, gby=[flag@0 as flag], aggr=[COUNT(?table?.value)]\
+                \n  CoalesceBatchesExec: target_batch_size=8192\
+                \n    RepartitionExec: partitioning=Hash([Column { name: \"flag\", index: 0 }], 8), input_partitions=8\
+                \n      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
+                \n        AggregateExec: mode=Partial, gby=[flag@0 as flag], aggr=[COUNT(?table?.value)]\
+                \n          EmptyExec: produce_one_row=false\
+                \n",
+            ).await?;
+        }
+        let plan = LogicalPlanBuilder::from(test_table_scan(true)?)
             .aggregate(vec![col("flag")], vec![count(col("value"))])?
             .build()?;
 
@@ -191,15 +241,36 @@ mod test {
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([Column { name: \"flag\", index: 0 }], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[flag@0 as flag], aggr=[COUNT(?table?.value)]\
-            \n        RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
-            \n          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[flag,value]\
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[flag,value]\
             \n",
         ).await
     }
 
     #[tokio::test]
     async fn test_count_without_group() -> Result<()> {
-        let plan = LogicalPlanBuilder::from(test_table_scan()?)
+        {
+            let plan = LogicalPlanBuilder::from(test_table_scan(false)?)
+                .aggregate(Vec::<Expr>::new(), vec![count(col("value"))])?
+                .build()?;
+
+            test_plan(
+                plan,
+                "\
+                Projection: SUM(COUNT(?table?.value)) AS COUNT(?table?.value)\
+                \n  Aggregate: groupBy=[[]], aggr=[[SUM(COUNT(?table?.value))]]\
+                \n    TableScan: ?table?, grouping=[], agg=[COUNT(?table?.value)]",
+                "\
+                ProjectionExec: expr=[SUM(COUNT(?table?.value))@0 as COUNT(?table?.value)]\
+                \n  AggregateExec: mode=Final, gby=[], aggr=[SUM(COUNT(?table?.value))]\
+                \n    CoalescePartitionsExec\
+                \n      AggregateExec: mode=Partial, gby=[], aggr=[SUM(COUNT(?table?.value))]\
+                \n        RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
+                \n          AggregateFilterTskvExec: agg=[[Count(\"value\")]], filter=[Predicate { pushed_down_domains: ColumnDomains { column_to_domain: Some({}) }, limit: None }]\
+                \n",
+            ).await?;
+        }
+
+        let plan = LogicalPlanBuilder::from(test_table_scan(true)?)
             .aggregate(Vec::<Expr>::new(), vec![count(col("value"))])?
             .build()?;
 
@@ -215,14 +286,36 @@ mod test {
             \n    CoalescePartitionsExec\
             \n      AggregateExec: mode=Partial, gby=[], aggr=[SUM(COUNT(?table?.value))]\
             \n        RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
-            \n          AggregateFilterTskvExec: agg=[[Count(\"value\")]], filter=[Predicate { exprs: [], pushed_down_domains: ColumnDomains { column_to_domain: Some({}) }, limit: None }]\
+            \n          AggregateFilterTskvExec: agg=[[Count(\"value\")]], filter=[Predicate { pushed_down_domains: ColumnDomains { column_to_domain: Some({}) }, limit: None }]\
             \n",
         ).await
     }
 
     #[tokio::test]
     async fn test_max_with_group() -> Result<()> {
-        let plan = LogicalPlanBuilder::from(test_table_scan()?)
+        {
+            let plan = LogicalPlanBuilder::from(test_table_scan(false)?)
+                .aggregate(vec![col("flag")], vec![max(col("value"))])?
+                .build()?;
+
+            test_plan(
+                plan,
+                "\
+                Aggregate: groupBy=[[?table?.flag]], aggr=[[MAX(?table?.value)]]\
+                \n  TableScan: ?table? projection=[flag, value]",
+                // TODO: This test function is not for EmptyExec executing.
+                "\
+                AggregateExec: mode=FinalPartitioned, gby=[flag@0 as flag], aggr=[MAX(?table?.value)]\
+                \n  CoalesceBatchesExec: target_batch_size=8192\
+                \n    RepartitionExec: partitioning=Hash([Column { name: \"flag\", index: 0 }], 8), input_partitions=8\
+                \n      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
+                \n        AggregateExec: mode=Partial, gby=[flag@0 as flag], aggr=[MAX(?table?.value)]\
+                \n          EmptyExec: produce_one_row=false\
+                \n",
+            ).await?;
+        }
+
+        let plan = LogicalPlanBuilder::from(test_table_scan(true)?)
             .aggregate(vec![col("value")], vec![max(col("value"))])?
             .build()?;
 
@@ -236,15 +329,33 @@ mod test {
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([Column { name: \"value\", index: 0 }], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[value@0 as value], aggr=[MAX(?table?.value)]\
-            \n        RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
-            \n          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
             \n",
         ).await
     }
 
     #[tokio::test]
     async fn test_max_without_group() -> Result<()> {
-        let plan = LogicalPlanBuilder::from(test_table_scan()?)
+        {
+            let plan = LogicalPlanBuilder::from(test_table_scan(false)?)
+                .aggregate(Vec::<Expr>::new(), vec![max(col("value"))])?
+                .build()?;
+
+            test_plan(
+                plan,
+                "\
+                Aggregate: groupBy=[[]], aggr=[[MAX(?table?.value)]]\
+                \n  TableScan: ?table? projection=[value]",
+                "\
+                AggregateExec: mode=Final, gby=[], aggr=[MAX(?table?.value)]\
+                \n  AggregateExec: mode=Partial, gby=[], aggr=[MAX(?table?.value)]\
+                \n    EmptyExec: produce_one_row=false\
+                \n",
+            )
+            .await?;
+        }
+
+        let plan = LogicalPlanBuilder::from(test_table_scan(true)?)
             .aggregate(Vec::<Expr>::new(), vec![max(col("value"))])?
             .build()?;
 
@@ -257,15 +368,35 @@ mod test {
             AggregateExec: mode=Final, gby=[], aggr=[MAX(?table?.value)]\
             \n  CoalescePartitionsExec\
             \n    AggregateExec: mode=Partial, gby=[], aggr=[MAX(?table?.value)]\
-            \n      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
-            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
+            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
             \n",
         ).await
     }
 
     #[tokio::test]
     async fn test_min_with_group() -> Result<()> {
-        let plan = LogicalPlanBuilder::from(test_table_scan()?)
+        {
+            let plan = LogicalPlanBuilder::from(test_table_scan(false)?)
+                .aggregate(vec![col("flag")], vec![min(col("value"))])?
+                .build()?;
+
+            test_plan(
+                plan,
+                "\
+                Aggregate: groupBy=[[?table?.flag]], aggr=[[MIN(?table?.value)]]\
+                \n  TableScan: ?table? projection=[flag, value]",
+                "\
+                AggregateExec: mode=FinalPartitioned, gby=[flag@0 as flag], aggr=[MIN(?table?.value)]\
+                \n  CoalesceBatchesExec: target_batch_size=8192\
+                \n    RepartitionExec: partitioning=Hash([Column { name: \"flag\", index: 0 }], 8), input_partitions=8\
+                \n      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
+                \n        AggregateExec: mode=Partial, gby=[flag@0 as flag], aggr=[MIN(?table?.value)]\
+                \n          EmptyExec: produce_one_row=false\
+                \n",
+            ).await?;
+        }
+
+        let plan = LogicalPlanBuilder::from(test_table_scan(true)?)
             .aggregate(vec![col("value")], vec![min(col("value"))])?
             .build()?;
 
@@ -279,15 +410,33 @@ mod test {
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([Column { name: \"value\", index: 0 }], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[value@0 as value], aggr=[MIN(?table?.value)]\
-            \n        RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
-            \n          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
             \n",
         ).await
     }
 
     #[tokio::test]
     async fn test_min_without_group() -> Result<()> {
-        let plan = LogicalPlanBuilder::from(test_table_scan()?)
+        {
+            let plan = LogicalPlanBuilder::from(test_table_scan(false)?)
+                .aggregate(Vec::<Expr>::new(), vec![min(col("value"))])?
+                .build()?;
+
+            test_plan(
+                plan,
+                "\
+                Aggregate: groupBy=[[]], aggr=[[MIN(?table?.value)]]\
+                \n  TableScan: ?table? projection=[value]",
+                "\
+                AggregateExec: mode=Final, gby=[], aggr=[MIN(?table?.value)]\
+                \n  AggregateExec: mode=Partial, gby=[], aggr=[MIN(?table?.value)]\
+                \n    EmptyExec: produce_one_row=false\
+                \n",
+            )
+            .await?;
+        }
+
+        let plan = LogicalPlanBuilder::from(test_table_scan(true)?)
             .aggregate(Vec::<Expr>::new(), vec![min(col("value"))])?
             .build()?;
 
@@ -300,15 +449,35 @@ mod test {
             AggregateExec: mode=Final, gby=[], aggr=[MIN(?table?.value)]\
             \n  CoalescePartitionsExec\
             \n    AggregateExec: mode=Partial, gby=[], aggr=[MIN(?table?.value)]\
-            \n      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
-            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
+            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
             \n",
         ).await
     }
 
     #[tokio::test]
     async fn test_sum_with_group() -> Result<()> {
-        let plan = LogicalPlanBuilder::from(test_table_scan()?)
+        {
+            let plan = LogicalPlanBuilder::from(test_table_scan(false)?)
+                .aggregate(vec![col("value")], vec![sum(col("value"))])?
+                .build()?;
+
+            test_plan(
+                plan,
+                "\
+                Aggregate: groupBy=[[?table?.value]], aggr=[[SUM(?table?.value)]]\
+                \n  TableScan: ?table? projection=[value]",
+                "\
+                AggregateExec: mode=FinalPartitioned, gby=[value@0 as value], aggr=[SUM(?table?.value)]\
+                \n  CoalesceBatchesExec: target_batch_size=8192\
+                \n    RepartitionExec: partitioning=Hash([Column { name: \"value\", index: 0 }], 8), input_partitions=8\
+                \n      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
+                \n        AggregateExec: mode=Partial, gby=[value@0 as value], aggr=[SUM(?table?.value)]\
+                \n          EmptyExec: produce_one_row=false\
+                \n",
+            ).await?;
+        }
+
+        let plan = LogicalPlanBuilder::from(test_table_scan(true)?)
             .aggregate(vec![col("value")], vec![sum(col("value"))])?
             .build()?;
 
@@ -322,14 +491,32 @@ mod test {
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([Column { name: \"value\", index: 0 }], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[value@0 as value], aggr=[SUM(?table?.value)]\
-            \n        RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
-            \n          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\n",
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\n",
         ).await
     }
 
     #[tokio::test]
     async fn test_sum_without_group() -> Result<()> {
-        let plan = LogicalPlanBuilder::from(test_table_scan()?)
+        {
+            let plan = LogicalPlanBuilder::from(test_table_scan(false)?)
+                .aggregate(Vec::<Expr>::new(), vec![sum(col("value"))])?
+                .build()?;
+
+            test_plan(
+                plan,
+                "\
+                Aggregate: groupBy=[[]], aggr=[[SUM(?table?.value)]]\
+                \n  TableScan: ?table? projection=[value]",
+                "\
+                AggregateExec: mode=Final, gby=[], aggr=[SUM(?table?.value)]\
+                \n  AggregateExec: mode=Partial, gby=[], aggr=[SUM(?table?.value)]\
+                \n    EmptyExec: produce_one_row=false\
+                \n",
+            )
+            .await?;
+        }
+
+        let plan = LogicalPlanBuilder::from(test_table_scan(true)?)
             .aggregate(Vec::<Expr>::new(), vec![sum(col("value"))])?
             .build()?;
 
@@ -342,8 +529,7 @@ mod test {
             AggregateExec: mode=Final, gby=[], aggr=[SUM(?table?.value)]\
             \n  CoalescePartitionsExec\
             \n    AggregateExec: mode=Partial, gby=[], aggr=[SUM(?table?.value)]\
-            \n      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
-            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
+            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
             \n",
         ).await
     }

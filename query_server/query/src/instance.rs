@@ -16,6 +16,7 @@ use trace::debug;
 use tskv::kv_option::Options;
 
 use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
+use crate::data_source::split;
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::execution::scheduler::LocalScheduler;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
@@ -87,6 +88,7 @@ pub async fn make_cnosdbms(
     options: Options,
     memory_pool: MemoryPoolRef,
 ) -> Result<impl DatabaseManagerSystem> {
+    let split_manager = split::default_split_manager_ref();
     // TODO session config need load global system config
     let session_factory = Arc::new(SessionCtxFactory::default());
     let parser = Arc::new(DefaultParser::default());
@@ -100,6 +102,7 @@ pub async fn make_cnosdbms(
 
     let query_dispatcher = SimpleQueryDispatcherBuilder::default()
         .with_coord(coord)
+        .with_split_manager(split_manager)
         .with_session_factory(session_factory)
         .with_parser(parser)
         .with_optimizer(optimizer)

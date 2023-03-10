@@ -17,6 +17,7 @@ use self::table_provider::tskv::ClusterTable;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
 
 pub mod sink;
+pub mod split;
 pub mod table_provider;
 pub mod write_exec_ext;
 

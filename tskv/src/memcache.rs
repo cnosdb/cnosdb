@@ -7,9 +7,10 @@ use std::sync::Arc;
 
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
+use models::predicate::domain::TimeRange;
 use models::schema::{TableColumn, TskvTableSchema};
 use models::utils::split_id;
-use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TimeRange, Timestamp, ValueType};
+use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use protos::models as fb_models;
 use protos::models::FieldType;
@@ -574,8 +575,9 @@ pub(crate) mod test {
     use std::mem::size_of;
     use std::sync::Arc;
 
+    use models::predicate::domain::TimeRange;
     use models::schema::TskvTableSchema;
-    use models::{SchemaId, SeriesId, TimeRange, Timestamp};
+    use models::{SchemaId, SeriesId, Timestamp};
     use parking_lot::RwLock;
 
     use super::{FieldVal, MemCache, RowData, RowGroup};

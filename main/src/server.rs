@@ -229,6 +229,7 @@ impl ServiceBuilder {
         let _options = tskv::Options::from(&self.config);
 
         let coord: CoordinatorRef = CoordService::new(
+            self.runtime.clone(),
             kv,
             meta,
             self.config.cluster.clone(),
@@ -275,7 +276,14 @@ impl ServiceBuilder {
             .parse::<SocketAddr>()
             .expect("Invalid tcp host");
 
-        GrpcService::new(kv, coord, host, tls_config, self.metrics_register.clone())
+        GrpcService::new(
+            self.runtime.clone(),
+            kv,
+            coord,
+            host,
+            tls_config,
+            self.metrics_register.clone(),
+        )
     }
 
     async fn create_flight_sql(&self, dbms: DBMSRef) -> FlightSqlServiceAdapter {

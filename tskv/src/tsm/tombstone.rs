@@ -14,7 +14,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use models::{FieldId, TimeRange};
+use models::predicate::domain::TimeRange;
+use models::FieldId;
 use trace::error;
 
 use super::DataBlock;
@@ -207,7 +208,7 @@ impl TsmTombstone {
 mod test {
     use std::path::PathBuf;
 
-    use models::TimeRange;
+    use models::predicate::domain::TimeRange;
 
     use super::TsmTombstone;
     use crate::file_system::file_manager;

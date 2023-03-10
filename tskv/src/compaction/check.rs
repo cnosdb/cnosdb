@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 use blake3::Hasher;
 use chrono::{Duration, DurationRound, NaiveDateTime};
+use models::predicate::domain::TimeRange;
 use models::schema::ColumnType;
-use models::{utils, ColumnId, FieldId, TimeRange, Timestamp};
+use models::{utils, ColumnId, FieldId, Timestamp};
 use snafu::ResultExt;
 use trace::warn;
 
@@ -431,11 +432,12 @@ mod test {
     use meta::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
+    use models::predicate::domain::TimeRange;
     use models::schema::{
         ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
         TskvTableSchema,
     };
-    use models::{TimeRange, Timestamp, ValueType};
+    use models::{Timestamp, ValueType};
     use protos::kv_service::{Meta, WritePointsRequest};
     use protos::models::{self as fb_models, FieldType, Points, PointsArgs, TableBuilder};
     use protos::{build_fb_schema_offset, models_helper, FbSchema};

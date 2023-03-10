@@ -13,12 +13,13 @@ use futures::Stream;
 use meta::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
-use models::predicate::domain::{Predicate, QueryArgs, QueryExpr};
+use models::predicate::domain::{QueryArgs, QueryExpr};
 use models::schema::TableColumn;
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::*;
 use protos::models::{PingBody, PingBodyBuilder};
 use tokio::io::AsyncReadExt;
+use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Sender};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
@@ -29,6 +30,7 @@ use tskv::iterator::{QueryOption, TableScanMetrics};
 type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, tonic::Status>> + Send>>;
 
 pub struct TskvServiceImpl {
+    pub runtime: Arc<Runtime>,
     pub kv_inst: EngineRef,
     pub coord: CoordinatorRef,
     pub metrics_register: Arc<MetricsRegister>,
@@ -185,23 +187,18 @@ impl TskvServiceImpl {
         args: QueryArgs,
         expr: QueryExpr,
         meta: MetaRef,
+        runtime: Arc<Runtime>,
         kv_inst: EngineRef,
         sender: Sender<CoordinatorResult<RecordBatch>>,
         metrics_register: Arc<MetricsRegister>,
     ) {
-        let filter = Arc::new(
-            Predicate::default()
-                .set_limit(args.limit)
-                .push_down_filter(&expr.filters, &expr.table_schema),
-        );
-
         let plan_metrics = ExecutionPlanMetricsSet::new();
         let scan_metrics = TableScanMetrics::new(&plan_metrics, 0, None);
         let option = QueryOption::new(
             args.batch_size,
-            filter,
+            expr.split,
             None,
-            expr.df_schema,
+            Arc::new(expr.df_schema),
             expr.table_schema,
             scan_metrics.tskv_metrics(),
         );
@@ -214,6 +211,7 @@ impl TskvServiceImpl {
 
         let executor = QueryExecutor::new(
             option,
+            runtime,
             Some(kv_inst),
             meta,
             sender.clone(),
@@ -467,6 +465,7 @@ impl TskvService for TskvServiceImpl {
             args,
             expr,
             self.coord.meta_manager(),
+            self.runtime.clone(),
             self.kv_inst.clone(),
             record_batch_sender,
             self.metrics_register.clone(),

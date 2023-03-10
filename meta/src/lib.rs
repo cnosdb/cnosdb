@@ -1,3 +1,16 @@
+pub mod client;
+pub mod error;
+pub mod limiter;
+pub mod meta_admin;
+pub mod meta_client;
+pub mod meta_client_mock;
+pub mod meta_manager;
+pub mod service;
+pub mod store;
+pub mod tenant_manager;
+pub mod user_manager;
+pub mod user_manager_mock;
+
 use std::fmt::Display;
 use std::sync::Arc;
 
@@ -13,18 +26,6 @@ use crate::store::command::WriteCommand;
 use crate::store::config::MetaInit;
 use crate::store::state_machine::CommandResp;
 use crate::store::Store;
-pub mod client;
-pub mod error;
-pub mod limiter;
-pub mod meta_admin;
-pub mod meta_client;
-pub mod meta_client_mock;
-pub mod meta_manager;
-pub mod service;
-pub mod store;
-pub mod tenant_manager;
-pub mod user_manager;
-pub mod user_manager_mock;
 
 pub type UserManagerRef = Arc<dyn UserManager>;
 pub type TenantManagerRef = Arc<dyn TenantManager>;

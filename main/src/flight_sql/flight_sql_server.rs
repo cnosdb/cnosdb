@@ -33,6 +33,7 @@ use trace::debug;
 use super::auth_middleware::CallHeaderAuthenticator;
 use crate::flight_sql::auth_middleware::AuthResult;
 use crate::flight_sql::utils;
+
 pub struct FlightSqlServiceImpl<T> {
     instance: DBMSRef,
     authenticator: T,

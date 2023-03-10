@@ -19,8 +19,7 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 = 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }} })}) }, projection=[time,fa]
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
 
 
@@ -33,8 +32,7 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 != 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
 "
 
 
@@ -47,8 +45,7 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 != 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
 "
 
 
@@ -61,8 +58,7 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 < 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Above }: Range { low: Marker { data_type: Float64, value: None, bound: Above }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Below } }} })}) }, projection=[time,fa]
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Above }: Range { low: Marker { data_type: Float64, value: None, bound: Above }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Below } }} })}) }, projection=[time,fa]
 "
 
 
@@ -75,8 +71,7 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 <= 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Above }: Range { low: Marker { data_type: Float64, value: None, bound: Above }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }} })}) }, projection=[time,fa]
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Above }: Range { low: Marker { data_type: Float64, value: None, bound: Above }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
 
 
@@ -89,8 +84,7 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 > 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Above }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Above }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Above }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Above }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
 "
 
 
@@ -103,8 +97,7 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 >= 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
 "
 
 
@@ -117,8 +110,7 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 >= 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
 "
 
 
@@ -141,8 +133,7 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 >= 12345678865 AND fa@1 <= 12345678869
-      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
 
 
@@ -155,8 +146,7 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 >= 12345678865 AND fa@1 <= 12345678869
-      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
 
 
@@ -174,8 +164,7 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 = 12345678869 OR fa@1 = 12345678865
-      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }, Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }, Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
 
 

@@ -3,7 +3,8 @@ use std::fmt::Debug;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use models::{TimeRange, Timestamp};
+use models::predicate::domain::TimeRange;
+use models::Timestamp;
 use trace::{debug, error, info};
 
 use crate::compaction::CompactReq;
@@ -405,7 +406,7 @@ mod test {
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use metrics::metric_register::MetricsRegister;
-    use models::TimeRange;
+    use models::predicate::domain::TimeRange;
     use tokio::sync::mpsc;
 
     use crate::compaction::test::create_options;

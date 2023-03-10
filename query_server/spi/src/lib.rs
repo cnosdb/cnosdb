@@ -403,6 +403,12 @@ pub enum QueryError {
     InvalidTimeWindowParam {
         reason: String,
     },
+
+    #[snafu(display("Database {} not found.", name))]
+    #[error_code(code = 59)]
+    DatabaseNotFound {
+        name: String,
+    },
 }
 
 impl From<ParserError> for QueryError {
