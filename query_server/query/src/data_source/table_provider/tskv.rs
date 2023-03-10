@@ -17,6 +17,7 @@ use datafusion::logical_expr::{
 use datafusion::optimizer::utils::split_conjunction;
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
+use datafusion::prelude::Column;
 use meta::error::MetaError;
 use models::meta_data::DatabaseInfo;
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
@@ -203,7 +204,9 @@ impl TableProvider for ClusterTable {
 
                     support_agg_func
                         && args.len() == 1
-                        && matches!(args[0], Expr::Column(_))
+                        // count(*) | count(1) | count(col)
+                        && (matches!(args[0], Expr::Column(_)) || matches!(args[0], Expr::Literal(_)))
+                        // not distinct
                         && !*distinct
                         && filter.is_none()
                 }
@@ -225,13 +228,16 @@ fn create_agg_filter_scan(
     filter: Arc<Predicate>,
     agg_with_grouping: &AggWithGrouping,
 ) -> Result<Arc<dyn ExecutionPlan>> {
-    // TODO only extract time range from filter
-
     let AggWithGrouping {
         group_expr: _,
         agg_expr,
         schema,
     } = agg_with_grouping;
+
+    let time_col = unsafe {
+        // use first column(time column)
+        Column::from_name(&table_schema.column_by_index(0).unwrap_unchecked().name)
+    };
 
     let aggs = agg_expr
         .iter()
@@ -253,8 +259,9 @@ fn create_agg_filter_scan(
                     // The parameter of the aggregate function pushed down must be a column column
                     match expr {
                         Expr::Column(c) => Ok(c),
+                        Expr::Literal(_) => Ok(&time_col),
                         _ => Err(DataFusionError::Internal(format!(
-                            "Pushed aggregate functions's args contains non-column: {expr:?}."
+                            "Pushed aggregate functions's args contains non-column or non-literal value: {expr:?}."
                         ))),
                     }
                 })

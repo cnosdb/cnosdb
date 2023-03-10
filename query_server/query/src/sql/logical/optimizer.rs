@@ -15,6 +15,7 @@ use datafusion::optimizer::propagate_empty_relation::PropagateEmptyRelation;
 use datafusion::optimizer::push_down_aggregation::PushDownAggregation;
 use datafusion::optimizer::push_down_filter::PushDownFilter;
 use datafusion::optimizer::push_down_limit::PushDownLimit;
+use datafusion::optimizer::push_down_projection::PushDownProjection;
 use datafusion::optimizer::rewrite_disjunctive_predicate::RewriteDisjunctivePredicate;
 use datafusion::optimizer::scalar_subquery_to_join::ScalarSubqueryToJoin;
 use datafusion::optimizer::simplify_expressions::SimplifyExpressions;
@@ -26,7 +27,6 @@ use spi::query::session::SessionCtx;
 use spi::Result;
 
 use crate::extension::logical::optimizer_rule::implicit_type_conversion::ImplicitTypeConversion;
-use crate::extension::logical::optimizer_rule::push_down_projection::PushDownProjectionAdapter;
 use crate::extension::logical::optimizer_rule::reject_cross_join::RejectCrossJoin;
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
 use crate::extension::logical::optimizer_rule::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
@@ -89,7 +89,7 @@ impl Default for DefaultLogicalOptimizer {
             Arc::new(SimplifyExpressions::new()),
             Arc::new(UnwrapCastInComparison::new()),
             Arc::new(CommonSubexprEliminate::new()),
-            Arc::new(PushDownProjectionAdapter::new()),
+            Arc::new(PushDownProjection::new()),
             // df default rules end
             // cnosdb rules
             Arc::new(RewriteTagScan {}),
