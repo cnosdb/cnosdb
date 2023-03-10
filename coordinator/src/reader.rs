@@ -10,13 +10,14 @@ use metrics::count::U64Counter;
 use models::meta_data::VnodeInfo;
 use models::utils::now_timestamp;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
+use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::info;
 use tskv::engine::EngineRef;
-use tskv::iterator::QueryOption;
+use tskv::iterator::{QueryOption, RowIterator};
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::service::CoordServiceMetrics;
@@ -56,6 +57,7 @@ impl ReaderIterator {
 pub struct QueryExecutor {
     option: QueryOption,
 
+    runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
     meta_manager: MetaRef,
 
@@ -66,6 +68,7 @@ pub struct QueryExecutor {
 impl QueryExecutor {
     pub fn new(
         option: QueryOption,
+        runtime: Arc<Runtime>,
         kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
         sender: Sender<CoordinatorResult<RecordBatch>>,
@@ -77,6 +80,7 @@ impl QueryExecutor {
         );
         Self {
             option,
+            runtime,
             kv_inst,
             meta_manager,
             sender,
@@ -240,10 +244,8 @@ impl QueryExecutor {
             })?
             .clone();
 
-        let mut iterator = kv_inst
-            .clone()
-            .create_row_iterator(kv_inst, self.option.clone(), vnode.id)
-            .await?;
+        let mut iterator =
+            RowIterator::new(self.runtime.clone(), kv_inst, self.option.clone(), vnode.id).await?;
 
         while let Some(data) = iterator.next().await {
             match data {

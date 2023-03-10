@@ -5,6 +5,7 @@ use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use metrics::metric_register::MetricsRegister;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
+use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tskv::engine::EngineRef;
@@ -15,6 +16,7 @@ use crate::{info, server};
 
 pub struct GrpcService {
     addr: SocketAddr,
+    runtime: Arc<Runtime>,
     kv_inst: EngineRef,
     coord: CoordinatorRef,
     tls_config: Option<TLSConfig>,
@@ -24,6 +26,7 @@ pub struct GrpcService {
 
 impl GrpcService {
     pub fn new(
+        runtime: Arc<Runtime>,
         kv_inst: EngineRef,
         coord: CoordinatorRef,
         addr: SocketAddr,
@@ -32,8 +35,9 @@ impl GrpcService {
     ) -> Self {
         Self {
             addr,
-            coord,
+            runtime,
             kv_inst,
+            coord,
             tls_config,
             metrics_register,
             handle: None,
@@ -64,6 +68,7 @@ impl Service for GrpcService {
     fn start(&mut self) -> server::Result<()> {
         let (shutdown, rx) = oneshot::channel();
         let tskv_grpc_service = TskvServiceServer::new(TskvServiceImpl {
+            runtime: self.runtime.clone(),
             kv_inst: self.kv_inst.clone(),
             coord: self.coord.clone(),
             metrics_register: self.metrics_register.clone(),

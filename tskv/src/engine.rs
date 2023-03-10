@@ -8,7 +8,6 @@ use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 
 use crate::error::Result;
-use crate::iterator::{self, RowIterator};
 use crate::kv_option::StorageOptions;
 use crate::tseries_family::SuperVersion;
 use crate::{TseriesFamilyId, VersionEdit};
@@ -112,13 +111,6 @@ pub trait Engine: Send + Sync + Debug {
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
 
     async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()>;
-
-    async fn create_row_iterator(
-        &self,
-        engine: EngineRef,
-        query_option: iterator::QueryOption,
-        vnode_id: u32,
-    ) -> Result<RowIterator>;
 
     async fn close(&self);
 }

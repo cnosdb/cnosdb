@@ -19,6 +19,7 @@ use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::*;
 use protos::models::{PingBody, PingBodyBuilder};
 use tokio::io::AsyncReadExt;
+use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Sender};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
@@ -29,6 +30,7 @@ use tskv::iterator::{QueryOption, TableScanMetrics};
 type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, tonic::Status>> + Send>>;
 
 pub struct TskvServiceImpl {
+    pub runtime: Arc<Runtime>,
     pub kv_inst: EngineRef,
     pub coord: CoordinatorRef,
     pub metrics_register: Arc<MetricsRegister>,
@@ -185,6 +187,7 @@ impl TskvServiceImpl {
         args: QueryArgs,
         expr: QueryExpr,
         meta: MetaRef,
+        runtime: Arc<Runtime>,
         kv_inst: EngineRef,
         sender: Sender<CoordinatorResult<RecordBatch>>,
         metrics_register: Arc<MetricsRegister>,
@@ -208,6 +211,7 @@ impl TskvServiceImpl {
 
         let executor = QueryExecutor::new(
             option,
+            runtime,
             Some(kv_inst),
             meta,
             sender.clone(),
@@ -461,6 +465,7 @@ impl TskvService for TskvServiceImpl {
             args,
             expr,
             self.coord.meta_manager(),
+            self.runtime.clone(),
             self.kv_inst.clone(),
             record_batch_sender,
             self.metrics_register.clone(),

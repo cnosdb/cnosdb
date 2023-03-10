@@ -18,6 +18,7 @@ use protos::kv_service::admin_command_request::Command::*;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{WritePointsRequest, *};
 use protos::models::Points;
+use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Sender};
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
@@ -40,6 +41,7 @@ pub type CoordinatorRef = Arc<dyn Coordinator>;
 pub struct CoordService {
     node_id: u64,
     meta: MetaRef,
+    runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
     writer: Arc<PointWriter>,
     metrics: Arc<CoordServiceMetrics>,
@@ -73,6 +75,7 @@ impl CoordServiceMetrics {
 
 impl CoordService {
     pub async fn new(
+        runtime: Arc<Runtime>,
         kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
         cluster: ClusterConfig,
@@ -91,6 +94,7 @@ impl CoordService {
         tokio::spawn(HintedOffManager::write_handoff_job(hh_manager, hh_receiver));
 
         let coord = Arc::new(Self {
+            runtime,
             kv_inst,
             node_id: cluster.node_id,
             meta: meta_manager,
@@ -219,6 +223,7 @@ impl CoordService {
         }
         let executor = QueryExecutor::new(
             option,
+            self.runtime.clone(),
             self.kv_inst.clone(),
             self.meta.clone(),
             sender.clone(),
