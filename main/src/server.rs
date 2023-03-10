@@ -96,6 +96,7 @@ impl Server {
 }
 
 pub(crate) struct ServiceBuilder {
+    pub cpu: usize,
     pub config: config::Config,
     pub runtime: Arc<Runtime>,
     pub memory_pool: MemoryPoolRef,
@@ -170,7 +171,7 @@ impl ServiceBuilder {
     }
 
     pub async fn build_singleton(&self, server: &mut Server) -> Option<EngineRef> {
-        let meta_service = MetaService::new(self.config.clone());
+        let meta_service = MetaService::new(self.cpu, self.config.clone());
         meta_service.start().await.unwrap();
         self.build_query_storage(server).await
     }

@@ -19,6 +19,7 @@ use trace::{error, info};
 use web::Json;
 
 use crate::meta_single::Infallible;
+
 pub struct MetaApp {
     pub http_addr: String,
     pub store: StateMachine,
@@ -114,20 +115,21 @@ pub async fn watch(
 }
 
 pub struct MetaService {
+    cpu: usize,
     opt: Config,
 }
 
 impl MetaService {
-    pub fn new(opt: Config) -> Self {
-        Self { opt }
+    pub fn new(cpu: usize, opt: Config) -> Self {
+        Self { cpu, opt }
     }
 
     pub async fn start(&self) -> std::io::Result<()> {
-        run_service(self.opt.clone()).await
+        run_service(self.cpu, &self.opt).await
     }
 }
 
-pub async fn run_service(opt: Config) -> std::io::Result<()> {
+pub async fn run_service(cpu: usize, opt: &Config) -> std::io::Result<()> {
     let db_path = format!("{}/meta/{}.binlog", opt.storage.path, 0);
     let db = Arc::new(sled::open(db_path.clone()).unwrap());
     let state_machine = StateMachine::new(db);
@@ -136,7 +138,7 @@ pub async fn run_service(opt: Config) -> std::io::Result<()> {
         store: state_machine,
     });
 
-    init_meta(&app, opt.clone()).await;
+    init_meta(&app, opt).await;
     let server = HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
@@ -150,13 +152,15 @@ pub async fn run_service(opt: Config) -> std::io::Result<()> {
     })
     .keep_alive(Duration::from_secs(5));
 
+    let server = server.workers(cpu);
+
     let x = server.bind(opt.cluster.meta_service_addr.clone())?;
 
     tokio::spawn(x.run());
     Ok(())
 }
 
-pub async fn init_meta(app: &Data<MetaApp>, opt: Config) {
+pub async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
     // init user
     let user_opt_res = UserOptionsBuilder::default()
         .must_change_password(true)
