@@ -74,13 +74,7 @@ impl UserDefinedLogicalNode for TableWriterPlanNode {
         let out_exprs: Vec<String> = self.output_exprs.iter().map(|e| e.to_string()).collect();
         write!(f, "TableWriter: {}", out_exprs.join(","))?;
         for field in self.target_table.schema().fields() {
-            write!(
-                f,
-                "\n    {} := {}({:?})",
-                field.name(),
-                field.data_type(),
-                field.metadata()
-            )?;
+            write!(f, "\n    {} := {}", field.name(), field.data_type(),)?;
         }
 
         Ok(())
