@@ -78,3 +78,10 @@ where t0 = 'a' and f0 = 11 and time > 3;
 select * from m0 
 where t0 = 'a' and f0 = 11 or time > 3;
 
+explain
+select * from m0 
+where t0 = null;
+
+explain
+select * from m0 
+where t0 > null;
