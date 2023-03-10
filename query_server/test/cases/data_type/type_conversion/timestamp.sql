@@ -6,6 +6,7 @@ test_timestamp_conv,ta=a1,tb=b1 fa=1,fb=2 3
 --#LP_END
 
 --#LP_BEGIN
+-- 2022-11-03 14:20:11
 test_timestamp_conv,ta=a1,tb=b1 fa=1,fb=2 1667456411000000000
 --#LP_END
 
@@ -15,6 +16,11 @@ explain
 select fa
 from test_timestamp_conv
 where time = 12345678865;
+
+explain
+select fa
+from test_timestamp_conv
+where time = 1667456411000000000;
 
 explain
 select fa
@@ -34,7 +40,17 @@ where time < 12345678865;
 explain
 select fa
 from test_timestamp_conv
+where time < 1667456412000000000;
+
+explain
+select fa
+from test_timestamp_conv
 where time <= 12345678865;
+
+explain
+select fa
+from test_timestamp_conv
+where time <= 1667456412000000000;
 
 explain
 select fa
@@ -60,6 +76,11 @@ where time = '1997-01-31 09:26:56';
 explain
 select fa
 from test_timestamp_conv
+where time = '2022-11-03 14:20:11';
+
+explain
+select fa
+from test_timestamp_conv
 where time <> '1997-01-31 09:26:56.123';
 
 explain
@@ -75,7 +96,17 @@ where time < '1997-01-31 09:26:56.123-05:00';
 explain
 select fa
 from test_timestamp_conv
+where time < '2022-11-03T14:20:12.123-05:00';
+
+explain
+select fa
+from test_timestamp_conv
 where time <= '1997-01-31T09:26:56.123-05:00';
+
+explain
+select fa
+from test_timestamp_conv
+where time <= '2022-11-03T14:20:12.123-05:00';
 
 explain
 select fa
@@ -109,12 +140,27 @@ where time between '1997-01-31 09:26:56' and '1997-03-31T09:26:56.123Z';
 explain
 select fa
 from test_timestamp_conv
+where time between '2022-11-03 14:20:10' and '2022-11-03T14:20:12.123Z';
+
+explain
+select fa
+from test_timestamp_conv
 where time between 12345678865 and 12345678869;
 
 explain
 select fa
 from test_timestamp_conv
+where time between 1667456410000000000 and 1667456412000000000;
+
+explain
+select fa
+from test_timestamp_conv
 where time between 12345678865 and '1997-03-31T09:26:56.123Z';
+
+explain
+select fa
+from test_timestamp_conv
+where time between 1667456410000000000 and '2022-11-03T14:20:12.123Z';
 
 
 ---- error start

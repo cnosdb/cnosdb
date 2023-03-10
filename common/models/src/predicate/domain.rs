@@ -94,7 +94,7 @@ impl TimeRange {
         if self.max_ts < self.min_ts {
             return 0;
         }
-        (self.max_ts as i128 - self.min_ts as i128) as u64
+        (self.max_ts as i128 - self.min_ts as i128) as u64 + 1_u64
     }
 
     #[inline(always)]
