@@ -476,28 +476,15 @@ impl<'a> ExtParser<'a> {
                 "EXPLAIN can only appear once".to_string(),
             ));
         }
-        match self.parse_statement()? {
-            ExtStatement::SqlStatement(statement) => Ok(ExtStatement::Explain(Explain {
-                analyze,
-                verbose,
-                format,
-                ext_statement: Box::new(ExtStatement::SqlStatement(statement)),
-            })),
-            ExtStatement::ShowSeries(statement) => Ok(ExtStatement::Explain(Explain {
-                analyze,
-                verbose,
-                format,
-                ext_statement: Box::new(ExtStatement::ShowSeries(statement)),
-            })),
-            ExtStatement::ShowTagValues(statement) => Ok(ExtStatement::Explain(Explain {
-                analyze,
-                verbose,
-                format,
-                ext_statement: Box::new(ExtStatement::ShowTagValues(statement)),
-            })),
 
-            _ => Err(ParserError::ParserError("Not Implemented".to_string())),
-        }
+        let stmt = self.parse_statement()?;
+
+        Ok(ExtStatement::Explain(Explain {
+            analyze,
+            verbose,
+            format,
+            ext_statement: Box::new(stmt),
+        }))
     }
 
     fn parse_show_queries(&mut self) -> Result<ExtStatement> {
