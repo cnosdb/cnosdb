@@ -11,8 +11,12 @@ use models::schema::{
 };
 use models::ValueType;
 use paste::paste;
-use protos::models::{FieldBuilder, FieldType, Point, PointArgs, Points, PointsArgs, TagBuilder};
+use protos::models::{
+    FieldBuilder, FieldType, Point, PointArgs, Points, PointsArgs, TableBuilder, TagBuilder,
+};
+use protos::{build_fb_schema_offset, init_field, init_tags, FbSchema};
 use spi::{QueryError, Result};
+use utils::bitset::BitSet;
 
 type Datum<'fbb> = WIPOffset<Vector<'fbb, u8>>;
 
@@ -136,15 +140,25 @@ fn construct_row_based_points(
     schema: TskvTableSchemaRef,
 ) -> Result<Vec<u8>> {
     let mut point_offsets = Vec::with_capacity(num_rows);
+
+    let fb_schema = build_fb_schema(&schema);
     // row-based
     for row_idx in 0..num_rows {
         let time = unsafe { time_col_array.get_unchecked(row_idx) };
 
         // Extract tags and fields
-        let mut tags = Vec::new();
-        let mut fields = Vec::new();
+        let mut tags = Vec::with_capacity(fb_schema.tag_len());
+        init_tags(fbb, &mut tags, fb_schema.tag_len());
+
+        let mut tags_nullbit = BitSet::with_size(fb_schema.tag_len());
+
+        let mut fields = Vec::with_capacity(fb_schema.field_len());
+        init_field(fbb, &mut fields, fb_schema.field().len());
+
+        let mut fields_nullbits = BitSet::with_size(fb_schema.field().len());
+
         for (col_idx, df_field) in column_schemas.iter().enumerate() {
-            let name = df_field.name();
+            let name = df_field.name().as_ref();
 
             let field = schema
                 .column(name)
@@ -160,30 +174,27 @@ fn construct_row_based_points(
                         continue;
                     }
                     ColumnType::Tag => {
-                        let fbk = fbb.create_vector(name.as_bytes());
-                        // let fbv = fbb.create_vector(datum);
+                        let idx = match fb_schema.tag_names().get(name) {
+                            None => continue,
+                            Some(v) => *v,
+                        };
                         let mut tag_builder = TagBuilder::new(fbb);
-                        tag_builder.add_key(fbk);
                         tag_builder.add_value(datum.to_owned());
-                        tags.push(tag_builder.finish());
+
+                        tags[idx] = tag_builder.finish();
+                        tags_nullbit.set(idx);
                     }
-                    ColumnType::Field(type_) => {
-                        let fbv_type = match type_ {
-                            ValueType::Unknown => FieldType::Unknown,
-                            ValueType::Float => FieldType::Float,
-                            ValueType::Integer => FieldType::Integer,
-                            ValueType::Unsigned => FieldType::Unsigned,
-                            ValueType::Boolean => FieldType::Boolean,
-                            ValueType::String => FieldType::String,
+                    ColumnType::Field(_) => {
+                        let idx = match fb_schema.field().get(name) {
+                            None => continue,
+                            Some(v) => *v,
                         };
 
-                        let fbk = fbb.create_vector(name.as_bytes());
-                        // let fbv = fbb.create_vector(datum);
                         let mut field_builder = FieldBuilder::new(fbb);
-                        field_builder.add_name(fbk);
-                        field_builder.add_type_(fbv_type);
                         field_builder.add_value(datum.to_owned());
-                        fields.push(field_builder.finish());
+
+                        fields[idx] = field_builder.finish();
+                        fields_nullbits.set(idx)
                     }
                 }
             }
@@ -194,28 +205,69 @@ fn construct_row_based_points(
         })?;
 
         let point_args = PointArgs {
-            db: Some(fbb.create_vector(schema.db.as_bytes())),
-            tab: Some(fbb.create_vector(schema.name.as_bytes())),
             tags: Some(fbb.create_vector(&tags)),
+            tags_nullbit: Some(fbb.create_vector(tags_nullbit.bytes())),
             fields: Some(fbb.create_vector(&fields)),
+            fields_nullbit: Some(fbb.create_vector(fields_nullbits.bytes())),
             timestamp: time,
         };
 
         point_offsets.push(Point::create(fbb, &point_args));
     }
 
+    let fb_schema_off = build_fb_schema_offset(fbb, &fb_schema);
+    let points = fbb.create_vector(&point_offsets);
+    let table_name = fbb.create_vector(schema.name.as_bytes());
+
+    let mut table_builder = TableBuilder::new(fbb);
+
+    table_builder.add_points(points);
+    table_builder.add_schema(fb_schema_off);
+    table_builder.add_tab(table_name);
+    table_builder.add_num_rows(num_rows as u64);
+
+    let table_offset = table_builder.finish();
+
     let fbb_db = fbb.create_vector(schema.db.as_bytes());
-    let points_raw = fbb.create_vector(&point_offsets);
+    let tables = fbb.create_vector(&[table_offset]);
     let points = Points::create(
         fbb,
         &PointsArgs {
             db: Some(fbb_db),
-            points: Some(points_raw),
+            tables: Some(tables),
         },
     );
     fbb.finish(points, None);
 
     Ok(fbb.finished_data().to_vec())
+}
+
+fn build_fb_schema(tskv_schema: &TskvTableSchemaRef) -> FbSchema<'_> {
+    let mut schema = FbSchema::default();
+    for column in tskv_schema.columns() {
+        match column.column_type {
+            ColumnType::Tag => {
+                schema.add_tag(&column.name);
+            }
+            ColumnType::Time => continue,
+            ColumnType::Field(field_type) => schema.add_filed(
+                &column.name,
+                convert_value_type_to_fb_field_type(field_type),
+            ),
+        }
+    }
+    schema
+}
+
+fn convert_value_type_to_fb_field_type(type_: ValueType) -> FieldType {
+    match type_ {
+        ValueType::Unknown => FieldType::Unknown,
+        ValueType::Float => FieldType::Float,
+        ValueType::Integer => FieldType::Integer,
+        ValueType::Unsigned => FieldType::Unsigned,
+        ValueType::Boolean => FieldType::Boolean,
+        ValueType::String => FieldType::String,
+    }
 }
 
 fn cast_arrow_array<T: 'static>(array: &ArrayRef) -> Result<&T> {

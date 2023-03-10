@@ -5,7 +5,7 @@ use meta::{MetaClientRef, MetaRef};
 use models::codec::Encoding;
 use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::ColumnId;
-use protos::models::Point;
+use protos::models::FieldType;
 use trace::error;
 
 use crate::schema::error::{Result, SchemaError};
@@ -42,26 +42,30 @@ impl DBschemas {
         self.database_name.clone()
     }
 
-    pub fn check_field_type_from_cache(&self, info: &Point) -> Result<()> {
-        let table_name =
-            unsafe { String::from_utf8_unchecked(info.tab().unwrap().bytes().to_vec()) };
+    pub fn check_field_type_from_cache(
+        &self,
+        table_name: &str,
+        tag_names: &[&str],
+        field_names: &[&str],
+        field_type: &[FieldType],
+    ) -> Result<()> {
         let schema = self
             .client
-            .get_tskv_table_schema(&self.database_name, &table_name)?
+            .get_tskv_table_schema(&self.database_name, table_name)?
             .ok_or(SchemaError::DatabaseNotFound {
                 database: self.database_name.clone(),
             })?;
-        for field in info.fields().unwrap() {
-            let field_name = String::from_utf8(field.name().unwrap().bytes().to_vec()).unwrap();
-            if let Some(v) = schema.column(&field_name) {
-                if field.type_().0 != v.column_type.field_type() as i32 {
+
+        for (field_name, field_type) in field_names.iter().zip(field_type) {
+            if let Some(v) = schema.column(field_name) {
+                if field_type.0 != v.column_type.field_type() as i32 {
                     error!(
                         "type mismatch, point: {}, schema: {}",
-                        field.type_().0,
+                        field_type.0,
                         v.column_type.field_type()
                     );
                     return Err(SchemaError::FieldType {
-                        field: field_name.to_owned(),
+                        field: field_name.to_string(),
                     });
                 }
             } else {
@@ -70,37 +74,41 @@ impl DBschemas {
                 });
             }
         }
-        for tag in info.tags().unwrap() {
-            let tag_name: String = String::from_utf8(tag.key().unwrap().bytes().to_vec()).unwrap();
-            if let Some(v) = schema.column(&tag_name) {
+
+        for tag_name in tag_names {
+            if let Some(v) = schema.column(tag_name) {
                 if ColumnType::Tag != v.column_type {
                     error!("type mismatch, point: tag, schema: {}", &v.column_type);
                     return Err(SchemaError::FieldType {
-                        field: tag_name.to_owned(),
+                        field: tag_name.to_string(),
                     });
                 }
             } else {
                 return Err(SchemaError::NotFoundField {
-                    field: tag_name.to_owned(),
+                    field: tag_name.to_string(),
                 });
             }
         }
         Ok(())
     }
 
-    pub async fn check_field_type_or_else_add(&self, info: &Point<'_>) -> Result<()> {
+    pub async fn check_field_type_or_else_add(
+        &self,
+        db_name: &str,
+        table_name: &str,
+        tag_names: &[&str],
+        field_names: &[&str],
+        field_type: &[FieldType],
+    ) -> Result<()> {
         //load schema first from cache,or else from storage and than cache it!
-        let table_name =
-            unsafe { String::from_utf8_unchecked(info.tab().unwrap().bytes().to_vec()) };
-        let db_name = unsafe { String::from_utf8_unchecked(info.db().unwrap().bytes().to_vec()) };
-        let schema = self.client.get_tskv_table_schema(&db_name, &table_name)?;
+        let schema = self.client.get_tskv_table_schema(db_name, table_name)?;
         let mut new_schema = false;
         let mut schema = match schema {
             None => {
                 let mut schema = TskvTableSchema::default();
                 schema.tenant = self.tenant_name.clone();
-                schema.db = db_name;
-                schema.name = table_name;
+                schema.db = db_name.to_string();
+                schema.name = table_name.to_string();
                 new_schema = true;
                 Arc::new(schema)
             }
@@ -146,19 +154,18 @@ impl DBschemas {
         ))?;
 
         //check tags
-        for tag in info.tags().unwrap() {
-            let tag_key =
-                unsafe { String::from_utf8_unchecked(tag.key().unwrap().bytes().to_vec()) };
-            check_fn(&mut TableColumn::new_with_default(tag_key, ColumnType::Tag))?
+        for tag_name in tag_names {
+            check_fn(&mut TableColumn::new_with_default(
+                tag_name.to_string(),
+                ColumnType::Tag,
+            ))?
         }
 
         //check fields
-        for field in info.fields().unwrap() {
-            let field_name =
-                unsafe { String::from_utf8_unchecked(field.name().unwrap().bytes().to_vec()) };
+        for (field_name, field_type) in field_names.iter().zip(field_type) {
             check_fn(&mut TableColumn::new_with_default(
-                field_name,
-                ColumnType::from_i32(field.type_().0),
+                field_name.to_string(),
+                ColumnType::from_i32(field_type.0),
             ))?
         }
 

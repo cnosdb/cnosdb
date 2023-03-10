@@ -1365,7 +1365,7 @@ impl<'a> ExtParser<'a> {
         let mut field_columns: Vec<ColumnOption> = vec![];
 
         if !self.consume_token(&Token::LParen) || self.consume_token(&Token::RParen) {
-            return Ok(field_columns);
+            return parser_err!("Expected field columns when create table");
         }
         loop {
             let name = self.parser.parse_identifier()?;

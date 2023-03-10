@@ -163,6 +163,8 @@ impl HttpService {
             .or(self.write_line_protocol())
             .or(self.metrics())
             .or(self.print_meta())
+            .or(self.debug_pprof())
+            .or(self.debug_jeprof())
             .or(self.prom_remote_read())
             .or(self.prom_remote_write())
     }
@@ -174,6 +176,8 @@ impl HttpService {
             .or(self.query())
             .or(self.metrics())
             .or(self.print_meta())
+            .or(self.debug_pprof())
+            .or(self.debug_jeprof())
             .or(self.prom_remote_read())
     }
 
@@ -184,6 +188,8 @@ impl HttpService {
             .or(self.write_line_protocol())
             .or(self.metrics())
             .or(self.print_meta())
+            .or(self.debug_pprof())
+            .or(self.debug_jeprof())
             .or(self.prom_remote_write())
     }
 
@@ -316,6 +322,32 @@ impl HttpService {
 
                 Ok(data)
             })
+    }
+
+    fn debug_pprof(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("debug" / "pprof").and_then(|| async move {
+            let res = utils::pprof_tools::gernate_pprof().await;
+            info!("debug pprof: {:?}", res);
+            match res {
+                Ok(v) => Ok(v),
+                Err(e) => Err(reject::custom(HttpError::PProfError { reason: e })),
+            }
+        })
+    }
+
+    fn debug_jeprof(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("debug" / "jeprof").and_then(|| async move {
+            let res = utils::pprof_tools::gernate_jeprof().await;
+            info!("debug jeprof: {:?}", res);
+            match res {
+                Ok(v) => Ok(v),
+                Err(e) => Err(reject::custom(HttpError::PProfError { reason: e })),
+            }
+        })
     }
 
     fn metrics(

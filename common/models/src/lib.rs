@@ -1,14 +1,13 @@
 pub mod codec;
 pub mod consistency_level;
 pub mod errors;
-mod field_info;
 pub mod meta_data;
 mod node_info;
-mod points;
 pub mod schema;
 mod series_info;
 pub mod tag;
 pub mod utils;
+mod value_type;
 #[macro_use]
 // pub mod error_code;
 pub mod arrow_array;
@@ -23,12 +22,11 @@ use std::sync::Arc;
 
 pub use error_code;
 pub use errors::{Error, Result};
-pub use field_info::{FieldInfo, ValueType};
 use parking_lot::RwLock;
-pub use points::*;
 pub use series_info::SeriesKey;
 pub use tag::Tag;
 pub use time_range::*;
+pub use value_type::ValueType;
 
 pub type ShardId = u64;
 pub type CatalogId = u64;
