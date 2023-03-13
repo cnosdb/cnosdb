@@ -23,7 +23,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Sender};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use trace::{debug, info};
+use trace::{debug, error, info};
 use tskv::engine::EngineRef;
 use tskv::iterator::{QueryOption, TableScanMetrics};
 
@@ -218,7 +218,10 @@ impl TskvServiceImpl {
             Arc::new(CoordServiceMetrics::new(&metrics_register)),
         );
         if let Err(err) = executor.local_node_executor(vnodes).await {
-            info!("select statement execute failed: {}", err.to_string());
+            if sender.is_closed() {
+                return;
+            }
+            error!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         } else {
             info!("select statement execute success");

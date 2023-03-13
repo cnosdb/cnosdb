@@ -114,6 +114,7 @@ impl ExecutionPlan for AggregateFilterTskvExec {
             100_usize,
             self.coord.clone(),
             iterator,
+            None,
             metrics,
         );
 
