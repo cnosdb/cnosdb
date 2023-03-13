@@ -49,6 +49,13 @@ impl NormalizedSimpleComparison {
             }),
             (_, _, _) => None,
         }
+        .and_then(|e| {
+            // not support null with column of binary op
+            if matches!(e.value, ScalarValue::Null | ScalarValue::Utf8(None)) {
+                return None;
+            }
+            Some(e)
+        })
     }
     /// Determine if a data type is sortable
     fn is_orderable(&self) -> bool {

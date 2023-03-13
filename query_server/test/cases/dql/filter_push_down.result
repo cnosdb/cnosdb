@@ -16,49 +16,49 @@
 rows
 1
 
--- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(2079939785551584142, NULL), (1243152233754651379, 12321); -- 0ms; --
+-- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(2079939785551584142, NULL), (1243152233754651379, 12321); --
 -- AFTER_SORT --
 422 Unprocessable Entity
 {"error_code":"020002","error_message":"Fields can't be empty"}
 -- ERROR:  --
 
--- EXECUTE SQL: INSERT m0(TIME, f1) VALUES(631407052613557553, 'TRUE'), (7486831592909450783, 'TRUE'); -- 0ms; --
+-- EXECUTE SQL: INSERT m0(TIME, f1) VALUES(631407052613557553, 'TRUE'), (7486831592909450783, 'TRUE'); --
 -- AFTER_SORT --
 200 OK
 rows
 2
 
--- EXECUTE SQL: INSERT m0(TIME, f2) VALUES(5867172425191822176, 888), (3986678807649375642, 999); -- 0ms; --
+-- EXECUTE SQL: INSERT m0(TIME, f2) VALUES(5867172425191822176, 888), (3986678807649375642, 999); --
 -- AFTER_SORT --
 200 OK
 rows
 2
 
--- EXECUTE SQL: INSERT m0(TIME, f3) VALUES(7488251815539246350, FALSE); -- 0ms; --
+-- EXECUTE SQL: INSERT m0(TIME, f3) VALUES(7488251815539246350, FALSE); --
 -- AFTER_SORT --
 200 OK
 rows
 1
 
--- EXECUTE SQL: INSERT m0(TIME, f4) VALUES(5414775681413349294, 1.111); -- 1ms; --
+-- EXECUTE SQL: INSERT m0(TIME, f4) VALUES(5414775681413349294, 1.111); --
 -- AFTER_SORT --
 200 OK
 rows
 1
 
--- EXECUTE SQL: INSERT m0(TIME, t0) VALUES(5414775681413349294, 't000'); -- 1ms; --
+-- EXECUTE SQL: INSERT m0(TIME, t0) VALUES(5414775681413349294, 't000'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
 {"error_code":"020002","error_message":"Fields can't be empty"}
 -- ERROR:  --
 
--- EXECUTE SQL: INSERT m0(TIME, t1) VALUES(5414775681413349294, 't111'); -- 1ms; --
+-- EXECUTE SQL: INSERT m0(TIME, t1) VALUES(5414775681413349294, 't111'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
 {"error_code":"020002","error_message":"Fields can't be empty"}
 -- ERROR:  --
 
--- EXECUTE SQL: INSERT m0(TIME, t0, t1, f0, f1, f2, f3, f4) VALUES (1, 'a', 'b', 11, '11', 11, true, 11.11), (2, 'a', 'c', 12, '11', 11, false, 11.11), (3, 'b', 'b', 13, '11', 11, false, 11.11), (4, 'b', 'a', 14, '11', 11, true, 11.11), (5, 'a', 'a', 11, '11', 11, true, 11.11), (6, 'b', 'c', 15, '11', 11, false, 11.11); -- 1ms; --
+-- EXECUTE SQL: INSERT m0(TIME, t0, t1, f0, f1, f2, f3, f4) VALUES (1, 'a', 'b', 11, '11', 11, true, 11.11), (2, 'a', 'c', 12, '11', 11, false, 11.11), (3, 'b', 'b', 13, '11', 11, false, 11.11), (4, 'b', 'a', 14, '11', 11, true, 11.11), (5, 'a', 'a', 11, '11', 11, true, 11.11), (6, 'b', 'c', 15, '11', 11, false, 11.11); --
 -- AFTER_SORT --
 200 OK
 rows
@@ -104,7 +104,6 @@ time,t0,t1,f0,f1,f2,f3,f4
 -- AFTER_SORT --
 200 OK
 time,t0,t1,f0,f1,f2,f3,f4
-
 
 -- EXECUTE SQL: select * from m0 where time > 3; --
 -- AFTER_SORT --
@@ -203,3 +202,26 @@ time,t0,t1,f0,f1,f2,f3,f4
 2207-04-02T03:26:32.909450783,,,,TRUE,,,
 2207-04-18T13:56:55.539246350,,,,,,false,
 
+-- EXECUTE SQL: explain select * from m0 where t0 = null; --
+200 OK
+plan_type,plan
+logical_plan,"Projection: m0.time, m0.t0, m0.t1, m0.f0, m0.f1, m0.f2, m0.f3, m0.f4
+  Filter: m0.t0 = Utf8(NULL)
+    TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]"
+physical_plan,"ProjectionExec: expr=[time@0 as time, t0@1 as t0, t1@2 as t1, f0@3 as f0, f1@4 as f1, f2@5 as f2, f3@6 as f3, f4@7 as f4]
+  CoalesceBatchesExec: target_batch_size=8192
+    FilterExec: t0@1 = NULL
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,t0,t1,f0,f1,f2,f3,f4]
+"
+
+-- EXECUTE SQL: explain select * from m0 where t0 > null; --
+200 OK
+plan_type,plan
+logical_plan,"Projection: m0.time, m0.t0, m0.t1, m0.f0, m0.f1, m0.f2, m0.f3, m0.f4
+  Filter: m0.t0 > Utf8(NULL)
+    TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]"
+physical_plan,"ProjectionExec: expr=[time@0 as time, t0@1 as t0, t1@2 as t1, f0@3 as f0, f1@4 as f1, f2@5 as f2, f3@6 as f3, f4@7 as f4]
+  CoalesceBatchesExec: target_batch_size=8192
+    FilterExec: t0@1 > NULL
+      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,t0,t1,f0,f1,f2,f3,f4]
+"
