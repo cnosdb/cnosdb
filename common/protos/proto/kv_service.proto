@@ -142,6 +142,7 @@ message FetchVnodeSummaryRequest {
 message QueryRecordBatchRequest {
     bytes args = 1;
     bytes expr = 2;
+    bytes aggs = 3;
 }
 
 /* -------------------------------------------------------------------- */
