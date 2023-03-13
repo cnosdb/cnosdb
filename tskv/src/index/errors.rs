@@ -33,8 +33,8 @@ pub enum IndexError {
     #[snafu(display("index storage error: {}", msg))]
     IndexStroage { msg: String },
 
-    #[snafu(display("roaring encode/decode error: {}", msg))]
-    RoaringBitmap { msg: String },
+    #[snafu(display("roaring encode/decode error: {}", source))]
+    RoaringBitmap { source: io::Error },
 
     #[snafu(display("binlog storage error: {}", msg))]
     IOErrors { msg: String },

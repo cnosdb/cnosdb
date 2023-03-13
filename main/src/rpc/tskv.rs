@@ -23,6 +23,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Sender};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use tonic::{Request, Response, Status};
 use trace::{debug, error, info};
 use tskv::engine::EngineRef;
 use tskv::iterator::{QueryOption, TableScanMetrics};
@@ -222,6 +223,49 @@ impl TskvServiceImpl {
                 return;
             }
             error!("select statement execute failed: {}", err.to_string());
+            let _ = sender.send(Err(err)).await;
+        } else {
+            info!("select statement execute success");
+        }
+    }
+
+    async fn tag_scan_exec(
+        args: QueryArgs,
+        expr: QueryExpr,
+        meta: MetaRef,
+        run_time: Arc<Runtime>,
+        kv_inst: EngineRef,
+        sender: Sender<CoordinatorResult<RecordBatch>>,
+        metrics_register: Arc<MetricsRegister>,
+    ) {
+        let plan_metrics = ExecutionPlanMetricsSet::new();
+        let scan_metrics = TableScanMetrics::new(&plan_metrics, 0, None);
+        let option = QueryOption::new(
+            args.batch_size,
+            expr.split,
+            None,
+            Arc::new(expr.df_schema),
+            expr.table_schema,
+            scan_metrics.tskv_metrics(),
+        );
+
+        let node_id = meta.node_id();
+        let vnodes = args
+            .vnode_ids
+            .iter()
+            .map(|id| VnodeInfo { id: *id, node_id })
+            .collect::<Vec<_>>();
+
+        let executor = QueryExecutor::new(
+            option,
+            run_time,
+            Some(kv_inst),
+            meta,
+            sender.clone(),
+            Arc::new(CoordServiceMetrics::new(&metrics_register)),
+        );
+        if let Err(err) = executor.local_node_tag_scan(vnodes).await {
+            info!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         } else {
             info!("select statement execute success");
@@ -465,6 +509,66 @@ impl TskvService for TskvServiceImpl {
 
         let (mut iterator, record_batch_sender) = ReaderIterator::new();
         tokio::spawn(TskvServiceImpl::query_record_batch_exec(
+            args,
+            expr,
+            self.coord.meta_manager(),
+            self.runtime.clone(),
+            self.kv_inst.clone(),
+            record_batch_sender,
+            self.metrics_register.clone(),
+        ));
+
+        let (send, recv) = mpsc::channel(1024);
+        tokio::spawn(async move {
+            while let Some(item) = iterator.next_and_encdoe().await {
+                match item {
+                    Ok(data) => {
+                        let _ = send
+                            .send(Ok(BatchBytesResponse {
+                                code: SUCCESS_RESPONSE_CODE,
+                                data,
+                            }))
+                            .await;
+                    }
+
+                    Err(err) => {
+                        info!("query record batch failed: {}", err);
+                        let _ = send
+                            .send(Ok(BatchBytesResponse {
+                                code: FAILED_RESPONSE_CODE,
+                                data: err.to_string().into(),
+                            }))
+                            .await;
+
+                        break;
+                    }
+                }
+            }
+        });
+
+        let out_stream = ReceiverStream::new(recv);
+
+        Ok(tonic::Response::new(Box::pin(out_stream)))
+    }
+
+    type TagScanStream = ResponseStream<BatchBytesResponse>;
+    async fn tag_scan(
+        &self,
+        request: Request<QueryRecordBatchRequest>,
+    ) -> Result<Response<Self::TagScanStream>, Status> {
+        let inner = request.into_inner();
+
+        let args = match QueryArgs::decode(&inner.args) {
+            Ok(args) => args,
+            Err(err) => return Err(self.tonic_status(err.to_string())),
+        };
+
+        let expr = match QueryExpr::decode(&inner.expr) {
+            Ok(expr) => expr,
+            Err(err) => return Err(self.tonic_status(err.to_string())),
+        };
+        let (mut iterator, record_batch_sender) = ReaderIterator::new();
+        tokio::spawn(TskvServiceImpl::tag_scan_exec(
             args,
             expr,
             self.coord.meta_manager(),

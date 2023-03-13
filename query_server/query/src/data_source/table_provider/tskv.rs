@@ -43,7 +43,7 @@ pub struct ClusterTable {
 }
 
 impl ClusterTable {
-    async fn create_physical_plan(
+    fn create_table_scan_physical_plan(
         &self,
         ctx: &SessionState,
         projection: Option<&Vec<usize>>,
@@ -70,6 +70,26 @@ impl ClusterTable {
         )))
     }
 
+    pub fn create_tag_scan_physical_plan(
+        &self,
+        projected_schema: &DFSchemaRef,
+        filters: &[Expr],
+        limit: Option<usize>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        let predicate = Arc::new(
+            Predicate::default()
+                .set_limit(limit)
+                .push_down_filter(filters, &self.schema),
+        );
+
+        Ok(Arc::new(TagScanExec::new(
+            self.schema.clone(),
+            projected_schema.as_ref().into(),
+            predicate,
+            self.coord.clone(),
+        )))
+    }
+
     pub fn new(
         coord: CoordinatorRef,
         split_manager: SplitManagerRef,
@@ -82,27 +102,6 @@ impl ClusterTable {
             database_info,
             schema,
         }
-    }
-
-    pub async fn tag_scan(
-        &self,
-        _ctx: &SessionState,
-        projected_schema: &DFSchemaRef,
-        filters: &[Expr],
-        limit: Option<usize>,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
-        let filter = Arc::new(
-            Predicate::default()
-                .set_limit(limit)
-                .push_down_filter(filters, &self.schema),
-        );
-
-        Ok(Arc::new(TagScanExec::new(
-            self.schema.clone(),
-            Arc::new(projected_schema.as_ref().into()),
-            filter,
-            self.coord.clone(),
-        )))
     }
 
     pub fn table_schema(&self) -> TskvTableSchemaRef {
@@ -159,7 +158,7 @@ impl TableProvider for ClusterTable {
             );
         }
 
-        return self.create_physical_plan(ctx, projection, filter).await;
+        return self.create_table_scan_physical_plan(ctx, projection, filter);
     }
 
     fn supports_filter_pushdown(&self, expr: &Expr) -> Result<TableProviderFilterPushDown> {

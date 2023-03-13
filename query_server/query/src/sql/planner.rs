@@ -1882,12 +1882,10 @@ fn show_series_projection(
     if where_contain_time {
         let exp = tags
             .iter()
-            .map(|tag| table_column_to_expr(table_schema, tag))
+            .map(|tag| col(Column::new(Some(&table_schema.name), &tag.name)))
             .collect::<Vec<Expr>>();
-        plan_builder = plan_builder.project(exp)?;
+        plan_builder = plan_builder.project(exp)?.distinct()?;
     };
-
-    plan_builder = plan_builder.distinct()?;
 
     // concat tag_key=tag_value projection
     let tag_concat_expr_iter = tags.iter().map(|tag| {
@@ -1971,23 +1969,21 @@ fn show_tag_value_projections(
     if where_contain_time {
         let exprs = tags
             .iter()
-            .map(|tag| table_column_to_expr(table_schema, tag))
+            .map(|tag| col(Column::new(Some(&table_schema.name), &tag.name)))
             .collect::<Vec<Expr>>();
 
-        plan_builder = plan_builder.project(exprs)?;
+        plan_builder = plan_builder.project(exprs)?.distinct()?;
     };
-
-    plan_builder = plan_builder.distinct()?;
 
     let mut projections = Vec::new();
     for tag in tags {
         let key_column = lit(&tag.name).alias("key");
-        let value_column = table_column_to_expr(table_schema, tag).alias("value");
+        let value_column = col(Column::new(Some(&table_schema.name), &tag.name)).alias("value");
         let projection = plan_builder
             .clone()
             .project(vec![key_column, value_column.clone()])?;
         let filter_expr = value_column.is_not_null();
-        let projection = projection.filter(filter_expr)?.build()?;
+        let projection = projection.filter(filter_expr)?.distinct()?.build()?;
         projections.push(Arc::new(projection));
     }
     let df_schema = projections[0].schema().clone();
@@ -1996,15 +1992,9 @@ fn show_tag_value_projections(
         inputs: projections,
         schema: df_schema,
     });
+    let union_distinct = LogicalPlanBuilder::from(union).distinct()?.build()?;
 
-    Ok(union)
-}
-
-fn table_column_to_expr(table_schema: &TskvTableSchema, column: &TableColumn) -> Expr {
-    Expr::Column(Column::new(
-        Some(table_schema.name.to_string()),
-        column.name.to_string(),
-    ))
+    Ok(union_distinct)
 }
 
 #[async_trait]

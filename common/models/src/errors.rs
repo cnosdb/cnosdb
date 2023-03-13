@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::io;
+use std::string::FromUtf8Error;
 
 use snafu::Snafu;
 
@@ -45,6 +46,9 @@ pub enum Error {
 
     #[snafu(display("Failed to convert vec to string"))]
     EncodingError,
+
+    #[snafu(display("RecordBatch is None"))]
+    NoneRecordBatch,
 }
 
 impl From<io::Error> for Error {
@@ -52,6 +56,12 @@ impl From<io::Error> for Error {
         Error::IOErrors {
             err: err.to_string(),
         }
+    }
+}
+
+impl From<FromUtf8Error> for Error {
+    fn from(_: FromUtf8Error) -> Self {
+        Error::EncodingError
     }
 }
 
