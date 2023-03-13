@@ -188,6 +188,7 @@ pub struct TableScanStream {
 
     iterator: ReaderIterator,
 
+    remain: Option<usize>,
     metrics: TableScanMetrics,
 }
 
@@ -236,6 +237,7 @@ impl TableScanStream {
             proj_fileds,
         );
 
+        let remain = split.limit();
         let option = QueryOption::new(
             batch_size,
             split,
@@ -251,6 +253,7 @@ impl TableScanStream {
             proj_schema,
             batch_size,
             coord,
+            remain,
             iterator,
             metrics,
         })
@@ -261,6 +264,7 @@ impl TableScanStream {
         batch_size: usize,
         coord: CoordinatorRef,
         iterator: ReaderIterator,
+        remain: Option<usize>,
         metrics: TableScanMetrics,
     ) -> Self {
         Self {
@@ -268,6 +272,7 @@ impl TableScanStream {
             batch_size,
             coord,
             iterator,
+            remain,
             metrics,
         }
     }
@@ -285,8 +290,22 @@ impl Stream for TableScanStream {
         let timer = metrics.elapsed_compute().timer();
 
         let result = match Box::pin(this.iterator.next()).poll_unpin(cx) {
-            Poll::Ready(Some(Ok(record_batch))) => match metrics.record_memory(&record_batch) {
-                Ok(_) => Poll::Ready(Some(Ok(record_batch))),
+            Poll::Ready(Some(Ok(batch))) => match metrics.record_memory(&batch) {
+                Ok(_) => match this.remain.as_mut() {
+                    Some(remain) => {
+                        if *remain == 0 {
+                            Poll::Ready(None)
+                        } else if *remain > batch.num_rows() {
+                            *remain -= batch.num_rows();
+                            Poll::Ready(Some(Ok(batch)))
+                        } else {
+                            let batch = batch.slice(0, *remain);
+                            *remain = 0;
+                            Poll::Ready(Some(Ok(batch)))
+                        }
+                    }
+                    None => Poll::Ready(Some(Ok(batch))),
+                },
                 Err(e) => Poll::Ready(Some(Err(e))),
             },
             Poll::Ready(Some(Err(e))) => {

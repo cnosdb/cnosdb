@@ -240,6 +240,9 @@ impl CoordService {
                 now.elapsed(),
             );
         }) {
+            if sender.is_closed() {
+                return;
+            }
             error!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         }
