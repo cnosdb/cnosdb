@@ -2,57 +2,29 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use datafusion::arrow::ipc::reader::StreamReader;
-use datafusion::arrow::ipc::writer::StreamWriter;
+use datafusion::arrow::array::StringBuilder;
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::MetaRef;
 use metrics::count::U64Counter;
+use models::arrow_array::build_arrow_array_builders;
 use models::meta_data::VnodeInfo;
 use models::utils::now_timestamp;
+use models::{record_batch_decode, SeriesKey};
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use trace::info;
+use tracing::info;
 use tskv::engine::EngineRef;
 use tskv::iterator::{QueryOption, RowIterator};
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::service::CoordServiceMetrics;
 use crate::SUCCESS_RESPONSE_CODE;
-
-#[derive(Debug)]
-pub struct ReaderIterator {
-    receiver: Receiver<CoordinatorResult<RecordBatch>>,
-}
-
-impl ReaderIterator {
-    pub fn new() -> (Self, Sender<CoordinatorResult<RecordBatch>>) {
-        let (sender, receiver) = mpsc::channel(1024);
-
-        (Self { receiver }, sender)
-    }
-
-    pub async fn next(&mut self) -> Option<CoordinatorResult<RecordBatch>> {
-        self.receiver.recv().await
-    }
-
-    pub async fn next_and_encdoe(&mut self) -> Option<CoordinatorResult<Vec<u8>>> {
-        if let Some(record) = self.receiver.recv().await {
-            match record {
-                Ok(record) => match record_batch_encode(&record) {
-                    Ok(data) => return Some(Ok(data)),
-                    Err(err) => return Some(Err(err)),
-                },
-                Err(err) => return Some(Err(err)),
-            }
-        }
-
-        None
-    }
-}
 
 pub struct QueryExecutor {
     option: QueryOption,
@@ -86,6 +58,32 @@ impl QueryExecutor {
             sender,
             data_out,
         }
+    }
+
+    pub async fn tag_scan(&self) -> CoordinatorResult<()> {
+        let mut routines = vec![];
+        let mapping = self.map_vnode().await?;
+        let now = tokio::time::Instant::now();
+        for (node_id, vnodes) in mapping.iter() {
+            info!(
+                "execute tag scan on node {}, vnode list: {:?} now: {:?}",
+                node_id, vnodes, now
+            );
+
+            let routine = self.node_tag_scan_executor(*node_id, vnodes.clone());
+            routines.push(routine);
+        }
+
+        let res = futures::future::try_join_all(routines).await.map(|_| ());
+
+        info!(
+            "parallel execute tag scan on vnodes over, start at: {:?} elapsed: {:?}, result: {:?}",
+            now,
+            now.elapsed(),
+            res,
+        );
+
+        res
     }
 
     pub async fn execute(&self) -> CoordinatorResult<()> {
@@ -140,6 +138,38 @@ impl QueryExecutor {
             }
         }
     }
+    async fn node_tag_scan_executor(
+        &self,
+        node_id: u64,
+        vnodes: Vec<VnodeInfo>,
+    ) -> CoordinatorResult<()> {
+        if node_id == self.meta_manager.node_id() {
+            self.local_node_tag_scan(vnodes.clone()).await
+        } else {
+            let result = self
+                .remote_node_tag_scan_executor(node_id, vnodes.clone())
+                .await;
+            if let Err(CoordinatorError::FailoverNode { id: _ }) = result {
+                let mut routines = vec![];
+                let mapping = self.try_map_vnode(&vnodes).await?;
+                for (tmp_id, tmp_vnodes) in mapping.iter() {
+                    info!(
+                        "try execute tag scan on node {}, vnode list: {:?}",
+                        tmp_id, tmp_vnodes
+                    );
+
+                    let routine = self.remote_node_tag_scan_executor(*tmp_id, tmp_vnodes.clone());
+                    routines.push(routine);
+                }
+
+                futures::future::try_join_all(routines).await?;
+
+                Ok(())
+            } else {
+                result
+            }
+        }
+    }
 
     async fn remote_node_executor(
         &self,
@@ -156,6 +186,32 @@ impl QueryExecutor {
 
         info!(
             "execute select command on remote node over: {}  start at: {:?}, elapsed: {:?}, result: {:?}",
+            node_id,
+            now,
+            now.elapsed(),
+            res
+        );
+
+        res
+    }
+
+    async fn remote_node_tag_scan_executor(
+        &self,
+        node_id: u64,
+        vnodes: Vec<VnodeInfo>,
+    ) -> CoordinatorResult<()> {
+        let now = tokio::time::Instant::now();
+        info!(
+            "execute tag scan command on remote node: {} vnodes: {:?} now: {:?}",
+            node_id, vnodes, now
+        );
+
+        let res = self
+            .warp_remote_node_tag_scan_executor(node_id, vnodes)
+            .await;
+
+        info!(
+            "execute tag scan command on remote node over: {}  start at: {:?}, elapsed: {:?}, result: {:?}",
             node_id,
             now,
             now.elapsed(),
@@ -213,6 +269,54 @@ impl QueryExecutor {
 
         Ok(())
     }
+    async fn warp_remote_node_tag_scan_executor(
+        &self,
+        node_id: u64,
+        vnodes: Vec<VnodeInfo>,
+    ) -> CoordinatorResult<()> {
+        let cmd = {
+            let vnode_ids = vnodes.iter().map(|v| v.id).collect::<Vec<_>>();
+            let req = self.option.to_query_record_batch_request(vnode_ids)?;
+            tonic::Request::new(req)
+        };
+
+        let channel = self
+            .meta_manager
+            .admin_meta()
+            .get_node_conn(node_id)
+            .await?;
+        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
+        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut resp_stream = client
+            .tag_scan(cmd)
+            .await
+            .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?
+            .into_inner();
+        while let Some(received) = resp_stream.next().await {
+            let received = received?;
+            if received.code != SUCCESS_RESPONSE_CODE {
+                return Err(CoordinatorError::GRPCRequest {
+                    msg: format!(
+                        "server status: {}, {:?}",
+                        received.code,
+                        String::from_utf8(received.data)
+                    ),
+                });
+            }
+            let record = record_batch_decode(&received.data)?;
+
+            self.meta_manager
+                .tenant_manager()
+                .limiter(self.option.table_schema.tenant.as_str())
+                .await
+                .check_data_out(record.get_array_memory_size())
+                .await?;
+
+            self.sender.send(Ok(record)).await?;
+        }
+
+        Ok(())
+    }
 
     pub async fn local_node_executor(&self, vnodes: Vec<VnodeInfo>) -> CoordinatorResult<()> {
         let mut routines = vec![];
@@ -226,6 +330,26 @@ impl QueryExecutor {
         let res = futures::future::try_join_all(routines).await.map(|_| ());
         info!(
             "parallel query local vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
+            now,
+            now.elapsed(),
+            res,
+        );
+
+        res
+    }
+
+    pub async fn local_node_tag_scan(&self, vnode: Vec<VnodeInfo>) -> CoordinatorResult<()> {
+        let mut routines = vec![];
+        let now = tokio::time::Instant::now();
+        for vnode in vnode.into_iter() {
+            info!("tag scan local vnode: {:?}, now: {:?}", vnode, now);
+            let routine = self.local_vnode_tag_scan(vnode);
+            routines.push(routine);
+        }
+
+        let res = futures::future::try_join_all(routines).await.map(|_| ());
+        info!(
+            "parallel tag scan local vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
             now,
             now.elapsed(),
             res,
@@ -257,6 +381,42 @@ impl QueryExecutor {
                     return Err(CoordinatorError::from(err));
                 }
             };
+        }
+
+        Ok(())
+    }
+
+    pub async fn local_vnode_tag_scan(&self, vnode: VnodeInfo) -> CoordinatorResult<()> {
+        let kv = self
+            .kv_inst
+            .as_ref()
+            .ok_or(CoordinatorError::KvInstanceNotFound {
+                vnode_id: vnode.id,
+                node_id: vnode.node_id,
+            })?
+            .clone();
+
+        let (tenant, db, table) = (
+            self.option.table_schema.tenant.as_str(),
+            self.option.table_schema.db.as_str(),
+            self.option.table_schema.name.as_str(),
+        );
+
+        let mut keys = Vec::new();
+
+        for series_id in kv
+            .get_series_id_by_filter(tenant, db, table, vnode.id, self.option.split.tags_filter())
+            .await?
+            .into_iter()
+        {
+            if let Some(key) = kv.get_series_key(tenant, db, vnode.id, series_id).await? {
+                keys.push(key)
+            }
+        }
+
+        for chunk in keys.chunks(self.option.batch_size) {
+            let record_batch = series_keys_to_record_batch(self.option.df_schema.clone(), chunk)?;
+            self.sender.send(Ok(record_batch)).await?;
         }
 
         Ok(())
@@ -339,21 +499,29 @@ impl QueryExecutor {
     }
 }
 
-pub fn record_batch_encode(record: &RecordBatch) -> CoordinatorResult<Vec<u8>> {
-    let buffer: Vec<u8> = Vec::new();
-    let mut stream_writer = StreamWriter::try_new(buffer, &record.schema())?;
-    stream_writer.write(record)?;
-    stream_writer.finish()?;
-    let data = stream_writer.into_inner()?;
+fn series_keys_to_record_batch(
+    schema: SchemaRef,
+    series_keys: &[SeriesKey],
+) -> Result<RecordBatch, ArrowError> {
+    let tag_key_array = schema.fields.iter().map(|f| f.name()).collect::<Vec<_>>();
+    let mut array_builders = build_arrow_array_builders(&schema, series_keys.len())?;
+    for key in series_keys {
+        for (k, array_builder) in tag_key_array.iter().zip(&mut array_builders) {
+            let tag_value = key
+                .tag_string_val(k)
+                .map_err(|e| ArrowError::ExternalError(Box::new(e)))?;
 
-    Ok(data)
-}
-
-pub fn record_batch_decode(buf: &[u8]) -> CoordinatorResult<RecordBatch> {
-    let mut stream_reader = StreamReader::try_new(std::io::Cursor::new(buf), None)?;
-    let record = stream_reader.next().ok_or(CoordinatorError::CommonError {
-        msg: "record batch is None".to_string(),
-    })??;
-
-    Ok(record)
+            let builder = array_builder
+                .as_any_mut()
+                .downcast_mut::<StringBuilder>()
+                .expect("Cast failed for List Builder<StringBuilder> during nested data parsing");
+            builder.append_option(tag_value)
+        }
+    }
+    let columns = array_builders
+        .into_iter()
+        .map(|mut b| b.finish())
+        .collect::<Vec<_>>();
+    let record_batch = RecordBatch::try_new(schema.clone(), columns)?;
+    Ok(record_batch)
 }

@@ -21,27 +21,25 @@ impl ExtensionPlanner for TagScanPlanner {
         node: &dyn UserDefinedLogicalNode,
         _logical_inputs: &[&LogicalPlan],
         _physical_inputs: &[Arc<dyn ExecutionPlan>],
-        session_state: &SessionState,
+        _session_state: &SessionState,
     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
-        Ok(
-            if let Some(TagScanPlanNode {
-                table_name: _,
-                source,
-                projection: _,
-                projected_schema,
-                filters,
-                fetch,
-            }) = as_tag_scan_plan_node(node)
-            {
-                let tag_scan = source
-                    .tag_scan(session_state, projected_schema, filters, *fetch)
-                    .await?;
+        let res = if let Some(TagScanPlanNode {
+            table_name: _,
+            source,
+            projection: _,
+            projected_schema,
+            filters,
+            fetch,
+        }) = as_tag_scan_plan_node(node)
+        {
+            let tag_scan =
+                source.create_tag_scan_physical_plan(projected_schema, filters, *fetch)?;
 
-                Some(tag_scan)
-            } else {
-                None
-            },
-        )
+            Some(tag_scan)
+        } else {
+            None
+        };
+        Ok(res)
     }
 }
 

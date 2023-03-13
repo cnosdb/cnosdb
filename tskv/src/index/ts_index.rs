@@ -266,36 +266,26 @@ impl TSIndex {
         tag_domains: &HashMap<String, Domain>,
     ) -> IndexResult<Vec<u32>> {
         debug!("pushed tags: {:?}", tag_domains);
-
-        let mut series_ids = Vec::with_capacity(tag_domains.len());
-        for (_idx, (tag_key, v)) in tag_domains.iter().enumerate() {
-            series_ids.push(self.get_series_ids_by_domain(tab, tag_key, v)?);
-        }
+        let series_ids = tag_domains
+            .iter()
+            .map(|(k, v)| self.get_series_ids_by_domain(tab, k, v))
+            .collect::<IndexResult<Vec<_>>>()?;
 
         debug!("filter scan all series_ids: {:?}", series_ids);
 
-        let bitmap = series_ids
+        let result = series_ids
             .into_iter()
             .reduce(|p, c| p.bitand(c))
-            .unwrap_or_default();
-
-        let mut result = Vec::with_capacity(bitmap.len() as usize);
-        for id in bitmap.iter() {
-            result.push(id);
-        }
+            .unwrap_or_default()
+            .into_iter()
+            .collect::<Vec<_>>();
 
         Ok(result)
     }
 
     pub fn get_series_id_list(&self, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u32>> {
-        let bitmap = self.get_series_id_bitmap(tab, tags)?;
-
-        let mut result = Vec::with_capacity(bitmap.len() as usize);
-        for id in bitmap.iter() {
-            result.push(id);
-        }
-
-        Ok(result)
+        let res = self.get_series_id_bitmap(tab, tags)?.iter().collect();
+        Ok(res)
     }
 
     pub fn get_series_id_bitmap(
@@ -312,7 +302,7 @@ impl TSIndex {
                 let data = self.storage.load(&val.1)?;
 
                 let rb = roaring::RoaringBitmap::deserialize_from(&*data)
-                    .map_err(|e| IndexError::RoaringBitmap { msg: e.to_string() })?;
+                    .map_err(|e| IndexError::RoaringBitmap { source: e })?;
 
                 bitmap = bitmap.bitor(rb);
             }
@@ -320,14 +310,14 @@ impl TSIndex {
             let key = encode_inverted_index_key(tab, &tags[0].key, &tags[0].value);
             if let Some(data) = self.storage.get(&key)? {
                 bitmap = roaring::RoaringBitmap::deserialize_from(&*data)
-                    .map_err(|e| IndexError::RoaringBitmap { msg: e.to_string() })?;
+                    .map_err(|e| IndexError::RoaringBitmap { source: e })?;
             }
 
             for tag in &tags[1..] {
                 let key = encode_inverted_index_key(tab, &tag.key, &tag.value);
                 if let Some(data) = self.storage.get(&key)? {
                     let rb = roaring::RoaringBitmap::deserialize_from(&*data)
-                        .map_err(|e| IndexError::RoaringBitmap { msg: e.to_string() })?;
+                        .map_err(|e| IndexError::RoaringBitmap { source: e })?;
                     bitmap = bitmap.bitand(rb);
                 } else {
                     return Ok(roaring::RoaringBitmap::new());
@@ -354,7 +344,7 @@ impl TSIndex {
                     if is_equal {
                         if let Some(data) = self.storage.get(&equal_key)? {
                             let rb = roaring::RoaringBitmap::deserialize_from(&*data)
-                                .map_err(|e| IndexError::RoaringBitmap { msg: e.to_string() })?;
+                                .map_err(|e| IndexError::RoaringBitmap { source: e })?;
                             bitmap = bitmap.bitor(rb);
                         };
 
@@ -367,7 +357,7 @@ impl TSIndex {
                         let item = item?;
                         let data = self.storage.load(&item.1)?;
                         let rb = roaring::RoaringBitmap::deserialize_from(&*data)
-                            .map_err(|e| IndexError::RoaringBitmap { msg: e.to_string() })?;
+                            .map_err(|e| IndexError::RoaringBitmap { source: e })?;
 
                         bitmap = bitmap.bitor(rb);
                     }
@@ -381,7 +371,7 @@ impl TSIndex {
 
                         if let Some(data) = self.storage.get(&index_key)? {
                             let rb = roaring::RoaringBitmap::deserialize_from(&*data)
-                                .map_err(|e| IndexError::RoaringBitmap { msg: e.to_string() })?;
+                                .map_err(|e| IndexError::RoaringBitmap { source: e })?;
                             bitmap = bitmap.bitor(rb);
                         };
                     }

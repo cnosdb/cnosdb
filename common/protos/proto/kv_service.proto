@@ -156,4 +156,5 @@ service TSKVService {
   rpc DownloadFile(DownloadFileRequest) returns (stream BatchBytesResponse) {};
   rpc GetVnodeFilesMeta(GetVnodeFilesMetaRequest) returns (GetVnodeFilesMetaResponse) {};
   rpc FetchVnodeSummary(FetchVnodeSummaryRequest) returns (BatchBytesResponse) {};
+  rpc TagScan(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
 }

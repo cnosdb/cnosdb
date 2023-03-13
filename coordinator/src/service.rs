@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::ops::Not;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -207,18 +208,11 @@ impl CoordService {
         option: QueryOption,
         sender: Sender<CoordinatorResult<RecordBatch>>,
     ) {
-        let tenant = option.table_schema.tenant.as_str();
-
-        if let Err(e) = self
-            .meta
-            .tenant_manager()
-            .limiter(tenant)
+        if self
+            .check_query_limiter(&option, sender.clone())
             .await
-            .check_query()
-            .await
-            .map_err(|e| CoordinatorError::Meta { source: e })
+            .not()
         {
-            let _ = sender.send(Err(e)).await;
             return;
         }
         let executor = QueryExecutor::new(
@@ -243,6 +237,66 @@ impl CoordService {
             if sender.is_closed() {
                 return;
             }
+            error!("select statement execute failed: {}", err.to_string());
+            let _ = sender.send(Err(err)).await;
+        }
+    }
+
+    // if success return true
+    async fn check_query_limiter(
+        &self,
+        option: &QueryOption,
+        sender: Sender<CoordinatorResult<RecordBatch>>,
+    ) -> bool {
+        let tenant = option.table_schema.tenant.as_str();
+
+        if let Err(e) = self
+            .meta
+            .tenant_manager()
+            .limiter(tenant)
+            .await
+            .check_query()
+            .await
+            .map_err(|e| CoordinatorError::Meta { source: e })
+        {
+            let _ = sender.send(Err(e)).await;
+            false
+        } else {
+            true
+        }
+    }
+
+    async fn tag_scan_request(
+        self,
+        option: QueryOption,
+        sender: Sender<CoordinatorResult<RecordBatch>>,
+    ) {
+        if self
+            .check_query_limiter(&option, sender.clone())
+            .await
+            .not()
+        {
+            return;
+        }
+        let executor = QueryExecutor::new(
+            option,
+            self.runtime.clone(),
+            self.kv_inst.clone(),
+            self.meta.clone(),
+            sender.clone(),
+            self.metrics.clone(),
+        );
+
+        let now = tokio::time::Instant::now();
+        info!("select statement execute now: {:?}", now);
+
+        if let Err(err) = executor.tag_scan().await.map(|_| {
+            info!(
+                "select statement execute success, start at: {:?} elapsed: {:?}",
+                now,
+                now.elapsed(),
+            );
+        }) {
             error!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         }
@@ -332,6 +386,13 @@ impl Coordinator for CoordService {
             coord, option, sender,
         ));
 
+        Ok(iterator)
+    }
+
+    fn tag_scan(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
+        let (iterator, sender) = ReaderIterator::new();
+        let coord = self.clone();
+        tokio::spawn(CoordService::tag_scan_request(coord, option, sender));
         Ok(iterator)
     }
 

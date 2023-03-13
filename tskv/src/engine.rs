@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use models::meta_data::VnodeId;
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::TableColumn;
 use models::{ColumnId, SeriesId, SeriesKey};
@@ -72,7 +73,7 @@ pub trait Engine: Send + Sync + Debug {
         tenant: &str,
         db: &str,
         tab: &str,
-        vnode_id: SeriesId,
+        vnode_id: VnodeId,
         filter: &ColumnDomains<String>,
     ) -> Result<Vec<SeriesId>>;
 

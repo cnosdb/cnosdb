@@ -31,6 +31,8 @@ pub trait Coordinator: Send + Sync + Debug {
 
     fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
 
+    fn tag_scan(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
+
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()>;
 
     async fn vnode_manager(
@@ -71,6 +73,11 @@ impl Coordinator for MockCoordinator {
     }
 
     fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
+        let (it, _) = ReaderIterator::new();
+        Ok(it)
+    }
+
+    fn tag_scan(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
         let (it, _) = ReaderIterator::new();
         Ok(it)
     }
