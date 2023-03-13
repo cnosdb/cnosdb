@@ -1000,7 +1000,7 @@ impl RowIterator {
                             let agg_ret = count_column_non_null_values(
                                 self.runtime.clone(),
                                 version.clone(),
-                                &self.series_ids,
+                                Arc::new(self.series_ids.clone()),
                                 None,
                                 time_ranges.clone(),
                             )
@@ -1017,7 +1017,7 @@ impl RowIterator {
                                 let agg_ret = count_column_non_null_values(
                                     self.runtime.clone(),
                                     version.clone(),
-                                    &self.series_ids,
+                                    Arc::new(self.series_ids.clone()),
                                     Some(item.id),
                                     time_ranges.clone(),
                                 )

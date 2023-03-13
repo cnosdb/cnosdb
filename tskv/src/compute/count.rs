@@ -26,7 +26,7 @@ pub enum TimeRangeCmp {
 pub async fn count_column_non_null_values(
     runtime: Arc<Runtime>,
     super_version: Arc<SuperVersion>,
-    series_ids: &[SeriesId],
+    series_ids: Arc<Vec<SeriesId>>,
     column_id: Option<ColumnId>,
     time_ranges: Arc<Vec<TimeRange>>,
 ) -> Result<u64> {
@@ -37,21 +37,18 @@ pub async fn count_column_non_null_values(
 
         let mut jh_vec = Vec::with_capacity(series_ids.len());
 
-        for series_id in series_ids {
+        for series_id in series_ids.iter() {
             let field_id = model_utils::unite_id(column_id, *series_id);
             let sv_inner = super_version.clone();
             let cfs_inner = column_files.clone();
             let trs_inner = time_ranges.clone();
 
-            jh_vec.push(runtime.spawn(async move {
-                count_non_null_values_inner(
-                    sv_inner,
-                    CountingObject::Field(field_id),
-                    &cfs_inner,
-                    trs_inner,
-                )
-                .await
-            }));
+            jh_vec.push(runtime.spawn(count_non_null_values_inner(
+                sv_inner,
+                CountingObject::Field(field_id),
+                cfs_inner.clone(),
+                trs_inner.clone(),
+            )));
         }
 
         let mut count_sum = 0_u64;
@@ -67,28 +64,28 @@ pub async fn count_column_non_null_values(
         count_non_null_values_inner(
             super_version,
             CountingObject::Series(series_ids),
-            &column_files,
+            column_files.clone(),
             time_ranges,
         )
         .await
     }
 }
 
-enum CountingObject<'a> {
+enum CountingObject {
     Field(FieldId),
-    Series(&'a [SeriesId]),
+    Series(Arc<Vec<SeriesId>>),
 }
 
 /// Get count of non-null values in time ranges of a field.
-async fn count_non_null_values_inner<'a>(
+async fn count_non_null_values_inner(
     super_version: Arc<SuperVersion>,
-    counting_object: CountingObject<'a>,
-    column_files: &[Arc<ColumnFile>],
+    counting_object: CountingObject,
+    column_files: Arc<Vec<Arc<ColumnFile>>>,
     sorted_time_ranges: Arc<Vec<TimeRange>>,
 ) -> Result<u64> {
     let read_tasks = create_file_read_tasks(
         &super_version,
-        column_files,
+        &column_files,
         &counting_object,
         &sorted_time_ranges,
     )
@@ -97,9 +94,11 @@ async fn count_non_null_values_inner<'a>(
         CountingObject::Field(field_id) => {
             get_field_timestamps_in_caches(&super_version, field_id, &sorted_time_ranges)
         }
-        CountingObject::Series(series_ids) => {
-            get_series_timestamps_in_caches(&super_version, series_ids, &sorted_time_ranges)
-        }
+        CountingObject::Series(series_ids) => get_series_timestamps_in_caches(
+            &super_version,
+            series_ids.as_slice(),
+            &sorted_time_ranges,
+        ),
     };
 
     let mut count = cached_timestamps.len() as u64;
@@ -234,7 +233,7 @@ struct ReadTask {
 async fn create_file_read_tasks<'a>(
     super_version: &SuperVersion,
     files: &[Arc<ColumnFile>],
-    counting_object: &CountingObject<'a>,
+    counting_object: &CountingObject,
     time_ranges: &[TimeRange],
 ) -> Result<Vec<ReadTask>> {
     let mut read_tasks: Vec<ReadTask> = Vec::new();
@@ -255,8 +254,8 @@ async fn create_file_read_tasks<'a>(
             if let CountingObject::Series(series_ids) = counting_object {
                 let (_, sid) = model_utils::split_id(idx.field_id());
                 let mut idx_in_series = false;
-                for series_id in *series_ids {
-                    if *series_id == sid {
+                for series_id in series_ids.iter().cloned() {
+                    if series_id == sid {
                         idx_in_series = true;
                         break;
                     }
@@ -411,7 +410,7 @@ mod test {
             self.runtime.block_on(count_column_non_null_values(
                 self.runtime.clone(),
                 self.super_version.clone(),
-                series_ids,
+                Arc::new(series_ids.to_vec()),
                 column_id,
                 Arc::new(time_ranges),
             ))
