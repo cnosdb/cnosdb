@@ -121,7 +121,12 @@ walkdir = "2.3.2"
 zstd = "0.11.2"
 tikv-jemalloc-ctl = "0.5"
 tikv-jemallocator = "0.5.0"
-tikv-jemalloc-sys = {version = "0.5", features = ["stats", "profiling", "unprefixed_malloc_on_supported_platforms"]}
+tikv-jemalloc-sys = { version = "0.5", features = ["stats", "profiling", "unprefixed_malloc_on_supported_platforms"] }
+async-backtrace = "0.2.2"
+radixdb = "0.2.5"
+roaring = "0.10.1"
+rust-crypto = "0.2.36"
+tower = "0.4.13"
 
 [workspace.package]
 version = "2.2.0"

@@ -1,23 +1,17 @@
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 
-use async_trait::async_trait;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use trace::{debug, info};
 
 use crate::error::Result;
 use crate::file_system::file_manager::{self};
+use crate::file_system::DataBlock;
 use crate::{byte_utils, file_utils};
 
 const SEGMENT_FILE_HEADER_SIZE: u64 = 12;
 const SEGMENT_FILE_MAGIC: [u8; 4] = [0x51, 0x55, 0x51, 0x45];
-
-#[async_trait]
-pub trait DataBlock {
-    async fn write(&self, file: &mut File) -> Result<usize>;
-    async fn read(&mut self, file: &mut File) -> Result<usize>;
-}
 
 pub struct QueueConfig {
     pub data_path: String,

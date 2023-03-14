@@ -5,7 +5,6 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use config::ClusterConfig;
 use models::auth::role::{TenantRoleIdentifier, UserRole};
 use models::auth::user::User;
@@ -18,28 +17,13 @@ use trace::info;
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
-use crate::meta_admin::RemoteAdminMeta;
-use crate::store::{command, key_path};
-use crate::tenant_manager::{
+use crate::model::meta_admin::RemoteAdminMeta;
+use crate::model::tenant_manager::{
     RemoteTenantManager, UseTenantInfo, USE_TENANT_ACTION_ADD, USE_TENANT_ACTION_DEL,
 };
-use crate::user_manager::RemoteUserManager;
-use crate::{AdminMetaRef, TenantManagerRef, UserManagerRef};
-
-#[async_trait]
-pub trait MetaManager: Send + Sync + Debug {
-    fn node_id(&self) -> u64;
-    fn admin_meta(&self) -> AdminMetaRef;
-    fn user_manager(&self) -> UserManagerRef;
-    fn tenant_manager(&self) -> TenantManagerRef;
-    async fn use_tenant(&self, val: &str) -> MetaResult<()>;
-    async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
-    async fn user_with_privileges(
-        &self,
-        user_name: &str,
-        tenant_name: Option<&str>,
-    ) -> MetaResult<User>;
-}
+use crate::model::user_manager::RemoteUserManager;
+use crate::model::{AdminMetaRef, MetaManager, TenantManagerRef, UserManagerRef};
+use crate::store::{command, key_path};
 
 #[derive(Debug)]
 pub struct RemoteMetaManager {

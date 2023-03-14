@@ -2,15 +2,14 @@ use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use datafusion::execution::memory_pool::GreedyMemoryPool;
-use meta::meta_manager::RemoteMetaManager;
-use meta::MetaRef;
+use meta::model::meta_manager::RemoteMetaManager;
+use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use parking_lot::Mutex;
 use protos::kv_service::WritePointsRequest;
 use protos::models_helper;
 use tokio::runtime::{self, Runtime};
-use tskv::engine::Engine;
-use tskv::TsKv;
+use tskv::{Engine, TsKv};
 
 async fn get_tskv() -> TsKv {
     let mut global_config = config::get_config_for_test();

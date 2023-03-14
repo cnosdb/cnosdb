@@ -3,44 +3,17 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
-use meta::{MetaClientRef, MetaRef};
+use meta::model::meta_client_mock::{MockMetaClient, MockMetaManager};
+use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
-use tskv::engine::EngineRef;
 use tskv::engine_mock::MockEngine;
-use tskv::iterator::QueryOption;
+use tskv::query_iterator::QueryOption;
+use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
 use crate::reader::ReaderIterator;
-use crate::VnodeManagerCmdType;
-
-#[async_trait::async_trait]
-pub trait Coordinator: Send + Sync + Debug {
-    fn node_id(&self) -> u64;
-    fn meta_manager(&self) -> MetaRef;
-    fn store_engine(&self) -> Option<EngineRef>;
-    async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
-
-    async fn write_points(
-        &self,
-        tenant: String,
-        level: ConsistencyLevel,
-        request: WritePointsRequest,
-    ) -> CoordinatorResult<()>;
-
-    fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
-
-    fn tag_scan(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
-
-    async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()>;
-
-    async fn vnode_manager(
-        &self,
-        tenant: &str,
-        cmd_type: VnodeManagerCmdType,
-    ) -> CoordinatorResult<()>;
-}
+use crate::{Coordinator, VnodeManagerCmdType};
 
 #[derive(Debug, Default)]
 pub struct MockCoordinator {}

@@ -428,8 +428,8 @@ mod test {
     use blake3::Hasher;
     use chrono::{Duration, NaiveDateTime};
     use datafusion::execution::memory_pool::GreedyMemoryPool;
-    use meta::meta_manager::RemoteMetaManager;
-    use meta::MetaRef;
+    use meta::model::meta_manager::RemoteMetaManager;
+    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::predicate::domain::TimeRange;
@@ -445,10 +445,9 @@ mod test {
 
     use super::{calc_block_partial_time_range, find_timestamp, hash_partial_datablock, Hash};
     use crate::compaction::check::{get_default_time_range, TimeRangeHashTreeNode};
-    use crate::engine::Engine;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
-    use crate::{Options, TsKv, TseriesFamilyId};
+    use crate::{Engine, Options, TsKv, TseriesFamilyId};
 
     fn parse_nanos(datetime: &str) -> Timestamp {
         NaiveDateTime::parse_from_str(datetime, "%Y-%m-%d %H:%M:%S")

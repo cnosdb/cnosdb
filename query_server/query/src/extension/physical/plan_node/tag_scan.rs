@@ -23,7 +23,7 @@ use models::predicate::Split;
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 use spi::QueryError;
 use trace::debug;
-use tskv::iterator::{QueryOption, TableScanMetrics};
+use tskv::query_iterator::{QueryOption, TableScanMetrics};
 
 #[derive(Debug, Clone)]
 pub struct TagScanExec {

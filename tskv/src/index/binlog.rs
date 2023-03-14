@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use trace::{debug, error};
 
 use super::{IndexError, IndexResult};
-use crate::file_system::{file_manager, AsyncFile, FileCursor, IFile};
+use crate::file_system::file::async_file::AsyncFile;
+use crate::file_system::file::cursor::FileCursor;
+use crate::file_system::file::IFile;
+use crate::file_system::file_manager;
 use crate::{byte_utils, file_utils};
 
 const SEGMENT_FILE_HEADER_SIZE: usize = 8;

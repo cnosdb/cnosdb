@@ -10,9 +10,10 @@ use coordinator::{FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::Stream;
+use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
-use models::predicate::domain::{self, QueryArgs, QueryExpr};
+use models::predicate::domain::{QueryArgs, QueryExpr};
 use models::schema::TableColumn;
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::*;
@@ -24,12 +25,11 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
 use trace::{debug, error, info};
-use tskv::engine::EngineRef;
-use tskv::iterator::{QueryOption, TableScanMetrics};
+use tskv::query_iterator::{QueryOption, TableScanMetrics};
+use tskv::EngineRef;
 
 type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, tonic::Status>> + Send>>;
 
-#[derive(Clone)]
 pub struct TskvServiceImpl {
     pub runtime: Arc<Runtime>,
     pub kv_inst: EngineRef,
@@ -185,24 +185,25 @@ impl TskvServiceImpl {
     }
 
     async fn query_record_batch_exec(
-        self,
         args: QueryArgs,
         expr: QueryExpr,
-        aggs: Option<Vec<TableColumn>>,
+        meta: MetaRef,
+        runtime: Arc<Runtime>,
+        kv_inst: EngineRef,
         sender: Sender<CoordinatorResult<RecordBatch>>,
+        metrics_register: Arc<MetricsRegister>,
     ) {
         let plan_metrics = ExecutionPlanMetricsSet::new();
         let scan_metrics = TableScanMetrics::new(&plan_metrics, 0, None);
         let option = QueryOption::new(
             args.batch_size,
             expr.split,
-            aggs,
+            None,
             Arc::new(expr.df_schema),
             expr.table_schema,
             scan_metrics.tskv_metrics(),
         );
 
-        let meta = self.coord.meta_manager();
         let node_id = meta.node_id();
         let mut vnodes = Vec::with_capacity(args.vnode_ids.len());
         for id in args.vnode_ids.iter() {
@@ -211,11 +212,11 @@ impl TskvServiceImpl {
 
         let executor = QueryExecutor::new(
             option,
-            self.runtime.clone(),
-            Some(self.kv_inst.clone()),
+            runtime,
+            Some(kv_inst),
             meta,
             sender.clone(),
-            Arc::new(CoordServiceMetrics::new(&self.metrics_register)),
+            Arc::new(CoordServiceMetrics::new(&metrics_register)),
         );
         if let Err(err) = executor.local_node_executor(vnodes).await {
             if sender.is_closed() {
@@ -231,7 +232,7 @@ impl TskvServiceImpl {
     async fn tag_scan_exec(
         args: QueryArgs,
         expr: QueryExpr,
-        meta: meta::MetaRef,
+        meta: MetaRef,
         run_time: Arc<Runtime>,
         kv_inst: EngineRef,
         sender: Sender<CoordinatorResult<RecordBatch>>,
@@ -506,19 +507,15 @@ impl TskvService for TskvServiceImpl {
             Err(err) => return Err(self.tonic_status(err.to_string())),
         };
 
-        let aggs = match domain::decode_agg(&inner.aggs) {
-            Ok(aggs) => aggs,
-            Err(err) => return Err(self.tonic_status(err.to_string())),
-        };
-
-        let service = self.clone();
         let (mut iterator, record_batch_sender) = ReaderIterator::new();
         tokio::spawn(TskvServiceImpl::query_record_batch_exec(
-            service,
             args,
             expr,
-            aggs,
+            self.coord.meta_manager(),
+            self.runtime.clone(),
+            self.kv_inst.clone(),
             record_batch_sender,
+            self.metrics_register.clone(),
         ));
 
         let (send, recv) = mpsc::channel(1024);

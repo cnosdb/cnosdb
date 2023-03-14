@@ -144,3 +144,8 @@ pub async fn cpu_pprof(_app: Data<MetaApp>) -> actix_web::Result<impl Responder>
         Err(v) => Ok(v),
     }
 }
+
+#[get("/debug/backtrace")]
+pub async fn backtrace(_app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+    Ok(utils::backtrace::backtrace())
+}

@@ -9,5 +9,10 @@ edition.workspace = true
 #members = ["error_code_macro"]
 
 [dependencies]
-error_code_macro = {path = "error_code_macro"}
-snafu = {workspace = true}
+error_code_macro = { path = "error_code_macro" }
+snafu = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+backtrace = ["async-backtrace"]

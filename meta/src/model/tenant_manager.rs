@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use models::meta_data::ExpiredBucketInfo;
 use models::oid::Identifier;
 use models::schema::{Tenant, TenantOptions};
@@ -13,9 +12,9 @@ use tokio::sync::RwLock;
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::{LocalRequestLimiter, NoneLimiter, RequestLimiter};
-use crate::meta_client::{MetaClient, RemoteMetaClient};
+use crate::model::meta_client::RemoteMetaClient;
+use crate::model::{MetaClient, MetaClientRef, TenantManager};
 use crate::store::command::{self, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND};
-use crate::MetaClientRef;
 
 pub const USE_TENANT_ACTION_ADD: i32 = 1;
 pub const USE_TENANT_ACTION_DEL: i32 = 2;
@@ -24,29 +23,6 @@ pub struct UseTenantInfo {
     pub name: String,
     pub version: u64,
     pub action: i32, //1: add, 2: del
-}
-
-#[async_trait]
-pub trait TenantManager: Send + Sync + Debug {
-    async fn clear(&self);
-    // tenant
-    async fn create_tenant(
-        &self,
-        name: String,
-        options: TenantOptions,
-    ) -> MetaResult<MetaClientRef>;
-    async fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>>;
-    async fn tenants(&self) -> MetaResult<Vec<Tenant>>;
-    async fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()>;
-    async fn drop_tenant(&self, name: &str) -> MetaResult<bool>;
-    // tenant object meta manager
-    async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
-
-    async fn get_tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
-
-    async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
-
-    async fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter>;
 }
 
 #[derive(Debug)]

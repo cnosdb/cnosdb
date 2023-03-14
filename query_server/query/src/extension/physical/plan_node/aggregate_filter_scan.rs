@@ -15,7 +15,7 @@ use datafusion::physical_plan::{
 use models::predicate::domain::{PredicateRef, PushedAggregateFunction, TimeRange};
 use models::predicate::Split;
 use models::schema::TskvTableSchemaRef;
-use tskv::iterator::{QueryOption, TableScanMetrics};
+use tskv::query_iterator::{QueryOption, TableScanMetrics};
 
 use super::tskv_exec::TableScanStream;
 

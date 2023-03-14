@@ -6,7 +6,7 @@ use serde::Serialize;
 use tokio::task::JoinHandle;
 use trace::debug;
 
-use crate::server::Service;
+use crate::spi::service::Service;
 use crate::{server, VERSION};
 
 async fn get_country_code_and_regin_name() -> (String, String) {

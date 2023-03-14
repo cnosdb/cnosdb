@@ -47,6 +47,11 @@ tempfile = { workspace = true }
 bytes = { workspace = true }
 snap = { workspace = true, default-features = false }
 regex = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+backtrace = ["async-backtrace"]
 
 # use libc on unix like platforms to set worker priority in DedicatedExecutor
 [target."cfg(unix)".dependencies.libc]

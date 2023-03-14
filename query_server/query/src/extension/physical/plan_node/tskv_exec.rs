@@ -23,7 +23,7 @@ use models::predicate::Split;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD};
 use spi::{QueryError, Result};
 use trace::debug;
-use tskv::iterator::{QueryOption, TableScanMetrics};
+use tskv::query_iterator::{QueryOption, TableScanMetrics};
 
 #[derive(Debug, Clone)]
 pub struct TskvExec {

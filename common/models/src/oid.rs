@@ -18,7 +18,7 @@ impl Id for Oid {}
 
 #[async_trait::async_trait]
 pub trait OidGenerator {
-    async fn next_oid(&self) -> std::result::Result<Oid, String>;
+    fn next_oid(&self) -> std::result::Result<Oid, String>;
 }
 
 #[derive(Default)]
@@ -28,7 +28,7 @@ pub struct MemoryOidGenerator {
 
 #[async_trait::async_trait]
 impl OidGenerator for MemoryOidGenerator {
-    async fn next_oid(&self) -> std::result::Result<Oid, String> {
+    fn next_oid(&self) -> std::result::Result<Oid, String> {
         Ok(self.delegate.next_id())
     }
 }

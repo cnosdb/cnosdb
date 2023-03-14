@@ -1,3 +1,14 @@
+use std::fmt::Debug;
+
+use meta::model::{MetaClientRef, MetaRef};
+use models::consistency_level::ConsistencyLevel;
+use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
+use tskv::query_iterator::QueryOption;
+use tskv::EngineRef;
+
+use crate::errors::CoordinatorResult;
+use crate::reader::ReaderIterator;
+
 pub mod errors;
 pub mod file_info;
 pub mod hh_queue;
@@ -21,9 +32,12 @@ pub struct WriteRequest {
 
 #[derive(Debug, Clone)]
 pub enum VnodeManagerCmdType {
-    Copy(u32, u64),    // vnode id, dst node id
-    Move(u32, u64),    // vnode id, dst node id
-    Drop(u32),         // vnode id
+    Copy(u32, u64),
+    // vnode id, dst node id
+    Move(u32, u64),
+    // vnode id, dst node id
+    Drop(u32),
+    // vnode id
     Compact(Vec<u32>), // vnode is list
 }
 
@@ -37,4 +51,31 @@ pub fn status_response_to_result(
             msg: format!("server status: {}, {}", status.code, status.data),
         })
     }
+}
+
+#[async_trait::async_trait]
+pub trait Coordinator: Send + Sync + Debug {
+    fn node_id(&self) -> u64;
+    fn meta_manager(&self) -> MetaRef;
+    fn store_engine(&self) -> Option<EngineRef>;
+    async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
+
+    async fn write_points(
+        &self,
+        tenant: String,
+        level: ConsistencyLevel,
+        request: WritePointsRequest,
+    ) -> CoordinatorResult<()>;
+
+    fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
+
+    fn tag_scan(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
+
+    async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()>;
+
+    async fn vnode_manager(
+        &self,
+        tenant: &str,
+        cmd_type: VnodeManagerCmdType,
+    ) -> CoordinatorResult<()>;
 }

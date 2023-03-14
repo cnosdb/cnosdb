@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use meta::model::MetaRef;
 use models::meta_data::{VnodeAllInfo, VnodeInfo};
 use protos::kv_service::admin_command_request::Command::DelVnode;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
@@ -13,6 +14,7 @@ use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::info;
+use tskv::EngineRef;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::file_info::get_file_info;
@@ -20,12 +22,12 @@ use crate::{status_response_to_result, SUCCESS_RESPONSE_CODE};
 
 pub struct VnodeManager {
     node_id: u64,
-    meta: meta::MetaRef,
-    kv_inst: tskv::engine::EngineRef,
+    meta: MetaRef,
+    kv_inst: EngineRef,
 }
 
 impl VnodeManager {
-    pub fn new(meta: meta::MetaRef, kv_inst: tskv::engine::EngineRef, node_id: u64) -> Self {
+    pub fn new(meta: MetaRef, kv_inst: EngineRef, node_id: u64) -> Self {
         Self {
             node_id,
             meta,

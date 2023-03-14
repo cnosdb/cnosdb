@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use memory_pool::{MemoryPool, MemoryPoolRef};
-use meta::MetaRef;
+use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::codec::Encoding;
 use models::predicate::domain::{ColumnDomains, TimeRange};
@@ -25,7 +25,6 @@ use crate::compaction::{
 };
 use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
 use crate::database::Database;
-use crate::engine::Engine;
 use crate::error::{self, Result};
 use crate::file_system::file_manager;
 use crate::index::ts_index;
@@ -36,7 +35,7 @@ use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
 use crate::wal::{WalEntryType, WalManager, WalTask};
-use crate::{database, file_utils, tenant_name_from_request, Error, TseriesFamilyId};
+use crate::{database, file_utils, tenant_name_from_request, Engine, Error, TseriesFamilyId};
 
 // TODO: A small summay channel capacity can cause a block
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;

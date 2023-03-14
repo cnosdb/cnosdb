@@ -40,7 +40,7 @@ use crate::kv_option::WalOptions;
 use crate::record_file::{self, RecordDataType, RecordDataVersion};
 use crate::tsm::codec::get_str_codec;
 use crate::tsm::DecodeSnafu;
-use crate::{engine, file_utils, TseriesFamilyId};
+use crate::{file_utils, Engine, TseriesFamilyId};
 
 const ENTRY_TYPE_LEN: usize = 1;
 const ENTRY_SEQUENCE_LEN: usize = 8;
@@ -374,7 +374,7 @@ impl WalManager {
 
     pub async fn recover(
         &self,
-        engine: &impl engine::Engine,
+        engine: &impl Engine,
         global_context: Arc<GlobalContext>,
     ) -> Result<()> {
         let min_log_seq = global_context.last_seq();
@@ -403,7 +403,7 @@ impl WalManager {
 
     async fn read_wal_to_engine(
         reader: &mut WalReader,
-        engine: &impl engine::Engine,
+        engine: &impl Engine,
         min_log_seq: u64,
     ) -> Result<bool> {
         let mut seq_gt_min_seq = false;
@@ -591,8 +591,8 @@ mod test {
     use std::sync::Arc;
 
     use datafusion::execution::memory_pool::GreedyMemoryPool;
-    use meta::meta_manager::RemoteMetaManager;
-    use meta::MetaRef;
+    use meta::model::meta_manager::RemoteMetaManager;
+    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::codec::Encoding;
@@ -605,14 +605,13 @@ mod test {
     use trace::init_default_global_tracing;
 
     use crate::context::GlobalSequenceContext;
-    use crate::engine::Engine;
     use crate::file_system::file_manager::list_file_names;
     use crate::kv_option::WalOptions;
     use crate::memcache::test::get_one_series_cache_data;
     use crate::memcache::FieldVal;
     use crate::tsm::codec::get_str_codec;
     use crate::wal::{WalEntryType, WalManager, WalReader};
-    use crate::{kv_option, Error, Result, TsKv};
+    use crate::{kv_option, Engine, Error, Result, TsKv};
 
     fn random_write_data() -> Vec<u8> {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();

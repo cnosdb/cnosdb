@@ -33,6 +33,7 @@ use spi::service::protocol::{Context, ContextBuilder, Query};
 use spi::QueryError;
 use tokio::sync::oneshot;
 use trace::{debug, info};
+use utils::backtrace;
 use warp::hyper::body::Bytes;
 use warp::hyper::Body;
 use warp::reject::{MethodNotAllowed, MissingHeader, PayloadTooLarge};
@@ -45,7 +46,8 @@ use crate::http::metrics::HttpMetrics;
 use crate::http::response::ResponseBuilder;
 use crate::http::result_format::{fetch_record_batches, ResultFormat};
 use crate::http::QuerySnafu;
-use crate::server::{Service, ServiceHandle};
+use crate::server::ServiceHandle;
+use crate::spi::service::Service;
 use crate::{server, VERSION};
 
 pub enum ServerMode {
@@ -167,6 +169,7 @@ impl HttpService {
             .or(self.debug_jeprof())
             .or(self.prom_remote_read())
             .or(self.prom_remote_write())
+            .or(self.backtrace())
     }
 
     fn routes_query(
@@ -179,6 +182,7 @@ impl HttpService {
             .or(self.debug_pprof())
             .or(self.debug_jeprof())
             .or(self.prom_remote_read())
+            .or(self.backtrace())
     }
 
     fn routes_store(
@@ -191,6 +195,7 @@ impl HttpService {
             .or(self.debug_pprof())
             .or(self.debug_jeprof())
             .or(self.prom_remote_write())
+            .or(self.backtrace())
     }
 
     fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -200,6 +205,18 @@ impl HttpService {
                 let mut resp = HashMap::new();
                 resp.insert("version", VERSION.as_str());
                 resp.insert("status", "healthy");
+                warp::reply::json(&resp)
+            })
+    }
+    fn backtrace(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("debug" / "backtrace")
+            .and(warp::get().or(warp::head()))
+            .map(|_| {
+                let res = backtrace::backtrace();
+                let mut resp = HashMap::new();
+                resp.insert("taskdump_tree:", res);
                 warp::reply::json(&resp)
             })
     }

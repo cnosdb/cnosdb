@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use config::{ClusterConfig, HintedOffConfig};
 use datafusion::arrow::record_batch::RecordBatch;
-use meta::{MetaClientRef, MetaRef};
+use meta::model::{MetaClientRef, MetaRef};
 use metrics::count::U64Counter;
 use metrics::label::Labels;
 use metrics::metric::Metric;
@@ -25,16 +25,16 @@ use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::info;
 use tracing::error;
-use tskv::engine::EngineRef;
-use tskv::iterator::QueryOption;
+use tskv::EngineRef;
 
 use crate::errors::*;
 use crate::hh_queue::HintedOffManager;
 use crate::metrics::LPReporter;
 use crate::reader::{QueryExecutor, ReaderIterator};
-use crate::service_mock::Coordinator;
 use crate::writer::PointWriter;
-use crate::{status_response_to_result, VnodeManagerCmdType, WriteRequest};
+use crate::{
+    status_response_to_result, Coordinator, QueryOption, VnodeManagerCmdType, WriteRequest,
+};
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
 

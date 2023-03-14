@@ -16,3 +16,8 @@ snafu = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 toml = { workspace = true }
 walkdir = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+backtrace = ["async-backtrace"]

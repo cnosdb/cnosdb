@@ -122,9 +122,8 @@ impl MetaService {
         Self { opt }
     }
 
-    pub async fn start(&self) -> crate::server::Result<()> {
-        run_service(self.opt.clone()).await?;
-        Ok(())
+    pub async fn start(&self) -> std::io::Result<()> {
+        run_service(self.opt.clone()).await
     }
 }
 

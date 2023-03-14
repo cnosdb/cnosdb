@@ -11,7 +11,8 @@ use tokio::time::{self, Duration};
 use trace::{debug, info};
 use tskv::byte_utils;
 use tskv::file_system::file_manager::list_dir_names;
-use tskv::file_system::queue::{DataBlock, Queue, QueueConfig};
+use tskv::file_system::queue::{Queue, QueueConfig};
+use tskv::file_system::DataBlock;
 
 use crate::errors::*;
 use crate::writer::PointWriter;

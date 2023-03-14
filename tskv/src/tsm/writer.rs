@@ -7,7 +7,9 @@ use snafu::{ResultExt, Snafu};
 use utils::BloomFilter;
 
 use crate::error::{self, Error, Result};
-use crate::file_system::{file_manager, FileCursor, IFile};
+use crate::file_system::file::cursor::FileCursor;
+use crate::file_system::file::IFile;
+use crate::file_system::file_manager;
 use crate::file_utils;
 use crate::tsm::{
     BlockEntry, BlockMeta, DataBlock, IndexEntry, BLOCK_META_SIZE, BLOOM_FILTER_BITS,

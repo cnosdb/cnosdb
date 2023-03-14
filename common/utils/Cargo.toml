@@ -6,12 +6,18 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+trace = { path = "../trace" }
 libc = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tikv-jemalloc-ctl = { workspace = true }
-pprof = { workspace = true, features = ["flamegraph", "protobuf-codec","frame-pointer"] }
+pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+backtrace = ["async-backtrace"]
 
 
 
 [dev-dependencies]
-rand = {workspace = true}
+rand = { workspace = true }

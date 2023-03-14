@@ -5,8 +5,8 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use datafusion::execution::memory_pool::GreedyMemoryPool;
-    use meta::meta_manager::RemoteMetaManager;
-    use meta::MetaRef;
+    use meta::model::meta_manager::RemoteMetaManager;
+    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::TenantOptions;
     use protos::kv_service::Meta;
@@ -15,9 +15,8 @@ mod tests {
     use tokio::runtime;
     use tokio::runtime::Runtime;
     use trace::{debug, error, info, init_default_global_tracing, warn};
-    use tskv::engine::Engine;
     use tskv::file_system::file_manager;
-    use tskv::{kv_option, TsKv};
+    use tskv::{kv_option, Engine, TsKv};
 
     fn get_tskv(dir: impl AsRef<Path>) -> (Arc<Runtime>, TsKv) {
         let dir = dir.as_ref();

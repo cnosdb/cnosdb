@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use coordinator::service::CoordinatorRef;
-use meta::MetaRef;
+use meta::model::MetaRef;
 
 use crate::service::protocol::Context;
 use crate::Result;

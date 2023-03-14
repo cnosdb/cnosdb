@@ -22,6 +22,9 @@ build:
 build_release:
 	cargo build --release --workspace --bins
 
+build_trace:
+	cargo clean;
+	git stash; export BACKTRACE=on; cargo build --workspace --bins --features backtrace; git reset --hard; git stash pop;
 test:
 	cargo test --workspace --exclude e2e_test
 
@@ -33,4 +36,4 @@ clean:
 run:
 	cargo run -- run
 
-.PHONY: docs check fmt fmt_check clippy clippy_check build build_release test docs_check clean run
+.PHONY: docs check fmt fmt_check clippy clippy_check build build_release build_trace test docs_check clean run

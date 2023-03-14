@@ -7,7 +7,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::datasource::MemTable;
 use meta::error::MetaError;
-use meta::MetaClientRef;
+use meta::model::MetaClientRef;
 use models::auth::user::User;
 
 use self::factory::columns::ColumnsFactory;

@@ -56,11 +56,10 @@ tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true }
 walkdir = { workspace = true }
 zstd = { workspace = true }
-radixdb = { version = "0.2.5", features = ["custom-store"] }
-roaring = "0.10.1"
-lru = "0.9.0"
+roaring = { workspace = true }
+radixdb = { workspace = true, features = ["custom-store"] }
 rand = { workspace = true }
-
+async-backtrace = { workspace = true, optional = true }
 [target.'cfg(any(target_os = "linux"))'.dependencies]
 tokio-uring = { version = "0.4", optional = true }
 rio = { version = "0.9", optional = true }
@@ -68,6 +67,7 @@ rio = { version = "0.9", optional = true }
 [features]
 default = []
 io_uring = ["rio"]
+backtrace = ["async-backtrace"]
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["async_tokio"] }

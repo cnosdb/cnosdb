@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
 use datafusion::datasource::TableProvider;
-use meta::MetaClientRef;
+use meta::model::MetaClientRef;
 use models::auth::user::User;
 
 use crate::metadata::usage_schema_provider::{

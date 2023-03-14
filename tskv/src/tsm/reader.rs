@@ -10,7 +10,9 @@ use utils::BloomFilter;
 
 use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u64};
 use crate::error::{self, Error, Result};
-use crate::file_system::{file_manager, AsyncFile, IFile};
+use crate::file_system::file::async_file::AsyncFile;
+use crate::file_system::file::IFile;
+use crate::file_system::file_manager;
 use crate::file_utils;
 use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
