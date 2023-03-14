@@ -32,13 +32,14 @@ pub struct WriteRequest {
 
 #[derive(Debug, Clone)]
 pub enum VnodeManagerCmdType {
+    // vnode id, dst node id
     Copy(u32, u64),
     // vnode id, dst node id
     Move(u32, u64),
-    // vnode id, dst node id
-    Drop(u32),
     // vnode id
-    Compact(Vec<u32>), // vnode is list
+    Drop(u32),
+    // vnode is list
+    Compact(Vec<u32>),
 }
 
 pub fn status_response_to_result(
