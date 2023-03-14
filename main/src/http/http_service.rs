@@ -5,18 +5,19 @@ use std::convert::Infallible;
 use std::fmt;
 use std::fmt::Display;
 use std::net::SocketAddr;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::Local;
-use config::TLSConfig;
+use config::{Config, TLSConfig};
 use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
 use line_protocol::{line_protocol_to_lines, parse_lines_to_points};
 use meta::error::MetaError;
-use metrics::metric_register::MetricsRegister;
+use metrics::metric_register::{MetricsRegister, MetricsRegisterRef};
 use metrics::prom_reporter::PromReporter;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
@@ -24,8 +25,8 @@ use models::consistency_level::ConsistencyLevel;
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
 use models::schema::DEFAULT_CATALOG;
+use once_cell::sync::Lazy;
 use protos::kv_service::WritePointsRequest;
-use query::prom::remote_server::PromRemoteSqlServer;
 use snafu::ResultExt;
 use spi::server::dbms::DBMSRef;
 use spi::server::prom::PromRemoteServerRef;
@@ -50,6 +51,7 @@ use crate::server::ServiceHandle;
 use crate::spi::service::Service;
 use crate::{server, VERSION};
 
+#[derive(Copy, Clone)]
 pub enum ServerMode {
     Store,
     Query,
@@ -73,44 +75,93 @@ impl Display for ServerMode {
 }
 
 pub struct HttpService {
-    tls_config: Option<TLSConfig>,
-    addr: SocketAddr,
-    dbms: DBMSRef,
-    coord: CoordinatorRef,
-    prs: PromRemoteServerRef,
+    http_service_ctx: Arc<HttpServiceContext>,
     handle: Option<ServiceHandle<()>>,
-    query_body_limit: u64,
-    write_body_limit: u64,
-    mode: ServerMode,
-    metrics_register: Arc<MetricsRegister>,
-    http_metrics: Arc<HttpMetrics>,
 }
 
 impl HttpService {
-    pub fn new(
-        dbms: DBMSRef,
-        coord: CoordinatorRef,
-        addr: SocketAddr,
-        tls_config: Option<TLSConfig>,
-        query_body_limit: u64,
-        write_body_limit: u64,
-        mode: ServerMode,
-        metrics_register: Arc<MetricsRegister>,
-    ) -> Self {
-        let prs = Arc::new(PromRemoteSqlServer::new(dbms.clone()));
+    pub fn ctx(&self) -> &Arc<HttpServiceContext> {
+        &self.http_service_ctx
+    }
+    pub fn mode(&self) -> ServerMode {
+        self.ctx().mode()
+    }
+    pub fn addr(&self) -> SocketAddr {
+        self.ctx().addr()
+    }
+}
 
+pub struct HttpServiceContext {
+    config: Arc<Config>,
+    dbms: DBMSRef,
+    prs: PromRemoteServerRef,
+    mode: ServerMode,
+    coord: CoordinatorRef,
+    metrics_register: MetricsRegisterRef,
+    http_metrics: Arc<HttpMetrics>,
+}
+
+impl HttpServiceContext {
+    pub fn new(
+        config: Arc<Config>,
+        dbms: DBMSRef,
+        prs: PromRemoteServerRef,
+        mode: ServerMode,
+        coord: CoordinatorRef,
+        metrics_register: MetricsRegisterRef,
+        http_metrics: Arc<HttpMetrics>,
+    ) -> Self {
         Self {
-            tls_config,
-            addr,
+            config,
             dbms,
-            coord,
             prs,
-            handle: None,
-            query_body_limit,
-            write_body_limit,
             mode,
-            metrics_register: metrics_register.clone(),
-            http_metrics: Arc::new(HttpMetrics::new(&metrics_register)),
+            coord,
+            metrics_register,
+            http_metrics,
+        }
+    }
+    pub fn addr(&self) -> SocketAddr {
+        self.config
+            .cluster
+            .http_listen_addr
+            .parse()
+            .expect("Http address error")
+    }
+    pub fn config(&self) -> &Arc<Config> {
+        &self.config
+    }
+    pub fn dbms(&self) -> &DBMSRef {
+        &self.dbms
+    }
+    pub fn prom_remote_server(&self) -> &PromRemoteServerRef {
+        &self.prs
+    }
+    pub fn mode(&self) -> ServerMode {
+        self.mode
+    }
+    pub fn coord(&self) -> &CoordinatorRef {
+        &self.coord
+    }
+    pub fn metrics_register(&self) -> &Arc<MetricsRegister> {
+        &self.metrics_register
+    }
+    pub fn metrics(&self) -> &Arc<HttpMetrics> {
+        &self.http_metrics
+    }
+    pub fn query_sql_limit(&self) -> u64 {
+        self.config.query.query_sql_limit
+    }
+    pub fn write_sql_limit(&self) -> u64 {
+        self.config.query.write_sql_limit
+    }
+}
+
+impl HttpService {
+    pub fn new(http_service_ctx: Arc<HttpServiceContext>) -> Self {
+        Self {
+            http_service_ctx,
+            handle: None,
         }
     }
 
@@ -127,34 +178,49 @@ impl HttpService {
                 res
             })
     }
-    fn with_dbms(&self) -> impl Filter<Extract = (DBMSRef,), Error = Infallible> + Clone {
-        let dbms = self.dbms.clone();
-        warp::any().map(move || dbms.clone())
+
+    fn with_http_service_ctx(
+        &self,
+    ) -> impl Filter<Extract = (Arc<HttpServiceContext>,), Error = Infallible> + Clone {
+        let ctx = self.ctx().clone();
+        warp::any().map(move || ctx.clone())
+    }
+
+    fn query_body(&self) -> impl Filter<Extract = (Bytes,), Error = Rejection> + Clone {
+        let query_body_limit = self.ctx().config().query_body_limit();
+        warp::post()
+            .and(warp::body::content_length_limit(query_body_limit))
+            .and(warp::body::bytes())
+    }
+
+    fn write_body(&self) -> impl Filter<Extract = (Bytes,), Error = Rejection> + Clone {
+        let write_body_limit = self.ctx().config().query_body_limit();
+        warp::post()
+            .and(warp::body::content_length_limit(write_body_limit))
+            .and(warp::body::bytes())
+    }
+
+    fn with_ctx(
+        &self,
+    ) -> impl Filter<Extract = (Arc<HttpServiceContext>,), Error = Infallible> + Clone {
+        let ctx = self.ctx().clone();
+        warp::any().map(move || ctx.clone())
     }
 
     fn with_coord(&self) -> impl Filter<Extract = (CoordinatorRef,), Error = Infallible> + Clone {
-        let coord = self.coord.clone();
+        let coord = self.ctx().coord().clone();
         warp::any().map(move || coord.clone())
     }
-    fn with_prom_remote_server(
-        &self,
-    ) -> impl Filter<Extract = (PromRemoteServerRef,), Error = Infallible> + Clone {
-        let prs = self.prs.clone();
-        warp::any().map(move || prs.clone())
+
+    fn tls_config(&self) -> Option<&TLSConfig> {
+        self.ctx().config().tls_config()
     }
 
     fn with_metrics_register(
         &self,
     ) -> impl Filter<Extract = (Arc<MetricsRegister>,), Error = Infallible> + Clone {
-        let register = self.metrics_register.clone();
+        let register = self.ctx().metrics_register().clone();
         warp::any().map(move || register.clone())
-    }
-
-    fn with_http_metrics(
-        &self,
-    ) -> impl Filter<Extract = (Arc<HttpMetrics>,), Error = Infallible> + Clone {
-        let metric = self.http_metrics.clone();
-        warp::any().map(move || metric.clone())
     }
 
     fn routes_bundle(
@@ -199,14 +265,15 @@ impl HttpService {
     }
 
     fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        pub static RESP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+            let mut res = HashMap::new();
+            res.insert("version", VERSION.as_str());
+            res.insert("status", "healthy");
+            res
+        });
         warp::path!("api" / "v1" / "ping")
             .and(warp::get().or(warp::head()))
-            .map(|_| {
-                let mut resp = HashMap::new();
-                resp.insert("version", VERSION.as_str());
-                resp.insert("status", "healthy");
-                warp::reply::json(&resp)
-            })
+            .map(|_| warp::reply::json(RESP.deref()))
     }
     fn backtrace(
         &self,
@@ -224,41 +291,38 @@ impl HttpService {
     fn query(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         // let dbms = self.dbms.clone();
         warp::path!("api" / "v1" / "sql")
-            .and(warp::post())
-            .and(warp::body::content_length_limit(self.query_body_limit))
-            .and(warp::body::bytes())
+            .and(self.query_body())
             .and(self.handle_header())
+            .and(self.with_ctx())
             .and(warp::query::<SqlParam>())
-            .and(self.with_dbms())
-            .and(self.with_http_metrics())
             .and_then(
                 |req: Bytes,
                  header: Header,
-                 param: SqlParam,
-                 dbms: DBMSRef,
-                 metrics: Arc<HttpMetrics>| async move {
+                 http_service_ctx: Arc<HttpServiceContext>,
+                 param: SqlParam| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive http sql request, header: {:?}, param: {:?}",
                         header, param
                     );
-
                     // Parse req、header and param to construct query request
-                    let query = construct_query(req, &header, param, dbms.clone())
+                    let query = construct_query(req, &header, param, http_service_ctx.dbms())
                         .await
                         .map_err(|e| {
                             sample_query_read_duration("", "", false, 0.0);
                             reject::custom(e)
                         })?;
-                    let result = sql_handle(&query, header, dbms).await.map_err(|e| {
-                        trace::error!("Failed to handle http sql request, err: {}", e);
-                        reject::custom(e)
-                    });
+                    let result = sql_handle(&query, header, http_service_ctx.dbms())
+                        .await
+                        .map_err(|e| {
+                            trace::error!("Failed to handle http sql request, err: {}", e);
+                            reject::custom(e)
+                        });
                     let tenant = query.context().tenant();
                     let db = query.context().database();
                     let user = query.context().user_info().desc().name();
 
-                    metrics.queries_inc(tenant, user, db);
+                    http_service_ctx.metrics().queries_inc(tenant, user, db);
 
                     sample_query_read_duration(
                         tenant,
@@ -275,25 +339,25 @@ impl HttpService {
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "write")
-            .and(warp::post())
-            .and(warp::body::content_length_limit(self.write_body_limit))
-            .and(warp::body::bytes())
+            .and(self.write_body())
             .and(self.handle_header())
             .and(warp::query::<WriteParam>())
-            .and(self.with_dbms())
-            .and(self.with_coord())
-            .and(self.with_http_metrics())
+            .and(self.with_ctx())
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: WriteParam,
-                 dbms: DBMSRef,
-                 coord: CoordinatorRef,
-                 metrics: Arc<HttpMetrics>| async move {
+                 http_service_context: Arc<HttpServiceContext>| async move {
+                    let coord = http_service_context.coord();
                     let start = Instant::now();
-                    let ctx = construct_write_context(header, param, dbms, coord.clone())
-                        .await
-                        .map_err(reject::custom)?;
+                    let ctx = construct_write_context(
+                        header,
+                        param,
+                        http_service_context.dbms(),
+                        http_service_context.coord(),
+                    )
+                    .await
+                    .map_err(reject::custom)?;
 
                     let req = construct_write_points_request(req, &ctx).map_err(reject::custom)?;
 
@@ -305,7 +369,7 @@ impl HttpService {
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    metrics.writes_inc(tenant, user, db);
+                    http_service_context.metrics().writes_inc(tenant, user, db);
 
                     sample_point_write_duration(
                         ctx.tenant(),
@@ -324,7 +388,7 @@ impl HttpService {
         warp::path!("api" / "v1" / "meta")
             .and(self.handle_header())
             .and(self.with_coord())
-            .and_then(|_header: Header, coord: CoordinatorRef| async move {
+            .and_then(|_, coord: CoordinatorRef| async move {
                 let tenant = DEFAULT_CATALOG.to_string();
 
                 let meta_client = match coord.tenant_meta(&tenant).await {
@@ -384,21 +448,15 @@ impl HttpService {
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "prom" / "read")
-            .and(warp::post())
-            .and(warp::body::content_length_limit(self.query_body_limit))
-            .and(warp::body::bytes())
+            .and(self.query_body())
             .and(self.handle_header())
             .and(warp::query::<SqlParam>())
-            .and(self.with_dbms())
-            .and(self.with_coord())
-            .and(self.with_prom_remote_server())
+            .and(self.with_ctx())
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: SqlParam,
-                 dbms: DBMSRef,
-                 coord: CoordinatorRef,
-                 prs: PromRemoteServerRef| async move {
+                 http_service_ctx: Arc<HttpServiceContext>| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive rest prom remote read request, header: {:?}, param: {:?}",
@@ -408,7 +466,8 @@ impl HttpService {
                     // Parse req、header and param to construct query request
                     let user_info = header.try_get_basic_auth().map_err(reject::custom)?;
                     let tenant = param.tenant;
-                    let user = dbms
+                    let user = http_service_ctx
+                        .dbms()
                         .authenticate(&user_info, tenant.as_deref())
                         .await
                         .map_err(|e| reject::custom(HttpError::from(e)))?;
@@ -418,8 +477,10 @@ impl HttpService {
                         .with_target_partitions(param.target_partitions)
                         .build();
 
-                    let result = prs
-                        .remote_read(&context, coord.meta_manager(), req)
+                    let meta_manager = http_service_ctx.coord().meta_manager();
+                    let result = http_service_ctx
+                        .prom_remote_server()
+                        .remote_read(&context, meta_manager, req)
                         .await
                         .map(|_| ResponseBuilder::ok())
                         .map_err(|e| {
@@ -442,34 +503,29 @@ impl HttpService {
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "prom" / "write")
-            .and(warp::post())
-            .and(warp::body::content_length_limit(self.query_body_limit))
-            .and(warp::body::bytes())
+            .and(self.write_body())
             .and(self.handle_header())
             .and(warp::query::<WriteParam>())
-            .and(self.with_coord())
-            .and(self.with_dbms())
-            .and(self.with_prom_remote_server())
-            .and(self.with_http_metrics())
+            .and(self.with_http_service_ctx())
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: WriteParam,
-                 coord: CoordinatorRef,
-                 dbms: DBMSRef,
-                 prs: PromRemoteServerRef,
-                 metrics: Arc<HttpMetrics>| async move {
+                 http_service_ctx: Arc<HttpServiceContext>| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive rest prom remote write request, header: {:?}, param: {:?}",
                         header, param
                     );
-                    let ctx = construct_write_context(header, param, dbms, coord.clone())
+                    let (dbms, coord) = (http_service_ctx.dbms(), http_service_ctx.coord());
+
+                    let ctx = construct_write_context(header, param, dbms, coord)
                         .await
                         .map_err(reject::custom)?;
 
-                    let result = prs
-                        .remote_write(req, &ctx, coord)
+                    let result = http_service_ctx
+                        .prom_remote_server()
+                        .remote_write(req, &ctx, coord.clone())
                         .await
                         .map(|_| ResponseBuilder::ok())
                         .map_err(|e| {
@@ -480,7 +536,7 @@ impl HttpService {
                     let (tenant, user, db) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    metrics.writes_inc(tenant, user, db);
+                    http_service_ctx.metrics().writes_inc(tenant, user, db);
 
                     sample_point_write_duration(
                         ctx.tenant(),
@@ -505,17 +561,17 @@ impl Service for HttpService {
         let join_handle = if let Some(TLSConfig {
             certificate,
             private_key,
-        }) = &self.tls_config
+        }) = &self.tls_config()
         {
-            match self.mode {
+            match self.mode() {
                 ServerMode::Store => {
                     let routes = self.routes_store().recover(handle_rejection);
                     let (addr, server) = warp::serve(routes)
                         .tls()
                         .cert_path(certificate)
                         .key_path(private_key)
-                        .bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                        .bind_with_graceful_shutdown(self.ctx().addr(), signal);
+                    info!("http server start addr: {}, {}", addr, self.mode());
                     tokio::spawn(server)
                 }
                 ServerMode::Query => {
@@ -524,8 +580,8 @@ impl Service for HttpService {
                         .tls()
                         .cert_path(certificate)
                         .key_path(private_key)
-                        .bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                        .bind_with_graceful_shutdown(self.ctx().addr(), signal);
+                    info!("http server start addr: {}, {}", addr, self.mode());
                     tokio::spawn(server)
                 }
                 ServerMode::Bundle => {
@@ -534,32 +590,32 @@ impl Service for HttpService {
                         .tls()
                         .cert_path(certificate)
                         .key_path(private_key)
-                        .bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                        .bind_with_graceful_shutdown(self.ctx().addr(), signal);
+                    info!("http server start addr: {}, {}", addr, self.ctx().mode);
                     tokio::spawn(server)
                 }
             }
         } else {
-            match self.mode {
+            match self.ctx().mode() {
                 ServerMode::Store => {
                     let routes = self.routes_store().recover(handle_rejection);
                     let (addr, server) =
-                        warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                        warp::serve(routes).bind_with_graceful_shutdown(self.ctx().addr(), signal);
+                    info!("http server start addr: {}, {}", addr, self.mode());
                     tokio::spawn(server)
                 }
                 ServerMode::Query => {
                     let routes = self.routes_query().recover(handle_rejection);
                     let (addr, server) =
-                        warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                        warp::serve(routes).bind_with_graceful_shutdown(self.ctx().addr(), signal);
+                    info!("http server start addr: {}, {}", addr, self.mode());
                     tokio::spawn(server)
                 }
                 ServerMode::Bundle => {
                     let routes = self.routes_bundle().recover(handle_rejection);
                     let (addr, server) =
-                        warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                        warp::serve(routes).bind_with_graceful_shutdown(self.addr(), signal);
+                    info!("http server start addr: {}, {}", addr, self.mode());
                     tokio::spawn(server)
                 }
             }
@@ -583,7 +639,7 @@ async fn construct_query(
     req: Bytes,
     header: &Header,
     param: SqlParam,
-    dbms: DBMSRef,
+    dbms: &DBMSRef,
 ) -> Result<Query, HttpError> {
     let user_info = header.try_get_basic_auth()?;
 
@@ -616,8 +672,8 @@ fn _construct_write_db_privilege(tenant_id: Oid, database: &str) -> Privilege<Oi
 async fn construct_write_context(
     header: Header,
     param: WriteParam,
-    dbms: DBMSRef,
-    coord: CoordinatorRef,
+    dbms: &DBMSRef,
+    coord: &CoordinatorRef,
 ) -> Result<Context, HttpError> {
     let user_info = header.try_get_basic_auth()?;
     let tenant = param.tenant;
@@ -673,7 +729,7 @@ fn construct_write_points_request(
     Ok(req)
 }
 
-async fn sql_handle(query: &Query, header: Header, dbms: DBMSRef) -> Result<Response, HttpError> {
+async fn sql_handle(query: &Query, header: Header, dbms: &DBMSRef) -> Result<Response, HttpError> {
     debug!("prepare to execute: {:?}", query.content());
 
     let fmt = ResultFormat::try_from(header.get_accept())?;

@@ -9,6 +9,7 @@ use crate::metric::Metric;
 use crate::reporter::Reporter;
 use crate::{CreateMetricRecorder, Measure, MetricRecorder};
 
+pub type MetricsRegisterRef = Arc<MetricsRegister>;
 #[derive(Debug)]
 pub struct MetricsRegister {
     labels: Labels,

@@ -132,7 +132,7 @@ fn main() -> Result<(), std::io::Error> {
         },
     };
 
-    let config = parse_config(run_args.config.as_ref());
+    let config = Arc::new(parse_config(run_args.config.as_ref()));
 
     init_process_global_tracing(
         &config.log.path,

@@ -114,11 +114,11 @@ pub async fn watch(
 }
 
 pub struct MetaService {
-    opt: Config,
+    opt: Arc<Config>,
 }
 
 impl MetaService {
-    pub fn new(opt: Config) -> Self {
+    pub fn new(opt: Arc<Config>) -> Self {
         Self { opt }
     }
 
@@ -127,7 +127,7 @@ impl MetaService {
     }
 }
 
-pub async fn run_service(opt: Config) -> std::io::Result<()> {
+pub async fn run_service(opt: Arc<Config>) -> std::io::Result<()> {
     let db_path = format!("{}/meta/{}.binlog", opt.storage.path, 0);
     let db = Arc::new(sled::open(db_path.clone()).unwrap());
     let state_machine = StateMachine::new(db);
@@ -156,7 +156,7 @@ pub async fn run_service(opt: Config) -> std::io::Result<()> {
     Ok(())
 }
 
-pub async fn init_meta(app: &Data<MetaApp>, opt: Config) {
+pub async fn init_meta(app: &Data<MetaApp>, opt: Arc<Config>) {
     // init user
     let user_opt_res = UserOptionsBuilder::default()
         .must_change_password(true)

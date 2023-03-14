@@ -58,6 +58,15 @@ impl Config {
     pub fn to_string_pretty(&self) -> String {
         toml::to_string_pretty(self).unwrap_or_else(|_| "Failed to stringfy Config".to_string())
     }
+    pub fn tls_config(&self) -> Option<&TLSConfig> {
+        self.security.tls_config.as_ref()
+    }
+    pub fn query_body_limit(&self) -> u64 {
+        self.query.query_sql_limit
+    }
+    pub fn write_body_limit(&self) -> u64 {
+        self.query.write_sql_limit
+    }
 }
 
 pub fn get_config(path: impl AsRef<Path>) -> Result<Config, std::io::Error> {

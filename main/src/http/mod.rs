@@ -12,7 +12,7 @@ use self::response::ResponseBuilder;
 
 pub mod header;
 pub mod http_service;
-mod metrics;
+pub mod metrics;
 mod response;
 mod result_format;
 

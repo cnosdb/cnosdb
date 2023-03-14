@@ -7,6 +7,7 @@ use meta::model::meta_manager::RemoteMetaManager;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use query::instance::make_cnosdbms;
+use query::prom::remote_server::PromRemoteSqlServer;
 use snafu::{Backtrace, Snafu};
 use spi::server::dbms::DBMSRef;
 use tokio::runtime::Runtime;
@@ -15,7 +16,8 @@ use tokio::task::JoinHandle;
 use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
-use crate::http::http_service::{HttpService, ServerMode};
+use crate::http::http_service::{HttpService, HttpServiceContext, ServerMode};
+use crate::http::metrics::HttpMetrics;
 use crate::meta_single::meta_service::MetaService;
 use crate::rpc::grpc_service::GrpcService;
 use crate::spi::service::ServiceRef;
@@ -96,7 +98,7 @@ impl Server {
 }
 
 pub(crate) struct ServiceBuilder {
-    pub config: config::Config,
+    pub config: Arc<config::Config>,
     pub runtime: Arc<Runtime>,
     pub memory_pool: MemoryPoolRef,
     pub metrics_register: Arc<MetricsRegister>,
@@ -176,9 +178,7 @@ impl ServiceBuilder {
     }
 
     async fn create_meta(&self) -> MetaRef {
-        let meta: MetaRef = RemoteMetaManager::new(self.config.cluster.clone()).await;
-
-        meta
+        RemoteMetaManager::new(self.config.cluster.clone()).await
     }
 
     async fn create_tskv(
@@ -187,7 +187,7 @@ impl ServiceBuilder {
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
     ) -> EngineRef {
-        let options = tskv::Options::from(&self.config);
+        let options = tskv::Options::from(self.config.as_ref());
         let kv = TsKv::open(
             meta,
             options.clone(),
@@ -204,19 +204,14 @@ impl ServiceBuilder {
     }
 
     async fn create_dbms(&self, coord: CoordinatorRef, memory_pool: MemoryPoolRef) -> DBMSRef {
-        let options = tskv::Options::from(&self.config);
+        let options = tskv::Options::from(self.config.as_ref());
         let dbms = make_cnosdbms(coord, options.clone(), memory_pool)
             .await
             .expect("make dbms");
-
-        let dbms: DBMSRef = Arc::new(dbms);
-
-        dbms
+        Arc::new(dbms)
     }
 
     async fn create_coord(&self, meta: MetaRef, kv: Option<EngineRef>) -> CoordinatorRef {
-        let _options = tskv::Options::from(&self.config);
-
         let coord: CoordinatorRef = CoordService::new(
             self.runtime.clone(),
             kv,
@@ -236,24 +231,18 @@ impl ServiceBuilder {
         coord: CoordinatorRef,
         mode: ServerMode,
     ) -> HttpService {
-        let tls_config = self.config.security.tls_config.clone();
-        let host = self
-            .config
-            .cluster
-            .http_listen_addr
-            .parse::<SocketAddr>()
-            .expect("Invalid tcp host");
-
-        HttpService::new(
+        let prometheus_http_service = Arc::new(PromRemoteSqlServer::new(dbms.clone()));
+        let metrics = Arc::new(HttpMetrics::new(&self.metrics_register));
+        let ctx = HttpServiceContext::new(
+            self.config.clone(),
             dbms,
-            coord,
-            host,
-            tls_config,
-            self.config.query.query_sql_limit,
-            self.config.query.write_sql_limit,
+            prometheus_http_service,
             mode,
+            coord,
             self.metrics_register.clone(),
-        )
+            metrics,
+        );
+        HttpService::new(Arc::new(ctx))
     }
 
     async fn create_grpc(&self, kv: EngineRef, coord: CoordinatorRef) -> GrpcService {
