@@ -231,7 +231,7 @@ impl TskvServiceImpl {
     async fn tag_scan_exec(
         args: QueryArgs,
         expr: QueryExpr,
-        meta: MetaRef,
+        meta: meta::MetaRef,
         run_time: Arc<Runtime>,
         kv_inst: EngineRef,
         sender: Sender<CoordinatorResult<RecordBatch>>,
