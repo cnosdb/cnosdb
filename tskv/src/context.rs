@@ -102,8 +102,14 @@ impl GlobalSequenceContext {
         self.min_seq.store(inner.min_seq, Ordering::Release);
     }
 
+    /// Get minimum sequence number of presisted write request
+    /// of all `TseriesFamily`s in all `Database`s
     pub fn min_seq(&self) -> u64 {
         self.min_seq.load(Ordering::Acquire)
+    }
+
+    pub fn cloned(&self) -> HashMap<TseriesFamilyId, u64> {
+        self.inner.read().tsf_seq_map.clone()
     }
 }
 
@@ -119,7 +125,6 @@ impl GlobalSequenceContext {
         })
     }
 
-    #[cfg(test)]
     pub fn set_min_seq(&self, min_seq: u64) {
         let mut inner = self.inner.write();
         inner.min_seq = min_seq;
@@ -129,7 +134,8 @@ impl GlobalSequenceContext {
 
 #[derive(Debug)]
 struct GlobalSequenceContextInner {
-    /// Minimum sequence number of all `TseriesFamily`s in all `Database`s
+    /// Minimum sequence number of presisted write request
+    /// among all `TseriesFamily`s in all `Database`s.ß
     min_seq: u64,
     /// Maps `TseriesFamily`-ID to it's last sequence number flushed to disk.
     tsf_seq_map: HashMap<TseriesFamilyId, u64>,

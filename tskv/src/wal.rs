@@ -33,9 +33,9 @@ use tokio::sync::oneshot;
 use trace::{debug, error, info, warn};
 
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
-use crate::context::{GlobalContext, GlobalSequenceContext};
+use crate::context::GlobalSequenceContext;
 use crate::error::{Error, Result};
-use crate::file_system::file_manager::{self};
+use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::record_file::{self, RecordDataType, RecordDataVersion};
 use crate::tsm::codec::get_str_codec;
@@ -403,19 +403,15 @@ impl WalManager {
         Ok((seq, size))
     }
 
-    pub async fn recover(
-        &self,
-        engine: &impl Engine,
-        global_context: Arc<GlobalContext>,
-    ) -> Result<()> {
-        let min_log_seq = global_context.last_seq();
-        warn!("recovering version set from seq '{}'", &min_log_seq);
+    pub async fn recover(&self, engine: &impl Engine) -> Result<()> {
+        let vnode_last_seq_map = self.global_seq_ctx.cloned();
+        let min_log_seq = self.global_seq_ctx.min_seq();
+        warn!("Recover: reading wal from seq '{}'", min_log_seq);
 
         let wal_files = file_manager::list_file_names(&self.current_dir);
         // TODO: Parallel get min_sequence at first.
         for file_name in wal_files {
-            let _id = file_utils::get_wal_file_id(&file_name)?;
-            let path = self.current_dir.join(file_name);
+            let path = self.current_dir.join(&file_name);
             if !file_manager::try_exists(&path) {
                 continue;
             }
@@ -426,7 +422,12 @@ impl WalManager {
             // If this file has no footer, try to read all it's records.
             // If max_sequence of this file is greater than min_log_seq, read all it's records.
             if reader.max_sequence == 0 || reader.max_sequence >= min_log_seq {
-                Self::read_wal_to_engine(&mut reader, engine, min_log_seq).await?;
+                info!(
+                    "Recover: reading wal '{}' for seq {} to {}",
+                    file_name, reader.min_sequence, reader.max_sequence
+                );
+                Self::read_wal_to_engine(&mut reader, engine, min_log_seq, &vnode_last_seq_map)
+                    .await?;
             }
         }
         Ok(())
@@ -436,6 +437,7 @@ impl WalManager {
         reader: &mut WalReader,
         engine: &impl Engine,
         min_log_seq: u64,
+        vnode_last_seq_map: &HashMap<TseriesFamilyId, u64>,
     ) -> Result<bool> {
         let mut seq_gt_min_seq = false;
         let decoder = get_str_codec(Encoding::Zstd);
@@ -452,7 +454,14 @@ impl WalManager {
                             let mut dst = Vec::new();
                             decoder.decode(e.data(), &mut dst).context(DecodeSnafu)?;
                             debug_assert_eq!(dst.len(), 1);
-                            let id = e.vnode_id();
+                            let vnode_id = e.vnode_id();
+                            if let Some(tsf_last_seq) = vnode_last_seq_map.get(&vnode_id) {
+                                // If `seq_no` of TsFamily is greater than or equal to `seq`,
+                                // it means that data was writen to tsm.
+                                if *tsf_last_seq >= seq {
+                                    continue;
+                                }
+                            }
                             let tenant =
                                 unsafe { String::from_utf8_unchecked(e.tenant().to_vec()) };
                             let req = WritePointsRequest {
@@ -464,7 +473,7 @@ impl WalManager {
                                 }),
                                 points: dst[0].to_vec(),
                             };
-                            engine.write_from_wal(id, req, seq).await.unwrap();
+                            engine.write_from_wal(vnode_id, req, seq).await.unwrap();
                         }
                         WalEntryType::Delete => {
                             // TODO delete a memcache entry
