@@ -19,6 +19,7 @@ pub struct SessionConfig {
     pub connection_info: ConnectionInfo,
     pub tenant: String,
     pub database: String,
+    pub precision: Option<String>,
     pub target_partitions: Option<usize>,
     pub fmt: PrintFormat,
     pub config_options: ConfigOptions,
@@ -35,6 +36,7 @@ impl SessionConfig {
             tenant: DEFAULT_USER.to_string(),
             database: DEFAULT_DATABASE.to_string(),
             target_partitions: None,
+            precision: None,
             config_options,
             fmt: PrintFormat::Csv,
         }
@@ -89,6 +91,12 @@ impl SessionConfig {
 
     pub fn with_result_format(mut self, fmt: PrintFormat) -> Self {
         self.fmt = fmt;
+
+        self
+    }
+
+    pub fn with_precision(mut self, precision: Option<String>) -> Self {
+        self.precision = precision;
 
         self
     }
@@ -152,7 +160,9 @@ impl SessionContext {
         let tenant = self.session_config.tenant.clone();
         let db = self.session_config.database.clone();
         let target_partitions = self.session_config.target_partitions;
+        let precision = self.session_config.precision.clone();
         let param = SqlParam {
+            precision,
             tenant: Some(tenant),
             db: Some(db),
             chunked: None,
@@ -191,10 +201,14 @@ impl SessionContext {
         let body = tokio::fs::read(path).await.map_err(|e| e.to_string())?;
 
         let user_info = &self.session_config.user_info;
+        let precision = self.session_config.precision.clone();
+        let tenant = self.session_config.tenant.clone();
+        let db = self.session_config.database.clone();
 
         let param = WriteParam {
-            tenant: None,
-            db: self.session_config.database.clone(),
+            precision,
+            tenant: Some(tenant),
+            db: Some(db),
         };
 
         // let param = &[("db", &self.session_config.database)];

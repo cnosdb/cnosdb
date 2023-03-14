@@ -144,7 +144,7 @@ pub(crate) async fn get_ts_family_hash_tree(
             Some(sch) => {
                 let shared_tab = Rc::new(tab);
                 for col in sch.columns() {
-                    if col.column_type != ColumnType::Time && col.column_type != ColumnType::Tag {
+                    if matches!(col.column_type, ColumnType::Field(_)) {
                         cid_table_name_map.insert(col.id, shared_tab.clone());
                         cid_col_name_map.insert(col.id, col.name.clone());
                     }
@@ -427,6 +427,7 @@ mod test {
 
     use blake3::Hasher;
     use chrono::{Duration, NaiveDateTime};
+    use datafusion::arrow::datatypes::TimeUnit;
     use datafusion::execution::memory_pool::GreedyMemoryPool;
     use meta::model::meta_manager::RemoteMetaManager;
     use meta::model::MetaRef;
@@ -843,7 +844,7 @@ mod test {
         ];
         #[rustfmt::skip]
             let columns = vec![
-            TableColumn::new(0, TIME_COL_NAME.to_string(), ColumnType::Time, Default::default()),
+            TableColumn::new(0, TIME_COL_NAME.to_string(), ColumnType::Time(TimeUnit::Nanosecond), Default::default()),
             TableColumn::new(1, U64_COL_NAME.to_string(), ColumnType::Field(ValueType::Unsigned), Default::default()),
             TableColumn::new(2, I64_COL_NAME.to_string(), ColumnType::Field(ValueType::Integer), Default::default()),
             TableColumn::new(3, F64_COL_NAME.to_string(), ColumnType::Field(ValueType::Float), Default::default()),

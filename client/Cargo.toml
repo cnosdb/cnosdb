@@ -10,6 +10,7 @@ name = "cnosdb-cli"
 path = "src/main.rs"
 
 [dependencies]
+models = { path = "../common/models"}
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
 
 clap = { workspace = true, features = ["derive", "cargo"] }

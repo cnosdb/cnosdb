@@ -161,6 +161,11 @@ impl Client {
         http_query.push_str("&tenant=");
         http_query.push_str(instruction.tenant_name());
 
+        if let Some(precision) = instruction.precision() {
+            http_query.push_str("&precision=");
+            http_query.push_str(precision);
+        }
+
         if instruction.pretty() {
             http_query.push_str("&pretty=true");
         }
@@ -195,6 +200,11 @@ impl Client {
 
         http_query.push_str("&tenant=");
         http_query.push_str(instruction.tenant_name());
+
+        if let Some(precision) = instruction.precision() {
+            http_query.push_str("&precision=");
+            http_query.push_str(precision);
+        }
 
         if instruction.pretty() {
             http_query.push_str("&pretty=true");

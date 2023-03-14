@@ -1,18 +1,25 @@
 use std::cmp::Ordering;
 
-use models::schema::FieldValue;
+use models::schema::{FieldValue, Precision};
+use models::Timestamp;
 use utils::BkdrHasher;
 
 use crate::{Error, Result};
 
 pub struct Parser {
     default_time: i64,
+    from_precision: Precision,
+    to_precision: Precision,
     // TODO Some statistics here
 }
 
 impl Parser {
-    pub fn new(default_time: i64) -> Parser {
-        Self { default_time }
+    pub fn new(default_time: i64, from_precision: Precision, to_precision: Precision) -> Parser {
+        Self {
+            default_time,
+            from_precision,
+            to_precision,
+        }
     }
 
     pub fn parse<'a>(&self, lines: &'a str) -> Result<Vec<Line<'a>>> {
@@ -77,6 +84,9 @@ impl Parser {
             self.default_time
         };
 
+        let timestamp =
+            Self::timestamp_convert(pos, timestamp, &self.from_precision, &self.to_precision)?;
+
         Ok(Some((
             Line {
                 hash_id: 0,
@@ -87,6 +97,32 @@ impl Parser {
             },
             pos - start_pos,
         )))
+    }
+
+    fn timestamp_convert(
+        pos: usize,
+        timestamp: Timestamp,
+        from_precision: &Precision,
+        to_precision: &Precision,
+    ) -> Result<Timestamp> {
+        let ts = match (from_precision, to_precision) {
+            (Precision::NS, Precision::US) | (Precision::US, Precision::MS) => timestamp / 1_000,
+            (Precision::MS, Precision::US) | (Precision::US, Precision::NS) => {
+                timestamp.checked_mul(1_000).ok_or(Error::Parse {
+                    pos,
+                    content: "timestamp is invalid".to_string(),
+                })?
+            }
+            (Precision::NS, Precision::MS) => timestamp / 1_000_000,
+            (Precision::MS, Precision::NS) => {
+                timestamp.checked_mul(1_000_000).ok_or(Error::Parse {
+                    pos,
+                    content: "timestamp is invalid".to_string(),
+                })?
+            }
+            _ => timestamp,
+        };
+        Ok(ts)
     }
 }
 
@@ -497,6 +533,8 @@ mod test {
     use std::fs::File;
     use std::io::Read;
 
+    use models::schema::Precision;
+
     use crate::parser::{
         next_field_set, next_measurement, next_tag_set, next_timestamp, FieldValue, Line, Parser,
     };
@@ -603,7 +641,7 @@ mod test {
             lines
         );
 
-        let parser = Parser::new(-1);
+        let parser = Parser::new(-1, Precision::NS, Precision::NS);
         let data = parser.parse(lines).unwrap();
         assert_eq!(data.len(), 2);
 
@@ -643,7 +681,7 @@ mod test {
         let mut lp_lines = String::new();
         lp_file.read_to_string(&mut lp_lines).unwrap();
 
-        let parser = Parser::new(0);
+        let parser = Parser::new(0, Precision::NS, Precision::NS);
         let lines = parser.parse(&lp_lines).unwrap();
 
         for l in lines {
@@ -653,7 +691,7 @@ mod test {
 
     #[test]
     fn test_unicode() {
-        let parser = Parser::new(-1);
+        let parser = Parser::new(-1, Precision::NS, Precision::NS);
         let lp = parser.parse("m,t1=中,t2=发,t3=majh f=\"白\"").unwrap();
         assert_eq!(lp.len(), 1);
         assert_eq!(lp[0].measurement, "m");

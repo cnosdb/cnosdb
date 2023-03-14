@@ -15,7 +15,7 @@ pub mod watermark;
 
 pub trait LogicalPlanExt: Sized {
     type Error;
-    fn transform_expressions_down<F>(self, f: &F) -> Result<Self, Self::Error>
+    fn transform_expressions_down<F>(&self, f: &F) -> Result<Self, Self::Error>
     where
         F: Fn(&Expr) -> Option<Expr>;
 }
@@ -23,7 +23,7 @@ pub trait LogicalPlanExt: Sized {
 impl LogicalPlanExt for LogicalPlan {
     type Error = DataFusionError;
 
-    fn transform_expressions_down<F>(self, f: &F) -> Result<Self, Self::Error>
+    fn transform_expressions_down<F>(&self, f: &F) -> Result<Self, Self::Error>
     where
         F: Fn(&Expr) -> Option<Expr>,
     {
@@ -37,20 +37,26 @@ impl LogicalPlanExt for LogicalPlan {
                 ..
             }) => {
                 let new_exprs = expr
-                    .into_iter()
+                    .iter()
+                    .cloned()
                     .map(|e| e.rewrite(&mut replacer))
                     .collect::<DFResult<Vec<_>>>()?;
 
                 Ok(LogicalPlan::Projection(Projection::try_new_with_schema(
-                    new_exprs, input, schema,
+                    new_exprs,
+                    input.clone(),
+                    schema.clone(),
                 )?))
             }
             LogicalPlan::Filter(Filter {
                 predicate, input, ..
             }) => {
-                let new_predicate = predicate.rewrite(&mut replacer)?;
+                let new_predicate = predicate.clone().rewrite(&mut replacer)?;
 
-                Ok(LogicalPlan::Filter(Filter::try_new(new_predicate, input)?))
+                Ok(LogicalPlan::Filter(Filter::try_new(
+                    new_predicate,
+                    input.clone(),
+                )?))
             }
             LogicalPlan::Repartition(Repartition {
                 partitioning_scheme,
@@ -59,26 +65,28 @@ impl LogicalPlanExt for LogicalPlan {
                 let new_partitioning_scheme = match partitioning_scheme {
                     Partitioning::Hash(expr, partitions) => {
                         let new_exprs = expr
-                            .into_iter()
+                            .iter()
+                            .cloned()
                             .map(|e| e.rewrite(&mut replacer))
                             .collect::<DFResult<Vec<_>>>()?;
 
-                        Partitioning::Hash(new_exprs, partitions)
+                        Partitioning::Hash(new_exprs, *partitions)
                     }
                     Partitioning::DistributeBy(expr) => {
                         let new_exprs = expr
-                            .into_iter()
+                            .iter()
+                            .cloned()
                             .map(|e| e.rewrite(&mut replacer))
                             .collect::<DFResult<Vec<_>>>()?;
 
                         Partitioning::DistributeBy(new_exprs)
                     }
-                    Partitioning::RoundRobinBatch(_) => partitioning_scheme,
+                    Partitioning::RoundRobinBatch(_) => partitioning_scheme.clone(),
                 };
 
                 Ok(LogicalPlan::Repartition(Repartition {
                     partitioning_scheme: new_partitioning_scheme,
-                    input,
+                    input: input.clone(),
                 }))
             }
             LogicalPlan::Window(Window {
@@ -87,14 +95,15 @@ impl LogicalPlanExt for LogicalPlan {
                 schema,
             }) => {
                 let new_exprs = window_expr
-                    .into_iter()
+                    .iter()
+                    .cloned()
                     .map(|e| e.rewrite(&mut replacer))
                     .collect::<DFResult<Vec<_>>>()?;
 
                 Ok(LogicalPlan::Window(Window {
-                    input,
+                    input: input.clone(),
                     window_expr: new_exprs,
-                    schema,
+                    schema: schema.clone(),
                 }))
             }
             LogicalPlan::Aggregate(Aggregate {
@@ -105,31 +114,34 @@ impl LogicalPlanExt for LogicalPlan {
                 ..
             }) => {
                 let new_group_expr = group_expr
-                    .into_iter()
+                    .iter()
+                    .cloned()
                     .map(|e| e.rewrite(&mut replacer))
                     .collect::<DFResult<Vec<_>>>()?;
                 let new_aggr_expr = aggr_expr
-                    .into_iter()
+                    .iter()
+                    .cloned()
                     .map(|e| e.rewrite(&mut replacer))
                     .collect::<DFResult<Vec<_>>>()?;
 
                 Ok(LogicalPlan::Aggregate(Aggregate::try_new_with_schema(
-                    input,
+                    input.clone(),
                     new_group_expr,
                     new_aggr_expr,
-                    schema,
+                    schema.clone(),
                 )?))
             }
             LogicalPlan::Sort(Sort { expr, input, fetch }) => {
                 let new_exprs = expr
-                    .into_iter()
+                    .iter()
+                    .cloned()
                     .map(|e| e.rewrite(&mut replacer))
                     .collect::<DFResult<Vec<_>>>()?;
 
                 Ok(LogicalPlan::Sort(Sort {
                     expr: new_exprs,
-                    input,
-                    fetch,
+                    input: input.clone(),
+                    fetch: *fetch,
                 }))
             }
             LogicalPlan::Extension(extension) => {
@@ -174,7 +186,7 @@ impl LogicalPlanExt for LogicalPlan {
             | LogicalPlan::Values(_)
             | LogicalPlan::Join(_)
             | LogicalPlan::Unnest(_)
-            | LogicalPlan::Prepare(_) => Ok(self),
+            | LogicalPlan::Prepare(_) => Ok(self.clone()),
         }
     }
 }

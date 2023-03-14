@@ -1234,6 +1234,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "http_protocol",
+ "models",
  "rustyline",
  "tokio",
 ]

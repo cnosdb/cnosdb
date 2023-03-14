@@ -75,7 +75,7 @@ impl OptimizerRule for RewriteTagScan {
                             new_projection
                                 .iter()
                                 .flat_map(|i| table_schema.column_by_index(*i))
-                                .map(|c| DFField::from_qualified(table_name, c.into()))
+                                .map(|c| DFField::from_qualified(table_name, c.to_arrow_field()))
                                 .collect(),
                             HashMap::new(),
                         )?;

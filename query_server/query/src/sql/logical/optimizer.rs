@@ -26,6 +26,7 @@ use datafusion::optimizer::OptimizerRule;
 use spi::query::session::SessionCtx;
 use spi::Result;
 
+use crate::extension::logical::optimizer_rule::cast_time_use_config_precision::CastTimeUseConfigPrecision;
 use crate::extension::logical::optimizer_rule::implicit_type_conversion::ImplicitTypeConversion;
 use crate::extension::logical::optimizer_rule::reject_cross_join::RejectCrossJoin;
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
@@ -55,6 +56,7 @@ impl Default for DefaultLogicalOptimizer {
     fn default() -> Self {
         // additional optimizer rule
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = vec![
+            Arc::new(CastTimeUseConfigPrecision {}),
             Arc::new(RejectCrossJoin {}),
             // data type conv
             Arc::new(ImplicitTypeConversion {}),

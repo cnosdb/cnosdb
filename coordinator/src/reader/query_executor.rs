@@ -10,7 +10,7 @@ use meta::model::MetaRef;
 use metrics::count::U64Counter;
 use models::arrow_array::build_arrow_array_builders;
 use models::meta_data::VnodeInfo;
-use models::utils::now_timestamp;
+use models::utils::now_timestamp_nanos;
 use models::{record_batch_decode, SeriesKey};
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use tokio::runtime::Runtime;
@@ -445,7 +445,7 @@ impl QueryExecutor {
                     continue;
                 }
 
-                let random = now_timestamp() as usize % repl.vnodes.len();
+                let random = now_timestamp_nanos() as usize % repl.vnodes.len();
                 let vnode = repl.vnodes[random].clone();
 
                 let list = vnode_mapping.entry(vnode.node_id).or_default();
@@ -485,7 +485,7 @@ impl QueryExecutor {
                 });
             }
 
-            let random = now_timestamp() as usize % repl.vnodes.len();
+            let random = now_timestamp_nanos() as usize % repl.vnodes.len();
             let vnode = repl.vnodes[random].clone();
 
             let list = vnode_mapping.entry(vnode.node_id).or_default();

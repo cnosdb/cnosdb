@@ -7,6 +7,7 @@ use client::print_format::PrintFormat;
 use client::print_options::PrintOptions;
 use client::{exec, CNOSDB_CLI_VERSION};
 use datafusion::error::Result;
+use models::schema::Precision;
 
 #[derive(Debug, Parser, PartialEq)]
 #[command(author, version, about, long_about= None)]
@@ -70,6 +71,14 @@ struct Args {
     )]
     data_path: Option<String>,
 
+    #[arg(
+        long,
+        help = "The precision of timestamp you write like 'ns','us','ms",
+        default_value = "ns",
+        value_parser = try_parse_precision
+    )]
+    precision: Option<String>,
+
     // #[arg(
     //     long,
     //     help = "The batch size of each query, or use CnosDB default",
@@ -128,7 +137,8 @@ pub async fn main() -> Result<()> {
         .with_tenant(args.tenant)
         .with_database(args.database)
         .with_target_partitions(args.target_partitions)
-        .with_result_format(args.format);
+        .with_result_format(args.format)
+        .with_precision(args.precision);
 
     let mut ctx = SessionContext::new(session_config);
 
@@ -191,5 +201,12 @@ fn try_parse_target_partitions(size: &str) -> std::result::Result<String, String
     match size.parse::<usize>() {
         Ok(s) if s > 0 => Ok(size.to_string()),
         _ => Err(format!("target-partition is not in 1..={}", usize::MAX)),
+    }
+}
+
+fn try_parse_precision(precision: &str) -> std::result::Result<String, String> {
+    match Precision::new(precision) {
+        None => Err("precision should be 'ms','ns','us'".to_string()),
+        Some(_) => Ok(precision.to_string()),
     }
 }

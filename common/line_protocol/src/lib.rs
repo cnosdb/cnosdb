@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
-use models::schema::FieldValue;
+use models::schema::{FieldValue, Precision};
 // use mut_batch::mutable_batch::MutableBatch;
 use snafu::Snafu;
 
@@ -22,8 +22,13 @@ pub enum Error {
     Parse { pos: usize, content: String },
 }
 
-pub fn line_protocol_to_lines(lines: &str, default_time: i64) -> Result<Vec<Line>> {
-    let parser = Parser::new(default_time);
+pub fn line_protocol_to_lines(
+    lines: &str,
+    default_time: i64,
+    from_precision: Precision,
+    to_precision: Precision,
+) -> Result<Vec<Line>> {
+    let parser = Parser::new(default_time, from_precision, to_precision);
     parser.parse(lines)
 }
 

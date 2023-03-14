@@ -23,7 +23,7 @@ use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivileg
 use models::consistency_level::ConsistencyLevel;
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
-use models::schema::DEFAULT_CATALOG;
+use models::schema::{Precision, DEFAULT_CATALOG};
 use protos::kv_service::WritePointsRequest;
 use query::prom::remote_server::PromRemoteSqlServer;
 use snafu::ResultExt;
@@ -45,7 +45,7 @@ use super::Error as HttpError;
 use crate::http::metrics::HttpMetrics;
 use crate::http::response::ResponseBuilder;
 use crate::http::result_format::{fetch_record_batches, ResultFormat};
-use crate::http::QuerySnafu;
+use crate::http::{MetaSnafu, QuerySnafu};
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
 use crate::{server, VERSION};
@@ -291,19 +291,47 @@ impl HttpService {
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>| async move {
                     let start = Instant::now();
+
+                    let from_precision =
+                        Precision::new(param.precision.as_deref().unwrap_or_default())
+                            .unwrap_or_default();
+
                     let ctx = construct_write_context(header, param, dbms, coord.clone())
                         .await
                         .map_err(reject::custom)?;
+                    let (tenant, db, user) =
+                        (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    let req = construct_write_points_request(req, &ctx).map_err(reject::custom)?;
+                    let meta_client = coord
+                        .meta_manager()
+                        .tenant_manager()
+                        .tenant_meta(tenant)
+                        .await
+                        .ok_or(MetaError::TenantNotFound {
+                            tenant: tenant.to_string(),
+                        })
+                        .context(MetaSnafu)
+                        .map_err(reject::custom)?;
+
+                    let to_precision = *meta_client
+                        .get_db_schema(db)
+                        .context(MetaSnafu)
+                        .map_err(reject::custom)?
+                        .ok_or(MetaError::DatabaseNotFound {
+                            database: db.to_string(),
+                        })
+                        .context(MetaSnafu)
+                        .map_err(reject::custom)?
+                        .config
+                        .precision_or_default();
+
+                    let req = construct_write_points_request(req, db, from_precision, to_precision)
+                        .map_err(reject::custom)?;
 
                     let resp: Result<(), HttpError> = coord
                         .write_points(ctx.tenant().to_string(), ConsistencyLevel::Any, req)
                         .await
                         .map_err(|e| e.into());
-
-                    let (tenant, db, user) =
-                        (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
                     metrics.writes_inc(tenant, user, db);
 
@@ -416,6 +444,7 @@ impl HttpService {
                         .with_tenant(tenant)
                         .with_database(param.db)
                         .with_target_partitions(param.target_partitions)
+                        .with_precision(param.precision)
                         .build();
 
                     let result = prs
@@ -597,6 +626,7 @@ async fn construct_query(
         .with_tenant(tenant)
         .with_database(param.db)
         .with_target_partitions(param.target_partitions)
+        .with_precision(param.precision)
         .build();
 
     Ok(Query::new(
@@ -621,12 +651,13 @@ async fn construct_write_context(
 ) -> Result<Context, HttpError> {
     let user_info = header.try_get_basic_auth()?;
     let tenant = param.tenant;
+    let db = param.db;
 
     let user = dbms.authenticate(&user_info, tenant.as_deref()).await?;
 
     let context = ContextBuilder::new(user)
         .with_tenant(tenant)
-        .with_database(Some(param.db))
+        .with_database(db)
         .build();
 
     let tenant_id = *coord
@@ -657,13 +688,22 @@ async fn construct_write_context(
 
 fn construct_write_points_request(
     req: Bytes,
-    ctx: &Context,
+    database: &str,
+    from_precision: Precision,
+    to_precision: Precision,
 ) -> Result<WritePointsRequest, HttpError> {
     let lines = String::from_utf8_lossy(req.as_ref());
-    let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
-        .map_err(|e| HttpError::ParseLineProtocol { source: e })?;
+    let default_time = match from_precision {
+        Precision::MS => Local::now().timestamp_millis(),
+        Precision::US => Local::now().timestamp_micros(),
+        Precision::NS => Local::now().timestamp_nanos(),
+    };
 
-    let points = parse_lines_to_points(ctx.database(), &line_protocol_lines);
+    let line_protocol_lines =
+        line_protocol_to_lines(&lines, default_time, from_precision, to_precision)
+            .map_err(|e| HttpError::ParseLineProtocol { source: e })?;
+
+    let points = parse_lines_to_points(database, &line_protocol_lines);
 
     let req = WritePointsRequest {
         version: 1,

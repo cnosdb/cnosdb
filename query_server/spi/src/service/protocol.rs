@@ -119,6 +119,13 @@ impl ContextBuilder {
         self
     }
 
+    pub fn with_precision(mut self, precision: Option<String>) -> Self {
+        if let Some(precision) = precision {
+            self.session_config = self.session_config.with_precision(precision)
+        }
+        self
+    }
+
     pub fn build(self) -> Context {
         Context {
             user_info: self.user_info,

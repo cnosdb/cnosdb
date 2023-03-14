@@ -6,7 +6,7 @@ use std::task::Poll;
 
 use coordinator::reader::ReaderIterator;
 use coordinator::service::CoordinatorRef;
-use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::context::TaskContext;
@@ -205,14 +205,14 @@ impl TableScanStream {
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
             if field_name == TIME_FIELD {
-                let encoding = match table_schema.column(TIME_FIELD) {
-                    None => Encoding::Default,
-                    Some(v) => v.encoding,
+                let (encoding, column_type) = match table_schema.column(TIME_FIELD) {
+                    None => (Encoding::Default, ColumnType::Time(TimeUnit::Nanosecond)),
+                    Some(v) => (v.encoding, v.column_type.clone()),
                 };
                 proj_fileds.push(TableColumn::new(
                     0,
                     TIME_FIELD.to_string(),
-                    ColumnType::Time,
+                    column_type,
                     encoding,
                 ));
                 continue;

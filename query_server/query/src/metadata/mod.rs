@@ -14,7 +14,7 @@ use datafusion::sql::{ResolvedTableReference, TableReference};
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::auth::user::UserDesc;
-use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
+use models::schema::{Precision, TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
 use parking_lot::RwLock;
 use spi::query::function::FuncMetaManagerRef;
 use spi::query::session::SessionCtx;
@@ -48,6 +48,8 @@ pub trait ContextProviderExtension: ContextProvider {
         &self,
         name: TableReference,
     ) -> datafusion::common::Result<TableSourceAdapter>;
+
+    fn get_db_precision(&self, name: &str) -> Result<Precision, MetaError>;
 }
 
 pub struct MetadataProvider {
@@ -261,6 +263,18 @@ impl ContextProviderExtension for MetadataProvider {
             database_name,
             table_name,
         ))
+    }
+
+    fn get_db_precision(&self, name: &str) -> Result<Precision, MetaError> {
+        let precision = *self
+            .meta_client
+            .get_db_schema(name)?
+            .ok_or(MetaError::DatabaseNotFound {
+                database: name.to_string(),
+            })?
+            .config
+            .precision_or_default();
+        Ok(precision)
     }
 }
 

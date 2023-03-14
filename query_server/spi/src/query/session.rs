@@ -6,6 +6,7 @@ use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use models::auth::user::User;
 use models::oid::Oid;
+use models::schema::OptimizerRuleConfig;
 
 use crate::service::protocol::Context;
 use crate::Result;
@@ -95,6 +96,13 @@ impl CnosSessionConfig {
     /// partition count must be greater than zero
     pub fn with_target_partitions(mut self, n: usize) -> Self {
         self.inner = self.inner.with_target_partitions(n);
+        self
+    }
+
+    pub fn with_precision(mut self, precision: String) -> Self {
+        let mut extension = OptimizerRuleConfig::default();
+        extension.input_precision = precision;
+        self.inner.config_options_mut().extensions.insert(extension);
         self
     }
 }

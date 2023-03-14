@@ -1,3 +1,4 @@
+pub mod cast_time_use_config_precision;
 pub mod implicit_type_conversion;
 pub mod merge_limit_with_sort;
 pub mod reject_cross_join;

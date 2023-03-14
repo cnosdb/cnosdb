@@ -8,7 +8,7 @@
 //!         - Column #4
 
 use std::collections::HashMap;
-use std::fmt::{self, Display};
+use std::fmt::{self, Debug, Display};
 use std::mem::size_of_val;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -18,6 +18,7 @@ use config::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfi
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
 };
+use datafusion::config::ConfigExtension;
 use datafusion::datasource::file_format::avro::AvroFormat;
 use datafusion::datasource::file_format::csv::CsvFormat;
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
@@ -33,7 +34,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::codec::Encoding;
 use crate::oid::{Identifier, Oid};
-use crate::{ColumnId, Error, SchemaId, ValueType};
+use crate::utils::{
+    DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS, MINUTES_MICROS,
+    MINUTES_MILLS, MINUTES_NANOS,
+};
+use crate::{extensions_options, ColumnId, Error, SchemaId, ValueType};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
@@ -46,6 +51,18 @@ pub const TIME_FIELD: &str = "time";
 pub const DEFAULT_DATABASE: &str = "public";
 pub const USAGE_SCHEMA: &str = "usage_schema";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
+
+pub const OPTIMIZER_CONFIG: &str = "OPTIMIZER_CONFIG";
+
+extensions_options!(
+    pub struct OptimizerRuleConfig {
+        pub input_precision: String, default = {"NS".to_string()}
+    }
+);
+
+impl ConfigExtension for OptimizerRuleConfig {
+    const PREFIX: &'static str = OPTIMIZER_CONFIG;
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum FieldValue {
@@ -157,7 +174,11 @@ impl Default for TskvTableSchema {
 
 impl TskvTableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
-        let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
+        let fields: Vec<ArrowField> = self
+            .columns
+            .iter()
+            .map(|field| field.to_arrow_field())
+            .collect();
         Arc::new(Schema::new(fields))
     }
 
@@ -280,7 +301,7 @@ impl TskvTableSchema {
     pub fn fields_id(&self) -> HashMap<ColumnId, usize> {
         let mut ans = vec![];
         for i in self.columns.iter() {
-            if i.column_type != ColumnType::Tag && i.column_type != ColumnType::Time {
+            if matches!(i.column_type, ColumnType::Field(_)) {
                 ans.push(i.id);
             }
         }
@@ -322,20 +343,15 @@ pub struct TableColumn {
     pub encoding: Encoding,
 }
 
-impl From<&TableColumn> for ArrowField {
-    fn from(column: &TableColumn) -> Self {
-        let mut f = ArrowField::new(&column.name, column.column_type.into(), column.nullable());
+impl From<TableColumn> for ArrowField {
+    fn from(column: TableColumn) -> Self {
         let mut map = HashMap::new();
         map.insert(FIELD_ID.to_string(), column.id.to_string());
         map.insert(TAG.to_string(), column.column_type.is_tag().to_string());
+        let nullable = column.nullable();
+        let mut f = ArrowField::new(&column.name, column.column_type.into(), nullable);
         f.set_metadata(map);
         f
-    }
-}
-
-impl From<TableColumn> for ArrowField {
-    fn from(field: TableColumn) -> Self {
-        (&field).into()
     }
 }
 
@@ -348,6 +364,7 @@ impl TableColumn {
             encoding,
         }
     }
+
     pub fn new_with_default(name: String, column_type: ColumnType) -> Self {
         Self {
             id: 0,
@@ -357,11 +374,11 @@ impl TableColumn {
         }
     }
 
-    pub fn new_time_column(id: ColumnId) -> TableColumn {
+    pub fn new_time_column(id: ColumnId, time_unit: TimeUnit) -> TableColumn {
         TableColumn {
             id,
             name: TIME_FIELD_NAME.to_string(),
-            column_type: ColumnType::Time,
+            column_type: ColumnType::Time(time_unit),
             encoding: Encoding::Default,
         }
     }
@@ -377,7 +394,7 @@ impl TableColumn {
 
     pub fn nullable(&self) -> bool {
         // The time column cannot be empty
-        !matches!(self.column_type, ColumnType::Time)
+        !matches!(self.column_type, ColumnType::Time(_))
     }
 
     pub fn encode(&self) -> crate::errors::Result<Vec<u8>> {
@@ -393,19 +410,28 @@ impl TableColumn {
 
         Ok(column)
     }
+
+    pub fn to_arrow_field(&self) -> ArrowField {
+        let mut f = ArrowField::new(&self.name, self.column_type.clone().into(), self.nullable());
+        let mut map = HashMap::new();
+        map.insert(FIELD_ID.to_string(), self.id.to_string());
+        map.insert(TAG.to_string(), self.column_type.is_tag().to_string());
+        f.set_metadata(map);
+        f
+    }
 }
 
 impl From<ColumnType> for ArrowDataType {
     fn from(t: ColumnType) -> Self {
         match t {
-            ColumnType::Tag => Self::Utf8,
-            ColumnType::Time => Self::Timestamp(TimeUnit::Nanosecond, None),
-            ColumnType::Field(ValueType::Float) => Self::Float64,
-            ColumnType::Field(ValueType::Integer) => Self::Int64,
-            ColumnType::Field(ValueType::Unsigned) => Self::UInt64,
-            ColumnType::Field(ValueType::String) => Self::Utf8,
-            ColumnType::Field(ValueType::Boolean) => Self::Boolean,
-            _ => Self::Null,
+            ColumnType::Tag => ArrowDataType::Utf8,
+            ColumnType::Time(unit) => ArrowDataType::Timestamp(unit, None),
+            ColumnType::Field(ValueType::Float) => ArrowDataType::Float64,
+            ColumnType::Field(ValueType::Integer) => ArrowDataType::Int64,
+            ColumnType::Field(ValueType::Unsigned) => ArrowDataType::UInt64,
+            ColumnType::Field(ValueType::String) => ArrowDataType::Utf8,
+            ColumnType::Field(ValueType::Boolean) => ArrowDataType::Boolean,
+            _ => ArrowDataType::Null,
         }
     }
 }
@@ -425,23 +451,28 @@ impl TryFrom<ArrowDataType> for ColumnType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ColumnType {
     Tag,
-    Time,
+    Time(TimeUnit),
     Field(ValueType),
 }
 
 impl ColumnType {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Tag => "tag",
-            Self::Time => "time",
-            Self::Field(ValueType::Integer) => "i64",
-            Self::Field(ValueType::Unsigned) => "u64",
-            Self::Field(ValueType::Float) => "f64",
-            Self::Field(ValueType::Boolean) => "bool",
-            Self::Field(ValueType::String) => "string",
+            Self::Tag => "TAG",
+            Self::Time(unit) => match unit {
+                TimeUnit::Second => "TimestampSecond",
+                TimeUnit::Millisecond => "TimestampMillisecond",
+                TimeUnit::Microsecond => "TimestampMicrosecond",
+                TimeUnit::Nanosecond => "TimestampNanosecond",
+            },
+            Self::Field(ValueType::Integer) => "I64",
+            Self::Field(ValueType::Unsigned) => "U64",
+            Self::Field(ValueType::Float) => "F64",
+            Self::Field(ValueType::Boolean) => "BOOL",
+            Self::Field(ValueType::String) => "STRING",
             _ => "Error filed type not supported",
         }
     }
@@ -450,7 +481,7 @@ impl ColumnType {
         match self {
             Self::Tag => "TAG",
             Self::Field(_) => "FIELD",
-            Self::Time => "TIME",
+            Self::Time(_) => "TIME",
         }
     }
 
@@ -472,7 +503,6 @@ impl ColumnType {
             2 => Self::Field(ValueType::Unsigned),
             3 => Self::Field(ValueType::Boolean),
             4 => Self::Field(ValueType::String),
-            5 => Self::Time,
             _ => Self::Field(ValueType::Unknown),
         }
     }
@@ -480,7 +510,7 @@ impl ColumnType {
     pub fn to_sql_type_str(&self) -> &'static str {
         match self {
             Self::Tag => "STRING",
-            Self::Time => "TIMESTAMP",
+            Self::Time(_) => "TIMESTAMP",
             Self::Field(value_type) => match value_type {
                 ValueType::String => "STRING",
                 ValueType::Integer => "BIGINT",
@@ -506,7 +536,7 @@ impl ColumnType {
     }
 
     pub fn is_time(&self) -> bool {
-        matches!(self, ColumnType::Time)
+        matches!(self, ColumnType::Time(_))
     }
 
     pub fn is_field(&self) -> bool {
@@ -558,6 +588,25 @@ impl DatabaseSchema {
 
     pub fn options(&self) -> &DatabaseOptions {
         &self.config
+    }
+
+    // return the min timestamp value database allowed to store
+    pub fn time_to_expired(&self) -> i64 {
+        let (ttl, now) = match self.config.precision_or_default() {
+            Precision::MS => (
+                self.config.ttl_or_default().to_millisecond(),
+                crate::utils::now_timestamp_millis(),
+            ),
+            Precision::US => (
+                self.config.ttl_or_default().to_microseconds(),
+                crate::utils::now_timestamp_micros(),
+            ),
+            Precision::NS => (
+                self.config.ttl_or_default().to_nanoseconds(),
+                crate::utils::now_timestamp_nanos(),
+            ),
+        };
+        now - ttl
     }
 }
 
@@ -668,11 +717,28 @@ impl DatabaseOptions {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum Precision {
     MS,
     US,
     NS,
+}
+
+impl Default for Precision {
+    fn default() -> Self {
+        Self::NS
+    }
+}
+
+impl From<Precision> for TimeUnit {
+    fn from(value: Precision) -> Self {
+        match value {
+            Precision::MS => TimeUnit::Millisecond,
+            Precision::US => TimeUnit::Microsecond,
+            Precision::NS => TimeUnit::Nanosecond,
+        }
+    }
 }
 
 impl Precision {
@@ -686,7 +752,7 @@ impl Precision {
     }
 }
 
-impl fmt::Display for Precision {
+impl Display for Precision {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Precision::MS => f.write_str("MS"),
@@ -769,9 +835,25 @@ impl Duration {
 
     pub fn to_nanoseconds(&self) -> i64 {
         match self.unit {
-            DurationUnit::Minutes => (self.time_num as i64).saturating_mul(60 * 1000000000),
-            DurationUnit::Hour => (self.time_num as i64).saturating_mul(3600 * 1000000000),
-            DurationUnit::Day => (self.time_num as i64).saturating_mul(24 * 3600 * 1000000000),
+            DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_NANOS),
+            DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_NANOS),
+            DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_NANOS),
+        }
+    }
+
+    pub fn to_microseconds(&self) -> i64 {
+        match self.unit {
+            DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_MICROS),
+            DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_MICROS),
+            DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_MICROS),
+        }
+    }
+
+    pub fn to_millisecond(&self) -> i64 {
+        match self.unit {
+            DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_MILLS),
+            DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_MILLS),
+            DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_MILLS),
         }
     }
 }

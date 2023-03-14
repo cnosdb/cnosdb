@@ -24,6 +24,8 @@ pub struct Instruction {
     time_out: Option<u64>,
 
     sleep: Option<u64>,
+
+    precision: Option<String>,
 }
 
 impl Default for Instruction {
@@ -36,6 +38,7 @@ impl Default for Instruction {
             user_name: "root".to_string(),
             time_out: None,
             sleep: None,
+            precision: None,
         }
     }
 }
@@ -106,6 +109,10 @@ impl Instruction {
         self.sleep
     }
 
+    pub fn precision(&self) -> &Option<String> {
+        &self.precision
+    }
+
     /// parse line to modify instruction
     pub fn parse_and_change(&mut self, line: &str) {
         if let Ok((_, tenant_name)) = instruction_parse_identity("TENANT")(line) {
@@ -134,6 +141,10 @@ impl Instruction {
 
         if let Ok((_, slepp)) = instruction_parse_to::<u64>("SLEEP")(line) {
             self.sleep = Some(slepp)
+        }
+
+        if let Ok((_, precision)) = instruction_parse_identity("PRECISION")(line) {
+            self.precision = Some(precision.to_string())
         }
     }
 }
