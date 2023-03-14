@@ -38,9 +38,10 @@ use crate::version_set::VersionSet;
 use crate::wal::{WalEntryType, WalManager, WalTask};
 use crate::{database, file_utils, tenant_name_from_request, Error, TseriesFamilyId};
 
-pub const COMPACT_REQ_CHANNEL_CAP: usize = 16;
-pub const SUMMARY_REQ_CHANNEL_CAP: usize = 16;
-pub const GLOBAL_TASK_REQ_CHANNEL_CAP: usize = 16;
+// TODO: A small summay channel capacity can cause a block
+pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;
+pub const SUMMARY_REQ_CHANNEL_CAP: usize = 1024;
+pub const GLOBAL_TASK_REQ_CHANNEL_CAP: usize = 1024;
 
 #[derive(Debug)]
 pub struct TsKv {

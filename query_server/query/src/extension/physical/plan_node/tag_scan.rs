@@ -4,28 +4,26 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use coordinator::reader::ReaderIterator;
 use coordinator::service::CoordinatorRef;
-use datafusion::arrow::array::{ArrayBuilder, ArrayRef};
+use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::arrow::error::Result as ArrowResult;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_expr::PhysicalSortExpr;
-use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet};
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::{
     DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream,
     Statistics,
 };
-use futures::executor::block_on;
-use futures::Stream;
-use meta::error::MetaError;
-use models::arrow_array::{build_arrow_array_builders, WriteArrow};
-use models::predicate::domain::{ColumnDomains, PredicateRef};
-use models::schema::{ColumnType, TskvTableSchemaRef};
-use models::{SeriesKey, TagValue};
+use futures::{FutureExt, Stream};
+use models::predicate::domain::{PredicateRef, TimeRange};
+use models::predicate::Split;
+use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 use spi::QueryError;
 use trace::debug;
+use tskv::iterator::{QueryOption, TableScanMetrics};
 
 #[derive(Debug, Clone)]
 pub struct TagScanExec {
@@ -48,7 +46,6 @@ impl TagScanExec {
         coord: CoordinatorRef,
     ) -> Self {
         let metrics = ExecutionPlanMetricsSet::new();
-
         Self {
             table_schema,
             proj_schema,
@@ -111,25 +108,19 @@ impl ExecutionPlan for TagScanExec {
 
         let batch_size = context.session_config().batch_size();
 
-        let metrics = BaselineMetrics::new(&self.metrics, partition);
+        let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
 
-        let tags_filter = self
-            .predicate()
-            .filter()
-            .translate_column(|c| self.table_schema.column(&c.name).cloned())
-            .translate_column(|e| match e.column_type {
-                ColumnType::Tag => Some(e.name.clone()),
-                _ => None,
-            });
-
-        block_on(do_tag_scan(
+        let tag_scan_stream = TagScanStream::new(
             self.table_schema.clone(),
             self.schema(),
-            tags_filter,
             self.coord.clone(),
-            metrics,
             batch_size,
-        ))
+            self.predicate.clone(),
+            metrics,
+        )
+        .map_err(|err| DataFusionError::External(Box::new(err)))?;
+
+        Ok(Box::pin(tag_scan_stream))
     }
 
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -178,58 +169,6 @@ impl<'a> Display for PredicateDisplay<'a> {
     }
 }
 
-async fn do_tag_scan(
-    table_schema: TskvTableSchemaRef,
-    proj_schema: SchemaRef,
-    tags_filter: ColumnDomains<String>,
-    coord: CoordinatorRef,
-    metrics: BaselineMetrics,
-    _batch_size: usize,
-) -> Result<SendableRecordBatchStream> {
-    debug!(
-        "Start do_tag_scan: proj_schema {}, tags_filter {:?}",
-        proj_schema, tags_filter
-    );
-
-    let _timer = metrics.elapsed_compute().timer();
-    let _db = &table_schema.db;
-    let tenant = &table_schema.tenant;
-
-    let _client = coord.tenant_meta(tenant).await.ok_or_else(|| {
-        DataFusionError::External(Box::new(MetaError::TenantNotFound {
-            tenant: tenant.to_string(),
-        }))
-    })?;
-
-    Err(DataFusionError::External(Box::new(
-        QueryError::NotImplemented {
-            err: "meta need get_series_id_by_filter".to_string(),
-        },
-    )))
-    // let series_keys = coord
-    //     .get_series_id_by_filter(tenant, db, &table_schema.name, &tags_filter)
-    //     .map_err(|e| ArrowError::ExternalError(Box::new(e)))?
-    //     .iter()
-    //     .map(|sid| store_engine.get_series_key(tenant, db, *sid))
-    //     .collect::<std::result::Result<Vec<_>, IndexError>>()
-    //     .map_err(|e| ArrowError::ExternalError(Box::new(e)))?;
-    //
-    // debug!("Scan series key count: {}", series_keys.len());
-    //
-    // let mut builder = TagRecordBatchStreamBuilder::try_new(proj_schema, series_keys.len())?;
-    //
-    // series_keys
-    //     .into_iter()
-    //     .flatten()
-    //     .for_each(|k| builder.append(k));
-    //
-    // let reader = builder.build()?;
-    //
-    // timer.done();
-    //
-    // Ok(Box::pin(reader))
-}
-
 struct TagRecordBatchStream {
     schema: SchemaRef,
     columns: Option<Vec<ArrayRef>>,
@@ -249,65 +188,123 @@ impl Stream for TagRecordBatchStream {
     }
 }
 
-impl RecordBatchStream for TagRecordBatchStream {
-    fn schema(&self) -> SchemaRef {
-        self.schema.clone()
-    }
+#[allow(dead_code)]
+pub struct TagScanStream {
+    proj_schema: SchemaRef,
+    batch_size: usize,
+    coord: CoordinatorRef,
+
+    iterator: ReaderIterator,
+
+    metrics: TableScanMetrics,
 }
 
-struct TagRecordBatchStreamBuilder {
-    schema: SchemaRef,
-    tag_key_array: Vec<String>,
-    builders: Vec<Box<dyn ArrayBuilder>>,
-    tag_values_containers: Vec<Vec<Option<TagValue>>>,
-}
+impl TagScanStream {
+    pub fn new(
+        table_schema: TskvTableSchemaRef,
+        proj_schema: SchemaRef,
+        coord: CoordinatorRef,
+        batch_size: usize,
+        predicate: PredicateRef,
+        metrics: TableScanMetrics,
+    ) -> Result<Self, QueryError> {
+        let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
+        for field_name in proj_schema.fields().iter().map(|f| f.name()) {
+            if let Some(v) = table_schema.column(field_name) {
+                proj_fileds.push(v.clone());
+            } else {
+                return Err(QueryError::CommonError {
+                    msg: format!(
+                        "tag scan stream build fail, because can't found field: {}",
+                        field_name
+                    ),
+                });
+            }
+        }
+        let proj_table_schema = TskvTableSchema::new(
+            table_schema.tenant.clone(),
+            table_schema.db.clone(),
+            table_schema.name.clone(),
+            proj_fileds,
+        );
 
-impl TagRecordBatchStreamBuilder {
-    #[allow(dead_code)]
-    pub fn try_new(schema: SchemaRef, size_hint: usize) -> ArrowResult<Self> {
-        let builders = build_arrow_array_builders(schema.clone(), size_hint)?;
-        let tag_values_containers: Vec<Vec<Option<TagValue>>> =
-            vec![Vec::with_capacity(size_hint); schema.fields().len()];
+        let split = Split::new(0, table_schema, TimeRange::all(), predicate);
 
-        let tag_key_array = schema.fields().iter().map(|e| e.name()).cloned().collect();
+        let option = QueryOption::new(
+            batch_size,
+            split,
+            None,
+            proj_schema.clone(),
+            proj_table_schema,
+            metrics.tskv_metrics(),
+        );
+
+        let iterator = coord.tag_scan(option)?;
 
         Ok(Self {
-            schema,
-            tag_key_array,
-            builders,
-            tag_values_containers,
+            proj_schema,
+            batch_size,
+            coord,
+            iterator,
+            metrics,
         })
     }
 
-    #[allow(dead_code)]
-    pub fn append(&mut self, series_key: SeriesKey) {
-        self.tag_key_array
-            .iter()
-            .zip(&mut self.tag_values_containers)
-            .for_each(|(tag_key, vals_container)| {
-                // TODO improve, to return Option
-                let tag_val = series_key.tag_val(tag_key);
+    pub fn with_iterator(
+        proj_schema: SchemaRef,
+        batch_size: usize,
+        coord: CoordinatorRef,
+        iterator: ReaderIterator,
+        metrics: TableScanMetrics,
+    ) -> Self {
+        Self {
+            proj_schema,
+            batch_size,
+            coord,
+            iterator,
+            metrics,
+        }
+    }
+}
 
-                vals_container.push(tag_val);
-            })
+impl Stream for TagScanStream {
+    type Item = std::result::Result<RecordBatch, DataFusionError>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        let metrics = &this.metrics;
+        let timer = metrics.elapsed_compute().timer();
+
+        let result = match Box::pin(this.iterator.next()).poll_unpin(cx) {
+            Poll::Ready(Some(Ok(record_batch))) => match metrics.record_memory(&record_batch) {
+                Ok(_) => Poll::Ready(Some(Ok(record_batch))),
+                Err(e) => Poll::Ready(Some(Err(e))),
+            },
+            Poll::Ready(Some(Err(e))) => {
+                Poll::Ready(Some(Err(DataFusionError::External(Box::new(e)))))
+            }
+            Poll::Ready(None) => {
+                metrics.done();
+                Poll::Ready(None)
+            }
+            Poll::Pending => Poll::Pending,
+        };
+
+        timer.done();
+        metrics.record_poll(result)
     }
 
-    #[allow(dead_code)]
-    pub fn build(mut self) -> ArrowResult<TagRecordBatchStream> {
-        trace::trace!("tag_values_containers: {:?}", &self.tag_values_containers);
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // todo   (self.data.len(), Some(self.data.len()))
+        (0, Some(0))
+    }
+}
 
-        self.tag_values_containers
-            .into_iter()
-            .zip(&mut self.builders)
-            .try_for_each(|(c, builder)| c.write(builder))?;
-
-        let columns = self.builders.iter_mut().map(|e| e.finish()).collect();
-
-        trace::trace!("columns: {:?}", columns);
-
-        Ok(TagRecordBatchStream {
-            schema: self.schema,
-            columns: Some(columns),
-        })
+impl RecordBatchStream for TagScanStream {
+    fn schema(&self) -> SchemaRef {
+        self.proj_schema.clone()
     }
 }

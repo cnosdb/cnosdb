@@ -643,9 +643,9 @@ f0,t0
 
 -- EXECUTE SQL: SELECT MIN(agg0) FROM (SELECT ALL MIN(to_timestamp(+ (nullif(-1663925346, 2112139127))))  as agg0 FROM m4 WHERE ((CAST((((('')||(1971431738)))>=(((m4.t0)||(to_timestamp(5639148217950766739))))) AS STRING))LIKE(((((translate(m4.t0, m4.t0, m4.t0))||(CAST(0.97684269811624557799945023361942730844020843505859375 AS BIGINT))))||(ltrim(m4.t1))))) UNION ALL SELECT ALL MIN(to_timestamp(+ (nullif(-1663925346, 2112139127))))  as agg0 FROM m4 WHERE NOT (((CAST((((('')||(1971431738)))>=(((m4.t0)||(to_timestamp(5639148217950766739))))) AS STRING))LIKE(((((translate(m4.t0, m4.t0, m4.t0))||(CAST(0.97684269811624557799945023361942730844020843505859375 AS BIGINT))))||(ltrim(m4.t1)))))) UNION ALL SELECT ALL MIN(to_timestamp(+ (nullif(-1663925346, 2112139127))))  as agg0 FROM m4 WHERE (((CAST((((('')||(1971431738)))>=(((m4.t0)||(to_timestamp(5639148217950766739))))) AS STRING))LIKE(((((translate(m4.t0, m4.t0, m4.t0))||(CAST(0.97684269811624557799945023361942730844020843505859375 AS BIGINT))))||(ltrim(m4.t1)))))) IS NULL) as asdf; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: External error: External error: External error: This feature is not implemented: meta need get_series_id_by_filter"}
--- ERROR:  --
+200 OK
+MIN(asdf.agg0)
+1969-12-31T23:59:58.336074654
 
 -- EXECUTE SQL: SELECT ALL SUM(((nullif(char_length(m4.t0), CAST(m4.f0 AS BIGINT)))%(((- (nullif(2939004359518327875, -1421620855)))*(ascii(m4.t1)))))) FROM m4; --
 -- AFTER_SORT --

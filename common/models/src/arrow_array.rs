@@ -1,10 +1,10 @@
-use arrow_schema::Field;
+use arrow_schema::{Field, Schema};
 use datafusion::arrow::array::{
     ArrayBuilder, BooleanBuilder, Float64Builder, Int64Builder, StringBuilder,
     TimestampMicrosecondBuilder, TimestampMillisecondBuilder, TimestampNanosecondBuilder,
     TimestampSecondBuilder, UInt64Builder,
 };
-use datafusion::arrow::datatypes::{DataType, SchemaRef, TimeUnit};
+use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::arrow::error::ArrowError;
 
 use crate::Error;
@@ -45,7 +45,7 @@ impl WriteArrow for Vec<Option<Vec<u8>>> {
 
 /// Create array builder from schema
 pub fn build_arrow_array_builders(
-    schema: SchemaRef,
+    schema: &Schema,
     batch_size: usize,
 ) -> Result<Vec<Box<dyn ArrayBuilder>>, ArrowError> {
     schema

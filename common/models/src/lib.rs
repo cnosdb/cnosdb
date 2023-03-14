@@ -16,6 +16,7 @@ pub mod duration;
 pub mod object_reference;
 pub mod oid;
 pub mod predicate;
+pub mod record_batch;
 pub mod time_range;
 
 use std::sync::Arc;
@@ -23,6 +24,7 @@ use std::sync::Arc;
 pub use error_code;
 pub use errors::{Error, Result};
 use parking_lot::RwLock;
+pub use record_batch::*;
 pub use series_info::SeriesKey;
 pub use tag::Tag;
 pub use time_range::*;

@@ -43,6 +43,13 @@ impl SeriesKey {
         None
     }
 
+    pub fn tag_string_val(&self, key: &str) -> Result<Option<String>> {
+        match self.tag_val(key) {
+            Some(v) => Ok(Some(String::from_utf8(v)?)),
+            None => Ok(None),
+        }
+    }
+
     pub fn hash(&self) -> u64 {
         let mut hasher = BkdrHasher::new();
         hasher.hash_with(self.table.as_bytes());

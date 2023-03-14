@@ -7,7 +7,7 @@ use tokio::runtime::Runtime;
 use trace::trace;
 
 use crate::tseries_family::{ColumnFile, SuperVersion};
-use crate::tsm::{BlockMeta, TsmReader};
+use crate::tsm::{self, BlockMeta, TsmReader};
 use crate::{Error, Result};
 
 #[derive(PartialEq, Eq)]
@@ -18,6 +18,11 @@ pub enum TimeRangeCmp {
     Include,
     /// A overlaps with B
     Intersect,
+}
+
+enum CountingObject {
+    Field(FieldId),
+    Series(SeriesId),
 }
 
 /// Compute pushed down aggregate:
@@ -31,49 +36,34 @@ pub async fn count_column_non_null_values(
     time_ranges: Arc<Vec<TimeRange>>,
 ) -> Result<u64> {
     let column_files = Arc::new(super_version.column_files(&time_ranges));
+    let mut jh_vec = Vec::with_capacity(series_ids.len());
 
-    if let Some(column_id) = column_id {
-        trace!("Selecting count for column: {}", column_id);
-
-        let mut jh_vec = Vec::with_capacity(series_ids.len());
-
-        for series_id in series_ids.iter() {
+    for series_id in series_ids.iter() {
+        let count_object = if let Some(column_id) = column_id {
             let field_id = model_utils::unite_id(column_id, *series_id);
-            let sv_inner = super_version.clone();
-            let cfs_inner = column_files.clone();
-            let trs_inner = time_ranges.clone();
+            CountingObject::Field(field_id)
+        } else {
+            CountingObject::Series(*series_id)
+        };
+        let sv_inner = super_version.clone();
+        let cfs_inner = column_files.clone();
+        let trs_inner = time_ranges.clone();
 
-            jh_vec.push(runtime.spawn(count_non_null_values_inner(
-                sv_inner,
-                CountingObject::Field(field_id),
-                cfs_inner.clone(),
-                trs_inner.clone(),
-            )));
-        }
-
-        let mut count_sum = 0_u64;
-        for jh in jh_vec {
-            // JoinHandle returns JoinError if task was paniced.
-            count_sum += jh.await.map_err(|e| Error::IO { source: e.into() })??;
-        }
-
-        Ok(count_sum)
-    } else {
-        trace!("Selecting count for column: time");
-
-        count_non_null_values_inner(
-            super_version,
-            CountingObject::Series(series_ids),
-            column_files.clone(),
-            time_ranges,
-        )
-        .await
+        jh_vec.push(runtime.spawn(count_non_null_values_inner(
+            sv_inner,
+            count_object,
+            cfs_inner,
+            trs_inner,
+        )));
     }
-}
 
-enum CountingObject {
-    Field(FieldId),
-    Series(Arc<Vec<SeriesId>>),
+    let mut count_sum = 0_u64;
+    for jh in jh_vec {
+        // JoinHandle returns JoinError if task was paniced.
+        count_sum += jh.await.map_err(|e| Error::IO { source: e.into() })??;
+    }
+
+    Ok(count_sum)
 }
 
 /// Get count of non-null values in time ranges of a field.
@@ -94,11 +84,9 @@ async fn count_non_null_values_inner(
         CountingObject::Field(field_id) => {
             get_field_timestamps_in_caches(&super_version, field_id, &sorted_time_ranges)
         }
-        CountingObject::Series(series_ids) => get_series_timestamps_in_caches(
-            &super_version,
-            series_ids.as_slice(),
-            &sorted_time_ranges,
-        ),
+        CountingObject::Series(series_id) => {
+            get_series_timestamps_in_caches(&super_version, series_id, &sorted_time_ranges)
+        }
     };
 
     let mut count = cached_timestamps.len() as u64;
@@ -197,7 +185,7 @@ fn get_field_timestamps_in_caches(
 /// Get timestamps of series in time ranges from all mutable and immutable caches.
 fn get_series_timestamps_in_caches(
     super_version: &SuperVersion,
-    series_ids: &[SeriesId],
+    series_id: SeriesId,
     time_ranges: &[TimeRange],
 ) -> (HashSet<Timestamp>, TimeRange) {
     let time_predicate = |ts| {
@@ -209,7 +197,7 @@ fn get_series_timestamps_in_caches(
     let mut cached_time_range = TimeRange::new(i64::MAX, i64::MIN);
     super_version
         .caches
-        .read_series_timestamps(series_ids, time_predicate, |ts| {
+        .read_series_timestamps(&[series_id], time_predicate, |ts| {
             cached_time_range.min_ts = cached_time_range.min_ts.min(ts);
             cached_time_range.max_ts = cached_time_range.max_ts.max(ts);
             cached_timestamps.insert(ts);
@@ -251,16 +239,9 @@ async fn create_file_read_tasks<'a>(
             CountingObject::Series(_series_ids) => reader.index_iterator(),
         };
         for idx in idx_meta_iter {
-            if let CountingObject::Series(series_ids) = counting_object {
+            if let CountingObject::Series(series_id) = counting_object {
                 let (_, sid) = model_utils::split_id(idx.field_id());
-                let mut idx_in_series = false;
-                for series_id in series_ids.iter().cloned() {
-                    if series_id == sid {
-                        idx_in_series = true;
-                        break;
-                    }
-                }
-                if !idx_in_series {
+                if *series_id != sid {
                     continue;
                 }
             }
@@ -302,7 +283,7 @@ async fn count_non_null_values_in_files(
     cached_time_range: Arc<TimeRange>,
 ) -> Result<u64> {
     let mut count = 0_u64;
-    let mut ts_set: HashSet<Timestamp> = HashSet::new();
+    let mut ts_set: HashSet<Timestamp> = HashSet::with_capacity(tsm::MAX_BLOCK_VALUES as usize);
     for read_task in reader_blk_metas {
         let blk = read_task
             .tsm_reader
@@ -584,20 +565,19 @@ mod test {
         let dir = "/tmp/test/ts_family/super_version_count";
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
-
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
                 (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
-                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![101, 102, 103, 104], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
+                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![2, 3, 101, 104], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
             ]),
             HashMap::from([
                 (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![104, 105, 106], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
+                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![5, 104, 106], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
             ]),
             HashMap::from([
                 (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![107, 108, 109], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
+                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![8, 107, 109], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
             ]),
         ];
 
@@ -607,13 +587,18 @@ mod test {
             let mut caches = vec![MemCache::new(1, 16, 0, &pool), MemCache::new(1, 16, 0, &pool), MemCache::new(1, 16, 0, &pool)];
             // cache, sid, schema_id, schema, time_range, put_none
             put_rows_to_cache(&mut caches[0], 1, 1, default_table_schema(vec![1]), (11, 15), false);
-            put_rows_to_cache(&mut caches[0], 2, 1, default_table_schema(vec![1]), (111, 115), false);
             put_rows_to_cache(&mut caches[1], 1, 1, default_table_schema(vec![1]), (21, 25), false);
-            put_rows_to_cache(&mut caches[1], 2, 1, default_table_schema(vec![1]), (121, 125), false);
             put_rows_to_cache(&mut caches[2], 1, 1, default_table_schema(vec![1]), (31, 35), false);
+
+            put_rows_to_cache(&mut caches[0], 2, 1, default_table_schema(vec![1]), (12, 13), false);
+            put_rows_to_cache(&mut caches[0], 2, 1, default_table_schema(vec![1]), (111, 115), false);
+            put_rows_to_cache(&mut caches[1], 2, 1, default_table_schema(vec![1]), (22, 23), false);
+            put_rows_to_cache(&mut caches[1], 2, 1, default_table_schema(vec![1]), (121, 125), false);
+            put_rows_to_cache(&mut caches[2], 2, 1, default_table_schema(vec![1]), (32, 33), false);
             put_rows_to_cache(&mut caches[2], 2, 1, default_table_schema(vec![1]), (131, 135), false);
             let mut mut_cache = MemCache::new(1, 16, 0, &pool);
             put_rows_to_cache(&mut mut_cache, 1, 1, default_table_schema(vec![1]), (31, 40), false);
+            put_rows_to_cache(&mut mut_cache, 2, 1, default_table_schema(vec![1]), (36, 37), false);
             put_rows_to_cache(&mut mut_cache, 2, 1, default_table_schema(vec![1]), (131, 140), false);
             CacheGroup {
                 mut_cache: Arc::new(RwLock::new(mut_cache)),
@@ -651,13 +636,23 @@ mod test {
             )),
         };
 
+        // # sum
+        // sid=1: 29, sid=2: 37
+        // # disk
+        // sid=1 (9): 1, 2, 3, 4, 5, 6, 7, 8, 9
+        // sid=2 (9):    2, 3,    5,       8, 101, 104, 106, 107, 109
+        // # memory
+        // sid=1 (20): 11, 12, 13, 14, 15, 21, 22, 23, 24, 25, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40
+        // sid=2 (8):  12, 13,             22, 23,             32, 33,         36, 37,
+        // sid=2 (20): 111, 112, 113, 114, 115, 121, 122, 123, 124, 125, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140
+
         #[rustfmt::skip]
         let _skip_fmt = {
             assert_eq!(test_helper.run(&[1], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 29);
-            assert_eq!(test_helper.run(&[1, 2], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 58);
+            assert_eq!(test_helper.run(&[1, 2], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 66);
 
             assert_eq!(test_helper.run(&[1], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 29);
-            assert_eq!(test_helper.run(&[1, 2], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 58);
+            assert_eq!(test_helper.run(&[1, 2], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 66);
             assert_eq!(test_helper.run(&[1], Some(1), vec![(0, 0)]).unwrap(), 0);
             assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 1)]).unwrap(), 1);
             assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 10)]).unwrap(), 9);
@@ -668,8 +663,8 @@ mod test {
             assert_eq!(test_helper.run(&[1], Some(1), vec![(40, 40)]).unwrap(), 1);
             assert_eq!(test_helper.run(&[1], Some(1), vec![(41, 41)]).unwrap(), 0);
 
-            assert_eq!(test_helper.run(&[2], Some(1), vec![(105, 110)]).unwrap(), 5);
-            assert_eq!(test_helper.run(&[2], Some(1), vec![(105, 121)]).unwrap(), 11);
+            assert_eq!(test_helper.run(&[2], Some(1), vec![(105, 110)]).unwrap(), 3);
+            assert_eq!(test_helper.run(&[2], Some(1), vec![(105, 121)]).unwrap(), 9);
             assert_eq!(test_helper.run(&[2], Some(1), vec![(115, 125)]).unwrap(), 6);
             "skip_fmt"
         };
