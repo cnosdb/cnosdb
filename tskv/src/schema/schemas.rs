@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use meta::error::{MetaError, MetaResult};
-use meta::{MetaClientRef, MetaRef};
+use meta::model::{MetaClientRef, MetaRef};
 use models::codec::Encoding;
 use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::ColumnId;

@@ -6,7 +6,7 @@ use datafusion::datasource::{provider_as_source, TableProvider, ViewTable};
 use datafusion::logical_expr::{binary_expr, col, LogicalPlanBuilder, Operator};
 use datafusion::prelude::lit;
 use meta::error::MetaError;
-use meta::MetaClientRef;
+use meta::model::MetaClientRef;
 use models::auth::user::User;
 use models::oid::Identifier;
 use models::schema::DEFAULT_CATALOG;

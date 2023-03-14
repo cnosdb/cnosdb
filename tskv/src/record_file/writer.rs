@@ -9,7 +9,9 @@ use super::{
     FILE_MAGIC_NUMBER_LEN, RECORD_MAGIC_NUMBER,
 };
 use crate::error::{self, Error, Result};
-use crate::file_system::{file_manager, FileCursor, IFile};
+use crate::file_system::file::cursor::FileCursor;
+use crate::file_system::file::IFile;
+use crate::file_system::file_manager;
 
 pub struct Writer {
     path: PathBuf,

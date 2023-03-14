@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
-use meta::{MetaClientRef, MetaRef};
+use meta::model::{MetaClientRef, MetaRef};
 use models::meta_data::*;
 use models::utils::now_timestamp;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
@@ -18,7 +18,7 @@ use tokio::sync::oneshot;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::{debug, info};
-use tskv::engine::EngineRef;
+use tskv::EngineRef;
 use utils::bitset::BitSet;
 use utils::BkdrHasher;
 

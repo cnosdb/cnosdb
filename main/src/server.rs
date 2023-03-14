@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use coordinator::service::{CoordService, CoordinatorRef};
 use memory_pool::MemoryPoolRef;
-use meta::meta_manager::RemoteMetaManager;
-use meta::MetaRef;
+use meta::model::meta_manager::RemoteMetaManager;
+use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use query::instance::make_cnosdbms;
 use snafu::{Backtrace, Snafu};
@@ -12,13 +12,13 @@ use spi::server::dbms::DBMSRef;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
-use tskv::engine::EngineRef;
-use tskv::TsKv;
+use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
 use crate::http::http_service::{HttpService, ServerMode};
 use crate::meta_single::meta_service::MetaService;
 use crate::rpc::grpc_service::GrpcService;
+use crate::spi::service::ServiceRef;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -44,14 +44,6 @@ impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {
         Self::TLSConfigError
     }
-}
-
-pub type ServiceRef = Box<dyn Service + Send + Sync>;
-
-#[async_trait::async_trait]
-pub trait Service {
-    fn start(&mut self) -> Result<()>;
-    async fn stop(&mut self, force: bool);
 }
 
 pub struct ServiceHandle<R> {
@@ -179,10 +171,7 @@ impl ServiceBuilder {
 
     pub async fn build_singleton(&self, server: &mut Server) -> Option<EngineRef> {
         let meta_service = MetaService::new(self.config.clone());
-        meta_service
-            .start()
-            .await
-            .expect("failed to start meta, please check http addr");
+        meta_service.start().await.unwrap();
         self.build_query_storage(server).await
     }
 

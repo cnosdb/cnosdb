@@ -172,7 +172,9 @@ mod test {
     use trace::info;
 
     use super::FileManager;
-    use crate::file_system::{file_manager, FileCursor, IFile};
+    use crate::file_system::file::cursor::FileCursor;
+    use crate::file_system::file::IFile;
+    use crate::file_system::file_manager;
 
     #[tokio::test]
     async fn test_get_instance() {

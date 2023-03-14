@@ -13,7 +13,9 @@ use super::{
 };
 use crate::byte_utils::decode_be_u32;
 use crate::error::{self, Error, Result};
-use crate::file_system::{file_manager, AsyncFile, IFile};
+use crate::file_system::file::async_file::AsyncFile;
+use crate::file_system::file::IFile;
+use crate::file_system::file_manager;
 
 pub struct Reader {
     path: PathBuf,
@@ -248,7 +250,7 @@ pub(crate) mod test {
     use super::Reader;
     use crate::byte_utils::decode_be_u32;
     use crate::error::{self, Error, Result};
-    use crate::file_system::IFile;
+    use crate::file_system::file::IFile;
     use crate::record_file::{
         Record, RECORD_CRC32_NUMBER_LEN, RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN,
         RECORD_DATA_VERSION_LEN, RECORD_HEADER_LEN, RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,

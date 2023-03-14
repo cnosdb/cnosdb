@@ -8,7 +8,7 @@ use models::oid::{Identifier, Oid};
 use trace::debug;
 
 use crate::error::MetaResult;
-use crate::user_manager::UserManager;
+use crate::model::UserManager;
 
 #[derive(Debug)]
 pub struct UserManagerMock {

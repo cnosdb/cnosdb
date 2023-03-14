@@ -7,7 +7,6 @@ use std::os::unix::prelude::AsRawFd;
 use std::path::Path;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 #[cfg(feature = "io_uring")]
 use rio::Rio;
 #[cfg(feature = "io_uring")]
@@ -15,6 +14,7 @@ use snafu::ResultExt;
 use tokio::task::spawn_blocking;
 
 use crate::file_system::file::os::{check_err, pread, pwrite};
+use crate::file_system::file::IFile;
 
 #[derive(Debug)]
 #[cfg(not(feature = "io_uring"))]
@@ -120,17 +120,6 @@ impl FsRuntime {
     pub fn new_runtime() -> Self {
         FsRuntime {}
     }
-}
-
-#[async_trait]
-pub trait IFile: Send {
-    async fn write_vec<'a>(&self, pos: u64, bufs: &'a mut [IoSlice<'a>]) -> Result<usize>;
-    async fn write_at(&self, pos: u64, data: &[u8]) -> Result<usize>;
-    async fn read_at(&self, pos: u64, data: &mut [u8]) -> Result<usize>;
-    async fn sync_data(&self) -> Result<()>;
-    async fn truncate(&self, size: u64) -> Result<()>;
-    fn len(&self) -> u64;
-    fn is_empty(&self) -> bool;
 }
 
 pub struct AsyncFile {

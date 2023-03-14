@@ -8,10 +8,11 @@ use protos::kv_service::tskv_service_server::TskvServiceServer;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
-use tskv::engine::EngineRef;
+use tskv::EngineRef;
 
 use crate::rpc::tskv::TskvServiceImpl;
-use crate::server::{Service, ServiceHandle};
+use crate::server::ServiceHandle;
+use crate::spi::service::Service;
 use crate::{info, server};
 
 pub struct GrpcService {

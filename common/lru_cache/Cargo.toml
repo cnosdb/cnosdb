@@ -13,6 +13,11 @@ harness = false
 parking_lot = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 utils = { path = "../utils" }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+backtrace = ["async-backtrace"]
 
 [dev-dependencies]
 criterion = { workspace = true }

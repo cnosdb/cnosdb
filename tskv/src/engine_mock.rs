@@ -11,12 +11,11 @@ use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
 use trace::debug;
 
-use crate::engine::Engine;
 use crate::error::Result;
 use crate::kv_option::StorageOptions;
 use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
-use crate::TseriesFamilyId;
+use crate::{Engine, TseriesFamilyId};
 
 #[derive(Debug, Default)]
 pub struct MockEngine {}

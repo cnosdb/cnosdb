@@ -7,7 +7,12 @@ edition.workspace = true
 
 [dependencies]
 models = { path = "../models" }
-protos = { path = "../protos"}
+protos = { path = "../protos" }
 utils = { path = "../utils" }
 snafu = { workspace = true }
-flatbuffers = {workspace = true}
+flatbuffers = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+backtrace = ["async-backtrace"]

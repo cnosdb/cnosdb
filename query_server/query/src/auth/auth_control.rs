@@ -1,4 +1,4 @@
-use meta::MetaRef;
+use meta::model::MetaRef;
 use models::auth::user::{AuthType, User, UserInfo};
 use models::auth::AuthError;
 use models::oid::{Identifier, Oid};

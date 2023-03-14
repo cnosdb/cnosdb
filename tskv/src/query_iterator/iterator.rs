@@ -29,12 +29,12 @@ use tokio::time::Instant;
 use trace::{debug, error};
 
 use crate::compute::count::count_column_non_null_values;
-use crate::engine::EngineRef;
 use crate::error::Result;
 use crate::memcache::DataType;
+use crate::query_iterator::Cursor;
 use crate::tseries_family::SuperVersion;
 use crate::tsm::{BlockMetaIterator, DataBlock, TsmReader};
-use crate::Error;
+use crate::{EngineRef, Error};
 
 pub type CursorPtr = Box<dyn Cursor>;
 
@@ -419,17 +419,6 @@ impl FieldFileLocation {
     pub fn next(&mut self) {
         self.read_index += 1;
     }
-}
-
-//-----------trait Cursor----------------
-#[async_trait::async_trait]
-pub trait Cursor: Send + Sync {
-    fn name(&self) -> &String;
-    fn is_field(&self) -> bool;
-    fn val_type(&self) -> ValueType;
-
-    async fn next(&mut self, ts: i64);
-    async fn peek(&mut self) -> Result<Option<DataType>, Error>;
 }
 
 //-----------Time Cursor----------------

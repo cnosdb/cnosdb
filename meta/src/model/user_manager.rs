@@ -2,30 +2,13 @@
 
 use std::fmt::Debug;
 
-use async_trait::async_trait;
 use models::auth::user::{UserDesc, UserOptions};
 use models::oid::Oid;
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
+use crate::model::UserManager;
 use crate::store::command::{self, META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND};
-
-#[async_trait]
-pub trait UserManager: Send + Sync + Debug {
-    // user
-    async fn create_user(
-        &self,
-        name: String,
-        options: UserOptions,
-        is_admin: bool,
-    ) -> MetaResult<Oid>;
-    async fn user(&self, name: &str) -> MetaResult<Option<UserDesc>>;
-    // fn user_with_privileges(&self, name: &str) -> Result<Option<User>>;
-    async fn users(&self) -> MetaResult<Vec<UserDesc>>;
-    async fn alter_user(&self, name: &str, options: UserOptions) -> MetaResult<()>;
-    async fn drop_user(&self, name: &str) -> MetaResult<bool>;
-    async fn rename_user(&self, old_name: &str, new_name: String) -> MetaResult<()>;
-}
 
 #[derive(Debug)]
 pub struct RemoteUserManager {

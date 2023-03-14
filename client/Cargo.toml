@@ -18,3 +18,8 @@ dirs = { workspace = true }
 env_logger = { workspace = true }
 rustyline = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "parking_lot"] }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+backtrace = ["async-backtrace"]

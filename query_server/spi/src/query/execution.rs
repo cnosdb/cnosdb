@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use meta::MetaRef;
+use meta::model::MetaRef;
 
 use super::dispatcher::{QueryInfo, QueryStatus};
 use super::logical_planner::Plan;

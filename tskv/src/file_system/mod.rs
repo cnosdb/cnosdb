@@ -3,9 +3,15 @@
 // #![deny(unused_imports)]
 // #![deny(unused_must_use)]
 
-mod file;
+use async_trait::async_trait;
+use tokio::fs::File;
+
+pub(crate) mod file;
 pub mod file_manager;
 pub mod queue;
 
-pub use file::async_file::{AsyncFile, IFile};
-pub use file::cursor::FileCursor;
+#[async_trait]
+pub trait DataBlock {
+    async fn write(&self, file: &mut File) -> crate::Result<usize>;
+    async fn read(&mut self, file: &mut File) -> crate::Result<usize>;
+}

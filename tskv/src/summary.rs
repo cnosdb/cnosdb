@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
-use meta::MetaRef;
+use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::Timestamp;
 use serde::{Deserialize, Serialize};
@@ -778,8 +778,8 @@ mod test {
 
     use config::ClusterConfig;
     use memory_pool::GreedyMemoryPool;
-    use meta::meta_manager::RemoteMetaManager;
-    use meta::MetaRef;
+    use meta::model::meta_manager::RemoteMetaManager;
+    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
     use tokio::runtime::Runtime;

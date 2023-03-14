@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use memory_pool::MemoryPoolRef;
-use meta::MetaRef;
+use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use snafu::ResultExt;

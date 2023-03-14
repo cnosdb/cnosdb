@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use async_trait::async_trait;
 use config::ClusterConfig;
 use models::meta_data::*;
 use tokio::sync::RwLock;
@@ -9,28 +8,9 @@ use tonic::transport::{Channel, Endpoint};
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
+use crate::model::AdminMeta;
 use crate::store::command::{self, EntryLog};
 use crate::store::key_path;
-
-#[async_trait]
-pub trait AdminMeta: Send + Sync + Debug {
-    // *数据节点上下线管理 */
-    async fn sync_all(&self) -> MetaResult<u64>;
-    async fn data_nodes(&self) -> Vec<NodeInfo>;
-    async fn add_data_node(&self) -> MetaResult<()>;
-    // fn del_data_node(&self, id: u64) -> MetaResult<()>;
-
-    // fn meta_nodes(&self);
-    // fn add_meta_node(&self, node: &NodeInfo) -> MetaResult<()>;
-    // fn del_meta_node(&self, id: u64) -> MetaResult<()>;
-
-    fn heartbeat(&self); // update node status
-
-    async fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo>;
-    async fn get_node_conn(&self, node_id: u64) -> MetaResult<Channel>;
-    async fn retain_id(&self, count: u32) -> MetaResult<u32>;
-    async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()>;
-}
 
 #[derive(Debug)]
 pub struct RemoteAdminMeta {

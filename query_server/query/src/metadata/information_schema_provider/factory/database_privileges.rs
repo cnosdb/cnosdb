@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
 use meta::error::MetaError;
-use meta::MetaClientRef;
+use meta::model::MetaClientRef;
 use models::auth::role::TenantRoleIdentifier;
 use models::auth::user::User;
 use models::oid::Identifier;

@@ -10,7 +10,8 @@ use trace::info;
 use self::flight_sql_server::FlightSqlServiceImpl;
 use crate::flight_sql::auth_middleware::basic_call_header_authenticator::BasicCallHeaderAuthenticator;
 use crate::flight_sql::auth_middleware::generated_bearer_token_authenticator::GeneratedBearerTokenAuthenticator;
-use crate::server::{Service, ServiceHandle};
+use crate::server::ServiceHandle;
+use crate::spi::service::Service;
 
 mod auth_middleware;
 pub mod flight_sql_server;

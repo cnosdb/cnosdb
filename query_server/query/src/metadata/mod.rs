@@ -1,7 +1,3 @@
-mod cluster_schema_provider;
-mod information_schema_provider;
-mod usage_schema_provider;
-
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -16,12 +12,13 @@ use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::{ResolvedTableReference, TableReference};
 use meta::error::MetaError;
-use meta::MetaClientRef;
+use meta::model::MetaClientRef;
 use models::auth::user::UserDesc;
 use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
 use parking_lot::RwLock;
 use spi::query::function::FuncMetaManagerRef;
 use spi::query::session::SessionCtx;
+pub use usage_schema_provider::{USAGE_SCHEMA, USAGE_SCHEMA_VNODE_DISK_STORAGE};
 
 use self::cluster_schema_provider::ClusterSchemaProvider;
 use self::information_schema_provider::InformationSchemaProvider;
@@ -31,9 +28,12 @@ use crate::dispatcher::query_tracker::QueryTracker;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::metadata::usage_schema_provider::UsageSchemaProvider;
 
+mod cluster_schema_provider;
+mod information_schema_provider;
+mod usage_schema_provider;
+
 pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
 pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
-pub use usage_schema_provider::{USAGE_SCHEMA, USAGE_SCHEMA_VNODE_DISK_STORAGE};
 
 /// remote meta
 pub struct RemoteCatalogMeta {}

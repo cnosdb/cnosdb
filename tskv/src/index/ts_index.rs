@@ -564,13 +564,10 @@ pub fn encode_series_id_list(list: &[u32]) -> Vec<u8> {
 
 #[cfg(test)]
 mod test {
-    use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
-    use lru::LruCache;
     use models::schema::ExternalTableSchema;
-    use models::utils::now_timestamp;
     use models::{SeriesKey, Tag};
 
     use super::TSIndex;
@@ -673,26 +670,5 @@ mod test {
         let ans = serde_json::from_str::<ExternalTableSchema>(&ans_inter).unwrap();
 
         assert_eq!(ans, schema);
-    }
-
-    #[test]
-    fn test_lru_cache() {
-        let mut cache = LruCache::new(NonZeroUsize::new(1000000).unwrap());
-        println!("{}", now_timestamp() / 1000000);
-        for i in 0..1000000 {
-            let key = format!("key___{}", i);
-            let val = format!("val___{}", i);
-            cache.put(key, val);
-        }
-
-        println!("{}", now_timestamp() / 1000000);
-        let mut count = 1000000 - 1;
-        while count > 0 {
-            let key = format!("key___{}", count);
-            cache.get(&key).unwrap();
-
-            count -= 1;
-        }
-        println!("{}", now_timestamp() / 1000000);
     }
 }

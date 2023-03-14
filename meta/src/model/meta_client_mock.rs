@@ -16,13 +16,12 @@ use tonic::transport::Channel;
 
 use crate::error::MetaResult;
 use crate::limiter::RequestLimiter;
-use crate::meta_admin::AdminMeta;
-use crate::meta_client::MetaClient;
-use crate::meta_manager::MetaManager;
+use crate::model::user_manager_mock::UserManagerMock;
+use crate::model::{
+    AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaManager, TenantManager,
+    TenantManagerRef, UserManagerRef,
+};
 use crate::store::command::EntryLog;
-use crate::tenant_manager::TenantManager;
-use crate::user_manager_mock::UserManagerMock;
-use crate::{AdminMetaRef, MetaClientRef, TenantManagerRef, UserManagerRef};
 
 #[derive(Default, Debug)]
 pub struct MockAdminMeta {}

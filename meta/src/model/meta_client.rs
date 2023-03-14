@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use client::MetaHttpClient;
 use config::TenantObjectLimiterConfig;
 use models::auth::privilege::DatabasePrivilege;
@@ -17,6 +16,7 @@ use store::command;
 use trace::{debug, info, warn};
 
 use crate::error::{MetaError, MetaResult};
+use crate::model::MetaClient;
 use crate::store::command::{
     EntryLog, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
     META_REQUEST_ROLE_EXIST, META_REQUEST_ROLE_NOT_FOUND, META_REQUEST_USER_EXIST,
@@ -24,107 +24,6 @@ use crate::store::command::{
 };
 use crate::store::key_path;
 use crate::{client, store};
-
-#[async_trait]
-pub trait MetaClient: Send + Sync + Debug {
-    fn tenant(&self) -> &Tenant;
-    fn tenant_name(&self) -> String {
-        self.tenant().name().to_string()
-    }
-    //fn create_user(&self, user: &UserInfo) -> MetaResult<()>;
-    //fn drop_user(&self, name: &str) -> MetaResult<()>;
-
-    // tenant member
-    // fn tenants_of_user(&mut self, user_id: &Oid) -> MetaResult<Option<&HashSet<Oid>>>;
-    // fn remove_member_from_all_tenants(&mut self, user_id: &Oid) -> MetaResult<bool>;
-    async fn add_member_with_role(
-        &self,
-        user_id: Oid,
-        role: TenantRoleIdentifier,
-    ) -> MetaResult<()>;
-    async fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>>;
-    async fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>>;
-    async fn reasign_member_role(&self, user_id: Oid, role: TenantRoleIdentifier)
-        -> MetaResult<()>;
-    async fn remove_member(&self, user_id: Oid) -> MetaResult<()>;
-
-    // tenant role
-    async fn create_custom_role(
-        &self,
-        role_name: String,
-        system_role: SystemTenantRole,
-        additiona_privileges: HashMap<String, DatabasePrivilege>,
-    ) -> MetaResult<()>;
-    async fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>>;
-    async fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>>;
-    async fn grant_privilege_to_custom_role(
-        &self,
-        database_privileges: Vec<(DatabasePrivilege, String)>,
-        role_name: &str,
-    ) -> MetaResult<()>;
-    async fn revoke_privilege_from_custom_role(
-        &self,
-        database_privileges: Vec<(DatabasePrivilege, String)>,
-        role_name: &str,
-    ) -> MetaResult<()>;
-    async fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool>;
-
-    async fn create_db(&self, info: DatabaseSchema) -> MetaResult<()>;
-    async fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()>;
-    fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>>;
-    fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>>;
-    fn list_databases(&self) -> MetaResult<Vec<String>>;
-    async fn drop_db(&self, name: &str) -> MetaResult<bool>;
-
-    async fn create_table(&self, schema: &TableSchema) -> MetaResult<()>;
-    async fn update_table(&self, schema: &TableSchema) -> MetaResult<()>;
-    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>>;
-    fn get_tskv_table_schema(
-        &self,
-        db: &str,
-        table: &str,
-    ) -> MetaResult<Option<Arc<TskvTableSchema>>>;
-    fn get_external_table_schema(
-        &self,
-        db: &str,
-        table: &str,
-    ) -> MetaResult<Option<Arc<ExternalTableSchema>>>;
-    fn list_tables(&self, db: &str) -> MetaResult<Vec<String>>;
-    async fn drop_table(&self, db: &str, table: &str) -> MetaResult<()>;
-
-    async fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo>;
-    async fn delete_bucket(&self, db: &str, id: u32) -> MetaResult<()>;
-
-    fn database_min_ts(&self, db: &str) -> Option<i64>;
-    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
-
-    fn get_vnode_all_info(&self, id: u32) -> Option<VnodeAllInfo>;
-    fn get_vnode_repl_set(&self, id: u32) -> Option<ReplicationSet>;
-
-    fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>>;
-
-    async fn locate_replcation_set_for_write(
-        &self,
-        db: &str,
-        hash_id: u64,
-        ts: i64,
-    ) -> MetaResult<ReplicationSet>;
-
-    async fn update_replication_set(
-        &self,
-        db: &str,
-        bucket_id: u32,
-        repl_id: u32,
-        del_info: &[VnodeInfo],
-        add_info: &[VnodeInfo],
-    ) -> MetaResult<()>;
-
-    async fn version(&self) -> u64;
-
-    async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()>;
-
-    fn print_data(&self) -> String;
-}
 
 #[derive(Debug)]
 pub struct RemoteMetaClient {
@@ -274,12 +173,6 @@ impl MetaClient for RemoteMetaClient {
         &self.tenant
     }
 
-    async fn version(&self) -> u64 {
-        self.data.read().version
-    }
-
-    // tenant member start
-
     async fn add_member_with_role(
         &self,
         user_id: Oid,
@@ -305,6 +198,8 @@ impl MetaClient for RemoteMetaClient {
             }
         }
     }
+
+    // tenant member start
 
     async fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>> {
         let req = command::ReadCommand::MemberRole(
@@ -396,10 +291,6 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    // tenant member end
-
-    // tenant role start
-
     async fn create_custom_role(
         &self,
         role_name: String,
@@ -426,6 +317,10 @@ impl MetaClient for RemoteMetaClient {
             }
         }
     }
+
+    // tenant member end
+
+    // tenant role start
 
     async fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>> {
         let req = command::ReadCommand::CustomRole(
@@ -534,8 +429,6 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    // tenant role end
-
     async fn create_db(&self, mut schema: DatabaseSchema) -> MetaResult<()> {
         self.check_create_db(&mut schema)?;
 
@@ -566,6 +459,8 @@ impl MetaClient for RemoteMetaClient {
             })
         }
     }
+
+    // tenant role end
 
     async fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
         let req =
@@ -663,6 +558,27 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
+    async fn update_table(&self, schema: &TableSchema) -> MetaResult<()> {
+        let req = command::WriteCommand::UpdateTable(
+            self.cluster.clone(),
+            self.tenant_name(),
+            schema.clone(),
+        );
+
+        let rsp = self
+            .client
+            .write::<command::TenaneMetaDataResp>(&req)
+            .await?;
+        let mut data = self.data.write();
+        if rsp.data.version > data.version {
+            *data = rsp.data;
+        }
+
+        // TODO table not exist
+
+        Ok(())
+    }
+
     fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>> {
         return Ok(self.data.read().table_schema(db, table));
     }
@@ -690,27 +606,6 @@ impl MetaClient for RemoteMetaClient {
         }
 
         Ok(None)
-    }
-
-    async fn update_table(&self, schema: &TableSchema) -> MetaResult<()> {
-        let req = command::WriteCommand::UpdateTable(
-            self.cluster.clone(),
-            self.tenant_name(),
-            schema.clone(),
-        );
-
-        let rsp = self
-            .client
-            .write::<command::TenaneMetaDataResp>(&req)
-            .await?;
-        let mut data = self.data.write();
-        if rsp.data.version > data.version {
-            *data = rsp.data;
-        }
-
-        // TODO table not exist
-
-        Ok(())
     }
 
     fn list_tables(&self, db: &str) -> MetaResult<Vec<String>> {
@@ -797,35 +692,30 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    async fn update_replication_set(
-        &self,
-        db: &str,
-        bucket_id: u32,
-        repl_id: u32,
-        del_info: &[VnodeInfo],
-        add_info: &[VnodeInfo],
-    ) -> MetaResult<()> {
-        let args = command::UpdateVnodeReplSetArgs {
-            cluster: self.cluster.clone(),
-            tenant: self.tenant_name(),
-            db_name: db.to_string(),
-            bucket_id,
-            repl_id,
-            del_info: del_info.to_vec(),
-            add_info: add_info.to_vec(),
-        };
-        let req = command::WriteCommand::UpdateVnodeReplSet(args);
+    fn database_min_ts(&self, name: &str) -> Option<i64> {
+        self.data.read().database_min_ts(name)
+    }
 
-        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
-        info!("update replication set: {:?}; {:?}", req, rsp);
+    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
+        let mut list = vec![];
+        for (key, val) in self.data.read().dbs.iter() {
+            let ttl = val.schema.config.ttl_or_default().to_nanoseconds();
+            let now = models::utils::now_timestamp();
 
-        if rsp.code == command::META_REQUEST_SUCCESS {
-            Ok(())
-        } else {
-            Err(MetaError::CommonError {
-                msg: rsp.to_string(),
-            })
+            for bucket in val.buckets.iter() {
+                if bucket.end_time < now - ttl {
+                    let info = ExpiredBucketInfo {
+                        tenant: self.tenant_name(),
+                        database: key.clone(),
+                        bucket: bucket.clone(),
+                    };
+
+                    list.push(info)
+                }
+            }
         }
+
+        list
     }
 
     fn get_vnode_all_info(&self, id: u32) -> Option<VnodeAllInfo> {
@@ -872,8 +762,10 @@ impl MetaClient for RemoteMetaClient {
         None
     }
 
-    fn database_min_ts(&self, name: &str) -> Option<i64> {
-        self.data.read().database_min_ts(name)
+    fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>> {
+        let buckets = self.data.read().mapping_bucket(db_name, start, end);
+
+        Ok(buckets)
     }
 
     async fn locate_replcation_set_for_write(
@@ -891,32 +783,39 @@ impl MetaClient for RemoteMetaClient {
         Ok(bucket.vnode_for(hash_id))
     }
 
-    fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>> {
-        let buckets = self.data.read().mapping_bucket(db_name, start, end);
+    async fn update_replication_set(
+        &self,
+        db: &str,
+        bucket_id: u32,
+        repl_id: u32,
+        del_info: &[VnodeInfo],
+        add_info: &[VnodeInfo],
+    ) -> MetaResult<()> {
+        let args = command::UpdateVnodeReplSetArgs {
+            cluster: self.cluster.clone(),
+            tenant: self.tenant_name(),
+            db_name: db.to_string(),
+            bucket_id,
+            repl_id,
+            del_info: del_info.to_vec(),
+            add_info: add_info.to_vec(),
+        };
+        let req = command::WriteCommand::UpdateVnodeReplSet(args);
 
-        Ok(buckets)
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
+        info!("update replication set: {:?}; {:?}", req, rsp);
+
+        if rsp.code == command::META_REQUEST_SUCCESS {
+            Ok(())
+        } else {
+            Err(MetaError::CommonError {
+                msg: rsp.to_string(),
+            })
+        }
     }
 
-    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
-        let mut list = vec![];
-        for (key, val) in self.data.read().dbs.iter() {
-            let ttl = val.schema.config.ttl_or_default().to_nanoseconds();
-            let now = models::utils::now_timestamp();
-
-            for bucket in val.buckets.iter() {
-                if bucket.end_time < now - ttl {
-                    let info = ExpiredBucketInfo {
-                        tenant: self.tenant_name(),
-                        database: key.clone(),
-                        bucket: bucket.clone(),
-                    };
-
-                    list.push(info)
-                }
-            }
-        }
-
-        list
+    async fn version(&self) -> u64 {
+        self.data.read().version
     }
 
     async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()> {

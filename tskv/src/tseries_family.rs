@@ -984,8 +984,8 @@ pub mod test_tseries_family {
 
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use meta::meta_manager::RemoteMetaManager;
-    use meta::MetaRef;
+    use meta::model::meta_manager::RemoteMetaManager;
+    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{DatabaseSchema, TenantOptions};
     use models::Timestamp;

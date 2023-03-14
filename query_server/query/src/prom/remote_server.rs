@@ -7,7 +7,7 @@ use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
 use line_protocol::{parse_lines_to_points, Line};
 use meta::error::MetaError;
-use meta::{MetaClientRef, MetaRef};
+use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
 use models::schema::{FieldValue, TskvTableSchema, TIME_FIELD_NAME};
 use protos::kv_service::WritePointsRequest;

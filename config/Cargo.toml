@@ -6,3 +6,8 @@ edition.workspace = true
 [dependencies]
 serde = { workspace = true }
 toml = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+backtrace = ["async-backtrace"]

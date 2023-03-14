@@ -55,6 +55,9 @@ jobs:
     - name: clean
       run: make clean
 
+    - name: trace
+      run: make build_trace
+
   integration-test:
     name: "Integration Test"
     runs-on: ubuntu-latest

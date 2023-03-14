@@ -1,7 +1,8 @@
 use std::io::{Error, ErrorKind, IoSlice, Result, SeekFrom};
 use std::ops::Deref;
 
-use crate::file_system::file::async_file::{AsyncFile, IFile};
+use crate::file_system::file::async_file::AsyncFile;
+use crate::file_system::file::IFile;
 
 pub struct FileCursor {
     file: AsyncFile,

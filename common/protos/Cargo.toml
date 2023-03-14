@@ -3,11 +3,9 @@ name = "protos"
 version.workspace = true
 edition.workspace = true
 
-[features]
-test = []
 
 [dependencies]
-utils = { path = "../utils"}
+utils = { path = "../utils" }
 
 chrono = { workspace = true }
 flatbuffers = { workspace = true }
@@ -16,6 +14,12 @@ rand = { workspace = true }
 snafu = { workspace = true }
 tonic = { workspace = true }
 protobuf = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+test = []
+backtrace = ["async-backtrace"]
 
 [build-dependencies]
 prost-build = { workspace = true }

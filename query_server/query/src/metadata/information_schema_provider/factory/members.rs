@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
 use meta::error::MetaError;
-use meta::MetaClientRef;
+use meta::model::MetaClientRef;
 use models::auth::user::User;
 
 use crate::dispatcher::query_tracker::QueryTracker;

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use datafusion::datasource::MemTable;
 use datafusion::logical_expr::TableType;
 use meta::error::MetaError;
-use meta::MetaClientRef;
+use meta::model::MetaClientRef;
 use models::auth::user::User;
 use models::oid::Identifier;
 

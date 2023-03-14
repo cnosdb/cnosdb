@@ -5,3 +5,8 @@ edition = "2021"
 
 [dependencies]
 datafusion = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+backtrace = ["async-backtrace"]
