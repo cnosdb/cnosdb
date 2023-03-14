@@ -423,33 +423,32 @@ impl Summary {
                 }
                 Err(Error::Eof) => break,
                 Err(e) => {
-                    println!("Error reading record: {:?}", e);
-                    break;
+                    return Err(e);
                 }
             }
         }
 
         let mut versions = HashMap::new();
         let mut has_seq_no = false;
-        let mut seq_no = 0_u64;
+        let mut max_seq_no_all = 0_u64;
         let mut has_file_id = false;
-        let mut file_id = 0_u64;
+        let mut max_file_id_all = 0_u64;
         for (tsf_id, edits) in tsf_edits_map {
             let database = tsf_database_map.remove(&tsf_id).unwrap();
 
             let mut files: HashMap<u64, CompactMeta> = HashMap::new();
-            let mut max_log = 0;
+            let mut max_seq_no = 0;
             let mut max_level_ts = i64::MIN;
             for e in edits {
                 if e.has_seq_no {
                     has_seq_no = true;
-                    seq_no = e.seq_no;
+                    max_seq_no = std::cmp::max(max_seq_no, e.seq_no);
+                    max_seq_no_all = std::cmp::max(max_seq_no_all, e.seq_no);
                 }
                 if e.has_file_id {
                     has_file_id = true;
-                    file_id = e.file_id;
+                    max_file_id_all = e.file_id;
                 }
-                max_log = std::cmp::max(max_log, e.seq_no);
                 max_level_ts = std::cmp::max(max_level_ts, e.max_level_ts);
                 for m in e.del_files {
                     files.remove(&m.file_id);
@@ -458,9 +457,10 @@ impl Summary {
                     files.insert(m.file_id, m);
                 }
             }
+
+            // Recover levels_info according to `CompactMeta`s;
             let mut levels = LevelInfo::init_levels(database.clone(), tsf_id, opt.storage.clone());
-            // according files map to recover levels_info;
-            for (_file_id, meta) in files {
+            for meta in files.into_values() {
                 let field_filter = if load_field_filter {
                     let tsm_path = meta.file_path(opt.storage.as_ref(), &database, tsf_id);
                     let tsm_reader = TsmReader::open(tsm_path).await?;
@@ -474,7 +474,7 @@ impl Summary {
                 tsf_id,
                 database,
                 opt.storage.clone(),
-                max_log,
+                max_seq_no,
                 levels,
                 max_level_ts,
                 Arc::new(ShardedCache::default()),
@@ -483,10 +483,10 @@ impl Summary {
         }
 
         if has_seq_no {
-            ctx.set_last_seq(seq_no + 1);
+            ctx.set_last_seq(max_seq_no_all + 1);
         }
         if has_file_id {
-            ctx.set_file_id(file_id + 1);
+            ctx.set_file_id(max_file_id_all + 1);
         }
         let vs = VersionSet::new(
             meta,
