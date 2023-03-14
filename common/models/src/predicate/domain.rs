@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use super::transformation::RowExpressionToDomainsVisitor;
 use super::Split;
-use crate::schema::{ScalarValueForkDF, TskvTableSchema};
+use crate::schema::{ScalarValueForkDF, TableColumn, TskvTableSchema};
 use crate::{Error, Result, Timestamp};
 
 pub type PredicateRef = Arc<Predicate>;
@@ -1213,6 +1213,24 @@ impl QueryExpr {
             err: err.to_string(),
         })
     }
+}
+
+pub fn encode_agg(agg: &Option<Vec<TableColumn>>) -> Result<Vec<u8>> {
+    let d = bincode::serialize(agg).map_err(|err| Error::InvalidSerdeMessage {
+        err: err.to_string(),
+    })?;
+
+    Ok(d)
+}
+
+pub fn decode_agg(buf: &[u8]) -> Result<Option<Vec<TableColumn>>> {
+    let args = bincode::deserialize::<Option<Vec<TableColumn>>>(buf).map_err(|err| {
+        Error::InvalidSerdeMessage {
+            err: err.to_string(),
+        }
+    })?;
+
+    Ok(args)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

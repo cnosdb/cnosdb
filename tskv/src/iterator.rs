@@ -17,7 +17,7 @@ use datafusion::physical_plan::metrics::{
 };
 use minivec::MiniVec;
 use models::meta_data::VnodeId;
-use models::predicate::domain::{QueryArgs, QueryExpr, TimeRange};
+use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRange};
 use models::predicate::Split;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD};
 use models::utils::{min_num, unite_id};
@@ -357,10 +357,12 @@ impl QueryOption {
 
         let args_bytes = QueryArgs::encode(&args)?;
         let expr_bytes = QueryExpr::encode(&expr)?;
+        let aggs_bytes = domain::encode_agg(&self.aggregates)?;
 
         Ok(QueryRecordBatchRequest {
             args: args_bytes,
             expr: expr_bytes,
+            aggs: aggs_bytes,
         })
     }
 }
