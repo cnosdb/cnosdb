@@ -4,6 +4,7 @@ use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::utils::expand_wildcard;
 use datafusion::logical_expr::{LogicalPlan, LogicalPlanBuilder};
+use datafusion::optimizer::optimizer::ApplyOrder;
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::prelude::{and, cast, col, lit, Expr};
 use datafusion::scalar::ScalarValue;
@@ -29,7 +30,7 @@ impl OptimizerRule for TransformTimeWindowRule {
     fn try_optimize(
         &self,
         plan: &LogicalPlan,
-        optimizer_config: &dyn OptimizerConfig,
+        _optimizer_config: &dyn OptimizerConfig,
     ) -> Result<Option<LogicalPlan>> {
         if plan.inputs().len() == 1 {
             let child = plan.inputs()[0];
@@ -66,13 +67,15 @@ impl OptimizerRule for TransformTimeWindowRule {
             }
         }
 
-        // If we didn't find the match pattern, recurse as
-        // normal and build the result.
-        datafusion::optimizer::utils::optimize_children(self, plan, optimizer_config)
+        Ok(None)
     }
 
     fn name(&self) -> &str {
         "transform_time_window"
+    }
+
+    fn apply_order(&self) -> Option<ApplyOrder> {
+        Some(ApplyOrder::BottomUp)
     }
 }
 
