@@ -55,7 +55,8 @@ impl SqlQueryExecution {
             .schedule(
                 optimized_physical_plan,
                 self.query_state_machine.session.inner().task_ctx(),
-            )?
+            )
+            .await?
             .stream();
         debug!("Success build result stream.");
         let schema_ref = stream.schema();
