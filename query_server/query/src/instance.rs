@@ -18,7 +18,7 @@ use tskv::kv_option::Options;
 use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
 use crate::data_source::split;
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
-use crate::execution::scheduler::LocalScheduler;
+use crate::execution::scheduler::local::LocalScheduler;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
 

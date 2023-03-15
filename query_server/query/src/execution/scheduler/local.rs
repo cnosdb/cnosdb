@@ -1,19 +1,24 @@
 use std::sync::Arc;
 
-use datafusion::common::Result;
+use async_trait::async_trait;
+use datafusion::error::DataFusionError;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
 use datafusion::physical_plan::ExecutionPlan;
 use spi::query::scheduler::{ExecutionResults, Scheduler};
+use trace::info;
 
 pub struct LocalScheduler {}
 
+#[async_trait]
 impl Scheduler for LocalScheduler {
-    fn schedule(
+    async fn schedule(
         &self,
         plan: Arc<dyn ExecutionPlan>,
         context: Arc<TaskContext>,
-    ) -> Result<ExecutionResults> {
+    ) -> Result<ExecutionResults, DataFusionError> {
+        info!("Init local executor of query engine.");
+
         let partition_count = plan.output_partitioning().partition_count();
 
         let merged_plan = if partition_count > 1 {
