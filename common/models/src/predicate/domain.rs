@@ -180,11 +180,7 @@ impl<'a> Deserialize<'a> for Marker {
     where
         D: serde::Deserializer<'a>,
     {
-        let mark = deserializer.deserialize_struct(
-            "ValueEntry",
-            &["data_type", "value", "bound"],
-            MarkerVisitor,
-        )?;
+        let mark = MarkerSerialize::deserialize(deserializer)?;
 
         Ok(mark.into())
     }
@@ -1201,16 +1197,16 @@ pub struct QueryExpr {
 
 impl QueryExpr {
     pub fn encode(option: &QueryExpr) -> Result<Vec<u8>> {
-        let bytes = serde_json::to_vec(option).map_err(|err| Error::InvalidQueryExprMsg {
-            err: err.to_string(),
+        let bytes = bincode::serialize(option).map_err(|e| Error::InvalidQueryExprMsg {
+            err: format!("encode error {}", e),
         })?;
 
         Ok(bytes)
     }
 
     pub fn decode(buf: &[u8]) -> Result<QueryExpr> {
-        serde_json::from_slice::<QueryExpr>(buf).map_err(|err| Error::InvalidQueryExprMsg {
-            err: err.to_string(),
+        bincode::deserialize::<QueryExpr>(buf).map_err(|e| Error::InvalidQueryExprMsg {
+            err: format!("decode error {}", e),
         })
     }
 }

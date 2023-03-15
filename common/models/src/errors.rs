@@ -41,7 +41,7 @@ pub enum Error {
     ))]
     Internal { err: String },
 
-    #[snafu(display("Invalid query expr message: {}", err))]
+    #[snafu(display("IO operator: {}", err))]
     IOErrors { err: String },
 
     #[snafu(display("Failed to convert vec to string"))]
