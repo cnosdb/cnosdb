@@ -9,6 +9,7 @@ use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::Timestamp;
+use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
@@ -22,6 +23,7 @@ use crate::context::{GlobalContext, GlobalSequenceTask};
 use crate::error::{Error, Result};
 use crate::file_system::file_manager::try_exists;
 use crate::kv_option::{Options, StorageOptions};
+use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
 use crate::tsm::TsmReader;
@@ -505,8 +507,10 @@ impl Summary {
         &mut self,
         version_edits: Vec<VersionEdit>,
         file_metas: HashMap<ColumnFileId, Arc<BloomFilter>>,
+        mem_caches: HashMap<TseriesFamilyId, Vec<Arc<SyncRwLock<MemCache>>>>,
     ) -> Result<()> {
-        self.write_summary(version_edits, file_metas).await?;
+        self.write_summary(version_edits, file_metas, mem_caches)
+            .await?;
         self.roll_summary_file().await?;
         Ok(())
     }
@@ -516,6 +520,7 @@ impl Summary {
         &mut self,
         version_edits: Vec<VersionEdit>,
         mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>>,
+        mem_caches: HashMap<TseriesFamilyId, Vec<Arc<SyncRwLock<MemCache>>>>,
     ) -> Result<()> {
         // Write VersionEdits into summary file and join VersionEdits by Database/TseriesFamilyId.
         let mut tsf_version_edits: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
@@ -555,7 +560,10 @@ impl Summary {
                     &mut file_metas,
                     min_seq.copied(),
                 );
-                tsf.write().await.new_version(new_version);
+                let flushed_mem_cahces = mem_caches.get(&tsf_id);
+                tsf.write()
+                    .await
+                    .new_version(new_version, flushed_mem_cahces);
             }
         }
         drop(version_set);
@@ -595,7 +603,8 @@ impl Summary {
             self.writer = Writer::open(new_path, RecordDataType::Summary)
                 .await
                 .unwrap();
-            self.write_summary(edits, file_metas).await?;
+            self.write_summary(edits, file_metas, HashMap::new())
+                .await?;
             match rename(new_path, old_path) {
                 Ok(_) => (),
                 Err(e) => {
@@ -688,15 +697,17 @@ pub struct SummaryProcessor {
     cbs: Vec<OneShotSender<Result<()>>>,
     edits: Vec<VersionEdit>,
     file_metas: HashMap<ColumnFileId, Arc<BloomFilter>>,
+    mem_caches: HashMap<TseriesFamilyId, Vec<Arc<SyncRwLock<MemCache>>>>,
 }
 
 impl SummaryProcessor {
     pub fn new(summary: Box<Summary>) -> Self {
         Self {
             summary,
-            cbs: vec![],
-            edits: vec![],
+            cbs: Vec::with_capacity(32),
+            edits: Vec::with_capacity(32),
             file_metas: HashMap::new(),
+            mem_caches: HashMap::new(),
         }
     }
 
@@ -704,15 +715,23 @@ impl SummaryProcessor {
         if let Some(file_metas) = task.file_metas {
             self.file_metas.extend(file_metas.into_iter());
         }
+        if let Some(mem_caches) = task.mem_caches {
+            self.mem_caches.extend(mem_caches.into_iter());
+        }
         let mut req = task.request;
         self.edits.append(&mut req.version_edits);
         self.cbs.push(req.call_back);
     }
 
     pub async fn apply(&mut self) {
-        let edits = std::mem::take(&mut self.edits);
+        let edits = std::mem::replace(&mut self.edits, Vec::with_capacity(32));
         let file_metas = std::mem::take(&mut self.file_metas);
-        match self.summary.apply_version_edit(edits, file_metas).await {
+        let mem_caches = std::mem::take(&mut self.mem_caches);
+        match self
+            .summary
+            .apply_version_edit(edits, file_metas, mem_caches)
+            .await
+        {
             Ok(()) => {
                 for cb in self.cbs.drain(..) {
                     let _ = cb.send(Ok(()));
@@ -735,12 +754,14 @@ impl SummaryProcessor {
 pub struct SummaryTask {
     pub request: WriteSummaryRequest,
     pub file_metas: Option<HashMap<ColumnFileId, Arc<BloomFilter>>>,
+    pub mem_caches: Option<HashMap<TseriesFamilyId, Vec<Arc<SyncRwLock<MemCache>>>>>,
 }
 
 impl SummaryTask {
     pub fn new(
         version_edits: Vec<VersionEdit>,
         file_metas: Option<HashMap<ColumnFileId, Arc<BloomFilter>>>,
+        mem_caches: Option<HashMap<TseriesFamilyId, Vec<Arc<SyncRwLock<MemCache>>>>>,
         call_back: OneShotSender<Result<()>>,
     ) -> Self {
         Self {
@@ -749,6 +770,7 @@ impl SummaryTask {
                 call_back,
             },
             file_metas,
+            mem_caches,
         }
     }
 }
@@ -967,7 +989,7 @@ mod test {
         .unwrap();
         let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
         summary
-            .apply_version_edit(vec![edit], HashMap::new())
+            .apply_version_edit(vec![edit], HashMap::new(), HashMap::new())
             .await
             .unwrap();
         let _summary = Summary::recover(
@@ -1016,7 +1038,7 @@ mod test {
 
         let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
         summary
-            .apply_version_edit(vec![edit], HashMap::new())
+            .apply_version_edit(vec![edit], HashMap::new(), HashMap::new())
             .await
             .unwrap();
         let mut summary = Summary::recover(
@@ -1035,7 +1057,7 @@ mod test {
         assert_eq!(summary.version_set.read().await.tsf_num().await, 1);
         let edit = VersionEdit::new_del_vnode(100);
         summary
-            .apply_version_edit(vec![edit], HashMap::new())
+            .apply_version_edit(vec![edit], HashMap::new(), HashMap::new())
             .await
             .unwrap();
         let summary = Summary::recover(
@@ -1125,7 +1147,7 @@ mod test {
             }
         }
         summary
-            .apply_version_edit(edits, HashMap::new())
+            .apply_version_edit(edits, HashMap::new(), HashMap::new())
             .await
             .unwrap();
 
@@ -1237,13 +1259,13 @@ mod test {
                 ..Default::default()
             };
             version.levels_info[1].push_compact_meta(&meta, Arc::new(BloomFilter::default()));
-            tsf.write().await.new_version(version);
+            tsf.write().await.new_version(version, None);
             edit.add_file(meta, 1);
             edits.push(edit);
         }
 
         summary
-            .apply_version_edit(edits, HashMap::new())
+            .apply_version_edit(edits, HashMap::new(), HashMap::new())
             .await
             .unwrap();
 

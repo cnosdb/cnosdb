@@ -10,8 +10,9 @@ use crate::TseriesFamilyId;
 
 #[derive(Default, Debug)]
 pub struct GlobalContext {
+    /// Database file id
     file_id: AtomicU64,
-    mem_seq: AtomicU64,
+    /// Sequence-No of the latest write request.
     last_seq: AtomicU64,
 }
 
@@ -19,46 +20,38 @@ impl GlobalContext {
     pub fn new() -> Self {
         Self {
             file_id: AtomicU64::new(0),
-            mem_seq: AtomicU64::new(0),
             last_seq: AtomicU64::new(0),
         }
     }
 }
 
 impl GlobalContext {
+    /// Get the current file id.
     pub fn file_id(&self) -> u64 {
         self.file_id.load(Ordering::Acquire)
     }
 
-    /// # Examples
-    ///  ```ignore
-    ///  assert_eq!(foo.file_id_next(), 0);
-    ///  assert_eq!(foo.file_id(), 1);
-    /// ```
+    /// Get the current file id and add 1.
     pub fn file_id_next(&self) -> u64 {
         self.file_id.fetch_add(1, Ordering::SeqCst)
     }
 
-    pub fn mem_seq_next(&self) -> u64 {
-        self.mem_seq.fetch_add(1, Ordering::SeqCst)
-    }
-
-    pub fn last_seq(&self) -> u64 {
-        self.last_seq.load(Ordering::Acquire)
-    }
-
-    pub fn fetch_add_log_seq(&self, n: u64) -> u64 {
-        self.file_id.fetch_add(n, Ordering::SeqCst)
-    }
-
-    pub fn set_last_seq(&self, v: u64) {
-        self.last_seq.store(v, Ordering::Release);
-    }
+    /// Set current file id.
     pub fn set_file_id(&self, v: u64) {
         self.file_id.store(v, Ordering::Release);
     }
 
-    pub fn mark_log_number_used(&self, v: u64) {
+    /// Get the current sequence number of the latest write request.
+    pub fn last_seq(&self) -> u64 {
+        self.last_seq.load(Ordering::Acquire)
+    }
+
+    /// Set current sequence number of the latest write request.
+    pub fn set_last_seq(&self, v: u64) {
+        self.last_seq.store(v, Ordering::Release);
+    }
+
+    pub fn mark_file_id_used(&self, v: u64) {
         let mut old = self.file_id.load(Ordering::Acquire);
         while old <= v {
             match self

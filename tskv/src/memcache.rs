@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::iter::FromIterator;
 use std::mem::size_of_val;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
@@ -324,10 +324,9 @@ impl SeriesData {
 
 #[derive(Debug)]
 pub struct MemCache {
-    tf_id: u32,
+    tf_id: TseriesFamilyId,
 
-    pub flushed: bool,
-    pub flushing: bool,
+    flushing: AtomicBool,
 
     max_size: u64,
     min_seq_no: u64,
@@ -343,23 +342,22 @@ pub struct MemCache {
 
 impl MemCache {
     pub fn new(tf_id: TseriesFamilyId, max_size: u64, seq: u64, pool: &MemoryPoolRef) -> Self {
-        let parts = 16;
-        let mut partions = Vec::with_capacity(parts);
-        for _i in 0..parts {
+        let part_count = 16;
+        let mut partions = Vec::with_capacity(part_count);
+        for _i in 0..part_count {
             partions.push(RwLock::new(HashMap::new()));
         }
         let res =
             RwLock::new(MemoryConsumer::new(format!("memcache-{}-{}", tf_id, seq)).register(pool));
         Self {
             tf_id,
-            partions,
+            flushing: AtomicBool::new(false),
+
             max_size,
             min_seq_no: seq,
 
-            flushed: false,
-            flushing: false,
-
-            part_count: parts,
+            part_count,
+            partions,
 
             seq_no: AtomicU64::new(seq),
             memory: res,
@@ -479,6 +477,16 @@ impl MemCache {
             }
         });
         ret
+    }
+
+    pub fn mark_flushing(&self) -> bool {
+        self.flushing
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+
+    pub fn is_flushing(&self) -> bool {
+        self.flushing.load(Ordering::Relaxed)
     }
 
     pub fn is_full(&self) -> bool {

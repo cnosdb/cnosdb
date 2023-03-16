@@ -59,7 +59,7 @@ pub fn run(
                         if flus_vnode {
                             let mut tsf_wlock = tsf.write().await;
                             tsf_wlock.switch_to_immutable();
-                            let flush_req = tsf_wlock.flush_req(true);
+                            let flush_req = tsf_wlock.build_flush_req(true);
                             drop(tsf_wlock);
                             if let Some(req) = flush_req {
                                 if let Err(e) = flush::run_flush_memtable_job(
@@ -83,6 +83,7 @@ pub fn run(
                                 let _ret = summary_task_sender_inner.send(SummaryTask::new(
                                     vec![version_edit],
                                     Some(file_metas),
+                                    None,
                                     summary_tx,
                                 ));
 

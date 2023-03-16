@@ -577,7 +577,7 @@ impl Engine for TsKv {
                 let request = {
                     let mut tsfamily = tsfamily.write().await;
                     tsfamily.switch_to_immutable();
-                    tsfamily.flush_req(true)
+                    tsfamily.build_flush_req(true)
                 };
 
                 if let Some(req) = request {
@@ -887,7 +887,7 @@ impl Engine for TsKv {
 
                 let mut tsf_wlock = ts_family.write().await;
                 tsf_wlock.switch_to_immutable();
-                let flush_req = tsf_wlock.flush_req(true);
+                let flush_req = tsf_wlock.build_flush_req(true);
                 drop(tsf_wlock);
                 if let Some(req) = flush_req {
                     if let Err(e) = run_flush_memtable_job(
@@ -914,6 +914,7 @@ impl Engine for TsKv {
                                 .send(SummaryTask::new(
                                     vec![version_edit],
                                     Some(file_metas),
+                                    None,
                                     summary_tx,
                                 ))
                                 .await;
