@@ -57,7 +57,7 @@ impl VersionSet {
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
-        for (_id, ver) in ver_set {
+        for ver in ver_set.into_values() {
             let owner = ver.database().to_string();
             let (tenant, database) = split_owner(&owner);
 

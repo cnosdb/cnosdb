@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,7 +16,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-use trace::{debug, error, info, trace, warn};
+use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
@@ -494,17 +494,14 @@ impl CacheGroup {
         mut value_predicate: impl FnMut(&FieldVal) -> bool,
         mut handle_data: impl FnMut(DataType),
     ) {
-        self.immut_cache
-            .iter()
-            .filter(|m| !m.read().flushed)
-            .for_each(|m| {
-                m.read().read_field_data(
-                    field_id,
-                    &mut time_predicate,
-                    &mut value_predicate,
-                    &mut handle_data,
-                );
-            });
+        self.immut_cache.iter().for_each(|m| {
+            m.read().read_field_data(
+                field_id,
+                &mut time_predicate,
+                &mut value_predicate,
+                &mut handle_data,
+            );
+        });
 
         self.mut_cache.read().read_field_data(
             field_id,
@@ -520,13 +517,10 @@ impl CacheGroup {
         mut time_predicate: impl FnMut(Timestamp) -> bool,
         mut handle_data: impl FnMut(Timestamp),
     ) {
-        self.immut_cache
-            .iter()
-            .filter(|m| !m.read().flushed)
-            .for_each(|m| {
-                m.read()
-                    .read_series_timestamps(series_ids, &mut time_predicate, &mut handle_data);
-            });
+        self.immut_cache.iter().for_each(|m| {
+            m.read()
+                .read_series_timestamps(series_ids, &mut time_predicate, &mut handle_data);
+        });
 
         self.mut_cache
             .read()
@@ -637,8 +631,6 @@ pub struct TseriesFamily {
     cache_opt: Arc<CacheOptions>,
     storage_opt: Arc<StorageOptions>,
     seq_no: u64,
-    immut_ts_min: AtomicI64,
-    mut_ts_max: AtomicI64,
     last_modified: Arc<tokio::sync::RwLock<Option<Instant>>>,
     flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
@@ -663,13 +655,11 @@ impl TseriesFamily {
         register: &Arc<MetricsRegister>,
     ) -> Self {
         let mm = Arc::new(RwLock::new(cache));
-        let seq = version.last_seq;
-        let max_level_ts = version.max_level_ts;
 
         Self {
             tf_id,
             database: database.clone(),
-            seq_no: seq,
+            seq_no: version.last_seq,
             mut_cache: mm.clone(),
             immut_cache: Default::default(),
             super_version: Arc::new(SuperVersion::new(
@@ -686,8 +676,6 @@ impl TseriesFamily {
             version,
             cache_opt,
             storage_opt,
-            immut_ts_min: AtomicI64::new(max_level_ts),
-            mut_ts_max: AtomicI64::new(i64::MIN),
             last_modified: Arc::new(tokio::sync::RwLock::new(None)),
             flush_task_sender,
             compact_task_sender,
@@ -719,15 +707,35 @@ impl TseriesFamily {
         ))
     }
 
-    /// Set new Version into current TsFamily,
+    /// Set new Version into current TsFamily, drop unused immutable caches,
     /// then create new SuperVersion, update seq_no
-    pub fn new_version(&mut self, new_version: Version) {
+    pub fn new_version(
+        &mut self,
+        new_version: Version,
+        flushed_mem_caches: Option<&Vec<Arc<RwLock<MemCache>>>>,
+    ) {
         let version = Arc::new(new_version);
-        trace!(
+        debug!(
             "New version(level_info) for ts_family({}): {:?}",
             self.tf_id,
             &version.levels_info()
         );
+        if let Some(flushed_mem_caches) = flushed_mem_caches {
+            let mut new_caches = Vec::with_capacity(self.immut_cache.len());
+            for c in self.immut_cache.iter() {
+                let mut cache_not_flushed = true;
+                for fc in flushed_mem_caches {
+                    if c.data_ptr() as usize == fc.data_ptr() as usize {
+                        cache_not_flushed = false;
+                        break;
+                    }
+                }
+                if cache_not_flushed {
+                    new_caches.push(c.clone());
+                }
+            }
+            self.immut_cache = new_caches;
+        }
         self.new_super_version(version.clone());
         self.seq_no = version.last_seq;
         self.version = version;
@@ -744,46 +752,36 @@ impl TseriesFamily {
         self.new_super_version(self.version.clone());
     }
 
-    /// Check if there are immutable caches to flush.
+    /// Check if there are immutable caches to flush and build a `FlushReq`,
+    /// or else return None.
     ///
-    /// If argument `force` is false, immutable caches number should be greater than
-    /// configuration `max_immutable_number`.
-    ///
-    /// If argument force is set to true, then do not check immutable caches number.
-    pub(crate) fn flush_req(&mut self, force: bool) -> Option<FlushReq> {
-        let len = self.immut_cache.len();
-
-        self.immut_cache.retain(|mem| !mem.read().flushed);
-
-        if len != self.immut_cache.len() {
-            self.new_super_version(self.version.clone());
-        }
-
-        self.immut_ts_min
-            .store(self.mut_ts_max.load(Ordering::Relaxed), Ordering::Relaxed);
-
-        let req_mems = self
+    /// If argument `force` is false, total count of immutable caches that
+    /// are not flushing or flushed should be greater than configuration `max_immutable_number`.
+    /// If argument `force` is set to true, then do not check the total count.
+    pub(crate) fn build_flush_req(&mut self, force: bool) -> Option<FlushReq> {
+        let mut filtered_caches: Vec<(TseriesFamilyId, Arc<RwLock<MemCache>>)> = self
             .immut_cache
             .iter()
-            .filter(|mem| !mem.read().flushing)
+            .filter(|c| !c.read().is_flushing())
             .cloned()
-            .map(|mem| (self.tf_id, mem))
-            .collect::<Vec<_>>();
+            .map(|c| (self.tf_id, c))
+            .collect();
 
-        if !force && req_mems.len() < self.cache_opt.max_immutable_number as usize {
+        if !force && filtered_caches.len() < self.cache_opt.max_immutable_number as usize {
             return None;
         }
 
-        for mem in req_mems.iter() {
-            mem.1.write().flushing = true;
-        }
+        // Mark these caches marked as `flushing` in current thread and collect them.
+        filtered_caches.retain(|(_, c)| c.read().mark_flushing());
 
-        info!("flush req queue len : {}", req_mems.len());
-        Some(FlushReq { mems: req_mems })
+        Some(FlushReq {
+            mems: filtered_caches,
+        })
     }
 
+    /// Try to build a `FlushReq`，if succeed, send it to flush job.
     pub(crate) async fn wrap_flush_req(&mut self, force: bool) {
-        if let Some(req) = self.flush_req(force) {
+        if let Some(req) = self.build_flush_req(force) {
             self.flush_task_sender
                 .send(req)
                 .await
@@ -808,7 +806,7 @@ impl TseriesFamily {
     pub async fn check_to_flush(&mut self) {
         if self.super_version.caches.mut_cache.read().is_full() {
             info!(
-                "mut_cache full,switch to immutable current pool_size : {}",
+                "mut_cache is full, switch to immutable. current pool_size : {}",
                 self.memory_pool.reserved()
             );
             self.switch_to_immutable();
@@ -1325,7 +1323,7 @@ pub mod test_tseries_family {
                 &mut HashMap::new(),
                 Some(min_seq),
             );
-            ts_family.new_version(new_version);
+            ts_family.new_version(new_version, None);
         }
     }
 

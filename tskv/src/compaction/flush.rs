@@ -358,18 +358,22 @@ pub async fn run_flush_memtable_job(
         if req.mems.is_empty() {
             return Ok(());
         }
-        for (tf, mem) in req.mems.into_iter() {
+        for (tf, mem) in req.mems {
             tsf_caches.entry(tf).or_default().push(mem);
         }
     }
 
     let mut version_edits: Vec<VersionEdit> = vec![];
     let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
-    for (tsf_id, caches) in tsf_caches.into_iter() {
+    for (tsf_id, caches) in tsf_caches.iter() {
         if caches.is_empty() {
             continue;
         }
-        let tsf_warp = version_set.read().await.get_tsfamily_by_tf_id(tsf_id).await;
+        let tsf_warp = version_set
+            .read()
+            .await
+            .get_tsfamily_by_tf_id(*tsf_id)
+            .await;
         if let Some(tsf) = tsf_warp {
             // todo: build path by vnode data
             let (storage_opt, version, database) = {
@@ -382,13 +386,19 @@ pub async fn run_flush_memtable_job(
                 )
             };
 
-            let path_tsm = storage_opt.tsm_dir(&database, tsf_id);
-            let path_delta = storage_opt.delta_dir(&database, tsf_id);
+            let path_tsm = storage_opt.tsm_dir(&database, *tsf_id);
+            let path_delta = storage_opt.delta_dir(&database, *tsf_id);
 
-            let flush_task =
-                FlushTask::new(caches, tsf_id, global_context.clone(), path_tsm, path_delta);
+            let flush_task = FlushTask::new(
+                caches.clone(),
+                *tsf_id,
+                global_context.clone(),
+                path_tsm,
+                path_delta,
+            );
             all_mems.extend(flush_task.mem_caches.clone());
 
+            // TODO: Make flush tasks run in parallel.
             flush_task
                 .run(version, &mut version_edits, &mut file_metas)
                 .await?;
@@ -396,7 +406,7 @@ pub async fn run_flush_memtable_job(
             tsf.read().await.update_last_modfied().await;
 
             if let Some(sender) = compact_task_sender.as_ref() {
-                if let Err(e) = sender.send(CompactTask::Vnode(tsf_id)).await {
+                if let Err(e) = sender.send(CompactTask::Vnode(*tsf_id)).await {
                     warn!("failed to send compact task({}), {}", tsf_id, e);
                 }
             }
@@ -406,7 +416,12 @@ pub async fn run_flush_memtable_job(
     info!("Flush: Flush finished, version edits: {:?}", version_edits);
 
     let (task_state_sender, task_state_receiver) = oneshot::channel();
-    let task = SummaryTask::new(version_edits, Some(file_metas), task_state_sender);
+    let task = SummaryTask::new(
+        version_edits,
+        Some(file_metas),
+        Some(tsf_caches),
+        task_state_sender,
+    );
 
     if let Err(e) = summary_task_sender.send(task).await {
         warn!("failed to send Summary task, {}", e);
@@ -414,12 +429,9 @@ pub async fn run_flush_memtable_job(
 
     if timeout(Duration::from_secs(10), task_state_receiver)
         .await
-        .is_ok()
+        .is_err()
     {
-        all_mems.iter().for_each(|mem| mem.write().flushed = true)
-    } else {
         error!("Failed recv summary call back, may case inconsistency of data temporarily");
-        all_mems.iter().for_each(|mem| mem.write().flushed = true)
     }
 
     Ok(())

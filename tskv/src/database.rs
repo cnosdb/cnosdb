@@ -180,7 +180,7 @@ impl Database {
         self.ts_families.insert(tsf_id, tf.clone());
 
         let (task_state_sender, _task_state_receiver) = oneshot::channel();
-        let task = SummaryTask::new(version_edits, file_metas, task_state_sender);
+        let task = SummaryTask::new(version_edits, file_metas, None, task_state_sender);
         if let Err(e) = summary_task_sender.send(task).await {
             error!("failed to send Summary task, {:?}", e);
         }
@@ -195,7 +195,7 @@ impl Database {
 
         let edits = vec![VersionEdit::new_del_vnode(tf_id)];
         let (task_state_sender, _task_state_receiver) = oneshot::channel();
-        let task = SummaryTask::new(edits, None, task_state_sender);
+        let task = SummaryTask::new(edits, None, None, task_state_sender);
         if let Err(e) = summary_task_sender.send(task).await {
             error!("failed to send Summary task, {:?}", e);
         }

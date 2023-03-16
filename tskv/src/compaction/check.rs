@@ -851,55 +851,62 @@ mod test {
             TableColumn::new(5, BOOL_COL_NAME.to_string(), ColumnType::Field(ValueType::Boolean), Default::default()),
         ];
 
-        let rt = Arc::new(
-            runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap(),
-        );
-
         let mut config = config::get_config_for_test();
         config.storage.path = base_dir;
         config.wal.path = wal_dir;
         config.wal.sync = true;
         config.log.path = log_dir;
         let opt = Options::from(&config);
-        let meta: MetaRef = rt.block_on(RemoteMetaManager::new(config.cluster));
-        rt.block_on(meta.admin_meta().add_data_node()).unwrap();
-        let _ = rt.block_on(
-            meta.tenant_manager()
-                .create_tenant(tenant_name.clone(), TenantOptions::default()),
+
+        let rt = Arc::new(
+            runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap(),
         );
-        let meta_client = rt
-            .block_on(meta.tenant_manager().tenant_meta(&tenant_name))
-            .unwrap();
-        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let engine = rt
-            .block_on(TsKv::open(
+        let (meta, meta_client) = rt.block_on(async {
+            let meta: MetaRef = RemoteMetaManager::new(config.cluster).await;
+            meta.admin_meta().add_data_node().await.unwrap();
+            let _ = meta
+                .tenant_manager()
+                .create_tenant(tenant_name.clone(), TenantOptions::default())
+                .await;
+            let meta_client = meta
+                .tenant_manager()
+                .tenant_meta(&tenant_name)
+                .await
+                .unwrap();
+            let _ = meta_client.drop_db(&database_name).await;
+
+            (meta, meta_client)
+        });
+
+        let engine = rt.block_on(async {
+            let engine = TsKv::open(
                 meta,
                 opt,
                 rt.clone(),
-                memory_pool,
+                Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024)),
                 Arc::new(MetricsRegister::default()),
-            ))
+            )
+            .await
             .unwrap();
+            let _ = engine.drop_database(&tenant_name, &database_name).await;
+            engine
+        });
 
         // Create database and ts_family
-        {
+        rt.block_on(async {
             let mut database_schema = DatabaseSchema::new(&tenant_name, &database_name);
             database_schema
                 .config
                 .with_ttl(DatabaseOptions::DEFAULT_TTL);
-            if let Err(e) = rt.block_on(meta_client.drop_db(&database_name)) {
-                println!(
-                    "Repair: failed to drop database '{}': {:?}",
-                    &database_name, e
-                );
-            }
-            rt.block_on(meta_client.create_db(database_schema.clone()))
+            meta_client
+                .create_db(database_schema.clone())
+                .await
                 .unwrap();
-            rt.block_on(
-                meta_client.create_table(&TableSchema::TsKvTableSchema(
+            meta_client
+                .create_table(&TableSchema::TsKvTableSchema(
                     TskvTableSchema::new(
                         tenant_name.clone(),
                         database_name.clone(),
@@ -907,43 +914,47 @@ mod test {
                         columns,
                     )
                     .into(),
-                )),
-            )
-            .unwrap();
-
-            //rt.block_on(meta_client.drop_db(&database_name)).unwrap();
-            let _ = rt.block_on(engine.drop_database(&tenant_name, &database_name));
-            let database = rt
-                .block_on(engine.get_db_or_else_create(&tenant_name, &database_name))
+                ))
+                .await
                 .unwrap();
-            let mut db = rt.block_on(database.write());
-            let ts_family = rt.block_on(db.add_tsfamily(
-                ts_family_id,
-                1,
-                None,
-                engine.summary_task_sender(),
-                engine.flush_task_sender(),
-                engine.compact_task_sender(),
-            ));
-            let tsf_r = rt.block_on(ts_family.read());
-            assert_eq!(1, tsf_r.tf_id());
-        }
+            let db = engine
+                .get_db_or_else_create(&tenant_name, &database_name)
+                .await
+                .unwrap();
+            let mut db = db.write().await;
+            let tsf = db
+                .add_tsfamily(
+                    ts_family_id,
+                    1,
+                    None,
+                    engine.summary_task_sender(),
+                    engine.flush_task_sender(),
+                    engine.compact_task_sender(),
+                )
+                .await;
+            let tsf = tsf.read().await;
+            assert_eq!(1, tsf.tf_id());
+        });
 
-        // Get created database and ts_family
-        let database_ref = rt
-            .block_on(engine.get_db(&tenant_name, &database_name))
-            .unwrap_or_else(|e| panic!("created database '{}' exists: {:?}", &database_name, e));
-        let schemas = rt.block_on(database_ref.read()).get_schemas();
-        let time_range_nanosec = get_default_time_range(schemas).unwrap();
-        let ts_family_ref = rt
-            .block_on(database_ref.read())
-            .get_tsfamily(ts_family_id)
-            .unwrap_or_else(|| {
-                panic!("created ts_family '{}' exists", ts_family_id);
-            });
+        rt.block_on(async {
+            // Get created database and ts_family
+            let database_ref = engine
+                .get_db(&tenant_name, &database_name)
+                .await
+                .unwrap_or_else(|e| {
+                    panic!("created database '{}' exists: {:?}", &database_name, e)
+                });
+            let schemas = database_ref.read().await.get_schemas();
+            let time_range_nanosec = get_default_time_range(schemas).unwrap();
+            let ts_family_ref = database_ref
+                .read()
+                .await
+                .get_tsfamily(ts_family_id)
+                .unwrap_or_else(|| {
+                    panic!("created ts_family '{}' not exist", ts_family_id);
+                });
 
-        // Write data to database and ts_family
-        {
+            // Write data to database and ts_family
             let mut timestamps: Vec<Timestamp> = Vec::new();
             let mut fields: Vec<Vec<(&str, Vec<u8>)>> = Vec::new();
             create_write_batch_args(&data_blocks, &mut timestamps, &mut fields);
@@ -956,47 +967,42 @@ mod test {
             );
             let points = flatbuffers::root::<fb_models::Points>(&write_batch.points).unwrap();
             models_helper::print_points(points);
-            rt.block_on(engine.write(ts_family_id, write_batch))
-                .unwrap();
+            engine.write(ts_family_id, write_batch).await.unwrap();
 
-            let mut ts_family_wlock = rt.block_on(ts_family_ref.write());
+            let mut ts_family_wlock = ts_family_ref.write().await;
             ts_family_wlock.switch_to_immutable();
-            let immut_cache_ref = ts_family_wlock
-                .super_version()
-                .caches
-                .immut_cache
-                .first()
-                .expect("translated immutable memory cache exist")
-                .clone();
-            rt.block_on(ts_family_wlock.wrap_flush_req(true));
+            ts_family_wlock.wrap_flush_req(true).await;
             drop(ts_family_wlock);
 
             let mut check_num = 0;
             loop {
-                rt.block_on(async {
-                    tokio::time::sleep(sec_1).await;
-                });
-                if immut_cache_ref.read().flushed {
-                    drop(immut_cache_ref);
+                tokio::time::sleep(sec_1).await;
+                // If flushing is finished, the newest super_version contains no immut_cache.
+                if ts_family_ref
+                    .read()
+                    .await
+                    .super_version()
+                    .caches
+                    .immut_cache
+                    .is_empty()
+                {
                     break;
                 }
                 check_num += 1;
                 if check_num >= 10 {
-                    println!("Repair: warn: flushing takes more than 10 seconds.");
+                    println!(
+                        "Repair: warn: flushing takes more than {} seconds.",
+                        check_num
+                    );
                 }
             }
-        }
 
-        // Get hash values and check them.
-        {
-            let trees = rt
-                .block_on(async {
-                    database_ref
-                        .read()
-                        .await
-                        .get_ts_family_hash_tree(ts_family_id)
-                        .await
-                })
+            // Get hash values and check them.
+            let trees = database_ref
+                .read()
+                .await
+                .get_ts_family_hash_tree(ts_family_id)
+                .await
                 .unwrap();
             assert_eq!(trees.len(), 1);
             assert_eq!(trees[0].table, table_name);
@@ -1031,8 +1037,8 @@ mod test {
                     _ => {}
                 }
             }
-        }
 
-        rt.block_on(engine.close());
+            engine.close().await;
+        });
     }
 }
