@@ -5530,6 +5530,7 @@ version = "2.2.0"
 dependencies = [
  "async-trait",
  "bytes 1.4.0",
+ "config",
  "coordinator",
  "datafusion",
  "derive_builder",

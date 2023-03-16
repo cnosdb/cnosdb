@@ -2,6 +2,7 @@ use std::io::Write;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use config::TenantLimiterConfig;
 use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
@@ -18,13 +19,13 @@ use datafusion::prelude::{col, Expr};
 use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SqlOption};
 use datafusion::sql::sqlparser::parser::ParserError;
 use lazy_static::lazy_static;
-use models::auth::privilege::{DatabasePrivilege, Privilege};
+use models::auth::privilege::{DatabasePrivilege, GlobalPrivilege, Privilege};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserOptions, UserOptionsBuilder};
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use models::object_reference::ResolvedTable;
-use models::oid::Oid;
-use models::schema::{DatabaseOptions, TableColumn, TenantOptions, TenantOptionsBuilder};
+use models::oid::{Identifier, Oid};
+use models::schema::{DatabaseOptions, TableColumn, Tenant, TenantOptions, TenantOptionsBuilder};
 use snafu::ResultExt;
 use tempfile::NamedTempFile;
 
@@ -269,6 +270,76 @@ pub struct CreateTenant {
     pub options: TenantOptions,
 }
 
+pub fn unset_option_to_alter_tenant_action(
+    tenant: Tenant,
+    ident: Ident,
+) -> Result<(AlterTenantAction, Privilege<Oid>)> {
+    let tenant_id = *tenant.id();
+    let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.to_own_options());
+
+    let privilege = match normalize_ident(&ident).as_str() {
+        "comment" => {
+            tenant_options_builder.unset_comment();
+            Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
+        }
+        "_limiter" => {
+            tenant_options_builder.unset_limiter_config();
+            Privilege::Global(GlobalPrivilege::System)
+        }
+        _ => {
+            return Err(QueryError::Parser {
+                source: ParserError::ParserError(format!(
+                    "Expected option [comment], [limiter] found [{}]",
+                    ident
+                )),
+            })
+        }
+    };
+    let tenant_options = tenant_options_builder.build()?;
+
+    Ok((
+        AlterTenantAction::SetOption(Box::new(tenant_options)),
+        privilege,
+    ))
+}
+
+pub fn sql_option_to_alter_tenant_action(
+    tenant: Tenant,
+    option: SqlOption,
+) -> std::result::Result<(AlterTenantAction, Privilege<Oid>), QueryError> {
+    let SqlOption { name, value } = option;
+    let tenant_id = *tenant.id();
+    let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.to_own_options());
+
+    let privilege = match normalize_ident(&name).as_str() {
+        "comment" => {
+            let value = parse_string_value(value)?;
+            tenant_options_builder.comment(value);
+            Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
+        }
+        "_limiter" => {
+            let config =
+                serde_json::from_str::<TenantLimiterConfig>(parse_string_value(value)?.as_str())
+                    .map_err(|_| ParserError::ParserError("limiter format error".to_string()))?;
+            tenant_options_builder.limiter_config(config);
+            Privilege::Global(GlobalPrivilege::System)
+        }
+        _ => {
+            return Err(QueryError::Parser {
+                source: ParserError::ParserError(format!(
+                    "Expected option [comment], [limiter] found [{}]",
+                    name
+                )),
+            })
+        }
+    };
+    let tenant_options = tenant_options_builder.build()?;
+    Ok((
+        AlterTenantAction::SetOption(Box::new(tenant_options)),
+        privilege,
+    ))
+}
+
 pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> Result<TenantOptions> {
     let mut builder = TenantOptionsBuilder::default();
 
@@ -277,13 +348,18 @@ pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> Result<TenantOp
             "comment" => {
                 builder.comment(parse_string_value(value).context(ParserSnafu)?);
             }
+            "_limiter" => {
+                let config = serde_json::from_str::<TenantLimiterConfig>(
+                    parse_string_value(value).context(ParserSnafu)?.as_str(),
+                )?;
+                builder.limiter_config(config);
+            }
             _ => {
-                return Err(QueryError::Semantic {
-                    err: ParserError::ParserError(format!(
-                        "Expected option [comment], found [{}]",
+                return Err(QueryError::Parser {
+                    source: ParserError::ParserError(format!(
+                        "Expected option [comment], [limiter] found [{}]",
                         name
-                    ))
-                    .to_string(),
+                    )),
                 })
             }
         }
@@ -389,7 +465,7 @@ pub enum AlterTenantAction {
     AddUser(AlterTenantAddUser),
     SetUser(AlterTenantSetUser),
     RemoveUser(Oid),
-    Set(Box<TenantOptions>),
+    SetOption(Box<TenantOptions>),
 }
 
 #[derive(Debug, Clone)]

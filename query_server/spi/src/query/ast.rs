@@ -168,6 +168,7 @@ pub enum AlterTenantOperation {
     SetUser(Ident, Ident),
     RemoveUser(Ident),
     Set(SqlOption),
+    UnSet(Ident),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

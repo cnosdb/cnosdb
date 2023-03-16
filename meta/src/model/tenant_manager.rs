@@ -118,10 +118,11 @@ impl TenantManager for RemoteTenantManager {
         name: String,
         options: TenantOptions,
     ) -> MetaResult<MetaClientRef> {
-        let _limiter = self.new_limiter(&self.cluster_name, &name, &options);
-        let req = command::WriteCommand::CreateTenant(self.cluster_name.clone(), name, options);
+        let limiter = self.new_limiter(&self.cluster_name, &name, &options);
+        let req =
+            command::WriteCommand::CreateTenant(self.cluster_name.clone(), name.clone(), options);
 
-        match self
+        let meta_client = match self
             .client
             .write::<command::CommonResp<Tenant>>(&req)
             .await?
@@ -135,7 +136,12 @@ impl TenantManager for RemoteTenantManager {
                     Err(MetaError::CommonError { msg: status.msg })
                 }
             }
-        }
+        };
+        self.limiters
+            .write()
+            .await
+            .insert(name.to_string(), limiter);
+        Ok(meta_client?)
     }
 
     async fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>> {
@@ -171,7 +177,7 @@ impl TenantManager for RemoteTenantManager {
     }
 
     async fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
-        let _limiter = self.new_limiter(&self.cluster_name, name, &options);
+        let limiter = self.new_limiter(&self.cluster_name, name, &options);
 
         let req = command::WriteCommand::AlterTenant(
             self.cluster_name.clone(),
@@ -179,21 +185,30 @@ impl TenantManager for RemoteTenantManager {
             options,
         );
 
-        match self
+        let tenant_meta = match self
             .client
             .write::<command::CommonResp<Tenant>>(&req)
             .await?
         {
-            command::CommonResp::Ok(data) => self.create_tenant_meta(data).await.map(|_| ()),
+            command::CommonResp::Ok(data) => self.create_tenant_meta(data).await?,
             command::CommonResp::Err(status) => {
                 // TODO improve response
-                if status.code == META_REQUEST_TENANT_NOT_FOUND {
+                return if status.code == META_REQUEST_TENANT_NOT_FOUND {
                     Err(MetaError::TenantNotFound { tenant: status.msg })
                 } else {
                     Err(MetaError::CommonError { msg: status.msg })
-                }
+                };
             }
-        }
+        };
+        self.limiters
+            .write()
+            .await
+            .insert(name.to_string(), limiter);
+        self.tenants
+            .write()
+            .await
+            .insert(name.to_string(), tenant_meta);
+        Ok(())
     }
 
     async fn drop_tenant(&self, name: &str) -> MetaResult<bool> {

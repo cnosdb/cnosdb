@@ -801,6 +801,10 @@ impl Tenant {
     pub fn options(&self) -> &TenantOptions {
         &self.options
     }
+
+    pub fn to_own_options(self) -> TenantOptions {
+        self.options
+    }
 }
 
 #[derive(Debug, Default, Clone, Builder, Serialize, Deserialize)]
@@ -810,11 +814,29 @@ pub struct TenantOptions {
     pub limiter_config: Option<TenantLimiterConfig>,
 }
 
-impl TenantOptions {
-    pub fn set_limiter(&mut self, limiter_config: Option<TenantLimiterConfig>) {
-        self.limiter_config = limiter_config;
+impl From<TenantOptions> for TenantOptionsBuilder {
+    fn from(value: TenantOptions) -> Self {
+        let mut builder = TenantOptionsBuilder::default();
+        if let Some(comment) = value.comment {
+            builder.comment(comment);
+        }
+        if let Some(config) = value.limiter_config {
+            builder.limiter_config(config);
+        }
+        builder
     }
+}
 
+impl TenantOptionsBuilder {
+    pub fn unset_comment(&mut self) {
+        self.comment = None
+    }
+    pub fn unset_limiter_config(&mut self) {
+        self.limiter_config = None
+    }
+}
+
+impl TenantOptions {
     pub fn object_config(&self) -> Option<&TenantObjectLimiterConfig> {
         match self.limiter_config {
             Some(ref limit_config) => limit_config.object_config.as_ref(),
