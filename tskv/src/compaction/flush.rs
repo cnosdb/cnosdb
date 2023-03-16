@@ -406,9 +406,7 @@ pub async fn run_flush_memtable_job(
             tsf.read().await.update_last_modfied().await;
 
             if let Some(sender) = compact_task_sender.as_ref() {
-                if let Err(e) = sender.send(CompactTask::Vnode(*tsf_id)).await {
-                    warn!("failed to send compact task({}), {}", tsf_id, e);
-                }
+                let _ = sender.send(CompactTask::Vnode(*tsf_id)).await;
             }
         }
     }

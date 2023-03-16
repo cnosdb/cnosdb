@@ -206,6 +206,7 @@ impl TsKv {
                 .await;
             let send_ret = cb.send(ret);
             if let Err(e) = send_ret {
+                // WAL job closed, leaving this write request.
                 warn!("send WAL write result failed: {:?}", e);
             }
         }
