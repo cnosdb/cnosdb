@@ -67,9 +67,6 @@ enum CnosKeyWord {
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     WRITE,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
-    ALL,
-
-    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     REMOVE,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     SERIES,
@@ -94,9 +91,6 @@ enum CnosKeyWord {
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     CHECKSUM,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
-    GROUP,
-
-    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     STREAM,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     STREAMS,
@@ -113,7 +107,7 @@ enum CnosKeyWord {
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     APPEND,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
-    UPDATE,
+    UNSET,
 }
 
 impl FromStr for CnosKeyWord {
@@ -135,7 +129,6 @@ impl FromStr for CnosKeyWord {
             "INHERIT" => Ok(CnosKeyWord::INHERIT),
             "READ" => Ok(CnosKeyWord::READ),
             "WRITE" => Ok(CnosKeyWord::WRITE),
-            "ALL" => Ok(CnosKeyWord::ALL),
             "REMOVE" => Ok(CnosKeyWord::REMOVE),
             "SERIES" => Ok(CnosKeyWord::SERIES),
             "FILES" => Ok(CnosKeyWord::FILES),
@@ -147,7 +140,6 @@ impl FromStr for CnosKeyWord {
             "MOVE" => Ok(CnosKeyWord::MOVE),
             "COMPACT" => Ok(CnosKeyWord::COMPACT),
             "CHECKSUM" => Ok(CnosKeyWord::CHECKSUM),
-            "GROUP" => Ok(CnosKeyWord::GROUP),
             "STREAM" => Ok(CnosKeyWord::STREAM),
             "STREAMS" => Ok(CnosKeyWord::STREAMS),
             "TRIGGER" => Ok(CnosKeyWord::TRIGGER),
@@ -156,7 +148,7 @@ impl FromStr for CnosKeyWord {
             "ONCE" => Ok(CnosKeyWord::ONCE),
             "COMPLETE" => Ok(CnosKeyWord::COMPLETE),
             "APPEND" => Ok(CnosKeyWord::APPEND),
-            "UPDATE" => Ok(CnosKeyWord::UPDATE),
+            "UNSET" => Ok(CnosKeyWord::UNSET),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
                 s
@@ -643,8 +635,11 @@ impl<'a> ExtParser<'a> {
                 let sql_option = self.parser.parse_sql_option()?;
                 AlterTenantOperation::Set(sql_option)
             }
+        } else if self.parse_cnos_keyword(CnosKeyWord::UNSET) {
+            let ident = self.parser.parse_identifier()?;
+            AlterTenantOperation::UnSet(ident)
         } else {
-            self.expected("ADD,REMOVE,SET", self.parser.peek_token())?
+            self.expected("ADD, REMOVE, SET, UNSET", self.parser.peek_token())?
         };
 
         Ok(ExtStatement::AlterTenant(AlterTenant { name, operation }))
@@ -838,7 +833,7 @@ impl<'a> ExtParser<'a> {
             Ok(Action::Read)
         } else if self.parse_cnos_keyword(CnosKeyWord::WRITE) {
             Ok(Action::Write)
-        } else if self.parse_cnos_keyword(CnosKeyWord::ALL) {
+        } else if self.parser.parse_keyword(Keyword::ALL) {
             Ok(Action::All)
         } else {
             self.expected(
@@ -986,7 +981,7 @@ impl<'a> ExtParser<'a> {
                     OutputMode::Complete
                 } else if self.parse_cnos_keyword(CnosKeyWord::APPEND) {
                     OutputMode::Append
-                } else if self.parse_cnos_keyword(CnosKeyWord::UPDATE) {
+                } else if self.parser.parse_keyword(Keyword::UPDATE) {
                     OutputMode::Update
                 } else {
                     return self.expected(
@@ -1299,7 +1294,7 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_checksum(&mut self) -> Result<ExtStatement> {
-        if self.parse_cnos_keyword(CnosKeyWord::GROUP) {
+        if self.parser.parse_keyword(Keyword::GROUP) {
             let replication_set_id = self.parse_number::<ReplicationSetId>()?;
             Ok(ExtStatement::ChecksumGroup(ChecksumGroup {
                 replication_set_id,

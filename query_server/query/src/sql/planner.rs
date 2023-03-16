@@ -52,7 +52,7 @@ use models::auth::user::User;
 use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
 use models::schema::{
-    ColumnType, DatabaseOptions, Duration, Precision, TableColumn, TableSourceAdapter,
+    ColumnType, DatabaseOptions, Duration, Precision, TableColumn, TableSourceAdapter, Tenant,
     TskvTableSchema, TskvTableSchemaRef,
 };
 use models::utils::SeqIdGenerator;
@@ -71,14 +71,15 @@ use spi::query::ast::{
 };
 use spi::query::datasource::{self, UriSchema};
 use spi::query::logical_planner::{
-    parse_connection_options, sql_options_to_tenant_options, sql_options_to_user_options,
-    AlterDatabase, AlterTable, AlterTableAction, AlterTenant, AlterTenantAction,
-    AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction, ChecksumGroup,
-    CompactVnode, CopyOptions, CopyOptionsBuilder, CopyVnode, CreateDatabase, CreateRole,
-    CreateTable, CreateTenant, CreateUser, DDLPlan, DatabaseObjectType, DescribeDatabase,
-    DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode,
-    FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType, GrantRevoke, LogicalPlanner,
-    MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan, TenantObjectType,
+    parse_connection_options, sql_option_to_alter_tenant_action, sql_options_to_tenant_options,
+    sql_options_to_user_options, unset_option_to_alter_tenant_action, AlterDatabase, AlterTable,
+    AlterTableAction, AlterTenant, AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser,
+    AlterUser, AlterUserAction, ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder,
+    CopyVnode, CreateDatabase, CreateRole, CreateTable, CreateTenant, CreateUser, DDLPlan,
+    DatabaseObjectType, DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject,
+    DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
+    GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan,
+    TenantObjectType,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -1179,8 +1180,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
 
     async fn construct_alter_tenant_action_with_privilege(
         &self,
+        tenant: Tenant,
         operation: AlterTenantOperation,
-        tenant_id: Oid,
     ) -> Result<(AlterTenantAction, Privilege<Oid>)> {
         let alter_tenant_action_with_privileges = match operation {
             AlterTenantOperation::AddUser(ref user, ref role) => {
@@ -1188,7 +1189,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 // role: TenantRole<Oid>,
                 // tenant_id: Oid,
                 let privilege =
-                    Privilege::TenantObject(TenantObjectPrivilege::MemberFull, Some(tenant_id));
+                    Privilege::TenantObject(TenantObjectPrivilege::MemberFull, Some(*tenant.id()));
 
                 let user_name = normalize_ident(user);
                 // 查询用户信息，不存在直接报错咯
@@ -1215,7 +1216,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 // role: TenantRole<Oid>,
                 // tenant_id: Oid,
                 let privilege =
-                    Privilege::TenantObject(TenantObjectPrivilege::MemberFull, Some(tenant_id));
+                    Privilege::TenantObject(TenantObjectPrivilege::MemberFull, Some(*tenant.id()));
 
                 let user_name = normalize_ident(user);
                 // 查询用户信息，不存在直接报错咯
@@ -1241,7 +1242,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 // user_id: Oid,
                 // tenant_id: Oid
                 let privilege =
-                    Privilege::TenantObject(TenantObjectPrivilege::MemberFull, Some(tenant_id));
+                    Privilege::TenantObject(TenantObjectPrivilege::MemberFull, Some(*tenant.id()));
 
                 let user_name = normalize_ident(user);
                 // 查询用户信息，不存在直接报错咯
@@ -1255,12 +1256,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 (AlterTenantAction::RemoveUser(user_id), privilege)
             }
             AlterTenantOperation::Set(sql_option) => {
-                // tenant_id: Oid
-                let privilege = Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)));
-
-                let tenant_options = sql_options_to_tenant_options(vec![sql_option])?;
-
-                (AlterTenantAction::Set(Box::new(tenant_options)), privilege)
+                sql_option_to_alter_tenant_action(tenant, sql_option)?
+            }
+            AlterTenantOperation::UnSet(ident) => {
+                unset_option_to_alter_tenant_action(tenant, ident)?
             }
         };
 
@@ -1282,7 +1281,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         let tenant = self.schema_provider.get_tenant(&tenant_name).await?;
 
         let (alter_tenant_action, privilege) = self
-            .construct_alter_tenant_action_with_privilege(operation, *tenant.id())
+            .construct_alter_tenant_action_with_privilege(tenant, operation)
             .await?;
 
         let plan = Plan::DDL(DDLPlan::AlterTenant(AlterTenant {

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
-use models::schema::DatabaseSchema;
+use models::schema::{DatabaseSchema, DEFAULT_CATALOG};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateTenant;
 use spi::Result;
@@ -48,10 +48,11 @@ impl DDLDefinitionTask for CreateTenantTask {
                 let meta_client = tenant_manager
                     .create_tenant(name.to_string(), options.clone())
                     .await?;
-                meta_client
-                    .create_db(DatabaseSchema::new(name, USAGE_SCHEMA))
-                    .await?;
-
+                if name.eq(DEFAULT_CATALOG) {
+                    meta_client
+                        .create_db(DatabaseSchema::new(name, USAGE_SCHEMA))
+                        .await?;
+                }
                 Ok(Output::Nil(()))
             }
         }

@@ -11,7 +11,7 @@ use models::auth::AuthError;
 use models::codec::Encoding;
 use models::define_result;
 use models::error_code::ErrorCode;
-use models::schema::TIME_FIELD_NAME;
+use models::schema::{TenantOptionsBuilderError, TIME_FIELD_NAME};
 use snafu::Snafu;
 
 use crate::service::protocol::QueryId;
@@ -409,6 +409,12 @@ pub enum QueryError {
     DatabaseNotFound {
         name: String,
     },
+
+    #[snafu(display("TenantOptions build fail: {} ", source))]
+    #[error_code(code = 60)]
+    TenantOptionsBuildFail {
+        source: TenantOptionsBuilderError,
+    },
 }
 
 impl From<ParserError> for QueryError {
@@ -526,6 +532,12 @@ impl From<serde_json::Error> for QueryError {
 impl From<snap::Error> for QueryError {
     fn from(source: snap::Error) -> Self {
         QueryError::SnappyError { source }
+    }
+}
+
+impl From<TenantOptionsBuilderError> for QueryError {
+    fn from(value: TenantOptionsBuilderError) -> Self {
+        QueryError::TenantOptionsBuildFail { source: value }
     }
 }
 

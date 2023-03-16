@@ -44,6 +44,34 @@
 tenant_name,tenant_options
 test_ts_tenant1,"{""comment"":null,""limiter_config"":null}"
 
+-- EXECUTE SQL: alter tenant test_ts_tenant1 set comment = 'hello world'; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_ts_tenant1 set _limiter = '{"object_config":{"max_users_number":1,"max_databases":3,"max_shard_number":2,"max_replicate_number":2,"max_retention_time":30},"request_config":{"data_in":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"data_out":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"queries":null,"writes":null}}'; --
+200 OK
+
+
+-- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
+-- AFTER_SORT --
+200 OK
+tenant_name,tenant_options
+test_ts_tenant1,"{""comment"":""hello world"",""limiter_config"":{""object_config"":{""max_users_number"":1,""max_databases"":3,""max_shard_number"":2,""max_replicate_number"":2,""max_retention_time"":30},""request_config"":{""data_in"":{""remote_bucket"":{""max"":100,""initial"":0,""refill"":100,""interval"":100},""local_bucket"":{""max"":100,""initial"":0}},""data_out"":{""remote_bucket"":{""max"":100,""initial"":0,""refill"":100,""interval"":100},""local_bucket"":{""max"":100,""initial"":0}},""queries"":null,""writes"":null}}}"
+
+-- EXECUTE SQL: alter tenant test_ts_tenant1 unset comment; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_ts_tenant1 unset _limiter; --
+200 OK
+
+
+-- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
+-- AFTER_SORT --
+200 OK
+tenant_name,tenant_options
+test_ts_tenant1,"{""comment"":null,""limiter_config"":null}"
+
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 -- AFTER_SORT --
 200 OK
@@ -71,4 +99,3 @@ test_ts_tenant1,"{""comment"":null,""limiter_config"":null}"
 422 Unprocessable Entity
 {"error_code":"030017","error_message":"Database not found: \"cluster_schema\""}
 -- ERROR:  --
-

@@ -11,6 +11,7 @@ meta = { path = "../../meta" }
 coordinator = { path = "../../coordinator" }
 tskv = {path = "../../tskv"}
 protos = {path = "../../common/protos"}
+config = {path = "../../config"}
 flatbuffers = {workspace = true }
 async-trait = { workspace = true }
 datafusion = { workspace = true }

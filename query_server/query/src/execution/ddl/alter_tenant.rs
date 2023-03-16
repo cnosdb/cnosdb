@@ -91,18 +91,9 @@ impl DDLDefinitionTask for AlterTenantTask {
                 meta.remove_member(*user_id).await?;
                 // .context(MetaSnafu)?;
             }
-            AlterTenantAction::Set(options) => {
-                // TODO 修改租户的信息
-                // tenant_id: Oid,
-                // options: TenantOptions
-                // fn alter_tenant(
-                //     &self,
-                //     tenant_id: Oid,
-                //     options: TenantOptions
-                // ) -> Result<()>;
-                debug!("Alter tenant {} with options [{}]", tenant_name, options);
+            AlterTenantAction::SetOption(tenant_option) => {
                 tenant_manager
-                    .alter_tenant(tenant_name, *options.clone())
+                    .alter_tenant(tenant_name, *tenant_option.clone())
                     .await?;
             }
         }
