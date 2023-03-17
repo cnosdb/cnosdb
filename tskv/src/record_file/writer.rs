@@ -112,7 +112,7 @@ impl Writer {
         Ok(written_size)
     }
 
-    pub async fn write_footer(&mut self, mut footer: [u8; FILE_FOOTER_LEN]) -> Result<()> {
+    pub async fn write_footer(&mut self, mut footer: [u8; FILE_FOOTER_LEN]) -> Result<usize> {
         self.sync().await?;
 
         // Get file crc
@@ -127,15 +127,14 @@ impl Writer {
 
         // Set file crc to footer
         footer[4..8].copy_from_slice(&crc.to_be_bytes());
+        self.footer = Some(footer);
 
         self.cursor
             .write(&footer)
             .await
             .context(error::WriteFileSnafu {
                 path: self.path.clone(),
-            })?;
-        self.footer = Some(footer);
-        Ok(())
+            })
     }
 
     pub fn footer(&self) -> Option<[u8; FILE_FOOTER_LEN]> {

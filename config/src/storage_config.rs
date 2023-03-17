@@ -10,31 +10,40 @@ use crate::codec::{bytes_num, duration};
 pub struct StorageConfig {
     #[serde(default = "StorageConfig::default_path")]
     pub path: String,
+
     #[serde(
         with = "bytes_num",
         default = "StorageConfig::default_max_summary_size"
     )]
     pub max_summary_size: u64,
+
     #[serde(with = "bytes_num", default = "StorageConfig::default_base_file_size")]
     pub base_file_size: u64,
+
     #[serde(default = "StorageConfig::default_flush_req_channel_cap")]
     pub flush_req_channel_cap: usize,
+
     #[serde(default = "StorageConfig::default_max_level")]
     pub max_level: u16,
+
     #[serde(default = "StorageConfig::default_compact_trigger_file_num")]
     pub compact_trigger_file_num: u32,
+
     #[serde(
         with = "duration",
         default = "StorageConfig::default_compact_trigger_cold_duration"
     )]
     pub compact_trigger_cold_duration: Duration,
+
     #[serde(
         with = "bytes_num",
         default = "StorageConfig::default_max_compact_size"
     )]
     pub max_compact_size: u64,
+
     #[serde(default = "StorageConfig::default_max_concurrent_compaction")]
     pub max_concurrent_compaction: u16,
+
     #[serde(default = "StorageConfig::default_strict_write")]
     pub strict_write: bool,
 }
@@ -65,7 +74,7 @@ impl StorageConfig {
     }
 
     fn default_compact_trigger_cold_duration() -> Duration {
-        Duration::from_secs(0)
+        Duration::from_secs(60 * 60)
     }
 
     fn default_max_compact_size() -> u64 {

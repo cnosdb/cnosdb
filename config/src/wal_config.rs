@@ -10,14 +10,25 @@ use crate::codec::{bytes_num, duration};
 pub struct WalConfig {
     #[serde(default = "WalConfig::default_enabled")]
     pub enabled: bool,
+
     #[serde(default = "WalConfig::default_path")]
     pub path: String,
-    #[serde(with = "bytes_num", default = "WalConfig::default_max_file_size")]
-    pub max_file_size: u64,
+
     #[serde(default = "WalConfig::default_wal_req_channel_cap")]
     pub wal_req_channel_cap: usize,
+
+    #[serde(with = "bytes_num", default = "WalConfig::default_max_file_size")]
+    pub max_file_size: u64,
+
+    #[serde(
+        with = "bytes_num",
+        default = "WalConfig::default_flush_trigger_total_file_size"
+    )]
+    pub flush_trigger_total_file_size: u64,
+
     #[serde(default = "WalConfig::default_sync")]
     pub sync: bool,
+
     #[serde(with = "duration", default = "WalConfig::default_sync_interval")]
     pub sync_interval: Duration,
 }
@@ -31,12 +42,16 @@ impl WalConfig {
         "data/wal".to_string()
     }
 
+    fn default_wal_req_channel_cap() -> usize {
+        64
+    }
+
     fn default_max_file_size() -> u64 {
         1024 * 1024 * 1024
     }
 
-    fn default_wal_req_channel_cap() -> usize {
-        64
+    fn default_flush_trigger_total_file_size() -> u64 {
+        2 * 1024 * 1024 * 1024
     }
 
     fn default_sync() -> bool {
@@ -73,8 +88,9 @@ impl Default for WalConfig {
         Self {
             enabled: Self::default_enabled(),
             path: Self::default_path(),
-            max_file_size: Self::default_max_file_size(),
             wal_req_channel_cap: Self::default_wal_req_channel_cap(),
+            max_file_size: Self::default_max_file_size(),
+            flush_trigger_total_file_size: Self::default_flush_trigger_total_file_size(),
             sync: Self::default_sync(),
             sync_interval: Self::default_sync_interval(),
         }

@@ -236,8 +236,11 @@ enabled = true
 # The directory where write ahead logs stored.
 path = 'data/wal'
 
+wal_req_channel_cap = 64
+
 # The maximum size of a wal file.
 max_file_size = "1G" # 1073741824
+flush_trigger_total_file_size = "2G"
 
 # If true, fsync will be called after every wal writes.
 sync = false

@@ -971,7 +971,7 @@ mod test {
 
             let mut ts_family_wlock = ts_family_ref.write().await;
             ts_family_wlock.switch_to_immutable();
-            ts_family_wlock.wrap_flush_req(true).await;
+            ts_family_wlock.send_flush_req(true).await;
             drop(ts_family_wlock);
 
             let mut check_num = 0;
