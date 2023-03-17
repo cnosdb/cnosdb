@@ -17,36 +17,34 @@ auth_enabled = false
 path = 'data/db'
 
 # The maximum file size of summary file.
-max_summary_size = "128M" # 134217728
+#max_summary_size = "128M" # 134,217,728 bytes
 
-# The maximum file size of a level is:
+# The maximum file size of a level is as follows:
 # $base_file_size * level * $compact_trigger_file_num
-base_file_size = "16M" # 16777216
+#base_file_size = "16M" # 16,777,216 bytes
 
-# The maxmimum flush request in memory
-flush_req_channel_cap = 16
+# The maxmimum amount of flush requests in memory
+#flush_req_channel_cap = 16
 
-# The maxmimum data file level (from 0 to 4).
-max_level = 4
+# The maxmimum level of a data file (from 0 to 4).
+#max_level = 4
 
 # Trigger of compaction using the number of level 0 files.
-compact_trigger_file_num = 4
+#compact_trigger_file_num = 4
 
 # Duration since last write to trigger compaction.
-compact_trigger_cold_duration = "1h"
+#compact_trigger_cold_duration = "1h"
 
 # The maximum size of all files in a compaction.
-max_compact_size = "2G" # 2147483648
+#max_compact_size = "2G" # 2,147,483,648 bytes
 
 # The maximum concurrent compactions.
-max_concurrent_compaction = 4
+#max_concurrent_compaction = 4
 
 # If true, write request will not be checked in detail.
 strict_write = false
 
 [wal]
-# The maxmimum wal request in memory
-wal_req_channel_cap = 64
 
 # If true, write requets on disk before writing to memory.
 enabled = true
@@ -54,16 +52,27 @@ enabled = true
 # The directory where write ahead logs stored.
 path = 'data/wal'
 
-# The maximum size of a wal file.
-max_file_size = "1G" # 1073741824
+# The maxmimum amount of write request in memory.
+#wal_req_channel_cap = 64
 
-# If true, fsync will be called after every wal writes.
-sync = false
-sync_interval = "0" # h, m, s
+# The maximum size of a WAL.
+#max_file_size = "1G" # 1,073,741,824 bytes
+
+# Trigger all vnode flushing if size of WALs exceeds this value.
+#flush_trigger_total_file_size = "2G" # 2,147,483,648 bytes
+
+# If true, fsync will be called after every WAL writes.
+#sync = false
+
+# Interval for automatic WAL fsync.
+#sync_interval = "0" # h, m, s
 
 [cache]
-max_buffer_size = "128M" # 134217728
-max_immutable_number = 4
+# The maximum size of a mutable cache.
+#max_buffer_size = "128M" # 134,217,728 bytes
+
+# The maximum amount of immutable caches.
+#max_immutable_number = 4
 
 [log]
 level = 'info'
@@ -82,6 +91,7 @@ meta_service_addr = '127.0.0.1:21001'
 http_listen_addr = '127.0.0.1:31007'
 grpc_listen_addr = '127.0.0.1:31008'
 flight_rpc_listen_addr = '127.0.0.1:31006'
+
 # Whether to store metrics to the CnosDB
 store_metrics = true
 

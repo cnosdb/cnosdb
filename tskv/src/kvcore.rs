@@ -211,9 +211,18 @@ impl TsKv {
             }
         }
 
-        async fn on_tick(wal_manager: &WalManager) {
+        async fn on_tick_sync(wal_manager: &WalManager) {
             if let Err(e) = wal_manager.sync().await {
                 error!("Failed flushing WAL file: {:?}", e);
+            }
+        }
+
+        async fn on_tick_check_total_size(
+            version_set: Arc<RwLock<VersionSet>>,
+            wal_manager: &WalManager,
+        ) {
+            if wal_manager.is_total_file_size_exceed() {
+                version_set.read().await.send_flush_req().await;
             }
         }
 
@@ -226,11 +235,13 @@ impl TsKv {
         }
 
         info!("Job 'WAL' starting.");
+        let version_set = self.version_set.clone();
         let mut close_receiver = self.close_sender.subscribe();
         self.runtime.spawn(async move {
             info!("Job 'WAL' started.");
 
             let sync_interval = wal_manager.sync_interval();
+            let mut check_total_size_ticker = tokio::time::interval(Duration::from_secs(10));
             if sync_interval == Duration::ZERO {
                 loop {
                     tokio::select! {
@@ -240,14 +251,17 @@ impl TsKv {
                                 _ => break
                             }
                         }
-                        _close_task = close_receiver.recv() => {
+                        _ = check_total_size_ticker.tick() => {
+                            on_tick_check_total_size(version_set.clone(), &wal_manager).await;
+                        }
+                        _ = close_receiver.recv() => {
                             on_cancel(wal_manager).await;
                             break;
                         }
                     }
                 }
             } else {
-                let mut ticker = tokio::time::interval(sync_interval);
+                let mut sync_ticker = tokio::time::interval(sync_interval);
                 loop {
                     tokio::select! {
                         wal_task = receiver.recv() => {
@@ -256,10 +270,13 @@ impl TsKv {
                                 _ => break
                             }
                         }
-                        _ = ticker.tick() => {
-                            on_tick(&wal_manager).await;
+                        _ = sync_ticker.tick() => {
+                            on_tick_sync(&wal_manager).await;
                         }
-                        _close_task = close_receiver.recv() => {
+                        _ = check_total_size_ticker.tick() => {
+                            on_tick_check_total_size(version_set.clone(), &wal_manager).await;
+                        }
+                        _ = close_receiver.recv() => {
                             on_cancel(wal_manager).await;
                             break;
                         }

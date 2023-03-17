@@ -378,7 +378,7 @@ pub async fn run_flush_memtable_job(
             // todo: build path by vnode data
             let (storage_opt, version, database) = {
                 let tsf_rlock = tsf.read().await;
-                tsf_rlock.update_last_modfied().await;
+                tsf_rlock.update_last_modified().await;
                 (
                     tsf_rlock.storage_opt(),
                     tsf_rlock.version(),
@@ -403,7 +403,7 @@ pub async fn run_flush_memtable_job(
                 .run(version, &mut version_edits, &mut file_metas)
                 .await?;
 
-            tsf.read().await.update_last_modfied().await;
+            tsf.read().await.update_last_modified().await;
 
             if let Some(sender) = compact_task_sender.as_ref() {
                 let _ = sender.send(CompactTask::Vnode(*tsf_id)).await;

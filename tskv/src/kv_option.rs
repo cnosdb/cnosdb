@@ -124,10 +124,11 @@ impl From<&Config> for QueryOptions {
 
 #[derive(Debug, Clone)]
 pub struct WalOptions {
-    pub wal_req_channel_cap: usize,
     pub enabled: bool,
     pub path: PathBuf,
+    pub wal_req_channel_cap: usize,
     pub max_file_size: u64,
+    pub flush_trigger_total_file_size: u64,
     pub sync: bool,
     pub sync_interval: Duration,
 }
@@ -139,6 +140,7 @@ impl From<&Config> for WalOptions {
             enabled: config.wal.enabled,
             path: PathBuf::from(config.wal.path.clone()),
             max_file_size: config.wal.max_file_size,
+            flush_trigger_total_file_size: config.wal.flush_trigger_total_file_size,
             sync: config.wal.sync,
             sync_interval: config.wal.sync_interval,
         }

@@ -418,10 +418,6 @@ impl Database {
         None
     }
 
-    pub fn tsf_num(&self) -> usize {
-        self.ts_families.len()
-    }
-
     pub fn ts_families(&self) -> &HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>> {
         &self.ts_families
     }
@@ -480,15 +476,6 @@ impl Database {
         self.schemas.clone()
     }
 
-    // todo: will delete in cluster version
-    pub fn get_tsfamily_random(&self) -> Option<Arc<RwLock<TseriesFamily>>> {
-        if let Some((_, v)) = self.ts_families.iter().next() {
-            return Some(v.clone());
-        }
-
-        None
-    }
-
     pub fn get_schema(&self) -> Result<DatabaseSchema> {
         Ok(self.schemas.db_schema()?)
     }
@@ -502,6 +489,13 @@ impl Database {
 
     pub fn owner(&self) -> Arc<String> {
         self.owner.clone()
+    }
+}
+
+#[cfg(test)]
+impl Database {
+    pub fn tsf_num(&self) -> usize {
+        self.ts_families.len()
     }
 }
 

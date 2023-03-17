@@ -773,14 +773,18 @@ impl TseriesFamily {
 
         // Mark these caches marked as `flushing` in current thread and collect them.
         filtered_caches.retain(|(_, c)| c.read().mark_flushing());
+        if filtered_caches.is_empty() {
+            return None;
+        }
 
         Some(FlushReq {
             mems: filtered_caches,
         })
     }
 
-    /// Try to build a `FlushReq`，if succeed, send it to flush job.
-    pub(crate) async fn wrap_flush_req(&mut self, force: bool) {
+    /// Try to build a `FlushReq` by immutable caches,
+    /// if succeed, send it to flush job.
+    pub(crate) async fn send_flush_req(&mut self, force: bool) {
         if let Some(req) = self.build_flush_req(force) {
             self.flush_task_sender
                 .send(req)
@@ -812,11 +816,11 @@ impl TseriesFamily {
             self.switch_to_immutable();
         }
         if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
-            self.wrap_flush_req(false).await;
+            self.send_flush_req(false).await;
         }
     }
 
-    pub async fn update_last_modfied(&self) {
+    pub async fn update_last_modified(&self) {
         *self.last_modified.write().await = Some(Instant::now());
     }
 
@@ -1456,8 +1460,11 @@ pub mod test_tseries_family {
 
             let version_set = version_set.write().await;
             let tsf = version_set
-                .get_tsfamily_by_name(&tenant, &database)
+                .get_database_tsfs(&tenant, &database)
                 .await
+                .unwrap()
+                .first()
+                .cloned()
                 .unwrap();
             let version = tsf.write().await.version();
             version.levels_info[1]

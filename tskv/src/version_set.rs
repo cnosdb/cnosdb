@@ -167,15 +167,6 @@ impl VersionSet {
         None
     }
 
-    pub async fn tsf_num(&self) -> usize {
-        let mut size = 0;
-        for db in self.dbs.values() {
-            size += db.read().await.tsf_num();
-        }
-
-        size
-    }
-
     pub async fn get_tsfamily_by_tf_id(&self, tf_id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
         for db in self.dbs.values() {
             if let Some(v) = db.read().await.get_tsfamily(tf_id) {
@@ -200,20 +191,6 @@ impl VersionSet {
         None
     }
 
-    // will delete in cluster version
-    pub async fn get_tsfamily_by_name(
-        &self,
-        tenant: &str,
-        database: &str,
-    ) -> Option<Arc<RwLock<TseriesFamily>>> {
-        let owner = make_owner(tenant, database);
-        if let Some(db) = self.dbs.get(&owner) {
-            return db.read().await.get_tsfamily_random();
-        }
-
-        None
-    }
-
     /// Snashots last version before `last_seq` of system state.
     ///
     /// Generated data is `VersionEdit`s for all vnodes and db-files,
@@ -225,13 +202,27 @@ impl VersionSet {
     ) -> (Vec<VersionEdit>, HashMap<ColumnFileId, Arc<BloomFilter>>) {
         let mut version_edits = vec![];
         let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
-        for (_name, db) in self.dbs.iter() {
+        for db in self.dbs.values() {
             db.read()
                 .await
                 .snapshot(last_seq, None, &mut version_edits, &mut file_metas)
                 .await;
         }
         (version_edits, file_metas)
+    }
+
+    /// Try to build and send `FlushReq`s to flush job for all ts_families.
+    pub async fn send_flush_req(&self) {
+        for db in self.dbs.values() {
+            for tsf in db.read().await.ts_families().values() {
+                let tsf_inner = tsf.clone();
+                self.runtime.spawn(async move {
+                    let mut tsf = tsf_inner.write().await;
+                    tsf.switch_to_immutable();
+                    tsf.send_flush_req(true).await;
+                });
+            }
+        }
     }
 
     /// **Please call this function after system recovered.**
@@ -250,5 +241,30 @@ impl VersionSet {
         }
 
         GlobalSequenceContext::new(min_seq, tsf_seq_map)
+    }
+}
+
+#[cfg(test)]
+impl VersionSet {
+    pub async fn tsf_num(&self) -> usize {
+        let mut size = 0;
+        for db in self.dbs.values() {
+            size += db.read().await.tsf_num();
+        }
+
+        size
+    }
+
+    pub async fn get_database_tsfs(
+        &self,
+        tenant: &str,
+        database: &str,
+    ) -> Option<Vec<Arc<RwLock<TseriesFamily>>>> {
+        let owner = make_owner(tenant, database);
+        if let Some(db) = self.dbs.get(&owner) {
+            return Some(db.read().await.ts_families().values().cloned().collect());
+        }
+
+        None
     }
 }

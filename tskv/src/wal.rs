@@ -224,14 +224,15 @@ impl WalWriter {
         self.inner.sync().await
     }
 
-    pub async fn close(mut self) -> Result<()> {
+    pub async fn close(mut self) -> Result<usize> {
         info!(
             "Closing wal with sequence: [{}, {})",
             self.min_sequence, self.max_sequence
         );
         let footer = build_footer(self.min_sequence, self.max_sequence);
-        self.inner.write_footer(footer).await?;
-        self.inner.close().await
+        let size = self.inner.write_footer(footer).await?;
+        self.inner.close().await?;
+        Ok(size)
     }
 }
 
@@ -240,6 +241,7 @@ pub struct WalManager {
     global_seq_ctx: Arc<GlobalSequenceContext>,
     current_dir: PathBuf,
     current_file: WalWriter,
+    total_file_size: u64,
     old_file_max_sequence: HashMap<u64, u64>,
 }
 
@@ -257,15 +259,23 @@ impl WalManager {
         }
         let base_path = config.path.to_path_buf();
 
+        let mut total_file_size = 0_u64;
         let mut old_file_max_sequence: HashMap<u64, u64> = HashMap::new();
         let file_names = file_manager::list_file_names(&config.path);
         for f in file_names {
-            match read_footer(base_path.join(&f)).await {
+            let file_path = base_path.join(&f);
+            match tokio::fs::metadata(&file_path).await {
+                Ok(m) => {
+                    total_file_size += m.len();
+                }
+                Err(e) => error!("Failed to get WAL file metadata for '{}': {:?}", &f, e),
+            }
+            match read_footer(file_path).await {
                 Ok(Some((_, max_seq))) => match file_utils::get_wal_file_id(&f) {
                     Ok(file_id) => {
                         old_file_max_sequence.insert(file_id, max_seq);
                     }
-                    Err(e) => warn!("Failed to parse WAL file name for '{}': {:?}", &f, e),
+                    Err(e) => error!("Failed to parse WAL file name for '{}': {:?}", &f, e),
                 },
                 Ok(None) => warn!("Failed to parse WAL file footer for '{}'", &f),
                 Err(e) => warn!("Failed to parse WAL file footer for '{}': {:?}", &f, e),
@@ -287,6 +297,7 @@ impl WalManager {
         let new_wal = file_utils::make_wal_file(&config.path, next_file_id);
         let current_file =
             WalWriter::open(config.clone(), next_file_id, new_wal, pre_max_seq).await?;
+        total_file_size += current_file.size;
         info!("WAL '{}' starts write", current_file.id);
         let current_dir = config.path.clone();
         Ok(WalManager {
@@ -295,6 +306,7 @@ impl WalManager {
             current_dir,
             current_file,
             old_file_max_sequence,
+            total_file_size,
         })
     }
 
@@ -323,6 +335,8 @@ impl WalManager {
                 "WAL '{}' starts write at seq {}",
                 self.current_file.id, self.current_file.max_sequence
             );
+            // Total WALs size add WAL header size.
+            self.total_file_size += new_file.size;
 
             let mut old_file = std::mem::replace(&mut self.current_file, new_file);
             if old_file.max_sequence <= old_file.min_sequence {
@@ -332,7 +346,8 @@ impl WalManager {
             }
             self.old_file_max_sequence
                 .insert(old_file.id, old_file.max_sequence);
-            old_file.close().await?;
+            // Total WALs size add WAL footer size.
+            self.total_file_size += old_file.close().await? as u64;
 
             self.check_to_delete().await;
         }
@@ -352,10 +367,24 @@ impl WalManager {
             for file_id in old_files_to_delete {
                 let file_path = file_utils::make_wal_file(&self.config.path, file_id);
                 debug!("Removing wal file '{}'", file_path.display());
-                if let Err(e) = std::fs::remove_file(&file_path) {
+                let file_size = match tokio::fs::metadata(&file_path).await {
+                    Ok(m) => m.len(),
+                    Err(e) => {
+                        error!(
+                            "Failed to get WAL file metadata for '{}': {:?}",
+                            file_path.display(),
+                            e
+                        );
+                        0
+                    }
+                };
+                if let Err(e) = tokio::fs::remove_file(&file_path).await {
                     error!("failed to remove file '{}': {:?}", file_path.display(), e);
                 }
+                // Remove max_sequence record for deleted file.
                 self.old_file_max_sequence.remove(&file_id);
+                // Subtract deleted file size.
+                self.total_file_size -= file_size;
             }
         }
     }
@@ -369,7 +398,9 @@ impl WalManager {
         tenant: Arc<Vec<u8>>,
     ) -> Result<(u64, usize)> {
         self.roll_wal_file(self.config.max_file_size).await?;
-        self.current_file.write(typ, data, id, tenant).await
+        let (seq, size) = self.current_file.write(typ, data, id, tenant).await?;
+        self.total_file_size += size as u64;
+        Ok((seq, size))
     }
 
     pub async fn recover(
@@ -463,12 +494,21 @@ impl WalManager {
         self.current_file.sync().await
     }
 
-    pub async fn close(self) -> Result<()> {
+    /// Close current record file, return count of bytes appended as footer.
+    pub async fn close(self) -> Result<usize> {
         self.current_file.close().await
     }
 
     pub fn sync_interval(&self) -> std::time::Duration {
         self.config.sync_interval
+    }
+
+    pub fn is_total_file_size_exceed(&self) -> bool {
+        self.total_file_size >= self.config.flush_trigger_total_file_size
+    }
+
+    pub fn total_file_size(&self) -> u64 {
+        self.total_file_size
     }
 }
 
@@ -759,6 +799,7 @@ mod test {
         // Argument max_file_size is so small that there must a new wal file created.
         global_config.wal.max_file_size = 1;
         global_config.wal.sync = false;
+        global_config.wal.flush_trigger_total_file_size = 100;
         let wal_config = WalOptions::from(&global_config);
 
         let tenant = Arc::new(b"cnosdb".to_vec());
@@ -782,6 +823,8 @@ mod test {
                 .unwrap();
             assert_eq!(seq, write_seq)
         }
+        assert_eq!(mgr.total_file_size(), 359);
+        assert!(mgr.is_total_file_size_exceed());
         mgr.close().await.unwrap();
 
         check_wal_files(dir, data_vec, false).await.unwrap();
