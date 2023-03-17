@@ -77,8 +77,8 @@ journal_path = "/tmp/cnosdb/meta/journal"
 snapshot_per_events = 500
 
 [log]
-logs_level = "warn"
-logs_path = "/tmp/cnosdb/logs"
+level = "warn"
+path = "/tmp/cnosdb/logs"
 
 [meta_init]
 cluster_name = "cluster_xxx"

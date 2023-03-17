@@ -981,7 +981,6 @@ impl Drop for TseriesFamily {
 pub mod test_tseries_family {
     use std::collections::HashMap;
     use std::mem::size_of;
-    use std::path::PathBuf;
     use std::sync::Arc;
 
     use lru_cache::asynchronous::ShardedCache;
@@ -999,7 +998,6 @@ pub mod test_tseries_family {
     use crate::compaction::flush_tests::default_table_schema;
     use crate::compaction::{run_flush_memtable_job, FlushReq};
     use crate::context::GlobalContext;
-    use crate::file_system::file_manager;
     use crate::file_utils::make_tsm_file_name;
     use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
@@ -1351,15 +1349,6 @@ pub mod test_tseries_family {
                 .await;
             meta_manager
         });
-        let dir = PathBuf::from("db/tsm/test/0".to_string());
-        if !file_manager::try_exists(&dir) {
-            std::fs::create_dir_all(&dir).unwrap();
-        }
-
-        let dir = PathBuf::from("data/db".to_string());
-        if !file_manager::try_exists(&dir) {
-            std::fs::create_dir_all(&dir).unwrap();
-        }
         let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let mem = MemCache::new(0, 1000, 0, &memory_pool);
         let row_group = RowGroup {
