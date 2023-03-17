@@ -20,7 +20,6 @@ test_*.log
 *.history
 
 #generated files
-**/protos/src/generated/
 common/license/private.rsa
 common/license/public.rsa
 
