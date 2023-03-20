@@ -3,8 +3,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::parquet;
 use datafusion::parquet::arrow::ArrowWriter;
-use datafusion::parquet::{self};
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{pin_mut, TryStreamExt};
 use snafu::ResultExt;
@@ -17,7 +19,7 @@ pub struct ParquetRecordBatchSerializer {}
 
 #[async_trait]
 impl RecordBatchSerializer for ParquetRecordBatchSerializer {
-    async fn to_bytes(
+    async fn stream_to_bytes(
         &self,
         ctx: &WriteContext,
         stream: SendableRecordBatchStream,
@@ -25,6 +27,29 @@ impl RecordBatchSerializer for ParquetRecordBatchSerializer {
         let (data, parquet_file_meta) = to_parquet_bytes(ctx, stream).await?;
         let num_rows = parquet_file_meta.num_rows as usize;
         Ok((num_rows, Bytes::from(data)))
+    }
+
+    async fn batches_to_bytes(
+        &self,
+        _ctx: &WriteContext,
+        schema: SchemaRef,
+        batches: &[RecordBatch],
+    ) -> Result<(usize, Bytes)> {
+        let mut bytes = vec![];
+        let file_meta_data = {
+            let mut writer = ArrowWriter::try_new(&mut bytes, schema, None)
+                .context(BuildParquetArrowWriterSnafu)?;
+
+            for batch in batches {
+                writer.write(batch).context(SerializeParquetSnafu)?;
+            }
+
+            writer.close().context(CloseParquetWriterSnafu)?
+        };
+
+        let num_rows = file_meta_data.num_rows as usize;
+
+        Ok((num_rows, Bytes::from(bytes)))
     }
 }
 
