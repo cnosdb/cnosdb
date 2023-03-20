@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use datafusion::arrow::csv::WriterBuilder;
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{pin_mut, TryStreamExt};
 use snafu::ResultExt;
@@ -26,7 +28,7 @@ impl CsvRecordBatchSerializer {
 
 #[async_trait]
 impl RecordBatchSerializer for CsvRecordBatchSerializer {
-    async fn to_bytes(
+    async fn stream_to_bytes(
         &self,
         _ctx: &WriteContext,
         stream: SendableRecordBatchStream,
@@ -44,6 +46,29 @@ impl RecordBatchSerializer for CsvRecordBatchSerializer {
             while let Some(batch) = stream.try_next().await? {
                 num_rows += batch.num_rows();
                 writer.write(&batch).context(SerializeCsvSnafu)?;
+            }
+        }
+
+        Ok((num_rows, Bytes::from(bytes)))
+    }
+
+    async fn batches_to_bytes(
+        &self,
+        _ctx: &WriteContext,
+        _schema: SchemaRef,
+        batches: &[RecordBatch],
+    ) -> Result<(usize, Bytes)> {
+        let mut num_rows = 0;
+        let mut bytes = vec![];
+        {
+            let mut writer = WriterBuilder::new()
+                .has_headers(self.with_header)
+                .with_delimiter(self.delimiter)
+                .build(&mut bytes);
+
+            for batch in batches {
+                num_rows += batch.num_rows();
+                writer.write(batch).context(SerializeCsvSnafu)?;
             }
         }
 
