@@ -94,3 +94,7 @@ select time
 from test_double_conv
 where fa in (12345678865, 'xx');
 ---- error end
+
+-- from https://github.com/cnosdb/cnosdb/issues/1033
+explain select sum(case when fa < 50 then fa else 0 end)
+    over (partition by ta) from test_double_conv;

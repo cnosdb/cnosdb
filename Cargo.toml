@@ -132,6 +132,14 @@ tower = "0.4.13"
 version = "2.2.0"
 edition = "2021"
 
+# When you want to debug a third-party library,
+# you can use patch,
+# which will use your local third-party library code
+
+#[patch."https://github.com/cnosdb/arrow-datafusion"]
+#datafusion = { path = "/path/to/arrow-datafusion/datafusion/core" }
+#datafusion-proto = { path = "/path/to/arrow-datafusion/datafusion/proto" }
+
 [profile.dev]
 lto = false
 opt-level = 0
