@@ -27,3 +27,14 @@ select * from information_schema.ROLES;
 --#USER_NAME=test_rs_u2
 --#SORT=true
 select * from information_schema.ROLES;
+
+--#TENANT=test_rs_tenant1
+--#USER_NAME=root
+alter tenant test_rs_tenant1 remove user test_rs_u1;
+alter tenant test_rs_tenant1 remove user test_rs_u2;
+
+--#TENANT=test_rs_tenant1
+--#USER_NAME=root
+--#SORT=true
+select * from information_schema.ROLES;
+
