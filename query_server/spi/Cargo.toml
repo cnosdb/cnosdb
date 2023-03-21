@@ -23,5 +23,5 @@ tempfile = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 bytes = { workspace = true }
-snap = { workspace = true, default-features = false }
+snap = { workspace = true }
 lazy_static = { workspace = true }
