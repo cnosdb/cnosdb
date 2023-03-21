@@ -29,7 +29,7 @@ tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-mult
 tokio-stream = { workspace = true, features = ["net"] }
 tokio-util = { workspace = true }
 parking_lot = { workspace = true }
-futures = { workspace = true, default-features = false, features = ["alloc"] }
+futures = { workspace = true, features = ["alloc"] }
 rust-crypto = { workspace = true }
 tower = { workspace = true }
 tonic = { workspace = true }
