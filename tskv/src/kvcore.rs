@@ -361,7 +361,7 @@ impl TsKv {
         &self,
         db: Arc<RwLock<Database>>,
         id: TseriesFamilyId,
-    ) -> Result<Arc<RwLock<ts_index::TSIndex>>> {
+    ) -> Result<Arc<ts_index::TSIndex>> {
         let opt_index = db.read().await.get_ts_index(id);
         match opt_index {
             Some(v) => Ok(v),
@@ -612,7 +612,7 @@ impl Engine for TsKv {
             }
 
             if let Some(ts_index) = db.read().await.get_ts_index(id) {
-                let _ = ts_index.write().await.flush().await;
+                let _ = ts_index.flush().await;
             }
         }
 
@@ -733,7 +733,7 @@ impl Engine for TsKv {
         let res = if filter.is_all() {
             // Match all records
             debug!("pushed tags filter is All.");
-            ts_index.read().await.get_series_id_list(tab, &[])?
+            ts_index.get_series_id_list(tab, &[]).await?
         } else if filter.is_none() {
             // Does not match any record, return null
             debug!("pushed tags filter is None.");
@@ -742,10 +742,7 @@ impl Engine for TsKv {
             // No error will be reported here
             debug!("pushed tags filter is {:?}.", filter);
             let domains = unsafe { filter.domains_unsafe() };
-            ts_index
-                .read()
-                .await
-                .get_series_ids_by_domains(tab, domains)?
+            ts_index.get_series_ids_by_domains(tab, domains).await?
         };
 
         Ok(res)
