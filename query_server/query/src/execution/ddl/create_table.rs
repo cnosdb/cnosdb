@@ -57,18 +57,18 @@ impl DDLDefinitionTask for CreateTableTask {
 }
 
 async fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Result<()> {
-    let CreateTable { .. } = stmt;
-    let table_schema = build_schema(stmt);
-    let tenant = machine.session.tenant();
+    let CreateTable { name, .. } = stmt;
+
     let client = machine
         .meta
         .tenant_manager()
-        .tenant_meta(tenant)
+        .tenant_meta(name.tenant())
         .await
         .ok_or(MetaError::TenantNotFound {
-            tenant: tenant.to_string(),
+            tenant: name.tenant().to_string(),
         })?;
-    // .context(MetaSnafu)?;
+
+    let table_schema = build_schema(stmt);
     client
         .create_table(&TableSchema::TsKvTableSchema(Arc::new(table_schema)))
         .await

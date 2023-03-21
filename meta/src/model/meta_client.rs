@@ -699,11 +699,8 @@ impl MetaClient for RemoteMetaClient {
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         let mut list = vec![];
         for (key, val) in self.data.read().dbs.iter() {
-            let ttl = val.schema.config.ttl_or_default().to_nanoseconds();
-            let now = models::utils::now_timestamp();
-
             for bucket in val.buckets.iter() {
-                if bucket.end_time < now - ttl {
+                if bucket.end_time < val.schema.time_to_expired() {
                     let info = ExpiredBucketInfo {
                         tenant: self.tenant_name(),
                         database: key.clone(),

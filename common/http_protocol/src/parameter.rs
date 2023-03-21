@@ -14,5 +14,5 @@ pub struct SqlParam {
 #[serde(rename_all = "snake_case")]
 pub struct WriteParam {
     pub tenant: Option<String>,
-    pub db: String,
+    pub db: Option<String>,
 }

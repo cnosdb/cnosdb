@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
-use datafusion::arrow::datatypes::{DataType, SchemaRef};
+use datafusion::arrow::datatypes::{DataType, SchemaRef, TimeUnit};
 use datafusion::arrow::error::ArrowError;
 use datafusion::common::parsers::CompressionTypeVariant;
 use datafusion::common::{
@@ -53,7 +53,7 @@ use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
 use models::schema::{
     ColumnType, DatabaseOptions, Duration, Precision, TableColumn, TableSourceAdapter, Tenant,
-    TskvTableSchema, TskvTableSchemaRef,
+    TskvTableSchema, TskvTableSchemaRef, TIME_FIELD,
 };
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
@@ -539,13 +539,18 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         // sys inner time column
         let mut schema: Vec<TableColumn> = Vec::with_capacity(columns.len() + 1);
 
-        let time_col = TableColumn::new_time_column(id_generator.next_id() as ColumnId);
+        let resolved_table = object_name_to_resolved_table(session, name)?;
+        let database_name = resolved_table.database().to_string();
+        let unit: TimeUnit = self.get_db_precision(&database_name)?.into();
+
+        let time_col =
+            TableColumn::new_time_column(id_generator.next_id() as ColumnId, unit.clone());
         // Append time column at the start
         schema.push(time_col);
 
         for column_opt in columns {
             let col_id = id_generator.next_id() as ColumnId;
-            let column = Self::column_opt_to_table_column(column_opt, col_id)?;
+            let column = self.column_opt_to_table_column(column_opt, col_id, unit.clone())?;
             schema.push(column);
         }
 
@@ -557,9 +562,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 });
             }
         }
-
-        let resolved_table = object_name_to_resolved_table(session, name)?;
-        let database_name = resolved_table.database().to_string();
 
         let plan = Plan::DDL(DDLPlan::CreateTable(CreateTable {
             schema,
@@ -577,14 +579,19 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    fn column_opt_to_table_column(column_opt: ColumnOption, id: ColumnId) -> Result<TableColumn> {
+    fn column_opt_to_table_column(
+        &self,
+        column_opt: ColumnOption,
+        id: ColumnId,
+        unit: TimeUnit,
+    ) -> Result<TableColumn> {
         Self::check_column_encoding(&column_opt)?;
 
         let col = if column_opt.is_tag {
             TableColumn::new_tag_column(id, normalize_ident(&column_opt.name))
         } else {
             let name = normalize_ident(&column_opt.name);
-            let column_type = Self::make_data_type(&name, &column_opt.data_type)?;
+            let column_type = self.make_data_type(&name, &column_opt.data_type, unit)?;
             TableColumn::new(
                 id,
                 name,
@@ -645,10 +652,24 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         let table_name = object_name_to_resolved_table(session, statement.table_name)?;
         let table_schema = self.get_tskv_schema(&table_name)?;
 
+        let time_unit = if let ColumnType::Time(ref unit) = table_schema
+            .column(TIME_FIELD)
+            .ok_or(QueryError::CommonError {
+                msg: "schema missing time column".to_string(),
+            })?
+            .column_type
+        {
+            unit.clone()
+        } else {
+            return Err(QueryError::CommonError {
+                msg: "time column type not match".to_string(),
+            });
+        };
+
         let alter_action = match statement.alter_action {
             ASTAlterTableAction::AddColumn { column } => {
                 let mut table_column =
-                    Self::column_opt_to_table_column(column, ColumnId::default())?;
+                    self.column_opt_to_table_column(column, ColumnId::default(), time_unit)?;
                 if table_schema.contains_column(&table_column.name) {
                     return Err(QueryError::ColumnAlreadyExists {
                         table: table_schema.name.to_string(),
@@ -997,6 +1018,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     ) -> Result<PlanWithPrivileges> {
         let ASTAlterDatabase { name, options } = stmt;
         let options = self.make_database_option(options)?;
+        if options.precision().is_some() {
+            return Err(QueryError::Semantic {
+                err: "Can not alter database precision".to_string(),
+            });
+        }
         let database_name = normalize_sql_object_name(&name);
         let plan = Plan::DDL(DDLPlan::AlterDatabase(AlterDatabase {
             database_name: database_name.to_string(),
@@ -1048,10 +1074,15 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    fn make_data_type(column_name: &str, data_type: &SQLDataType) -> Result<ColumnType> {
+    fn make_data_type(
+        &self,
+        column_name: &str,
+        data_type: &SQLDataType,
+        time_unit: TimeUnit,
+    ) -> Result<ColumnType> {
         match data_type {
             // todo : should support get time unit for database
-            SQLDataType::Timestamp(_, TimezoneInfo::None) => Ok(ColumnType::Time),
+            SQLDataType::Timestamp(_, TimezoneInfo::None) => Ok(ColumnType::Time(time_unit)),
             SQLDataType::BigInt(_) => Ok(ColumnType::Field(ValueType::Integer)),
             SQLDataType::UnsignedBigInt(_) => Ok(ColumnType::Field(ValueType::Unsigned)),
             SQLDataType::Double => Ok(ColumnType::Field(ValueType::Float)),
@@ -1087,6 +1118,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             });
         }
         Ok(())
+    }
+
+    fn get_db_precision(&self, name: &str) -> Result<Precision> {
+        let precision = self.schema_provider.get_db_precision(name)?;
+        Ok(precision)
     }
 
     fn get_table_source(&self, table_name: &ResolvedTable) -> Result<Arc<dyn TableSource>> {
@@ -2071,6 +2107,7 @@ mod tests {
     use std::any::Any;
     use std::sync::Arc;
 
+    use datafusion::arrow::datatypes::TimeUnit::Nanosecond;
     use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
     use datafusion::error::Result;
     use datafusion::execution::memory_pool::UnboundedMemoryPool;
@@ -2104,6 +2141,10 @@ mod tests {
 
         fn reset_access_databases(&self) -> crate::metadata::DatabaseSet {
             Default::default()
+        }
+
+        fn get_db_precision(&self, _name: &str) -> std::result::Result<Precision, MetaError> {
+            Ok(Precision::NS)
         }
 
         fn get_table_source(
@@ -2246,7 +2287,7 @@ mod tests {
                         TableColumn {
                             id: 0,
                             name: "time".to_string(),
-                            column_type: ColumnType::Time,
+                            column_type: ColumnType::Time(Nanosecond),
                             encoding: Encoding::Default,
                         },
                         TableColumn {

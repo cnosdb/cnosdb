@@ -271,7 +271,7 @@ mod test {
     use std::sync::atomic::AtomicU64;
     use std::sync::{self, Arc};
 
-    use models::utils::now_timestamp;
+    use models::utils::now_timestamp_nanos;
     use tokio::time::{self, Duration};
 
     use super::IndexEngine;
@@ -299,7 +299,7 @@ mod test {
     async fn test_engine_write_perf() {
         let mut engine = IndexEngine::new("/tmp/test/2").unwrap();
 
-        let mut begin = now_timestamp() / 1000000;
+        let mut begin = now_timestamp_nanos() / 1000000;
         for i in 1..10001 {
             let key = format!("key012345678901234567890123456789_{}", i);
             let val = format!("val012345678901234567890123456789_{}", i);
@@ -307,7 +307,7 @@ mod test {
             if i % 100000 == 0 {
                 engine.flush().unwrap();
 
-                let end = now_timestamp() / 1000000;
+                let end = now_timestamp_nanos() / 1000000;
                 println!("{}  : time {}", i, end - begin);
                 begin = end;
             }
@@ -351,7 +351,11 @@ mod test {
 
             let total = count.fetch_add(1, sync::atomic::Ordering::SeqCst);
             if total % 100000 == 0 {
-                println!("read total: {}; time: {}", total, now_timestamp() / 1000000);
+                println!(
+                    "read total: {}; time: {}",
+                    total,
+                    now_timestamp_nanos() / 1000000
+                );
             }
         }
     }

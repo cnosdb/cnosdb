@@ -6,9 +6,7 @@ use datafusion::arrow::array::{
 use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
 use flatbuffers::{self, FlatBufferBuilder, Vector, WIPOffset};
-use models::schema::{
-    is_time_column, ColumnType, TableColumn, TskvTableSchemaRef, TIME_FIELD_NAME,
-};
+use models::schema::{is_time_column, ColumnType, TskvTableSchemaRef, TIME_FIELD_NAME};
 use models::ValueType;
 use paste::paste;
 use protos::models::{
@@ -170,7 +168,7 @@ fn construct_row_based_points(
 
             if let Some(datum) = value {
                 match field.column_type {
-                    ColumnType::Time => {
+                    ColumnType::Time(_) => {
                         continue;
                     }
                     ColumnType::Tag => {
@@ -249,7 +247,7 @@ fn build_fb_schema(tskv_schema: &TskvTableSchemaRef) -> FbSchema<'_> {
             ColumnType::Tag => {
                 schema.add_tag(&column.name);
             }
-            ColumnType::Time => continue,
+            ColumnType::Time(_) => continue,
             ColumnType::Field(field_type) => schema.add_filed(
                 &column.name,
                 convert_value_type_to_fb_field_type(field_type),
@@ -304,7 +302,7 @@ macro_rules! define_extract_time_column_from_func {
                     },
                     ArrowDataType::Int64 => Ok(cast_arrow_array::<Int64Array>(array)?.iter().collect()),
                     other => Err(QueryError::InvalidArrayType {
-                        expected: ArrowDataType::from(TableColumn::new_time_column(0).column_type).to_string(),
+                        expected: "ArrowDataType for Timestamp".to_string(),
                         found: other.to_string(),
                     }),
                 }

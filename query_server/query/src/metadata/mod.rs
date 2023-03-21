@@ -14,7 +14,7 @@ use datafusion::sql::{ResolvedTableReference, TableReference};
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::auth::user::UserDesc;
-use models::schema::{TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
+use models::schema::{Precision, TableSchema, TableSourceAdapter, Tenant, DEFAULT_CATALOG};
 use parking_lot::RwLock;
 use spi::query::function::FuncMetaManagerRef;
 use spi::query::session::SessionCtx;
@@ -44,6 +44,7 @@ pub trait ContextProviderExtension: ContextProvider {
     async fn get_tenant(&self, name: &str) -> Result<Tenant, MetaError>;
     /// Clear the access record and return the content before clearing
     fn reset_access_databases(&self) -> DatabaseSet;
+    fn get_db_precision(&self, name: &str) -> Result<Precision, MetaError>;
     fn get_table_source(
         &self,
         name: TableReference,
@@ -226,6 +227,18 @@ impl ContextProviderExtension for MetadataProvider {
         let result = self.access_databases.read().clone();
         self.access_databases.write().reset();
         result
+    }
+
+    fn get_db_precision(&self, name: &str) -> Result<Precision, MetaError> {
+        let precision = *self
+            .meta_client
+            .get_db_schema(name)?
+            .ok_or(MetaError::DatabaseNotFound {
+                database: name.to_string(),
+            })?
+            .config
+            .precision_or_default();
+        Ok(precision)
     }
 
     fn get_table_source(

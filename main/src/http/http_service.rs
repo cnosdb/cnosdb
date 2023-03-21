@@ -295,7 +295,8 @@ impl HttpService {
                         .await
                         .map_err(reject::custom)?;
 
-                    let req = construct_write_points_request(req, &ctx).map_err(reject::custom)?;
+                    let req = construct_write_points_request(req, ctx.database())
+                        .map_err(reject::custom)?;
 
                     let resp: Result<(), HttpError> = coord
                         .write_points(ctx.tenant().to_string(), ConsistencyLevel::Any, req)
@@ -621,12 +622,13 @@ async fn construct_write_context(
 ) -> Result<Context, HttpError> {
     let user_info = header.try_get_basic_auth()?;
     let tenant = param.tenant;
+    let db = param.db;
 
     let user = dbms.authenticate(&user_info, tenant.as_deref()).await?;
 
     let context = ContextBuilder::new(user)
         .with_tenant(tenant)
-        .with_database(Some(param.db))
+        .with_database(db)
         .build();
 
     let tenant_id = *coord
@@ -655,15 +657,12 @@ async fn construct_write_context(
     Ok(context)
 }
 
-fn construct_write_points_request(
-    req: Bytes,
-    ctx: &Context,
-) -> Result<WritePointsRequest, HttpError> {
+fn construct_write_points_request(req: Bytes, db: &str) -> Result<WritePointsRequest, HttpError> {
     let lines = String::from_utf8_lossy(req.as_ref());
     let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
         .map_err(|e| HttpError::ParseLineProtocol { source: e })?;
 
-    let points = parse_lines_to_points(ctx.database(), &line_protocol_lines);
+    let points = parse_lines_to_points(db, &line_protocol_lines);
 
     let req = WritePointsRequest {
         version: 1,

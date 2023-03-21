@@ -111,6 +111,11 @@ impl DatabaseInfo {
 
         TimeRange::new(min_ts, max_ts)
     }
+
+    // return the min timestamp value database allowed to store
+    pub fn time_to_expired(&self) -> i64 {
+        self.schema.time_to_expired()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -141,10 +146,7 @@ impl TenantMetaData {
 
     pub fn database_min_ts(&self, name: &str) -> Option<i64> {
         if let Some(db) = self.dbs.get(name) {
-            let ttl = db.schema.config.ttl_or_default().to_nanoseconds();
-            let now = crate::utils::now_timestamp();
-
-            return Some(now - ttl);
+            return Some(db.time_to_expired());
         }
 
         None
