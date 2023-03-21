@@ -192,9 +192,12 @@ impl SessionContext {
 
         let user_info = &self.session_config.user_info;
 
+        let tenant = self.session_config.tenant.clone();
+        let db = self.session_config.database.clone();
+
         let param = WriteParam {
-            tenant: None,
-            db: self.session_config.database.clone(),
+            tenant: Some(tenant),
+            db: Some(db),
         };
 
         // let param = &[("db", &self.session_config.database)];

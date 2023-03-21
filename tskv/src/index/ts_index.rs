@@ -180,7 +180,7 @@ impl TSIndex {
         // first write binlog
         let encode = series_key.encode();
         let block = SeriesKeyBlock {
-            ts: utils::now_timestamp(),
+            ts: utils::now_timestamp_nanos(),
             series_id: id,
             data_len: encode.len() as u32,
             data: encode.clone(),
@@ -229,7 +229,7 @@ impl TSIndex {
     pub async fn del_series_info(&mut self, sid: u32) -> IndexResult<()> {
         // first write binlog
         let block = SeriesKeyBlock {
-            ts: utils::now_timestamp(),
+            ts: utils::now_timestamp_nanos(),
             series_id: sid,
             data_len: 0,
             data: vec![],
