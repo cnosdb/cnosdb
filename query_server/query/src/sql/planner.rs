@@ -338,7 +338,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                     }),
                     Privilege::TenantObject(
                         TenantObjectPrivilege::Database(
-                            DatabasePrivilege::Write,
+                            DatabasePrivilege::Full,
                             Some(database_name),
                         ),
                         Some(tenant_id),
