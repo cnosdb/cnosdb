@@ -185,10 +185,7 @@ impl TsKv {
             .await
             .unwrap();
 
-        wal_manager
-            .recover(self, self.global_ctx.clone())
-            .await
-            .unwrap();
+        wal_manager.recover(self).await.unwrap();
 
         wal_manager
     }
@@ -524,7 +521,6 @@ impl Engine for TsKv {
         let tsf = self
             .get_tsfamily_or_else_create(seq, id, None, db.clone())
             .await?;
-
         tsf.read().await.put_points(seq, write_group)?;
         return Ok(());
     }

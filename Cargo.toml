@@ -60,7 +60,7 @@ env_logger = "0.9"
 evmap = "10.0"
 flatbuffers = "22.9"
 flate2 = "1.0.24"
-futures = { version = "0.3" }
+futures = { version = "0.3", default-features = false }
 integer-encoding = "3.0.3"
 lazy_static = "1.4"
 libc = { version = "0.2", default-features = false }
@@ -131,6 +131,14 @@ tower = "0.4.13"
 [workspace.package]
 version = "2.2.0"
 edition = "2021"
+
+# When you want to debug a third-party library,
+# you can use patch,
+# which will use your local third-party library code
+
+#[patch."https://github.com/cnosdb/arrow-datafusion"]
+#datafusion = { path = "/path/to/arrow-datafusion/datafusion/core" }
+#datafusion-proto = { path = "/path/to/arrow-datafusion/datafusion/proto" }
 
 [profile.dev]
 lto = false

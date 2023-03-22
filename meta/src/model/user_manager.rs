@@ -8,7 +8,9 @@ use models::oid::Oid;
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
 use crate::model::UserManager;
-use crate::store::command::{self, META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND};
+use crate::store::command::{
+    self, CommonResp, META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND,
+};
 
 #[derive(Debug)]
 pub struct RemoteUserManager {
@@ -83,20 +85,15 @@ impl UserManager for RemoteUserManager {
     async fn alter_user(&self, name: &str, options: UserOptions) -> MetaResult<()> {
         let req = command::WriteCommand::AlterUser(self.cluster.clone(), name.to_string(), options);
 
-        match self
-            .client
-            .write::<command::CommonResp<UserDesc>>(&req)
-            .await?
-        {
-            command::CommonResp::Ok(_data) => Ok(()),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                if status.code == META_REQUEST_USER_NOT_FOUND {
-                    Err(MetaError::UserNotFound { user: status.msg })
-                } else {
-                    Err(MetaError::CommonError { msg: status.msg })
-                }
+        if let CommonResp::Err(status) = self.client.write::<CommonResp<()>>(&req).await? {
+            // TODO improve response
+            if status.code == META_REQUEST_USER_NOT_FOUND {
+                Err(MetaError::UserNotFound { user: status.msg })
+            } else {
+                Err(MetaError::CommonError { msg: status.msg })
             }
+        } else {
+            Ok(())
         }
     }
 

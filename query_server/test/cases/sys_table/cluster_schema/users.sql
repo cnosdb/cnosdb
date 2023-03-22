@@ -6,6 +6,10 @@ create tenant if not exists test_us_tenant1;
 create user if not exists test_us_u1;
 create user if not exists test_us_u2;
 
+alter user test_us_u1 set comment = 'test comment';
+
+select * from cluster_schema.users where user_name = 'test_us_u1';
+
 alter tenant cnosdb add user test_us_u1 as owner;
 alter tenant cnosdb add user test_us_u2 as member;
 

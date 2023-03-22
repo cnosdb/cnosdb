@@ -13,6 +13,7 @@ use datafusion::logical_expr::{
 };
 use datafusion::optimizer::optimizer::OptimizerRule;
 use datafusion::optimizer::OptimizerConfig;
+use datafusion::prelude::lit;
 use datafusion::scalar::ScalarValue;
 use trace::debug;
 
@@ -191,8 +192,9 @@ impl<'a> DataTypeRewriter<'a> {
                         col, value
                     )));
                 }
+                let casted_right = expr_changed_with_alias(right.as_ref(), lit(casted_right))?;
 
-                (left, Box::new(Expr::Literal(casted_right)))
+                (left, Box::new(casted_right))
             }
             _ => (left, right),
         };
@@ -324,6 +326,18 @@ fn string_to_timestamp_ns(string: &str) -> Result<ScalarValue> {
     ))
 }
 
+/// when an expr changed from old to new, compare their name,
+/// if unequal then new_expr.alias(old_expr)
+fn expr_changed_with_alias(old: &Expr, new: Expr) -> Result<Expr> {
+    let old_expr_name = old.display_name();
+    let new_expr_name = new.display_name();
+
+    match (old_expr_name, new_expr_name) {
+        (Ok(old_name), Ok(new_name)) if old_name.ne(&new_name) => Ok(new.alias(old_name)),
+        _ => Ok(new),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -375,35 +389,36 @@ mod tests {
         )
     }
 
+    fn assert_expr_type_conversion(expr: Expr, expected: &str) -> Result<()> {
+        let schema = expr_test_schema();
+        let mut rewriter = DataTypeRewriter {
+            schemas: vec![&schema],
+        };
+        let rewrite_expr = expr.rewrite(&mut rewriter)?;
+
+        let rewrite_expr = format!("{rewrite_expr:?}");
+
+        assert_eq!(rewrite_expr, expected);
+        Ok(())
+    }
+
     #[test]
     fn test_type_conversion_int64() {
         let int_value = 100;
         let int_str = int_value.to_string();
         let not_int_str = "100ss".to_string();
-        let schema = expr_test_schema();
-        let mut rewriter = DataTypeRewriter {
-            schemas: vec![&schema],
-        };
 
         // Int64 c2 > "100" success
-        let exp = col("c2").gt(Expr::Literal(ScalarValue::Utf8(Some(int_str.clone()))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c2").gt(Expr::Literal(ScalarValue::Int64(Some(int_value)),))
-        );
+        let expr = col("c2").gt(lit(&int_str));
+        assert_expr_type_conversion(expr, "c2 > Int64(100) AS Utf8(\"100\")").unwrap();
 
         // Int64 "100" > c2 success
-        let exp = Expr::Literal(ScalarValue::Utf8(Some(int_str))).gt(col("c2"));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            Expr::Literal(ScalarValue::Int64(Some(int_value))).gt(col("c2"))
-        );
+        let expr = lit(int_str).gt(col("c2"));
+        assert_expr_type_conversion(expr, "Int64(100) AS Utf8(\"100\") > c2").unwrap();
 
         // Int64 c2 > "100ss" fail
-        let exp = col("c2").gt(Expr::Literal(ScalarValue::Utf8(Some(not_int_str))));
-        assert!(exp.rewrite(&mut rewriter).is_err());
+        let expr = col("c2").gt(lit(not_int_str));
+        assert_expr_type_conversion(expr, "").err().unwrap();
     }
 
     #[test]
@@ -411,36 +426,24 @@ mod tests {
         let double_value = 100.1;
         let double_str = double_value.to_string();
         let not_int_str = "100ss".to_string();
-        let schema = expr_test_schema();
-        let mut rewriter = DataTypeRewriter {
-            schemas: vec![&schema],
-        };
 
         // Float64 c3 > "100" success
-        let exp = col("c3").gt(Expr::Literal(ScalarValue::Utf8(Some(double_str.clone()))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c3").gt(Expr::Literal(ScalarValue::Float64(Some(double_value)),))
-        );
+        let expr = col("c3").gt(lit(&double_str));
+        assert_expr_type_conversion(expr, "c3 > Float64(100.1) AS Utf8(\"100.1\")").unwrap();
 
         // Float64 c3 > "100ss" fail
-        let exp = col("c3").gt(Expr::Literal(ScalarValue::Utf8(Some(not_int_str.clone()))));
-        assert!(exp.rewrite(&mut rewriter).is_err());
+        let expr = col("c3").gt(lit(&not_int_str));
+        assert_expr_type_conversion(expr, "c4 > Float32(100.1) AS Utf8(\"100.1\")")
+            .err()
+            .unwrap();
 
         // Float32 c4 > "100" success
-        let exp = col("c4").gt(Expr::Literal(ScalarValue::Utf8(Some(double_str))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c4").gt(Expr::Literal(ScalarValue::Float32(Some(
-                double_value as f32
-            )),))
-        );
+        let expr = col("c4").gt(lit(double_str));
+        assert_expr_type_conversion(expr, "c4 > Float32(100.1) AS Utf8(\"100.1\")").unwrap();
 
         // Float32 c4 > "100ss" fail
-        let exp = col("c4").gt(Expr::Literal(ScalarValue::Utf8(Some(not_int_str))));
-        assert!(exp.rewrite(&mut rewriter).is_err());
+        let expr = col("c4").gt(lit(not_int_str));
+        assert_expr_type_conversion(expr, "").err().unwrap();
     }
 
     #[test]
@@ -448,316 +451,170 @@ mod tests {
         let bool_value = true;
         let bool_str = bool_value.to_string();
         let not_int_str = "100ss".to_string();
-        let schema = expr_test_schema();
-        let mut rewriter = DataTypeRewriter {
-            schemas: vec![&schema],
-        };
 
         // Boolean c5 > "100ss" fail
-        let exp = col("c5").gt(Expr::Literal(ScalarValue::Utf8(Some(not_int_str))));
-        assert!(exp.rewrite(&mut rewriter).is_err());
+        let expr = col("c5").gt(lit(not_int_str));
+        assert_expr_type_conversion(expr, "c5 > Boolean(true) AS Utf8(\"true\")")
+            .err()
+            .unwrap();
 
         // Boolean c5 > "true" success
-        let exp = col("c5").gt(Expr::Literal(ScalarValue::Utf8(Some(bool_str))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c5").gt(Expr::Literal(ScalarValue::Boolean(Some(bool_value)),))
-        );
+        let expr = col("c5").gt(lit(bool_str));
+        assert_expr_type_conversion(expr, "c5 > Boolean(true) AS Utf8(\"true\")").unwrap();
 
         // Boolean c5 > true success
-        let exp = col("c5").gt(Expr::Literal(ScalarValue::Boolean(Some(bool_value))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c5").gt(Expr::Literal(ScalarValue::Boolean(Some(bool_value)),))
-        );
+        let expr = col("c5").gt(lit(ScalarValue::Boolean(Some(bool_value))));
+        assert_expr_type_conversion(expr, "c5 > Boolean(true)").unwrap();
     }
 
     #[test]
     fn test_type_conversion_timestamp_with_binary_op() {
-        let schema = expr_test_schema();
-        let mut rewriter = DataTypeRewriter {
-            schemas: vec![&schema],
-        };
-
         let date_string = "2021-09-07 16:00:00".to_string();
         // Timestamp(ms) c6 > "2021-09-07 16:00:00"
-        let exp = col("c6").gt(Expr::Literal(ScalarValue::Utf8(Some(date_string.clone()))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c6").gt(Expr::Literal(ScalarValue::TimestampMillisecond(
-                Some(
-                    string_to_timestamp_nanos(&date_string)
-                        .map(|t| t / 1_000_000)
-                        .unwrap(),
-                ),
-                None
-            ),))
-        );
+        let expr = col("c6").gt(lit(date_string.clone()));
+        assert_expr_type_conversion(
+            expr,
+            "c6 > TimestampMillisecond(1631030400000, None) AS Utf8(\"2021-09-07 16:00:00\")",
+        )
+        .unwrap();
 
         // Timestamp(s) c7 > "2021-09-07 16:00:00"
-        let exp = col("c7").gt(Expr::Literal(ScalarValue::Utf8(Some(date_string.clone()))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c7").gt(Expr::Literal(ScalarValue::TimestampSecond(
-                Some(
-                    string_to_timestamp_nanos(&date_string)
-                        .map(|t| t / 1_000_000_000)
-                        .unwrap(),
-                ),
-                None
-            ),))
-        );
+        let expr = col("c7").gt(lit(date_string.clone()));
+        assert_expr_type_conversion(
+            expr,
+            "c7 > TimestampSecond(1631030400, None) AS Utf8(\"2021-09-07 16:00:00\")",
+        )
+        .unwrap();
 
         // Timestamp(us) c8 > "2021-09-07 16:00:00"
-        let exp = col("c8").gt(Expr::Literal(ScalarValue::Utf8(Some(date_string.clone()))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c8").gt(Expr::Literal(ScalarValue::TimestampMicrosecond(
-                Some(
-                    string_to_timestamp_nanos(&date_string)
-                        .map(|t| t / 1_000)
-                        .unwrap(),
-                ),
-                None
-            ),))
-        );
+        let expr = col("c8").gt(lit(date_string.clone()));
+        assert_expr_type_conversion(
+            expr,
+            "c8 > TimestampMicrosecond(1631030400000000, None) AS Utf8(\"2021-09-07 16:00:00\")",
+        )
+        .unwrap();
 
         // Timestamp(ns) c9 > "2021-09-07 16:00:00"
-        let exp = col("c9").gt(Expr::Literal(ScalarValue::Utf8(Some(date_string.clone()))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c9").gt(Expr::Literal(ScalarValue::TimestampNanosecond(
-                Some(string_to_timestamp_nanos(&date_string).unwrap(),),
-                None
-            ),))
-        );
+        let expr = col("c9").gt(lit(date_string.clone()));
+        assert_expr_type_conversion(
+            expr,
+            "c9 > TimestampNanosecond(1631030400000000000, None) AS Utf8(\"2021-09-07 16:00:00\")",
+        )
+        .unwrap();
 
         // "2021-09-07 16:00:00" > Timestamp(ms) c6
-        let exp = Expr::Literal(ScalarValue::Utf8(Some(date_string.clone()))).gt(col("c6"));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            Expr::Literal(ScalarValue::TimestampMillisecond(
-                Some(
-                    string_to_timestamp_nanos(&date_string)
-                        .map(|t| t / 1_000_000)
-                        .unwrap(),
-                ),
-                None
-            ),)
-            .gt(col("c6"))
-        );
+        let expr = lit(date_string.clone()).gt(col("c6"));
+        assert_expr_type_conversion(
+            expr,
+            "TimestampMillisecond(1631030400000, None) AS Utf8(\"2021-09-07 16:00:00\") > c6",
+        )
+        .unwrap();
 
         // "2021-09-07 16:00:00" > Timestamp(s) c7
-        let exp = Expr::Literal(ScalarValue::Utf8(Some(date_string.clone()))).gt(col("c7"));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            Expr::Literal(ScalarValue::TimestampSecond(
-                Some(
-                    string_to_timestamp_nanos(&date_string)
-                        .map(|t| t / 1_000_000_000)
-                        .unwrap(),
-                ),
-                None
-            ),)
-            .gt(col("c7"))
-        );
+        let expr = lit(date_string.clone()).gt(col("c7"));
+        assert_expr_type_conversion(
+            expr,
+            "TimestampSecond(1631030400, None) AS Utf8(\"2021-09-07 16:00:00\") > c7",
+        )
+        .unwrap();
 
         // "2021-09-07 16:00:00" > Timestamp(us) c8
-        let exp = Expr::Literal(ScalarValue::Utf8(Some(date_string.clone()))).gt(col("c8"));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            Expr::Literal(ScalarValue::TimestampMicrosecond(
-                Some(
-                    string_to_timestamp_nanos(&date_string)
-                        .map(|t| t / 1_000)
-                        .unwrap(),
-                ),
-                None
-            ),)
-            .gt(col("c8"))
-        );
+        let expr = lit(date_string.clone()).gt(col("c8"));
+        assert_expr_type_conversion(
+            expr,
+            "TimestampMicrosecond(1631030400000000, None) AS Utf8(\"2021-09-07 16:00:00\") > c8",
+        )
+        .unwrap();
 
         // "2021-09-07 16:00:00" > Timestamp(ns) c9
-        let exp = Expr::Literal(ScalarValue::Utf8(Some(date_string.clone()))).gt(col("c9"));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            Expr::Literal(ScalarValue::TimestampNanosecond(
-                Some(string_to_timestamp_nanos(&date_string).unwrap(),),
-                None
-            ),)
-            .gt(col("c9"))
-        );
+        let expr = lit(date_string).gt(col("c9"));
+        assert_expr_type_conversion(
+            expr,
+            "TimestampNanosecond(1631030400000000000, None) AS Utf8(\"2021-09-07 16:00:00\") > c9",
+        )
+        .unwrap();
 
         // Timestamp(ms) c6 > 1642141472
         let timestamp_int = 1642141472;
-        let exp = col("c6").gt(Expr::Literal(ScalarValue::Int64(Some(timestamp_int))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c6").gt(Expr::Literal(ScalarValue::TimestampMillisecond(
-                Some(timestamp_int),
-                None
-            )))
-        );
+        let expr = col("c6").gt(lit(ScalarValue::Int64(Some(timestamp_int))));
+        assert_expr_type_conversion(
+            expr,
+            "c6 > TimestampMillisecond(1642141472, None) AS Int64(1642141472)",
+        )
+        .unwrap();
 
         // Timestamp(s) c7 > 1642141472
         let timestamp_int = 1642141472;
-        let exp = col("c7").gt(Expr::Literal(ScalarValue::Int64(Some(timestamp_int))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c7").gt(Expr::Literal(ScalarValue::TimestampSecond(
-                Some(timestamp_int),
-                None
-            )))
-        );
+        let expr = col("c7").gt(Expr::Literal(ScalarValue::Int64(Some(timestamp_int))));
+        assert_expr_type_conversion(
+            expr,
+            "c7 > TimestampSecond(1642141472, None) AS Int64(1642141472)",
+        )
+        .unwrap();
 
         // Timestamp(us) c8 > 1642141472
         let timestamp_int = 1642141472;
-        let exp = col("c8").gt(Expr::Literal(ScalarValue::Int64(Some(timestamp_int))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c8").gt(Expr::Literal(ScalarValue::TimestampMicrosecond(
-                Some(timestamp_int),
-                None
-            )))
-        );
+        let expr = col("c8").gt(lit(ScalarValue::Int64(Some(timestamp_int))));
+        assert_expr_type_conversion(
+            expr,
+            "c8 > TimestampMicrosecond(1642141472, None) AS Int64(1642141472)",
+        )
+        .unwrap();
 
         // Timestamp(ns) c9 > 1642141472
         let timestamp_int = 1642141472;
-        let exp = col("c9").gt(Expr::Literal(ScalarValue::Int64(Some(timestamp_int))));
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            col("c9").gt(Expr::Literal(ScalarValue::TimestampNanosecond(
-                Some(timestamp_int),
-                None
-            )))
-        );
+        let expr = col("c9").gt(lit(ScalarValue::Int64(Some(timestamp_int))));
+        assert_expr_type_conversion(
+            expr,
+            "c9 > TimestampNanosecond(1642141472, None) AS Int64(1642141472)",
+        )
+        .unwrap();
     }
 
     #[test]
     fn test_type_conversion_timestamp_with_between_and() {
-        let schema = expr_test_schema();
-        let mut rewriter = DataTypeRewriter {
-            schemas: vec![&schema],
-        };
-
         // Timestamp(ms) c6 between "2021-09-07 16:00:00" and "2021-09-07 17:00:00"
         let date_string = "2021-09-07 16:00:00".to_string();
         let date_string2 = "2021-09-07 17:00:00".to_string();
-        let exp = Expr::Between(Between {
-            expr: Box::new(col("c6")),
-            negated: false,
-            low: Box::new(Expr::Literal(ScalarValue::Utf8(Some(date_string.clone())))),
-            high: Box::new(Expr::Literal(ScalarValue::Utf8(Some(date_string2.clone())))),
-        });
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            Expr::Between(Between {
-                expr: Box::new(col("c6")),
-                negated: false,
-                low: Box::new(Expr::Literal(ScalarValue::TimestampMillisecond(
-                    Some(
-                        string_to_timestamp_nanos(&date_string)
-                            .map(|t| t / 1_000_000)
-                            .unwrap(),
-                    ),
-                    None
-                ),)),
-                high: Box::new(Expr::Literal(ScalarValue::TimestampMillisecond(
-                    Some(
-                        string_to_timestamp_nanos(&date_string2)
-                            .map(|t| t / 1_000_000)
-                            .unwrap(),
-                    ),
-                    None
-                ),))
-            })
-        );
+        let expr = Expr::Between(Between::new(
+            col("c6").into(),
+            false,
+            lit(&date_string).into(),
+            lit(&date_string2).into(),
+        ));
+
+        assert_expr_type_conversion(expr, "c6 BETWEEN TimestampMillisecond(1631030400000, None) AS Utf8(\"2021-09-07 16:00:00\") AND TimestampMillisecond(1631034000000, None) AS Utf8(\"2021-09-07 17:00:00\")").unwrap();
 
         // Timestamp(ms) c6 between 1642141472 and 1642141472
         let timestamp_int_low = 1642141472;
         let timestamp_int_high = 1642141474;
-        let exp = Expr::Between(Between {
-            expr: Box::new(col("c6")),
-            negated: false,
-            low: Box::new(Expr::Literal(ScalarValue::Int64(Some(timestamp_int_low)))),
-            high: Box::new(Expr::Literal(ScalarValue::Int64(Some(timestamp_int_high)))),
-        });
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            Expr::Between(Between {
-                expr: Box::new(col("c6")),
-                negated: false,
-                low: Box::new(Expr::Literal(ScalarValue::TimestampMillisecond(
-                    Some(timestamp_int_low),
-                    None
-                ),)),
-                high: Box::new(Expr::Literal(ScalarValue::TimestampMillisecond(
-                    Some(timestamp_int_high),
-                    None
-                ),))
-            })
-        );
+        let expr = Expr::Between(Between::new(
+            col("c6").into(),
+            false,
+            lit(&date_string).into(),
+            lit(&date_string2).into(),
+        ));
+        assert_expr_type_conversion(expr, "c6 BETWEEN TimestampMillisecond(1631030400000, None) AS Utf8(\"2021-09-07 16:00:00\") AND TimestampMillisecond(1631034000000, None) AS Utf8(\"2021-09-07 17:00:00\")").unwrap();
+
+        let expr = Expr::Between(Between::new(
+            col("c6").into(),
+            false,
+            lit(ScalarValue::Int64(Some(timestamp_int_low))).into(),
+            lit(ScalarValue::Int64(Some(timestamp_int_high))).into(),
+        ));
+        assert_expr_type_conversion(expr, "c6 BETWEEN TimestampMillisecond(1642141472, None) AS Int64(1642141472) AND TimestampMillisecond(1642141474, None) AS Int64(1642141474)").unwrap();
     }
 
     #[test]
     fn test_type_conversion_timestamp_with_in_list() {
-        let schema = expr_test_schema();
-        let mut rewriter = DataTypeRewriter {
-            schemas: vec![&schema],
-        };
-
         // Timestamp(ms) c6 in ('2021-09-07 16:00:00', '2021-09-07 17:00:00')
         let date_string = "2021-09-07 16:00:00".to_string();
         let date_string2 = "2021-09-07 17:00:00".to_string();
-        let exp = Expr::InList {
-            expr: Box::new(col("c6")),
+        let expr = Expr::InList {
+            expr: col("c6").into(),
             negated: false,
-            list: vec![
-                Expr::Literal(ScalarValue::Utf8(Some(date_string.clone()))),
-                Expr::Literal(ScalarValue::Utf8(Some(date_string2.clone()))),
-            ],
+            list: vec![lit(date_string), lit(date_string2)],
         };
-        let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
-        assert_eq!(
-            rewrite_exp,
-            Expr::InList {
-                expr: Box::new(col("c6")),
-                negated: false,
-                list: vec![
-                    Expr::Literal(ScalarValue::TimestampMillisecond(
-                        Some(
-                            string_to_timestamp_nanos(&date_string)
-                                .map(|t| t / 1_000_000)
-                                .unwrap(),
-                        ),
-                        None
-                    ),),
-                    Expr::Literal(ScalarValue::TimestampMillisecond(
-                        Some(
-                            string_to_timestamp_nanos(&date_string2)
-                                .map(|t| t / 1_000_000)
-                                .unwrap(),
-                        ),
-                        None
-                    ),),
-                ],
-            },
-        );
+        assert_expr_type_conversion(expr, "c6 IN ([TimestampMillisecond(1631030400000, None) AS Utf8(\"2021-09-07 16:00:00\"), TimestampMillisecond(1631034000000, None) AS Utf8(\"2021-09-07 17:00:00\")])").unwrap();
     }
 }

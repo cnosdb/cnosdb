@@ -172,4 +172,16 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 200 OK
 plan_type,plan
 
-
+-- EXECUTE SQL: explain select sum(case when fa < 50 then fa else 0 end) over (partition by ta) from test_double_conv; --
+200 OK
+plan_type,plan
+logical_plan,"Projection: SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+  WindowAggr: windowExpr=[[SUM(CASE WHEN test_double_conv.fa < Float64(50) AS Int64(50) THEN test_double_conv.fa ELSE Float64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING AS SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]]
+    TableScan: test_double_conv projection=[ta, fa]"
+physical_plan,"ProjectionExec: expr=[SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING@2 as SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]
+  WindowAggExec: wdw=[SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING: Ok(Field { name: ""SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"", data_type: Float64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} }), frame: WindowFrame { units: Rows, start_bound: Preceding(UInt64(NULL)), end_bound: Following(UInt64(NULL)) }]
+    SortExec: [ta@0 ASC NULLS LAST]
+      CoalesceBatchesExec: target_batch_size=8192
+        RepartitionExec: partitioning=Hash([Column { name: ""ta"", index: 0 }], 8), input_partitions=8
+          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[ta,fa]
+"
