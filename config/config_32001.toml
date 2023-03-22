@@ -1,3 +1,11 @@
+
+#reporting_disabled = false
+
+[depolyment]
+#mode = 'singleton'
+#cpu = 4
+#memory = 16
+
 [query]
 max_server_connections = 10240
 query_sql_limit = 16777216   # 16 * 1024 * 1024

@@ -1,9 +1,11 @@
 #![allow(dead_code)]
 
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{command, Args, Parser, Subcommand};
+use config::{Config, SetDeployment};
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
@@ -63,33 +65,44 @@ enum CliCommand {
 
 #[derive(Debug, Args)]
 struct RunArgs {
-    /// Number of CPUs on the system.
-    #[arg(short, long, global = true, default_value_t = 4)]
-    cpu: usize,
+    /// Number of CPUs on the system, the default value is 4
+    #[arg(short, long, global = true)]
+    cpu: Option<usize>,
 
-    /// Gigabytes(G) of memory on the system.
-    #[arg(short, long, global = true, default_value_t = 16)]
-    memory: usize,
+    /// Gigabytes(G) of memory on the system, the default value is 16
+    #[arg(short, long, global = true)]
+    memory: Option<usize>,
 
     /// Path to configuration file.
     #[arg(long, global = true)]
     config: Option<String>,
 
-    #[command(subcommand)]
-    subcmd: Option<RunCommand>,
+    /// The deployment mode of CnosDB.
+    /// There are Tskv, Query, QueryTskv and Singleton, the default is QueryTskv
+    #[arg(short = 'M', long, global = true, value_enum)]
+    deployment_mode: Option<DeploymentMode>,
 }
 
-#[derive(Debug, Subcommand)]
-enum RunCommand {
-    /// Run storage engine (default).
-    #[command()]
-    Tskv {},
-    /// Run query server.
-    #[command(arg_required_else_help = true)]
-    Query {},
-    /// Run singleton server.
-    #[command()]
-    Singleton {},
+#[derive(Debug, Copy, Clone)]
+enum DeploymentMode {
+    Tskv,
+    Query,
+    QueryTskv,
+    Singleton,
+}
+
+impl FromStr for DeploymentMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mode = match s.to_ascii_lowercase().as_str() {
+            "tskv" => Self::Tskv,
+            "query" => Self::Query,
+            "singleton" => Self::Singleton,
+            "querytskv" => Self::QueryTskv,
+            _ => return Err("can't parse deployment-mode".to_string()),
+        };
+        Ok(mode)
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -132,7 +145,8 @@ fn main() -> Result<(), std::io::Error> {
         },
     };
 
-    let config = parse_config(run_args.config.as_ref());
+    let mut config = parse_config(run_args.config.as_ref());
+    merge_args_config(&run_args, &mut config);
 
     init_process_global_tracing(
         &config.log.path,
@@ -143,12 +157,12 @@ fn main() -> Result<(), std::io::Error> {
     );
     init_tskv_metrics_recorder();
 
-    let runtime = Arc::new(init_runtime(Some(run_args.cpu))?);
-    let memory_size = run_args.memory * 1024 * 1024 * 1024;
+    let runtime = Arc::new(init_runtime(Some(config.deployment_cpu()))?);
+    let memory_size = config.deployment_memory() * 1024 * 1024 * 1024;
     let memory_pool = Arc::new(GreedyMemoryPool::new(memory_size));
     runtime.clone().block_on(async move {
         let builder = server::ServiceBuilder {
-            cpu: run_args.cpu,
+            cpu: config.deployment_cpu(),
             config: config.clone(),
             runtime: runtime.clone(),
             memory_pool: memory_pool.clone(),
@@ -163,13 +177,14 @@ fn main() -> Result<(), std::io::Error> {
             server.add_service(Box::new(ReportService::new()));
         }
 
-        let storage = match &run_args.subcmd {
-            None => builder.build_query_storage(&mut server).await,
-            Some(RunCommand::Tskv {}) => builder.build_storage_server(&mut server).await,
-            Some(RunCommand::Query {}) => builder.build_query_server(&mut server).await,
-            Some(RunCommand::Singleton {}) => builder.build_singleton(&mut server).await,
+        let storage = match config.deployment_mode() {
+            config::DeploymentMode::QueryTskv => builder.build_query_storage(&mut server).await,
+            config::DeploymentMode::Tskv => builder.build_storage_server(&mut server).await,
+            config::DeploymentMode::Query => builder.build_query_server(&mut server).await,
+            config::DeploymentMode::Singleton => builder.build_singleton(&mut server).await,
         };
 
+        info!("CnosDB server start as {} mode", config.deployment_mode());
         server.start().expect("CnosDB server start.");
         signal::block_waiting_ctrl_c();
         server.stop(true).await;
@@ -210,5 +225,31 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
                 .thread_stack_size(4 * 1024 * 1024)
                 .build(),
         },
+    }
+}
+
+/// When the command line and the configuration file specify a setting at the same time,
+/// the command line has higher priority
+fn merge_args_config(args: &RunArgs, mut_config: &mut Config) {
+    match args.deployment_mode.as_ref() {
+        Some(DeploymentMode::Tskv) => mut_config.deployment.set_mode(config::DeploymentMode::Tskv),
+        Some(DeploymentMode::Singleton) => mut_config
+            .deployment
+            .set_mode(config::DeploymentMode::Singleton),
+        Some(DeploymentMode::Query) => mut_config
+            .deployment
+            .set_mode(config::DeploymentMode::Query),
+        Some(DeploymentMode::QueryTskv) => mut_config
+            .deployment
+            .set_mode(config::DeploymentMode::QueryTskv),
+        _ => {}
+    }
+
+    if let Some(m) = args.memory {
+        mut_config.deployment.set_memory(m)
+    }
+
+    if let Some(c) = args.cpu {
+        mut_config.deployment.set_cpu(c)
     }
 }
