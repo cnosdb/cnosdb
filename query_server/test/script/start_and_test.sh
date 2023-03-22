@@ -32,8 +32,8 @@ while [[ $# -gt 0 ]]; do
   key=${1}
   case ${key} in
   --singleton)
-    EXE_RUN_CMD=${EXE_RUN_CMD}" singleton"
-    CARGO_RUN_CMD=${CARGO_RUN_CMD}" singleton"
+    EXE_RUN_CMD=${EXE_RUN_CMD}" --deployment-mode singleton"
+    CARGO_RUN_CMD=${CARGO_RUN_CMD}" --deployment-mode singleton"
     shift 1
     ;;
   -h | --help)
