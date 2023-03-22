@@ -6,6 +6,7 @@ use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{get, middleware, post, web, App, HttpServer, Responder};
 use config::Config;
+use meta::service::MetaApi;
 use meta::store::command::*;
 use meta::store::state_machine::{CommandResp, StateMachine};
 use meta::{ClusterNode, ClusterNodeId, TypeConfig};
@@ -13,24 +14,155 @@ use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder, ROOT};
 use models::oid::Identifier;
 use models::schema::{TenantOptionsBuilder, DEFAULT_CATALOG, DEFAULT_DATABASE, USAGE_SCHEMA};
-use openraft::error::ClientWriteError;
+use openraft::async_trait::async_trait;
+use openraft::error::{ClientWriteError, Infallible};
 use openraft::raft::ClientWriteResponse;
 use trace::{error, info};
 use web::Json;
-
-use crate::meta_single::Infallible;
 
 pub struct MetaApp {
     pub http_addr: String,
     pub store: StateMachine,
 }
 
+#[async_trait]
+impl MetaApi for MetaApp {
+    async fn read(&self, req: Json<ReadCommand>) -> Result<CommandResp, Infallible> {
+        let res = self.store.process_read_command(&req.0);
+
+        let response: Result<CommandResp, Infallible> = Ok(res);
+        response
+    }
+
+    async fn write(
+        &self,
+        req: Json<WriteCommand>,
+    ) -> Result<ClientWriteResponse<TypeConfig>, ClientWriteError<ClusterNodeId, ClusterNode>> {
+        let res = self.store.process_write_command(&req.0);
+
+        let resp: Result<
+            ClientWriteResponse<TypeConfig>,
+            ClientWriteError<ClusterNodeId, ClusterNode>,
+        > = Ok(ClientWriteResponse::<TypeConfig> {
+            log_id: Default::default(),
+            data: res,
+            membership: None,
+        });
+        resp
+    }
+
+    async fn dump(&self) -> String {
+        let mut response = "".to_string();
+        for res in self.store.db.iter() {
+            let (k, v) = res.unwrap();
+            let k = String::from_utf8((*k).to_owned()).unwrap();
+            let v = String::from_utf8((*v).to_owned()).unwrap();
+            response = response + &format!("{}: {}\n", k, v);
+        }
+        response
+    }
+
+    async fn restore(&self, data: String) -> String {
+        info!("restore data length:{}", data.len());
+
+        let mut count = 0;
+        let lines: Vec<&str> = data.split('\n').collect();
+        for line in lines.iter() {
+            let strs: Vec<&str> = line.splitn(2, ": ").collect();
+            if strs.len() != 2 {
+                continue;
+            }
+
+            let command = WriteCommand::Set {
+                key: strs[0].to_string(),
+                value: strs[1].to_string(),
+            };
+
+            let resp = self.store.process_write_command(&command);
+            if let Err(err) = serde_json::from_str::<CommonResp<()>>(&resp) {
+                return err.to_string();
+            }
+            count += 1;
+        }
+        format!("Restore Data Success, Total: {} ", count)
+    }
+
+    async fn watch(
+        &self,
+        req: Json<(String, String, HashSet<String>, u64)>,
+    ) -> Result<CommandResp, Infallible> {
+        info!("watch all  args: {:?}", req);
+        let client = req.0 .0;
+        let cluster = req.0 .1;
+        let tenants = req.0 .2;
+        let base_ver = req.0 .3;
+        let mut follow_ver = base_ver;
+
+        let mut notify = {
+            let watch_data = self.store.read_change_logs(&cluster, &tenants, follow_ver);
+            info!(
+                "{} {}.{}: change logs: {:?} ",
+                client, base_ver, follow_ver, watch_data
+            );
+            if watch_data.need_return(base_ver) {
+                let data = serde_json::to_string(&watch_data).unwrap();
+                let response: Result<CommandResp, Infallible> = Ok(data);
+                return response;
+            }
+
+            self.store.watch.subscribe()
+        };
+
+        let now = std::time::Instant::now();
+        loop {
+            let _ = tokio::time::timeout(tokio::time::Duration::from_secs(20), notify.recv()).await;
+
+            let watch_data = self.store.read_change_logs(&cluster, &tenants, follow_ver);
+            info!(
+                "{} {}.{}: change logs: {:?} ",
+                client, base_ver, follow_ver, watch_data
+            );
+            if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
+                let data = serde_json::to_string(&watch_data).unwrap();
+                let response: Result<CommandResp, Infallible> = Ok(data);
+                return response;
+            }
+
+            if follow_ver < watch_data.max_ver {
+                follow_ver = watch_data.max_ver;
+            }
+        }
+    }
+
+    async fn debug(&self) -> String {
+        let mut response = "******---------------------------******\n".to_string();
+        for res in self.store.db.iter() {
+            let (k, v) = res.unwrap();
+            let k = String::from_utf8((*k).to_owned()).unwrap();
+            let v = String::from_utf8((*v).to_owned()).unwrap();
+            response = response + &format!("* {}: {}\n", k, v);
+        }
+        response += "******----------------------------------------------******\n";
+        response
+    }
+
+    async fn cpu_pprof(&self) -> String {
+        match utils::pprof_tools::gernate_pprof().await {
+            Ok(v) => v,
+            Err(v) => v,
+        }
+    }
+
+    async fn backtrace(&self) -> String {
+        utils::backtrace::backtrace()
+    }
+}
+
 #[post("/read")]
 pub async fn read(app: Data<MetaApp>, req: Json<ReadCommand>) -> actix_web::Result<impl Responder> {
-    let res = app.store.process_read_command(&req.0);
-
-    let response: Result<CommandResp, Infallible> = Ok(res);
-    Ok(Json(response))
+    let app = app.as_ref() as &dyn MetaApi;
+    let res = app.read(req).await;
+    Ok(Json(res))
 }
 
 #[post("/write")]
@@ -38,32 +170,30 @@ pub async fn write(
     app: Data<MetaApp>,
     req: Json<WriteCommand>,
 ) -> actix_web::Result<impl Responder> {
-    let res = app.store.process_write_command(&req.0);
+    let app = app.as_ref() as &dyn MetaApi;
+    let response = app.write(req).await;
+    Ok(Json(response))
+}
 
-    let resp: Result<
-        ClientWriteResponse<TypeConfig>,
-        ClientWriteError<ClusterNodeId, ClusterNode>,
-    > = Ok(ClientWriteResponse::<TypeConfig> {
-        log_id: Default::default(),
-        data: res,
-        membership: None,
-    });
+#[get("/dump")]
+pub async fn dump(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+    let app = app.as_ref() as &dyn MetaApi;
+    let response = app.dump().await;
+    Ok(response)
+}
 
-    Ok(Json(resp))
+#[post("/restore")]
+pub async fn restore(app: Data<MetaApp>, data: String) -> actix_web::Result<impl Responder> {
+    let app = app.as_ref() as &dyn MetaApi;
+    let res = app.restore(data).await;
+    Ok(res)
 }
 
 #[get("/debug")]
 pub async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
-    let mut response = "******---------------------------******\n".to_string();
-    for res in app.store.db.iter() {
-        let (k, v) = res.unwrap();
-        let k = String::from_utf8((*k).to_owned()).unwrap();
-        let v = String::from_utf8((*v).to_owned()).unwrap();
-        response = response + &format!("* {}: {}\n", k, v);
-    }
-    response += "******----------------------------------------------******\n";
-
-    Ok(response)
+    let app = app.as_ref() as &dyn MetaApi;
+    let resp = app.debug().await;
+    Ok(resp)
 }
 
 #[post("/watch")]
@@ -71,47 +201,23 @@ pub async fn watch(
     app: Data<MetaApp>,
     req: Json<(String, String, HashSet<String>, u64)>, //client id, cluster,version
 ) -> actix_web::Result<impl Responder> {
-    info!("watch all  args: {:?}", req);
-    let client = req.0 .0;
-    let cluster = req.0 .1;
-    let tenants = req.0 .2;
-    let base_ver = req.0 .3;
-    let mut follow_ver = base_ver;
+    let app = app.as_ref() as &dyn MetaApi;
+    let res = app.watch(req).await;
+    Ok(Json(res))
+}
 
-    let mut notify = {
-        let watch_data = app.store.read_change_logs(&cluster, &tenants, follow_ver);
-        info!(
-            "{} {}.{}: change logs: {:?} ",
-            client, base_ver, follow_ver, watch_data
-        );
-        if watch_data.need_return(base_ver) {
-            let data = serde_json::to_string(&watch_data).unwrap();
-            let response: Result<CommandResp, Infallible> = Ok(data);
-            return Ok(Json(response));
-        }
+#[get("/debug/pprof")]
+pub async fn cpu_pprof(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+    let app = app.as_ref() as &dyn MetaApi;
+    let res = app.cpu_pprof().await;
+    Ok(res)
+}
 
-        app.store.watch.subscribe()
-    };
-
-    let now = std::time::Instant::now();
-    loop {
-        let _ = tokio::time::timeout(tokio::time::Duration::from_secs(20), notify.recv()).await;
-
-        let watch_data = app.store.read_change_logs(&cluster, &tenants, follow_ver);
-        info!(
-            "{} {}.{}: change logs: {:?} ",
-            client, base_ver, follow_ver, watch_data
-        );
-        if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
-            let data = serde_json::to_string(&watch_data).unwrap();
-            let response: Result<CommandResp, Infallible> = Ok(data);
-            return Ok(Json(response));
-        }
-
-        if follow_ver < watch_data.max_ver {
-            follow_ver = watch_data.max_ver;
-        }
-    }
+#[get("/debug/backtrace")]
+pub async fn backtrace(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+    let app = app.as_ref() as &dyn MetaApi;
+    let res = app.backtrace().await;
+    Ok(res)
 }
 
 pub struct MetaService {
@@ -147,8 +253,12 @@ pub async fn run_service(cpu: usize, opt: &Config) -> std::io::Result<()> {
             .app_data(app.clone())
             .service(write)
             .service(read)
+            .service(dump)
+            .service(restore)
             .service(debug)
             .service(watch)
+            .service(cpu_pprof)
+            .service(backtrace)
     })
     .keep_alive(Duration::from_secs(5));
 
