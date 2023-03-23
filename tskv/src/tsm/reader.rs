@@ -180,7 +180,10 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
     let len = reader.len();
     if len < FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
-            reason: format!("TSM file size less than FOOTER_SIZE({})", FOOTER_SIZE),
+            reason: format!(
+                "TSM file ({}) size less than FOOTER_SIZE({})",
+                tsm_id, FOOTER_SIZE
+            ),
         });
     }
     let mut buf = [0u8; FOOTER_SIZE];
@@ -194,7 +197,10 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
     let offset = decode_be_u64(&buf[BLOOM_FILTER_SIZE..]);
     if offset > len - FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
-            reason: format!("TSM file size less than index offset({})", offset),
+            reason: format!(
+                "TSM file ({}) size less than index offset({})",
+                tsm_id, offset
+            ),
         });
     }
     let data_len = (len - offset - FOOTER_SIZE as u64) as usize;

@@ -80,12 +80,14 @@ pub fn run(
                             Ok(Some((version_edit, file_metas))) => {
                                 metrics::incr_compaction_success();
                                 let (summary_tx, _summary_rx) = oneshot::channel();
-                                let _ret = summary_task_sender_inner.send(SummaryTask::new(
-                                    vec![version_edit],
-                                    Some(file_metas),
-                                    None,
-                                    summary_tx,
-                                ));
+                                let _ = summary_task_sender_inner
+                                    .send(SummaryTask::new(
+                                        vec![version_edit],
+                                        Some(file_metas),
+                                        None,
+                                        summary_tx,
+                                    ))
+                                    .await;
 
                                 metrics::sample_tskv_compaction_duration(
                                     database.as_str(),
