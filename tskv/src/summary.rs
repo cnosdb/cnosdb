@@ -447,7 +447,7 @@ impl Summary {
                 }
                 if e.has_file_id {
                     has_file_id = true;
-                    max_file_id_all = e.file_id;
+                    max_file_id_all = std::cmp::max(max_file_id_all, e.file_id);
                 }
                 max_level_ts = std::cmp::max(max_level_ts, e.max_level_ts);
                 for m in e.del_files {
