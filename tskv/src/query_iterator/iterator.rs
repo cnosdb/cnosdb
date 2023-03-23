@@ -26,8 +26,9 @@ use models::{FieldId, SeriesId, ValueType};
 use parking_lot::RwLock;
 use protos::kv_service::QueryRecordBatchRequest;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{channel, Receiver};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
 use trace::{debug, error};
 
 use crate::compute::count::count_column_non_null_values;
@@ -618,8 +619,8 @@ pub struct RowIterator {
     super_version: Option<Arc<SuperVersion>>,
     /// List of series id filtered from engine.
     series_ids: Arc<Vec<SeriesId>>,
-    series_iter_receivers: Vec<Receiver<Option<Result<Vec<ArrayRef>>>>>,
-    finished_series_group_row_iters: usize,
+    series_iter_receiver: Receiver<Option<Result<RecordBatch>>>,
+    series_iter_closer: CancellationToken,
     /// Whether this iterator was finsihed.
     is_finished: bool,
 }
@@ -657,6 +658,7 @@ impl RowIterator {
         let query_option = Arc::new(query_option);
         let metrics = query_option.metrics.clone();
         let series_len = series_ids.len();
+        let (tx, rx) = channel(1);
         if query_option.aggregates.is_some() {
             // TODO: Correct the aggregate columns order.
             let mut row_iterator = Self {
@@ -667,16 +669,16 @@ impl RowIterator {
                 metrics,
                 super_version,
                 series_ids: Arc::new(series_ids),
-                series_iter_receivers: Vec::with_capacity(1),
-                finished_series_group_row_iters: 0,
+                series_iter_receiver: rx,
+                series_iter_closer: CancellationToken::new(),
                 is_finished: false,
             };
-            row_iterator.new_series_group_iteration(0, series_len);
+            row_iterator.new_series_group_iteration(0, series_len, tx);
 
             Ok(row_iterator)
         } else {
             // TODO：get series_group_size more intelligently
-            let series_group_size = 10;
+            let series_group_size = num_cpus::get();
             // `usize::div_ceil(self, Self)` is now unstable, so do it by-hand.
             let series_group_num = series_len / series_group_size
                 + if series_len % series_group_size == 0 {
@@ -693,8 +695,8 @@ impl RowIterator {
                 metrics,
                 super_version,
                 series_ids: Arc::new(series_ids),
-                series_iter_receivers: Vec::with_capacity(series_group_num),
-                finished_series_group_row_iters: 0,
+                series_iter_receiver: rx,
+                series_iter_closer: CancellationToken::new(),
                 is_finished: false,
             };
 
@@ -704,14 +706,19 @@ impl RowIterator {
                 if end > series_len {
                     end = series_len
                 }
-                row_iterator.new_series_group_iteration(start, end);
+                row_iterator.new_series_group_iteration(start, end, tx.clone());
             }
 
             Ok(row_iterator)
         }
     }
 
-    fn new_series_group_iteration(&mut self, start: usize, end: usize) {
+    fn new_series_group_iteration(
+        &mut self,
+        start: usize,
+        end: usize,
+        sender: Sender<Option<Result<RecordBatch>>>,
+    ) {
         let mut iter = SeriesGroupRowIterator {
             runtime: self.runtime.clone(),
             engine: self.engine.clone(),
@@ -727,15 +734,25 @@ impl RowIterator {
             columns: Vec::with_capacity(self.query_option.table_schema.columns().len()),
             is_finished: false,
         };
-        let (tx, rx) = channel(1);
-        self.series_iter_receivers.push(rx);
+        let can_tok = self.series_iter_closer.clone();
         self.runtime.spawn(async move {
-            while let Some(ret) = iter.next().await {
-                if tx.send(Some(ret)).await.is_err() {
-                    return;
+            loop {
+                tokio::select! {
+                    _ = can_tok.cancelled() => {
+                        break;
+                    }
+                    iter_ret = iter.next() => {
+                        if let Some(ret) = iter_ret {
+                            if sender.send(Some(ret)).await.is_err() {
+                                return;
+                            }
+                        } else {
+                            let _ = sender.send(None).await;
+                            break;
+                        }
+                    }
                 }
             }
-            let _ = tx.send(None).await;
         });
     }
 
@@ -756,14 +773,21 @@ impl RowIterator {
         let mut builders: Vec<ArrayBuilderPtr> =
             Vec::with_capacity(query_option.table_schema.columns().len());
         for item in query_option.table_schema.columns().iter() {
-            debug!("schema info {:02X} {}", item.id, item.name);
-            let builder_item = Self::builder(&item.column_type, query_option.batch_size)?;
+            debug!(
+                "Building record builder: schema info {:02X} {}",
+                item.id, item.name
+            );
+            let builder_item =
+                Self::new_column_builder(&item.column_type, query_option.batch_size)?;
             builders.push(ArrayBuilderPtr::new(builder_item, item.column_type.clone()))
         }
         Ok(builders)
     }
 
-    fn builder(column_type: &ColumnType, batch_size: usize) -> Result<Box<dyn ArrayBuilder>> {
+    fn new_column_builder(
+        column_type: &ColumnType,
+        batch_size: usize,
+    ) -> Result<Box<dyn ArrayBuilder>> {
         Ok(match column_type {
             ColumnType::Tag => Box::new(StringBuilder::with_capacity(batch_size, batch_size * 32)),
             ColumnType::Time(unit) => match unit {
@@ -788,7 +812,7 @@ impl RowIterator {
                 }
                 ValueType::Unknown => {
                     return Err(Error::CommonError {
-                        reason: "Invalid column type".to_string(),
+                        reason: "failed to create column builder: unkown column type".to_string(),
                     })
                 }
             },
@@ -801,64 +825,46 @@ impl RowIterator {
         if self.is_finished {
             return None;
         }
-
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
-        let mut builders = match Self::build_record_builders(self.query_option.as_ref()) {
-            Ok(builders) => builders,
-            Err(e) => return Some(Err(e)),
-        };
-        timer.done();
-
-        let mut finished = vec![false; self.series_iter_receivers.len()];
-        loop {
-            if self.finished_series_group_row_iters >= finished.len() {
-                self.is_finished = true;
-                break;
+        if self.series_ids.is_empty() {
+            self.is_finished = true;
+            // Build an empty result.
+            let timer = self.metrics.elapsed_point_to_record_batch().timer();
+            let mut empty_builders = match Self::build_record_builders(self.query_option.as_ref()) {
+                Ok(builders) => builders,
+                Err(e) => return Some(Err(e)),
+            };
+            let mut empty_cols = vec![];
+            for item in empty_builders.iter_mut() {
+                empty_cols.push(item.ptr.finish())
             }
-            for (i, iter) in self.series_iter_receivers.iter_mut().enumerate() {
-                if finished[i] {
-                    continue;
+            let empty_result =
+                RecordBatch::try_new(self.query_option.df_schema.clone(), empty_cols).map_err(
+                    |err| Error::CommonError {
+                        reason: format!("iterator fail, {}", err),
+                    },
+                );
+            timer.done();
+
+            return Some(empty_result);
+        }
+
+        while let Some(ret) = self.series_iter_receiver.recv().await {
+            match ret {
+                Some(Ok(r)) => {
+                    return Some(Ok(r));
                 }
-                if let Some(ret) = iter.recv().await {
-                    match ret {
-                        Some(Ok(cols)) => {
-                            for (builder, col) in builders.iter_mut().zip(cols) {
-                                builder.append_column_data(col);
-                            }
-                        }
-                        Some(Err(e)) => {
-                            error!("Series group iterator error: {:?}", e);
-                        }
-                        None => {
-                            debug!("Series group iterator finished.");
-                            finished[i] = true;
-                            self.finished_series_group_row_iters += 1;
-                        }
-                    }
-                } else {
-                    self.finished_series_group_row_iters += 1;
-                    finished[i] = true;
+                Some(Err(e)) => {
+                    self.series_iter_closer.cancel();
+                    return Some(Err(e));
+                }
+                None => {
+                    // Do nothing
+                    debug!("One of series group iterator finished.");
                 }
             }
         }
 
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
-        let result = {
-            let mut cols = vec![];
-            for item in builders.iter_mut() {
-                cols.push(item.ptr.finish())
-            }
-
-            match RecordBatch::try_new(self.query_option.df_schema.clone(), cols) {
-                Ok(batch) => Some(Ok(batch)),
-                Err(err) => Some(Err(Error::CommonError {
-                    reason: format!("iterator fail, {}", err),
-                })),
-            }
-        };
-        timer.done();
-
-        result
+        None
     }
 }
 
@@ -883,7 +889,7 @@ struct SeriesGroupRowIterator {
 }
 
 impl SeriesGroupRowIterator {
-    pub async fn next(&mut self) -> Option<Result<Vec<ArrayRef>>> {
+    pub async fn next(&mut self) -> Option<Result<RecordBatch>> {
         if self.is_finished {
             return None;
         }
@@ -907,13 +913,22 @@ impl SeriesGroupRowIterator {
         }
 
         let timer = self.metrics.elapsed_point_to_record_batch().timer();
-        let mut cols = Vec::with_capacity(builders.len());
-        for item in builders.iter_mut() {
-            cols.push(item.ptr.finish())
-        }
+        let result = {
+            let mut cols = Vec::with_capacity(builders.len());
+            for builder in builders.iter_mut() {
+                cols.push(builder.ptr.finish())
+            }
+
+            match RecordBatch::try_new(self.query_option.df_schema.clone(), cols) {
+                Ok(batch) => Some(Ok(batch)),
+                Err(err) => Some(Err(Error::CommonError {
+                    reason: format!("iterator fail, {}", err),
+                })),
+            }
+        };
         timer.done();
 
-        Some(Ok(cols))
+        result
     }
 }
 
