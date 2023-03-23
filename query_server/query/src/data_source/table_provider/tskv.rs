@@ -70,6 +70,96 @@ impl ClusterTable {
         )))
     }
 
+    fn create_agg_filter_scan(
+        &self,
+        ctx: &SessionState,
+        filter: Arc<Predicate>,
+        agg_with_grouping: &AggWithGrouping,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        let AggWithGrouping {
+            group_expr: _,
+            agg_expr,
+            schema,
+        } = agg_with_grouping;
+        let proj_schema = SchemaRef::from(schema.deref());
+
+        let table_layout = TableLayoutHandle {
+            db: self.database_info.clone(),
+            table: self.schema.clone(),
+            predicate: filter.clone(),
+        };
+        let splits = self.split_manager.splits(ctx, table_layout);
+        if splits.is_empty() {
+            return Ok(Arc::new(EmptyExec::new(false, proj_schema)));
+        }
+
+        let time_col = unsafe {
+            // use first column(time column)
+            Column::from_name(&self.schema.column_by_index(0).unwrap_unchecked().name)
+        };
+
+        let aggs = agg_expr
+            .iter()
+            .map(|e| match e {
+                Expr::AggregateFunction(agg) => Ok(agg),
+                _ => Err(DataFusionError::Plan(
+                    "Invalid plan, pushed aggregate functions contains unsupported".to_string(),
+                )),
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let pushed_aggs = aggs
+        .into_iter()
+        .map(|agg| {
+            let AggregateFunction { fun, args, .. } = agg;
+
+            args.iter()
+                .map(|expr| {
+                    // The parameter of the aggregate function pushed down must be a column column
+                    match expr {
+                        Expr::Column(c) => Ok(c),
+                        Expr::Literal(_) => Ok(&time_col),
+                        _ => Err(DataFusionError::Internal(format!(
+                            "Pushed aggregate functions's args contains non-column or non-literal value: {expr:?}."
+                        ))),
+                    }
+                })
+                .collect::<Result<Vec<_>>>()
+                .and_then(|columns| {
+                    // Convert pushdown aggregate functions to intermediate structures
+                    match fun {
+                        aggregate_function::AggregateFunction::Count => {
+                            let column = columns
+                                .first()
+                                .ok_or_else(|| {
+                                    DataFusionError::Internal(
+                                        "Pushed aggregate functions's args is none.".to_string(),
+                                    )
+                                })?
+                                .deref()
+                                .clone();
+                            Ok(PushedAggregateFunction::Count(column.name))
+                        }
+                        // aggregate_function::AggregateFunction::Max => {},
+                        // aggregate_function::AggregateFunction::Min => {},
+                        _ => Err(DataFusionError::Internal(
+                            "Pushed aggregate functions's args is none.".to_string(),
+                        )),
+                    }
+                })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+        Ok(Arc::new(AggregateFilterTskvExec::new(
+            self.coord.clone(),
+            proj_schema,
+            self.schema.clone(),
+            pushed_aggs,
+            filter,
+            splits,
+        )))
+    }
+
     pub fn create_tag_scan_physical_plan(
         &self,
         projected_schema: &DFSchemaRef,
@@ -150,12 +240,7 @@ impl TableProvider for ClusterTable {
 
         if let Some(agg_with_grouping) = agg_with_grouping {
             debug!("Create aggregate filter tskv scan.");
-            return create_agg_filter_scan(
-                self.coord.clone(),
-                self.schema.clone(),
-                filter,
-                agg_with_grouping,
-            );
+            return self.create_agg_filter_scan(ctx, filter, agg_with_grouping);
         }
 
         return self.create_table_scan_physical_plan(ctx, projection, filter);
@@ -219,84 +304,6 @@ impl TableProvider for ClusterTable {
 
         Ok(result)
     }
-}
-
-fn create_agg_filter_scan(
-    coord: CoordinatorRef,
-    table_schema: TskvTableSchemaRef,
-    filter: Arc<Predicate>,
-    agg_with_grouping: &AggWithGrouping,
-) -> Result<Arc<dyn ExecutionPlan>> {
-    let AggWithGrouping {
-        group_expr: _,
-        agg_expr,
-        schema,
-    } = agg_with_grouping;
-
-    let time_col = unsafe {
-        // use first column(time column)
-        Column::from_name(&table_schema.column_by_index(0).unwrap_unchecked().name)
-    };
-
-    let aggs = agg_expr
-        .iter()
-        .map(|e| match e {
-            Expr::AggregateFunction(agg) => Ok(agg),
-            _ => Err(DataFusionError::Plan(
-                "Invalid plan, pushed aggregate functions contains unsupported".to_string(),
-            )),
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    let pushed_aggs = aggs
-        .into_iter()
-        .map(|agg| {
-            let AggregateFunction { fun, args, .. } = agg;
-
-            args.iter()
-                .map(|expr| {
-                    // The parameter of the aggregate function pushed down must be a column column
-                    match expr {
-                        Expr::Column(c) => Ok(c),
-                        Expr::Literal(_) => Ok(&time_col),
-                        _ => Err(DataFusionError::Internal(format!(
-                            "Pushed aggregate functions's args contains non-column or non-literal value: {expr:?}."
-                        ))),
-                    }
-                })
-                .collect::<Result<Vec<_>>>()
-                .and_then(|columns| {
-                    // Convert pushdown aggregate functions to intermediate structures
-                    match fun {
-                        aggregate_function::AggregateFunction::Count => {
-                            let column = columns
-                                .first()
-                                .ok_or_else(|| {
-                                    DataFusionError::Internal(
-                                        "Pushed aggregate functions's args is none.".to_string(),
-                                    )
-                                })?
-                                .deref()
-                                .clone();
-                            Ok(PushedAggregateFunction::Count(column.name))
-                        }
-                        // aggregate_function::AggregateFunction::Max => {},
-                        // aggregate_function::AggregateFunction::Min => {},
-                        _ => Err(DataFusionError::Internal(
-                            "Pushed aggregate functions's args is none.".to_string(),
-                        )),
-                    }
-                })
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(Arc::new(AggregateFilterTskvExec::new(
-        coord,
-        SchemaRef::from(schema.deref()),
-        table_schema,
-        pushed_aggs,
-        filter,
-    )))
 }
 
 #[async_trait]

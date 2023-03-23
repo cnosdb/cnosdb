@@ -1201,7 +1201,6 @@ impl SeriesGroupRowIterator {
             self.query_option.aggregates.as_ref(),
         ) {
             (Some(version), Some(aggregates)) => {
-                let time_ranges = Arc::new(vec![*self.query_option.split.time_range()]);
                 for (i, item) in aggregates.iter().enumerate() {
                     match item.column_type {
                         ColumnType::Tag => todo!("collect count for tag"),
@@ -1211,7 +1210,7 @@ impl SeriesGroupRowIterator {
                                 version.clone(),
                                 self.series_ids.clone(),
                                 None,
-                                time_ranges.clone(),
+                                *self.query_option.split.time_range(),
                             )
                             .await?;
                             builder[i].append_primitive::<Int64Type>(agg_ret as i64);
@@ -1228,7 +1227,7 @@ impl SeriesGroupRowIterator {
                                     version.clone(),
                                     self.series_ids.clone(),
                                     Some(item.id),
-                                    time_ranges.clone(),
+                                    *self.query_option.split.time_range(),
                                 )
                                 .await?;
                                 builder[i].append_primitive::<Int64Type>(agg_ret as i64);

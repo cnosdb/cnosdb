@@ -12,9 +12,10 @@ use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::{
     DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics,
 };
-use models::predicate::domain::{PredicateRef, PushedAggregateFunction, TimeRange};
+use models::predicate::domain::{PredicateRef, PushedAggregateFunction};
 use models::predicate::Split;
 use models::schema::TskvTableSchemaRef;
+use trace::debug;
 use tskv::query_iterator::{QueryOption, TableScanMetrics};
 
 use super::tskv_exec::TableScanStream;
@@ -26,6 +27,7 @@ pub struct AggregateFilterTskvExec {
     table_schema: TskvTableSchemaRef,
     pushed_aggs: Vec<PushedAggregateFunction>,
     filter: PredicateRef,
+    splits: Vec<Split>,
 }
 
 impl AggregateFilterTskvExec {
@@ -35,6 +37,7 @@ impl AggregateFilterTskvExec {
         table_schema: TskvTableSchemaRef,
         pushed_aggs: Vec<PushedAggregateFunction>,
         filter: PredicateRef,
+        splits: Vec<Split>,
     ) -> Self {
         Self {
             coord,
@@ -42,6 +45,7 @@ impl AggregateFilterTskvExec {
             table_schema,
             pushed_aggs,
             filter,
+            splits,
         }
     }
 }
@@ -56,7 +60,7 @@ impl ExecutionPlan for AggregateFilterTskvExec {
     }
 
     fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(1)
+        Partitioning::UnknownPartitioning(self.splits.len())
     }
 
     fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
@@ -89,16 +93,18 @@ impl ExecutionPlan for AggregateFilterTskvExec {
                 }
             }
         }
+
+        let split = unsafe {
+            debug_assert!(partition < self.splits.len(), "Partition not exists");
+            self.splits.get_unchecked(partition).clone()
+        };
+        debug!("Split of partition: {:?}", split);
+
         let metrics = ExecutionPlanMetricsSet::new();
         let metrics = TableScanMetrics::new(&metrics, partition, Some(context.memory_pool()));
         let query_opt = QueryOption::new(
             100_usize,
-            Split::new(
-                0,
-                self.table_schema.clone(),
-                TimeRange::all(),
-                self.filter.clone(),
-            ),
+            split,
             Some(agg_columns),
             self.schema.clone(),
             (*self.table_schema).clone(),
