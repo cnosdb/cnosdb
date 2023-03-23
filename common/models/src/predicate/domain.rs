@@ -31,14 +31,17 @@ pub struct TimeRange {
 }
 
 impl From<(StdBound<i64>, StdBound<i64>)> for TimeRange {
-    /// TODO 目前TimeRange只支持闭区间
+    // TODO: TimeRange is a closed interval now.
+    // TODO: Using TimeRange { min_ts: Bound, max_ts: Bound }
     fn from(range: (StdBound<i64>, StdBound<i64>)) -> Self {
         let min_ts = match range.0 {
-            StdBound::Excluded(v) | StdBound::Included(v) => v,
+            StdBound::Excluded(v) => v + 1,
+            StdBound::Included(v) => v,
             _ => Timestamp::MIN,
         };
         let max_ts = match range.1 {
-            StdBound::Excluded(v) | StdBound::Included(v) => v,
+            StdBound::Excluded(v) => v - 1,
+            StdBound::Included(v) => v,
             _ => Timestamp::MAX,
         };
 
