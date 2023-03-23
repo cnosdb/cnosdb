@@ -95,28 +95,8 @@ impl Case {
         let mut no_diff = true;
         let mut diff_buf = String::with_capacity(512);
         for (i, (l, r)) in origins.iter().zip(outs.iter()).enumerate() {
-            let (mut ll, mut rl) = (1, 1);
-            let mut is_diff = false;
             diff_buf.clear();
-            for diff in diff::lines(&l.response, &r.response) {
-                match diff {
-                    diff::Result::Left(l) => {
-                        is_diff = true;
-                        diff_buf.push_str(format!("{:<4}|    | -{}\n", ll, l).as_str());
-                        ll += 1;
-                    }
-                    diff::Result::Right(r) => {
-                        is_diff = true;
-                        diff_buf.push_str(format!("    |{:<4}| +{}\n", rl, r).as_str());
-                        rl += 1;
-                    }
-                    _ => {
-                        ll += 1;
-                        rl += 1;
-                    }
-                }
-            }
-            if is_diff {
+            if check_diff(&l.response, &r.response, &mut diff_buf) {
                 no_diff = false;
                 println!(
                     r#"====================
@@ -245,4 +225,58 @@ pub fn search_cases(path: &PathBuf, pattern: Option<String>) -> Result<Vec<Case>
         res.push(Case::new(sql_file)?);
     }
     Ok(res)
+}
+
+fn check_diff(str1: &str, str2: &str, buf: &mut String) -> bool {
+    let (mut ll, mut rl) = (1, 1);
+    let mut is_diff = false;
+    for diff in diff::lines(str1, str2) {
+        match diff {
+            diff::Result::Left(l) => {
+                is_diff = true;
+                buf.push_str(format!("{:<4}|    | -{}\n", ll, l).as_str());
+                ll += 1;
+            }
+            diff::Result::Right(r) => {
+                is_diff = true;
+                buf.push_str(format!("    |{:<4}| +{}\n", rl, r).as_str());
+                rl += 1;
+            }
+            _ => {
+                ll += 1;
+                rl += 1;
+            }
+        }
+    }
+    is_diff
+}
+
+#[test]
+fn test_check_diff() {
+    let str1 = r#"200 OK
+time,t0,f0,t1,f1
+1970-01-01T00:00:00.000000001,2,4,3,
+1970-01-01T00:00:00.000000005,6,8,7,
+1970-01-01T00:00:00.000000009,10,12,11,13
+1970-01-01T00:00:00.000000014,15,17,16,18
+"#;
+
+    let str2 = r#"200 OK
+time,t0,f0,t1,f1
+1970-01-01T00:00:00.000000009,10,12,11,13
+1970-01-01T00:00:00.000000014,15,17,16,18
+1970-01-01T00:00:00.000000001,2,4,3,
+1970-01-01T00:00:00.000000005,6,8,7,
+"#;
+
+    let mut diff_buf = String::with_capacity(512);
+    assert!(check_diff(str1, str2, &mut diff_buf));
+    assert_eq!(
+        diff_buf,
+        r#"3   |    | -1970-01-01T00:00:00.000000001,2,4,3,
+4   |    | -1970-01-01T00:00:00.000000005,6,8,7,
+    |5   | +1970-01-01T00:00:00.000000001,2,4,3,
+    |6   | +1970-01-01T00:00:00.000000005,6,8,7,
+"#
+    )
 }

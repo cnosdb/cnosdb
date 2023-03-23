@@ -59,11 +59,11 @@ t2,c
 {"error_code":"010001","error_message":"Datafusion: Schema error: No field named 'time'. Valid fields are 'key', 'value'."}
 -- ERROR:  --
 
--- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY key; --
+-- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY key, value; --
 200 OK
 key,value
-t0,a
 t0,
+t0,a
 t1,b
 t2,c
 
@@ -136,35 +136,35 @@ key,value
 t1,b
 t2,c
 
--- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE time < now() ORDER BY key; --
+-- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE time < now() ORDER BY key, value; --
 200 OK
 key,value
-t0,a
 t0,
+t0,a
 t1,b
 t2,c
 
--- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE f1 IS NOT NULL ORDER BY key; --
+-- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE f1 IS NOT NULL ORDER BY key, value; --
 422 Unprocessable Entity
 {"error_code":"010046","error_message":"Semantic error: SHOW SERIES does not support where clause contains field f1"}
 -- ERROR:  --
 
--- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE t0 != '' ORDER BY key; --
+-- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE t0 != '' ORDER BY key, value; --
 200 OK
 key,value
 t0,a
 t1,b
 t2,c
 
--- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE t0 IS NOT NULL ORDER BY key; --
+-- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE t0 IS NOT NULL ORDER BY key, value; --
 200 OK
 key,value
-t0,a
 t0,
+t0,a
 t1,b
 t2,c
 
--- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE t1 = 'b' ORDER BY key; --
+-- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE t1 = 'b' ORDER BY key, value; --
 200 OK
 key,value
 t0,a
