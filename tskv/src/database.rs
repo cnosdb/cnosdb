@@ -41,7 +41,7 @@ pub struct Database {
     opt: Arc<Options>,
 
     schemas: Arc<DBschemas>,
-    ts_indexes: HashMap<TseriesFamilyId, Arc<RwLock<index::ts_index::TSIndex>>>,
+    ts_indexes: HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>>,
     ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
     runtime: Arc<Runtime>,
     memory_pool: MemoryPoolRef,
@@ -205,7 +205,7 @@ impl Database {
         &self,
         db_name: &str,
         tables: FlatBufferTable<'_>,
-        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
+        ts_index: Arc<index::ts_index::TSIndex>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         if self.opt.storage.strict_write {
             self.build_write_group_strict_mode(db_name, tables, ts_index)
@@ -220,7 +220,7 @@ impl Database {
         &self,
         db_name: &str,
         tables: FlatBufferTable<'_>,
-        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
+        ts_index: Arc<index::ts_index::TSIndex>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
@@ -252,7 +252,7 @@ impl Database {
         &self,
         db_name: &str,
         tables: FlatBufferTable<'_>,
-        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
+        ts_index: Arc<index::ts_index::TSIndex>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         let mut map = HashMap::new();
         for table in tables {
@@ -339,27 +339,25 @@ impl Database {
         tab_name: &str,
         info: &Point<'_>,
         tag_names: &[&str],
-        ts_index: Arc<RwLock<index::ts_index::TSIndex>>,
+        ts_index: Arc<index::ts_index::TSIndex>,
     ) -> Result<u32> {
         let nullbits = info.fields_nullbit().ok_or(InvalidPoint)?.bytes();
         if !nullbits.iter().any(|x| *x != 0) {
             return Err(InvalidPoint);
         }
 
-        let mut series_key = SeriesKey::build_series_key(db_name, tab_name, tag_names, info)
-            .map_err(|e| Error::CommonError {
-                reason: e.to_string(),
+        let series_key =
+            SeriesKey::build_series_key(db_name, tab_name, tag_names, info).map_err(|e| {
+                Error::CommonError {
+                    reason: e.to_string(),
+                }
             })?;
 
-        if let Some(id) = ts_index.read().await.get_series_id(&series_key)? {
+        if let Some(id) = ts_index.get_series_id(&series_key).await? {
             return Ok(id);
         }
 
-        let id = ts_index
-            .write()
-            .await
-            .add_series_if_not_exists(&mut series_key)
-            .await?;
+        let id = ts_index.add_series_if_not_exists(&series_key).await?;
 
         Ok(id)
     }
@@ -400,7 +398,7 @@ impl Database {
 
     pub async fn get_series_key(&self, vnode_id: u32, sid: u32) -> IndexResult<Option<SeriesKey>> {
         if let Some(idx) = self.get_ts_index(vnode_id) {
-            return idx.read().await.get_series_key(sid);
+            return idx.get_series_key(sid).await;
         }
 
         Ok(None)
@@ -433,7 +431,7 @@ impl Database {
         self.ts_indexes.remove(&id);
     }
 
-    pub fn get_ts_index(&self, id: u32) -> Option<Arc<RwLock<index::ts_index::TSIndex>>> {
+    pub fn get_ts_index(&self, id: u32) -> Option<Arc<index::ts_index::TSIndex>> {
         if let Some(v) = self.ts_indexes.get(&id) {
             return Some(v.clone());
         }
@@ -441,23 +439,20 @@ impl Database {
         None
     }
 
-    pub fn ts_indexes(&self) -> &HashMap<TseriesFamilyId, Arc<RwLock<index::ts_index::TSIndex>>> {
-        &self.ts_indexes
+    pub fn ts_indexes(&self) -> HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>> {
+        self.ts_indexes.clone()
     }
 
     pub async fn get_table_sids(&self, table: &str) -> IndexResult<Vec<SeriesId>> {
         let mut res = vec![];
         for (_, ts_index) in self.ts_indexes.iter() {
-            let mut list = ts_index.read().await.get_series_id_list(table, &[])?;
+            let mut list = ts_index.get_series_id_list(table, &[]).await?;
             res.append(&mut list);
         }
         Ok(res)
     }
 
-    pub async fn get_ts_index_or_add(
-        &mut self,
-        id: u32,
-    ) -> Result<Arc<RwLock<index::ts_index::TSIndex>>> {
+    pub async fn get_ts_index_or_add(&mut self, id: u32) -> Result<Arc<index::ts_index::TSIndex>> {
         if let Some(v) = self.ts_indexes.get(&id) {
             return Ok(v.clone());
         }
@@ -465,7 +460,7 @@ impl Database {
         let path = self.opt.storage.index_dir(&self.owner, id);
 
         let idx = index::ts_index::TSIndex::new(path).await?;
-        let idx = Arc::new(RwLock::new(idx));
+        let idx = Arc::new(idx);
 
         self.ts_indexes.insert(id, idx.clone());
 
@@ -517,10 +512,9 @@ pub(crate) async fn delete_table_async(
 
         let mut sids = vec![];
         for (_id, index) in db.read().await.ts_indexes().iter() {
-            let mut index = index.write().await;
-
             let mut ids = index
                 .get_series_id_list(&table, &[])
+                .await
                 .context(error::IndexErrSnafu)?;
 
             for sid in ids.iter() {

@@ -45,6 +45,16 @@ impl SeriesKeyBlock {
     pub fn size(&self) -> u32 {
         self.data_len + BLOCK_HEADER_SIZE as u32
     }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(self.size() as usize);
+        buf.extend_from_slice(&self.ts.to_be_bytes());
+        buf.extend_from_slice(&self.series_id.to_be_bytes());
+        buf.extend_from_slice(&self.data_len.to_be_bytes());
+        buf.extend_from_slice(&self.data);
+
+        buf
+    }
 }
 
 pub struct IndexBinlog {
@@ -97,10 +107,10 @@ impl IndexBinlog {
         Ok(())
     }
 
-    pub async fn write(&mut self, block: &SeriesKeyBlock) -> IndexResult<()> {
+    pub async fn write(&mut self, data: &[u8]) -> IndexResult<()> {
         self.roll_write_file().await?;
 
-        self.writer_file.write(block).await?;
+        self.writer_file.write(data).await?;
 
         Ok(())
     }
@@ -176,19 +186,20 @@ impl BinlogWriter {
         BinlogWriter::write_header(&self.file, offset).await
     }
 
-    pub async fn write(&mut self, block: &SeriesKeyBlock) -> IndexResult<usize> {
+    pub async fn write(&mut self, data: &[u8]) -> IndexResult<usize> {
         let mut pos = self.size;
+        pos += self.file.write_at(pos, data).await? as u64;
 
-        pos += self.file.write_at(pos, &block.ts.to_be_bytes()).await? as u64;
-        pos += self
-            .file
-            .write_at(pos, &block.series_id.to_be_bytes())
-            .await? as u64;
-        pos += self
-            .file
-            .write_at(pos, &block.data_len.to_be_bytes())
-            .await? as u64;
-        pos += self.file.write_at(pos, &block.data).await? as u64;
+        // pos += self.file.write_at(pos, &block.ts.to_be_bytes()).await? as u64;
+        // pos += self
+        //     .file
+        //     .write_at(pos, &block.series_id.to_be_bytes())
+        //     .await? as u64;
+        // pos += self
+        //     .file
+        //     .write_at(pos, &block.data_len.to_be_bytes())
+        //     .await? as u64;
+        // pos += self.file.write_at(pos, &block.data).await? as u64;
 
         debug!(
             "Write binlog data pos: {}, len: {}",

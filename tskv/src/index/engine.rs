@@ -75,6 +75,50 @@ impl IndexEngine {
         Ok(blob.to_vec())
     }
 
+    pub fn get_rb(&self, key: &[u8]) -> IndexResult<Option<roaring::RoaringBitmap>> {
+        if let Some(data) = self.get(key)? {
+            let rb = roaring::RoaringBitmap::deserialize_from(&*data)
+                .map_err(|e| IndexError::RoaringBitmap { source: e })?;
+
+            Ok(Some(rb))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn load_rb(
+        &self,
+        val: &radixdb::node::Value<store::PagedFileStore>,
+    ) -> IndexResult<roaring::RoaringBitmap> {
+        let data = self.load(val)?;
+
+        let rb = roaring::RoaringBitmap::deserialize_from(&*data)
+            .map_err(|e| IndexError::RoaringBitmap { source: e })?;
+
+        Ok(rb)
+    }
+
+    pub fn build_revert_index(&self, key: &[u8], id: u32, add: bool) -> IndexResult<Vec<u8>> {
+        let mut rb = match self.get(key)? {
+            Some(val) => roaring::RoaringBitmap::deserialize_from(&*val)
+                .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?,
+
+            None => roaring::RoaringBitmap::new(),
+        };
+
+        if add {
+            rb.insert(id);
+        } else {
+            rb.remove(id);
+        }
+
+        let mut bytes = vec![];
+        rb.serialize_into(&mut bytes)
+            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+
+        Ok(bytes)
+    }
+
     pub fn modify(&mut self, key: &[u8], id: u32, add: bool) -> IndexResult<()> {
         let mut rb = match self.get(key)? {
             Some(val) => roaring::RoaringBitmap::deserialize_from(&*val)
@@ -101,6 +145,17 @@ impl IndexEngine {
     pub fn delete(&mut self, key: &[u8]) -> IndexResult<()> {
         self.db
             .try_remove(key)
+            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+
+        Ok(())
+    }
+
+    pub fn combine(&mut self, tree: radixdb::RadixTree) -> IndexResult<()> {
+        self.db
+            .try_outer_combine_with(&tree, radixdb::node::DetachConverter, |a, b| {
+                a.set(Some(b.downcast()));
+                Ok(())
+            })
             .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
 
         Ok(())
