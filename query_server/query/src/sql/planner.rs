@@ -53,7 +53,7 @@ use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
 use models::schema::{
     ColumnType, DatabaseOptions, Duration, Precision, TableColumn, TableSourceAdapter, Tenant,
-    TskvTableSchema, TskvTableSchemaRef, TIME_FIELD,
+    TskvTableSchema, TskvTableSchemaRef, DEFAULT_CATALOG, DEFAULT_DATABASE, TIME_FIELD,
 };
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
@@ -370,6 +370,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         let (plan, privilege) = match obj_type {
             TenantObjectType::Database => {
                 let database_name = normalize_ident(object_name);
+                if database_name.eq(DEFAULT_DATABASE) {
+                    return Err(QueryError::ForbidDropDatabase {
+                        name: database_name,
+                    });
+                }
                 (
                     DDLPlan::DropTenantObject(DropTenantObject {
                         tenant_name: tenant_name.to_string(),
@@ -419,6 +424,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         let (plan, privilege) = match obj_type {
             GlobalObjectType::Tenant => {
                 let tenant_name = normalize_ident(object_name);
+                if tenant_name == DEFAULT_CATALOG {
+                    return Err(QueryError::ForbidDropTenant { name: tenant_name });
+                }
+
                 (
                     DDLPlan::DropGlobalObject(DropGlobalObject {
                         if_exist,
