@@ -114,16 +114,20 @@ impl Picker for LevelCompactionPicker {
             if file.is_compacting() || !file.time_range().overlaps(&picking_time_range) {
                 continue;
             }
+            if !file.mark_compacting() {
+                continue;
+            }
             picking_files_size += file.size();
             if picking_files_size > storage_opt.max_compact_size {
                 break;
             }
             picking_files.push(file.clone());
-            file.mark_compacting();
         }
-
         if picking_files.len() <= 1 {
             info!("Picker: picked files: None");
+            if let Some(f) = picking_files.first() {
+                f.unmark_compacting();
+            }
             return None;
         }
 

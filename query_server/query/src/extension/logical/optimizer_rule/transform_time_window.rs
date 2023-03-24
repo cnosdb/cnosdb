@@ -58,11 +58,9 @@ impl OptimizerRule for TransformTimeWindowRule {
                 };
 
                 // replace current plan's exprs and child
-                let final_plan = replace_window_expr(
-                    col(WINDOW_START).alias(&window.window_alias),
-                    plan.clone(),
-                )?
-                .with_new_inputs(&[window_plan])?;
+                let final_plan =
+                    replace_window_expr(col(WINDOW_START).alias(&window.window_alias), plan)?
+                        .with_new_inputs(&[window_plan])?;
                 return Ok(Some(final_plan));
             }
         }
@@ -326,7 +324,7 @@ fn build_sliding_window_plan(
 }
 
 /// Replace udf [`TIME_WINDOW`] with the specified expression
-fn replace_window_expr(new_expr: Expr, plan: LogicalPlan) -> Result<LogicalPlan> {
+fn replace_window_expr(new_expr: Expr, plan: &LogicalPlan) -> Result<LogicalPlan> {
     plan.transform_expressions_down(&|expr: &Expr| {
         if matches!(expr, Expr::ScalarUDF {
             fun,

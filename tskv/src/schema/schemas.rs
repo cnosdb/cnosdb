@@ -102,6 +102,13 @@ impl DBschemas {
     ) -> Result<()> {
         //load schema first from cache,or else from storage and than cache it!
         let schema = self.client.get_tskv_table_schema(db_name, table_name)?;
+        let db_schema =
+            self.client
+                .get_db_schema(db_name)?
+                .ok_or(SchemaError::DatabaseNotFound {
+                    database: db_name.to_string(),
+                })?;
+        let precision = db_schema.config.precision_or_default();
         let mut new_schema = false;
         let mut schema = match schema {
             None => {
@@ -150,7 +157,7 @@ impl DBschemas {
         //check timestamp
         check_fn(&mut TableColumn::new_with_default(
             TIME_STAMP_NAME.to_string(),
-            ColumnType::Time,
+            ColumnType::Time((*precision).into()),
         ))?;
 
         //check tags

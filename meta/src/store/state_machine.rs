@@ -7,7 +7,6 @@ use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
-use models::utils;
 use openraft::{EffectiveMembership, LogId};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, from_str};
@@ -898,7 +897,6 @@ impl StateMachine {
                 .into_values()
                 .collect();
 
-        let now = utils::now_timestamp();
         if node_list.is_empty()
             || db_schema.config.shard_num_or_default() == 0
             || db_schema.config.replica_or_default() > node_list.len() as u64
@@ -910,7 +908,7 @@ impl StateMachine {
             .to_string();
         }
 
-        if *ts < now - db_schema.config.ttl_or_default().to_nanoseconds() {
+        if *ts < db_schema.time_to_expired() {
             return TenaneMetaDataResp::new(
                 META_REQUEST_FAILED,
                 format!("database {} create expired bucket not permit!", db),

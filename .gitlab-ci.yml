@@ -1,0 +1,53 @@
+stages:
+  - bench
+bench-job:
+  stage: bench
+  tags:
+    - shell
+  script:
+    # - source /root/.bashrc
+    - echo "clean env"
+    # - rm -rf /tmp/cnosdb
+    - rm -rf /data1/cnosdb
+    # - pkill -9 cnosdb
+    # - pkill -9 cnosdb-meta
+    - sleep 10
+    - echo "modify default config"
+    - sed -i "s/3100/3300/g" config/config_31001.toml
+    - sed -i "s/2100/2200/g" config/config_31001.toml
+    - sed -i "s/tmp/data1/g" config/config_31001.toml
+    - sed -i "s/3200/3400/g" config/config_32001.toml
+    - sed -i "s/2100/2200/g" config/config_32001.toml
+    - sed -i "s/tmp/data1/g" config/config_32001.toml
+    - sed -i "s/tmp/data1/g" meta/config/config_21003.toml
+    - sed -i "s/tmp/data1/g" meta/config/config_21001.toml
+    - sed -i "s/tmp/data1/g" meta/config/config_21002.toml
+    - sed -i "s/2100/2200/g" meta/config/config_21003.toml
+    - sed -i "s/2100/2200/g" meta/config/config_21001.toml
+    - sed -i "s/2100/2200/g" meta/config/config_21002.toml
+    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_21001.toml
+    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_21002.toml
+    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_21003.toml
+    - sed -i "s/tmp/data1/g" run_cluster.sh
+    - sed -i "s/1000000000/10/g" run_cluster.sh
+    - sed -i "s/tmp/data1/g" meta/cluster.sh
+    - sed -i "s/ 2100/ 2200/g" meta/cluster.sh
+    - sed -i "s/:2100/:2200/g" meta/cluster.sh
+    - sed -i "s/127.0.0.1/172.17.0.1/g" config/config_31001.toml
+    - sed -i "s/127.0.0.1/172.17.0.1/g" config/config_32001.toml
+    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/cluster.sh
+    - sed -i "s/127.0.0.1/172.17.0.1/g" run_cluster.sh
+    - sed -i "s/debug/release/g" meta/cluster.sh
+    - sed -i "s/build/& --release/g" meta/cluster.sh
+    - sed -i "s/build/& --release/g" run_cluster.sh
+    - sed -i "s/debug/release/g" run_cluster.sh
+    - echo "starting cluster"
+    - bash ./run_cluster.sh
+    - echo "cluster is running"
+    - echo "create database"
+    - cnosdb-cli -P 33001 -h 172.17.0.1 -f /home/gitlab-runner/benchmark.sh 
+    # - echo "generate data"
+    # - generate_data --use-case="iot" --seed=123 --scale=100 --timestamp-start="2023-01-01T00:00:00Z"  --timestamp-end="2023-01-01T01:00:00Z" --log-interval='6.3s' --format="cnosdb" | gzip >/cnosdb_1h_data.gz
+    # - echo "data is ready"
+    - echo "loading data"
+    - cat /data/cnosdb_iot_123_2022.gz| gunzip | load_cnosdb --urls http://172.17.0.1:33001 --workers 50

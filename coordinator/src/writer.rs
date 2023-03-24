@@ -4,7 +4,7 @@ use std::time::Duration;
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use meta::model::{MetaClientRef, MetaRef};
 use models::meta_data::*;
-use models::utils::now_timestamp;
+use models::utils::now_timestamp_nanos;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{Meta, WritePointsRequest, WriteVnodeRequest};
 use protos::models::{
@@ -399,7 +399,7 @@ impl PointWriter {
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
         let (sender, receiver) = oneshot::channel();
-        let block = HintedOffBlock::new(now_timestamp(), vnode_id, tenant.to_string(), data);
+        let block = HintedOffBlock::new(now_timestamp_nanos(), vnode_id, tenant.to_string(), data);
         let request = HintedOffWriteReq {
             node_id,
             sender,

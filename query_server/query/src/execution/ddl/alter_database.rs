@@ -62,6 +62,6 @@ fn build_database_schema(database_options: &DatabaseOptions, config: &mut Databa
         config.with_vnode_duration(vnode_duration.clone());
     }
     if let Some(precision) = database_options.precision() {
-        config.with_precision(precision.clone());
+        config.with_precision(*precision);
     }
 }

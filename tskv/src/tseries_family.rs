@@ -125,8 +125,14 @@ impl ColumnFile {
         self.compacting.load(Ordering::Acquire)
     }
 
-    pub fn mark_compacting(&self) {
-        self.compacting.store(true, Ordering::Release);
+    pub fn mark_compacting(&self) -> bool {
+        self.compacting
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+
+    pub fn unmark_compacting(&self) {
+        self.compacting.store(false, Ordering::Release);
     }
 }
 
