@@ -26,3 +26,6 @@ common/license/public.rsa
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+# Generated deb and rpm packages
+output

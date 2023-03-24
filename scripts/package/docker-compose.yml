@@ -1,0 +1,14 @@
+version: "3"
+services:
+  package:
+    build:
+      dockerfile: Dockerfile
+    volumes:
+      - ../../:/cnosdb
+    command:
+      - /bin/bash
+      - -c
+      - |
+        chmod +x ./scripts/package/package.sh
+        scripts/package/package.sh -n cnosdb-meta
+        scripts/package/package.sh -n cnosdb

@@ -12,10 +12,10 @@
 #       - aarch64-unknown-linux-gnu
 
 [target.x86_64-unknown-linux-gnu]
-dockerfile = "./scripts/cross/x86_64-unknown-linux-gnu.dockerfile"
+image = "cnosdb/cross:x86_64-unknown-linux-gnu"
 
 [target.aarch64-unknown-linux-gnu]
-dockerfile = "./scripts/cross/aarch64-unknown-linux-gnu.dockerfile"
+image = "cnosdb/cross:aarch64-unknown-linux-gnu"
 
 # Encountered unexpected events:
 # https://gist.github.com/IvanGao01/d679a70223fb632719124d6bf7194c2c

@@ -1,15 +1,16 @@
 #!/bin/bash
-set -x
+set -e
 
 NAME=""
 S3_URL=""
 SECRET_ID=""
 SECRET_KEY=""
 OUTPUT=""
+BUILD_OPTION="release"
 
 USER=cnosdb
 GROUP=cnosdb
-VERSION=$(grep 'workspace.package' /cnosdb/Cargo.toml -A 3 | grep 'version =' | sed 's/.*"\(.*\)"/\1/')
+VERSION=$(grep 'workspace.package' ./Cargo.toml -A 3 | grep 'version =' | sed 's/.*"\(.*\)"/\1/')
 DESCRIPTION="An Open Source Distributed Time Series Database with high performance, high compression ratio and high usability."
 LICENSE="AGPL-3.0"
 VENDOR="CnosDB Tech (Beijing) Limited"
@@ -19,8 +20,8 @@ LOG_DIR="/var/log/cnosdb"
 DATA_DIR="/var/lib/cnosdb"
 
 usage() {
-  cat << EOF
-Usage: $0 -n <package-name> [-s <S3 URL>] [-i <Secret ID>] [-k <Secret Key>] [-h] [-o <PATH>]
+cat << EOF
+Usage: $0 -n <package-name> [-s <S3 URL>] [-i <Secret ID>] [-k <Secret Key>] [-o <PATH>] [-l] [-N] [-r] [-h]
 
 Build and upload packages to S3.
 
@@ -30,77 +31,86 @@ Options:
   -i <Secret ID>      The S3 Secret ID. Optional.
   -k <Secret Key>     The S3 Secret Key. Optional.
   -o <PATH>           Path to output package. Optional.
+  -b <BUILD OPTION>   Build option [latest, nightly, release]. Optional. Default is release.
   -h                  Show this help message.
 EOF
 }
 
 # 解析命令行选项和参数
-while getopts "n:s:i:k:o:h" opt; do
+while getopts "n:s:i:k:o:b:h" opt; do
   case ${opt} in
     n) NAME=$OPTARG ;;
     s) S3_URL=$OPTARG ;;
     i) SECRET_ID=$OPTARG ;;
     k) SECRET_KEY=$OPTARG ;;
     o) OUTPUT=$OPTARG;;
+    b) BUILD_OPTION=$OPTARG ;;
     h) usage; exit 0 ;;
     \?) echo "Invalid option: -$OPTARG" >&2; usage; exit 1 ;;
     :) echo "Option -$OPTARG requires an argument." >&2; usage; exit 1 ;;
   esac
 done
 
-# 验证必要参数是否存在
+# Verify if necessary parameters exist
 if [ -z "$NAME" ]; then
   echo "Package name is missing! Use -n option to specify the package name."
   usage
   exit 1
 fi
 
-## 接收NAME参数，根据不同NAME指定不同的FPM_CMD字符串
+# Verify if BUILD_OPTION is legal
+if [ "$BUILD_OPTION" != "latest" ] && [ "$BUILD_OPTION" != "nightly" ] && [ "$BUILD_OPTION" != "release" ]; then
+  echo "Build option is invalid! Use -b option to specify the build option."
+  usage
+  exit 1
+fi
+
+# If BUILD_OPTION is not equal to release, then use nightly or latest directly
+if [ "$BUILD_OPTION" != "release" ]; then
+  VERSION="$BUILD_OPTION"
+fi
+
+## Receive the NAME parameter and specify different FPMs based on different FPM_CMD String
 build_fpm_cmd() {
 
 NAME=$1
 ARCH=$2
 OUTPUT_TYPE=$3
-SOURCEFILE_CNOSDB="https://ec6ze24v.oss-cn-beijing.aliyuncs.com/source/$4/release/${VERSION}/cnosdb"
-SOURCEFILE_CNOSDB_CLI="https://ec6ze24v.oss-cn-beijing.aliyuncs.com/source/$4/release/${VERSION}/cnosdb-cli"
-SOURCEFILE_CNOSDB_META="https://ec6ze24v.oss-cn-beijing.aliyuncs.com/source/$4/release/${VERSION}/cnosdb-meta"
+TARGET=$4
 
 PKG_TEMP=$(mktemp -d)
 
    # Create layout for packaging under $PKG_TEMP.
-  rm -rf "${PKG_TEMP}"
   mkdir -p "${PKG_TEMP}/usr/bin" \
            "${PKG_TEMP}/var/log/cnosdb" \
            "${PKG_TEMP}/var/lib/cnosdb" \
            "${PKG_TEMP}/etc/cnosdb" \
            "${PKG_TEMP}/usr/lib/${NAME}/scripts"
 
-  chmod -R 0755 "${PKG_TEMP}"
-
   # Copy service scripts.
   cp "/cnosdb/scripts/package/${NAME}/init.sh" "${PKG_TEMP}/usr/lib/${NAME}/scripts/init.sh"
   chmod 0644 "${PKG_TEMP}/usr/lib/${NAME}/scripts/init.sh"
   cp "/cnosdb/scripts/package/${NAME}/${NAME}.service" "${PKG_TEMP}/usr/lib/${NAME}/scripts/${NAME}.service"
   chmod 0644 "${PKG_TEMP}/usr/lib/${NAME}/scripts/${NAME}.service"
-  cp "/cnosdb/scripts/package/${NAME}/${NAME}-systemd-start.sh" "${PKG_TEMP}/usr/lib/${NAME}/scripts/${NAME}-systemd-start.sh"
-  chmod 0755 "${PKG_TEMP}/usr/lib/${NAME}/scripts/${NAME}-systemd-start.sh"
 
   if [ "${NAME}" == "cnosdb" ]; then
 
       cp /cnosdb/config/config.toml "${PKG_TEMP}/etc/${NAME}/${NAME}.conf"
 
-      wget -O "${PKG_TEMP}/usr/bin/cnosdb" "${SOURCEFILE_CNOSDB}"
-      wget -O "${PKG_TEMP}/usr/bin/cnosdb-cli" "${SOURCEFILE_CNOSDB_CLI}"
+      # Copy binaries.
+      cp "/cnosdb/target/${TARGET}/release/cnosdb" "${PKG_TEMP}/usr/bin/cnosdb"
+      cp "/cnosdb/target/${TARGET}/release/cnosdb-cli" "${PKG_TEMP}/usr/bin/cnosdb-cli"
 
-      chmod 755 "${SOURCEFILE_CNOSDB}"
-      chmod 755 "${SOURCEFILE_CNOSDB_CLI}"
+      chmod 755 "${PKG_TEMP}/usr/bin/cnosdb"
+      chmod 755 "${PKG_TEMP}/usr/bin/cnosdb-cli"
 
   elif [ "${NAME}" == "cnosdb-meta" ]; then
 
       cp /cnosdb/meta/config/config.toml "${PKG_TEMP}/etc/cnosdb/${NAME}.conf"
-      wget -O "${PKG_TEMP}/usr/bin/cnosdb-meta" "${SOURCEFILE_CNOSDB_META}"
 
-      chmod 755 "${SOURCEFILE_CNOSDB_META}"
+      cp "/cnosdb/target/${TARGET}/release/cnosdb-meta" "${PKG_TEMP}/usr/bin/cnosdb-meta"
+
+      chmod 755 "${PKG_TEMP}/usr/bin/cnosdb-meta"
 
   else
       echo "Invalid build name."
@@ -117,9 +127,9 @@ PKG_TEMP=$(mktemp -d)
    --architecture "${ARCH}" \
    -s dir \
    --url "https://www.cnosdb.com/" \
-   --before-install /cnosdb/scripts/package/${NAME}/before-install.sh \
-   --after-install /cnosdb/scripts/package/${NAME}/after-install.sh \
-   --after-remove /cnosdb/scripts/package/${NAME}/after-remove.sh \
+   --before-install /cnosdb/scripts/package/"${NAME}"/before-install.sh \
+   --after-install /cnosdb/scripts/package/"${NAME}"/after-install.sh \
+   --after-remove /cnosdb/scripts/package/"${NAME}"/after-remove.sh \
    --directories "${LOG_DIR}" \
    --directories "${DATA_DIR}" \
    --rpm-attr 755,${USER},${GROUP}:${LOG_DIR} \
@@ -158,7 +168,7 @@ main(){
         arch=arm64
       fi
       # Call the build_fpm_cmd function with the given arguments
-     build_fpm_cmd "${NAME}" "${arch}" "${output_type}" "$target"
+     build_fpm_cmd "${NAME}" "${arch}" "${output_type}" "${target}"
 
     done
   done

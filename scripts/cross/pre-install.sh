@@ -39,6 +39,7 @@ install_protoc() {
   unzip -qq "${download_path}" -d "${TMP_DIR}"
   chmod 755 "${TMP_DIR}/bin/protoc"
   mv -fv "${TMP_DIR}/bin/protoc" "${install_path}"
+  mv -fv "${TMP_DIR}/include/google" "/usr/include"
 }
 
 install_cmake() {

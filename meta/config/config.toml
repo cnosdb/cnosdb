@@ -1,8 +1,16 @@
 id = 1
-http_addr = "0.0.0.0:21001"
+http_addr = "127.0.0.1:8901"
 
-logs_level = "info"
-logs_path = "/var/log/cnosdb"
 snapshot_path = "/var/lib/cnosdb/meta/snapshot"
 journal_path = "/var/lib/cnosdb/meta/journal"
 snapshot_per_events = 500
+
+[log]
+level = "info"
+path = "/var/log/cnosdb"
+
+[meta_init]
+cluster_name = "cluster_xxx"
+admin_user = "root"
+system_tenant = "cnosdb"
+default_database = ["public", "usage_schema"]

@@ -6,11 +6,11 @@ Documentation=https://docs.cnosdb.com/
 After=network-online.target
 
 [Service]
-User=cnosdb
-Group=cnosdb
+User=root
+Group=root
 LimitNOFILE=65536
 EnvironmentFile=-/etc/default/cnosdb
-ExecStart=/usr/lib/cnosdb/scripts/cnosdb-systemd-start.sh
+ExecStart=/usr/bin/cnosdb run --config /etc/cnosdb/cnosdb.conf $CNOSDB_OPTS
 KillMode=control-group
 Restart=on-failure
 PIDFile=/var/run/cnosdb/cnosdb.pid
