@@ -59,6 +59,7 @@ http_listen_addr = '127.0.0.1:31001'
 grpc_listen_addr = '127.0.0.1:31002'
 flight_rpc_listen_addr = '127.0.0.1:31004'
 store_metrics = true
+cold_data_server = false
 
 [hinted_off]
 enable = true

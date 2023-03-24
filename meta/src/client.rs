@@ -250,6 +250,8 @@ mod test {
 
         let node = NodeInfo {
             id: 111,
+            disk_free: 1000,
+            is_cold: false,
             grpc_addr: "".to_string(),
             http_addr: "127.0.0.1:8888".to_string(),
             status: 0,

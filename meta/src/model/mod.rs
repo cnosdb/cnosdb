@@ -38,7 +38,8 @@ pub trait AdminMeta: Send + Sync + Debug {
     // *数据节点上下线管理 */
     async fn sync_all(&self) -> MetaResult<u64>;
     async fn data_nodes(&self) -> Vec<NodeInfo>;
-    async fn add_data_node(&self) -> MetaResult<()>;
+    async fn add_data_node(&self, disk_free: u64, is_cold_server: bool) -> MetaResult<()>;
+    // async fn add_data_node(&self) -> MetaResult<()>;
     // fn del_data_node(&self, id: u64) -> MetaResult<()>;
 
     // fn meta_nodes(&self);

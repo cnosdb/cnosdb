@@ -1,17 +1,21 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use coordinator::service::{CoordService, CoordinatorRef};
 use memory_pool::MemoryPoolRef;
+use meta::error::MetaResult;
 use meta::model::meta_manager::RemoteMetaManager;
-use meta::model::MetaRef;
+use meta::model::{MetaManager, MetaRef};
 use metrics::metric_register::MetricsRegister;
+use models::meta_data::get_disk_info;
 use query::instance::make_cnosdbms;
 use snafu::{Backtrace, Snafu};
 use spi::server::dbms::DBMSRef;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
+use tokio::time;
 use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
@@ -103,10 +107,34 @@ pub(crate) struct ServiceBuilder {
     pub metrics_register: Arc<MetricsRegister>,
 }
 
+#[allow(unreachable_code)]
+async fn regualar_get_disk_info(
+    config: config::Config,
+    meta: Arc<dyn MetaManager>,
+) -> MetaResult<()> {
+    let mut interval = time::interval(Duration::from_secs(300));
+    let path_buf = config.storage.path.as_str();
+    let cold_data_server = config.cluster.cold_data_server;
+
+    loop {
+        interval.tick().await;
+
+        if let Ok(disk_free) = get_disk_info(path_buf) {
+            meta.admin_meta()
+                .add_data_node(disk_free, cold_data_server)
+                .await
+                .unwrap();
+        }
+    }
+
+    Ok(())
+}
+
 impl ServiceBuilder {
     pub async fn build_storage_server(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
-        meta.admin_meta().add_data_node().await.unwrap();
+
+        tokio::spawn(regualar_get_disk_info(self.config.clone(), meta.clone()));
 
         let kv_inst = self
             .create_tskv(meta.clone(), self.runtime.clone(), self.memory_pool.clone())
@@ -147,7 +175,8 @@ impl ServiceBuilder {
 
     pub async fn build_query_storage(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
-        meta.admin_meta().add_data_node().await.unwrap();
+
+        tokio::spawn(regualar_get_disk_info(self.config.clone(), meta.clone()));
 
         let kv_inst = self
             .create_tskv(meta.clone(), self.runtime.clone(), self.memory_pool.clone())

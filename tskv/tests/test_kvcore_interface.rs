@@ -8,6 +8,7 @@ mod tests {
     use meta::model::meta_manager::RemoteMetaManager;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
+    use models::meta_data::get_disk_info;
     use models::schema::TenantOptions;
     use protos::kv_service::Meta;
     use protos::{kv_service, models_helper};
@@ -16,6 +17,7 @@ mod tests {
     use tokio::runtime::Runtime;
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::file_system::file_manager;
+    use tskv::kv_option::StorageOptions;
     use tskv::{kv_option, Engine, TsKv};
 
     fn get_tskv(dir: impl AsRef<Path>) -> (Arc<Runtime>, TsKv) {
@@ -27,9 +29,20 @@ mod tests {
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let meta_manager: MetaRef = rt.block_on(RemoteMetaManager::new(global_config.cluster));
-        rt.block_on(meta_manager.admin_meta().add_data_node())
+        let meta_manager: MetaRef =
+            rt.block_on(RemoteMetaManager::new(global_config.cluster.clone()));
+
+        let storage_options = StorageOptions::from(&global_config);
+
+        if let Ok(disk_free) = get_disk_info(storage_options.path.as_path().to_str().unwrap()) {
+            rt.block_on(
+                meta_manager
+                    .admin_meta()
+                    .add_data_node(disk_free, global_config.cluster.cold_data_server),
+            )
             .unwrap();
+        }
+
         let _ = rt.block_on(
             meta_manager
                 .tenant_manager()

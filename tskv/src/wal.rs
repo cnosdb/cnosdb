@@ -645,6 +645,7 @@ mod test {
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::codec::Encoding;
+    use models::meta_data::get_disk_info;
     use models::schema::TenantOptions;
     use models::Timestamp;
     use protos::models::FieldType;
@@ -930,8 +931,18 @@ mod test {
         rt.block_on(async {
             let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
             let opt = kv_option::Options::from(&global_config);
-            let meta_manager: MetaRef = RemoteMetaManager::new(global_config.cluster).await;
-            meta_manager.admin_meta().add_data_node().await.unwrap();
+            let meta_manager: MetaRef = RemoteMetaManager::new(global_config.cluster.clone()).await;
+            use crate::kv_option::StorageOptions;
+            let storage_options = StorageOptions::from(&global_config);
+
+            if let Ok(disk_free) = get_disk_info(storage_options.path.as_path().to_str().unwrap()) {
+                meta_manager
+                    .admin_meta()
+                    .add_data_node(disk_free, global_config.cluster.cold_data_server)
+                    .await
+                    .unwrap();
+            }
+
             let _ = meta_manager
                 .tenant_manager()
                 .create_tenant("cnosdb".to_string(), TenantOptions::default())

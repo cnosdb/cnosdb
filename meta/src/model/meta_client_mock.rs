@@ -30,7 +30,8 @@ impl AdminMeta for MockAdminMeta {
     async fn sync_all(&self) -> MetaResult<u64> {
         Ok(0)
     }
-    async fn add_data_node(&self) -> MetaResult<()> {
+
+    async fn add_data_node(&self, disk_free: u64, is_cold_server: bool) -> MetaResult<()> {
         Ok(())
     }
 

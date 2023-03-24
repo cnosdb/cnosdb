@@ -71,10 +71,12 @@ impl AdminMeta for RemoteAdminMeta {
         self.sync_all_data_node().await
     }
 
-    async fn add_data_node(&self) -> MetaResult<()> {
+    async fn add_data_node(&self, arg_disk_free: u64, is_cold_server: bool) -> MetaResult<()> {
         let node = NodeInfo {
             status: 0,
             id: self.config.node_id,
+            disk_free: arg_disk_free,
+            is_cold: is_cold_server,
             grpc_addr: self.config.grpc_listen_addr.clone(),
             http_addr: self.config.http_listen_addr.clone(),
         };

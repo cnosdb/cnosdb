@@ -5,10 +5,12 @@ use datafusion::execution::memory_pool::GreedyMemoryPool;
 use meta::model::meta_manager::RemoteMetaManager;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use models::meta_data::get_disk_info;
 use parking_lot::Mutex;
 use protos::kv_service::WritePointsRequest;
 use protos::models_helper;
 use tokio::runtime::{self, Runtime};
+use tskv::kv_option::StorageOptions;
 use tskv::{Engine, TsKv};
 
 async fn get_tskv() -> TsKv {
@@ -24,7 +26,16 @@ async fn get_tskv() -> TsKv {
     );
 
     let meta_manager: MetaRef = RemoteMetaManager::new(global_config.cluster.clone()).await;
-    meta_manager.admin_meta().add_data_node().await.unwrap();
+    let storage_options = StorageOptions::from(&global_config);
+
+    if let Ok(disk_free) = get_disk_info(storage_options.path.as_path().to_str().unwrap()) {
+        meta_manager
+            .admin_meta()
+            .add_data_node(disk_free, global_config.cluster.cold_data_server)
+            .await
+            .unwrap();
+    }
+
     let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
     TsKv::open(
         meta_manager,

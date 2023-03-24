@@ -994,6 +994,7 @@ pub mod test_tseries_family {
     use meta::model::meta_manager::RemoteMetaManager;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
+    use models::meta_data::get_disk_info;
     use models::schema::{DatabaseSchema, TenantOptions};
     use models::Timestamp;
     use parking_lot::RwLock;
@@ -1347,8 +1348,17 @@ pub mod test_tseries_family {
 
         let config = config::get_config_for_test();
         let meta_manager: MetaRef = runtime.block_on(async {
-            let meta_manager: MetaRef = RemoteMetaManager::new(config.cluster).await;
-            meta_manager.admin_meta().add_data_node().await.unwrap();
+            let meta_manager: MetaRef = RemoteMetaManager::new(config.cluster.clone()).await;
+            let storage_options = StorageOptions::from(&config);
+
+            if let Ok(disk_free) = get_disk_info(storage_options.path.as_path().to_str().unwrap()) {
+                meta_manager
+                    .admin_meta()
+                    .add_data_node(disk_free, config.cluster.cold_data_server)
+                    .await
+                    .unwrap();
+            }
+
             let _ = meta_manager
                 .tenant_manager()
                 .create_tenant("cnosdb".to_string(), TenantOptions::default())

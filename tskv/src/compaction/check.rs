@@ -433,6 +433,7 @@ mod test {
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
+    use models::meta_data::get_disk_info;
     use models::predicate::domain::TimeRange;
     use models::schema::{
         ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
@@ -866,8 +867,16 @@ mod test {
                 .unwrap(),
         );
         let (meta, meta_client) = rt.block_on(async {
-            let meta: MetaRef = RemoteMetaManager::new(config.cluster).await;
-            meta.admin_meta().add_data_node().await.unwrap();
+            let meta: MetaRef = RemoteMetaManager::new(config.cluster.clone()).await;
+            use crate::kv_option::StorageOptions;
+            let storage_options = StorageOptions::from(&config);
+
+            if let Ok(disk_free) = get_disk_info(storage_options.path.as_path().to_str().unwrap()) {
+                meta.admin_meta()
+                    .add_data_node(disk_free, config.cluster.cold_data_server)
+                    .await
+                    .unwrap();
+            }
             let _ = meta
                 .tenant_manager()
                 .create_tenant(tenant_name.clone(), TenantOptions::default())
