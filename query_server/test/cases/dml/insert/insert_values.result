@@ -1,11 +1,3 @@
--- EXECUTE SQL: DROP DATABASE IF EXISTS public; --
-200 OK
-
-
--- EXECUTE SQL: CREATE DATABASE public; --
-200 OK
-
-
 -- WRITE LINE PROTOCOL --
 test,ta=a1,tb=b1 fa=1,fb=2 3
 -- LINE PROTOCOL END --
@@ -140,4 +132,3 @@ rows
 422 Unprocessable Entity
 {"error_code":"020002","error_message":"Fields can't be empty"}
 -- ERROR:  --
-

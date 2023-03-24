@@ -1,8 +1,6 @@
 --#SORT=true
 --#SLEEP=100
 -- normal
-DROP DATABASE IF EXISTS public;
-CREATE DATABASE public;
 -- public.test(time i64, ta utf8, tb utf8, fa , fb)
 -- insert all columns with single record
 --#LP_BEGIN

@@ -415,6 +415,18 @@ pub enum QueryError {
     TenantOptionsBuildFail {
         source: TenantOptionsBuilderError,
     },
+
+    #[snafu(display("Tenant \"{}\" forbid drop", name))]
+    #[error_code(code = 61)]
+    ForbidDropTenant {
+        name: String,
+    },
+
+    #[snafu(display("Database \"{}\" forbid drop", name))]
+    #[error_code(code = 62)]
+    ForbidDropDatabase {
+        name: String,
+    },
 }
 
 impl From<ParserError> for QueryError {

@@ -1,11 +1,3 @@
--- EXECUTE SQL: DROP DATABASE IF EXISTS public; --
-200 OK
-
-
--- EXECUTE SQL: CREATE DATABASE public; --
-200 OK
-
-
 -- WRITE LINE PROTOCOL --
 test_insert_subquery,ta=a1,tb=b1 fa=1,fb=2 3
 -- LINE PROTOCOL END --
@@ -104,4 +96,3 @@ time,ta,tb,fa,fb
 2022-11-03T06:20:11.000000007,7a,7b,7.0,7.0
 2022-11-03T06:20:11.000000008,8a,8b,8.0,8.0
 2022-11-03T06:20:11.000000009,9a,9b,9.0,9.0
-
