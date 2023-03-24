@@ -897,9 +897,12 @@ impl StateMachine {
                 .into_values()
                 .collect();
 
+        let mut hot_node_list = node_list.clone();
+        hot_node_list.retain(|node_info| !node_info.is_cold);
+
         if node_list.is_empty()
             || db_schema.config.shard_num_or_default() == 0
-            || db_schema.config.replica_or_default() > node_list.len() as u64
+            || db_schema.config.replica_or_default() > hot_node_list.len() as u64
         {
             return TenaneMetaDataResp::new(
                 META_REQUEST_FAILED,
@@ -930,7 +933,7 @@ impl StateMachine {
                 .to_nanoseconds(),
         );
         let (group, used) = allocation_replication_set(
-            node_list,
+            hot_node_list,
             db_schema.config.shard_num_or_default() as u32,
             db_schema.config.replica_or_default() as u32,
             bucket.id + 1,

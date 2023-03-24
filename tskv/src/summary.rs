@@ -967,8 +967,12 @@ mod test {
         global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
-        let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+        let empty_path = "";
+        let meta_manager: MetaRef =
+            RemoteMetaManager::new(cluster_options.clone(), empty_path.to_string()).await;
+
         meta_manager.admin_meta().add_data_node().await.unwrap();
+
         let _ = meta_manager
             .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
@@ -1015,8 +1019,12 @@ mod test {
         global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
-        let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+        let empty_path = "";
+        let meta_manager: MetaRef =
+            RemoteMetaManager::new(cluster_options.clone(), empty_path.to_string()).await;
+
         meta_manager.admin_meta().add_data_node().await.unwrap();
+
         let _ = meta_manager
             .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
@@ -1087,7 +1095,10 @@ mod test {
         global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
-        let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+        let empty_path = "";
+        let meta_manager: MetaRef =
+            RemoteMetaManager::new(cluster_options.clone(), empty_path.to_string()).await;
+
         meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
             .tenant_manager()
@@ -1179,8 +1190,13 @@ mod test {
         compact_task_sender: Sender<CompactTask>,
     ) {
         let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let meta_manager: MetaRef = RemoteMetaManager::new(cluster_options).await;
+
+        let empty_path = "";
+        let meta_manager: MetaRef =
+            RemoteMetaManager::new(cluster_options.clone(), empty_path.to_string()).await;
+
         meta_manager.admin_meta().add_data_node().await.unwrap();
+
         let _ = meta_manager
             .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())

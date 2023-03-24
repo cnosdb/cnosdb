@@ -27,7 +27,11 @@ mod tests {
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let meta_manager: MetaRef = rt.block_on(RemoteMetaManager::new(global_config.cluster));
+        let meta_manager: MetaRef = rt.block_on(RemoteMetaManager::new(
+            global_config.cluster,
+            global_config.storage.path,
+        ));
+
         rt.block_on(meta_manager.admin_meta().add_data_node())
             .unwrap();
         let _ = rt.block_on(

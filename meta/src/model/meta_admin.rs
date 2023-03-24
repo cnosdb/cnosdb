@@ -5,6 +5,7 @@ use config::ClusterConfig;
 use models::meta_data::*;
 use tokio::sync::RwLock;
 use tonic::transport::{Channel, Endpoint};
+use trace::info;
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
@@ -19,10 +20,11 @@ pub struct RemoteAdminMeta {
     conn_map: RwLock<HashMap<u64, Channel>>,
 
     client: MetaHttpClient,
+    path: String,
 }
 
 impl RemoteAdminMeta {
-    pub fn new(config: ClusterConfig) -> Self {
+    pub fn new(config: ClusterConfig, storage_path: String) -> Self {
         let meta_url = config.meta_service_addr.clone();
 
         Self {
@@ -30,6 +32,7 @@ impl RemoteAdminMeta {
             conn_map: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
             client: MetaHttpClient::new(meta_url),
+            path: storage_path,
         }
     }
 
@@ -72,9 +75,20 @@ impl AdminMeta for RemoteAdminMeta {
     }
 
     async fn add_data_node(&self) -> MetaResult<()> {
+        let mut disk_free_ = 0;
+
+        match get_disk_info(&self.path) {
+            Ok(disk_free) => disk_free_ = disk_free,
+            Err(e) => info!("{}", e),
+        }
+
+        let is_cold_server = self.config.cold_data_server;
+
         let node = NodeInfo {
             status: 0,
             id: self.config.node_id,
+            disk_free: disk_free_,
+            is_cold: is_cold_server,
             grpc_addr: self.config.grpc_listen_addr.clone(),
             http_addr: self.config.http_listen_addr.clone(),
         };

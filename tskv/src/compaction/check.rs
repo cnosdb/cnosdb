@@ -866,7 +866,9 @@ mod test {
                 .unwrap(),
         );
         let (meta, meta_client) = rt.block_on(async {
-            let meta: MetaRef = RemoteMetaManager::new(config.cluster).await;
+            let meta: MetaRef =
+                RemoteMetaManager::new(config.cluster, config.storage.path.clone()).await;
+
             meta.admin_meta().add_data_node().await.unwrap();
             let _ = meta
                 .tenant_manager()

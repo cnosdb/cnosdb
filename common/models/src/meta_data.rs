@@ -1,8 +1,12 @@
 use std::collections::HashMap;
+use std::ffi::CString;
+use std::io;
+use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::errors::check_err;
 use crate::predicate::domain::TimeRange;
 use crate::schema::{DatabaseSchema, TableSchema};
 
@@ -36,6 +40,8 @@ pub struct NodeInfo {
     pub id: NodeId,
     pub grpc_addr: String,
     pub http_addr: String,
+    pub disk_free: u64,
+    pub is_cold: bool,
     pub status: u64,
 }
 
@@ -217,9 +223,10 @@ pub fn allocation_replication_set(
     }
 
     let mut incr_id = begin_seq;
-
-    let mut index = begin_seq;
     let mut group = vec![];
+    let mut sort_nodes = nodes;
+    sort_nodes.sort_by(|a, b| b.disk_free.cmp(&a.disk_free));
+
     for _ in 0..shards {
         let mut repl_set = ReplicationSet {
             id: incr_id,
@@ -227,17 +234,28 @@ pub fn allocation_replication_set(
         };
         incr_id += 1;
 
-        for _ in 0..replica {
+        for i in 0..replica {
             repl_set.vnodes.push(VnodeInfo {
                 id: incr_id,
-                node_id: nodes.get((index % node_count) as usize).unwrap().id,
+                node_id: sort_nodes.get(i as usize).unwrap().id,
             });
             incr_id += 1;
-            index += 1;
         }
 
         group.push(repl_set);
     }
 
     (group, incr_id - begin_seq)
+}
+
+pub fn get_disk_info(path_buf: &str) -> io::Result<u64> {
+    let path = path_buf;
+
+    let mut statfs = MaybeUninit::<libc::statfs>::zeroed();
+    let c_storage_path = CString::new(path).unwrap();
+    check_err(unsafe { libc::statfs(c_storage_path.as_ptr() as *const i8, statfs.as_mut_ptr()) })?;
+
+    let statfs = unsafe { statfs.assume_init() };
+
+    Ok(statfs.f_bsize as u64 * statfs.f_bfree)
 }

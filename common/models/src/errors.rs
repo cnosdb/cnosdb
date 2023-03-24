@@ -73,3 +73,11 @@ pub fn tuple_err<T, R, E>(value: (Result<T, E>, Result<R, E>)) -> Result<(T, R),
         (Err(e), Err(_)) => Err(e),
     }
 }
+
+pub fn check_err(r: libc::c_int) -> io::Result<libc::c_int> {
+    if r == -1 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(r)
+    }
+}

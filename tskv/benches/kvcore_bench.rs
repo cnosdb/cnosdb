@@ -23,8 +23,14 @@ async fn get_tskv() -> TsKv {
             .unwrap(),
     );
 
-    let meta_manager: MetaRef = RemoteMetaManager::new(global_config.cluster.clone()).await;
+    let meta_manager: MetaRef = RemoteMetaManager::new(
+        global_config.cluster.clone(),
+        global_config.storage.path.clone(),
+    )
+    .await;
+
     meta_manager.admin_meta().add_data_node().await.unwrap();
+
     let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
     TsKv::open(
         meta_manager,
