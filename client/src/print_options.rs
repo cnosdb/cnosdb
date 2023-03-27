@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use crate::ctx::ResultSet;
 use crate::print_format::PrintFormat;
+use crate::Result;
 
 #[derive(Debug, Clone)]
 pub struct PrintOptions {
@@ -21,7 +22,7 @@ fn print_timing_info(_row_count: usize, now: Instant) {
 
 impl PrintOptions {
     /// print the batches to stdout using the specified format
-    pub fn print_batches(&self, result_set: &ResultSet, now: Instant) -> Result<(), String> {
+    pub fn print_batches(&self, result_set: &ResultSet, now: Instant) -> Result<()> {
         result_set.print_fmt(&self.format)?;
 
         if !self.quiet {
