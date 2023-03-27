@@ -1228,6 +1228,7 @@ dependencies = [
 name = "client"
 version = "2.2.0"
 dependencies = [
+ "anyhow",
  "async-backtrace",
  "clap 4.1.8",
  "datafusion",
@@ -1236,6 +1237,7 @@ dependencies = [
  "http_protocol",
  "rustyline",
  "tokio",
+ "walkdir",
 ]
 
 [[package]]

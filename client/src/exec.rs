@@ -12,6 +12,7 @@ use crate::command::{Command, OutputFormat};
 use crate::ctx::SessionContext;
 use crate::helper::CliHelper;
 use crate::print_options::PrintOptions;
+use crate::Result;
 
 /// run and execute SQL statements and commands from a file, against a context with the given print options
 pub async fn exec_from_lines(
@@ -100,7 +101,7 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &mut PrintO
                         }
                         _ => {
                             if let Err(e) = cmd.execute(ctx, &mut print_options).await {
-                                eprintln!("{}", e)
+                                eprintln!("{e}")
                             }
                         }
                     }
@@ -146,7 +147,7 @@ async fn exec_and_print(
     ctx: &mut SessionContext,
     print_options: &PrintOptions,
     sql: String,
-) -> Result<(), String> {
+) -> Result<()> {
     let strs: Vec<&str> = sql.split(';').collect();
     for tmp in strs.iter() {
         if tmp.trim().is_empty() {
@@ -181,18 +182,18 @@ pub fn is_system_table_db(db: &str) -> bool {
     db.eq("cluster_schema") || db.eq("information_schema")
 }
 
-pub async fn connect_database(database: &str, ctx: &mut SessionContext) -> Result<(), String> {
+pub async fn connect_database(database: &str, ctx: &mut SessionContext) -> Result<()> {
     if is_system_table_db(database) {
         ctx.set_database(database);
         return Ok(());
     }
     let old_database = ctx.get_database().to_string();
     ctx.set_database(database);
-    match ctx.sql(format!("DESCRIBE DATABASE {}", database)).await {
-        Ok(_) => Ok(()),
-        Err(e) => {
+    ctx.sql(format!("DESCRIBE DATABASE {}", database))
+        .await
+        .map_err(|e| {
             ctx.set_database(old_database.as_str());
-            Err(e)
-        }
-    }
+            e
+        })
+        .map(|_| ())
 }

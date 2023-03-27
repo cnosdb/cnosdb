@@ -1,3 +1,6 @@
+use std::path::Path;
+
+use anyhow::anyhow;
 use datafusion::arrow::record_batch::RecordBatch;
 use http_protocol::header::ACCEPT;
 use http_protocol::http_client::HttpClient;
@@ -6,6 +9,7 @@ use http_protocol::status_code::OK;
 
 use crate::config::ConfigOptions;
 use crate::print_format::PrintFormat;
+use crate::Result;
 
 pub const DEFAULT_USER: &str = "cnosdb";
 pub const DEFAULT_PASSWORD: &str = "";
@@ -146,7 +150,7 @@ impl SessionContext {
         self.session_config.database.as_str()
     }
 
-    pub async fn sql(&self, sql: String) -> Result<ResultSet, String> {
+    pub async fn sql(&self, sql: String) -> Result<ResultSet> {
         let user_info = &self.session_config.user_info;
 
         let tenant = self.session_config.tenant.clone();
@@ -169,26 +173,25 @@ impl SessionContext {
             .query(&param)
             .body(sql)
             .send()
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
 
         match resp.status() {
             OK => {
-                let body = resp.bytes().await.map_err(|e| format!("{}", e))?;
+                let body = resp.bytes().await?;
 
                 Ok(ResultSet::Bytes((body.to_vec(), 0)))
             }
             _ => {
                 let status = resp.status().to_string();
-                let body = resp.text().await.map_err(|e| format!("{}", e))?;
+                let body = resp.text().await?;
 
-                Err(format!("{}, details: {}", status, body))
+                Err(anyhow!("{status}, details: {body}"))
             }
         }
     }
 
-    pub async fn write(&self, path: &str) -> Result<ResultSet, String> {
-        let body = tokio::fs::read(path).await.map_err(|e| e.to_string())?;
+    pub async fn write_line_protocol_file(&self, path: impl AsRef<Path>) -> Result<ResultSet> {
+        let body = tokio::fs::read(path).await?;
 
         let user_info = &self.session_config.user_info;
 
@@ -200,8 +203,6 @@ impl SessionContext {
             db: Some(db),
         };
 
-        // let param = &[("db", &self.session_config.database)];
-
         let resp = self
             .http_client
             .post(API_V1_WRITE_PATH)
@@ -209,21 +210,37 @@ impl SessionContext {
             .query(&param)
             .body(body)
             .send()
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
 
         match resp.status() {
             OK => {
-                let body = resp.bytes().await.map_err(|e| format!("{}", e))?;
+                let body = resp.bytes().await?;
 
                 Ok(ResultSet::Bytes((body.to_vec(), 0)))
             }
             _ => {
-                let body = resp.text().await.map_err(|e| format!("{}", e))?;
+                let body = resp.text().await?;
 
-                Err(body)
+                Ok(ResultSet::Bytes((body.into(), 0)))
             }
         }
+    }
+
+    pub async fn write(&self, path: impl AsRef<Path>) -> Result<()> {
+        if path.as_ref().is_file() {
+            self.write_line_protocol_file(path).await?;
+            return Ok(());
+        }
+        for dir_entry in walkdir::WalkDir::new(path)
+            .sort_by_file_name()
+            .into_iter()
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|d| d.path().is_file())
+        {
+            self.write_line_protocol_file(dir_entry.path()).await?;
+        }
+        Ok(())
     }
 }
 
@@ -234,13 +251,13 @@ pub enum ResultSet {
 }
 
 impl ResultSet {
-    pub fn print_fmt(&self, print: &PrintFormat) -> Result<(), String> {
+    pub fn print_fmt(&self, print: &PrintFormat) -> Result<()> {
         match self {
             Self::RecordBatches(batches) => {
-                print.print_batches(batches).map_err(|e| e.to_string())?;
+                print.print_batches(batches)?;
             }
             Self::Bytes((r, _)) => {
-                let str = String::from_utf8(r.to_owned()).map_err(|e| e.to_string())?;
+                let str = String::from_utf8(r.to_owned())?;
                 if !str.is_empty() {
                     println!("{}", str);
                 }

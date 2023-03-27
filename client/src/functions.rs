@@ -8,6 +8,8 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::util::pretty::pretty_format_batches;
 
+use crate::Result;
+
 #[derive(Debug)]
 pub enum Function {
     Select,
@@ -34,7 +36,7 @@ const ALL_FUNCTIONS: [Function; 9] = [
 ];
 
 impl Function {
-    pub fn function_details(&self) -> std::result::Result<&str, String> {
+    pub fn function_details(&self) -> Result<&str> {
         let details = match self {
             Function::Select => {
                 r#"
@@ -188,7 +190,7 @@ impl fmt::Display for Function {
     }
 }
 
-pub fn display_all_functions() -> std::result::Result<(), String> {
+pub fn display_all_functions() -> Result<()> {
     println!("Available help:");
     let array = StringArray::from(
         ALL_FUNCTIONS
@@ -197,8 +199,7 @@ pub fn display_all_functions() -> std::result::Result<(), String> {
             .collect::<Vec<String>>(),
     );
     let schema = Schema::new(vec![Field::new("Function", DataType::Utf8, false)]);
-    let batch =
-        RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array)]).map_err(|e| e.to_string())?;
+    let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array)])?;
     println!("{}", pretty_format_batches(&[batch]).unwrap());
     Ok(())
 }
