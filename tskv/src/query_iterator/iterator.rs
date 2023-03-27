@@ -22,7 +22,7 @@ use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRange};
 use models::predicate::Split;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema};
 use models::utils::{min_num, unite_id};
-use models::{FieldId, SeriesId, ValueType};
+use models::{FieldId, SeriesId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use protos::kv_service::QueryRecordBatchRequest;
 use tokio::runtime::Runtime;
@@ -65,6 +65,68 @@ impl ArrayBuilderPtr {
                 self.column_type
             );
         }
+    }
+
+    pub fn append_timestamp(&mut self, unit: &TimeUnit, timestamp: Timestamp) {
+        match unit {
+            TimeUnit::Second => self.append_primitive::<TimestampSecondType>(timestamp),
+            TimeUnit::Millisecond => self.append_primitive::<TimestampMillisecondType>(timestamp),
+            TimeUnit::Microsecond => self.append_primitive::<TimestampMicrosecondType>(timestamp),
+            TimeUnit::Nanosecond => self.append_primitive::<TimestampNanosecondType>(timestamp),
+        }
+    }
+
+    pub fn append_value(
+        &mut self,
+        value_type: ValueType,
+        value: Option<DataType>,
+        column_name: &str,
+    ) -> Result<()> {
+        match value_type {
+            ValueType::Unknown => {
+                return Err(Error::CommonError {
+                    reason: format!("unknown type of column '{}'", column_name),
+                });
+            }
+            ValueType::String => {
+                if let Some(DataType::Str(_, val)) = value {
+                    let data =
+                        String::from_utf8(val.to_vec()).map_err(|_| Error::ErrCharacterSet)?;
+                    self.append_string(data);
+                } else {
+                    self.append_null_string();
+                }
+            }
+            ValueType::Boolean => {
+                if let Some(DataType::Bool(_, val)) = value {
+                    self.append_bool(val);
+                } else {
+                    self.append_null_bool();
+                }
+            }
+            ValueType::Float => {
+                if let Some(DataType::F64(_, val)) = value {
+                    self.append_primitive::<Float64Type>(val);
+                } else {
+                    self.append_primitive_null::<Float64Type>();
+                }
+            }
+            ValueType::Integer => {
+                if let Some(DataType::I64(_, val)) = value {
+                    self.append_primitive::<Int64Type>(val);
+                } else {
+                    self.append_primitive_null::<Int64Type>();
+                }
+            }
+            ValueType::Unsigned => {
+                if let Some(DataType::U64(_, val)) = value {
+                    self.append_primitive::<UInt64Type>(val);
+                } else {
+                    self.append_primitive_null::<UInt64Type>();
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn append_primitive_null<T: ArrowPrimitiveType>(&mut self) {
@@ -449,16 +511,8 @@ impl Cursor for TimeCursor {
         &self.name
     }
 
-    fn is_field(&self) -> bool {
-        false
-    }
-
-    fn val_type(&self) -> ValueType {
-        ValueType::Integer
-    }
-
-    fn unit(&self) -> Option<TimeUnit> {
-        Some(self.unit.clone())
+    fn column_type(&self) -> ColumnType {
+        ColumnType::Time(self.unit.clone())
     }
 
     async fn next(&mut self, _ts: i64) {}
@@ -488,16 +542,8 @@ impl Cursor for TagCursor {
         &self.name
     }
 
-    fn is_field(&self) -> bool {
-        false
-    }
-
-    fn val_type(&self) -> ValueType {
-        ValueType::String
-    }
-
-    fn unit(&self) -> Option<TimeUnit> {
-        None
+    fn column_type(&self) -> ColumnType {
+        ColumnType::Tag
     }
 
     async fn next(&mut self, _ts: i64) {}
@@ -579,10 +625,6 @@ impl Cursor for FieldCursor {
         Ok(Some(data))
     }
 
-    fn unit(&self) -> Option<TimeUnit> {
-        None
-    }
-
     async fn next(&mut self, ts: i64) {
         if let Some(val) = self.peek_cache() {
             if val.timestamp() == ts {
@@ -599,12 +641,8 @@ impl Cursor for FieldCursor {
         }
     }
 
-    fn val_type(&self) -> ValueType {
-        self.value_type
-    }
-
-    fn is_field(&self) -> bool {
-        true
+    fn column_type(&self) -> ColumnType {
+        ColumnType::Field(self.value_type)
     }
 }
 
@@ -1131,65 +1169,15 @@ impl SeriesGroupRowIterator {
         let timer = self.metrics.elapsed_point_to_record_batch().timer();
 
         for (i, value) in values.into_iter().enumerate() {
-            if let Some(unit) = self.columns[i].unit() {
-                match unit {
-                    TimeUnit::Second => {
-                        builder[i].append_primitive::<TimestampSecondType>(min_time)
-                    }
-                    TimeUnit::Millisecond => {
-                        builder[i].append_primitive::<TimestampMillisecondType>(min_time)
-                    }
-                    TimeUnit::Microsecond => {
-                        builder[i].append_primitive::<TimestampMicrosecondType>(min_time)
-                    }
-                    TimeUnit::Nanosecond => {
-                        builder[i].append_primitive::<TimestampNanosecondType>(min_time)
-                    }
+            match self.columns[i].column_type() {
+                ColumnType::Time(unit) => {
+                    builder[i].append_timestamp(&unit, min_time);
                 }
-            }
-
-            match self.columns[i].val_type() {
-                ValueType::Unknown => {
-                    return Err(Error::CommonError {
-                        reason: format!("unknown type of column '{}'", self.columns[i].name()),
-                    });
+                ColumnType::Tag => {
+                    builder[i].append_value(ValueType::String, value, self.columns[i].name())?;
                 }
-                ValueType::Float => {
-                    if let Some(DataType::F64(_, val)) = value {
-                        builder[i].append_primitive::<Float64Type>(val);
-                    } else {
-                        builder[i].append_primitive_null::<Float64Type>();
-                    }
-                }
-                ValueType::Integer => {
-                    if let Some(DataType::I64(_, val)) = value {
-                        builder[i].append_primitive::<Int64Type>(val);
-                    } else {
-                        builder[i].append_primitive_null::<Int64Type>();
-                    }
-                }
-                ValueType::Unsigned => {
-                    if let Some(DataType::U64(_, val)) = value {
-                        builder[i].append_primitive::<UInt64Type>(val);
-                    } else {
-                        builder[i].append_primitive_null::<UInt64Type>();
-                    }
-                }
-                ValueType::Boolean => {
-                    if let Some(DataType::Bool(_, val)) = value {
-                        builder[i].append_bool(val);
-                    } else {
-                        builder[i].append_null_bool();
-                    }
-                }
-                ValueType::String => {
-                    if let Some(DataType::Str(_, val)) = value {
-                        let data =
-                            String::from_utf8(val.to_vec()).map_err(|_| Error::ErrCharacterSet)?;
-                        builder[i].append_string(data);
-                    } else {
-                        builder[i].append_null_string();
-                    }
+                ColumnType::Field(value_type) => {
+                    builder[i].append_value(value_type, value, self.columns[i].name())?;
                 }
             }
         }
