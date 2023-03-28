@@ -11,39 +11,41 @@ path = "src/bin/main.rs"
 
 [dependencies]
 config = { path = "../config" }
-trace = { path = "../common/trace" }
+error_code = { path = "../common/error_code" }
+limiter_bucket = { path = "../common/limiter_bucket" }
 models = { path = "../common/models" }
+trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
-error_code = {path = "../common/error_code"}
-limiter_bucket = {path = "../common/limiter_bucket"}
 
-toml = { workspace = true }
+actix-web = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }
+backoff = { workspace = true }
+byteorder = { workspace = true }
 clap = { workspace = true }
+dashmap = { workspace = true }
 once_cell = { workspace = true }
+openraft = { workspace = true, features = ["serde"] }
+parking_lot = { workspace = true }
+rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sled = { workspace = true }
+snafu = { workspace = true }
+surf = { workspace = true, features = ["curl-client", "encoding"], default-features = false }
+sys-info = { workspace = true }
 tokio = { workspace = true }
+toml = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-futures = { workspace = true }
+ureq = { workspace = true, features = ["json", "charset"] }
 uuid = { workspace = true }
 walkdir = { workspace = true }
-rand = { workspace = true }
-tracing = { workspace = true }
-snafu = { workspace = true }
-parking_lot = { workspace = true }
-tonic = { workspace = true }
-dashmap = { workspace = true }
-openraft = { workspace = true, features = ["serde"] }
-actix-web = {workspace = true}
-byteorder = {workspace = true}
-sled = {workspace = true}
-tracing-futures = {workspace = true}
-ureq = { workspace = true, features = ["json", "charset"] }
-backoff = { workspace = true }
-sys-info = { workspace = true }
-surf = { workspace = true, features = ["curl-client", "encoding"], default-features = false }
+
+[target.'cfg(unix)'.dependencies]
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
-async-backtrace = { workspace = true, optional = true }
 
 [features]
 default = []

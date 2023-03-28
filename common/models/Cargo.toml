@@ -6,32 +6,32 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+config = { path = "../../config" }
+error_code = { path = "../error_code" }
 protos = { path = "../protos" }
-utils = { path = "../utils" }
 trace = { path = "../trace" }
-error_code = {path = "../error_code"}
-config = { path = "../../config"}
+utils = { path = "../utils" }
 
-arrow-schema = { workspace = true,  features = ["serde"] }
+arrow-schema = { workspace = true, features = ["serde"] }
 async-trait = { workspace = true }
 bincode = { workspace = true }
-datafusion = { workspace = true }
-parking_lot = { workspace = true }
-serde = { workspace = true }
-snafu = { workspace = true }
-serde_json = { workspace = true }
-datafusion-proto = { workspace = true }
-uuid = { workspace = true }
-derive_builder = { workspace = true }
-openssl = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
+datafusion = { workspace = true }
+datafusion-proto = { workspace = true }
+derive_builder = { workspace = true }
+futures = { workspace = true }
+libc = { workspace = true }
+openssl = { workspace = true }
+parking_lot = { workspace = true }
+pin-project = { workspace = true }
 rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+snafu = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
-futures = { workspace = true }
-pin-project = { workspace = true }
-libc = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 flatbuffers = { workspace = true }

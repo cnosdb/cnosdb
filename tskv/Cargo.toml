@@ -5,16 +5,17 @@ edition.workspace = true
 
 [dependencies]
 config = { path = "../config" }
-meta = { path = "../meta" }
-models = { path = "../common/models" }
-metrics = { path = "../common/metrics" }
-protos = { path = "../common/protos", features = ["test"] }
-trace = { path = "../common/trace" }
-utils = { path = "../common/utils" }
 error_code = { path = "../common/error_code" }
 lru_cache = { path = "../common/lru_cache" }
 memory_pool = { path = "../common/memory_pool" }
+meta = { path = "../meta" }
+metrics = { path = "../common/metrics" }
+models = { path = "../common/models" }
+protos = { path = "../common/protos", features = ["test"] }
+trace = { path = "../common/trace" }
+utils = { path = "../common/utils" }
 
+async-backtrace = { workspace = true, optional = true }
 async-recursion = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
@@ -36,15 +37,18 @@ lazy_static = { workspace = true }
 libc = { workspace = true }
 minivec = { workspace = true }
 mio = { workspace = true }
+num-traits = { workspace = true }
 num_cpus = { workspace = true }
 num_enum = { workspace = true }
-num-traits = { workspace = true }
 once_cell = { workspace = true }
 page_size = { workspace = true }
 parking_lot = { workspace = true, features = ["nightly", "send_guard"] }
 priority-queue = { workspace = true }
 q_compress = { workspace = true }
+radixdb = { workspace = true, features = ["custom-store"] }
+rand = { workspace = true }
 regex = { workspace = true }
+roaring = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serial_test = { workspace = true }
@@ -56,13 +60,13 @@ tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true }
 walkdir = { workspace = true }
 zstd = { workspace = true }
-roaring = { workspace = true }
-radixdb = { workspace = true, features = ["custom-store"] }
-rand = { workspace = true }
-async-backtrace = { workspace = true, optional = true }
-[target.'cfg(any(target_os = "linux"))'.dependencies]
-tokio-uring = { version = "0.4", optional = true }
+
+[target.'cfg(linux)'.dependencies]
 rio = { version = "0.9", optional = true }
+tokio-uring = { version = "0.4", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { workspace = true }
 
 [features]
 default = []
@@ -71,11 +75,10 @@ backtrace = ["async-backtrace"]
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["async_tokio"] }
+parking_lot = { workspace = true, features = ["nightly"] }
 rand = { workspace = true }
 tempfile = { workspace = true }
-parking_lot = { workspace = true, features = ["nightly"] }
-
 
 [[bench]]
-name = "kvcore_bench"
 harness = false
+name = "kvcore_bench"

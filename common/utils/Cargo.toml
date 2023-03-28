@@ -7,17 +7,18 @@ edition.workspace = true
 
 [dependencies]
 trace = { path = "../trace" }
+
+async-backtrace = { workspace = true, optional = true }
 libc = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-tikv-jemalloc-ctl = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
-async-backtrace = { workspace = true, optional = true }
+tikv-jemalloc-ctl = { workspace = true }
 
 [features]
 default = []
 backtrace = ["async-backtrace"]
-
-
 
 [dev-dependencies]
 rand = { workspace = true }

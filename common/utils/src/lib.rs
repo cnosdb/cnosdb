@@ -7,4 +7,6 @@ pub mod bitset;
 mod bkdr_hash;
 mod bloom_filter;
 mod dedup;
+
+#[cfg(unix)]
 pub mod pprof_tools;

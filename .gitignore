@@ -1,5 +1,6 @@
 # IDE
 **/.idea/
+/.vs
 /.vscode/
 
 # Cargo
