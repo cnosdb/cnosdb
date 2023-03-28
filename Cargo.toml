@@ -28,6 +28,7 @@ default-members = ["main"]
 [workspace.dependencies]
 actix-rt = "2.7.0"
 actix-web = "4.0.0"
+anyhow = "1"
 async-recursion = "1.0.0"
 async-stream = "0.3"
 async-trait = "0.1"

@@ -1,12 +1,11 @@
 use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use clap::{value_parser, Parser};
 use client::ctx::{SessionConfig, SessionContext};
 use client::print_format::PrintFormat;
 use client::print_options::PrintOptions;
 use client::{exec, CNOSDB_CLI_VERSION};
-use datafusion::error::Result;
 
 #[derive(Debug, Parser, PartialEq)]
 #[command(author, version, about, long_about= None)]
@@ -103,10 +102,13 @@ struct Args {
         help = "Reduce printing other than the results and work quietly"
     )]
     quiet: bool,
+
+    #[arg(short = 'W', long, help = "write linie protocol from path")]
+    write_line_protocol: Option<PathBuf>,
 }
 
 #[tokio::main]
-pub async fn main() -> Result<()> {
+pub async fn main() -> Result<(), anyhow::Error> {
     env_logger::init();
     let args = Args::parse();
 
@@ -131,6 +133,10 @@ pub async fn main() -> Result<()> {
         .with_result_format(args.format);
 
     let mut ctx = SessionContext::new(session_config);
+    if let Some(ref path) = args.write_line_protocol {
+        ctx.write(path).await?;
+        return Ok(());
+    }
 
     let mut print_options = PrintOptions {
         format: args.format,
@@ -187,9 +193,9 @@ fn try_parse_data_dir(dir: &str) -> std::result::Result<String, String> {
     }
 }
 
-fn try_parse_target_partitions(size: &str) -> std::result::Result<String, String> {
+fn try_parse_target_partitions(size: &str) -> std::result::Result<usize, String> {
     match size.parse::<usize>() {
-        Ok(s) if s > 0 => Ok(size.to_string()),
-        _ => Err(format!("target-partition is not in 1..={}", usize::MAX)),
+        Ok(s) if s > 0 => Ok(s),
+        _ => Err(format!("target-partitions is not in 1..={}", usize::MAX)),
     }
 }

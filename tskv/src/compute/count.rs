@@ -33,9 +33,9 @@ pub async fn count_column_non_null_values(
     super_version: Arc<SuperVersion>,
     series_ids: Arc<Vec<SeriesId>>,
     column_id: Option<ColumnId>,
-    time_ranges: Arc<Vec<TimeRange>>,
+    time_range: TimeRange,
 ) -> Result<u64> {
-    let column_files = Arc::new(super_version.column_files(&time_ranges));
+    let column_files = Arc::new(super_version.column_files(&[time_range]));
     let mut jh_vec = Vec::with_capacity(series_ids.len());
 
     for series_id in series_ids.iter() {
@@ -47,13 +47,12 @@ pub async fn count_column_non_null_values(
         };
         let sv_inner = super_version.clone();
         let cfs_inner = column_files.clone();
-        let trs_inner = time_ranges.clone();
 
         jh_vec.push(runtime.spawn(count_non_null_values_inner(
             sv_inner,
             count_object,
             cfs_inner,
-            trs_inner,
+            time_range,
         )));
     }
 
@@ -71,27 +70,21 @@ async fn count_non_null_values_inner(
     super_version: Arc<SuperVersion>,
     counting_object: CountingObject,
     column_files: Arc<Vec<Arc<ColumnFile>>>,
-    sorted_time_ranges: Arc<Vec<TimeRange>>,
+    time_range: TimeRange,
 ) -> Result<u64> {
-    let read_tasks = create_file_read_tasks(
-        &super_version,
-        &column_files,
-        &counting_object,
-        &sorted_time_ranges,
-    )
-    .await?;
+    let read_tasks =
+        create_file_read_tasks(&super_version, &column_files, &counting_object, &time_range)
+            .await?;
     let (cached_timestamps, cached_time_range) = match counting_object {
         CountingObject::Field(field_id) => {
-            get_field_timestamps_in_caches(&super_version, field_id, &sorted_time_ranges)
+            get_field_timestamps_in_caches(&super_version, field_id, &time_range)
         }
         CountingObject::Series(series_id) => {
-            get_series_timestamps_in_caches(&super_version, series_id, &sorted_time_ranges)
+            get_series_timestamps_in_caches(&super_version, series_id, &time_range)
         }
     };
 
     let mut count = cached_timestamps.len() as u64;
-    let cached_timestamps = Arc::new(cached_timestamps);
-    let cached_time_range = Arc::new(cached_time_range);
 
     let mut grouped_tr = TimeRange::new(i64::MAX, i64::MIN);
     let mut grouped_reader_blk_metas: Vec<ReadTask> = Vec::new();
@@ -113,9 +106,9 @@ async fn count_non_null_values_inner(
                     // Block overlaps with cached data or conditions, need to decode it to remove duplicates.
                     count += count_non_null_values_in_files(
                         reader_blk_metas,
-                        sorted_time_ranges.clone(),
-                        cached_timestamps.clone(),
-                        cached_time_range.clone(),
+                        &time_range,
+                        &cached_timestamps,
+                        &cached_time_range,
                     )
                     .await?;
                 } else {
@@ -131,9 +124,9 @@ async fn count_non_null_values_inner(
                 let reader_blk_metas = std::mem::take(&mut grouped_reader_blk_metas);
                 count += count_non_null_values_in_files(
                     reader_blk_metas,
-                    sorted_time_ranges.clone(),
-                    cached_timestamps.clone(),
-                    cached_time_range.clone(),
+                    &time_range,
+                    &cached_timestamps,
+                    &cached_time_range,
                 )
                 .await?;
             }
@@ -144,9 +137,9 @@ async fn count_non_null_values_inner(
         trace!("Calculate the last {}", grouped_reader_blk_metas.len());
         count += count_non_null_values_in_files(
             grouped_reader_blk_metas,
-            sorted_time_ranges.clone(),
-            cached_timestamps.clone(),
-            cached_time_range.clone(),
+            &time_range,
+            &cached_timestamps,
+            &cached_time_range,
         )
         .await?;
     }
@@ -158,13 +151,9 @@ async fn count_non_null_values_inner(
 fn get_field_timestamps_in_caches(
     super_version: &SuperVersion,
     field_id: FieldId,
-    time_ranges: &[TimeRange],
+    time_range: &TimeRange,
 ) -> (HashSet<Timestamp>, TimeRange) {
-    let time_predicate = |ts| {
-        time_ranges
-            .iter()
-            .any(|tr| tr.is_boundless() || tr.contains(ts))
-    };
+    let time_predicate = |ts| time_range.is_boundless() || time_range.contains(ts);
     let mut cached_timestamps: HashSet<i64> = HashSet::new();
     let mut cached_time_range = TimeRange::new(i64::MAX, i64::MIN);
     super_version.caches.read_field_data(
@@ -186,13 +175,9 @@ fn get_field_timestamps_in_caches(
 fn get_series_timestamps_in_caches(
     super_version: &SuperVersion,
     series_id: SeriesId,
-    time_ranges: &[TimeRange],
+    time_range: &TimeRange,
 ) -> (HashSet<Timestamp>, TimeRange) {
-    let time_predicate = |ts| {
-        time_ranges
-            .iter()
-            .any(|tr| tr.is_boundless() || tr.contains(ts))
-    };
+    let time_predicate = |ts| time_range.is_boundless() || time_range.contains(ts);
     let mut cached_timestamps: HashSet<i64> = HashSet::new();
     let mut cached_time_range = TimeRange::new(i64::MAX, i64::MIN);
     super_version
@@ -222,7 +207,7 @@ async fn create_file_read_tasks<'a>(
     super_version: &SuperVersion,
     files: &[Arc<ColumnFile>],
     counting_object: &CountingObject,
-    time_ranges: &[TimeRange],
+    time_range: &TimeRange,
 ) -> Result<Vec<ReadTask>> {
     let mut read_tasks: Vec<ReadTask> = Vec::new();
 
@@ -247,18 +232,14 @@ async fn create_file_read_tasks<'a>(
             }
             for blk_meta in idx.block_iterator() {
                 let blk_tr = blk_meta.time_range();
-                let mut tr_cmp = TimeRangeCmp::Exclude;
-                for tr in time_ranges.iter() {
-                    if tr.includes(&blk_tr) {
-                        trace!("Included: {} for block {}", &tr, &blk_tr);
-                        // Block is included by conditions, needn't to decode.
-                        tr_cmp = TimeRangeCmp::Include;
-                        break;
-                    } else if tr.overlaps(&blk_tr) {
-                        trace!("overlapped: {} for block {}", &tr, &blk_tr);
-                        tr_cmp = TimeRangeCmp::Intersect;
-                    }
-                }
+                let tr_cmp = if time_range.includes(&blk_tr) {
+                    // Block is included by conditions, needn't to decode.
+                    TimeRangeCmp::Include
+                } else if time_range.overlaps(&blk_tr) {
+                    TimeRangeCmp::Intersect
+                } else {
+                    TimeRangeCmp::Exclude
+                };
                 if tr_cmp != TimeRangeCmp::Exclude {
                     read_tasks.push(ReadTask {
                         tsm_reader: reader.clone(),
@@ -278,9 +259,9 @@ async fn create_file_read_tasks<'a>(
 /// Get count of non-null values in time ranges from grouped read tasks.
 async fn count_non_null_values_in_files(
     reader_blk_metas: Vec<ReadTask>,
-    time_ranges: Arc<Vec<TimeRange>>,
-    cached_timestamps: Arc<HashSet<Timestamp>>,
-    cached_time_range: Arc<TimeRange>,
+    time_range: &TimeRange,
+    cached_timestamps: &HashSet<Timestamp>,
+    cached_time_range: &TimeRange,
 ) -> Result<u64> {
     let mut count = 0_u64;
     let mut ts_set: HashSet<Timestamp> = HashSet::with_capacity(tsm::MAX_BLOCK_VALUES as usize);
@@ -306,45 +287,43 @@ async fn count_non_null_values_in_files(
             }
         } else {
             // Cached timestmaps not contains this DataBlock.
-            for tr in time_ranges.iter() {
-                let low = match timestamps.binary_search(&tr.min_ts) {
-                    Ok(l) => l,
-                    Err(l) => {
-                        if l == 0 {
-                            // Lowest timestamp is smaller than the first timestamp.
-                            0
-                        } else if l < timestamps.len() {
-                            if timestamps[l] >= tr.min_ts {
-                                l
-                            } else {
-                                l + 1
-                            }
+            let low = match timestamps.binary_search(&time_range.min_ts) {
+                Ok(l) => l,
+                Err(l) => {
+                    if l == 0 {
+                        // Lowest timestamp is smaller than the first timestamp.
+                        0
+                    } else if l < timestamps.len() {
+                        if timestamps[l] >= time_range.min_ts {
+                            l
                         } else {
-                            // Lowest timestamp is greater than the last timestamp.
-                            break;
+                            l + 1
                         }
+                    } else {
+                        // Lowest timestamp is greater than the last timestamp.
+                        break;
                     }
-                };
-                let high = match timestamps.binary_search(&tr.max_ts) {
-                    Ok(h) => h,
-                    Err(h) => {
-                        if h == 0 {
-                            // Highest timestamp is smaller than the first timestamp.
-                            continue;
-                        } else if h < timestamps.len() {
-                            if timestamps[h] <= tr.max_ts {
-                                h - 1
-                            } else {
-                                h
-                            }
+                }
+            };
+            let high = match timestamps.binary_search(&time_range.max_ts) {
+                Ok(h) => h,
+                Err(h) => {
+                    if h == 0 {
+                        // Highest timestamp is smaller than the first timestamp.
+                        continue;
+                    } else if h < timestamps.len() {
+                        if timestamps[h] <= time_range.max_ts {
+                            h
                         } else {
-                            // Highest timestamp is greater than the last timestamp.
-                            timestamps.len() - 1
+                            h - 1
                         }
+                    } else {
+                        // Highest timestamp is greater than the last timestamp.
+                        timestamps.len() - 1
                     }
-                };
-                ts_set.extend(timestamps[low..=high].iter());
-            }
+                }
+            };
+            ts_set.extend(timestamps[low..=high].iter());
         }
     }
     count += ts_set.len() as u64;
@@ -384,15 +363,15 @@ mod test {
             &self,
             series_ids: &[SeriesId],
             column_id: Option<ColumnId>,
-            time_ranges: Vec<impl Into<TimeRange>>,
+            time_range: impl Into<TimeRange>,
         ) -> Result<u64> {
-            let time_ranges: Vec<TimeRange> = time_ranges.into_iter().map(|tr| tr.into()).collect();
+            let time_range = time_range.into();
             self.runtime.block_on(count_column_non_null_values(
                 self.runtime.clone(),
                 self.super_version.clone(),
                 Arc::new(series_ids.to_vec()),
                 column_id,
-                Arc::new(time_ranges),
+                time_range,
             ))
         }
     }
@@ -455,29 +434,24 @@ mod test {
 
         #[rustfmt::skip]
         let _skip_fmt = {
-            assert_eq!(test_helper.run(&[1], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 9);
-            assert_eq!(test_helper.run(&[1, 2], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 18);
+            assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 9);
+            assert_eq!(test_helper.run(&[1, 2], None, (i64::MIN, i64::MAX)).unwrap(), 18);
 
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 9);
-            assert_eq!(test_helper.run(&[1, 2], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 18);
+            assert_eq!(test_helper.run(&[1], Some(1), (i64::MIN, i64::MAX)).unwrap(), 9);
+            assert_eq!(test_helper.run(&[1, 2], Some(1), (i64::MIN, i64::MAX)).unwrap(), 18);
 
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(0, 0)]).unwrap(), 0);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 1)]).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 4)]).unwrap(), 4);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 5)]).unwrap(), 5);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 4)]).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 5)]).unwrap(), 2);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 7)]).unwrap(), 4);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(10, 10)]).unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), (0, 0)).unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), (1, 1)).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), (1, 4)).unwrap(), 4);
+            assert_eq!(test_helper.run(&[1], Some(1), (1, 5)).unwrap(), 5);
+            assert_eq!(test_helper.run(&[1], Some(1), (4, 4)).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), (4, 5)).unwrap(), 2);
+            assert_eq!(test_helper.run(&[1], Some(1), (4, 7)).unwrap(), 4);
+            assert_eq!(test_helper.run(&[1], Some(1), (10, 10)).unwrap(), 0);
 
-            assert_eq!(test_helper.run(&[2], Some(1), vec![(10, 40)]).unwrap(), 4);
-            assert_eq!(test_helper.run(&[2], Some(1), vec![(40, 50)]).unwrap(), 2);
+            assert_eq!(test_helper.run(&[2], Some(1), (10, 40)).unwrap(), 4);
+            assert_eq!(test_helper.run(&[2], Some(1), (40, 50)).unwrap(), 2);
 
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(2, 3), (5, 5), (8, 8)]).unwrap(), 4);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 5), (6, 8)]).unwrap(), 5);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 3), (2, 4), (3, 7)]).unwrap(), 7);
-
-            assert_eq!(test_helper.run(&[1, 2], Some(1), vec![(1, 3), (2, 4), (3, 7), (10, 30), (20, 40), (30, 70)]).unwrap(), 14);
             "skip_fmt"
         };
     }
@@ -499,6 +473,8 @@ mod test {
             put_rows_to_cache(&mut caches[1], 2, 1, default_table_schema(vec![1]), (104, 106), false);
             put_rows_to_cache(&mut caches[2], 1, 1, default_table_schema(vec![1]), (7, 9), false);
             put_rows_to_cache(&mut caches[2], 2, 1, default_table_schema(vec![1]), (107, 109), false);
+            put_rows_to_cache(&mut caches[2], 1, 1, default_table_schema(vec![1]), (11, 15), false);
+            put_rows_to_cache(&mut caches[2], 2, 1, default_table_schema(vec![1]), (111, 115), false);
             let mut mut_cache = MemCache::new(1, 16, 0, &pool);
             put_rows_to_cache(&mut mut_cache, 1, 1, default_table_schema(vec![1]), (11, 15), false);
             put_rows_to_cache(&mut mut_cache, 2, 1, default_table_schema(vec![1]), (111, 115), false);
@@ -532,30 +508,23 @@ mod test {
 
         #[rustfmt::skip]
         let _skip_fmt = {
-            assert_eq!(test_helper.run(&[1], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 14);
-            assert_eq!(test_helper.run(&[1], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 14);
+            assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 14);
+            assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 14);
 
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 14);
-            assert_eq!(test_helper.run(&[1, 2], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 28);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(0, 0)]).unwrap(), 0);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 1)]).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 4)]).unwrap(), 4);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 5)]).unwrap(), 5);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 4)]).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 5)]).unwrap(), 2);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 7)]).unwrap(), 4);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(10, 10)]).unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), (i64::MIN, i64::MAX)).unwrap(), 14);
+            assert_eq!(test_helper.run(&[1, 2], Some(1), (i64::MIN, i64::MAX)).unwrap(), 28);
+            assert_eq!(test_helper.run(&[1], Some(1), (0, 0)).unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), (1, 1)).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), (1, 4)).unwrap(), 4);
+            assert_eq!(test_helper.run(&[1], Some(1), (1, 5)).unwrap(), 5);
+            assert_eq!(test_helper.run(&[1], Some(1), (4, 4)).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), (4, 5)).unwrap(), 2);
+            assert_eq!(test_helper.run(&[1], Some(1), (4, 7)).unwrap(), 4);
+            assert_eq!(test_helper.run(&[1], Some(1), (8, 10)).unwrap(), 2);
+            assert_eq!(test_helper.run(&[1], Some(1), (10, 10)).unwrap(), 0);
 
-            assert_eq!(test_helper.run(&[2], Some(1), vec![(101, 104)]).unwrap(), 4);
-            assert_eq!(test_helper.run(&[2], Some(1), vec![(104, 105)]).unwrap(), 2);
-
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(2, 3), (5, 5), (8, 8)]).unwrap(), 4);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(4, 5), (6, 8)]).unwrap(), 5);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 3), (2, 4), (3, 7)]).unwrap(), 7);
-
-            assert_eq!(test_helper.run(&[1, 2], Some(1),
-                vec![(1, 3), (2, 4), (3, 7), (101, 103), (102, 104), (103, 107)]
-            ).unwrap(), 14);
+            assert_eq!(test_helper.run(&[2], Some(1), (101, 104)).unwrap(), 4);
+            assert_eq!(test_helper.run(&[2], Some(1), (104, 105)).unwrap(), 2);
             "skip_fmt"
         };
     }
@@ -648,24 +617,24 @@ mod test {
 
         #[rustfmt::skip]
         let _skip_fmt = {
-            assert_eq!(test_helper.run(&[1], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 29);
-            assert_eq!(test_helper.run(&[1, 2], None, vec![(i64::MIN, i64::MAX)]).unwrap(), 66);
+            assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 29);
+            assert_eq!(test_helper.run(&[1, 2], None, (i64::MIN, i64::MAX)).unwrap(), 66);
 
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 29);
-            assert_eq!(test_helper.run(&[1, 2], Some(1), vec![(i64::MIN, i64::MAX)]).unwrap(), 66);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(0, 0)]).unwrap(), 0);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 1)]).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 10)]).unwrap(), 9);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(1, 50)]).unwrap(), 29);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(10, 20)]).unwrap(), 5);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(10, 50)]).unwrap(), 20);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(15, 21)]).unwrap(), 2);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(40, 40)]).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), vec![(41, 41)]).unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), (i64::MIN, i64::MAX)).unwrap(), 29);
+            assert_eq!(test_helper.run(&[1, 2], Some(1), (i64::MIN, i64::MAX)).unwrap(), 66);
+            assert_eq!(test_helper.run(&[1], Some(1), (0, 0)).unwrap(), 0);
+            assert_eq!(test_helper.run(&[1], Some(1), (1, 1)).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), (1, 10)).unwrap(), 9);
+            assert_eq!(test_helper.run(&[1], Some(1), (1, 50)).unwrap(), 29);
+            assert_eq!(test_helper.run(&[1], Some(1), (10, 20)).unwrap(), 5);
+            assert_eq!(test_helper.run(&[1], Some(1), (10, 50)).unwrap(), 20);
+            assert_eq!(test_helper.run(&[1], Some(1), (15, 21)).unwrap(), 2);
+            assert_eq!(test_helper.run(&[1], Some(1), (40, 40)).unwrap(), 1);
+            assert_eq!(test_helper.run(&[1], Some(1), (41, 41)).unwrap(), 0);
 
-            assert_eq!(test_helper.run(&[2], Some(1), vec![(105, 110)]).unwrap(), 3);
-            assert_eq!(test_helper.run(&[2], Some(1), vec![(105, 121)]).unwrap(), 9);
-            assert_eq!(test_helper.run(&[2], Some(1), vec![(115, 125)]).unwrap(), 6);
+            assert_eq!(test_helper.run(&[2], Some(1), (105, 110)).unwrap(), 3);
+            assert_eq!(test_helper.run(&[2], Some(1), (105, 121)).unwrap(), 9);
+            assert_eq!(test_helper.run(&[2], Some(1), (115, 125)).unwrap(), 6);
             "skip_fmt"
         };
     }

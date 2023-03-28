@@ -262,12 +262,11 @@ mod test {
                 "\
                 ProjectionExec: expr=[SUM(COUNT(?table?.value))@0 as COUNT(?table?.value)]\
                 \n  AggregateExec: mode=Final, gby=[], aggr=[SUM(COUNT(?table?.value))]\
-                \n    CoalescePartitionsExec\
-                \n      AggregateExec: mode=Partial, gby=[], aggr=[SUM(COUNT(?table?.value))]\
-                \n        RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
-                \n          AggregateFilterTskvExec: agg=[[Count(\"value\")]], filter=[Predicate { pushed_down_domains: ColumnDomains { column_to_domain: Some({}) }, limit: None }]\
+                \n    AggregateExec: mode=Partial, gby=[], aggr=[SUM(COUNT(?table?.value))]\
+                \n      EmptyExec: produce_one_row=false\
                 \n",
-            ).await?;
+            )
+            .await?;
         }
 
         let plan = LogicalPlanBuilder::from(test_table_scan(true)?)
@@ -285,8 +284,7 @@ mod test {
             \n  AggregateExec: mode=Final, gby=[], aggr=[SUM(COUNT(?table?.value))]\
             \n    CoalescePartitionsExec\
             \n      AggregateExec: mode=Partial, gby=[], aggr=[SUM(COUNT(?table?.value))]\
-            \n        RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
-            \n          AggregateFilterTskvExec: agg=[[Count(\"value\")]], filter=[Predicate { pushed_down_domains: ColumnDomains { column_to_domain: Some({}) }, limit: None }]\
+            \n        AggregateFilterTskvExec: agg=[[Count(\"value\")]], filter=[Predicate { pushed_down_domains: ColumnDomains { column_to_domain: Some({}) }, limit: None }]\
             \n",
         ).await
     }
@@ -303,7 +301,6 @@ mod test {
                 "\
                 Aggregate: groupBy=[[?table?.flag]], aggr=[[MAX(?table?.value)]]\
                 \n  TableScan: ?table? projection=[flag, value]",
-                // TODO: This test function is not for EmptyExec executing.
                 "\
                 AggregateExec: mode=FinalPartitioned, gby=[flag@0 as flag], aggr=[MAX(?table?.value)]\
                 \n  CoalesceBatchesExec: target_batch_size=8192\
