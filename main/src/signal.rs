@@ -8,22 +8,23 @@ pub fn block_waiting_ctrl_c() {
 }
 
 pub fn install_crash_handler() {
-    #[cfg(unix)]
     unsafe fn set_signal_handler(signal: libc::c_int, handler: unsafe extern "C" fn(libc::c_int)) {
-        use libc::{sigaction, sigfillset, sighandler_t};
-        let mut sigset = std::mem::zeroed();
-        if sigfillset(&mut sigset) != -1 {
-            let mut action: sigaction = std::mem::zeroed();
-            action.sa_mask = sigset;
-            action.sa_sigaction = handler as sighandler_t;
-            sigaction(signal, &action, std::ptr::null_mut());
+        #[cfg(unix)]
+        {
+            use libc::{sigaction, sigfillset, sighandler_t};
+            let mut sigset = std::mem::zeroed();
+            if sigfillset(&mut sigset) != -1 {
+                let mut action: sigaction = std::mem::zeroed();
+                action.sa_mask = sigset;
+                action.sa_sigaction = handler as sighandler_t;
+                sigaction(signal, &action, std::ptr::null_mut());
+            }
         }
-    }
-
-    #[cfg(windows)]
-    unsafe fn set_signal_handler(signal: libc::c_int, handler: unsafe extern "C" fn(libc::c_int)) {
-        use libc::{sighandler_t, signal as sigaction};
-        sigaction(signal, handler as sighandler_t);
+        #[cfg(windows)]
+        {
+            use libc::{sighandler_t, signal as sigaction};
+            sigaction(signal, handler as sighandler_t);
+        }
     }
 
     unsafe extern "C" fn signal_handler(sig: i32) {

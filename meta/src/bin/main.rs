@@ -80,12 +80,10 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
     });
 
     let server = HttpServer::new(move || {
-        let mut server = App::new()
+        App::new()
+            .wrap(Logger::default())
             .wrap(Logger::new("%a %{User-Agent}i"))
-            .wrap(middleware::Compress::default());
-
-        // Split server creating for `clippy_check` on windows.
-        server = server
+            .wrap(middleware::Compress::default())
             .app_data(app.clone())
             .service(raft_api::append)
             .service(raft_api::snapshot)
@@ -100,14 +98,8 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
             .service(api::restore)
             .service(api::debug)
             .service(api::watch)
-            .service(api::backtrace);
-
-        #[cfg(unix)]
-        {
-            server = server.service(api::cpu_pprof);
-        }
-
-        server
+            .service(api::backtrace)
+            .service(api::cpu_pprof)
     })
     .keep_alive(Duration::from_secs(5));
 

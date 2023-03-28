@@ -1,4 +1,4 @@
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io::{Error, ErrorKind, IoSlice, Result};
 use std::ops::Deref;
 use std::path::Path;
@@ -6,8 +6,80 @@ use std::sync::Arc;
 
 use tokio::task::spawn_blocking;
 
-use crate::file_system::file::os::RawFile;
+use super::os;
 use crate::file_system::file::IFile;
+
+#[derive(Debug)]
+#[cfg(not(feature = "io_uring"))]
+struct RawFile(Arc<File>);
+
+#[derive(Debug)]
+#[cfg(feature = "io_uring")]
+struct RawFile(Arc<File>, Arc<rio::Rio>);
+
+impl RawFile {
+    fn file_size(&self) -> Result<u64> {
+        os::file_size(os::fd(self.0.as_ref()))
+    }
+
+    async fn pwrite(&self, pos: u64, data: &[u8]) -> Result<usize> {
+        #[cfg(feature = "io_uring")]
+        {
+            let completion = self.1.write_at(&self.0, &data, pos).await?;
+            Ok(data.len())
+        }
+
+        #[cfg(not(feature = "io_uring"))]
+        {
+            let len = data.len();
+            let ptr = data.as_ptr() as u64;
+            let fd = os::fd(self.0.as_ref());
+            asyncify(move || os::pwrite(fd, pos, len, ptr)).await
+        }
+    }
+
+    async fn pread(&self, pos: u64, data: &mut [u8]) -> Result<usize> {
+        #[cfg(feature = "io_uring")]
+        {
+            let completion = self.1.read_at(&self.0, &data, pos).await?;
+            Ok(data.len())
+        }
+        #[cfg(not(feature = "io_uring"))]
+        {
+            let len = data.len();
+            let ptr = data.as_ptr() as u64;
+            let fd = os::fd(self.0.as_ref());
+            let len = asyncify(move || os::pread(fd, pos, len, ptr)).await?;
+            Ok(len)
+        }
+    }
+
+    async fn sync_data(&self) -> Result<()> {
+        #[cfg(feature = "io_uring")]
+        {
+            self.1.fsync(&self.0).await?;
+            Ok(())
+        }
+        #[cfg(not(feature = "io_uring"))]
+        {
+            let file = self.0.clone();
+            asyncify(move || file.sync_data()).await
+        }
+    }
+
+    async fn truncate(&self, size: u64) -> Result<()> {
+        #[cfg(feature = "io_uring")]
+        {
+            let file = self.0.clone();
+            asyncify(move || file.set_len(size)).await
+        }
+        #[cfg(not(feature = "io_uring"))]
+        {
+            let file = self.0.clone();
+            asyncify(move || file.set_len(size)).await
+        }
+    }
+}
 
 pub(crate) async fn asyncify<F, T>(f: F) -> Result<T>
 where
@@ -23,22 +95,24 @@ where
     }
 }
 
-unsafe impl Send for FsRuntime {}
-
 pub struct FsRuntime {
     #[cfg(feature = "io_uring")]
     rio: Arc<Rio>,
 }
 
+unsafe impl Send for FsRuntime {}
+
 impl FsRuntime {
-    #[cfg(feature = "io_uring")]
     pub fn new_runtime() -> Self {
-        let rio = Arc::new(rio::new().unwrap());
-        FsRuntime { rio }
-    }
-    #[cfg(not(feature = "io_uring"))]
-    pub fn new_runtime() -> Self {
-        FsRuntime {}
+        #[cfg(feature = "io_uring")]
+        {
+            let rio = Arc::new(rio::new().unwrap());
+            FsRuntime { rio }
+        }
+        #[cfg(not(feature = "io_uring"))]
+        {
+            FsRuntime {}
+        }
     }
 }
 
@@ -47,8 +121,6 @@ pub struct AsyncFile {
     ctx: Arc<FsRuntime>,
     size: u64,
 }
-
-impl AsyncFile {}
 
 #[async_trait::async_trait]
 impl IFile for AsyncFile {
@@ -59,9 +131,11 @@ impl IFile for AsyncFile {
         }
         Ok((p - pos) as usize)
     }
+
     async fn write_at(&self, pos: u64, data: &[u8]) -> Result<usize> {
         self.inner.pwrite(pos, data).await
     }
+
     async fn read_at(&self, pos: u64, data: &mut [u8]) -> Result<usize> {
         self.inner.pread(pos, data).await
     }

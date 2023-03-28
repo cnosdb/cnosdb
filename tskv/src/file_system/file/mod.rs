@@ -1,11 +1,11 @@
+pub(crate) mod async_file;
+pub(crate) mod cursor;
+mod os;
+
 use std::io;
 use std::io::IoSlice;
 
 use async_trait::async_trait;
-
-pub(crate) mod async_file;
-pub(crate) mod cursor;
-mod os;
 
 #[async_trait]
 pub trait IFile: Send {
