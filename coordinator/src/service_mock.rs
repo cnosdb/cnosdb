@@ -6,6 +6,7 @@ use std::sync::Arc;
 use meta::model::meta_client_mock::{MockMetaClient, MockMetaManager};
 use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
+use models::schema::Precision;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
 use tskv::engine_mock::MockEngine;
 use tskv::query_iterator::QueryOption;
@@ -40,6 +41,7 @@ impl Coordinator for MockCoordinator {
         &self,
         tenant: String,
         level: ConsistencyLevel,
+        precision: Precision,
         req: WritePointsRequest,
     ) -> CoordinatorResult<()> {
         Ok(())

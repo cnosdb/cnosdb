@@ -25,6 +25,7 @@ mod rpc;
 pub mod server;
 mod signal;
 mod spi;
+mod tcp;
 
 static VERSION: Lazy<String> = Lazy::new(|| {
     format!(

@@ -1,102 +1,61 @@
-use std::cmp::Ordering;
+extern crate core;
 
-use models::schema::FieldValue;
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
+
+use protos::FieldValue;
+use serde::{Deserialize, Serialize};
+use snafu::Snafu;
 use utils::BkdrHasher;
 
-use crate::{Error, Result};
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-pub struct Parser {
-    default_time: i64,
-    // TODO Some statistics here
-}
+pub mod line_protocol;
+pub mod lines_convert;
+pub mod open_tsdb;
 
-impl Parser {
-    pub fn new(default_time: i64) -> Parser {
-        Self { default_time }
-    }
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
+pub enum Error {
+    #[snafu(display("Error: pos: {}, in: '{}'", pos, content))]
+    Parse { pos: usize, content: String },
 
-    pub fn parse<'a>(&self, lines: &'a str) -> Result<Vec<Line<'a>>> {
-        let mut ret: Vec<Line> = Vec::new();
-        let mut pos = 0_usize;
-        while let Some((mut line, offset)) = self.next_line(lines, pos)? {
-            line.sort_and_dedup();
-            ret.push(line);
-            pos += offset;
-        }
-        Ok(ret)
-    }
+    #[snafu(display("line missing field : {} or line invalid: {}", field, buf))]
+    MissingField { field: String, buf: String },
 
-    fn next_line<'a>(&self, buf: &'a str, position: usize) -> Result<Option<(Line<'a>, usize)>> {
-        if position > buf.len() {
-            return Ok(None);
-        }
-
-        let start_pos = position;
-        let mut pos = position;
-        let measurement = if let Some(m) = next_measurement(&buf[pos..]) {
-            pos += m.1;
-            m.0
-        } else {
-            return Ok(None);
-        };
-        check_pos_valid(buf, pos)?;
-
-        let tags = if let Some(t) = next_tag_set(&buf[pos..]) {
-            pos += t.1;
-            t.0
-        } else {
-            return Err(Error::Parse {
-                pos,
-                content: String::from(buf),
-            });
-        };
-        check_pos_valid(buf, pos)?;
-
-        let fields = if let Some(f) = next_field_set(&buf[pos..])? {
-            pos += f.1;
-            f.0
-        } else {
-            return Err(Error::Parse {
-                pos,
-                content: String::from(buf),
-            });
-        };
-
-        let timestamp = if pos < buf.len() {
-            if let Some(t) = next_timestamp(&buf[pos..]) {
-                let timestamp = t.0.parse::<i64>().map_err(|e| Error::Parse {
-                    pos,
-                    content: format!("{}: '{}'", e, buf),
-                })?;
-                pos += t.1;
-                timestamp
-            } else {
-                self.default_time
-            }
-        } else {
-            self.default_time
-        };
-
-        Ok(Some((
-            Line {
-                hash_id: 0,
-                measurement,
-                tags,
-                fields,
-                timestamp,
-            },
-            pos - start_pos,
-        )))
-    }
+    #[snafu(display("{}", content))]
+    Common { content: String },
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Line<'a> {
     hash_id: u64,
-    pub measurement: &'a str,
+    pub table: &'a str,
     pub tags: Vec<(&'a str, &'a str)>,
     pub fields: Vec<(&'a str, FieldValue)>,
     pub timestamp: i64,
+}
+
+impl<'a> From<DataPoint<'a>> for Line<'a> {
+    fn from(value: DataPoint<'a>) -> Self {
+        let tags = value.tags.into_iter().collect();
+        let fields = vec![("value", FieldValue::F64(value.value))];
+        Line {
+            hash_id: 0,
+            table: value.metric,
+            tags,
+            fields,
+            timestamp: value.timestamp,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct DataPoint<'a> {
+    pub metric: &'a str,
+    pub timestamp: i64,
+    pub value: f64,
+    pub tags: BTreeMap<&'a str, &'a str>,
 }
 
 impl<'a> Line<'_> {
@@ -106,7 +65,7 @@ impl<'a> Line<'_> {
                 .sort_by(|a, b| -> Ordering { a.0.partial_cmp(b.0).unwrap() });
 
             let mut hasher = BkdrHasher::new();
-            hasher.hash_with(self.measurement.as_bytes());
+            hasher.hash_with(self.table.as_bytes());
             for (k, v) in &self.tags {
                 hasher.hash_with(k.as_bytes());
                 hasher.hash_with(v.as_bytes());
@@ -126,7 +85,7 @@ impl<'a> Line<'_> {
     ) -> Line<'a> {
         let mut res = Line {
             hash_id: 0,
-            measurement,
+            table: measurement,
             tags,
             fields,
             timestamp,
@@ -195,6 +154,48 @@ fn next_measurement(buf: &str) -> Option<(&str, usize)> {
     }
 }
 
+fn next_metric(buf: &str) -> Option<(&str, usize)> {
+    let mut escaped = false;
+    let mut exists_metric = false;
+    let (mut tok_begin, mut tok_end) = (0, buf.len());
+    let mut i = 0;
+    for (_, c) in buf.chars().enumerate() {
+        // Measurement begin character
+        if c == '\\' {
+            escaped = true;
+            if !exists_metric {
+                exists_metric = true;
+                tok_begin = i;
+            }
+            i += c.len_utf8();
+            continue;
+        }
+        if exists_metric {
+            // Measurement end character
+            if c == ' ' {
+                tok_end = i;
+                break;
+            }
+        } else {
+            // Measurement begin character
+            if c.is_alphanumeric() {
+                exists_metric = true;
+                tok_begin = i;
+            }
+        }
+        if escaped {
+            escaped = false;
+        }
+
+        i += c.len_utf8();
+    }
+    if exists_metric {
+        Some((&buf[tok_begin..tok_end], tok_end + 1))
+    } else {
+        None
+    }
+}
+
 fn is_tagset_character(c: char) -> bool {
     c.is_alphanumeric() || c == '\\'
 }
@@ -257,7 +258,10 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
     }
     if exists_tag_set {
         if tok_end == 0 {
-            tok_end = buf.len()
+            tok_end = buf.len();
+            if buf.ends_with('\n') {
+                tok_end -= 1;
+            }
         }
         tag_set.push((
             &buf[tok_offsets[0]..tok_offsets[1]],
@@ -467,7 +471,7 @@ fn parse_string_field(buf: &str) -> Result<FieldValue> {
     }
 }
 
-fn next_timestamp(buf: &str) -> Option<(&str, usize)> {
+fn next_value(buf: &str) -> Option<(&str, usize)> {
     let mut exists_timestamp = false;
     let (mut tok_begin, mut tok_end) = (0, buf.len());
     for (i, c) in buf.chars().enumerate() {
@@ -489,182 +493,5 @@ fn next_timestamp(buf: &str) -> Option<(&str, usize)> {
         Some((&buf[tok_begin..tok_end], tok_end + 1))
     } else {
         None
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::fs::File;
-    use std::io::Read;
-
-    use crate::parser::{
-        next_field_set, next_measurement, next_tag_set, next_timestamp, FieldValue, Line, Parser,
-    };
-
-    #[test]
-    fn test_parse_functions() {
-        //! measurement: ma
-        //! | ta  | tb | fa       | fb | ts |
-        //! | --  | -- | ------   | -- | -- |
-        //! | 2\\ | 1  | "112\"3" | 2  | 1  |
-        //!
-        //! measurement: mb
-        //! | tb | tc  | fa  | fc  | ts |
-        //! | -- | --- | --- | --- | -- |
-        //! | 2  | abc | 1.3 | 0.9 |    |
-
-        let lines = "ma,ta=2\\\\,tb=1 fa=\"112\\\"3\",fb=2 1  \n mb,tb=2,tc=abc fa=1.3,fc=0.9";
-        println!(
-            "Length of the line protocol string in test case: {}\n======\n{}\n======",
-            lines.len(),
-            lines
-        );
-
-        let mut pos = 0;
-        let measurement = next_measurement(&lines[pos..]).unwrap();
-        assert_eq!(measurement, ("ma", 3));
-        pos += measurement.1;
-
-        if pos < lines.len() {
-            let tagset = next_tag_set(&lines[pos..]).unwrap();
-            assert_eq!(tagset, (vec![("ta", "2\\\\"), ("tb", "1")], 12));
-            pos += tagset.1;
-        }
-
-        if pos < lines.len() {
-            let fieldset = next_field_set(&lines[pos..]).unwrap().unwrap();
-            assert_eq!(
-                fieldset,
-                (
-                    vec![
-                        ("fa", FieldValue::Str(b"112\\\"3".to_vec())),
-                        ("fb", FieldValue::F64(2.0))
-                    ],
-                    17
-                )
-            );
-            pos += fieldset.1;
-        }
-
-        if pos < lines.len() {
-            let timestamp = next_timestamp(&lines[pos..]);
-            assert_eq!(timestamp, Some(("1", 2)));
-            pos += timestamp.unwrap().1;
-        }
-
-        println!("==========");
-
-        if pos < lines.len() {
-            let measurement = next_measurement(&lines[pos..]).unwrap();
-            assert_eq!(measurement, ("mb", 6));
-            pos += measurement.1;
-        }
-
-        if pos < lines.len() {
-            let tagset = next_tag_set(&lines[pos..]).unwrap();
-            assert_eq!(tagset, (vec![("tb", "2"), ("tc", "abc")], 12));
-            pos += tagset.1;
-        }
-
-        if pos < lines.len() {
-            let fieldset = next_field_set(&lines[pos..]).unwrap().unwrap();
-            assert_eq!(
-                fieldset,
-                (
-                    vec![("fa", FieldValue::F64(1.3)), ("fc", FieldValue::F64(0.9))],
-                    14
-                )
-            );
-            pos += fieldset.1;
-        }
-
-        if pos < lines.len() {
-            let timestamp = next_timestamp(&lines[pos..]);
-            assert_eq!(timestamp, None);
-        }
-    }
-
-    #[test]
-    fn test_line_parser() {
-        //! measurement: ma
-        //! | ta  | tb | fa     | fb | fc             | ts |
-        //! | --  | -- | ------ | -- | -------------- | -- |
-        //! | 2\\ | 1  | 112\"" | 2  | "hello, world" | 1  |
-        //!
-        //! measurement: mb
-        //! | tb | tc  | fa  | fc  | ts |
-        //! | -- | --- | --- | --- | -- |
-        //! | 2  | abc | 1.3 | 0.9 |    |
-
-        let lines = "ma,ta=2\\\\,tb=1 fa=\"112\\\"3\",fb=2,fc=\"hello, world\" 1  \n mb,tb=2,tc=abc fa=1.3,fc=0.9";
-        println!(
-            "Length of the line protocol string in test case: {}\n======\n{}\n======",
-            lines.len(),
-            lines
-        );
-
-        let parser = Parser::new(-1);
-        let data = parser.parse(lines).unwrap();
-        assert_eq!(data.len(), 2);
-
-        let data_1 = data.get(0).unwrap();
-        assert_eq!(
-            *data_1,
-            Line {
-                hash_id: 0,
-                measurement: "ma",
-                tags: vec![("ta", "2\\\\"), ("tb", "1")],
-                fields: vec![
-                    ("fa", FieldValue::Str(b"112\\\"3".to_vec())),
-                    ("fb", FieldValue::F64(2.0)),
-                    ("fc", FieldValue::Str(b"hello, world".to_vec())),
-                ],
-                timestamp: 1
-            }
-        );
-
-        let data_2 = data.get(1).unwrap();
-        assert_eq!(
-            *data_2,
-            Line {
-                hash_id: 0,
-                measurement: "mb",
-                tags: vec![("tb", "2"), ("tc", "abc")],
-                fields: vec![("fa", FieldValue::F64(1.3)), ("fc", FieldValue::F64(0.9))],
-                timestamp: -1
-            }
-        );
-    }
-
-    #[test]
-    #[ignore]
-    fn test_generated_data() {
-        let mut lp_file = File::open("/tmp/cnosdb-data").unwrap();
-        let mut lp_lines = String::new();
-        lp_file.read_to_string(&mut lp_lines).unwrap();
-
-        let parser = Parser::new(0);
-        let lines = parser.parse(&lp_lines).unwrap();
-
-        for l in lines {
-            println!("{:?}", l);
-        }
-    }
-
-    #[test]
-    fn test_unicode() {
-        let parser = Parser::new(-1);
-        let lp = parser.parse("m,t1=中,t2=发,t3=majh f=\"白\"").unwrap();
-        assert_eq!(lp.len(), 1);
-        assert_eq!(lp[0].measurement, "m");
-        assert_eq!(lp[0].tags.len(), 3);
-        assert_eq!(lp[0].tags[0], ("t1", "中"));
-        assert_eq!(lp[0].tags[1], ("t2", "发"));
-        assert_eq!(lp[0].tags[2], ("t3", "majh"));
-        assert_eq!(lp[0].fields.len(), 1);
-        assert_eq!(
-            lp[0].fields[0],
-            ("f", FieldValue::Str("白".to_string().into_bytes().to_vec()))
-        );
     }
 }

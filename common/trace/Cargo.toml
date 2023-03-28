@@ -8,8 +8,9 @@ edition.workspace = true
 [dependencies]
 config = { path = "../../config" }
 parking_lot = { workspace = true }
+time = { workspace = true , features = ["macros"]}
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["parking_lot", "registry", "env-filter"] }
+tracing-subscriber = { workspace = true, features = ["parking_lot", "registry", "env-filter", "time", "local-time",] }
 tracing-appender = { workspace = true }
 tracing-error = { workspace = true }
 color-eyre = { workspace = true }

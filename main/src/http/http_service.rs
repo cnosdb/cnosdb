@@ -14,7 +14,6 @@ use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
-use line_protocol::{line_protocol_to_lines, parse_lines_to_points};
 use meta::error::MetaError;
 use metrics::metric_register::MetricsRegister;
 use metrics::prom_reporter::PromReporter;
@@ -23,7 +22,11 @@ use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivileg
 use models::consistency_level::ConsistencyLevel;
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
-use models::schema::DEFAULT_CATALOG;
+use models::schema::{Precision, DEFAULT_CATALOG};
+use protocol_parser::line_protocol::line_protocol_to_lines;
+use protocol_parser::lines_convert::parse_lines_to_points;
+use protocol_parser::open_tsdb::open_tsdb_to_lines;
+use protocol_parser::{DataPoint, Line};
 use protos::kv_service::WritePointsRequest;
 use query::prom::remote_server::PromRemoteSqlServer;
 use snafu::ResultExt;
@@ -32,7 +35,7 @@ use spi::server::prom::PromRemoteServerRef;
 use spi::service::protocol::{Context, ContextBuilder, Query};
 use spi::QueryError;
 use tokio::sync::oneshot;
-use trace::{debug, info};
+use trace::{debug, error, info};
 use utils::backtrace;
 use warp::hyper::body::Bytes;
 use warp::hyper::Body;
@@ -170,6 +173,8 @@ impl HttpService {
             .or(self.prom_remote_read())
             .or(self.prom_remote_write())
             .or(self.backtrace())
+            .or(self.write_open_tsdb())
+            .or(self.put_open_tsdb())
     }
 
     fn routes_query(
@@ -296,11 +301,18 @@ impl HttpService {
                         .await
                         .map_err(reject::custom)?;
 
-                    let req = construct_write_points_request(req, ctx.database())
+                    let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
+
+                    let req = construct_write_lines_points_request(req, ctx.database())
                         .map_err(reject::custom)?;
 
                     let resp: Result<(), HttpError> = coord
-                        .write_points(ctx.tenant().to_string(), ConsistencyLevel::Any, req)
+                        .write_points(
+                            ctx.tenant().to_string(),
+                            ConsistencyLevel::Any,
+                            precision,
+                            req,
+                        )
                         .await
                         .map_err(|e| e.into());
 
@@ -310,8 +322,116 @@ impl HttpService {
                     metrics.writes_inc(tenant, user, db);
 
                     sample_point_write_duration(
-                        ctx.tenant(),
-                        ctx.database(),
+                        tenant,
+                        db,
+                        resp.is_ok(),
+                        start.elapsed().as_millis() as f64,
+                    );
+                    resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
+                },
+            )
+    }
+
+    fn write_open_tsdb(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "opentsdb" / "write")
+            .and(warp::post())
+            .and(warp::body::content_length_limit(self.write_body_limit))
+            .and(warp::body::bytes())
+            .and(self.handle_header())
+            .and(warp::query::<WriteParam>())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and(self.with_http_metrics())
+            .and_then(
+                |req: Bytes,
+                 header: Header,
+                 param: WriteParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>| async move {
+                    let start = Instant::now();
+                    let ctx = construct_write_context(header, param, dbms, coord.clone())
+                        .await
+                        .map_err(reject::custom)?;
+                    let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
+
+                    let req =
+                        construct_write_tsdb_points_request(req, &ctx).map_err(reject::custom)?;
+
+                    let resp: Result<(), HttpError> = coord
+                        .write_points(
+                            ctx.tenant().to_string(),
+                            ConsistencyLevel::Any,
+                            precision,
+                            req,
+                        )
+                        .await
+                        .map_err(|e| e.into());
+
+                    let (tenant, db, user) =
+                        (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
+
+                    metrics.writes_inc(tenant, user, db);
+
+                    sample_point_write_duration(
+                        tenant,
+                        db,
+                        resp.is_ok(),
+                        start.elapsed().as_millis() as f64,
+                    );
+                    resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
+                },
+            )
+    }
+
+    fn put_open_tsdb(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "opentsdb" / "put")
+            .and(warp::post())
+            .and(warp::body::content_length_limit(self.write_body_limit))
+            .and(warp::body::bytes())
+            .and(self.handle_header())
+            .and(warp::query::<WriteParam>())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and(self.with_http_metrics())
+            .and_then(
+                |req: Bytes,
+                 header: Header,
+                 param: WriteParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>| async move {
+                    let start = Instant::now();
+                    let ctx = construct_write_context(header, param, dbms, coord.clone())
+                        .await
+                        .map_err(reject::custom)?;
+                    let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
+
+                    let req = construct_write_tsdb_points_json_request(req, &ctx)
+                        .map_err(reject::custom)?;
+
+                    let resp: Result<(), HttpError> = coord
+                        .write_points(
+                            ctx.tenant().to_string(),
+                            ConsistencyLevel::Any,
+                            precision,
+                            req,
+                        )
+                        .await
+                        .map_err(|e| e.into());
+
+                    let (tenant, db, user) =
+                        (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
+
+                    metrics.writes_inc(tenant, user, db);
+
+                    sample_point_write_duration(
+                        tenant,
+                        db,
                         resp.is_ok(),
                         start.elapsed().as_millis() as f64,
                     );
@@ -636,12 +756,14 @@ async fn construct_write_context(
     let user_info = header.try_get_basic_auth()?;
     let tenant = param.tenant;
     let db = param.db;
+    let precision = param.precision;
 
     let user = dbms.authenticate(&user_info, tenant.as_deref()).await?;
 
     let context = ContextBuilder::new(user)
         .with_tenant(tenant)
         .with_database(db)
+        .with_precision(precision)
         .build();
 
     let tenant_id = *coord
@@ -670,12 +792,62 @@ async fn construct_write_context(
     Ok(context)
 }
 
-fn construct_write_points_request(req: Bytes, db: &str) -> Result<WritePointsRequest, HttpError> {
+fn construct_write_lines_points_request(
+    req: Bytes,
+    db: &str,
+) -> Result<WritePointsRequest, HttpError> {
     let lines = String::from_utf8_lossy(req.as_ref());
     let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
         .map_err(|e| HttpError::ParseLineProtocol { source: e })?;
 
     let points = parse_lines_to_points(db, &line_protocol_lines);
+
+    let req = WritePointsRequest {
+        version: 1,
+        meta: None,
+        points,
+    };
+    Ok(req)
+}
+
+fn construct_write_tsdb_points_request(
+    req: Bytes,
+    ctx: &Context,
+) -> Result<WritePointsRequest, HttpError> {
+    let lines = String::from_utf8_lossy(req.as_ref());
+    let tsdb_protocol_lines = open_tsdb_to_lines(&lines, Local::now().timestamp_nanos())
+        .map_err(|e| HttpError::ParseOpentsdbProtocol { source: e })?;
+
+    let points = parse_lines_to_points(ctx.database(), &tsdb_protocol_lines);
+
+    let req = WritePointsRequest {
+        version: 1,
+        meta: None,
+        points,
+    };
+    Ok(req)
+}
+
+fn construct_write_tsdb_points_json_request(
+    req: Bytes,
+    ctx: &Context,
+) -> Result<WritePointsRequest, HttpError> {
+    let lines = String::from_utf8_lossy(req.as_ref());
+    let tsdb_datapoints = match serde_json::from_str::<DataPoint>(&lines) {
+        Ok(datapoint) => vec![datapoint],
+        Err(_) => match serde_json::from_str::<Vec<DataPoint>>(&lines) {
+            Ok(datapoints) => datapoints,
+            Err(e) => {
+                error!("{}", e);
+                return Err(HttpError::ParseOpentsdbJsonProtocol { source: e });
+            }
+        },
+    }
+    .into_iter()
+    .map(Line::from)
+    .collect::<Vec<Line>>();
+
+    let points = parse_lines_to_points(ctx.database(), &tsdb_datapoints);
 
     let req = WritePointsRequest {
         version: 1,

@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
+use models::schema::Precision;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
 use tskv::query_iterator::QueryOption;
 use tskv::EngineRef;
@@ -27,6 +28,7 @@ pub const SUCCESS_RESPONSE_CODE: i32 = 1;
 pub struct WriteRequest {
     pub tenant: String,
     pub level: models::consistency_level::ConsistencyLevel,
+    pub precision: Precision,
     pub request: protos::kv_service::WritePointsRequest,
 }
 
@@ -65,6 +67,7 @@ pub trait Coordinator: Send + Sync + Debug {
         &self,
         tenant: String,
         level: ConsistencyLevel,
+        precision: Precision,
         request: WritePointsRequest,
     ) -> CoordinatorResult<()>;
 

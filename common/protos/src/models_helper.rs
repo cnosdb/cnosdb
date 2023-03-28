@@ -137,7 +137,7 @@ where
 
 #[cfg(feature = "test")]
 mod test {
-    use crate::{build_fb_schema_offset, init_field, init_tags, FbSchema};
+    use crate::{build_fb_schema_offset, init_fields, init_tags, FbSchema};
     use chrono::prelude::*;
     use flatbuffers::{self, ForwardsUOffset, Vector, WIPOffset};
     use std::collections::HashMap;
@@ -188,7 +188,7 @@ mod test {
         WIPOffset<Vector<'a, u8>>,
     ) {
         let mut fields = Vec::with_capacity(schema.field().len());
-        init_field(fbb, &mut fields, schema.field_len());
+        init_fields(fbb, &mut fields, schema.field_len());
 
         let mut fields_nullbits = BitSet::with_size(schema.field_len());
 

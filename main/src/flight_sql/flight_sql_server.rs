@@ -829,7 +829,7 @@ mod test {
     use crate::flight_sql::utils;
 
     async fn run_test_server() {
-        let addr = "0.0.0.0:31004".parse().expect("parse address");
+        let addr = "0.0.0.0:8904".parse().expect("parse address");
 
         let instance = Arc::new(DatabaseManagerSystemMock {});
         let authenticator = GeneratedBearerTokenAuthenticator::new(
@@ -851,7 +851,7 @@ mod test {
 
         run_test_server().await;
 
-        let endpoint = Endpoint::from_static("http://localhost:31004");
+        let endpoint = Endpoint::from_static("http://localhost:8904");
         let mut client = FlightServiceClient::connect(endpoint)
             .await
             .expect("connect");

@@ -1,0 +1,133 @@
+-- EXECUTE SQL: CREATE DATABASE cli_precision WITH TTL '100000d' precision 'us'; --
+200 OK
+
+
+-- WRITE LINE PROTOCOL --
+test1,ta=a1,tb=b1 fa=1,fb=2 1667456411000001
+-- LINE PROTOCOL END --
+200 OK
+
+
+-- WRITE OPEN TSDB PROTOCOL --
+test2 1667456411000001 1 ta=a1 tb=b1
+-- OPEN TSDB PROTOCOL END --
+200 OK
+
+
+-- WRITE OPEN TSDB JSON --
+[
+{
+"metric": "nice",
+"timestamp": 1667456411000001,
+"value": 18,
+"tags": {
+"host": "web01",
+"dc": "lga"
+}
+},
+{
+"metric": "nice",
+"timestamp": 1667456411000002,
+"value": 9,
+"tags": {
+"host": "web02",
+"dc": "lga"
+}
+}
+]
+-- OPEN TSDB JSON END --
+200 OK
+
+
+-- WRITE OPEN TSDB JSON --
+select * from test1;
+-- OPEN TSDB JSON END --
+200 OK
+time,ta,tb,fa,fb
+2022-11-03T06:20:11.000001000,a1,b1,1.0,2.0
+
+-- WRITE OPEN TSDB JSON --
+select * from test2;
+-- OPEN TSDB JSON END --
+200 OK
+time,ta,tb,value
+2022-11-03T06:20:11.000001000,a1,b1,1.0
+
+-- WRITE OPEN TSDB JSON --
+select * from nice;
+-- OPEN TSDB JSON END --
+200 OK
+time,dc,host,value
+2022-11-03T06:20:11.000001000,lga,web01,18.0
+2022-11-03T06:20:11.000002000,lga,web02,9.0
+
+-- WRITE OPEN TSDB JSON --
+drop database cli_precision;
+-- OPEN TSDB JSON END --
+200 OK
+
+
+-- WRITE OPEN TSDB JSON --
+CREATE DATABASE cli_precision WITH TTL '100000d' precision 'ms';
+-- OPEN TSDB JSON END --
+200 OK
+
+
+-- WRITE LINE PROTOCOL --
+test1,ta=a1,tb=b1 fa=1,fb=2 1667456411000001
+-- LINE PROTOCOL END --
+200 OK
+
+
+-- WRITE OPEN TSDB PROTOCOL --
+test2 1667456411000001 1 ta=a1 tb=b1
+-- OPEN TSDB PROTOCOL END --
+200 OK
+
+
+-- WRITE OPEN TSDB JSON --
+[
+{
+"metric": "nice",
+"timestamp": 1667456411000001,
+"value": 18,
+"tags": {
+"host": "web01",
+"dc": "lga"
+}
+},
+{
+"metric": "nice",
+"timestamp": 1667456411000002,
+"value": 9,
+"tags": {
+"host": "web02",
+"dc": "lga"
+}
+}
+]
+-- OPEN TSDB JSON END --
+200 OK
+
+
+-- WRITE OPEN TSDB JSON --
+select * from test1;
+-- OPEN TSDB JSON END --
+200 OK
+time,ta,tb,fa,fb
+2022-11-03T06:20:11.000000000,a1,b1,1.0,2.0
+
+-- WRITE OPEN TSDB JSON --
+select * from test2;
+-- OPEN TSDB JSON END --
+200 OK
+time,ta,tb,value
+2022-11-03T06:20:11.000000000,a1,b1,1.0
+
+-- WRITE OPEN TSDB JSON --
+select * from nice;
+-- OPEN TSDB JSON END --
+200 OK
+time,dc,host,value
+2022-11-03T06:20:11.000000000,lga,web01,18.0
+2022-11-03T06:20:11.000000000,lga,web02,9.0

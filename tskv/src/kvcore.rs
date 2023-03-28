@@ -8,7 +8,7 @@ use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::codec::Encoding;
 use models::predicate::domain::{ColumnDomains, TimeRange};
-use models::schema::{make_owner, DatabaseSchema, TableColumn};
+use models::schema::{make_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
@@ -197,9 +197,10 @@ impl TsKv {
             cb: oneshot::Sender<Result<(u64, usize)>>,
             id: TseriesFamilyId,
             tenant: Arc<Vec<u8>>,
+            precision: Precision,
         ) {
             let ret = wal_manager
-                .write(WalEntryType::Write, points, id, tenant)
+                .write(WalEntryType::Write, points, id, tenant, precision)
                 .await;
             let send_ret = cb.send(ret);
             if let Err(e) = send_ret {
@@ -244,7 +245,7 @@ impl TsKv {
                     tokio::select! {
                         wal_task = receiver.recv() => {
                             match wal_task {
-                                Some(WalTask::Write { id, points, tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant).await,
+                                Some(WalTask::Write { id, points, precision,tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant, precision).await,
                                 _ => break
                             }
                         }
@@ -263,7 +264,7 @@ impl TsKv {
                     tokio::select! {
                         wal_task = receiver.recv() => {
                             match wal_task {
-                                Some(WalTask::Write { id, points, tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant).await,
+                                Some(WalTask::Write { id, points, precision,tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant, precision).await,
                                 _ => break
                             }
                         }
@@ -426,7 +427,13 @@ impl TsKv {
         Ok(())
     }
 
-    async fn write_wal(&self, id: TseriesFamilyId, tenant: &str, points: &[u8]) -> Result<u64> {
+    async fn write_wal(
+        &self,
+        id: TseriesFamilyId,
+        tenant: &str,
+        precision: Precision,
+        points: &[u8],
+    ) -> Result<u64> {
         if !self.options.wal.enabled {
             return Ok(0);
         }
@@ -439,6 +446,7 @@ impl TsKv {
         self.wal_sender
             .send(WalTask::Write {
                 id,
+                precision,
                 cb,
                 points: Arc::new(enc_points),
                 tenant: Arc::new(tenant.as_bytes().to_vec()),
@@ -456,6 +464,7 @@ impl Engine for TsKv {
     async fn write(
         &self,
         id: TseriesFamilyId,
+        precision: Precision,
         write_batch: WritePointsRequest,
     ) -> Result<WritePointsResponse> {
         let tenant = tenant_name_from_request(&write_batch);
@@ -474,10 +483,10 @@ impl Engine for TsKv {
         let write_group = db
             .read()
             .await
-            .build_write_group(&db_name, tables, ts_index)
+            .build_write_group(&db_name, precision, tables, ts_index)
             .await?;
 
-        let seq = self.write_wal(id, &tenant, &points).await?;
+        let seq = self.write_wal(id, &tenant, precision, &points).await?;
 
         let tsf = self
             .get_tsfamily_or_else_create(seq, id, None, db.clone())
@@ -494,6 +503,7 @@ impl Engine for TsKv {
     async fn write_from_wal(
         &self,
         id: TseriesFamilyId,
+        precision: Precision,
         write_batch: WritePointsRequest,
         seq: u64,
     ) -> Result<()> {
@@ -511,6 +521,7 @@ impl Engine for TsKv {
             .await
             .build_write_group(
                 &db_name,
+                precision,
                 fb_points.tables().ok_or(Error::CommonError {
                     reason: "points missing table".to_string(),
                 })?,

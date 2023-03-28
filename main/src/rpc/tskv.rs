@@ -14,7 +14,7 @@ use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
 use models::predicate::domain::{self, QueryArgs, QueryExpr};
-use models::schema::TableColumn;
+use models::schema::{Precision, TableColumn};
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::*;
 use protos::models::{PingBody, PingBodyBuilder};
@@ -320,7 +320,7 @@ impl TskvService for TskvServiceImpl {
                 Ok(req) => {
                     let ret = self
                         .kv_inst
-                        .write(0, req)
+                        .write(0, Precision::NS, req)
                         .await
                         .map_err(|err| tonic::Status::internal(err.to_string()));
                     resp_sender.send(ret).await.expect("successful");
@@ -354,7 +354,15 @@ impl TskvService for TskvServiceImpl {
             points: inner.data,
         };
 
-        if let Err(err) = self.kv_inst.write(inner.vnode_id, request).await {
+        if let Err(err) = self
+            .kv_inst
+            .write(
+                inner.vnode_id,
+                Precision::from(inner.precision as u8),
+                request,
+            )
+            .await
+        {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
         } else {
             info!("success write data to vnode: {}", inner.vnode_id);

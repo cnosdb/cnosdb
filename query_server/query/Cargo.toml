@@ -12,7 +12,7 @@ utils = { path = "../../common/utils" }
 config = { path = "../../config" }
 meta = { path = "../../meta" }
 coordinator = { path = "../../coordinator" }
-line_protocol = { path = "../../common/line_protocol" }
+protocol_parser = { path = "../../common/protocol_parser" }
 memory_pool = { path = "../../common/memory_pool" }
 spi = { path = "../spi" }
 metrics = {path = "../../common/metrics"}

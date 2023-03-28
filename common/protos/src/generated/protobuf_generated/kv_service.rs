@@ -88,7 +88,9 @@ pub struct WriteVnodeRequest {
     pub vnode_id: u32,
     #[prost(string, tag = "2")]
     pub tenant: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "3")]
+    #[prost(uint32, tag = "3")]
+    pub precision: u32,
+    #[prost(bytes = "vec", tag = "4")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]

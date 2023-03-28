@@ -20,6 +20,8 @@ pub struct ClusterConfig {
     pub grpc_listen_addr: String,
     #[serde(default = "ClusterConfig::default_flight_rpc_listen_addr")]
     pub flight_rpc_listen_addr: String,
+    #[serde(default = "ClusterConfig::default_tcp_listen_addr")]
+    pub tcp_listen_addr: String,
     #[serde(default = "ClusterConfig::default_store_metrics")]
     pub store_metrics: bool,
 
@@ -37,19 +39,23 @@ impl ClusterConfig {
     }
 
     fn default_meta_service_addr() -> String {
-        "127.0.0.1:21001".to_string()
+        "127.0.0.1:8901".to_string()
     }
 
     fn default_http_listen_addr() -> String {
-        "127.0.0.1:31007".to_string()
+        "127.0.0.1:8902".to_string()
     }
 
     fn default_grpc_listen_addr() -> String {
-        "127.0.0.1:31008".to_string()
+        "127.0.0.1:8903".to_string()
     }
 
     fn default_flight_rpc_listen_addr() -> String {
-        "127.0.0.1:31006".to_string()
+        "127.0.0.1:8904".to_string()
+    }
+
+    fn default_tcp_listen_addr() -> String {
+        "127.0.0.1:8905".to_string()
     }
 
     fn default_store_metrics() -> bool {
@@ -71,16 +77,24 @@ impl ClusterConfig {
             self.node_id = id.parse::<u64>().unwrap();
         }
 
-        if let Ok(val) = std::env::var("CNOSDB_http_listen_addr") {
+        if let Ok(val) = std::env::var("CNOSDB_HTTP_LISTEN_ADDR") {
             self.http_listen_addr = val;
         }
 
-        if let Ok(val) = std::env::var("CNOSDB_grpc_listen_addr") {
+        if let Ok(val) = std::env::var("CNOSDB_GRPC_LISTEN_ADDR") {
             self.grpc_listen_addr = val;
         }
 
-        if let Ok(val) = std::env::var("CNOSDB_flight_rpc_listen_addr") {
+        if let Ok(val) = std::env::var("CNOSDB_FLIGHT_RPC_LISTEN_ADDR") {
             self.flight_rpc_listen_addr = val;
+        }
+
+        if let Ok(val) = std::env::var("CNOSDB_TCP_LISTEN_ADDR") {
+            self.flight_rpc_listen_addr = val;
+        }
+
+        if let Ok(val) = std::env::var("CNOSDB_STORE_METRICS") {
+            self.store_metrics = val.parse::<bool>().unwrap();
         }
     }
 }
@@ -94,6 +108,7 @@ impl Default for ClusterConfig {
             http_listen_addr: Self::default_http_listen_addr(),
             grpc_listen_addr: Self::default_grpc_listen_addr(),
             flight_rpc_listen_addr: Self::default_flight_rpc_listen_addr(),
+            tcp_listen_addr: Self::default_tcp_listen_addr(),
             store_metrics: Self::default_store_metrics(),
             cold_data_server: Self::default_cold_data_server(),
         }

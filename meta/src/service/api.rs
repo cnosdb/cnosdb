@@ -30,8 +30,8 @@ pub async fn write(
     Ok(Json(response))
 }
 
-// curl -XPOST http://127.0.0.1:21001/dump --o ./meta_dump.data
-// curl -XPOST http://127.0.0.1:21001/restore --data-binary "@./meta_dump.data"
+// curl -XPOST http://127.0.0.1:8901/dump --o ./meta_dump.data
+// curl -XPOST http://127.0.0.1:8901/restore --data-binary "@./meta_dump.data"
 #[get("/dump")]
 pub async fn dump(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     let sm = app.store.state_machine.read().await;
