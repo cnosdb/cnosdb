@@ -37,7 +37,7 @@ use crate::utils::{
     DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS, MINUTES_MICROS,
     MINUTES_MILLS, MINUTES_NANOS,
 };
-use crate::{ColumnId, Error, SchemaId, ValueType};
+use crate::{ColumnId, Error, SchemaId, Timestamp, ValueType};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
@@ -50,15 +50,7 @@ pub const TIME_FIELD: &str = "time";
 pub const DEFAULT_DATABASE: &str = "public";
 pub const USAGE_SCHEMA: &str = "usage_schema";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum FieldValue {
-    U64(u64),
-    I64(i64),
-    Str(Vec<u8>),
-    F64(f64),
-    Bool(bool),
-}
+pub const DEFAULT_PRECISION: &str = "NS";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TableSchema {
@@ -227,6 +219,14 @@ impl TskvTableSchema {
         self.columns_index
             .get(name)
             .map(|idx| unsafe { self.columns.get_unchecked(*idx) })
+    }
+
+    pub fn time_column_precision(&self) -> Precision {
+        self.columns
+            .iter()
+            .find(|column| column.column_type.is_time())
+            .map(|column| column.column_type.precision().unwrap_or(Precision::NS))
+            .unwrap_or(Precision::NS)
     }
 
     /// Get the index of the column
@@ -525,6 +525,18 @@ impl ColumnType {
         matches!(self, ColumnType::Time(_))
     }
 
+    pub fn precision(&self) -> Option<Precision> {
+        match self {
+            ColumnType::Time(unit) => match unit {
+                TimeUnit::Millisecond => Some(Precision::MS),
+                TimeUnit::Microsecond => Some(Precision::US),
+                TimeUnit::Nanosecond => Some(Precision::NS),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub fn is_field(&self) -> bool {
         matches!(self, ColumnType::Field(_))
     }
@@ -706,14 +718,36 @@ impl DatabaseOptions {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Precision {
-    MS,
+    MS = 0,
     US,
     NS,
+}
+
+impl From<u8> for Precision {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Precision::MS,
+            1 => Precision::US,
+            2 => Precision::NS,
+            _ => Precision::NS,
+        }
+    }
 }
 
 impl Default for Precision {
     fn default() -> Self {
         Self::NS
+    }
+}
+
+impl From<TimeUnit> for Precision {
+    fn from(value: TimeUnit) -> Self {
+        match value {
+            TimeUnit::Millisecond => Precision::MS,
+            TimeUnit::Microsecond => Precision::US,
+            TimeUnit::Nanosecond => Precision::NS,
+            _ => Precision::NS,
+        }
     }
 }
 
@@ -735,6 +769,16 @@ impl Precision {
             "NS" => Some(Precision::NS),
             _ => None,
         }
+    }
+}
+
+pub fn timestamp_convert(from: Precision, to: Precision, ts: Timestamp) -> Option<Timestamp> {
+    match (from, to) {
+        (Precision::NS, Precision::US) | (Precision::US, Precision::MS) => Some(ts / 1_000),
+        (Precision::MS, Precision::US) | (Precision::US, Precision::NS) => ts.checked_mul(1_000),
+        (Precision::NS, Precision::MS) => Some(ts / 1_000_000),
+        (Precision::MS, Precision::NS) => ts.checked_mul(1_000_000),
+        _ => Some(ts),
     }
 }
 

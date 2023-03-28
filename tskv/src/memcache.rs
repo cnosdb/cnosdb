@@ -8,7 +8,7 @@ use std::sync::Arc;
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
 use models::predicate::domain::TimeRange;
-use models::schema::{TableColumn, TskvTableSchema};
+use models::schema::{timestamp_convert, Precision, TableColumn, TskvTableSchema};
 use models::utils::split_id;
 use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
 use parking_lot::RwLock;
@@ -107,6 +107,7 @@ impl RowData {
     pub fn point_to_row_data(
         p: fb_models::Point,
         schema: &TskvTableSchema,
+        from_precision: Precision,
         field_names: &[&str],
         field_type: &[FieldType],
     ) -> Result<RowData> {
@@ -159,7 +160,13 @@ impl RowData {
                 fields
             }
         };
-        let ts = p.timestamp();
+        let to_precision = schema.time_column_precision();
+        let ts = timestamp_convert(from_precision, to_precision, p.timestamp()).ok_or(
+            Error::CommonError {
+                reason: "timestamp overflow".to_string(),
+            },
+        )?;
+
         Ok(RowData { ts, fields })
     }
 

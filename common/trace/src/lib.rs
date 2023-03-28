@@ -4,15 +4,16 @@ use std::sync::Arc;
 use config::TokioTrace;
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, Once};
+use time::UtcOffset;
 use tracing::metadata::LevelFilter;
 pub use tracing::{debug, error, info, instrument, trace, warn};
 pub use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::{non_blocking, rolling};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::fmt::time::OffsetTime;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{fmt, Layer, Registry};
+use tracing_subscriber::{fmt, EnvFilter, Layer, Registry};
 
 const TOKIO_TRACE: &str = ",tokio=trace,runtime=trace";
 /// only use for unit test
@@ -68,14 +69,20 @@ pub fn init_global_tracing(
 ) -> Vec<WorkerGuard> {
     let log_level = log_level.to_string() + ",actix_web::middleware::logger=warn";
     let env_filter = get_env_filter(&log_level, tokio_trace);
+    let local_time = OffsetTime::new(
+        UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC),
+        time::format_description::well_known::Rfc3339,
+    );
     let formatting_layer = fmt::layer()
         .pretty()
+        .with_timer(local_time.clone())
         .with_writer(std::io::stderr)
         .with_filter(LevelFilter::DEBUG);
 
     let file_appender = rolling::daily(log_path, log_file_prefix_name);
     let (non_blocking_appender, guard) = non_blocking(file_appender);
     let file_layer = fmt::layer()
+        .with_timer(local_time)
         .with_writer(non_blocking_appender)
         .with_filter(LevelFilter::DEBUG);
 

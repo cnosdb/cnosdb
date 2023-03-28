@@ -5,6 +5,7 @@ use datafusion::execution::memory_pool::GreedyMemoryPool;
 use meta::model::meta_manager::RemoteMetaManager;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use models::schema::Precision;
 use parking_lot::Mutex;
 use protos::kv_service::WritePointsRequest;
 use protos::models_helper;
@@ -45,7 +46,8 @@ async fn get_tskv() -> TsKv {
 
 fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRequest) {
     let rt = Runtime::new().unwrap();
-    rt.block_on(tskv.lock().write(0, request)).unwrap();
+    rt.block_on(tskv.lock().write(0, Precision::NS, request))
+        .unwrap();
 }
 
 // fn test_insert_cache(tskv: Arc<Mutex<TsKv>>, buf: &[u8]) {
@@ -80,7 +82,7 @@ fn big_write(c: &mut Criterion) {
                     meta: None,
                     points,
                 };
-                rt.block_on(tskv.write(0, request)).unwrap();
+                rt.block_on(tskv.write(0, Precision::NS, request)).unwrap();
             }
         })
     });

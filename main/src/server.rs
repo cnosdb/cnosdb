@@ -22,6 +22,7 @@ use crate::http::http_service::{HttpService, ServerMode};
 use crate::meta_single::meta_service::MetaService;
 use crate::rpc::grpc_service::GrpcService;
 use crate::spi::service::ServiceRef;
+use crate::tcp::tcp_service::TcpService;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -35,6 +36,9 @@ pub enum Error {
 
     #[snafu(display("Ensure the TLS configuration is correct"))]
     TLSConfigError,
+
+    #[snafu(display("Server Common Error : {}", reason))]
+    Common { reason: String },
 }
 
 impl From<tonic::transport::Error> for Error {
@@ -135,9 +139,11 @@ impl ServiceBuilder {
         let http_service =
             Box::new(self.create_http(dbms.clone(), coord.clone(), ServerMode::Store));
         let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()));
+        let tcp_service = Box::new(self.create_tcp(coord.clone()));
 
         server.add_service(http_service);
         server.add_service(grpc_service);
+        server.add_service(tcp_service);
 
         Some(kv_inst)
     }
@@ -174,10 +180,12 @@ impl ServiceBuilder {
         let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()));
         let http_service =
             Box::new(self.create_http(dbms.clone(), coord.clone(), ServerMode::Bundle));
+        let tcp_service = Box::new(self.create_tcp(coord.clone()));
 
         server.add_service(http_service);
         server.add_service(grpc_service);
         server.add_service(flight_sql_service);
+        server.add_service(tcp_service);
 
         Some(kv_inst)
     }
@@ -303,6 +311,10 @@ impl ServiceBuilder {
             self.config.security.tls_config.clone(),
             self.metrics_register.clone(),
         )
+    }
+
+    fn create_tcp(&self, coord: CoordinatorRef) -> TcpService {
+        TcpService::new(coord, self.config.cluster.tcp_listen_addr.clone())
     }
 
     fn create_flight_sql(&self, dbms: DBMSRef) -> FlightSqlServiceAdapter {

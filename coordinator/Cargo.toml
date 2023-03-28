@@ -12,7 +12,7 @@ utils = { path = "../common/utils" }
 tskv = { path = "../tskv" }
 meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }
-line_protocol = { path = "../common/line_protocol" }
+protocol_parser = { path = "../common/protocol_parser" }
 
 walkdir = { workspace = true }
 datafusion = { workspace = true }

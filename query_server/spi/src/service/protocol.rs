@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use datafusion::arrow::record_batch::RecordBatch;
 use models::auth::user::User;
-use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
+use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE, DEFAULT_PRECISION};
 use trace::trace;
 
 use crate::query::execution::Output;
@@ -70,6 +70,7 @@ pub struct Context {
     user_info: User,
     tenant: String,
     database: String,
+    precision: String,
     session_config: CnosSessionConfig,
 }
 
@@ -80,6 +81,10 @@ impl Context {
 
     pub fn database(&self) -> &str {
         &self.database
+    }
+
+    pub fn precision(&self) -> &str {
+        &self.precision
     }
 
     pub fn user_info(&self) -> &User {
@@ -95,6 +100,7 @@ pub struct ContextBuilder {
     user_info: User,
     tenant: String,
     database: String,
+    precision: String,
     session_config: CnosSessionConfig,
 }
 
@@ -102,6 +108,7 @@ impl ContextBuilder {
     pub fn new(user_info: User) -> Self {
         Self {
             user_info,
+            precision: DEFAULT_PRECISION.to_string(),
             tenant: DEFAULT_CATALOG.to_string(),
             database: DEFAULT_DATABASE.to_string(),
             session_config: Default::default(),
@@ -122,6 +129,13 @@ impl ContextBuilder {
         self
     }
 
+    pub fn with_precision(mut self, precision: Option<String>) -> Self {
+        if let Some(precision) = precision {
+            self.precision = precision
+        }
+        self
+    }
+
     pub fn with_target_partitions(mut self, target_partitions: Option<usize>) -> Self {
         if let Some(dbtarget_partitions) = target_partitions {
             self.session_config = self
@@ -136,6 +150,7 @@ impl ContextBuilder {
             user_info: self.user_info,
             tenant: self.tenant,
             database: self.database,
+            precision: self.precision,
             session_config: self.session_config,
         }
     }

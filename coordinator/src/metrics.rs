@@ -1,11 +1,12 @@
 use std::fmt::Debug;
 
-use line_protocol::{parse_lines_to_points, Line};
 use metrics::label::Labels;
 use metrics::metric_type::MetricType;
 use metrics::metric_value::MetricValue;
 use metrics::reporter::Reporter;
-use models::schema::FieldValue;
+use protocol_parser::lines_convert::parse_lines_to_points;
+use protocol_parser::Line;
+use protos::FieldValue;
 
 #[derive(Debug)]
 struct LPLine {

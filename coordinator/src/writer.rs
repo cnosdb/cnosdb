@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
+use meta::error::MetaError;
 use meta::model::{MetaClientRef, MetaRef};
 use models::meta_data::*;
+use models::schema::{timestamp_convert, Precision};
 use models::utils::now_timestamp_nanos;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{Meta, WritePointsRequest, WriteVnodeRequest};
@@ -199,11 +201,24 @@ impl<'a> VnodeMapping<'a> {
         meta_client: MetaClientRef,
         db_name: &str,
         tab_name: &str,
+        precision: Precision,
         schema: Schema<'_>,
         point: Point<'_>,
     ) -> CoordinatorResult<()> {
+        let db_schema = meta_client
+            .get_db_schema(db_name)?
+            .ok_or(MetaError::DatabaseNotFound {
+                database: db_name.to_string(),
+            })?;
+        let db_precision = db_schema.config.precision_or_default();
+        let ts = timestamp_convert(precision, *db_precision, point.timestamp()).ok_or(
+            CoordinatorError::CommonError {
+                msg: "timestamp overflow".to_string(),
+            },
+        )?;
+
         if let Some(val) = meta_client.database_min_ts(db_name) {
-            if point.timestamp() < val {
+            if ts < val {
                 return Err(CoordinatorError::CommonError {
                     msg: "write expired time data not permit".to_string(),
                 });
@@ -246,7 +261,7 @@ impl<'a> VnodeMapping<'a> {
 
         //let full_name = format!("{}.{}", meta_client.tenant_name(), db);
         let info = meta_client
-            .locate_replcation_set_for_write(db_name, hash_id, point.timestamp())
+            .locate_replcation_set_for_write(db_name, hash_id, ts)
             .await?;
         self.sets.entry(info.id).or_insert_with(|| info.clone());
         let entry = self
@@ -321,6 +336,7 @@ impl PointWriter {
                         meta_client.clone(),
                         &database_name,
                         &table_name,
+                        req.precision,
                         schema,
                         item,
                     )
@@ -336,8 +352,13 @@ impl PointWriter {
             for vnode in points.repl_set.vnodes.iter() {
                 debug!("write points on vnode {:?},  now: {:?}", vnode, now);
 
-                let request =
-                    self.write_to_node(vnode.id, &req.tenant, vnode.node_id, points.data.clone());
+                let request = self.write_to_node(
+                    vnode.id,
+                    &req.tenant,
+                    vnode.node_id,
+                    req.precision,
+                    points.data.clone(),
+                );
                 requests.push(request);
             }
         }
@@ -359,17 +380,20 @@ impl PointWriter {
         vnode_id: u32,
         tenant: &str,
         node_id: u64,
+        precision: Precision,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
         if node_id == self.node_id && self.kv_inst.is_some() {
-            let result = self.write_to_local_node(vnode_id, tenant, data).await;
+            let result = self
+                .write_to_local_node(vnode_id, tenant, precision, data)
+                .await;
             debug!("write data to local {}({}) {:?}", node_id, vnode_id, result);
 
             return result;
         }
 
         if let Err(err) = self
-            .write_to_remote_node(vnode_id, node_id, tenant, data.clone())
+            .write_to_remote_node(vnode_id, node_id, tenant, precision, data.clone())
             .await
         {
             debug!(
@@ -379,7 +403,9 @@ impl PointWriter {
                 err.to_string()
             );
 
-            return self.write_to_handoff(vnode_id, node_id, tenant, data).await;
+            return self
+                .write_to_handoff(vnode_id, node_id, tenant, precision, data)
+                .await;
         }
 
         debug!(
@@ -396,10 +422,17 @@ impl PointWriter {
         vnode_id: u32,
         node_id: u64,
         tenant: &str,
+        precision: Precision,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
         let (sender, receiver) = oneshot::channel();
-        let block = HintedOffBlock::new(now_timestamp_nanos(), vnode_id, tenant.to_string(), data);
+        let block = HintedOffBlock::new(
+            now_timestamp_nanos(),
+            vnode_id,
+            tenant.to_string(),
+            precision,
+            data,
+        );
         let request = HintedOffWriteReq {
             node_id,
             sender,
@@ -416,6 +449,7 @@ impl PointWriter {
         vnode_id: u32,
         node_id: u64,
         tenant: &str,
+        precision: Precision,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
         let channel = self
@@ -428,6 +462,7 @@ impl PointWriter {
 
         let cmd = tonic::Request::new(WriteVnodeRequest {
             vnode_id,
+            precision: precision as u32,
             tenant: tenant.to_string(),
             data,
         });
@@ -440,6 +475,7 @@ impl PointWriter {
         &self,
         vnode_id: u32,
         tenant: &str,
+        precision: Precision,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
         let req = WritePointsRequest {
@@ -453,7 +489,7 @@ impl PointWriter {
         };
 
         if let Some(kv_inst) = self.kv_inst.clone() {
-            let _ = kv_inst.write(vnode_id, req).await?;
+            let _ = kv_inst.write(vnode_id, precision, req).await?;
             Ok(())
         } else {
             Err(CoordinatorError::KvInstanceNotFound {

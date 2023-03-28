@@ -435,8 +435,8 @@ mod test {
     use minivec::MiniVec;
     use models::predicate::domain::TimeRange;
     use models::schema::{
-        ColumnType, DatabaseOptions, DatabaseSchema, TableColumn, TableSchema, TenantOptions,
-        TskvTableSchema,
+        ColumnType, DatabaseOptions, DatabaseSchema, Precision, TableColumn, TableSchema,
+        TenantOptions, TskvTableSchema,
     };
     use models::{Timestamp, ValueType};
     use protos::kv_service::{Meta, WritePointsRequest};
@@ -970,7 +970,10 @@ mod test {
             );
             let points = flatbuffers::root::<fb_models::Points>(&write_batch.points).unwrap();
             models_helper::print_points(points);
-            engine.write(ts_family_id, write_batch).await.unwrap();
+            engine
+                .write(ts_family_id, Precision::NS, write_batch)
+                .await
+                .unwrap();
 
             let mut ts_family_wlock = ts_family_ref.write().await;
             ts_family_wlock.switch_to_immutable();

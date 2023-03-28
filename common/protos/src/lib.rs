@@ -7,6 +7,7 @@ use flatbuffers::{FlatBufferBuilder, WIPOffset};
 pub use generated::*;
 use snafu::Snafu;
 use std::collections::HashMap;
+use utils::bitset::BitSet;
 
 pub mod models_helper;
 
@@ -17,6 +18,15 @@ type PointsResult<T> = Result<T, PointsError>;
 pub enum PointsError {
     #[snafu(display("{}", msg))]
     Points { msg: String },
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum FieldValue {
+    U64(u64),
+    I64(i64),
+    Str(Vec<u8>),
+    F64(f64),
+    Bool(bool),
 }
 
 pub fn fb_table_name(table: &Table) -> PointsResult<String> {
@@ -96,7 +106,7 @@ impl<'a> FbSchema<'a> {
         self.tag_name.entry(tag_key).or_insert(len);
     }
 
-    pub fn add_filed(&mut self, field_key: &'a str, field_type: FieldType) {
+    pub fn add_field(&mut self, field_key: &'a str, field_type: FieldType) {
         self.field.entry(field_key).or_insert_with(|| {
             self.field_type.push(field_type);
             self.field_type.len() - 1
@@ -138,7 +148,7 @@ pub fn init_tags<'fbb: 'mut_fbb, 'mut_fbb>(
     }
 }
 
-pub fn init_field<'fbb: 'mut_fbb, 'mut_fbb>(
+pub fn init_fields<'fbb: 'mut_fbb, 'mut_fbb>(
     fbb: &'mut_fbb mut FlatBufferBuilder<'fbb>,
     fields: &mut Vec<WIPOffset<Field<'fbb>>>,
     len: usize,
@@ -180,4 +190,82 @@ pub fn build_fb_schema_offset<'fbb>(
     schema_builder.add_field_type(field_type);
 
     schema_builder.finish()
+}
+
+pub fn init_tags_and_nullbits<'a, 'fbb: 'mut_fbb, 'mut_fbb>(
+    fbb: &'mut_fbb mut FlatBufferBuilder<'fbb>,
+    schema: &'a FbSchema<'a>,
+) -> (Vec<WIPOffset<Tag<'fbb>>>, BitSet) {
+    let mut tags = Vec::with_capacity(schema.tag_names().len());
+    init_tags(fbb, &mut tags, schema.tag_names().len());
+
+    let tags_nullbit = BitSet::with_size(schema.tag_names().len());
+    (tags, tags_nullbit)
+}
+
+pub fn init_fields_and_nullbits<'a, 'fbb: 'mut_fbb, 'mut_fbb>(
+    fbb: &'mut_fbb mut FlatBufferBuilder<'fbb>,
+    schema: &'a FbSchema,
+) -> (Vec<WIPOffset<Field<'fbb>>>, BitSet) {
+    let mut fields = Vec::with_capacity(schema.field().len());
+    init_fields(fbb, &mut fields, schema.field().len());
+
+    let fields_nullbits = BitSet::with_size(schema.field().len());
+    (fields, fields_nullbits)
+}
+
+pub fn insert_tag<'a, 'fbb: 'mut_fbb, 'mut_fbb>(
+    fbb: &'mut_fbb mut FlatBufferBuilder<'fbb>,
+    tags: &mut [WIPOffset<Tag<'fbb>>],
+    tag_nullbits: &'a mut BitSet,
+    schema: &'a FbSchema,
+    tag_key: &str,
+    tag_value: &str,
+) {
+    let tag_index = match schema.tag_names().get(tag_key) {
+        None => return,
+        Some(v) => *v,
+    };
+
+    let tag_value = fbb.create_vector(tag_value.as_bytes());
+
+    let mut tag_builder = TagBuilder::new(fbb);
+    tag_builder.add_value(tag_value);
+    tags[tag_index] = tag_builder.finish();
+
+    tag_nullbits.set(tag_index);
+}
+
+pub fn insert_field<'a, 'fbb: 'mut_fbb, 'mut_fbb>(
+    fbb: &'mut_fbb mut FlatBufferBuilder<'fbb>,
+    fields: &mut [WIPOffset<Field<'fbb>>],
+    field_nullbits: &'a mut BitSet,
+    schema: &'a FbSchema,
+    field_key: &str,
+    field_value: &FieldValue,
+) {
+    let field_index = match schema.field().get(field_key) {
+        None => return,
+        Some(v) => *v,
+    };
+
+    let field_value = match field_value {
+        FieldValue::U64(field_val) => fbb.create_vector(&field_val.to_be_bytes()),
+        FieldValue::I64(field_val) => fbb.create_vector(&field_val.to_be_bytes()),
+        FieldValue::Str(field_val) => fbb.create_vector(field_val),
+        FieldValue::F64(field_val) => fbb.create_vector(&field_val.to_be_bytes()),
+        FieldValue::Bool(field_val) => {
+            if *field_val {
+                fbb.create_vector(&[1_u8][..])
+            } else {
+                fbb.create_vector(&[0_u8][..])
+            }
+        }
+    };
+
+    let mut field_builder = FieldBuilder::new(fbb);
+    field_builder.add_value(field_value);
+    fields[field_index] = field_builder.finish();
+
+    field_nullbits.set(field_index);
 }

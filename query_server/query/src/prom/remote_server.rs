@@ -5,11 +5,12 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
-use line_protocol::{parse_lines_to_points, Line};
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::consistency_level::ConsistencyLevel;
-use models::schema::{FieldValue, TskvTableSchema, TIME_FIELD_NAME};
+use models::schema::{Precision, TskvTableSchema, TIME_FIELD_NAME};
+use protocol_parser::lines_convert::parse_lines_to_points;
+use protocol_parser::Line;
 use protos::kv_service::WritePointsRequest;
 use protos::models_helper::{parse_proto_bytes, to_proto_bytes};
 use protos::prompb::remote::{
@@ -17,6 +18,7 @@ use protos::prompb::remote::{
 };
 use protos::prompb::types::label_matcher::Type;
 use protos::prompb::types::TimeSeries;
+use protos::FieldValue;
 use regex::Regex;
 use snap::raw::{decompress_len, max_compress_len, Decoder, Encoder};
 use snap::Result as SnapResult;
@@ -71,6 +73,7 @@ impl PromRemoteServer for PromRemoteSqlServer {
             .write_points(
                 ctx.tenant().to_string(),
                 ConsistencyLevel::Any,
+                Precision::NS,
                 write_points_request,
             )
             .await?;

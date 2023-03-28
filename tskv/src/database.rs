@@ -7,7 +7,7 @@ use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::predicate::domain::TimeRange;
-use models::schema::{DatabaseSchema, TskvTableSchema};
+use models::schema::{DatabaseSchema, Precision, TskvTableSchema};
 use models::utils::unite_id;
 use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
 use protos::models::{FieldType, Point, Table};
@@ -204,14 +204,15 @@ impl Database {
     pub async fn build_write_group(
         &self,
         db_name: &str,
+        precision: Precision,
         tables: FlatBufferTable<'_>,
         ts_index: Arc<index::ts_index::TSIndex>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         if self.opt.storage.strict_write {
-            self.build_write_group_strict_mode(db_name, tables, ts_index)
+            self.build_write_group_strict_mode(db_name, precision, tables, ts_index)
                 .await
         } else {
-            self.build_write_group_loose_mode(db_name, tables, ts_index)
+            self.build_write_group_loose_mode(db_name, precision, tables, ts_index)
                 .await
         }
     }
@@ -219,6 +220,7 @@ impl Database {
     pub async fn build_write_group_strict_mode(
         &self,
         db_name: &str,
+        precision: Precision,
         tables: FlatBufferTable<'_>,
         ts_index: Arc<index::ts_index::TSIndex>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
@@ -242,7 +244,15 @@ impl Database {
                 let sid =
                     Self::build_index(db_name, &table_name, &point, &tag_names, ts_index.clone())
                         .await?;
-                self.build_row_data(&mut map, &table_name, point, &field_names, &field_type, sid)?
+                self.build_row_data(
+                    &mut map,
+                    &table_name,
+                    precision,
+                    point,
+                    &field_names,
+                    &field_type,
+                    sid,
+                )?
             }
         }
         Ok(map)
@@ -251,6 +261,7 @@ impl Database {
     pub async fn build_write_group_loose_mode(
         &self,
         db_name: &str,
+        precision: Precision,
         tables: FlatBufferTable<'_>,
         ts_index: Arc<index::ts_index::TSIndex>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
@@ -289,7 +300,15 @@ impl Database {
                         .await?;
                 }
 
-                self.build_row_data(&mut map, &table_name, point, &field_names, &field_type, sid)?
+                self.build_row_data(
+                    &mut map,
+                    &table_name,
+                    precision,
+                    point,
+                    &field_names,
+                    &field_type,
+                    sid,
+                )?
             }
         }
         Ok(map)
@@ -299,6 +318,7 @@ impl Database {
         &self,
         map: &mut HashMap<(SeriesId, SchemaId), RowGroup>,
         table_name: &str,
+        precision: Precision,
         point: Point,
         field_names: &[&str],
         field_type: &[FieldType],
@@ -310,7 +330,8 @@ impl Database {
             None => return Ok(()),
         };
 
-        let row = RowData::point_to_row_data(point, &table_schema, field_names, field_type)?;
+        let row =
+            RowData::point_to_row_data(point, &table_schema, precision, field_names, field_type)?;
         let schema_size = table_schema.size();
         let schema_id = table_schema.schema_id;
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
