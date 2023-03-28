@@ -160,42 +160,83 @@ impl HttpService {
     fn routes_bundle(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        self.ping()
-            .or(self.query())
-            .or(self.write_line_protocol())
-            .or(self.metrics())
-            .or(self.print_meta())
-            .or(self.debug_pprof())
-            .or(self.debug_jeprof())
-            .or(self.prom_remote_read())
-            .or(self.prom_remote_write())
-            .or(self.backtrace())
+        #[cfg(unix)]
+        {
+            self.ping()
+                .or(self.query())
+                .or(self.write_line_protocol())
+                .or(self.metrics())
+                .or(self.print_meta())
+                .or(self.prom_remote_read())
+                .or(self.prom_remote_write())
+                .or(self.backtrace())
+                .or(self.debug_pprof())
+                .or(self.debug_jeprof())
+        }
+
+        #[cfg(not(unix))]
+        {
+            self.ping()
+                .or(self.query())
+                .or(self.write_line_protocol())
+                .or(self.metrics())
+                .or(self.print_meta())
+                .or(self.prom_remote_read())
+                .or(self.prom_remote_write())
+                .or(self.backtrace())
+        }
     }
 
     fn routes_query(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        self.ping()
-            .or(self.query())
-            .or(self.metrics())
-            .or(self.print_meta())
-            .or(self.debug_pprof())
-            .or(self.debug_jeprof())
-            .or(self.prom_remote_read())
-            .or(self.backtrace())
+        #[cfg(unix)]
+        {
+            self.ping()
+                .or(self.query())
+                .or(self.metrics())
+                .or(self.print_meta())
+                .or(self.prom_remote_read())
+                .or(self.backtrace())
+                .or(self.debug_pprof())
+                .or(self.debug_jeprof())
+        }
+
+        #[cfg(not(unix))]
+        {
+            self.ping()
+                .or(self.query())
+                .or(self.metrics())
+                .or(self.print_meta())
+                .or(self.prom_remote_read())
+                .or(self.backtrace())
+        }
     }
 
     fn routes_store(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        self.ping()
-            .or(self.write_line_protocol())
-            .or(self.metrics())
-            .or(self.print_meta())
-            .or(self.debug_pprof())
-            .or(self.debug_jeprof())
-            .or(self.prom_remote_write())
-            .or(self.backtrace())
+        #[cfg(unix)]
+        {
+            self.ping()
+                .or(self.write_line_protocol())
+                .or(self.metrics())
+                .or(self.print_meta())
+                .or(self.prom_remote_write())
+                .or(self.backtrace())
+                .or(self.debug_pprof())
+                .or(self.debug_jeprof())
+        }
+
+        #[cfg(not(unix))]
+        {
+            self.ping()
+                .or(self.write_line_protocol())
+                .or(self.metrics())
+                .or(self.print_meta())
+                .or(self.prom_remote_write())
+                .or(self.backtrace())
+        }
     }
 
     fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -342,6 +383,7 @@ impl HttpService {
             })
     }
 
+    #[cfg(unix)]
     fn debug_pprof(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -355,6 +397,7 @@ impl HttpService {
         })
     }
 
+    #[cfg(unix)]
     fn debug_jeprof(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {

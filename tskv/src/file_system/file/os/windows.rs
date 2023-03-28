@@ -1,46 +1,25 @@
 use std::convert::TryFrom;
-use std::fs::{File, OpenOptions};
-use std::io::prelude::*;
+use std::fs::File;
 use std::io::{Error, Result};
 use std::mem::MaybeUninit;
-use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::AsRawHandle;
-use std::path::Path;
+use std::os::windows::prelude::RawHandle;
+use std::sync::Arc;
 
 use winapi::shared::minwindef::*;
 use winapi::um::fileapi::*;
 use winapi::um::minwinbase::OVERLAPPED;
-use winapi::um::winbase::FILE_FLAG_NO_BUFFERING;
 
-//todo:
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct FileId(u64);
+use crate::file_system::file::async_file::asyncify;
 
-impl FileId {
-    pub fn file_size(file: &File) -> Result<(FileId, u64)> {
-        let mut info = MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::zeroed();
-        check_err(unsafe { GetFileInformationByHandle(file.as_raw_handle(), info.as_mut_ptr()) })?;
-        let info = unsafe { info.assume_init() };
-        let id = Self(u64::from(info.nFileIndexHigh) << 32 | u64::from(info.nFileIndexLow));
-        let len = u64::from(info.nFileSizeHigh) << 32 | u64::from(info.nFileSizeLow);
-        Ok((id, len))
-    }
-}
-
-pub fn open(path: impl AsRef<Path>, options: &OpenOptions) -> Result<File> {
-    let mut options = options.clone();
-    options.custom_flags(FILE_FLAG_NO_BUFFERING);
-    options.open(path)
-}
-
-pub fn read_at(file: &File, pos: u64, buf: &mut [u8]) -> Result<usize> {
+pub fn pread(raw_handle: usize, pos: u64, len: usize, buf_ptr: u64) -> Result<usize> {
     let mut bytes: DWORD = 0;
     let mut ov = overlapped(pos);
     check_err(unsafe {
         ReadFile(
-            file.as_raw_handle(),
-            buf.as_mut_ptr() as LPVOID,
-            DWORD::try_from(buf.len()).unwrap(),
+            raw_handle as RawHandle,
+            buf_ptr as LPVOID,
+            DWORD::try_from(len).unwrap(),
             &mut bytes,
             &mut ov,
         )
@@ -48,14 +27,14 @@ pub fn read_at(file: &File, pos: u64, buf: &mut [u8]) -> Result<usize> {
     Ok(usize::try_from(bytes).unwrap())
 }
 
-pub fn write_at(file: &File, pos: u64, buf: &[u8]) -> Result<usize> {
+pub fn pwrite(raw_handle: usize, pos: u64, len: usize, buf_ptr: u64) -> Result<usize> {
     let mut bytes: DWORD = 0;
     let mut ov = overlapped(pos);
     check_err(unsafe {
-        ReadFile(
-            file.as_raw_handle(),
-            buf.as_ptr() as LPVOID,
-            DWORD::try_from(buf.len()).unwrap(),
+        WriteFile(
+            raw_handle as RawHandle,
+            buf_ptr as LPVOID,
+            DWORD::try_from(len).unwrap(),
             &mut bytes,
             &mut ov,
         )
@@ -77,5 +56,83 @@ fn check_err(r: BOOL) -> Result<()> {
         Err(Error::last_os_error())
     } else {
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+#[cfg(not(feature = "io_uring"))]
+pub struct RawFile(pub Arc<File>);
+
+#[derive(Debug)]
+#[cfg(feature = "io_uring")]
+pub struct RawFile(Arc<File>, Arc<rio::Rio>);
+
+impl RawFile {
+    pub fn file_size(&self) -> Result<u64> {
+        let mut info = MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::zeroed();
+        check_err(unsafe {
+            GetFileInformationByHandle(self.0.as_raw_handle(), info.as_mut_ptr())
+        })?;
+        let info = unsafe { info.assume_init() };
+        let len = u64::from(info.nFileSizeHigh) << 32 | u64::from(info.nFileSizeLow);
+        Ok(len)
+    }
+
+    pub async fn pwrite(&self, pos: u64, data: &[u8]) -> Result<usize> {
+        #[cfg(feature = "io_uring")]
+        {
+            let completion = self.1.write_at(&self.0, &data, pos).await?;
+            Ok(data.len())
+        }
+
+        #[cfg(not(feature = "io_uring"))]
+        {
+            let len = data.len();
+            let ptr = data.as_ptr() as u64;
+            let fd = self.0.as_raw_handle() as usize;
+            asyncify(move || pwrite(fd, pos, len, ptr)).await
+        }
+    }
+
+    pub async fn pread(&self, pos: u64, data: &mut [u8]) -> Result<usize> {
+        #[cfg(feature = "io_uring")]
+        {
+            let completion = self.1.read_at(&self.0, &data, pos).await?;
+            Ok(data.len())
+        }
+        #[cfg(not(feature = "io_uring"))]
+        {
+            let len = data.len();
+            let ptr = data.as_ptr() as u64;
+            let fd = self.0.as_raw_handle() as usize;
+            let len = asyncify(move || pread(fd, pos, len, ptr)).await?;
+            Ok(len)
+        }
+    }
+
+    pub async fn sync_data(&self) -> Result<()> {
+        #[cfg(feature = "io_uring")]
+        {
+            self.1.fsync(&self.0).await?;
+            Ok(())
+        }
+        #[cfg(not(feature = "io_uring"))]
+        {
+            let file = self.0.clone();
+            asyncify(move || file.sync_data()).await
+        }
+    }
+
+    pub async fn truncate(&self, size: u64) -> Result<()> {
+        #[cfg(feature = "io_uring")]
+        {
+            let file = self.0.clone();
+            asyncify(move || file.set_len(size)).await
+        }
+        #[cfg(not(feature = "io_uring"))]
+        {
+            let file = self.0.clone();
+            asyncify(move || file.set_len(size)).await
+        }
     }
 }
