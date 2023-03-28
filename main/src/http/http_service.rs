@@ -160,83 +160,42 @@ impl HttpService {
     fn routes_bundle(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        #[cfg(unix)]
-        {
-            self.ping()
-                .or(self.query())
-                .or(self.write_line_protocol())
-                .or(self.metrics())
-                .or(self.print_meta())
-                .or(self.prom_remote_read())
-                .or(self.prom_remote_write())
-                .or(self.backtrace())
-                .or(self.debug_pprof())
-                .or(self.debug_jeprof())
-        }
-
-        #[cfg(not(unix))]
-        {
-            self.ping()
-                .or(self.query())
-                .or(self.write_line_protocol())
-                .or(self.metrics())
-                .or(self.print_meta())
-                .or(self.prom_remote_read())
-                .or(self.prom_remote_write())
-                .or(self.backtrace())
-        }
+        self.ping()
+            .or(self.query())
+            .or(self.write_line_protocol())
+            .or(self.metrics())
+            .or(self.print_meta())
+            .or(self.debug_pprof())
+            .or(self.debug_jeprof())
+            .or(self.prom_remote_read())
+            .or(self.prom_remote_write())
+            .or(self.backtrace())
     }
 
     fn routes_query(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        #[cfg(unix)]
-        {
-            self.ping()
-                .or(self.query())
-                .or(self.metrics())
-                .or(self.print_meta())
-                .or(self.prom_remote_read())
-                .or(self.backtrace())
-                .or(self.debug_pprof())
-                .or(self.debug_jeprof())
-        }
-
-        #[cfg(not(unix))]
-        {
-            self.ping()
-                .or(self.query())
-                .or(self.metrics())
-                .or(self.print_meta())
-                .or(self.prom_remote_read())
-                .or(self.backtrace())
-        }
+        self.ping()
+            .or(self.query())
+            .or(self.metrics())
+            .or(self.print_meta())
+            .or(self.debug_pprof())
+            .or(self.debug_jeprof())
+            .or(self.prom_remote_read())
+            .or(self.backtrace())
     }
 
     fn routes_store(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        #[cfg(unix)]
-        {
-            self.ping()
-                .or(self.write_line_protocol())
-                .or(self.metrics())
-                .or(self.print_meta())
-                .or(self.prom_remote_write())
-                .or(self.backtrace())
-                .or(self.debug_pprof())
-                .or(self.debug_jeprof())
-        }
-
-        #[cfg(not(unix))]
-        {
-            self.ping()
-                .or(self.write_line_protocol())
-                .or(self.metrics())
-                .or(self.print_meta())
-                .or(self.prom_remote_write())
-                .or(self.backtrace())
-        }
+        self.ping()
+            .or(self.write_line_protocol())
+            .or(self.metrics())
+            .or(self.print_meta())
+            .or(self.debug_pprof())
+            .or(self.debug_jeprof())
+            .or(self.prom_remote_write())
+            .or(self.backtrace())
     }
 
     fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -383,30 +342,42 @@ impl HttpService {
             })
     }
 
-    #[cfg(unix)]
     fn debug_pprof(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("debug" / "pprof").and_then(|| async move {
-            let res = utils::pprof_tools::gernate_pprof().await;
-            info!("debug pprof: {:?}", res);
-            match res {
-                Ok(v) => Ok(v),
-                Err(e) => Err(reject::custom(HttpError::PProfError { reason: e })),
+            #[cfg(unix)]
+            {
+                let res = utils::pprof_tools::gernate_pprof().await;
+                info!("debug pprof: {:?}", res);
+                match res {
+                    Ok(v) => Ok(v),
+                    Err(e) => Err(reject::custom(HttpError::PProfError { reason: e })),
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                Err::<String, _>(reject::not_found())
             }
         })
     }
 
-    #[cfg(unix)]
     fn debug_jeprof(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("debug" / "jeprof").and_then(|| async move {
-            let res = utils::pprof_tools::gernate_jeprof().await;
-            info!("debug jeprof: {:?}", res);
-            match res {
-                Ok(v) => Ok(v),
-                Err(e) => Err(reject::custom(HttpError::PProfError { reason: e })),
+            #[cfg(unix)]
+            {
+                let res = utils::pprof_tools::gernate_jeprof().await;
+                info!("debug jeprof: {:?}", res);
+                match res {
+                    Ok(v) => Ok(v),
+                    Err(e) => Err(reject::custom(HttpError::PProfError { reason: e })),
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                Err::<String, _>(reject::not_found())
             }
         })
     }
