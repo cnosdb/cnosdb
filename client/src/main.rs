@@ -193,9 +193,9 @@ fn try_parse_data_dir(dir: &str) -> std::result::Result<String, String> {
     }
 }
 
-fn try_parse_target_partitions(size: &str) -> std::result::Result<String, String> {
+fn try_parse_target_partitions(size: &str) -> std::result::Result<usize, String> {
     match size.parse::<usize>() {
-        Ok(s) if s > 0 => Ok(size.to_string()),
-        _ => Err(format!("target-partition is not in 1..={}", usize::MAX)),
+        Ok(s) if s > 0 => Ok(s),
+        _ => Err(format!("target-partitions is not in 1..={}", usize::MAX)),
     }
 }
