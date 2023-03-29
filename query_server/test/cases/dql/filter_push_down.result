@@ -205,8 +205,9 @@ time,t0,t1,f0,f1,f2,f3,f4
 200 OK
 plan_type,plan
 logical_plan,"Projection: m0.time, m0.t0, m0.t1, m0.f0, m0.f1, m0.f2, m0.f3, m0.f4
-  Filter: m0.t0 = Utf8(NULL)
-    TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]"
+  SubqueryAlias: m0
+    Filter: m0.t0 = Utf8(NULL)
+      TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time, t0@1 as t0, t1@2 as t1, f0@3 as f0, f1@4 as f1, f2@5 as f2, f3@6 as f3, f4@7 as f4]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: t0@1 = NULL
@@ -217,8 +218,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time, t0@1 as t0, t1@2 as t1, f0@
 200 OK
 plan_type,plan
 logical_plan,"Projection: m0.time, m0.t0, m0.t1, m0.f0, m0.f1, m0.f2, m0.f3, m0.f4
-  Filter: m0.t0 > Utf8(NULL)
-    TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]"
+  SubqueryAlias: m0
+    Filter: m0.t0 > Utf8(NULL)
+      TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time, t0@1 as t0, t1@2 as t1, f0@3 as f0, f1@4 as f1, f2@5 as f2, f3@6 as f3, f4@7 as f4]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: t0@1 > NULL

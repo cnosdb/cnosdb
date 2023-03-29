@@ -13,8 +13,8 @@ use models::schema::DEFAULT_CATALOG;
 use spi::Result;
 pub use vnode_disk_storage::USAGE_SCHEMA_VNODE_DISK_STORAGE;
 
+use crate::data_source::batch::tskv::ClusterTable;
 use crate::data_source::split;
-use crate::data_source::table_provider::tskv::ClusterTable;
 use crate::metadata::usage_schema_provider::coord_data_in::CoordDataIn;
 use crate::metadata::usage_schema_provider::coord_data_out::CoordDataOut;
 use crate::metadata::usage_schema_provider::user_queries::UserQueries;

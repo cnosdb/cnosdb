@@ -2,6 +2,7 @@ use datafusion::arrow::datatypes::DataType;
 
 pub mod ast;
 pub mod auth;
+pub mod config;
 pub mod datasource;
 pub mod dispatcher;
 pub mod execution;
@@ -12,6 +13,7 @@ pub mod parser;
 pub mod physical_planner;
 pub mod scheduler;
 pub mod session;
+pub mod stream;
 
 pub const AFFECTED_ROWS: (&str, DataType) = ("rows", DataType::UInt64);
 

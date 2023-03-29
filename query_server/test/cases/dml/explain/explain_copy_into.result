@@ -2,7 +2,7 @@
 200 OK
 plan_type,plan
 logical_plan,"Aggregate: groupBy=[[]], aggr=[[SUM(rows) AS rows]]
-  TableWriter: not_exec_only_prevent_col_prune(CAST(col1 AS Utf8), col2) AS rows
+  TableWriter: rows(CAST(col1 AS Utf8), col2) AS rows
     col1 := Int64
     col2 := Utf8
     Projection: col1 AS col1, col2 AS col2

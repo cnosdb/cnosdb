@@ -65,6 +65,7 @@ impl Default for DefaultLogicalOptimizer {
             Arc::new(DecorrelateWhereExists::new()),
             Arc::new(DecorrelateWhereIn::new()),
             Arc::new(ScalarSubqueryToJoin::new()),
+            Arc::new(InlineTableScan::new()),
             Arc::new(ExtractEquijoinPredicate::new()),
             // simplify expressions does not simplify expressions in subqueries, so we
             // run it again after running the optimizations that potentially converted

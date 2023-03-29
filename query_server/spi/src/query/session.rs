@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use datafusion::execution::context::SessionState;
 use datafusion::execution::memory_pool::MemoryPool;
@@ -7,6 +8,7 @@ use datafusion::prelude::{SessionConfig, SessionContext};
 use models::auth::user::User;
 use models::oid::Oid;
 
+use super::config::StreamTriggerInterval;
 use crate::service::protocol::Context;
 use crate::Result;
 
@@ -51,6 +53,7 @@ pub struct SessionCtxFactory {}
 impl SessionCtxFactory {
     pub fn create_session_ctx(
         &self,
+        session_id: impl Into<String>,
         context: Context,
         tenant_id: Oid,
         memory_pool: Arc<dyn MemoryPool>,
@@ -59,7 +62,8 @@ impl SessionCtxFactory {
         let mut rt_config = RuntimeConfig::new();
         rt_config.memory_pool = Some(memory_pool);
         let rt = RuntimeEnv::new(rt_config)?;
-        let df_session_state = SessionState::with_config_rt(ctx.inner, Arc::new(rt));
+        let df_session_state = SessionState::with_config_rt(ctx.inner, Arc::new(rt))
+            .with_session_id(session_id.into());
         let df_session_ctx = SessionContext::with_state(df_session_state);
 
         Ok(SessionCtx {
@@ -79,8 +83,13 @@ pub struct CnosSessionConfig {
 
 impl Default for CnosSessionConfig {
     fn default() -> Self {
-        let inner =
-            SessionConfig::default().set_bool("datafusion.optimizer.skip_failed_rules", false);
+        let inner = SessionConfig::default()
+            .set_bool("datafusion.optimizer.skip_failed_rules", false)
+            // TODO read from config file
+            // .with_extension(Arc::new(StreamTriggerInterval::Once));
+            .with_extension(Arc::new(StreamTriggerInterval::Interval(
+                Duration::from_secs(6),
+            )));
 
         Self { inner }
     }

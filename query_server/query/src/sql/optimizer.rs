@@ -119,8 +119,8 @@ mod test {
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::ValueType;
 
+    use crate::data_source::batch::tskv::ClusterTable;
     use crate::data_source::split;
-    use crate::data_source::table_provider::tskv::ClusterTable;
 
     fn observe(_plan: &LogicalPlan, _rule: &dyn OptimizerRule) {}
 

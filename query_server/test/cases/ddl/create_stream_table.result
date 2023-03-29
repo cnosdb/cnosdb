@@ -1,0 +1,17 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS createstreamtable; --
+200 OK
+
+-- EXECUTE SQL: CREATE DATABASE createstreamtable; --
+200 OK
+
+-- EXECUTE SQL: CREATE TABLE test0( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
+200 OK
+
+-- EXECUTE SQL: CREATE STREAM TABLE TskvTable ( time TIMESTAMP, name STRING, driver STRING, load_capacity DOUBLE ) WITH ( db = 'createstreamtable', table = 'test0', event_time_column = 'time' ) engine = tskv; --
+200 OK
+
+-- EXECUTE SQL: select * from information_schema.tables where table_database = 'createstreamtable' order by table_name; --
+200 OK
+table_tenant,table_database,table_name,table_type,table_engine,table_options
+cnosdb,createstreamtable,test0,BASE TABLE,TSKV,TODO
+cnosdb,createstreamtable,tskvtable,BASE TABLE,STREAM,TODO

@@ -12,6 +12,7 @@ use std::fmt::{self, Display};
 use std::mem::size_of_val;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration as StdDuration;
 
 use arrow_schema::{DataType, Field as DFField};
 use config::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
@@ -26,7 +27,7 @@ use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::ListingOptions;
 use datafusion::error::Result as DataFusionResult;
-use datafusion::logical_expr::TableSource;
+use datafusion::prelude::Column;
 use datafusion::scalar::ScalarValue;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
@@ -56,6 +57,7 @@ pub const DEFAULT_PRECISION: &str = "NS";
 pub enum TableSchema {
     TsKvTableSchema(Arc<TskvTableSchema>),
     ExternalTableSchema(Arc<ExternalTableSchema>),
+    StreamTableSchema(Arc<StreamTable>),
 }
 
 impl TableSchema {
@@ -63,6 +65,7 @@ impl TableSchema {
         match self {
             TableSchema::TsKvTableSchema(schema) => schema.name.clone(),
             TableSchema::ExternalTableSchema(schema) => schema.name.clone(),
+            TableSchema::StreamTableSchema(schema) => schema.name().into(),
         }
     }
 
@@ -70,6 +73,7 @@ impl TableSchema {
         match self {
             TableSchema::TsKvTableSchema(schema) => schema.db.clone(),
             TableSchema::ExternalTableSchema(schema) => schema.db.clone(),
+            TableSchema::StreamTableSchema(schema) => schema.db().into(),
         }
     }
 
@@ -77,6 +81,15 @@ impl TableSchema {
         match self {
             TableSchema::TsKvTableSchema(_) => "TSKV",
             TableSchema::ExternalTableSchema(_) => "EXTERNAL",
+            TableSchema::StreamTableSchema(_) => "STREAM",
+        }
+    }
+
+    pub fn to_arrow_schema(&self) -> SchemaRef {
+        match self {
+            Self::ExternalTableSchema(e) => Arc::new(e.schema.clone()),
+            Self::TsKvTableSchema(e) => e.to_arrow_schema(),
+            Self::StreamTableSchema(e) => e.schema(),
         }
     }
 }
@@ -179,6 +192,16 @@ impl TskvTableSchema {
         }
     }
 
+    /// only for mock!!!
+    pub fn new_test() -> Self {
+        TskvTableSchema::new(
+            "cnosdb".into(),
+            "public".into(),
+            "test".into(),
+            vec![TableColumn::new_time_column(0, TimeUnit::Second)],
+        )
+    }
+
     /// add column
     /// not add if exists
     pub fn add_column(&mut self, col: TableColumn) {
@@ -260,6 +283,21 @@ impl TskvTableSchema {
             .collect()
     }
 
+    /// Traverse and return the time column of the table
+    ///
+    /// Do not call frequently
+    pub fn time_column(&self) -> TableColumn {
+        // There is one and only one time column
+        unsafe {
+            self.columns
+                .iter()
+                .filter(|column| column.column_type.is_time())
+                .last()
+                .cloned()
+                .unwrap_unchecked()
+        }
+    }
+
     /// Number of columns of ColumnType is Field
     pub fn field_num(&self) -> usize {
         self.columns
@@ -339,6 +377,12 @@ impl From<TableColumn> for ArrowField {
         let mut f = ArrowField::new(&column.name, column.column_type.into(), nullable);
         f.set_metadata(map);
         f
+    }
+}
+
+impl From<TableColumn> for Column {
+    fn from(field: TableColumn) -> Self {
+        Column::from_name(field.name)
     }
 }
 
@@ -980,49 +1024,70 @@ impl Display for TenantOptions {
     }
 }
 
-pub struct TableSourceAdapter {
-    source: Arc<dyn TableSource>,
-    tenant_id: Oid,
-    tenant_name: String,
-    database_name: String,
-    table_name: String,
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Watermark {
+    pub column: String,
+    pub delay: StdDuration,
 }
 
-impl TableSourceAdapter {
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct StreamTable {
+    tenant: String,
+    db: String,
+    name: String,
+    schema: SchemaRef,
+    stream_type: String,
+    watermark: Watermark,
+    extra_options: HashMap<String, String>,
+}
+
+impl StreamTable {
     pub fn new(
-        source: Arc<dyn TableSource>,
-        tenant_id: Oid,
-        tenant_name: impl Into<String>,
-        database_name: impl Into<String>,
-        table_name: impl Into<String>,
+        tenant: impl Into<String>,
+        db: impl Into<String>,
+        name: impl Into<String>,
+        schema: SchemaRef,
+        stream_type: impl Into<String>,
+        watermark: Watermark,
+        extra_options: HashMap<String, String>,
     ) -> Self {
         Self {
-            source,
-            tenant_id,
-            tenant_name: tenant_name.into(),
-            database_name: database_name.into(),
-            table_name: table_name.into(),
+            tenant: tenant.into(),
+            db: db.into(),
+            name: name.into(),
+            schema,
+            stream_type: stream_type.into(),
+            watermark,
+            extra_options,
         }
     }
 
-    pub fn inner(&self) -> Arc<dyn TableSource> {
-        self.source.clone()
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
-    pub fn tenant_id(&self) -> Oid {
-        self.tenant_id
+    pub fn tenant(&self) -> &str {
+        &self.tenant
     }
 
-    pub fn tenant_name(&self) -> &str {
-        &self.tenant_name
+    pub fn db(&self) -> &str {
+        &self.db
     }
 
-    pub fn database_name(&self) -> &str {
-        &self.database_name
+    pub fn stream_type(&self) -> &str {
+        &self.stream_type
     }
 
-    pub fn table_name(&self) -> &str {
-        &self.table_name
+    pub fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+
+    pub fn watermark(&self) -> &Watermark {
+        &self.watermark
+    }
+
+    pub fn extra_options(&self) -> &HashMap<String, String> {
+        &self.extra_options
     }
 }
 
