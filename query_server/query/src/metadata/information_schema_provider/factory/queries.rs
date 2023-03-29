@@ -65,6 +65,7 @@ impl InformationSchemaTableFactory for QueriesFactory {
 
             builder.append_row(
                 query_id,
+                query.query_type().to_string(),
                 query_text,
                 user_id,
                 user_name,

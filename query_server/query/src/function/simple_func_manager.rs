@@ -5,6 +5,8 @@ use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
 use spi::query::function::*;
 use spi::{QueryError, Result};
 
+pub type SimpleFunctionMetadataManagerRef = Arc<SimpleFunctionMetadataManager>;
+
 #[derive(Debug, Default)]
 pub struct SimpleFunctionMetadataManager {
     /// Scalar functions that are registered with the context

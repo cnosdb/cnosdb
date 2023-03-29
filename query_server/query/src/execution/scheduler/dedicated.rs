@@ -5,7 +5,7 @@ use datafusion::common::Result;
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
-use datafusion::physical_plan::ExecutionPlan;
+use datafusion::physical_plan::{execute_stream, ExecutionPlan};
 use futures::Future;
 use models::runtime::cross_rt_stream::CrossRtStream;
 use models::runtime::executor::DedicatedExecutor;
@@ -45,7 +45,9 @@ impl Scheduler for DedicatedScheduler {
         plan: Arc<dyn ExecutionPlan>,
         context: Arc<TaskContext>,
     ) -> Result<ExecutionResults> {
-        let stream = self.run(async move { plan.execute(0, context) }).await?;
+        let stream = self
+            .run(async move { execute_stream(plan, context) })
+            .await?;
 
         let schema = stream.schema();
         let stream = CrossRtStream::new_with_df_error_stream(stream, self.runtime.clone());

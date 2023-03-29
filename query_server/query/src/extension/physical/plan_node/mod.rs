@@ -1,5 +1,9 @@
 pub mod aggregate_filter_scan;
 pub mod expand;
+pub mod state_restore;
+pub mod state_save;
 pub mod table_writer;
+pub mod table_writer_merge;
 pub mod tag_scan;
 pub mod tskv_exec;
+pub mod watermark;

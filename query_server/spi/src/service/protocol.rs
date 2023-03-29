@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use datafusion::arrow::record_batch::RecordBatch;
@@ -55,9 +56,9 @@ impl From<QueryId> for Vec<u8> {
     }
 }
 
-impl ToString for QueryId {
-    fn to_string(&self) -> String {
-        self.0.to_string()
+impl Display for QueryId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

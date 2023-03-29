@@ -9,7 +9,7 @@ use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::prelude::{and, cast, col, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use lazy_static::lazy_static;
-use models::duration::{DAY, HOUR, MINUTE, MS, SECOND};
+use models::duration::DAY;
 use spi::QueryError;
 use trace::debug;
 
@@ -18,6 +18,7 @@ use crate::extension::expr::expr_utils::find_exprs_in_exprs_deeply_nested;
 use crate::extension::expr::{TIME_WINDOW, WINDOW_END, WINDOW_START};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::extension::logical::plan_node::LogicalPlanExt;
+use crate::utils::duration::parse_duration;
 
 lazy_static! {
     static ref INIT_TIME: Expr = lit(ScalarValue::TimestampNanosecond(Some(0), None));
@@ -252,6 +253,10 @@ fn make_window_exprs(i: i64, window: &TimeWindow) -> Vec<Expr> {
 }
 
 /// Convert tumbling window to new plan
+///
+/// Original Schema[c1, c2, c3]
+///
+/// New Schema[_start, _end, c1, c2, c3]
 fn build_tumbling_window_plan(
     window: &TimeWindow,
     child: LogicalPlan,
@@ -274,6 +279,10 @@ fn build_tumbling_window_plan(
 }
 
 /// Convert sliding window to new plan
+///
+/// Original Schema[c1, c2, c3]
+///
+/// New Schema[_start, _end, c1, c2, c3]
 fn build_sliding_window_plan(
     window: &TimeWindow,
     child: LogicalPlan,
@@ -338,44 +347,11 @@ fn replace_window_expr(new_expr: Expr, plan: &LogicalPlan) -> Result<LogicalPlan
     })
 }
 
-fn parse_duration(s: &str) -> std::result::Result<Duration, String> {
-    if s.is_empty() {
-        return Err("Empty string".to_string());
-    }
-    let size_len = s
-        .to_string()
-        .chars()
-        .take_while(|c| char::is_ascii_digit(c) || ['.'].contains(c))
-        .count();
-    let (digits, unit) = s.split_at(size_len);
-
-    let digits = digits.parse::<f64>().map_err(|err| err.to_string())?;
-
-    let unit = match unit {
-        "d" => DAY,
-        "h" => HOUR,
-        "m" => MINUTE,
-        "s" => SECOND,
-        "ms" => MS,
-        _ => return Err("Only support d, h, m, s, ms".to_string()),
-    };
-
-    let millis = digits * (unit as f64);
-
-    if millis.floor() != millis || millis < 1.0 {
-        return Err(format!(
-            "Must be greater than or equal to 1ms, but found: {s}"
-        ));
-    }
-
-    Ok(Duration::from_millis(millis as u64))
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
-    use super::parse_duration;
+    use crate::utils::duration::parse_duration;
 
     #[test]
     fn test_parse_duration() {

@@ -2,52 +2,45 @@ use std::any::Any;
 use std::collections::HashSet;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
-use std::time::Duration;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
-use datafusion::prelude::{col, Column, Expr};
+use datafusion::prelude::Expr;
+use models::schema::Watermark;
 
 use crate::extension::{EVENT_TIME_COLUMN, WATERMARK_DELAY_MS};
 
 #[derive(Clone)]
 pub struct WatermarkNode {
-    pub event_time: Column,
-    pub delay: Duration,
+    pub watermark: Watermark,
     pub input: Arc<LogicalPlan>,
-    pub expressions: Vec<Expr>,
     /// The schema description of the output
     pub schema: DFSchemaRef,
 }
 
 impl WatermarkNode {
     /// Create a new WatermarkNode
-    pub fn try_new(
-        event_time: Column,
-        delay: Duration,
-        input: Arc<LogicalPlan>,
-    ) -> Result<Self, DataFusionError> {
+    pub fn try_new(watermark: Watermark, input: Arc<LogicalPlan>) -> Result<Self, DataFusionError> {
         let schema = input.schema();
         // find event time column
-        let idx = schema.index_of_column(&event_time)?;
+        let idx = schema.index_of_column_by_name(None, &watermark.column)?;
         let mut metadata = input.schema().metadata().clone();
         // It will be used when the aggregate node is transferred to a physical node
         let _ = metadata.insert(EVENT_TIME_COLUMN.into(), idx.to_string());
-        let _ = metadata.insert(WATERMARK_DELAY_MS.into(), delay.as_millis().to_string());
+        let _ = metadata.insert(
+            WATERMARK_DELAY_MS.into(),
+            watermark.delay.as_millis().to_string(),
+        );
 
         let schema = Arc::new(DFSchema::new_with_metadata(
             schema.fields().clone(),
             metadata,
         )?);
 
-        let expressions = vec![col(event_time.clone())];
-
         Ok(Self {
-            event_time,
-            delay,
+            watermark,
             input,
-            expressions,
             schema,
         })
     }
@@ -73,15 +66,15 @@ impl UserDefinedLogicalNode for WatermarkNode {
     }
 
     fn expressions(&self) -> Vec<Expr> {
-        self.expressions.clone()
+        vec![]
     }
 
     fn fmt_for_explain(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "Watermark: event_time={}, delay={}ms",
-            self.event_time,
-            self.delay.as_millis()
+            self.watermark.column,
+            self.watermark.delay.as_millis(),
         )
     }
 

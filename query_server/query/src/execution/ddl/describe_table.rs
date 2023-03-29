@@ -9,7 +9,7 @@ use models::object_reference::ResolvedTable;
 use models::schema::TableSchema;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeTable;
-use spi::Result;
+use spi::{QueryError, Result};
 
 use crate::execution::ddl::DDLDefinitionTask;
 
@@ -100,6 +100,12 @@ async fn describe_table(
             .map_err(datafusion::error::DataFusionError::ArrowError)?;
             let batches = vec![batch];
             Ok(Output::StreamData(schema, batches))
+        }
+        TableSchema::StreamTableSchema(_) => {
+            // TODO refactor: direct query information_schema
+            Err(QueryError::NotImplemented {
+                err: format!("describe stream table: {}", table_name),
+            })
         }
     }
 }

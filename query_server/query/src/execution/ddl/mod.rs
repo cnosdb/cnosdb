@@ -8,6 +8,7 @@ use self::alter_tenant::AlterTenantTask;
 use self::alter_user::AlterUserTask;
 use self::create_external_table::CreateExternalTableTask;
 use self::create_role::CreateRoleTask;
+use self::create_stream_table::CreateStreamTableTask;
 use self::create_table::CreateTableTask;
 use self::create_tenant::CreateTenantTask;
 use self::create_user::CreateUserTask;
@@ -38,6 +39,7 @@ mod copy_vnode;
 mod create_database;
 mod create_external_table;
 mod create_role;
+mod create_stream_table;
 mod create_table;
 mod create_tenant;
 mod create_user;
@@ -160,6 +162,9 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::MoveVnode(sub_plan) => Box::new(MoveVnodeTask::new(sub_plan.clone())),
             DDLPlan::CompactVnode(sub_plan) => Box::new(CompactVnodeTask::new(sub_plan.clone())),
             DDLPlan::ChecksumGroup(sub_plan) => Box::new(ChecksumGroupTask::new(sub_plan.clone())),
+            DDLPlan::CreateStreamTable(sub_plan) => {
+                Box::new(CreateStreamTableTask::new(sub_plan.clone()))
+            }
         }
     }
 }

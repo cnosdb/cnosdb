@@ -404,28 +404,72 @@ pub enum QueryError {
         reason: String,
     },
 
-    #[snafu(display("Database {} not found.", name))]
+    #[snafu(display("Unsupported stream type: {}", stream_type))]
     #[error_code(code = 59)]
+    UnsupportedStreamType {
+        stream_type: String,
+    },
+
+    #[snafu(display("Stream source factory already exists: {}", stream_type))]
+    #[error_code(code = 60)]
+    StreamSourceFactoryAlreadyExists {
+        stream_type: String,
+    },
+
+    #[snafu(display("Event time column not specified of table {}", name))]
+    #[error_code(code = 61)]
+    EventTimeColumnNotSpecified {
+        name: String,
+    },
+
+    #[snafu(display("Database {} not found.", name))]
+    #[error_code(code = 62)]
     DatabaseNotFound {
         name: String,
     },
 
     #[snafu(display("TenantOptions build fail: {} ", source))]
-    #[error_code(code = 60)]
+    #[error_code(code = 63)]
     TenantOptionsBuildFail {
         source: TenantOptionsBuilderError,
     },
 
     #[snafu(display("Tenant \"{}\" forbid drop", name))]
-    #[error_code(code = 61)]
+    #[error_code(code = 64)]
     ForbidDropTenant {
         name: String,
     },
 
     #[snafu(display("Database \"{}\" forbid drop", name))]
-    #[error_code(code = 62)]
+    #[error_code(code = 65)]
     ForbidDropDatabase {
         name: String,
+    },
+
+    #[snafu(display("Missing option {} of table {}", option_name, table_name))]
+    #[error_code(code = 66)]
+    MissingTableOptions {
+        option_name: String,
+        table_name: String,
+    },
+
+    #[snafu(display("Invalid option {} of table {}: {}", option_name, table_name, reason))]
+    #[error_code(code = 67)]
+    InvalidTableOption {
+        option_name: String,
+        table_name: String,
+        reason: String,
+    },
+
+    #[snafu(display(
+        "Invalid data type for column: {}, valid are: {}",
+        column_name,
+        data_type
+    ))]
+    #[error_code(code = 68)]
+    InvalidDataType {
+        column_name: String,
+        data_type: String,
     },
 }
 
