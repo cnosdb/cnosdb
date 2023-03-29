@@ -80,27 +80,28 @@ impl MicroBatchStreamExecution {
         let runtime = self.runtime.clone();
         let offset_tracker = Arc::new(OffsetTracker::new());
 
-        let result = self.trigger_executor.schedule(move |current_batch_id| {
-            let exec = IncrementalExecution {
-                query_state_machine: query_state_machine.clone(),
-                plan: plan.clone(),
-                scheduler: scheduler.clone(),
-                current_batch_id,
-                stream_providers: stream_providers.clone(),
-                watermark_tracker: watermark_tracker.clone(),
-                state_store_factory: state_store_factory.clone(),
-                offset_tracker: offset_tracker.clone(),
-            };
+        let result = self.trigger_executor.schedule(
+            move |current_batch_id| {
+                let exec = IncrementalExecution {
+                    query_state_machine: query_state_machine.clone(),
+                    plan: plan.clone(),
+                    scheduler: scheduler.clone(),
+                    current_batch_id,
+                    stream_providers: stream_providers.clone(),
+                    watermark_tracker: watermark_tracker.clone(),
+                    state_store_factory: state_store_factory.clone(),
+                    offset_tracker: offset_tracker.clone(),
+                };
 
-            runtime
-                .spawn(async move {
+                async move {
                     exec.execute().await.map_err(|err| {
                         error!("Execute stream query error: {err}");
                         err
                     })
-                })
-                .detach();
-        });
+                }
+            },
+            runtime,
+        );
 
         Ok(result)
     }
