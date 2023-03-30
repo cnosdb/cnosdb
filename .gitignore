@@ -1,4 +1,5 @@
 # IDE
+/.fleet
 **/.idea/
 /.vs
 /.vscode/

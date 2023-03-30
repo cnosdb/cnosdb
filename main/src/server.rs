@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 
 use coordinator::service::{CoordService, CoordinatorRef};
@@ -237,19 +237,28 @@ impl ServiceBuilder {
         coord: CoordinatorRef,
         mode: ServerMode,
     ) -> HttpService {
-        let tls_config = self.config.security.tls_config.clone();
-        let host = self
+        let addr = self
             .config
             .cluster
             .http_listen_addr
-            .parse::<SocketAddr>()
-            .expect("Invalid tcp host");
+            .to_socket_addrs()
+            .map_err(|e| {
+                format!(
+                    "Cannot resolve http_listen_addr '{}': {}",
+                    self.config.cluster.http_listen_addr, e
+                )
+            })
+            .unwrap()
+            .collect::<Vec<SocketAddr>>()
+            .first()
+            .copied()
+            .expect("Config http_listen_addr cannot be empty.");
 
         HttpService::new(
             dbms,
             coord,
-            host,
-            tls_config,
+            addr,
+            self.config.security.tls_config.clone(),
             self.config.query.query_sql_limit,
             self.config.query.write_sql_limit,
             mode,
@@ -258,33 +267,52 @@ impl ServiceBuilder {
     }
 
     async fn create_grpc(&self, kv: EngineRef, coord: CoordinatorRef) -> GrpcService {
-        let tls_config = self.config.security.tls_config.clone();
-        let host = self
+        let addr = self
             .config
             .cluster
             .grpc_listen_addr
-            .parse::<SocketAddr>()
-            .expect("Invalid tcp host");
+            .to_socket_addrs()
+            .map_err(|e| {
+                format!(
+                    "Cannot resolve grpc_listen_addr '{}': {}",
+                    self.config.cluster.grpc_listen_addr, e
+                )
+            })
+            .unwrap()
+            .collect::<Vec<SocketAddr>>()
+            .first()
+            .copied()
+            .expect("Config grpc_listen_addr cannot be empty.");
 
         GrpcService::new(
             self.runtime.clone(),
             kv,
             coord,
-            host,
-            tls_config,
+            addr,
+            self.config.security.tls_config.clone(),
             self.metrics_register.clone(),
         )
     }
 
     async fn create_flight_sql(&self, dbms: DBMSRef) -> FlightSqlServiceAdapter {
         let tls_config = self.config.security.tls_config.clone();
-        let host = self
+        let addr = self
             .config
             .cluster
             .flight_rpc_listen_addr
-            .parse::<SocketAddr>()
-            .expect("Invalid tcp host");
+            .to_socket_addrs()
+            .map_err(|e| {
+                format!(
+                    "Cannot resolve flight_rpc_listen_addr '{}': {}",
+                    self.config.cluster.flight_rpc_listen_addr, e
+                )
+            })
+            .unwrap()
+            .collect::<Vec<SocketAddr>>()
+            .first()
+            .copied()
+            .expect("Config flight_rpc_listen_addr cannot be empty.");
 
-        FlightSqlServiceAdapter::new(dbms, host, tls_config)
+        FlightSqlServiceAdapter::new(dbms, addr, tls_config)
     }
 }
