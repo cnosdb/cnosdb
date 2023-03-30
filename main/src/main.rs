@@ -1,10 +1,9 @@
 #![allow(dead_code)]
 
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
-use clap::{command, Args, Parser, Subcommand};
+use clap::{command, Args, Parser, Subcommand, ValueEnum};
 use config::{Config, SetDeployment};
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
@@ -77,32 +76,22 @@ struct RunArgs {
     #[arg(long, global = true)]
     config: Option<String>,
 
-    /// The deployment mode of CnosDB.
-    /// There are Tskv, Query, QueryTskv and Singleton, the default is QueryTskv
+    /// The deployment mode of CnosDB,
     #[arg(short = 'M', long, global = true, value_enum)]
     deployment_mode: Option<DeploymentMode>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, ValueEnum)]
+#[clap(rename_all = "snake_case")]
 enum DeploymentMode {
-    Tskv,
-    Query,
+    /// Default, Run query and tskv engines.
     QueryTskv,
+    /// Only run the tskv engine.
+    Tskv,
+    /// Only run the query engine.
+    Query,
+    /// Stand-alone deployment.
     Singleton,
-}
-
-impl FromStr for DeploymentMode {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mode = match s.to_ascii_lowercase().as_str() {
-            "tskv" => Self::Tskv,
-            "query" => Self::Query,
-            "singleton" => Self::Singleton,
-            "querytskv" => Self::QueryTskv,
-            _ => return Err("can't parse deployment-mode".to_string()),
-        };
-        Ok(mode)
-    }
 }
 
 #[derive(Debug, Subcommand)]

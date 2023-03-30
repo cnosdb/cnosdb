@@ -71,7 +71,7 @@ impl Config {
 
     pub fn deployment_memory(&self) -> usize {
         match self.deployment {
-            Some(d) => d.cpu_or_default(),
+            Some(d) => d.memory_or_default(),
             None => Deployment::default().memory_or_default(),
         }
     }
