@@ -14,7 +14,7 @@ pub fn serialize<S>(date: &Duration, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let s = format!("{:?}", date);
+    let s = format_duration(date);
     serializer.serialize_str(&s)
 }
 
@@ -51,6 +51,32 @@ const SCALES_LIST: [u64; 7] = [
     60_000_000_000,
     60 * 60_000_000_000,
 ];
+
+pub(crate) fn format_duration(duration: &Duration) -> String {
+    if duration.is_zero() {
+        return "0".to_string();
+    }
+    let num = duration.as_nanos();
+    let mut i = 0_usize;
+    for s in SCALES_LIST.iter().skip(1) {
+        if num < *s as u128 {
+            break;
+        }
+        i += 1;
+    }
+    for s in SCALES_LIST[..=i].iter().rev() {
+        if num % *s as u128 == 0 {
+            break;
+        }
+        i -= 1;
+    }
+
+    format!(
+        "{}{}",
+        num / SCALES_LIST[i] as u128,
+        UNITS_LIST[i].iter().collect::<String>()
+    )
+}
 
 /// Parse ([0-9]+[a-z]+) to Duration.
 pub(crate) fn parse_duration(duration_str: &str) -> Result<Duration, Box<dyn Error>> {
@@ -146,7 +172,48 @@ mod test {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::codec::duration;
+    use crate::codec::duration::{self, format_duration};
+
+    #[test]
+    fn test_format_duration() {
+        assert_eq!(format_duration(&Duration::from_nanos(1)).as_str(), "1ns");
+        assert_eq!(
+            format_duration(&Duration::from_nanos(100)).as_str(),
+            "100ns"
+        );
+        assert_eq!(
+            format_duration(&Duration::from_nanos(1_000)).as_str(),
+            "1us"
+        );
+        assert_eq!(
+            format_duration(&Duration::from_nanos(1_000_000)).as_str(),
+            "1ms"
+        );
+        assert_eq!(
+            format_duration(&Duration::from_nanos(1_000_000_000)).as_str(),
+            "1s"
+        );
+        assert_eq!(
+            format_duration(&Duration::from_nanos(10_000_000_000)).as_str(),
+            "10s"
+        );
+        assert_eq!(
+            format_duration(&Duration::from_nanos(61_000_000_000)).as_str(),
+            "61s"
+        );
+        assert_eq!(
+            format_duration(&Duration::from_nanos(60_000_000_000)).as_str(),
+            "1m"
+        );
+        assert_eq!(
+            format_duration(&Duration::from_nanos(3660 * 1_000_000_000)).as_str(),
+            "61m"
+        );
+        assert_eq!(
+            format_duration(&Duration::from_nanos(3600 * 1_000_000_000)).as_str(),
+            "1h"
+        );
+    }
 
     #[derive(Serialize, Deserialize, Debug)]
     pub struct Foo {

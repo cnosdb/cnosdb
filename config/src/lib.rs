@@ -2,7 +2,7 @@ mod cache_config;
 mod check;
 mod cluster_config;
 mod codec;
-mod deployment;
+mod deployment_config;
 mod hinted_off_config;
 mod limiter_config;
 mod log_config;
@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::cache_config::*;
 pub use crate::cluster_config::*;
-pub use crate::deployment::*;
+pub use crate::deployment_config::*;
 pub use crate::hinted_off_config::*;
 pub use crate::limiter_config::*;
 pub use crate::log_config::*;
@@ -32,9 +32,9 @@ pub use crate::wal_config::*;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Config {
-    pub deployment: Option<Deployment>,
     #[serde(default = "Config::default_reporting_disabled")]
     pub reporting_disabled: bool,
+    pub deployment: DeploymentConfig,
     pub query: QueryConfig,
     pub storage: StorageConfig,
     pub wal: WalConfig,
@@ -60,25 +60,6 @@ impl Config {
 
     pub fn to_string_pretty(&self) -> String {
         toml::to_string_pretty(self).unwrap_or_else(|_| "Failed to stringfy Config".to_string())
-    }
-
-    pub fn deployment_cpu(&self) -> usize {
-        match self.deployment {
-            Some(d) => d.cpu_or_default(),
-            None => Deployment::default().cpu_or_default(),
-        }
-    }
-
-    pub fn deployment_memory(&self) -> usize {
-        match self.deployment {
-            Some(d) => d.cpu_or_default(),
-            None => Deployment::default().memory_or_default(),
-        }
-    }
-    pub fn deployment_mode(&self) -> DeploymentMode {
-        self.deployment
-            .and_then(|d| d.mode)
-            .unwrap_or(DeploymentMode::QueryTskv)
     }
 }
 
@@ -143,6 +124,9 @@ pub fn check_config(path: impl AsRef<Path>, show_warnings: bool) {
         Ok(cfg) => {
             let mut check_results = CheckConfigResult::default();
 
+            if let Some(c) = cfg.deployment.check(&cfg) {
+                check_results.add_all(c)
+            }
             if let Some(c) = cfg.query.check(&cfg) {
                 check_results.add_all(c)
             }
@@ -209,6 +193,11 @@ mod test {
     fn test_parse() {
         let config_str = r#"
 #reporting_disabled = false
+
+[deployment]
+mode = 'singleton'
+cpu = 4
+memory = 16
 
 [query]
 max_server_connections = 10240

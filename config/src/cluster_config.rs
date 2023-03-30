@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -113,32 +113,32 @@ impl CheckConfig for ClusterConfig {
             });
         }
 
-        if let Err(e) = self.meta_service_addr.parse::<SocketAddr>() {
+        if let Err(e) = self.meta_service_addr.to_socket_addrs() {
             ret.add_error(CheckConfigItemResult {
                 config: config_name.clone(),
                 item: "meta_service_addr".to_string(),
-                message: format!("Cannot parse 'meta_service_addr': {}", e),
+                message: format!("Cannot resolve 'meta_service_addr': {}", e),
             });
         }
-        if let Err(e) = self.http_listen_addr.parse::<SocketAddr>() {
+        if let Err(e) = self.http_listen_addr.to_socket_addrs() {
             ret.add_error(CheckConfigItemResult {
                 config: config_name.clone(),
                 item: "http_listen_addr".to_string(),
-                message: format!("Cannot parse 'http_listen_addr': {}", e),
+                message: format!("Cannot resolve 'http_listen_addr': {}", e),
             });
         }
-        if let Err(e) = self.grpc_listen_addr.parse::<SocketAddr>() {
+        if let Err(e) = self.grpc_listen_addr.to_socket_addrs() {
             ret.add_error(CheckConfigItemResult {
                 config: config_name.clone(),
                 item: "grpc_listen_addr".to_string(),
-                message: format!("Cannot parse 'grpc_listen_addr': {}", e),
+                message: format!("Cannot resolve 'grpc_listen_addr': {}", e),
             });
         }
-        if let Err(e) = self.flight_rpc_listen_addr.parse::<SocketAddr>() {
+        if let Err(e) = self.flight_rpc_listen_addr.to_socket_addrs() {
             ret.add_error(CheckConfigItemResult {
                 config: config_name,
                 item: "flight_rpc_listen_addr".to_string(),
-                message: format!("Cannot parse 'flight_rpc_listen_addr': {}", e),
+                message: format!("Cannot resolve 'flight_rpc_listen_addr': {}", e),
             });
         }
 
