@@ -24,6 +24,12 @@ impl TriggerExecutorFactory {
     }
 }
 
+impl Drop for TriggerExecutorFactory {
+    fn drop(&mut self) {
+        self.runtime.shutdown();
+    }
+}
+
 pub type TriggerExecutorRef = Arc<TriggerExecutor>;
 
 pub struct TriggerExecutor {

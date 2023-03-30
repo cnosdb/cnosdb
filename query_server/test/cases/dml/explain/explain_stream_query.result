@@ -28,7 +28,7 @@
 
 -- EXECUTE SQL: CREATE STREAM TABLE TskvTableWithoutWM WITH ( db = 'explain_stream_query', table = 'test0' ) engine = tskv; --
 422 Unprocessable Entity
-{"error_code":"010063","error_message":"Missing option event_time_column of table tskvtablewithoutwm"}
+{"error_code":"010066","error_message":"Missing option event_time_column of table tskvtablewithoutwm"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select * from information_schema.tables where table_database = 'explain_stream_query' order by table_name; --

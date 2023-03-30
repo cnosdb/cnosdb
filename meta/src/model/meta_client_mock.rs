@@ -257,7 +257,7 @@ impl MetaClient for MockMetaClient {
     }
 
     fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
-        todo!()
+        Ok(Some(DatabaseInfo::default()))
     }
 }
 

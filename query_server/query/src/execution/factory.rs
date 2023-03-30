@@ -115,3 +115,9 @@ fn is_dml(query_plan: &QueryPlan) -> bool {
         _ => false,
     }
 }
+
+impl Drop for SqlQueryExecutionFactory {
+    fn drop(&mut self) {
+        self.runtime.shutdown();
+    }
+}
