@@ -3,17 +3,19 @@ use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum DeploymentMode {
     Tskv,
     Query,
     Singleton,
     QueryTskv,
 }
+
 impl Display for DeploymentMode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Tskv => write!(f, "tskv"),
-            Self::QueryTskv => write!(f, "query tskv"),
+            Self::QueryTskv => write!(f, "query_tskv"),
             Self::Singleton => write!(f, "singleton"),
             Self::Query => write!(f, "query"),
         }
@@ -88,4 +90,21 @@ impl SetDeployment for Deployment {
     fn set_memory(&mut self, memory: usize) {
         self.memory = Some(memory)
     }
+}
+
+#[test]
+fn test_deployment() {
+    let deployment = Deployment {
+        mode: Some(DeploymentMode::QueryTskv),
+        cpu: Some(4),
+        memory: Some(16),
+    };
+    let deployment_str = r#"
+mode = 'query_tskv'
+cpu = 4
+memory = 16
+"#;
+    println!("{}", toml::to_string_pretty(&deployment).unwrap());
+    let deployment_from_toml: Deployment = toml::from_str(deployment_str).unwrap();
+    assert_eq!(deployment, deployment_from_toml)
 }

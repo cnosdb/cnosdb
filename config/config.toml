@@ -1,7 +1,7 @@
 
 #reporting_disabled = false
 
-[depolyment]
+[deployment]
 #mode = 'singleton'
 #cpu = 4
 #memory = 16
