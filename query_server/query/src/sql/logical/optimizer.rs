@@ -27,7 +27,6 @@ use spi::query::session::SessionCtx;
 use spi::Result;
 
 use crate::extension::logical::optimizer_rule::implicit_type_conversion::ImplicitTypeConversion;
-use crate::extension::logical::optimizer_rule::reject_cross_join::RejectCrossJoin;
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
 use crate::extension::logical::optimizer_rule::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
 use crate::extension::logical::optimizer_rule::transform_time_window::TransformTimeWindowRule;
@@ -55,7 +54,7 @@ impl Default for DefaultLogicalOptimizer {
     fn default() -> Self {
         // additional optimizer rule
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = vec![
-            Arc::new(RejectCrossJoin {}),
+            // Arc::new(RejectCrossJoin {}),
             // data type conv
             Arc::new(ImplicitTypeConversion {}),
             // df default rules start

@@ -12,7 +12,6 @@
 
 # Developing
 **/dev/
-**/data/
 **/tskv_log/
 
 # tmpfile

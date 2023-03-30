@@ -451,8 +451,7 @@ dependencies = [
 [[package]]
 name = "arrow-flight"
 version = "32.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "039ae2ddb0e2c74255a7131cce73f47fb43b7debb13b382a92bd33bcf22f3017"
+source = "git+https://github.com/cnosdb/arrow-rs.git?branch=32.0.0#c4483c9e2120bd7a3d5e40b8ef8858cdc5b00f7d"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -1831,7 +1830,7 @@ dependencies = [
 [[package]]
 name = "datafusion"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=0b0a9cf19690e13c8119d8931a1677fbd2ab042b#0b0a9cf19690e13c8119d8931a1677fbd2ab042b"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1877,7 +1876,7 @@ dependencies = [
 [[package]]
 name = "datafusion-common"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=0b0a9cf19690e13c8119d8931a1677fbd2ab042b#0b0a9cf19690e13c8119d8931a1677fbd2ab042b"
 dependencies = [
  "arrow",
  "chrono",
@@ -1890,7 +1889,7 @@ dependencies = [
 [[package]]
 name = "datafusion-expr"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=0b0a9cf19690e13c8119d8931a1677fbd2ab042b#0b0a9cf19690e13c8119d8931a1677fbd2ab042b"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1902,7 +1901,7 @@ dependencies = [
 [[package]]
 name = "datafusion-optimizer"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=0b0a9cf19690e13c8119d8931a1677fbd2ab042b#0b0a9cf19690e13c8119d8931a1677fbd2ab042b"
 dependencies = [
  "arrow",
  "async-trait",
@@ -1918,7 +1917,7 @@ dependencies = [
 [[package]]
 name = "datafusion-physical-expr"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=0b0a9cf19690e13c8119d8931a1677fbd2ab042b#0b0a9cf19690e13c8119d8931a1677fbd2ab042b"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1948,7 +1947,7 @@ dependencies = [
 [[package]]
 name = "datafusion-proto"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=0b0a9cf19690e13c8119d8931a1677fbd2ab042b#0b0a9cf19690e13c8119d8931a1677fbd2ab042b"
 dependencies = [
  "arrow",
  "chrono",
@@ -1965,7 +1964,7 @@ dependencies = [
 [[package]]
 name = "datafusion-row"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=0b0a9cf19690e13c8119d8931a1677fbd2ab042b#0b0a9cf19690e13c8119d8931a1677fbd2ab042b"
 dependencies = [
  "arrow",
  "datafusion-common",
@@ -1976,7 +1975,7 @@ dependencies = [
 [[package]]
 name = "datafusion-sql"
 version = "18.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=10a2325d6260c5f0251cfb1187e022c6607c6ef5#10a2325d6260c5f0251cfb1187e022c6607c6ef5"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?rev=0b0a9cf19690e13c8119d8931a1677fbd2ab042b#0b0a9cf19690e13c8119d8931a1677fbd2ab042b"
 dependencies = [
  "arrow-schema",
  "datafusion-common",
@@ -2143,6 +2142,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "educe"
+version = "0.4.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb0188e3c3ba8df5753894d54461f0e39bc91741dc5b22e1c46999ec2c71f4e4"
+dependencies = [
+ "enum-ordinalize",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "either"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2162,6 +2173,20 @@ name = "endian-type"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
+
+[[package]]
+name = "enum-ordinalize"
+version = "3.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a62bb1df8b45ecb7ffa78dca1c17a438fb193eb083db0b1b494d2a61bcb5096a"
+dependencies = [
+ "num-bigint",
+ "num-traits",
+ "proc-macro2",
+ "quote",
+ "rustc_version 0.4.0",
+ "syn",
+]
 
 [[package]]
 name = "env_logger"
@@ -2369,6 +2394,12 @@ checksum = "a9c384f161156f5260c24a097c56119f9be8c798586aecc13afbcbe7b7e26bf8"
 dependencies = [
  "percent-encoding",
 ]
+
+[[package]]
+name = "fs-err"
+version = "2.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0845fa252299212f0389d64ba26f34fa32cfe41588355f21ed507c59a0f64541"
 
 [[package]]
 name = "fs2"
@@ -3197,6 +3228,17 @@ checksum = "57ed28aba195b38d5ff02b9170cbff627e336a20925e43b4945390401c5dc93f"
 dependencies = [
  "cc",
  "libc",
+]
+
+[[package]]
+name = "libtest-mimic"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7b603516767d1ab23d0de09d023e62966c3322f7148297c35cf3d97aa8b37fa"
+dependencies = [
+ "clap 4.1.8",
+ "termcolor",
+ "threadpool",
 ]
 
 [[package]]
@@ -5431,6 +5473,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "similar"
+version = "2.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "420acb44afdae038210c99e69aae24109f32f15500aa708e81d46c9f29d55fcf"
+
+[[package]]
 name = "skeptic"
 version = "0.13.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5575,6 +5623,45 @@ checksum = "67cf02bbac7a337dc36e4f5a693db6c21e7863f45070f7064577eb4367a3212b"
 dependencies = [
  "base64ct",
  "der",
+]
+
+[[package]]
+name = "sqllogicaltests"
+version = "2.2.0"
+dependencies = [
+ "arrow",
+ "arrow-flight",
+ "async-trait",
+ "futures",
+ "prost",
+ "snafu",
+ "sqllogictest",
+ "tokio",
+ "tonic",
+ "trace",
+]
+
+[[package]]
+name = "sqllogictest"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b7d83bd42830e2c891865c0da6e8ad741ed3a108188061ea4eaf99cf13cd375"
+dependencies = [
+ "async-trait",
+ "educe",
+ "fs-err",
+ "futures",
+ "glob",
+ "humantime",
+ "itertools",
+ "libtest-mimic",
+ "md-5",
+ "owo-colors",
+ "regex",
+ "similar",
+ "tempfile",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -5872,6 +5959,15 @@ checksum = "3fdd6f064ccff2d6567adcb3873ca630700f00b5ad3f060c25b5dcfd9a4ce152"
 dependencies = [
  "cfg-if",
  "once_cell",
+]
+
+[[package]]
+name = "threadpool"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
+dependencies = [
+ "num_cpus",
 ]
 
 [[package]]
