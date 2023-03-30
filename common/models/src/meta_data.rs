@@ -223,6 +223,7 @@ pub fn allocation_replication_set(
     }
 
     let mut incr_id = begin_seq;
+    let mut index = begin_seq;
     let mut group = vec![];
     let mut sort_nodes = nodes;
     sort_nodes.sort_by(|a, b| b.disk_free.cmp(&a.disk_free));
@@ -234,12 +235,13 @@ pub fn allocation_replication_set(
         };
         incr_id += 1;
 
-        for i in 0..replica {
+        for _ in 0..replica {
             repl_set.vnodes.push(VnodeInfo {
                 id: incr_id,
-                node_id: sort_nodes.get(i as usize).unwrap().id,
+                node_id: sort_nodes.get((index % node_count) as usize).unwrap().id,
             });
             incr_id += 1;
+            index += 1;
         }
 
         group.push(repl_set);
