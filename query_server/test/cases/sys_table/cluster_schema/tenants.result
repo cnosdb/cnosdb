@@ -46,7 +46,7 @@ test_ts_tenant1,"{""comment"":null,""limiter_config"":null}"
 
 -- EXECUTE SQL: drop tenant cnosdb; --
 422 Unprocessable Entity
-{"error_code":"010061","error_message":"Tenant \"cnosdb\" forbid drop"}
+{"error_code":"010064","error_message":"Tenant \"cnosdb\" forbid drop"}
 -- ERROR:  --
 
 -- EXECUTE SQL: alter tenant test_ts_tenant1 set comment = 'hello world'; --

@@ -1,17 +1,14 @@
 -- EXECUTE SQL: explain COPY INTO 'file:///tmp/data/parquet_out2/' FROM (select 1 as col1, 'xx' as col2) file_format = (type = 'parquet'); --
 200 OK
 plan_type,plan
-logical_plan,"Aggregate: groupBy=[[]], aggr=[[SUM(rows) AS rows]]
-  TableWriter: rows(CAST(col1 AS Utf8), col2) AS rows
-    col1 := Int64
-    col2 := Utf8
+logical_plan,"TableWriterMerge: SUM(rows) AS rows
+  TableWriter: table=external_location_table, rows(CAST(col1 AS Utf8), col2) AS rows
     Projection: col1 AS col1, col2 AS col2
       Projection: Int64(1) AS col1, Utf8(""xx"") AS col2
         EmptyRelation"
-physical_plan,"AggregateExec: mode=Final, gby=[], aggr=[rows]
-  AggregateExec: mode=Partial, gby=[], aggr=[rows]
-    TableWriterExec: [file:///tmp/data/parquet_out2/]
-      ProjectionExec: expr=[col1@0 as col1, col2@1 as col2]
-        ProjectionExec: expr=[1 as col1, xx as col2]
-          EmptyExec: produce_one_row=true
+physical_plan,"TableWriterMergeExec
+  TableWriterExec: [file:///tmp/data/parquet_out2/]
+    ProjectionExec: expr=[col1@0 as col1, col2@1 as col2]
+      ProjectionExec: expr=[1 as col1, xx as col2]
+        EmptyExec: produce_one_row=true
 "

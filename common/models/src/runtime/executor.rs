@@ -333,12 +333,6 @@ impl DedicatedExecutor {
     }
 }
 
-impl Drop for DedicatedExecutor {
-    fn drop(&mut self) {
-        self.shutdown()
-    }
-}
-
 #[cfg(unix)]
 fn set_current_thread_priority(prio: i32) {
     // on linux setpriority sets the current thread's priority

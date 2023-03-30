@@ -2187,9 +2187,7 @@ mod tests {
     use datafusion::error::Result;
     use datafusion::execution::memory_pool::UnboundedMemoryPool;
     use datafusion::logical_expr::logical_plan::AggWithGrouping;
-    use datafusion::logical_expr::{
-        Aggregate, AggregateUDF, Extension, ScalarUDF, TableSource, TableType,
-    };
+    use datafusion::logical_expr::{AggregateUDF, Extension, ScalarUDF, TableSource, TableType};
     use datafusion::physical_plan::ExecutionPlan;
     use datafusion::sql::planner::ContextProvider;
     use datafusion::sql::TableReference;
@@ -2534,8 +2532,8 @@ mod tests {
 
         match plan.plan {
             Plan::Query(QueryPlan {
-                df_plan: LogicalPlan::Aggregate(Aggregate { input, .. }),
-            }) => match input.as_ref() {
+                df_plan: LogicalPlan::Extension(Extension { node }),
+            }) => match &node.inputs()[0] {
                 LogicalPlan::Extension(Extension { node }) => {
                     match node.as_any().downcast_ref::<TableWriterPlanNode>() {
                         Some(TableWriterPlanNode {
