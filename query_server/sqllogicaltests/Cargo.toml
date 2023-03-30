@@ -1,0 +1,18 @@
+[package]
+name = "sqllogicaltests"
+version.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+trace = { path = "../../common/trace" }
+sqllogictest ={ workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+arrow = { workspace = true }
+arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
+tonic = { workspace = true, features = ["transport", "tls"] }
+prost = { workspace = true }
+futures = { workspace = true, default-features = false, features = ["alloc"] }
+snafu = { workspace = true }

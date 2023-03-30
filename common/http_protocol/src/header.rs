@@ -18,3 +18,4 @@ pub const BEARER_PREFIX: &str = "Bearer ";
 // parameters
 pub const TENANT: &str = "tenant";
 pub const DB: &str = "db";
+pub const TARGET_PARTITIONS: &str = "target_partitions";
