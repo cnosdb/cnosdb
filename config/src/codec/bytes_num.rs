@@ -13,7 +13,7 @@ pub fn serialize<S>(num: &u64, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let s = format!("{:?}", num);
+    let s = format_bytes_number(*num);
     serializer.serialize_str(&s)
 }
 
@@ -29,7 +29,7 @@ where
     D: Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
-    parse_number(&s).map_err(serde::de::Error::custom)
+    parse_bytes_number(&s).map_err(serde::de::Error::custom)
 }
 
 const UNITS_LIST: [&[char]; 10] = [
@@ -52,6 +52,9 @@ const UNITS_LIST: [&[char]; 10] = [
 // exbibytes
 // zettabyte
 // zebibyte
+
+const UNITS_STR_LIST: [&str; 10] = ["B", "KB", "KiB", "K", "MB", "MiB", "M", "GB", "GiB", "G"];
+
 const SCALES_LIST: [u64; 10] = [
     1,
     1_000,
@@ -65,8 +68,30 @@ const SCALES_LIST: [u64; 10] = [
     1024 * 1024 * 1024,
 ];
 
+pub(crate) fn format_bytes_number(num: u64) -> String {
+    if num == 0 {
+        return "0".to_string();
+    }
+
+    let mut i = 0_usize;
+    for s in SCALES_LIST.iter().skip(1) {
+        if num < *s {
+            break;
+        }
+        i += 1;
+    }
+    for s in SCALES_LIST[..=i].iter().rev() {
+        if num % *s == 0 {
+            break;
+        }
+        i -= 1;
+    }
+
+    format!("{}{}", num / SCALES_LIST[i], UNITS_STR_LIST[i])
+}
+
 /// Parse ([0-9]+[a-z]+) to u64 bytes.
-pub(crate) fn parse_number(num_str: &str) -> Result<u64, Box<dyn Error>> {
+pub(crate) fn parse_bytes_number(num_str: &str) -> Result<u64, Box<dyn Error>> {
     if num_str == "0" {
         return Ok(0);
     }
@@ -153,27 +178,53 @@ mod test {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::codec::bytes_num::{self, parse_number};
+    use crate::codec::bytes_num::{self, format_bytes_number, parse_bytes_number};
+
+    #[test]
+    fn test_stringfy() {
+        assert_eq!(format_bytes_number(1024 + 1).as_str(), "1025B");
+        assert_eq!(format_bytes_number(1024).as_str(), "1K");
+        assert_eq!(format_bytes_number(1_000).as_str(), "1KB");
+        assert_eq!(format_bytes_number(102400).as_str(), "100K");
+        assert_eq!(format_bytes_number(100_000).as_str(), "100KB");
+        assert_eq!(format_bytes_number(1024 * (1024 + 1)).as_str(), "1025K");
+        assert_eq!(
+            format_bytes_number(4 * 1024 * 1024 + 1024).as_str(),
+            "4097K"
+        );
+        assert_eq!(format_bytes_number(1024 * 1024).as_str(), "1M");
+        assert_eq!(format_bytes_number(1_000_000).as_str(), "1MB");
+        assert_eq!(
+            format_bytes_number(1024 * 1024 * (1024 + 1)).as_str(),
+            "1025M"
+        );
+        assert_eq!(
+            format_bytes_number(4 * 1024 * 1024 * 1024 + 1024 * 1024).as_str(),
+            "4097M"
+        );
+        assert_eq!(format_bytes_number(1024 * 1024 * 1024).as_str(), "1G");
+        assert_eq!(format_bytes_number(1_000_000_000).as_str(), "1GB");
+    }
 
     #[test]
     fn test_parse() {
-        assert_eq!(parse_number("1024").unwrap(), 1024);
-        assert_eq!(parse_number("1Kib").unwrap(), 1024);
-        assert_eq!(parse_number("1k").unwrap(), 1024);
-        assert_eq!(parse_number("1K").unwrap(), 1024);
-        assert_eq!(parse_number("1kb").unwrap(), 1_000);
-        assert_eq!(parse_number("1mib").unwrap(), 1024 * 1024);
-        assert_eq!(parse_number("1Mib").unwrap(), 1024 * 1024);
-        assert_eq!(parse_number("1m").unwrap(), 1024 * 1024);
-        assert_eq!(parse_number("1M").unwrap(), 1024 * 1024);
-        assert_eq!(parse_number("1mb").unwrap(), 1_000_000);
-        assert_eq!(parse_number("1mB").unwrap(), 1_000_000);
-        assert_eq!(parse_number("1gib").unwrap(), 1024 * 1024 * 1024);
-        assert_eq!(parse_number("1Gib").unwrap(), 1024 * 1024 * 1024);
-        assert_eq!(parse_number("1g").unwrap(), 1024 * 1024 * 1024);
-        assert_eq!(parse_number("1G").unwrap(), 1024 * 1024 * 1024);
-        assert_eq!(parse_number("1gb").unwrap(), 1_000_000_000);
-        assert_eq!(parse_number("1Gb").unwrap(), 1_000_000_000);
+        assert_eq!(parse_bytes_number("1024").unwrap(), 1024);
+        assert_eq!(parse_bytes_number("1Kib").unwrap(), 1024);
+        assert_eq!(parse_bytes_number("1k").unwrap(), 1024);
+        assert_eq!(parse_bytes_number("1K").unwrap(), 1024);
+        assert_eq!(parse_bytes_number("1kb").unwrap(), 1_000);
+        assert_eq!(parse_bytes_number("1mib").unwrap(), 1024 * 1024);
+        assert_eq!(parse_bytes_number("1Mib").unwrap(), 1024 * 1024);
+        assert_eq!(parse_bytes_number("1m").unwrap(), 1024 * 1024);
+        assert_eq!(parse_bytes_number("1M").unwrap(), 1024 * 1024);
+        assert_eq!(parse_bytes_number("1mb").unwrap(), 1_000_000);
+        assert_eq!(parse_bytes_number("1mB").unwrap(), 1_000_000);
+        assert_eq!(parse_bytes_number("1gib").unwrap(), 1024 * 1024 * 1024);
+        assert_eq!(parse_bytes_number("1Gib").unwrap(), 1024 * 1024 * 1024);
+        assert_eq!(parse_bytes_number("1g").unwrap(), 1024 * 1024 * 1024);
+        assert_eq!(parse_bytes_number("1G").unwrap(), 1024 * 1024 * 1024);
+        assert_eq!(parse_bytes_number("1gb").unwrap(), 1_000_000_000);
+        assert_eq!(parse_bytes_number("1Gb").unwrap(), 1_000_000_000);
     }
 
     #[derive(Serialize, Deserialize, Debug)]
