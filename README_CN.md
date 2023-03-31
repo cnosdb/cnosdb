@@ -268,4 +268,6 @@ Query took 0.036 seconds.
 
 - CnosDB 2.0使用[Apache Arrow](https://github.com/apache/arrow)作为内存模型。
 - CnosDB 2.0的查询引擎基于[Apache Arrow DataFusion](https://github.com/apache/arrow-datafusion)构建。
-- CnosDB 2.0的测试框架使用[SQLancer](https://github.com/sqlancer/sqlancer)作为支持。
+- CnosDB 2.0的Bug挖掘工具使用[SQLancer](https://github.com/sqlancer/sqlancer)作为支持。
+- CnosDB 2.0的集成测试框架基于[sqllogictest-rs](https://github.com/risinglightdb/sqllogictest-rs)构建.
+
