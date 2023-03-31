@@ -39,10 +39,10 @@ pub struct RemoteMetaManager {
 }
 
 impl RemoteMetaManager {
-    pub async fn new(config: ClusterConfig) -> Arc<Self> {
+    pub async fn new(config: ClusterConfig, path: String) -> Arc<Self> {
         let (tenant_change_sender, tenant_change_receiver) = mpsc::channel(1024);
 
-        let admin: AdminMetaRef = Arc::new(RemoteAdminMeta::new(config.clone()));
+        let admin: AdminMetaRef = Arc::new(RemoteAdminMeta::new(config.clone(), path));
         let base_ver = admin.sync_all().await.unwrap();
         let user_manager = Arc::new(RemoteUserManager::new(
             config.name.clone(),

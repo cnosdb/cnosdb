@@ -930,8 +930,12 @@ mod test {
         rt.block_on(async {
             let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
             let opt = kv_option::Options::from(&global_config);
-            let meta_manager: MetaRef = RemoteMetaManager::new(global_config.cluster).await;
+            let meta_manager: MetaRef =
+                RemoteMetaManager::new(global_config.cluster, global_config.storage.path.clone())
+                    .await;
+
             meta_manager.admin_meta().add_data_node().await.unwrap();
+
             let _ = meta_manager
                 .tenant_manager()
                 .create_tenant("cnosdb".to_string(), TenantOptions::default())

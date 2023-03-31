@@ -22,6 +22,9 @@ pub struct ClusterConfig {
     pub flight_rpc_listen_addr: String,
     #[serde(default = "ClusterConfig::default_store_metrics")]
     pub store_metrics: bool,
+
+    #[serde(default = "ClusterConfig::default_cold_data_server")]
+    pub cold_data_server: bool,
 }
 
 impl ClusterConfig {
@@ -51,6 +54,10 @@ impl ClusterConfig {
 
     fn default_store_metrics() -> bool {
         true
+    }
+
+    fn default_cold_data_server() -> bool {
+        false
     }
 
     pub fn override_by_env(&mut self) {
@@ -88,6 +95,7 @@ impl Default for ClusterConfig {
             grpc_listen_addr: Self::default_grpc_listen_addr(),
             flight_rpc_listen_addr: Self::default_flight_rpc_listen_addr(),
             store_metrics: Self::default_store_metrics(),
+            cold_data_server: Self::default_cold_data_server(),
         }
     }
 }
