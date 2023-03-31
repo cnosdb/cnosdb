@@ -1,7 +1,7 @@
 name: Mirror and run GitLab CI
 
 on:
-  push
+  [push, workflow_dispatch]
 
 jobs:
   build:
