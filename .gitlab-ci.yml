@@ -41,6 +41,7 @@ bench-job:
     - sed -i "s/build/& --release/g" meta/cluster.sh
     - sed -i "s/build/& --release/g" run_cluster.sh
     - sed -i "s/debug/release/g" run_cluster.sh
+    - sed -i "s/run/& -c 64 -m 256 /" run_cluster.sh
     - echo "starting cluster"
     - bash ./run_cluster.sh
     - echo "cluster is running"
