@@ -270,3 +270,4 @@ Please refer to [Contribution Guide](./CONTRIBUTING_EN.md) to contribute to Cnos
 - CnosDB 2.0 uses [Apache Arrow](https://github.com/apache/arrow) as the memory model.
 - CnosDB 2.0's query engine is powered by [Apache Arrow DataFusion](https://github.com/apache/arrow-datafusion).
 - CnosDB 2.0's bug detection is powered by [SQLancer](https://github.com/sqlancer/sqlancer).
+- CnosDB 2.0's integration test framework is powered by [sqllogictest-rs](https://github.com/risinglightdb/sqllogictest-rs).
