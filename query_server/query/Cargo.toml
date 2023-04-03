@@ -22,7 +22,6 @@ async-trait = { workspace = true }
 datafusion = { workspace = true }
 chrono = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
-crossbeam = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true }
 minivec = { workspace = true }
@@ -30,7 +29,6 @@ num_cpus = { workspace = true }
 parking_lot = { workspace = true }
 paste = { workspace = true }
 pin-project = { workspace = true }
-priority-queue = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true }
 rand = { workspace = true }
