@@ -20,7 +20,6 @@ utils = { path = "../common/utils" }
 actix-web = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }
-backoff = { workspace = true }
 byteorder = { workspace = true }
 clap = { workspace = true }
 dashmap = { workspace = true }
@@ -40,7 +39,6 @@ toml = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-futures = { workspace = true }
-ureq = { workspace = true, features = ["json", "charset"] }
 uuid = { workspace = true }
 walkdir = { workspace = true }
 

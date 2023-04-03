@@ -10,7 +10,6 @@ models = { path = "../models" }
 
 reqwest = { workspace = true, features = ["native-tls", "__rustls"] }
 serde = { workspace = true }
-serde_json = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 
 [features]

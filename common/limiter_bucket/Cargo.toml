@@ -8,11 +8,13 @@ edition.workspace = true
 [dependencies]
 config = { path = "../../config" }
 
-bincode = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["serde_derive"] }
 parking_lot = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
+
+[dev-dependencies]
+bincode = { workspace = true }
 
 [features]
 default = []
