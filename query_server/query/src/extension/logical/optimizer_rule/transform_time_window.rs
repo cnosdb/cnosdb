@@ -3,7 +3,7 @@ use std::time::Duration;
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::utils::expand_wildcard;
-use datafusion::logical_expr::{LogicalPlan, LogicalPlanBuilder};
+use datafusion::logical_expr::{LogicalPlan, LogicalPlanBuilder, GetIndexedField};
 use datafusion::optimizer::optimizer::ApplyOrder;
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::prelude::{and, cast, col, lit, Expr};
@@ -15,7 +15,7 @@ use trace::debug;
 
 use crate::extension::expr::expr_fn::{ge, is_not_null, lt, minus, modulo, multiply, plus};
 use crate::extension::expr::expr_utils::find_exprs_in_exprs_deeply_nested;
-use crate::extension::expr::{TIME_WINDOW, WINDOW_END, WINDOW_START};
+use crate::extension::expr::{TIME_WINDOW, WINDOW_COL_NAME, WINDOW_END, WINDOW_START};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::extension::logical::plan_node::LogicalPlanExt;
 use crate::utils::duration::parse_duration;
@@ -60,7 +60,7 @@ impl OptimizerRule for TransformTimeWindowRule {
 
                 // replace current plan's exprs and child
                 let final_plan =
-                    replace_window_expr(col(WINDOW_START).alias(&window.window_alias), plan)?
+                    replace_window_expr(col(WINDOW_COL_NAME).alias(&window.window_alias), plan)?
                         .with_new_inputs(&[window_plan])?;
                 return Ok(Some(final_plan));
             }
@@ -211,7 +211,7 @@ impl TimeWindowBuilder {
 /// Generate a window start expression(alias name [`WINDOW_START`])
 /// and a window end expression(alias name [`WINDOW_END`])
 /// based on the given [`TimeWindow`] parameter
-fn make_window_exprs(i: i64, window: &TimeWindow) -> Vec<Expr> {
+fn make_window_expr(i: i64, window: &TimeWindow) -> Expr {
     let TimeWindow {
         time_column,
         window_duration,
@@ -246,10 +246,12 @@ fn make_window_exprs(i: i64, window: &TimeWindow) -> Vec<Expr> {
     let window_start = cast(window_start, ns_type.clone());
     let window_end = cast(window_end, ns_type);
 
-    vec![
-        window_start.alias(WINDOW_START),
-        window_end.alias(WINDOW_END),
-    ]
+    let args = vec![
+        (WINDOW_START.to_string(), window_start),
+        (WINDOW_END.to_string(), window_end),
+    ];
+
+    Expr::NamedStruct(Box::new(args)).alias(WINDOW_COL_NAME)
 }
 
 /// Convert tumbling window to new plan
@@ -262,10 +264,10 @@ fn build_tumbling_window_plan(
     child: LogicalPlan,
     child_project_exprs: Vec<Expr>,
 ) -> Result<LogicalPlan> {
-    let windows = make_window_exprs(0, window);
+    let window_expr = make_window_expr(0, window);
     let mut window_projection: Vec<Expr> =
-        Vec::with_capacity(windows.len() + child_project_exprs.len());
-    window_projection.extend(windows);
+        Vec::with_capacity(child_project_exprs.len() + 1);
+    window_projection.push(window_expr);
     window_projection.extend(child_project_exprs);
 
     let filter = is_not_null(window.time_column.clone());
@@ -300,28 +302,33 @@ fn build_sliding_window_plan(
     // prevent window_duration + slide_duration from overflowing
     let overlapping_windows = (window_ns + slide_ns - 1) / slide_ns;
 
-    let windows = (0..overlapping_windows).map(|i| make_window_exprs(i as i64, window));
-    // Generate project exprs for each window
-    let projections = windows
-        .map(|e| {
-            let mut result: Vec<Expr> = Vec::with_capacity(e.len() + child_project_exprs.len());
-            result.extend(e);
-            result.extend(child_project_exprs.clone());
-            result
-        })
-        .collect::<Vec<Vec<_>>>();
-
+    let windows = (0..overlapping_windows).map(|i| make_window_expr(i as i64, window)).collect::<Vec<_>>();
+    
     let filter = if window_ns % slide_ns == 0 {
         // When the condition windowDuration % slideDuration = 0 is fulfilled,
         // the estimation of the number of windows becomes exact one,
         // which means all produced windows are valid.
         is_not_null(time_column.clone())
     } else {
+        let window_expr = Box::new(windows[0].clone());
+        let start = Expr::GetIndexedField(GetIndexedField::new(window_expr.clone(), ScalarValue::Utf8(Some(WINDOW_START.to_string()))));
+        let end = Expr::GetIndexedField(GetIndexedField::new(window_expr, ScalarValue::Utf8(Some(WINDOW_END.to_string()))));
         and(
-            ge(time_column.clone(), col(WINDOW_START)),
-            lt(time_column.clone(), col(WINDOW_END)),
+            ge(time_column.clone(), start),
+            lt(time_column.clone(), end),
         )
     };
+
+    // Generate project exprs for each window
+    let projections = windows
+        .into_iter()
+        .map(|e| {
+            let mut result: Vec<Expr> = Vec::with_capacity(child_project_exprs.len() + 1);
+            result.push(e);
+            result.extend(child_project_exprs.clone());
+            result
+        })
+        .collect::<Vec<Vec<_>>>();
 
     // Expand: [$start, $end, <child exprs>]
     let expand_node = LogicalPlanBuilder::from(child)

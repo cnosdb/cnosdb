@@ -55,8 +55,8 @@ derive_builder = "0.11"
 arrow = { version = "32.0.0", features = ["prettyprint"] }
 arrow-schema = { version = "32.0.0", features = ["serde"] }
 arrow-flight = { version = "32.0.0" }
-datafusion-proto = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "0b0a9cf19690e13c8119d8931a1677fbd2ab042b" }
-datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "0b0a9cf19690e13c8119d8931a1677fbd2ab042b" }
+datafusion-proto = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "e257fa50e33e8a13c312af3c04078bc6e4742992" }
+datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "e257fa50e33e8a13c312af3c04078bc6e4742992" }
 diff = "0.1.13"
 dirs = "4.0.0"
 env_logger = "0.9"
@@ -136,9 +136,9 @@ version = "2.2.0"
 # you can use patch,
 # which will use your local third-party library code
 
-#[patch."https://github.com/cnosdb/arrow-datafusion"]
-#datafusion = { path = "/path/to/arrow-datafusion/datafusion/core" }
-#datafusion-proto = { path = "/path/to/arrow-datafusion/datafusion/proto" }
+# [patch."https://github.com/cnosdb/arrow-datafusion"]
+# datafusion = { path = "../arrow-datafusion/datafusion/core" }
+# datafusion-proto = { path = "../arrow-datafusion/datafusion/proto" }
 [patch.crates-io]
 arrow-flight = { git = "https://github.com/cnosdb/arrow-rs.git", branch = "32.0.0" }
 
