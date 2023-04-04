@@ -72,9 +72,11 @@ insert into readings_kv select * from readings_ext limit 10;
 # create stream job
 statement ok
 insert into readings_agg
-  select time_window(time, '5m') as time, name, max(elevation) as elevation 
-  from TskvTable 
-  group by name, time_window(time, '5m');
+  select time._start, name, elevation
+  from (
+    select time_window(time, '5m') as time, name, max(elevation) as elevation 
+    from TskvTable 
+    group by name, time_window(time, '5m'));
 
 statement ok
 insert into readings_kv(time, name, elevation) values('2022-01-01T04:01:00', 'test', 111);

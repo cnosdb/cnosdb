@@ -5,13 +5,14 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use datafusion::arrow::datatypes::{Schema, SchemaRef};
+use datafusion::arrow::datatypes::{Schema, SchemaRef, DataType};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
+use datafusion::error::DataFusionError;
 use datafusion::execution::context::TaskContext;
 use datafusion::logical_expr::Operator;
 use datafusion::physical_expr::PhysicalSortExpr;
-use datafusion::physical_plan::expressions::{binary, Column, Literal};
+use datafusion::physical_plan::expressions::{binary, Column, Literal, GetIndexedFieldExpr};
 use datafusion::physical_plan::metrics::{
     self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
 };
@@ -23,6 +24,7 @@ use datafusion::scalar::ScalarValue;
 use futures::{Stream, StreamExt};
 use trace::debug;
 
+use crate::extension::expr::WINDOW_END;
 use crate::extension::utils::batch_filter;
 use crate::extension::WATERMARK_DELAY_MS;
 use crate::stream::state_store::{StateStore, StateStoreFactory};
@@ -48,9 +50,9 @@ impl<T> StateSaveExec<T> {
         let input_schema = input.schema();
 
         let watermark_predicate_for_data =
-            create_watermark_predicate(input_schema.as_ref(), Operator::Gt, watermark_ns)?;
+            create_watermark_predicate(input_schema.as_ref(), Operator::Gt, watermark_ns, Operator::Or)?;
         let watermark_predicate_for_expired_data =
-            create_watermark_predicate(input_schema.as_ref(), Operator::LtEq, watermark_ns)?;
+            create_watermark_predicate(input_schema.as_ref(), Operator::LtEq, watermark_ns, Operator::And)?;
 
         Ok(Self {
             watermark_ns,
@@ -310,6 +312,7 @@ fn create_watermark_predicate(
     schema: &Schema,
     op: Operator,
     watermark_ns: i64,
+    x: Operator,
 ) -> DFResult<Option<Arc<dyn PhysicalExpr>>> {
     schema
         .fields()
@@ -317,13 +320,32 @@ fn create_watermark_predicate(
         .enumerate()
         .filter(|(_, f)| f.metadata().contains_key(WATERMARK_DELAY_MS))
         .map(|(idx, f)| {
-            let lhs = Arc::new(Column::new(f.name(), idx));
+            let lhs: Arc<dyn PhysicalExpr> = match f.data_type() {
+                DataType::Struct(fields) => {
+                    let field = fields
+                        .iter()
+                        .find(|f| f.name() == WINDOW_END)
+                        .ok_or_else(|| {
+                            DataFusionError::Plan(format!(
+                                "Struct field {:?} does not have a event time column: {WINDOW_END}",
+                                f.name()
+                            ))
+                        })?;
+                    
+                    let arg = Arc::new(Column::new(field.name(), idx));
+                    Arc::new(GetIndexedFieldExpr::new(arg, ScalarValue::Utf8(Some(field.name().clone()))))
+                },
+                _ => {
+                    Arc::new(Column::new(f.name(), idx))
+                }
+            };
+
             let rhs = Arc::new(Literal::new(ScalarValue::TimestampNanosecond(
                 Some(watermark_ns),
                 None,
             )));
             binary(lhs, op, rhs, schema)
         })
-        .reduce(|l, r| binary(l?, Operator::And, r?, schema))
+        .reduce(|l, r| binary(l?, x, r?, schema))
         .transpose()
 }
