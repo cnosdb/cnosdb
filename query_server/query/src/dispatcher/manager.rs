@@ -7,6 +7,7 @@ use meta::error::MetaError;
 use models::oid::Oid;
 use models::schema::DEFAULT_CATALOG;
 use spi::query::ast::ExtStatement;
+use spi::query::datasource::stream::checker::StreamCheckerManagerRef;
 use spi::query::datasource::stream::StreamProviderManagerRef;
 use spi::query::dispatcher::{QueryDispatcher, QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecutionFactory, QueryStateMachine};
@@ -192,6 +193,7 @@ pub struct SimpleQueryDispatcherBuilder {
 
     func_manager: Option<FuncMetaManagerRef>,
     stream_provider_manager: Option<StreamProviderManagerRef>,
+    stream_checker_manager: Option<StreamCheckerManagerRef>,
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -248,6 +250,14 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
+    pub fn with_stream_checker_manager(
+        mut self,
+        stream_checker_manager: StreamCheckerManagerRef,
+    ) -> Self {
+        self.stream_checker_manager = Some(stream_checker_manager);
+        self
+    }
+
     pub fn build(self) -> Result<SimpleQueryDispatcher> {
         let coord = self.coord.ok_or_else(|| QueryError::BuildQueryDispatcher {
             err: "lost of coord".to_string(),
@@ -295,6 +305,12 @@ impl SimpleQueryDispatcherBuilder {
                     err: "lost of stream_provider_manager".to_string(),
                 })?;
 
+        let stream_checker_manager =
+            self.stream_checker_manager
+                .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                    err: "lost of stream_checker_manager".to_string(),
+                })?;
+
         let query_tracker = Arc::new(QueryTracker::new(self.queries_limit));
         // TODO restore from metastore
 
@@ -302,6 +318,7 @@ impl SimpleQueryDispatcherBuilder {
             optimizer,
             scheduler,
             query_tracker.clone(),
+            stream_checker_manager,
         ));
         let memory_pool = self
             .memory_pool

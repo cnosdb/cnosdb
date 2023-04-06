@@ -9,6 +9,7 @@ use models::auth::AuthError;
 use models::oid::Oid;
 use snafu::ResultExt;
 use spi::query::auth::AccessControlRef;
+use spi::query::datasource::stream::checker::StreamCheckerManager;
 use spi::query::datasource::stream::StreamProviderManager;
 use spi::query::dispatcher::QueryDispatcher;
 use spi::query::session::SessionCtxFactory;
@@ -117,8 +118,16 @@ pub async fn make_cnosdbms(
         coord.clone(),
         split_manager.clone(),
     ));
-    stream_provider_manager
-        .register_stream_provider_factory(TSKV_STREAM_PROVIDER, tskv_stream_provider_factory)?;
+    stream_provider_manager.register_stream_provider_factory(
+        TSKV_STREAM_PROVIDER,
+        tskv_stream_provider_factory.clone(),
+    )?;
+
+    // init stream checker manager
+    let mut stream_checker_manager = StreamCheckerManager::default();
+    // stream table checker of tskv
+    stream_checker_manager
+        .register_stream_checker(TSKV_STREAM_PROVIDER, tskv_stream_provider_factory)?;
 
     let queries_limit = options.query.max_server_connections;
 
@@ -135,6 +144,7 @@ pub async fn make_cnosdbms(
         .with_memory_pool(memory_pool)
         .with_func_manager(Arc::new(func_manager))
         .with_stream_provider_manager(Arc::new(stream_provider_manager))
+        .with_stream_checker_manager(Arc::new(stream_checker_manager))
         .build()?;
 
     let mut builder = CnosdbmsBuilder::default();

@@ -5,14 +5,14 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use datafusion::arrow::datatypes::{Schema, SchemaRef, DataType};
+use datafusion::arrow::datatypes::{DataType, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::TaskContext;
 use datafusion::logical_expr::Operator;
 use datafusion::physical_expr::PhysicalSortExpr;
-use datafusion::physical_plan::expressions::{binary, Column, Literal, GetIndexedFieldExpr};
+use datafusion::physical_plan::expressions::{binary, Column, GetIndexedFieldExpr, Literal};
 use datafusion::physical_plan::metrics::{
     self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
 };
@@ -49,10 +49,18 @@ impl<T> StateSaveExec<T> {
     ) -> DFResult<Self> {
         let input_schema = input.schema();
 
-        let watermark_predicate_for_data =
-            create_watermark_predicate(input_schema.as_ref(), Operator::Gt, watermark_ns, Operator::Or)?;
-        let watermark_predicate_for_expired_data =
-            create_watermark_predicate(input_schema.as_ref(), Operator::LtEq, watermark_ns, Operator::And)?;
+        let watermark_predicate_for_data = create_watermark_predicate(
+            input_schema.as_ref(),
+            Operator::Gt,
+            watermark_ns,
+            Operator::Or,
+        )?;
+        let watermark_predicate_for_expired_data = create_watermark_predicate(
+            input_schema.as_ref(),
+            Operator::LtEq,
+            watermark_ns,
+            Operator::And,
+        )?;
 
         Ok(Self {
             watermark_ns,
@@ -322,22 +330,24 @@ fn create_watermark_predicate(
         .map(|(idx, f)| {
             let lhs: Arc<dyn PhysicalExpr> = match f.data_type() {
                 DataType::Struct(fields) => {
-                    let field = fields
-                        .iter()
-                        .find(|f| f.name() == WINDOW_END)
-                        .ok_or_else(|| {
-                            DataFusionError::Plan(format!(
+                    let field =
+                        fields
+                            .iter()
+                            .find(|f| f.name() == WINDOW_END)
+                            .ok_or_else(|| {
+                                DataFusionError::Plan(format!(
                                 "Struct field {:?} does not have a event time column: {WINDOW_END}",
                                 f.name()
                             ))
-                        })?;
-                    
+                            })?;
+
                     let arg = Arc::new(Column::new(field.name(), idx));
-                    Arc::new(GetIndexedFieldExpr::new(arg, ScalarValue::Utf8(Some(field.name().clone()))))
-                },
-                _ => {
-                    Arc::new(Column::new(f.name(), idx))
+                    Arc::new(GetIndexedFieldExpr::new(
+                        arg,
+                        ScalarValue::Utf8(Some(field.name().clone())),
+                    ))
                 }
+                _ => Arc::new(Column::new(f.name(), idx)),
             };
 
             let rhs = Arc::new(Literal::new(ScalarValue::TimestampNanosecond(

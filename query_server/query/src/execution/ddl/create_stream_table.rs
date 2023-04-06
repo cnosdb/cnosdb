@@ -4,19 +4,21 @@ use async_trait::async_trait;
 use meta::error::MetaError;
 use models::schema::{StreamTable, TableSchema};
 use snafu::ResultExt;
+use spi::query::datasource::stream::checker::StreamTableCheckerRef;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateStreamTable;
-use spi::Result;
+use spi::{QueryError, Result};
 
 use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct CreateStreamTableTask {
+    checker: Option<StreamTableCheckerRef>,
     stmt: CreateStreamTable,
 }
 
 impl CreateStreamTableTask {
-    pub fn new(stmt: CreateStreamTable) -> Self {
-        Self { stmt }
+    pub fn new(checker: Option<StreamTableCheckerRef>, stmt: CreateStreamTable) -> Self {
+        Self { checker, stmt }
     }
 }
 
@@ -49,15 +51,22 @@ impl DDLDefinitionTask for CreateStreamTableTask {
             })?,
             // does not exist, create
             (_, None) => {
-                create_table(&self.stmt, query_state_machine).await?;
+                let table = build_table(&self.stmt);
+                self.checker
+                    .as_ref()
+                    .ok_or_else(|| QueryError::UnsupportedStreamType {
+                        stream_type: table.stream_type().to_string(),
+                    })?
+                    .check(&client, &table)?;
+
+                create_table(table, query_state_machine).await?;
                 Ok(Output::Nil(()))
             }
         }
     }
 }
 
-async fn create_table(stmt: &CreateStreamTable, machine: QueryStateMachineRef) -> Result<()> {
-    let table = build_table(stmt);
+async fn create_table(table: StreamTable, machine: QueryStateMachineRef) -> Result<()> {
     machine
         .meta
         .tenant_manager()

@@ -1,3 +1,5 @@
+pub mod checker;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -12,6 +14,7 @@ use datafusion::prelude::Expr;
 use meta::model::MetaClientRef;
 use models::schema::{StreamTable, Watermark};
 
+use self::checker::SchemaChecker;
 use crate::QueryError;
 
 pub type StreamProviderManagerRef = Arc<StreamProviderManager>;
@@ -58,7 +61,7 @@ pub type StreamProviderFactoryRef = Arc<dyn StreamProviderFactory + Send + Sync>
 
 /// Each type of [`StreamTable`] corresponds to a unique [`StreamProviderFactory`]\
 /// When supporting new streaming data sources, this interface needs to be implemented and registered with [`StreamProviderManager`].
-pub trait StreamProviderFactory {
+pub trait StreamProviderFactory: SchemaChecker<StreamTable> {
     /// Create the corresponding [`StreamProviderRef`] according to the type of the given [`StreamTable`].\
     /// [`MetaClientRef`] is for possible stream tables associated with internal tables
     fn create(
