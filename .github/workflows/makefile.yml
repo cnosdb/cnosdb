@@ -131,5 +131,5 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          bash .query_server/test/script/start_and_test_3meta2data.sh
+          bash ./query_server/test/script/start_and_test_3meta2data.sh
 
