@@ -17,7 +17,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use trace::{debug, info};
+use trace::debug;
 use tskv::EngineRef;
 use utils::bitset::BitSet;
 use utils::BkdrHasher;
@@ -334,7 +334,7 @@ impl PointWriter {
             points.finish()?;
 
             for vnode in points.repl_set.vnodes.iter() {
-                info!("write points on vnode {:?},  now: {:?}", vnode, now);
+                debug!("write points on vnode {:?},  now: {:?}", vnode, now);
 
                 let request =
                     self.write_to_node(vnode.id, &req.tenant, vnode.node_id, points.data.clone());
@@ -344,7 +344,7 @@ impl PointWriter {
 
         let res = futures::future::try_join_all(requests).await.map(|_| ());
 
-        info!(
+        debug!(
             "parallel write points on vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
             now,
             now.elapsed(),
@@ -372,7 +372,7 @@ impl PointWriter {
             .write_to_remote_node(vnode_id, node_id, tenant, data.clone())
             .await
         {
-            info!(
+            debug!(
                 "write data to remote {}({}) failed; {}!",
                 node_id,
                 vnode_id,

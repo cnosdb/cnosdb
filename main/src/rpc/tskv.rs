@@ -222,10 +222,10 @@ impl TskvServiceImpl {
             if sender.is_closed() {
                 return;
             }
-            error!("select statement execute failed: {}", err.to_string());
+            debug!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         } else {
-            info!("select statement execute success");
+            debug!("select statement execute success");
         }
     }
 
@@ -265,10 +265,13 @@ impl TskvServiceImpl {
             Arc::new(CoordServiceMetrics::new(&metrics_register)),
         );
         if let Err(err) = executor.local_node_tag_scan(vnodes).await {
-            info!("select statement execute failed: {}", err.to_string());
+            if sender.is_closed() {
+                return;
+            }
+            debug!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         } else {
-            info!("select statement execute success");
+            debug!("select statement execute success");
         }
     }
 }
@@ -284,9 +287,9 @@ impl TskvService for TskvServiceImpl {
         let ping_req = _request.into_inner();
         let ping_body = flatbuffers::root::<PingBody>(&ping_req.body);
         if let Err(e) = ping_body {
-            eprintln!("{}", e);
+            error!("{}", e);
         } else {
-            println!("ping_req:body(flatbuffer): {:?}", ping_body);
+            info!("ping_req:body(flatbuffer): {:?}", ping_body);
         }
 
         let mut fbb = flatbuffers::FlatBufferBuilder::new();

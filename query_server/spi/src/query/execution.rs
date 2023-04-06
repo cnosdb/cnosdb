@@ -55,11 +55,7 @@ impl Output {
     }
 
     pub fn num_rows(&self) -> usize {
-        self.chunk_result()
-            .iter()
-            .map(|e| e.num_rows())
-            .reduce(|p, c| p + c)
-            .unwrap_or(0)
+        self.chunk_result().iter().map(|e| e.num_rows()).sum()
     }
 
     /// Returns the number of records affected by the query operation

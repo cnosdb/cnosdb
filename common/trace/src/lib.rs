@@ -66,7 +66,8 @@ pub fn init_global_tracing(
     log_file_prefix_name: &str,
     tokio_trace: Option<&TokioTrace>,
 ) -> Vec<WorkerGuard> {
-    let env_filter = get_env_filter(log_level, tokio_trace);
+    let log_level = log_level.to_string() + ",actix_web::middleware::logger=warn";
+    let env_filter = get_env_filter(&log_level, tokio_trace);
     let formatting_layer = fmt::layer()
         .pretty()
         .with_writer(std::io::stderr)

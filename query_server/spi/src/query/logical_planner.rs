@@ -505,7 +505,12 @@ pub enum AlterTableAction {
         column_name: String,
     },
 }
-
+impl DDLPlan {
+    pub fn display(&self) -> String {
+        //TODO
+        "todo".into()
+    }
+}
 #[async_trait]
 pub trait LogicalPlanner {
     async fn create_logical_plan(

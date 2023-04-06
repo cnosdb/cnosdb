@@ -553,6 +553,12 @@ impl From<TenantOptionsBuilderError> for QueryError {
     }
 }
 
+impl From<AuthError> for QueryError {
+    fn from(value: AuthError) -> Self {
+        QueryError::Auth { source: value }
+    }
+}
+
 impl QueryError {
     pub fn error_code(&self) -> &dyn ErrorCode {
         match self {

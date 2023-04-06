@@ -44,7 +44,7 @@ use super::header::Header;
 use super::Error as HttpError;
 use crate::http::metrics::HttpMetrics;
 use crate::http::response::ResponseBuilder;
-use crate::http::result_format::{fetch_record_batches, ResultFormat};
+use crate::http::result_format::{get_result_format_from_header, ResultFormat};
 use crate::http::QuerySnafu;
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
@@ -97,7 +97,7 @@ impl HttpService {
         mode: ServerMode,
         metrics_register: Arc<MetricsRegister>,
     ) -> Self {
-        let prs = Arc::new(PromRemoteSqlServer::new(dbms.clone()));
+        let prs = Arc::new(PromRemoteSqlServer::new(dbms.clone(), coord.clone()));
 
         Self {
             tls_config,
@@ -250,7 +250,8 @@ impl HttpService {
                             sample_query_read_duration("", "", false, 0.0);
                             reject::custom(e)
                         })?;
-                    let result = sql_handle(&query, header, dbms).await.map_err(|e| {
+                    let result_fmt = get_result_format_from_header(&header)?;
+                    let result = sql_handle(&query, &dbms, result_fmt).await.map_err(|e| {
                         trace::error!("Failed to handle http sql request, err: {}", e);
                         reject::custom(e)
                     });
@@ -405,14 +406,12 @@ impl HttpService {
             .and(self.handle_header())
             .and(warp::query::<SqlParam>())
             .and(self.with_dbms())
-            .and(self.with_coord())
             .and(self.with_prom_remote_server())
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: SqlParam,
                  dbms: DBMSRef,
-                 coord: CoordinatorRef,
                  prs: PromRemoteServerRef| async move {
                     let start = Instant::now();
                     debug!(
@@ -434,7 +433,7 @@ impl HttpService {
                         .build();
 
                     let result = prs
-                        .remote_read(&context, coord.meta_manager(), req)
+                        .remote_read(&context, req)
                         .await
                         .map(|_| ResponseBuilder::ok())
                         .map_err(|e| {
@@ -484,7 +483,7 @@ impl HttpService {
                         .map_err(reject::custom)?;
 
                     let result = prs
-                        .remote_write(req, &ctx, coord)
+                        .remote_write(&ctx, req)
                         .await
                         .map(|_| ResponseBuilder::ok())
                         .map_err(|e| {
@@ -686,18 +685,14 @@ fn construct_write_points_request(req: Bytes, db: &str) -> Result<WritePointsReq
     Ok(req)
 }
 
-async fn sql_handle(query: &Query, header: Header, dbms: DBMSRef) -> Result<Response, HttpError> {
+async fn sql_handle(
+    query: &Query,
+    dbms: &DBMSRef,
+    fmt: ResultFormat,
+) -> Result<Response, HttpError> {
     debug!("prepare to execute: {:?}", query.content());
-
-    let fmt = ResultFormat::try_from(header.get_accept())?;
-
-    let result = dbms.execute(query).await.context(QuerySnafu)?;
-
-    let batches = fetch_record_batches(result)
-        .await
-        .map_err(|e| HttpError::FetchResult {
-            reason: format!("{e}"),
-        })?;
+    let result = dbms.execute(query).await?;
+    let batches = result.fetch_record_batches().await;
 
     fmt.wrap_batches_to_response(&batches)
 }

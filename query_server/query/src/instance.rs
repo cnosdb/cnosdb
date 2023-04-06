@@ -5,6 +5,8 @@ use coordinator::service::CoordinatorRef;
 use derive_builder::Builder;
 use memory_pool::MemoryPoolRef;
 use models::auth::user::{User, UserInfo};
+use models::auth::AuthError;
+use models::oid::Oid;
 use snafu::ResultExt;
 use spi::query::auth::AccessControlRef;
 use spi::query::dispatcher::QueryDispatcher;
@@ -23,7 +25,7 @@ use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
 
 #[derive(Builder)]
-pub struct Cnosdbms<D> {
+pub struct Cnosdbms<D: QueryDispatcher> {
     // TODO access control
     access_control: AccessControlRef,
     // query dispatcher & query execution
@@ -45,11 +47,7 @@ where
     async fn execute(&self, query: &Query) -> Result<QueryHandle> {
         let query_id = self.query_dispatcher.create_query_id();
 
-        let tenant_id = self
-            .access_control
-            .tenant_id(query.context().tenant())
-            .await
-            .context(AuthSnafu)?;
+        let tenant_id = self.get_tenant_id(query.context().tenant()).await?;
 
         let result = self
             .query_dispatcher
@@ -83,6 +81,14 @@ where
     }
 }
 
+impl<D: QueryDispatcher> Cnosdbms<D> {
+    pub(crate) async fn get_tenant_id(
+        &self,
+        tenant_name: &str,
+    ) -> std::result::Result<Oid, AuthError> {
+        self.access_control.tenant_id(tenant_name).await
+    }
+}
 pub async fn make_cnosdbms(
     coord: CoordinatorRef,
     options: Options,

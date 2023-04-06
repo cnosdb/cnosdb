@@ -18,7 +18,7 @@ use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use tracing::info;
+use trace::debug;
 use tskv::query_iterator::{QueryOption, RowIterator};
 use tskv::EngineRef;
 
@@ -65,7 +65,7 @@ impl QueryExecutor {
         let mapping = self.map_vnode().await?;
         let now = tokio::time::Instant::now();
         for (node_id, vnodes) in mapping.iter() {
-            info!(
+            debug!(
                 "execute tag scan on node {}, vnode list: {:?} now: {:?}",
                 node_id, vnodes, now
             );
@@ -76,7 +76,7 @@ impl QueryExecutor {
 
         let res = futures::future::try_join_all(routines).await.map(|_| ());
 
-        info!(
+        debug!(
             "parallel execute tag scan on vnodes over, start at: {:?} elapsed: {:?}, result: {:?}",
             now,
             now.elapsed(),
@@ -91,7 +91,7 @@ impl QueryExecutor {
         let mapping = self.map_vnode().await?;
         let now = tokio::time::Instant::now();
         for (node_id, vnodes) in mapping.iter() {
-            info!(
+            debug!(
                 "execute select on node {}, vnode list: {:?} now: {:?}",
                 node_id, vnodes, now
             );
@@ -102,7 +102,7 @@ impl QueryExecutor {
 
         let res = futures::future::try_join_all(routines).await.map(|_| ());
 
-        info!(
+        debug!(
             "parallel execute select on vnodes over, start at: {:?} elapsed: {:?}, result: {:?}",
             now,
             now.elapsed(),
@@ -121,7 +121,7 @@ impl QueryExecutor {
                 let mut routines = vec![];
                 let mapping = self.try_map_vnode(&vnodes).await?;
                 for (tmp_id, tmp_vnodes) in mapping.iter() {
-                    info!(
+                    debug!(
                         "try execute select on node {}, vnode list: {:?}",
                         tmp_id, tmp_vnodes
                     );
@@ -153,7 +153,7 @@ impl QueryExecutor {
                 let mut routines = vec![];
                 let mapping = self.try_map_vnode(&vnodes).await?;
                 for (tmp_id, tmp_vnodes) in mapping.iter() {
-                    info!(
+                    debug!(
                         "try execute tag scan on node {}, vnode list: {:?}",
                         tmp_id, tmp_vnodes
                     );
@@ -177,14 +177,14 @@ impl QueryExecutor {
         vnodes: Vec<VnodeInfo>,
     ) -> CoordinatorResult<()> {
         let now = tokio::time::Instant::now();
-        info!(
+        debug!(
             "execute select command on remote node: {} vnodes: {:?} now: {:?}",
             node_id, vnodes, now
         );
 
         let res = self.warp_remote_node_executor(node_id, vnodes).await;
 
-        info!(
+        debug!(
             "execute select command on remote node over: {}  start at: {:?}, elapsed: {:?}, result: {:?}",
             node_id,
             now,
@@ -201,7 +201,7 @@ impl QueryExecutor {
         vnodes: Vec<VnodeInfo>,
     ) -> CoordinatorResult<()> {
         let now = tokio::time::Instant::now();
-        info!(
+        debug!(
             "execute tag scan command on remote node: {} vnodes: {:?} now: {:?}",
             node_id, vnodes, now
         );
@@ -210,7 +210,7 @@ impl QueryExecutor {
             .warp_remote_node_tag_scan_executor(node_id, vnodes)
             .await;
 
-        info!(
+        debug!(
             "execute tag scan command on remote node over: {}  start at: {:?}, elapsed: {:?}, result: {:?}",
             node_id,
             now,
@@ -322,13 +322,13 @@ impl QueryExecutor {
         let mut routines = vec![];
         let now = tokio::time::Instant::now();
         for vnode in vnodes.iter() {
-            info!("query local vnode: {:?}, now: {:?}", vnode, now);
+            debug!("query local vnode: {:?}, now: {:?}", vnode, now);
             let routine = self.local_vnode_executor(vnode.clone());
             routines.push(routine);
         }
 
         let res = futures::future::try_join_all(routines).await.map(|_| ());
-        info!(
+        debug!(
             "parallel query local vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
             now,
             now.elapsed(),
@@ -342,13 +342,13 @@ impl QueryExecutor {
         let mut routines = vec![];
         let now = tokio::time::Instant::now();
         for vnode in vnode.into_iter() {
-            info!("tag scan local vnode: {:?}, now: {:?}", vnode, now);
+            debug!("tag scan local vnode: {:?}, now: {:?}", vnode, now);
             let routine = self.local_vnode_tag_scan(vnode);
             routines.push(routine);
         }
 
         let res = futures::future::try_join_all(routines).await.map(|_| ());
-        info!(
+        debug!(
             "parallel tag scan local vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
             now,
             now.elapsed(),

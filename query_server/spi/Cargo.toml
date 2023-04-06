@@ -12,6 +12,7 @@ coordinator = { path = "../../coordinator" }
 tskv = {path = "../../tskv"}
 protos = {path = "../../common/protos"}
 config = {path = "../../config"}
+trace = { path = "../../common/trace" }
 flatbuffers = {workspace = true }
 async-trait = { workspace = true }
 datafusion = { workspace = true }
