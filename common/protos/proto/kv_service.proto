@@ -86,6 +86,11 @@ message CompactVnodeRequest {
     repeated uint32 vnode_ids = 1;
 }
 
+message ChangeNodeStateRequest {
+  uint64 node_id = 1;
+  string node_state = 2;
+}
+
 message DropColumnRequest {
     string db = 1;
     string table = 2;
@@ -117,6 +122,7 @@ message AdminCommandRequest {
     DropColumnRequest drop_column = 8;
     AddColumnRequest add_column = 9;
     AlterColumnRequest alter_column = 10;
+    ChangeNodeStateRequest  change_node_state = 11;
   }
 }
 
@@ -145,6 +151,7 @@ message QueryRecordBatchRequest {
     bytes expr = 2;
     bytes aggs = 3;
 }
+
 
 /* -------------------------------------------------------------------- */
 service TSKVService {

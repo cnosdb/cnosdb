@@ -7,7 +7,8 @@ use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{User, UserDesc, UserOptions};
 use models::meta_data::{
-    BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
+    BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, NodeState, ReplicationSet, VnodeAllInfo,
+    VnodeInfo,
 };
 use models::oid::{Identifier, Oid};
 use models::schema::{
@@ -51,6 +52,8 @@ pub trait AdminMeta: Send + Sync + Debug {
     async fn get_node_conn(&self, node_id: u64) -> MetaResult<Channel>;
     async fn retain_id(&self, count: u32) -> MetaResult<u32>;
     async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()>;
+    async fn update_node_state_cache(&self, node_id: u64, node_state: NodeState) -> MetaResult<()>;
+    async fn get_node_state(&self, node_id: u64) -> MetaResult<NodeState>;
 }
 
 #[async_trait]
@@ -146,6 +149,8 @@ pub trait MetaClient: Send + Sync + Debug {
         del_info: &[VnodeInfo],
         add_info: &[VnodeInfo],
     ) -> MetaResult<()>;
+
+    async fn update_node_state(&self, node_id: u64, node_state: String) -> MetaResult<()>;
 
     async fn version(&self) -> u64;
 

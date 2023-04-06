@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
+use models::meta_data::NodeState;
 use models::schema::Precision;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
 use tskv::query_iterator::QueryOption;
@@ -14,6 +15,7 @@ pub mod errors;
 pub mod file_info;
 pub mod hh_queue;
 pub mod metrics;
+pub mod node_mgr;
 pub mod reader;
 pub mod service;
 pub mod service_mock;
@@ -30,6 +32,11 @@ pub struct WriteRequest {
     pub level: models::consistency_level::ConsistencyLevel,
     pub precision: Precision,
     pub request: protos::kv_service::WritePointsRequest,
+}
+
+#[derive(Debug, Clone)]
+pub enum NodeManagerCmdType {
+    ChangeNodeState(u64, NodeState),
 }
 
 #[derive(Debug, Clone)]
@@ -81,5 +88,11 @@ pub trait Coordinator: Send + Sync + Debug {
         &self,
         tenant: &str,
         cmd_type: VnodeManagerCmdType,
+    ) -> CoordinatorResult<()>;
+
+    async fn execute_node_command(
+        &self,
+        tenant: &str,
+        cmd_type: NodeManagerCmdType,
     ) -> CoordinatorResult<()>;
 }

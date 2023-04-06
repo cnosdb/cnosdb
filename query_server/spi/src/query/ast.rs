@@ -10,7 +10,6 @@ use models::codec::Encoding;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 
 use super::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
-
 /// Statement representations
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtStatement {
@@ -59,11 +58,20 @@ pub enum ExtStatement {
     MoveVnode(MoveVnode),
     CompactVnode(CompactVnode),
     ChecksumGroup(ChecksumGroup),
+
+    //node cmd
+    ChangeNodeState(ChangeNodeState),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChecksumGroup {
     pub replication_set_id: ReplicationSetId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangeNodeState {
+    pub node_id: NodeId,
+    pub node_state: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

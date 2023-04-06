@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use coordinator::errors::CoordinatorResult;
 use coordinator::file_info::get_files_meta;
+use coordinator::node_mgr::NodeManager;
 use coordinator::reader::{QueryExecutor, ReaderIterator};
 use coordinator::service::{CoordServiceMetrics, CoordinatorRef};
 use coordinator::vnode_mgr::VnodeManager;
@@ -167,6 +168,23 @@ impl TskvServiceImpl {
         let meta = self.coord.meta_manager();
         let manager = VnodeManager::new(meta, self.kv_inst.clone(), self.coord.node_id());
         if let Err(err) = manager.move_vnode(tenant, request.vnode_id).await {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
+
+    async fn admin_change_node_state(
+        &self,
+        tenant: &str,
+        request: &ChangeNodeStateRequest,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let meta = self.coord.meta_manager();
+        let manager = NodeManager::new(meta, self.coord.node_id());
+        if let Err(err) = manager
+            .change_node_state(tenant, request.node_state.clone())
+            .await
+        {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
         } else {
             self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
@@ -404,6 +422,9 @@ impl TskvService for TskvServiceImpl {
                 }
                 admin_command_request::Command::AlterColumn(command) => {
                     self.admin_alter_column(&inner.tenant, command).await
+                }
+                admin_command_request::Command::ChangeNodeState(command) => {
+                    self.admin_change_node_state(&inner.tenant, command).await
                 }
             };
 

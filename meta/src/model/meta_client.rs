@@ -645,7 +645,6 @@ impl MetaClient for RemoteMetaClient {
             db.to_string(),
             ts,
         );
-
         let rsp = self
             .client
             .write::<command::TenaneMetaDataResp>(&req)
@@ -801,6 +800,20 @@ impl MetaClient for RemoteMetaClient {
 
         let rsp = self.client.write::<command::StatusResponse>(&req).await?;
         info!("update replication set: {:?}; {:?}", req, rsp);
+
+        if rsp.code == command::META_REQUEST_SUCCESS {
+            Ok(())
+        } else {
+            Err(MetaError::CommonError {
+                msg: rsp.to_string(),
+            })
+        }
+    }
+
+    async fn update_node_state(&self, node_id: u64, node_state: String) -> MetaResult<()> {
+        let req = command::WriteCommand::ChangeNodeState(self.cluster.clone(), node_id, node_state);
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
+        info!("update node state: {:?}; {:?}", req, rsp);
 
         if rsp.code == command::META_REQUEST_SUCCESS {
             Ok(())

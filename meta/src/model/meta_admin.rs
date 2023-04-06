@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use config::ClusterConfig;
 use models::meta_data::*;
@@ -18,6 +19,7 @@ pub struct RemoteAdminMeta {
     config: ClusterConfig,
     data_nodes: RwLock<HashMap<u64, NodeInfo>>,
     conn_map: RwLock<HashMap<u64, Channel>>,
+    node_state_cache: RwLock<HashMap<u64, NodeState>>,
 
     client: MetaHttpClient,
     path: String,
@@ -30,6 +32,7 @@ impl RemoteAdminMeta {
         Self {
             config,
             conn_map: RwLock::new(HashMap::new()),
+            node_state_cache: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
             client: MetaHttpClient::new(meta_url),
             path: storage_path,
@@ -66,6 +69,61 @@ impl RemoteAdminMeta {
 
         info
     }
+
+    fn get_time_and_disk_free(&self) -> (u64, u64) {
+        let disk_free = match get_disk_info(&self.path) {
+            Ok(disk_free) => disk_free,
+            Err(e) => {
+                info!("{}", e);
+                0
+            }
+        };
+
+        let time = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(time) => time.as_secs(),
+            Err(e) => {
+                info!("{}", e);
+                0
+            }
+        };
+
+        (disk_free, time)
+    }
+
+    async fn get_node_state(&self) -> NodeState {
+        let mut node_state = NodeState::default();
+        if self.config.cold_data_server {
+            node_state = NodeState::Cold;
+        };
+
+        if self
+            .node_state_cache
+            .read()
+            .await
+            .get(&self.config.node_id)
+            .is_none()
+        {
+            self.node_state_cache
+                .write()
+                .await
+                .insert(self.config.node_id, node_state.clone());
+            return node_state;
+        }
+
+        let cache_node_state = self
+            .node_state_cache
+            .read()
+            .await
+            .get(&self.config.node_id)
+            .unwrap()
+            .clone();
+
+        if cache_node_state != node_state {
+            node_state = cache_node_state;
+        }
+
+        node_state
+    }
 }
 
 #[async_trait::async_trait]
@@ -75,20 +133,14 @@ impl AdminMeta for RemoteAdminMeta {
     }
 
     async fn add_data_node(&self) -> MetaResult<()> {
-        let mut disk_free_ = 0;
-
-        match get_disk_info(&self.path) {
-            Ok(disk_free) => disk_free_ = disk_free,
-            Err(e) => info!("{}", e),
-        }
-
-        let is_cold_server = self.config.cold_data_server;
+        let (disk_free_, time_) = self.get_time_and_disk_free();
+        let node_state = self.get_node_state().await;
 
         let node = NodeInfo {
-            status: 0,
+            status: node_state,
+            time: time_,
             id: self.config.node_id,
             disk_free: disk_free_,
-            is_cold: is_cold_server,
             grpc_addr: self.config.grpc_listen_addr.clone(),
             http_addr: self.config.http_listen_addr.clone(),
         };
@@ -188,4 +240,23 @@ impl AdminMeta for RemoteAdminMeta {
     }
 
     fn heartbeat(&self) {}
+
+    async fn update_node_state_cache(&self, node_id: u64, node_state: NodeState) -> MetaResult<()> {
+        self.node_state_cache
+            .write()
+            .await
+            .insert(node_id, node_state);
+        Ok(())
+    }
+
+    async fn get_node_state(&self, node_id: u64) -> MetaResult<NodeState> {
+        let node_state = self
+            .node_state_cache
+            .read()
+            .await
+            .get(&node_id)
+            .unwrap()
+            .clone();
+        Ok(node_state)
+    }
 }

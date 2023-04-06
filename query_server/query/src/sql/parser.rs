@@ -17,12 +17,12 @@ use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use snafu::ResultExt;
 use spi::query::ast::{
     self, parse_string_value, Action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
-    AlterTenantOperation, AlterUser, AlterUserOperation, ChecksumGroup, ColumnOption, CompactVnode,
-    CopyIntoLocation, CopyIntoTable, CopyTarget, CopyVnode, CreateDatabase, CreateRole,
-    CreateStream, CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase,
-    DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode, Explain,
-    ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege, ShowSeries, ShowTagBody,
-    ShowTagValues, Trigger, UriLocation, With,
+    AlterTenantOperation, AlterUser, AlterUserOperation, ChangeNodeState, ChecksumGroup,
+    ColumnOption, CompactVnode, CopyIntoLocation, CopyIntoTable, CopyTarget, CopyVnode,
+    CreateDatabase, CreateRole, CreateStream, CreateTable, CreateTenant, CreateUser,
+    DatabaseOptions, DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject,
+    DropTenantObject, DropVnode, Explain, ExtStatement, GrantRevoke, MoveVnode, OutputMode,
+    Privilege, ShowSeries, ShowTagBody, ShowTagValues, Trigger, UriLocation, With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -108,6 +108,17 @@ enum CnosKeyWord {
     APPEND,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     UNSET,
+
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    CHANGE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    STATE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    PENDING,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    RUNNING,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    COLD,
 }
 
 impl FromStr for CnosKeyWord {
@@ -149,6 +160,11 @@ impl FromStr for CnosKeyWord {
             "COMPLETE" => Ok(CnosKeyWord::COMPLETE),
             "APPEND" => Ok(CnosKeyWord::APPEND),
             "UNSET" => Ok(CnosKeyWord::UNSET),
+            "CHANGE" => Ok(CnosKeyWord::CHANGE),
+            "STATE" => Ok(CnosKeyWord::STATE),
+            "RUNNING" => Ok(CnosKeyWord::RUNNING),
+            "PENDING" => Ok(CnosKeyWord::PENDING),
+            "COLD" => Ok(CnosKeyWord::COLD),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
                 s
@@ -286,6 +302,10 @@ impl<'a> ExtParser<'a> {
                             CnosKeyWord::CHECKSUM => {
                                 self.parser.next_token();
                                 self.parse_checksum()
+                            }
+                            CnosKeyWord::CHANGE => {
+                                self.parser.next_token();
+                                self.parse_change_node_state()
                             }
                             _ => Ok(ExtStatement::SqlStatement(Box::new(
                                 self.parser.parse_statement()?,
@@ -1318,6 +1338,34 @@ impl<'a> ExtParser<'a> {
         }
     }
 
+    fn parse_node_state(&mut self) -> Result<String, ParserError> {
+        let res = self.parser.peek_token().to_string();
+        if self.parse_cnos_keyword(CnosKeyWord::RUNNING)
+            || self.parse_cnos_keyword(CnosKeyWord::PENDING)
+            || self.parse_cnos_keyword(CnosKeyWord::COLD)
+        {
+            Ok(res)
+        } else {
+            self.expected("[RUNNING | PENDING | COLD]", self.parser.peek_token())?
+        }
+    }
+
+    fn parse_change_node_state(&mut self) -> Result<ExtStatement> {
+        if self.parse_cnos_keyword(CnosKeyWord::NODE) {
+            let node_id = self.parse_number::<NodeId>()?;
+            if !self.parse_cnos_keyword(CnosKeyWord::STATE) {
+                return self.expected("STATE", self.parser.peek_token());
+            }
+            let node_state = self.parse_node_state()?;
+            Ok(ExtStatement::ChangeNodeState(ChangeNodeState {
+                node_id,
+                node_state,
+            }))
+        } else {
+            parser_err!("Expected NODE,after CHANGE")
+        }
+    }
+
     fn parse_checksum(&mut self) -> Result<ExtStatement> {
         if self.parser.parse_keyword(Keyword::GROUP) {
             let replication_set_id = self.parse_number::<ReplicationSetId>()?;
@@ -2191,6 +2239,23 @@ mod tests {
                 panic!("expect CreateStreamTable")
             }
             _ => panic!("expect CreateStream"),
+        }
+    }
+
+    #[test]
+    fn test_change_node_state() {
+        let sql = "change node 1001 state Pending;";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::ChangeNodeState(ast::ChangeNodeState {
+                node_id,
+                node_state,
+            }) => {
+                assert_eq!(*node_id, 1001_u64);
+                assert_eq!(node_state.to_string(), "Pending".to_string());
+            }
+            _ => panic!("failed"),
         }
     }
 }

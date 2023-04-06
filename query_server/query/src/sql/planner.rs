@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use std::iter;
 use std::option::Option;
 use std::sync::Arc;
+use std::{iter, vec};
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -48,6 +48,7 @@ use models::auth::privilege::{
 };
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::User;
+use models::meta_data::NodeState;
 use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
 use models::schema::{
@@ -57,16 +58,16 @@ use models::schema::{
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use object_store::ObjectStore;
-use spi::query::ast;
 use spi::query::ast::{
-    AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
+    self, AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
     AlterTableAction as ASTAlterTableAction, AlterTenantOperation, AlterUserOperation,
-    ChecksumGroup as ASTChecksumGroup, ColumnOption, CompactVnode as ASTCompactVnode,
-    CopyIntoTable, CopyTarget, CopyVnode as ASTCopyVnode, CreateDatabase as ASTCreateDatabase,
-    CreateTable as ASTCreateTable, DatabaseOptions as ASTDatabaseOptions,
-    DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions,
-    DropVnode as ASTDropVnode, ExtStatement, MoveVnode as ASTMoveVnode,
-    ShowSeries as ASTShowSeries, ShowTagBody, ShowTagValues as ASTShowTagValues, UriLocation, With,
+    ChangeNodeState as ASTChangeNodeState, ChecksumGroup as ASTChecksumGroup, ColumnOption,
+    CompactVnode as ASTCompactVnode, CopyIntoTable, CopyTarget, CopyVnode as ASTCopyVnode,
+    CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
+    DatabaseOptions as ASTDatabaseOptions, DescribeDatabase as DescribeDatabaseOptions,
+    DescribeTable as DescribeTableOptions, DropVnode as ASTDropVnode, ExtStatement,
+    MoveVnode as ASTMoveVnode, ShowSeries as ASTShowSeries, ShowTagBody,
+    ShowTagValues as ASTShowTagValues, UriLocation, With,
 };
 use spi::query::datasource::{self, UriSchema};
 use spi::query::logical_planner::{
@@ -74,8 +75,8 @@ use spi::query::logical_planner::{
     sql_options_to_tenant_options, sql_options_to_user_options,
     unset_option_to_alter_tenant_action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
     AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction,
-    ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder, CopyVnode, CreateDatabase,
-    CreateRole, CreateStreamTable, CreateTable, CreateTenant, CreateUser, DDLPlan,
+    ChangeNodeState, ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder, CopyVnode,
+    CreateDatabase, CreateRole, CreateStreamTable, CreateTable, CreateTenant, CreateUser, DDLPlan,
     DatabaseObjectType, DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject,
     DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
     GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan,
@@ -162,6 +163,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             ExtStatement::MoveVnode(stmt) => self.move_vnode_to_plan(stmt),
             ExtStatement::CompactVnode(stmt) => self.compact_vnode_to_plan(stmt),
             ExtStatement::ChecksumGroup(stmt) => self.checksum_group_to_plan(stmt),
+            ExtStatement::ChangeNodeState(stmt) => self.change_node_state_to_plan(stmt),
             ExtStatement::CreateStream(_) => Err(QueryError::NotImplemented {
                 err: "CreateStream Planner.".to_string(),
             }),
@@ -1466,6 +1468,23 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
+    fn change_node_state_to_plan(&self, stmt: ASTChangeNodeState) -> Result<PlanWithPrivileges> {
+        let ASTChangeNodeState {
+            node_id,
+            node_state,
+        } = stmt;
+
+        let plan = Plan::DDL(DDLPlan::ChangeNodeState(ChangeNodeState {
+            node_id,
+            node_state: NodeState::from(node_state),
+        }));
+
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
     fn checksum_group_to_plan(&self, stmt: ASTChecksumGroup) -> Result<PlanWithPrivileges> {
         let ASTChecksumGroup { replication_set_id } = stmt;
 
@@ -2205,7 +2224,6 @@ mod tests {
     use crate::metadata::ContextProviderExtension;
     use crate::sql::parser::ExtParser;
 
-    #[derive(Debug)]
     struct MockContext {}
 
     #[async_trait::async_trait]
@@ -2547,6 +2565,66 @@ mod tests {
                 _ => panic!(),
             },
             _ => panic!(),
+        }
+    }
+    #[tokio::test]
+    async fn test_change_node_state() {
+        let vec: Vec<String> = vec![
+            "change node 1001 state Running;".to_string(),
+            "change NODE 1001 state PENDING;".to_string(),
+            "CHANGE NODE 1001 STATE COld;".to_string(),
+            "change VNODE 1001 state Running;".to_string(),
+            "change NODE 1001 state Unknown;".to_string(),
+            "change NODE 1001 state;".to_string(),
+            "change NODE 1001;".to_string(),
+            "change;".to_string(),
+        ];
+
+        for (i, _elem) in vec.iter().enumerate() {
+            let statements = ExtParser::parse_sql(vec[i].as_str());
+
+            if i < 3 {
+                let mut state = statements.clone().unwrap();
+                assert_eq!(state.len(), 1);
+                let test = MockContext {};
+                let planner = SqlPlaner::new(&test);
+                let plan = planner
+                    .statement_to_plan(state.pop_back().unwrap(), &session())
+                    .await
+                    .unwrap();
+                if let Plan::DDL(DDLPlan::ChangeNodeState(ChangeNodeState {
+                    node_id,
+                    node_state,
+                })) = plan.plan
+                {
+                    println!("{:?} {:?}", node_id, node_state.to_string());
+                }
+            }
+            if let Err(e) = statements {
+                match i {
+                    3 => assert_eq!(
+                        "sql parser error: Expected NODE,after CHANGE",
+                        e.to_string().as_str()
+                    ),
+                    4 => assert_eq!(
+                        "sql parser error: Expected [RUNNING | PENDING | COLD], found: Unknown",
+                        e.to_string().as_str()
+                    ),
+                    5 => assert_eq!(
+                        "sql parser error: Expected [RUNNING | PENDING | COLD], found: ;",
+                        e.to_string().as_str()
+                    ),
+                    6 => assert_eq!(
+                        "sql parser error: Expected STATE, found: ;",
+                        e.to_string().as_str()
+                    ),
+                    7 => assert_eq!(
+                        "sql parser error: Expected NODE,after CHANGE",
+                        e.to_string().as_str()
+                    ),
+                    _ => panic!(),
+                }
+            }
         }
     }
 }

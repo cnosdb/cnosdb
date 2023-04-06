@@ -19,6 +19,7 @@ use self::drop_tenant_object::DropTenantObjectTask;
 use self::grant_revoke::GrantRevokeTask;
 use crate::execution::ddl::alter_database::AlterDatabaseTask;
 use crate::execution::ddl::alter_table::AlterTableTask;
+use crate::execution::ddl::change_node_state::ChangeNodeStateTask;
 use crate::execution::ddl::checksum_group::ChecksumGroupTask;
 use crate::execution::ddl::compact_vnode::CompactVnodeTask;
 use crate::execution::ddl::copy_vnode::CopyVnodeTask;
@@ -34,6 +35,7 @@ mod alter_database;
 mod alter_table;
 mod alter_tenant;
 mod alter_user;
+mod change_node_state;
 mod checksum_group;
 mod compact_vnode;
 mod copy_vnode;
@@ -170,6 +172,9 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::CopyVnode(sub_plan) => Box::new(CopyVnodeTask::new(sub_plan.clone())),
             DDLPlan::MoveVnode(sub_plan) => Box::new(MoveVnodeTask::new(sub_plan.clone())),
             DDLPlan::CompactVnode(sub_plan) => Box::new(CompactVnodeTask::new(sub_plan.clone())),
+            DDLPlan::ChangeNodeState(sub_plan) => {
+                Box::new(ChangeNodeStateTask::new(sub_plan.clone()))
+            }
             DDLPlan::ChecksumGroup(sub_plan) => Box::new(ChecksumGroupTask::new(sub_plan.clone())),
             DDLPlan::CreateStreamTable(sub_plan) => {
                 let checker = self.stream_checker_manager.checker(&sub_plan.stream_type);

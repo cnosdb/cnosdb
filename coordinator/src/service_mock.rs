@@ -14,7 +14,7 @@ use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
 use crate::reader::ReaderIterator;
-use crate::{Coordinator, VnodeManagerCmdType};
+use crate::{Coordinator, NodeManagerCmdType, VnodeManagerCmdType};
 
 #[derive(Debug, Default)]
 pub struct MockCoordinator {}
@@ -65,6 +65,14 @@ impl Coordinator for MockCoordinator {
         &self,
         tenant: &str,
         cmd_type: VnodeManagerCmdType,
+    ) -> CoordinatorResult<()> {
+        Ok(())
+    }
+
+    async fn execute_node_command(
+        &self,
+        tenant: &str,
+        cmd_type: NodeManagerCmdType,
     ) -> CoordinatorResult<()> {
         Ok(())
     }

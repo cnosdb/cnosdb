@@ -221,12 +221,14 @@ impl MetaHttpClient {
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
+    use std::time::{SystemTime, UNIX_EPOCH};
     use std::{thread, time};
 
-    use models::meta_data::{NodeInfo, VnodeInfo};
+    use models::meta_data::{NodeInfo, NodeState, VnodeInfo};
     use models::schema::DatabaseSchema;
     use tokio::sync::mpsc::channel;
     use tokio::time::timeout;
+    use trace::info;
 
     use crate::client::MetaHttpClient;
     use crate::store::command::{self, UpdateVnodeReplSetArgs};
@@ -248,13 +250,21 @@ mod test {
             .unwrap();
         println!("read tenant data: {}", serde_json::to_string(&rsp).unwrap());
 
+        let time_ = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(time) => time.as_secs(),
+            Err(e) => {
+                info!("{}", e);
+                0
+            }
+        };
+
         let node = NodeInfo {
             id: 111,
             disk_free: 1000,
-            is_cold: false,
+            time: time_,
             grpc_addr: "".to_string(),
             http_addr: "127.0.0.1:8888".to_string(),
-            status: 0,
+            status: NodeState::Running,
         };
 
         let req = command::WriteCommand::AddDataNode(cluster.clone(), node);

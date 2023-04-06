@@ -6,7 +6,8 @@ use std::sync::Arc;
 use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::meta_data::{
-    BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
+    BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, NodeState, ReplicationSet, VnodeAllInfo,
+    VnodeInfo,
 };
 use models::oid::Oid;
 use models::schema::{
@@ -55,6 +56,14 @@ impl AdminMeta for MockAdminMeta {
 
     async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()> {
         Ok(())
+    }
+
+    async fn update_node_state_cache(&self, node_id: u64, node_state: NodeState) -> MetaResult<()> {
+        Ok(())
+    }
+
+    async fn get_node_state(&self, node_id: u64) -> MetaResult<NodeState> {
+        Ok(NodeState::Running)
     }
 }
 
@@ -246,6 +255,10 @@ impl MetaClient for MockMetaClient {
 
     async fn version(&self) -> u64 {
         0
+    }
+
+    async fn update_node_state(&self, node_id: u64, node_state: String) -> MetaResult<()> {
+        Ok(())
     }
 
     fn get_vnode_all_info(&self, id: u32) -> Option<VnodeAllInfo> {

@@ -23,7 +23,7 @@ use lazy_static::lazy_static;
 use models::auth::privilege::{DatabasePrivilege, GlobalPrivilege, Privilege};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserOptions, UserOptionsBuilder};
-use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
+use models::meta_data::{NodeId, NodeState, ReplicationSetId, VnodeId};
 use models::object_reference::ResolvedTable;
 use models::oid::{Identifier, Oid};
 use models::schema::{
@@ -140,12 +140,20 @@ pub enum DDLPlan {
 
     CompactVnode(CompactVnode),
 
+    ChangeNodeState(ChangeNodeState),
+
     ChecksumGroup(ChecksumGroup),
 }
 
 #[derive(Debug, Clone)]
 pub struct ChecksumGroup {
     pub replication_set_id: ReplicationSetId,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChangeNodeState {
+    pub node_id: NodeId,
+    pub node_state: NodeState,
 }
 
 #[derive(Debug, Clone)]

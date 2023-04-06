@@ -32,7 +32,8 @@ use crate::metrics::LPReporter;
 use crate::reader::{QueryExecutor, ReaderIterator};
 use crate::writer::PointWriter;
 use crate::{
-    status_response_to_result, Coordinator, QueryOption, VnodeManagerCmdType, WriteRequest,
+    status_response_to_result, Coordinator, NodeManagerCmdType, QueryOption, VnodeManagerCmdType,
+    WriteRequest,
 };
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
@@ -511,6 +512,26 @@ impl Coordinator for CoordService {
             }
         };
 
+        self.exec_admin_command_on_node(req_node_id, grpc_req).await
+    }
+
+    async fn execute_node_command(
+        &self,
+        tenant: &str,
+        cmd_type: NodeManagerCmdType,
+    ) -> CoordinatorResult<()> {
+        let (grpc_req, req_node_id) = match cmd_type {
+            NodeManagerCmdType::ChangeNodeState(node_id, node_state) => (
+                AdminCommandRequest {
+                    tenant: tenant.to_string(),
+                    command: Some(ChangeNodeState(ChangeNodeStateRequest {
+                        node_id,
+                        node_state: node_state.to_string(),
+                    })),
+                },
+                node_id,
+            ),
+        };
         self.exec_admin_command_on_node(req_node_id, grpc_req).await
     }
 }
