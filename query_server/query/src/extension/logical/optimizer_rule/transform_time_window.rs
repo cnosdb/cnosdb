@@ -3,7 +3,7 @@ use std::time::Duration;
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::utils::expand_wildcard;
-use datafusion::logical_expr::{LogicalPlan, LogicalPlanBuilder, GetIndexedField};
+use datafusion::logical_expr::{GetIndexedField, LogicalPlan, LogicalPlanBuilder};
 use datafusion::optimizer::optimizer::ApplyOrder;
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::prelude::{and, cast, col, lit, Expr};
@@ -265,8 +265,7 @@ fn build_tumbling_window_plan(
     child_project_exprs: Vec<Expr>,
 ) -> Result<LogicalPlan> {
     let window_expr = make_window_expr(0, window);
-    let mut window_projection: Vec<Expr> =
-        Vec::with_capacity(child_project_exprs.len() + 1);
+    let mut window_projection: Vec<Expr> = Vec::with_capacity(child_project_exprs.len() + 1);
     window_projection.push(window_expr);
     window_projection.extend(child_project_exprs);
 
@@ -302,8 +301,10 @@ fn build_sliding_window_plan(
     // prevent window_duration + slide_duration from overflowing
     let overlapping_windows = (window_ns + slide_ns - 1) / slide_ns;
 
-    let windows = (0..overlapping_windows).map(|i| make_window_expr(i as i64, window)).collect::<Vec<_>>();
-    
+    let windows = (0..overlapping_windows)
+        .map(|i| make_window_expr(i as i64, window))
+        .collect::<Vec<_>>();
+
     let filter = if window_ns % slide_ns == 0 {
         // When the condition windowDuration % slideDuration = 0 is fulfilled,
         // the estimation of the number of windows becomes exact one,
@@ -311,12 +312,15 @@ fn build_sliding_window_plan(
         is_not_null(time_column.clone())
     } else {
         let window_expr = Box::new(windows[0].clone());
-        let start = Expr::GetIndexedField(GetIndexedField::new(window_expr.clone(), ScalarValue::Utf8(Some(WINDOW_START.to_string()))));
-        let end = Expr::GetIndexedField(GetIndexedField::new(window_expr, ScalarValue::Utf8(Some(WINDOW_END.to_string()))));
-        and(
-            ge(time_column.clone(), start),
-            lt(time_column.clone(), end),
-        )
+        let start = Expr::GetIndexedField(GetIndexedField::new(
+            window_expr.clone(),
+            ScalarValue::Utf8(Some(WINDOW_START.to_string())),
+        ));
+        let end = Expr::GetIndexedField(GetIndexedField::new(
+            window_expr,
+            ScalarValue::Utf8(Some(WINDOW_END.to_string())),
+        ));
+        and(ge(time_column.clone(), start), lt(time_column.clone(), end))
     };
 
     // Generate project exprs for each window

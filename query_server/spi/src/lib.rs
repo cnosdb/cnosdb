@@ -471,6 +471,12 @@ pub enum QueryError {
         column_name: String,
         data_type: String,
     },
+
+    #[snafu(display("Stream table checker already exists: {}", stream_type))]
+    #[error_code(code = 69)]
+    StreamTableCheckerAlreadyExists {
+        stream_type: String,
+    },
 }
 
 impl From<ParserError> for QueryError {

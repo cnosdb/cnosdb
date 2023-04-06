@@ -3,6 +3,7 @@ use std::sync::Arc;
 use datafusion::logical_expr::{Extension, LogicalPlan};
 use models::runtime::executor::DedicatedExecutor;
 use spi::query::config::StreamTriggerInterval;
+use spi::query::datasource::stream::checker::StreamCheckerManagerRef;
 use spi::query::execution::{QueryExecutionFactory, QueryExecutionRef, QueryStateMachineRef};
 use spi::query::logical_planner::{Plan, QueryPlan};
 use spi::query::optimizer::Optimizer;
@@ -24,6 +25,7 @@ pub struct SqlQueryExecutionFactory {
     query_tracker: Arc<QueryTracker>,
     trigger_executor_factory: TriggerExecutorFactoryRef,
     runtime: Arc<DedicatedExecutor>,
+    stream_checker_manager: StreamCheckerManagerRef,
 }
 
 impl SqlQueryExecutionFactory {
@@ -32,6 +34,7 @@ impl SqlQueryExecutionFactory {
         optimizer: Arc<dyn Optimizer + Send + Sync>,
         scheduler: SchedulerRef,
         query_tracker: Arc<QueryTracker>,
+        stream_checker_manager: StreamCheckerManagerRef,
     ) -> Self {
         // TODO configurable
         // Only do periodic scheduling, no need for many threads
@@ -50,6 +53,7 @@ impl SqlQueryExecutionFactory {
             query_tracker,
             trigger_executor_factory,
             runtime,
+            stream_checker_manager,
         }
     }
 }
@@ -96,7 +100,11 @@ impl QueryExecutionFactory for SqlQueryExecutionFactory {
                     self.runtime.clone(),
                 ))
             }
-            Plan::DDL(ddl_plan) => Arc::new(DDLExecution::new(state_machine, ddl_plan)),
+            Plan::DDL(ddl_plan) => Arc::new(DDLExecution::new(
+                state_machine,
+                self.stream_checker_manager.clone(),
+                ddl_plan,
+            )),
             Plan::SYSTEM(sys_plan) => Arc::new(SystemExecution::new(
                 state_machine,
                 sys_plan,

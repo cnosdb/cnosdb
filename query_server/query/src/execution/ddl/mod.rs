@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use spi::query::datasource::stream::checker::StreamCheckerManagerRef;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::DDLPlan;
@@ -66,9 +67,16 @@ pub struct DDLExecution {
 }
 
 impl DDLExecution {
-    pub fn new(query_state_machine: QueryStateMachineRef, plan: DDLPlan) -> Self {
+    pub fn new(
+        query_state_machine: QueryStateMachineRef,
+        stream_checker_manager: StreamCheckerManagerRef,
+        plan: DDLPlan,
+    ) -> Self {
         Self {
-            task_factory: DDLDefinitionTaskFactory { plan },
+            task_factory: DDLDefinitionTaskFactory {
+                stream_checker_manager,
+                plan,
+            },
             query_state_machine,
         }
     }
@@ -119,6 +127,7 @@ impl QueryExecution for DDLExecution {
 }
 
 struct DDLDefinitionTaskFactory {
+    stream_checker_manager: StreamCheckerManagerRef,
     plan: DDLPlan,
 }
 
@@ -163,7 +172,9 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::CompactVnode(sub_plan) => Box::new(CompactVnodeTask::new(sub_plan.clone())),
             DDLPlan::ChecksumGroup(sub_plan) => Box::new(ChecksumGroupTask::new(sub_plan.clone())),
             DDLPlan::CreateStreamTable(sub_plan) => {
-                Box::new(CreateStreamTableTask::new(sub_plan.clone()))
+                let checker = self.stream_checker_manager.checker(&sub_plan.stream_type);
+
+                Box::new(CreateStreamTableTask::new(checker, sub_plan.clone()))
             }
         }
     }

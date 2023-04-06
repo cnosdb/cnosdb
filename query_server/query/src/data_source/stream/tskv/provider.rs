@@ -73,7 +73,8 @@ impl StreamProvider for TskvStreamProvider {
 
     /// Returns the latest (highest) available offsets
     async fn latest_available_offset(&self) -> DFResult<Option<Self::Offset>> {
-        // TODO
+        // TODO 从tskv获取最新的offset
+        // 当前使用本地时间作为offset会导致空转浪费资源
         let offset = Local::now().naive_utc().timestamp_nanos();
         Ok(Some(offset))
     }
