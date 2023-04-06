@@ -23,8 +23,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Sender};
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use trace::info;
-use tracing::error;
+use trace::{debug, error, info};
 use tskv::EngineRef;
 
 use crate::errors::*;
@@ -225,10 +224,10 @@ impl CoordService {
         );
 
         let now = tokio::time::Instant::now();
-        info!("select statement execute now: {:?}", now);
+        debug!("select statement execute now: {:?}", now);
 
         if let Err(err) = executor.execute().await.map(|_| {
-            info!(
+            debug!(
                 "select statement execute success, start at: {:?} elapsed: {:?}",
                 now,
                 now.elapsed(),
@@ -237,7 +236,7 @@ impl CoordService {
             if sender.is_closed() {
                 return;
             }
-            error!("select statement execute failed: {}", err.to_string());
+            debug!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         }
     }
@@ -288,16 +287,16 @@ impl CoordService {
         );
 
         let now = tokio::time::Instant::now();
-        info!("select statement execute now: {:?}", now);
+        debug!("select statement execute now: {:?}", now);
 
         if let Err(err) = executor.tag_scan().await.map(|_| {
-            info!(
+            debug!(
                 "select statement execute success, start at: {:?} elapsed: {:?}",
                 now,
                 now.elapsed(),
             );
         }) {
-            error!("select statement execute failed: {}", err.to_string());
+            debug!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         }
     }
@@ -366,9 +365,9 @@ impl Coordinator for CoordService {
         };
 
         let now = tokio::time::Instant::now();
-        info!("write points, now: {:?}", now);
+        debug!("write points, now: {:?}", now);
         let res = self.writer.write_points(&req).await;
-        info!(
+        debug!(
             "write points result: {:?}, start at: {:?} elapsed: {:?}",
             res,
             now,

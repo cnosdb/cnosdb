@@ -15,7 +15,7 @@ use models::oid::Identifier;
 use models::schema::{TenantOptionsBuilder, DEFAULT_CATALOG, DEFAULT_DATABASE, USAGE_SCHEMA};
 use openraft::error::ClientWriteError;
 use openraft::raft::ClientWriteResponse;
-use trace::{error, info};
+use trace::{debug, error};
 use web::Json;
 
 use crate::meta_single::Infallible;
@@ -71,7 +71,7 @@ pub async fn watch(
     app: Data<MetaApp>,
     req: Json<(String, String, HashSet<String>, u64)>, //client id, cluster,version
 ) -> actix_web::Result<impl Responder> {
-    info!("watch all  args: {:?}", req);
+    debug!("watch all  args: {:?}", req);
     let client = req.0 .0;
     let cluster = req.0 .1;
     let tenants = req.0 .2;
@@ -80,7 +80,7 @@ pub async fn watch(
 
     let mut notify = {
         let watch_data = app.store.read_change_logs(&cluster, &tenants, follow_ver);
-        info!(
+        debug!(
             "{} {}.{}: change logs: {:?} ",
             client, base_ver, follow_ver, watch_data
         );
@@ -98,7 +98,7 @@ pub async fn watch(
         let _ = tokio::time::timeout(tokio::time::Duration::from_secs(20), notify.recv()).await;
 
         let watch_data = app.store.read_change_logs(&cluster, &tenants, follow_ver);
-        info!(
+        debug!(
             "{} {}.{}: change logs: {:?} ",
             client, base_ver, follow_ver, watch_data
         );

@@ -1,7 +1,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use datafusion::arrow::record_batch::RecordBatch;
 use models::auth::user::User;
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
+use trace::trace;
 
 use crate::query::execution::Output;
 use crate::query::session::CnosSessionConfig;
@@ -14,6 +16,16 @@ impl QueryId {
         static NEXT_ID: AtomicU64 = AtomicU64::new(1);
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         Self(id)
+    }
+
+    pub fn get(&self) -> u64 {
+        self.0
+    }
+}
+
+impl From<QueryId> for u64 {
+    fn from(val: QueryId) -> Self {
+        val.0
     }
 }
 
@@ -172,5 +184,18 @@ impl QueryHandle {
 
     pub fn result(self) -> Output {
         self.result
+    }
+
+    pub async fn fetch_record_batches(self) -> Vec<RecordBatch> {
+        trace!("try collect result for: {}", self.query.content());
+
+        let actual = match self.result {
+            Output::StreamData(_, stream) => stream,
+            Output::Nil(_) => vec![],
+        };
+
+        trace!("successfully collected result of {}", self.query.content());
+
+        actual
     }
 }

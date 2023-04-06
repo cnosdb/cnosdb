@@ -36,9 +36,7 @@ impl SqlQueryExecution {
             abort_handle: Mutex::new(None),
         }
     }
-}
 
-impl SqlQueryExecution {
     async fn start(&self) -> Result<Output> {
         // begin optimize
         self.query_state_machine.begin_optimize();

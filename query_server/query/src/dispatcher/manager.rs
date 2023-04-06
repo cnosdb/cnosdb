@@ -69,11 +69,8 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             tenant_id,
             self.memory_pool.clone(),
         )?;
-
         let meta_client = self
             .coord
-            .meta_manager()
-            .tenant_manager()
             .tenant_meta(query.context().tenant())
             .await
             .ok_or_else(|| MetaError::TenantNotFound {

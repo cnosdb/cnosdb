@@ -77,7 +77,7 @@ impl QueryExecution for DDLExecution {
     // execute ddl task
     // This logic usually does not change
     async fn start(&self) -> Result<Output> {
-        let query_state_machine = self.query_state_machine.clone();
+        let query_state_machine = &self.query_state_machine;
 
         query_state_machine.begin_schedule();
 

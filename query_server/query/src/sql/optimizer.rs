@@ -43,10 +43,7 @@ impl Optimizer for CascadeOptimizer {
         let optimized_physical_plan = self.physical_optimizer.optimize(physical_plan, session)?;
 
         debug!(
-            "Final physical plan:\nOutput partition count: {}\n{}\n",
-            optimized_physical_plan
-                .output_partitioning()
-                .partition_count(),
+            "Final physical plan:\n{}\n",
             displayable(optimized_physical_plan.as_ref()).indent()
         );
 

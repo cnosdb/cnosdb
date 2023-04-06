@@ -12,6 +12,7 @@ use datafusion::physical_optimizer::pipeline_fixer::PipelineFixer;
 use datafusion::physical_optimizer::repartition::Repartition;
 use datafusion::physical_optimizer::sort_enforcement::EnforceSorting;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
+use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
 use datafusion::physical_plan::planner::{
     DefaultPhysicalPlanner as DFDefaultPhysicalPlanner, ExtensionPlanner,
 };
@@ -151,8 +152,17 @@ impl PhysicalOptimizer for DefaultPhysicalPlanner {
         plan: Arc<dyn ExecutionPlan>,
         _session: &SessionCtx,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        // df plan阶段已经优化过，直接返回
-        Ok(plan)
+        let partition_count = plan.output_partitioning().partition_count();
+
+        let merged_plan = if partition_count > 1 {
+            Arc::new(CoalescePartitionsExec::new(plan))
+        } else {
+            plan
+        };
+
+        debug_assert_eq!(1, merged_plan.output_partitioning().partition_count());
+
+        Ok(merged_plan)
     }
 
     fn inject_optimizer_rule(

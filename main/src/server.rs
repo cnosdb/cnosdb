@@ -132,11 +132,9 @@ impl ServiceBuilder {
         let dbms = self
             .create_dbms(coord.clone(), self.memory_pool.clone())
             .await;
-        let http_service = Box::new(
-            self.create_http(dbms.clone(), coord.clone(), ServerMode::Store)
-                .await,
-        );
-        let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()).await);
+        let http_service =
+            Box::new(self.create_http(dbms.clone(), coord.clone(), ServerMode::Store));
+        let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()));
 
         server.add_service(http_service);
         server.add_service(grpc_service);
@@ -150,11 +148,9 @@ impl ServiceBuilder {
         let dbms = self
             .create_dbms(coord.clone(), self.memory_pool.clone())
             .await;
-        let http_service = Box::new(
-            self.create_http(dbms.clone(), coord.clone(), ServerMode::Query)
-                .await,
-        );
-        let flight_sql_service = Box::new(self.create_flight_sql(dbms.clone()).await);
+        let http_service =
+            Box::new(self.create_http(dbms.clone(), coord.clone(), ServerMode::Query));
+        let flight_sql_service = Box::new(self.create_flight_sql(dbms.clone()));
 
         server.add_service(http_service);
         server.add_service(flight_sql_service);
@@ -174,12 +170,10 @@ impl ServiceBuilder {
         let dbms = self
             .create_dbms(coord.clone(), self.memory_pool.clone())
             .await;
-        let flight_sql_service = Box::new(self.create_flight_sql(dbms.clone()).await);
-        let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()).await);
-        let http_service = Box::new(
-            self.create_http(dbms.clone(), coord.clone(), ServerMode::Bundle)
-                .await,
-        );
+        let flight_sql_service = Box::new(self.create_flight_sql(dbms.clone()));
+        let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()));
+        let http_service =
+            Box::new(self.create_http(dbms.clone(), coord.clone(), ServerMode::Bundle));
 
         server.add_service(http_service);
         server.add_service(grpc_service);
@@ -253,12 +247,7 @@ impl ServiceBuilder {
         coord
     }
 
-    async fn create_http(
-        &self,
-        dbms: DBMSRef,
-        coord: CoordinatorRef,
-        mode: ServerMode,
-    ) -> HttpService {
+    fn create_http(&self, dbms: DBMSRef, coord: CoordinatorRef, mode: ServerMode) -> HttpService {
         let addr = self
             .config
             .cluster
@@ -288,7 +277,7 @@ impl ServiceBuilder {
         )
     }
 
-    async fn create_grpc(&self, kv: EngineRef, coord: CoordinatorRef) -> GrpcService {
+    fn create_grpc(&self, kv: EngineRef, coord: CoordinatorRef) -> GrpcService {
         let addr = self
             .config
             .cluster
@@ -316,7 +305,7 @@ impl ServiceBuilder {
         )
     }
 
-    async fn create_flight_sql(&self, dbms: DBMSRef) -> FlightSqlServiceAdapter {
+    fn create_flight_sql(&self, dbms: DBMSRef) -> FlightSqlServiceAdapter {
         let tls_config = self.config.security.tls_config.clone();
         let addr = self
             .config
