@@ -87,5 +87,6 @@ trap "echo 'Received Ctrl+C, stopping.'" SIGINT
 echo "Test complete, killing CnosDB Server(pid=${PID})"
 
 kill ${PID}
+rm -rf ${TEST_DATA_DIR}
 
 exit ${EXIT_CODE:-0}
