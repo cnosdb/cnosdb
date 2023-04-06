@@ -27,7 +27,12 @@ impl OffsetTracker {
 
     pub fn update_available_offset(&self, topic: String, offset: i64) {
         let mut available_offsets = self.available_offsets.write();
-        let current_offset = self.processed_offsets.read().get(&topic).cloned().unwrap_or(i64::MIN);
+        let current_offset = self
+            .processed_offsets
+            .read()
+            .get(&topic)
+            .cloned()
+            .unwrap_or(i64::MIN);
         if offset > current_offset {
             available_offsets.insert(topic, offset);
         }
@@ -39,8 +44,12 @@ impl OffsetTracker {
             .read()
             .iter()
             .map(|(id, offset)| {
-                let start = self.processed_offsets.read().get(id).cloned()
-                    // 防止处理重复数据所以+1ns
+                let start = self
+                    .processed_offsets
+                    .read()
+                    .get(id)
+                    .cloned()
+                    // 防止处理重复数据所以+1
                     .map(|e| e + 1);
                 (id.clone(), (start, *offset))
             })

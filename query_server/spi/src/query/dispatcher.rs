@@ -84,11 +84,16 @@ impl QueryInfo {
 pub struct QueryStatus {
     state: QueryState,
     duration: Duration,
+    error_count: u64,
 }
 
 impl QueryStatus {
     pub fn new(state: QueryState, duration: Duration) -> Self {
-        Self { state, duration }
+        Self {
+            state,
+            duration,
+            error_count: 0,
+        }
     }
 
     pub fn query_state(&self) -> &QueryState {
@@ -97,5 +102,38 @@ impl QueryStatus {
 
     pub fn duration(&self) -> &Duration {
         &self.duration
+    }
+
+    pub fn error_count(&self) -> u64 {
+        self.error_count
+    }
+}
+
+pub struct QueryStatusBuilder {
+    state: QueryState,
+    duration: Duration,
+    error_count: u64,
+}
+
+impl QueryStatusBuilder {
+    pub fn new(state: QueryState, duration: Duration) -> Self {
+        Self {
+            state,
+            duration,
+            error_count: 0,
+        }
+    }
+
+    pub fn with_error_count(mut self, error_count: u64) -> Self {
+        self.error_count = error_count;
+        self
+    }
+
+    pub fn build(self) -> QueryStatus {
+        QueryStatus {
+            state: self.state,
+            duration: self.duration,
+            error_count: self.error_count,
+        }
     }
 }

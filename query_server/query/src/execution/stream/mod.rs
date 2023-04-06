@@ -14,14 +14,14 @@ use futures::TryStreamExt;
 use models::runtime::executor::{DedicatedExecutor, Job};
 use parking_lot::Mutex;
 use spi::query::datasource::stream::StreamProviderRef;
-use spi::query::dispatcher::{QueryInfo, QueryStatus};
+use spi::query::dispatcher::{QueryInfo, QueryStatus, QueryStatusBuilder};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef, QueryType};
 use spi::query::logical_planner::QueryPlan;
 use spi::query::physical_planner::PhysicalPlanner;
 use spi::query::scheduler::SchedulerRef;
 use spi::query::stream::watermark_tracker::WatermarkTrackerRef;
 use spi::Result;
-use trace::{error, warn};
+use trace::error;
 
 use self::trigger::executor::TriggerExecutorRef;
 use crate::extension::physical::optimizer_rule::add_state_store::AddStateStore;
@@ -71,6 +71,8 @@ impl MicroBatchStreamExecution {
 
 impl MicroBatchStreamExecution {
     fn run_stream(&self) -> Result<Job<()>> {
+        self.query_state_machine.begin_schedule();
+
         let query_state_machine = self.query_state_machine.clone();
         let plan = self.plan.clone();
         let scheduler = self.scheduler.clone();
@@ -179,10 +181,12 @@ impl QueryExecution for MicroBatchStreamExecution {
     }
 
     fn status(&self) -> QueryStatus {
-        QueryStatus::new(
+        QueryStatusBuilder::new(
             self.query_state_machine.state().clone(),
             self.query_state_machine.duration(),
         )
+        .with_error_count(self.trigger_executor.error_count())
+        .build()
     }
 }
 
@@ -266,20 +270,8 @@ where
             .await?
             .stream();
 
-        loop {
-            match stream.try_next().await {
-                Ok(Some(batch)) => {
-                    trace::trace!("Receive an item, num rows: {}", batch.num_rows());
-                }
-                Ok(None) => {
-                    break;
-                }
-                Err(err) => {
-                    // TODO Record failed status
-                    warn!("Failed run stream query {:?}, error: {}", id, err);
-                    break;
-                }
-            }
+        while let Some(batch) = stream.try_next().await? {
+            trace::trace!("Receive an item, num rows: {}", batch.num_rows());
         }
 
         // 6. Record the commit log after the execution is complete
