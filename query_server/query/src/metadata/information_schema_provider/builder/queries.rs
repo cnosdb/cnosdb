@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use datafusion::arrow::array::{Float64Builder, StringBuilder};
+use datafusion::arrow::array::{Float64Builder, StringBuilder, UInt64Builder};
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::datasource::MemTable;
@@ -18,6 +18,7 @@ lazy_static! {
         Field::new("tenant_name", DataType::Utf8, false),
         Field::new("state", DataType::Utf8, false),
         Field::new("duration", DataType::Float64, false),
+        Field::new("error_count", DataType::UInt64, false),
     ]));
 }
 
@@ -32,6 +33,7 @@ pub struct InformationSchemaQueriesBuilder {
     tenant_names: StringBuilder,
     states: StringBuilder,
     durations: Float64Builder,
+    error_counts: UInt64Builder,
 }
 
 impl Default for InformationSchemaQueriesBuilder {
@@ -46,6 +48,7 @@ impl Default for InformationSchemaQueriesBuilder {
             tenant_names: StringBuilder::new(),
             states: StringBuilder::new(),
             durations: Float64Builder::new(),
+            error_counts: UInt64Builder::new(),
         }
     }
 }
@@ -63,6 +66,7 @@ impl InformationSchemaQueriesBuilder {
         tenant_name: impl AsRef<str>,
         state: impl AsRef<str>,
         duration: f64,
+        error_count: u64,
     ) {
         // Note: append_value is actually infallable.
         self.query_ids.append_value(query_id.as_ref());
@@ -74,6 +78,7 @@ impl InformationSchemaQueriesBuilder {
         self.tenant_names.append_value(tenant_name.as_ref());
         self.states.append_value(state.as_ref());
         self.durations.append_value(duration);
+        self.error_counts.append_value(error_count);
     }
 }
 
@@ -91,6 +96,7 @@ impl TryFrom<InformationSchemaQueriesBuilder> for MemTable {
             mut tenant_names,
             mut states,
             mut durations,
+            mut error_counts,
         } = value;
 
         let batch = RecordBatch::try_new(
@@ -105,6 +111,7 @@ impl TryFrom<InformationSchemaQueriesBuilder> for MemTable {
                 Arc::new(tenant_names.finish()),
                 Arc::new(states.finish()),
                 Arc::new(durations.finish()),
+                Arc::new(error_counts.finish()),
             ],
         )?;
 

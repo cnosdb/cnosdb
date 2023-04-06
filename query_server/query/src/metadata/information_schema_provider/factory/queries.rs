@@ -62,6 +62,7 @@ impl InformationSchemaTableFactory for QueriesFactory {
 
             let state = status.query_state();
             let duration = status.duration().as_secs_f64();
+            let error_count = status.error_count();
 
             builder.append_row(
                 query_id,
@@ -73,6 +74,7 @@ impl InformationSchemaTableFactory for QueriesFactory {
                 tenant_name,
                 state,
                 duration,
+                error_count,
             );
         }
 

@@ -1,9 +1,10 @@
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use futures::Future;
 use models::runtime::executor::{DedicatedExecutor, Job};
 use spi::query::config::StreamTriggerInterval;
+use spi::QueryError;
 
 pub type TriggerExecutorFactoryRef = Arc<TriggerExecutorFactory>;
 
@@ -20,6 +21,7 @@ impl TriggerExecutorFactory {
         Arc::new(TriggerExecutor {
             trigger: trigger.clone(),
             runtime: self.runtime.clone(),
+            err_counter: Default::default(),
         })
     }
 }
@@ -35,6 +37,7 @@ pub type TriggerExecutorRef = Arc<TriggerExecutor>;
 pub struct TriggerExecutor {
     trigger: StreamTriggerInterval,
     runtime: Arc<DedicatedExecutor>,
+    err_counter: Arc<AtomicU64>,
 }
 
 impl TriggerExecutor {
@@ -42,12 +45,12 @@ impl TriggerExecutor {
     where
         F: Fn(i64) -> T,
         F: Send + Sync + 'static,
-        T: Future + Send + 'static,
-        T::Output: Send + 'static,
+        T: Future<Output = Result<(), QueryError>> + Send + 'static,
+        // T::Output: Send + 'static,
     {
         let current_batch_id = AtomicI64::default();
-
         let fetch_add_batch_id = move || current_batch_id.fetch_add(1, Ordering::Relaxed);
+        let err_counter = self.err_counter.clone();
 
         match self.trigger {
             StreamTriggerInterval::Once => self.runtime.spawn(async move {
@@ -56,11 +59,21 @@ impl TriggerExecutor {
             StreamTriggerInterval::Interval(d) => self.runtime.spawn(async move {
                 let mut ticker = tokio::time::interval(d);
                 loop {
-                    let _ = runtime.spawn(task(fetch_add_batch_id())).await;
+                    match runtime.spawn(task(fetch_add_batch_id())).await {
+                        Ok(Ok(_)) => {}
+                        _ => {
+                            // Record failed status
+                            let _ = err_counter.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
 
                     ticker.tick().await;
                 }
             }),
         }
+    }
+
+    pub fn error_count(&self) -> u64 {
+        self.err_counter.load(Ordering::Relaxed)
     }
 }
