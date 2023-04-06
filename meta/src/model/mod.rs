@@ -147,6 +147,8 @@ pub trait MetaClient: Send + Sync + Debug {
         add_info: &[VnodeInfo],
     ) -> MetaResult<()>;
 
+    async fn update_node_state(&self, node_id: u64, node_state: String) -> MetaResult<()>;
+
     async fn version(&self) -> u64;
 
     async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()>;

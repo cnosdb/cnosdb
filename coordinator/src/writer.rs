@@ -243,7 +243,6 @@ impl<'a> VnodeMapping<'a> {
 
             hasher.number()
         };
-
         //let full_name = format!("{}.{}", meta_client.tenant_name(), db);
         let info = meta_client
             .locate_replcation_set_for_write(db_name, hash_id, point.timestamp())

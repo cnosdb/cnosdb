@@ -248,6 +248,10 @@ impl MetaClient for MockMetaClient {
         0
     }
 
+    async fn update_node_state(&self, node_id: u64, node_state: String) -> MetaResult<()> {
+        Ok(())
+    }
+
     fn get_vnode_all_info(&self, id: u32) -> Option<VnodeAllInfo> {
         None
     }

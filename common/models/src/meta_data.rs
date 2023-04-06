@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::ffi::CString;
-use std::io;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
+use std::{fmt, io};
 
 use serde::{Deserialize, Serialize};
 
@@ -35,14 +35,43 @@ pub struct UserInfo {
     pub perm: u64, //read write admin bitmap
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Default, Clone)]
+pub enum NodeState {
+    #[default]
+    Running,
+    Pending,
+    Cold,
+    Unknown,
+}
+
+impl fmt::Display for NodeState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            NodeState::Running => write!(f, "Running"),
+            NodeState::Pending => write!(f, "Pending"),
+            NodeState::Cold => write!(f, "Cold"),
+            NodeState::Unknown => write!(f, "Unknown state"),
+        }
+    }
+}
+
+impl From<String> for NodeState {
+    fn from(node_state: String) -> Self {
+        match node_state.as_str() {
+            "Running" => NodeState::Running,
+            "Pending" => NodeState::Pending,
+            "Cold" => NodeState::Cold,
+            _ => NodeState::Unknown,
+        }
+    }
+}
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct NodeInfo {
     pub id: NodeId,
     pub grpc_addr: String,
     pub http_addr: String,
     pub disk_free: u64,
-    pub is_cold: bool,
-    pub status: u64,
+    pub status: NodeState,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

@@ -37,6 +37,9 @@ pub enum WriteCommand {
     // cluster, node info
     AddDataNode(String, NodeInfo),
 
+    //cluster ,node_id ,state
+    ChangeNodeState(String, u64, String),
+
     // cluster, tenant, db schema
     CreateDB(String, String, DatabaseSchema),
 
