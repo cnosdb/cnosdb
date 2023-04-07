@@ -63,6 +63,13 @@ struct Args {
     target_partitions: Option<usize>,
 
     #[arg(
+        short,
+        long,
+        help = "Optionally, specify the micro batch stream trigger interval. e.g. once, 1m, 10s"
+    )]
+    stream_trigger_interval: Option<String>,
+
+    #[arg(
         long,
         help = "Path to your data, default to current directory",
         value_parser = try_parse_data_dir
@@ -137,6 +144,7 @@ pub async fn main() -> Result<(), anyhow::Error> {
         .with_tenant(args.tenant)
         .with_database(args.database)
         .with_target_partitions(args.target_partitions)
+        .with_stream_trigger_interval(args.stream_trigger_interval)
         .with_result_format(args.format)
         .with_precision(args.precision);
 

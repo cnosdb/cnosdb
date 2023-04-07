@@ -8,6 +8,7 @@ pub struct SqlParam {
     pub chunked: Option<String>,
     // Number of partitions for query execution. Increasing partitions can increase concurrency.
     pub target_partitions: Option<usize>,
+    pub stream_trigger_interval: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

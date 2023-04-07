@@ -6,6 +6,7 @@ use models::auth::user::User;
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE, DEFAULT_PRECISION};
 use trace::trace;
 
+use crate::query::config::StreamTriggerInterval;
 use crate::query::execution::Output;
 use crate::query::session::CnosSessionConfig;
 
@@ -142,6 +143,13 @@ impl ContextBuilder {
             self.session_config = self
                 .session_config
                 .with_target_partitions(dbtarget_partitions);
+        }
+        self
+    }
+
+    pub fn with_stream_trigger_interval(mut self, interval: Option<StreamTriggerInterval>) -> Self {
+        if let Some(interval) = interval {
+            self.session_config = self.session_config.with_stream_trigger_interval(interval);
         }
         self
     }

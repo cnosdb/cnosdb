@@ -453,7 +453,7 @@ pub enum QueryError {
         table_name: String,
     },
 
-    #[snafu(display("Invalid option {} of table {}: {}", option_name, table_name, reason))]
+    #[snafu(display("Invalid option [{}] of table {}: {}", option_name, table_name, reason))]
     #[error_code(code = 67)]
     InvalidTableOption {
         option_name: String,
