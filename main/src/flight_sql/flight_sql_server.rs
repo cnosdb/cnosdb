@@ -18,11 +18,12 @@ use arrow_flight::{
 use datafusion::arrow::datatypes::{Schema, ToByteSlice};
 use datafusion::arrow::ipc::writer::IpcWriteOptions;
 use futures::Stream;
-use http_protocol::header::{DB, TARGET_PARTITIONS, TENANT};
+use http_protocol::header::{DB, STREAM_TRIGGER_INTERVAL, TARGET_PARTITIONS, TENANT};
 use models::auth::user::User;
 use models::oid::UuidGenerator;
 use moka::sync::Cache;
 use prost::bytes::Bytes;
+use spi::query::config::StreamTriggerInterval;
 use spi::query::execution::Output;
 use spi::server::dbms::DBMSRef;
 use spi::service::protocol::{Context, ContextBuilder, Query, QueryHandle};
@@ -156,10 +157,21 @@ where
                     TARGET_PARTITIONS, e
                 ))
             })?;
+        let stream_trigger_interval =
+            utils::get_value_from_header(metadata, STREAM_TRIGGER_INTERVAL, "")
+                .map(|e| e.parse::<StreamTriggerInterval>())
+                .transpose()
+                .map_err(|e| {
+                    Status::invalid_argument(format!(
+                        "parse {} failed, error: {}",
+                        STREAM_TRIGGER_INTERVAL, e
+                    ))
+                })?;
         let ctx = ContextBuilder::new(user_info)
             .with_tenant(tenant)
             .with_database(db)
             .with_target_partitions(target_partitions)
+            .with_stream_trigger_interval(stream_trigger_interval)
             .build();
 
         Ok(ctx)

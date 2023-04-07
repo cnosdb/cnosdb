@@ -21,6 +21,7 @@ impl TriggerExecutorFactory {
         Arc::new(TriggerExecutor {
             trigger: trigger.clone(),
             runtime: self.runtime.clone(),
+            processed_count: Default::default(),
             err_counter: Default::default(),
         })
     }
@@ -37,6 +38,7 @@ pub type TriggerExecutorRef = Arc<TriggerExecutor>;
 pub struct TriggerExecutor {
     trigger: StreamTriggerInterval,
     runtime: Arc<DedicatedExecutor>,
+    processed_count: Arc<AtomicU64>,
     err_counter: Arc<AtomicU64>,
 }
 
@@ -50,11 +52,18 @@ impl TriggerExecutor {
     {
         let current_batch_id = AtomicI64::default();
         let fetch_add_batch_id = move || current_batch_id.fetch_add(1, Ordering::Relaxed);
+        let processed_count = self.processed_count.clone();
         let err_counter = self.err_counter.clone();
 
         match self.trigger {
             StreamTriggerInterval::Once => self.runtime.spawn(async move {
-                task(fetch_add_batch_id());
+                match task(fetch_add_batch_id()).await {
+                    Ok(_) => {}
+                    Err(_) => {
+                        let _ = err_counter.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                let _ = processed_count.fetch_add(1, Ordering::Relaxed);
             }),
             StreamTriggerInterval::Interval(d) => self.runtime.spawn(async move {
                 let mut ticker = tokio::time::interval(d);
@@ -66,11 +75,15 @@ impl TriggerExecutor {
                             let _ = err_counter.fetch_add(1, Ordering::Relaxed);
                         }
                     }
-
+                    let _ = processed_count.fetch_add(1, Ordering::Relaxed);
                     ticker.tick().await;
                 }
             }),
         }
+    }
+
+    pub fn processed_count(&self) -> u64 {
+        self.processed_count.load(Ordering::Relaxed)
     }
 
     pub fn error_count(&self) -> u64 {

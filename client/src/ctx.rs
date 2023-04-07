@@ -26,6 +26,7 @@ pub struct SessionConfig {
     pub database: String,
     pub precision: String,
     pub target_partitions: Option<usize>,
+    pub stream_trigger_interval: Option<String>,
     pub fmt: PrintFormat,
     pub config_options: ConfigOptions,
 }
@@ -42,6 +43,7 @@ impl SessionConfig {
             database: DEFAULT_DATABASE.to_string(),
             precision: DEFAULT_PRECISION.to_string(),
             target_partitions: None,
+            stream_trigger_interval: None,
             config_options,
             fmt: PrintFormat::Csv,
         }
@@ -73,6 +75,11 @@ impl SessionConfig {
 
     pub fn with_target_partitions(mut self, target_partitions: Option<usize>) -> Self {
         self.target_partitions = target_partitions;
+        self
+    }
+
+    pub fn with_stream_trigger_interval(mut self, stream_trigger_interval: Option<String>) -> Self {
+        self.stream_trigger_interval = stream_trigger_interval;
         self
     }
 
@@ -167,11 +174,13 @@ impl SessionContext {
         let tenant = self.session_config.tenant.clone();
         let db = self.session_config.database.clone();
         let target_partitions = self.session_config.target_partitions;
+        let stream_trigger_interval = self.session_config.stream_trigger_interval.clone();
         let param = SqlParam {
             tenant: Some(tenant),
             db: Some(db),
             chunked: None,
             target_partitions,
+            stream_trigger_interval,
         };
 
         // let param = &[("db", &self.session_config.database)];

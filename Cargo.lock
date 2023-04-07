@@ -2080,6 +2080,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
+name = "duration-str"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f94be4825ff6a563f1bfbdb786ae10c687333c7524fade954e2271170e7f7e6d"
+dependencies = [
+ "chrono",
+ "nom",
+ "rust_decimal",
+ "serde",
+ "thiserror",
+ "time 0.3.20",
+]
+
+[[package]]
 name = "e2e_test"
 version = "2.2.0"
 dependencies = [
@@ -4971,6 +4985,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust_decimal"
+version = "1.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26bd36b60561ee1fb5ec2817f198b6fd09fa571c897a5e86d1487cfc2b096dfc"
+dependencies = [
+ "arrayvec",
+ "num-traits",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5491,6 +5515,7 @@ dependencies = [
  "coordinator",
  "datafusion",
  "derive_builder",
+ "duration-str",
  "error_code",
  "flatbuffers 22.12.6",
  "lazy_static",

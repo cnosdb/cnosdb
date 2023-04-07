@@ -106,4 +106,10 @@ impl CnosSessionConfig {
         self.inner = self.inner.with_target_partitions(n);
         self
     }
+
+    /// TODO
+    pub fn with_stream_trigger_interval(mut self, interval: StreamTriggerInterval) -> Self {
+        self.inner = self.inner.with_extension(Arc::new(interval));
+        self
+    }
 }

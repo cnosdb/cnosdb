@@ -30,6 +30,7 @@ use protocol_parser::{DataPoint, Line};
 use protos::kv_service::WritePointsRequest;
 use query::prom::remote_server::PromRemoteSqlServer;
 use snafu::ResultExt;
+use spi::query::config::StreamTriggerInterval;
 use spi::server::dbms::DBMSRef;
 use spi::server::prom::PromRemoteServerRef;
 use spi::service::protocol::{Context, ContextBuilder, Query};
@@ -731,6 +732,15 @@ async fn construct_query(
         .with_tenant(tenant)
         .with_database(param.db)
         .with_target_partitions(param.target_partitions)
+        .with_stream_trigger_interval(
+            param
+                .stream_trigger_interval
+                .map(|ref e| {
+                    e.parse::<StreamTriggerInterval>()
+                        .map_err(|reason| HttpError::InvalidHeader { reason })
+                })
+                .transpose()?,
+        )
         .build();
 
     Ok(Query::new(

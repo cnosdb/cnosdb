@@ -185,6 +185,7 @@ impl QueryExecution for MicroBatchStreamExecution {
             self.query_state_machine.state().clone(),
             self.query_state_machine.duration(),
         )
+        .with_processed_count(self.trigger_executor.processed_count())
         .with_error_count(self.trigger_executor.error_count())
         .build()
     }

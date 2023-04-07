@@ -18,6 +18,7 @@ lazy_static! {
         Field::new("tenant_name", DataType::Utf8, false),
         Field::new("state", DataType::Utf8, false),
         Field::new("duration", DataType::Float64, false),
+        Field::new("processed_count", DataType::UInt64, false),
         Field::new("error_count", DataType::UInt64, false),
     ]));
 }
@@ -33,6 +34,7 @@ pub struct InformationSchemaQueriesBuilder {
     tenant_names: StringBuilder,
     states: StringBuilder,
     durations: Float64Builder,
+    processed_counts: UInt64Builder,
     error_counts: UInt64Builder,
 }
 
@@ -48,6 +50,7 @@ impl Default for InformationSchemaQueriesBuilder {
             tenant_names: StringBuilder::new(),
             states: StringBuilder::new(),
             durations: Float64Builder::new(),
+            processed_counts: UInt64Builder::new(),
             error_counts: UInt64Builder::new(),
         }
     }
@@ -66,6 +69,7 @@ impl InformationSchemaQueriesBuilder {
         tenant_name: impl AsRef<str>,
         state: impl AsRef<str>,
         duration: f64,
+        processed_count: u64,
         error_count: u64,
     ) {
         // Note: append_value is actually infallable.
@@ -78,6 +82,7 @@ impl InformationSchemaQueriesBuilder {
         self.tenant_names.append_value(tenant_name.as_ref());
         self.states.append_value(state.as_ref());
         self.durations.append_value(duration);
+        self.processed_counts.append_value(processed_count);
         self.error_counts.append_value(error_count);
     }
 }
@@ -96,6 +101,7 @@ impl TryFrom<InformationSchemaQueriesBuilder> for MemTable {
             mut tenant_names,
             mut states,
             mut durations,
+            mut processed_counts,
             mut error_counts,
         } = value;
 
@@ -111,6 +117,7 @@ impl TryFrom<InformationSchemaQueriesBuilder> for MemTable {
                 Arc::new(tenant_names.finish()),
                 Arc::new(states.finish()),
                 Arc::new(durations.finish()),
+                Arc::new(processed_counts.finish()),
                 Arc::new(error_counts.finish()),
             ],
         )?;
