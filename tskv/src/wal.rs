@@ -26,6 +26,7 @@ use std::string::String;
 use std::sync::Arc;
 
 use models::codec::Encoding;
+use models::schema::Precision;
 use protos::kv_service::{Meta, WritePointsRequest};
 use protos::models_helper::print_points;
 use snafu::ResultExt;
@@ -46,8 +47,8 @@ const ENTRY_TYPE_LEN: usize = 1;
 const ENTRY_SEQUENCE_LEN: usize = 8;
 const ENTRY_VNODE_LEN: usize = 4;
 const ENTRY_TENANT_LEN: usize = 8;
-const ENTRY_HEADER_LEN: usize = 21;
-// 1 + 8 + 4 + 8
+// 1 + 8 + 4 + 1 + 8
+const ENTRY_HEADER_LEN: usize = 22;
 const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'w', b'a', b'l', b'o']);
 const FOOTER_MAGIC_NUMBER_LEN: usize = 4;
 
@@ -58,6 +59,7 @@ const BLOCK_HEADER_SIZE: usize = 25;
 pub enum WalTask {
     Write {
         id: TseriesFamilyId,
+        precision: Precision,
         points: Arc<Vec<u8>>,
         tenant: Arc<Vec<u8>>,
         // (seq_no, written_size)
@@ -103,13 +105,17 @@ impl WalEntryBlock {
         decode_be_u32(&self.buf[9..13])
     }
 
+    pub fn precision(&self) -> Precision {
+        Precision::from(self.buf[13])
+    }
+
     pub fn tenant(&self) -> &[u8] {
-        let tenant_len = decode_be_u64(&self.buf[13..21]) as usize;
+        let tenant_len = decode_be_u64(&self.buf[14..22]) as usize;
         &self.buf[ENTRY_HEADER_LEN..(ENTRY_HEADER_LEN + tenant_len)]
     }
 
     pub fn data(&self) -> &[u8] {
-        let tenant_len = decode_be_u64(&self.buf[13..21]) as usize;
+        let tenant_len = decode_be_u64(&self.buf[14..22]) as usize;
         &self.buf[(ENTRY_HEADER_LEN + tenant_len)..]
     }
 }
@@ -190,6 +196,7 @@ impl WalWriter {
         data: Arc<Vec<u8>>,
         id: TseriesFamilyId,
         tenant: Arc<Vec<u8>>,
+        precision: Precision,
     ) -> Result<(u64, usize)> {
         let seq = self.max_sequence;
         let tenant_len = tenant.len() as u64;
@@ -203,6 +210,7 @@ impl WalWriter {
                     &[typ as u8][..],
                     &seq.to_be_bytes(),
                     &id.to_be_bytes(),
+                    &(precision as u8).to_be_bytes(),
                     &tenant_len.to_be_bytes(),
                     &tenant,
                     &data,
@@ -396,9 +404,13 @@ impl WalManager {
         data: Arc<Vec<u8>>,
         id: TseriesFamilyId,
         tenant: Arc<Vec<u8>>,
+        precision: Precision,
     ) -> Result<(u64, usize)> {
         self.roll_wal_file(self.config.max_file_size).await?;
-        let (seq, size) = self.current_file.write(typ, data, id, tenant).await?;
+        let (seq, size) = self
+            .current_file
+            .write(typ, data, id, tenant, precision)
+            .await?;
         self.total_file_size += size as u64;
         Ok((seq, size))
     }
@@ -464,6 +476,7 @@ impl WalManager {
                             }
                             let tenant =
                                 unsafe { String::from_utf8_unchecked(e.tenant().to_vec()) };
+                            let precision = e.precision();
                             let req = WritePointsRequest {
                                 version: 1,
                                 meta: Some(Meta {
@@ -473,7 +486,10 @@ impl WalManager {
                                 }),
                                 points: dst[0].to_vec(),
                             };
-                            engine.write_from_wal(vnode_id, req, seq).await.unwrap();
+                            engine
+                                .write_from_wal(vnode_id, precision, req, seq)
+                                .await
+                                .unwrap();
                         }
                         WalEntryType::Delete => {
                             // TODO delete a memcache entry
@@ -645,7 +661,7 @@ mod test {
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::codec::Encoding;
-    use models::schema::TenantOptions;
+    use models::schema::{Precision, TenantOptions};
     use models::Timestamp;
     use protos::models::FieldType;
     use protos::{models as fb_models, models_helper, FbSchema};
@@ -786,7 +802,13 @@ mod test {
             data_vec.push(data.clone());
 
             let (seq, _) = mgr
-                .write(WalEntryType::Write, data, 0, Arc::new(b"cnosdb".to_vec()))
+                .write(
+                    WalEntryType::Write,
+                    data,
+                    0,
+                    Arc::new(b"cnosdb".to_vec()),
+                    Precision::NS,
+                )
                 .await
                 .unwrap();
             assert_eq!(i, seq)
@@ -827,12 +849,18 @@ mod test {
             }
 
             let (write_seq, _) = mgr
-                .write(WalEntryType::Write, data.clone(), 0, tenant.clone())
+                .write(
+                    WalEntryType::Write,
+                    data.clone(),
+                    0,
+                    tenant.clone(),
+                    Precision::NS,
+                )
                 .await
                 .unwrap();
             assert_eq!(seq, write_seq)
         }
-        assert_eq!(mgr.total_file_size(), 359);
+        assert_eq!(mgr.total_file_size(), 364);
         assert!(mgr.is_total_file_size_exceed());
         mgr.close().await.unwrap();
 
@@ -868,6 +896,7 @@ mod test {
                 Arc::new(enc_points),
                 0,
                 Arc::new("cnosdb".as_bytes().to_vec()),
+                Precision::NS,
             )
             .await
             .unwrap();
@@ -919,6 +948,7 @@ mod test {
                     Arc::new(enc_points),
                     10,
                     Arc::new("cnosdb".as_bytes().to_vec()),
+                    Precision::NS,
                 )
                 .await
                 .expect("write succeed");

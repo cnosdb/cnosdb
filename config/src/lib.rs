@@ -115,7 +115,7 @@ pub fn get_config_for_test() -> Config {
         .parent()
         .unwrap()
         .join("config")
-        .join("config_31001.toml");
+        .join("config_8902.toml");
     get_config(path).unwrap()
 }
 
@@ -273,7 +273,7 @@ path = 'data/log'
 [cluster]
 node_id = 100
 name = 'cluster_xxx'
-meta_service_addr = '127.0.0.1:21001'
+meta_service_addr = '127.0.0.1:8901'
 tenant = ''
 
 flight_rpc_listen_addr = '127.0.0.1:31006'

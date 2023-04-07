@@ -13,28 +13,28 @@ bench-job:
     # - pkill -9 cnosdb-meta
     - sleep 10
     - echo "modify default config"
-    - sed -i "s/3100/3300/g" config/config_31001.toml
-    - sed -i "s/2100/2200/g" config/config_31001.toml
-    - sed -i "s/tmp/data1/g" config/config_31001.toml
-    - sed -i "s/3200/3400/g" config/config_32001.toml
-    - sed -i "s/2100/2200/g" config/config_32001.toml
-    - sed -i "s/tmp/data1/g" config/config_32001.toml
-    - sed -i "s/tmp/data1/g" meta/config/config_21003.toml
-    - sed -i "s/tmp/data1/g" meta/config/config_21001.toml
-    - sed -i "s/tmp/data1/g" meta/config/config_21002.toml
-    - sed -i "s/2100/2200/g" meta/config/config_21003.toml
-    - sed -i "s/2100/2200/g" meta/config/config_21001.toml
-    - sed -i "s/2100/2200/g" meta/config/config_21002.toml
-    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_21001.toml
-    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_21002.toml
-    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_21003.toml
+    - sed -i "s/3100/3300/g" config/config_8902.toml
+    - sed -i "s/2100/2200/g" config/config_8902.toml
+    - sed -i "s/tmp/data1/g" config/config_8902.toml
+    - sed -i "s/3200/3400/g" config/config_8912.toml
+    - sed -i "s/2100/2200/g" config/config_8912.toml
+    - sed -i "s/tmp/data1/g" config/config_8912.toml
+    - sed -i "s/tmp/data1/g" meta/config/config_8921.toml
+    - sed -i "s/tmp/data1/g" meta/config/config_8901.toml
+    - sed -i "s/tmp/data1/g" meta/config/config_8911.toml
+    - sed -i "s/2100/2200/g" meta/config/config_8921.toml
+    - sed -i "s/2100/2200/g" meta/config/config_8901.toml
+    - sed -i "s/2100/2200/g" meta/config/config_8911.toml
+    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_8901.toml
+    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_8911.toml
+    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_8921.toml
     - sed -i "s/tmp/data1/g" run_cluster.sh
     - sed -i "s/1000000000/10/g" run_cluster.sh
     - sed -i "s/tmp/data1/g" meta/cluster.sh
     - sed -i "s/ 2100/ 2200/g" meta/cluster.sh
     - sed -i "s/:2100/:2200/g" meta/cluster.sh
-    - sed -i "s/127.0.0.1/172.17.0.1/g" config/config_31001.toml
-    - sed -i "s/127.0.0.1/172.17.0.1/g" config/config_32001.toml
+    - sed -i "s/127.0.0.1/172.17.0.1/g" config/config_8902.toml
+    - sed -i "s/127.0.0.1/172.17.0.1/g" config/config_8912.toml
     - sed -i "s/127.0.0.1/172.17.0.1/g" meta/cluster.sh
     - sed -i "s/127.0.0.1/172.17.0.1/g" run_cluster.sh
     - sed -i "s/debug/release/g" meta/cluster.sh

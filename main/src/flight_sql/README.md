@@ -48,7 +48,7 @@
     properties.put("useEncryption", false);
 
     try (Connection connection = DriverManager.getConnection(
-            "jdbc:arrow-flight-sql://localhost:31004", properties);
+            "jdbc:arrow-flight-sql://localhost:8901", properties);
             Statement stmt = connection.createStatement()) {
         stmt.execute("CREATE TABLE IF NOT EXISTS air\n" +
             "(\n" +
@@ -76,7 +76,7 @@
 ```java
     BufferAllocator allocator = new RootAllocator(Integer.MAX_VALUE);
     // specify the address of the server according to the specific situation
-    final Location clientLocation = Location.forGrpcInsecure("localhost", 31004);
+    final Location clientLocation = Location.forGrpcInsecure("localhost", 8901);
     FlightClient client = FlightClient.builder(allocator, clientLocation).build();
     // basic authenticate， is authenticateBasicToken instead of authenticateBasic
     Optional<CredentialCallOption> credentialCallOption = client.authenticateBasicToken("root", "password");
@@ -120,7 +120,7 @@
 
 ```go
     var dialOpts = []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	cl, err := flightsql.NewClient("localhost:31004", nil, nil, dialOpts...)
+	cl, err := flightsql.NewClient("localhost:8904", nil, nil, dialOpts...)
     if err != nil {
         return err
     }
@@ -161,7 +161,7 @@
 - example
 
 ```cpp
-  ARROW_ASSIGN_OR_RAISE(auto location, Location::ForGrpcTcp("localhost", 31004));
+  ARROW_ASSIGN_OR_RAISE(auto location, Location::ForGrpcTcp("localhost", 8904));
   ARROW_ASSIGN_OR_RAISE(auto client, FlightClient::Connect(location));
 
   FlightCallOptions call_options;
@@ -233,7 +233,7 @@
     import pyarrow as pa
     import pyarrow.flight
 
-    client = pa.flight.connect("grpc://localhost:31004")
+    client = pa.flight.connect("grpc://localhost:8904")
 
     # 1. Perform basic authentication and get the authenticated context
     token_pair = client.authenticate_basic_token(b'root', b'password')
@@ -266,7 +266,7 @@ arrow-flight = { version = "26.0.0", features = ["flight-sql-experimental"]}
 - example
 
 ```rust
-    let endpoint = Endpoint::from_static("http://localhost:31004");
+    let endpoint = Endpoint::from_static("http://localhost:8904");
     let mut client = FlightServiceClient::connect(endpoint)
         .await
         .expect("connect");

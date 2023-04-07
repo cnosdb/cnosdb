@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use config::HintedOffConfig;
+use models::schema::Precision;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::oneshot::Sender;
@@ -19,7 +20,7 @@ use crate::writer::PointWriter;
 
 const SEGMENT_FILE_SUFFIX: &str = "hh";
 const SEGMENT_FILE_MAX_SIZE: u64 = 1073741824; // 1 GiB
-const HINTEDOFF_BLOCK_HEADER_SIZE: usize = 20; // 8 + 4 + 4 + 4
+const HINTEDOFF_BLOCK_HEADER_SIZE: usize = 21; // 8 + 4 + 4 + 4
 
 #[derive(Debug)]
 pub struct HintedOffWriteReq {
@@ -34,16 +35,24 @@ pub struct HintedOffBlock {
     pub vnode_id: u32,
     pub tenant_len: u32,
     pub data_len: u32,
+    pub precision: Precision,
 
     pub tenant: String,
     pub data: Vec<u8>,
 }
 
 impl HintedOffBlock {
-    pub fn new(ts: i64, vnode_id: u32, tenant: String, data: Vec<u8>) -> Self {
+    pub fn new(
+        ts: i64,
+        vnode_id: u32,
+        tenant: String,
+        precision: Precision,
+        data: Vec<u8>,
+    ) -> Self {
         Self {
             ts,
             vnode_id,
+            precision,
             tenant_len: tenant.len() as u32,
             tenant,
             data_len: data.len() as u32,
@@ -67,6 +76,7 @@ impl DataBlock for HintedOffBlock {
         let mut written_size = 0;
         written_size += file.write(&self.ts.to_be_bytes()).await?;
         written_size += file.write(&self.vnode_id.to_be_bytes()).await?;
+        written_size += file.write(&[self.precision as u8]).await?;
         written_size += file.write(&self.tenant_len.to_be_bytes()).await?;
         written_size += file.write(&self.data_len.to_be_bytes()).await?;
 
@@ -83,8 +93,9 @@ impl DataBlock for HintedOffBlock {
 
         self.ts = byte_utils::decode_be_i64(header_buf[0..8].into());
         self.vnode_id = byte_utils::decode_be_u32(header_buf[8..12].into());
-        self.tenant_len = byte_utils::decode_be_u32(header_buf[12..16].into());
-        self.data_len = byte_utils::decode_be_u32(header_buf[16..20].into());
+        self.precision = header_buf[12].into();
+        self.tenant_len = byte_utils::decode_be_u32(header_buf[13..17].into());
+        self.data_len = byte_utils::decode_be_u32(header_buf[17..21].into());
 
         let mut buf = Vec::new();
         buf.resize((self.data_len + self.tenant_len) as usize, 0);
@@ -177,7 +188,7 @@ impl HintedOffManager {
     async fn hinted_off_service(node_id: u64, writer: Arc<PointWriter>, queue: Arc<RwLock<Queue>>) {
         debug!("hinted_off_service started for node: {}", node_id);
 
-        let mut block = HintedOffBlock::new(0, 0, "".to_string(), vec![]);
+        let mut block = HintedOffBlock::new(0, 0, "".to_string(), Precision::NS, vec![]);
         loop {
             let read_result = queue.write().await.read(&mut block).await;
             match read_result {
@@ -197,7 +208,13 @@ impl HintedOffManager {
     async fn write_until_success(writer: Arc<PointWriter>, block: &HintedOffBlock, node_id: u64) {
         loop {
             if writer
-                .write_to_remote_node(block.vnode_id, node_id, &block.tenant, block.data.clone())
+                .write_to_remote_node(
+                    block.vnode_id,
+                    node_id,
+                    &block.tenant,
+                    block.precision,
+                    block.data.clone(),
+                )
                 .await
                 .is_ok()
             {
@@ -252,6 +269,7 @@ mod test {
                 1000 + i,
                 123,
                 "cnosdb".to_string(),
+                Precision::NS,
                 data.as_bytes().to_vec(),
             );
             queue.write().await.write(&block).await.unwrap();
@@ -265,7 +283,7 @@ mod test {
 
     async fn read_hinted_off_file(queue: Arc<RwLock<Queue>>) {
         debug!("read file started.");
-        let mut block = HintedOffBlock::new(0, 0, "".to_string(), vec![]);
+        let mut block = HintedOffBlock::new(0, 0, "".to_string(), Precision::NS, vec![]);
         loop {
             match queue.write().await.read(&mut block).await {
                 Ok(_) => {

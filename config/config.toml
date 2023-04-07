@@ -91,11 +91,12 @@ path = 'data/log'
 [cluster]
 node_id = 100
 name = 'cluster_xxx'
-meta_service_addr = '127.0.0.1:21001'
+meta_service_addr = '127.0.0.1:8901'
 
-http_listen_addr = '127.0.0.1:31007'
-grpc_listen_addr = '127.0.0.1:31008'
-flight_rpc_listen_addr = '127.0.0.1:31006'
+http_listen_addr = '127.0.0.1:8902'
+grpc_listen_addr = '127.0.0.1:8903'
+flight_rpc_listen_addr = '127.0.0.1:8904'
+tcp_listen_addr = '127.0.0.1:8905'
 
 # Whether to store metrics to the CnosDB
 store_metrics = true

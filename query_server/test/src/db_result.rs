@@ -9,6 +9,8 @@ pub struct DBResult {
     pub is_sorted: bool,
     pub is_ok: bool,
     pub is_line_protocol: bool,
+    pub is_open_tsdb: bool,
+    pub is_open_tsdb_json: bool,
 }
 
 impl DBResult {
@@ -18,11 +20,15 @@ impl DBResult {
         let mut parsing = false;
         let mut parsing_header = true;
         let mut parsing_line_protocol = false;
+        let mut parsing_opentsdb_protocol = false;
+        let mut parsing_opentsdb_json = false;
         let mut req_buf = String::with_capacity(256);
         let mut resp_buf = String::with_capacity(256);
         let mut is_ok = true;
         let mut is_sorted = false;
         let mut is_line_protocol = false;
+        let mut is_open_tsdb = false;
+        let mut is_open_tsdb_json = false;
 
         for line in lines.lines() {
             if line.trim().is_empty() && parsing {
@@ -33,16 +39,21 @@ impl DBResult {
                     is_ok,
                     is_sorted,
                     is_line_protocol,
+                    is_open_tsdb,
+                    is_open_tsdb_json,
                 });
 
                 parsing = false;
                 parsing_header = true;
                 parsing_line_protocol = false;
+                parsing_opentsdb_protocol = false;
+                parsing_opentsdb_json = false;
                 req_buf.clear();
                 resp_buf.clear();
                 is_ok = true;
                 is_sorted = false;
                 is_line_protocol = false;
+                is_open_tsdb = false;
             } else if parsing_header {
                 if line.starts_with("-- EXECUTE SQL:") {
                     parsing = true;
@@ -58,11 +69,43 @@ impl DBResult {
                     parsing = true;
                     parsing_header = false;
                     parsing_line_protocol = true;
+                    parsing_opentsdb_protocol = false;
                     is_line_protocol = true;
+                    is_open_tsdb = false;
+                } else if line.starts_with("-- WRITE OPEN TSDB PROTOCOL ") {
+                    parsing = true;
+                    parsing_header = false;
+                    parsing_line_protocol = false;
+                    parsing_opentsdb_protocol = true;
+                    is_line_protocol = false;
+                    is_open_tsdb = true;
+                } else if line.starts_with("-- WRITE OPEN TSDB JSON") {
+                    parsing = true;
+                    parsing_header = false;
+                    parsing_line_protocol = false;
+                    parsing_opentsdb_protocol = false;
+                    parsing_opentsdb_json = true;
+                    is_line_protocol = false;
+                    is_open_tsdb = false;
+                    is_open_tsdb_json = true;
                 }
             } else if parsing_line_protocol {
                 if line.starts_with("-- LINE PROTOCOL END") {
                     parsing_line_protocol = false;
+                } else {
+                    req_buf.push_str(line);
+                    req_buf.push('\n');
+                }
+            } else if parsing_opentsdb_protocol {
+                if line.starts_with("-- OPEN TSDB PROTOCOL END") {
+                    parsing_opentsdb_protocol = false;
+                } else {
+                    req_buf.push_str(line);
+                    req_buf.push('\n');
+                }
+            } else if parsing_opentsdb_json {
+                if line.starts_with("-- OPEN TSDB JSON END") {
+                    parsing_opentsdb_json = false;
                 } else {
                     req_buf.push_str(line);
                     req_buf.push('\n');
@@ -84,6 +127,8 @@ impl DBResult {
                 is_ok,
                 is_sorted,
                 is_line_protocol,
+                is_open_tsdb,
+                is_open_tsdb_json,
             });
         }
 
@@ -97,6 +142,14 @@ impl Display for DBResult {
             writeln!(f, "-- WRITE LINE PROTOCOL --")?;
             writeln!(f, "{}", self.request)?;
             writeln!(f, "-- LINE PROTOCOL END --")?;
+        } else if self.is_open_tsdb {
+            writeln!(f, "-- WRITE OPEN TSDB PROTOCOL --")?;
+            writeln!(f, "{}", self.request)?;
+            writeln!(f, "-- OPEN TSDB PROTOCOL END --")?;
+        } else if self.is_open_tsdb_json {
+            writeln!(f, "-- WRITE OPEN TSDB JSON --")?;
+            writeln!(f, "{}", self.request)?;
+            writeln!(f, "-- OPEN TSDB JSON END --")?;
         } else {
             writeln!(f, "-- EXECUTE SQL: {} --", self.request)?;
             if self.is_sorted {

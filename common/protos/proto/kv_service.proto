@@ -56,7 +56,8 @@ message StatusResponse {
 message WriteVnodeRequest {
     uint32 vnode_id = 1;
     string tenant =2;
-    bytes data = 3;
+    uint32 precision = 3;
+    bytes data = 4;
 }
 
 message DropDBRequest {

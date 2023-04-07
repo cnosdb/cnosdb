@@ -1,5 +1,5 @@
-id = 2
-http_addr = "127.0.0.1:21002"
+id = 1
+http_addr = "127.0.0.1:8901"
 
 snapshot_path = "/tmp/cnosdb/meta/snapshot"
 journal_path = "/tmp/cnosdb/meta/journal"

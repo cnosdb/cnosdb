@@ -12,9 +12,8 @@ use paste::paste;
 use protos::models::{
     FieldBuilder, FieldType, Point, PointArgs, Points, PointsArgs, TableBuilder, TagBuilder,
 };
-use protos::{build_fb_schema_offset, init_field, init_tags, FbSchema};
+use protos::{build_fb_schema_offset, init_fields_and_nullbits, init_tags_and_nullbits, FbSchema};
 use spi::{QueryError, Result};
-use utils::bitset::BitSet;
 
 type Datum<'fbb> = WIPOffset<Vector<'fbb, u8>>;
 
@@ -80,7 +79,7 @@ macro_rules! arrow_array_to_offset_array {
 pub fn record_batch_to_points_flat_buffer(
     record_batch: &RecordBatch,
     table_schema: TskvTableSchemaRef,
-) -> Result<Vec<u8>> {
+) -> Result<(Vec<u8>, TimeUnit)> {
     let mut fbb = FlatBufferBuilder::new();
 
     let record_schema = record_batch.schema();
@@ -89,14 +88,14 @@ pub fn record_batch_to_points_flat_buffer(
     let mut columns_wip_offset_without_time_col = Vec::with_capacity(column_schemas.len());
     let mut column_schemas_without_time_col = Vec::with_capacity(column_schemas.len());
 
-    let mut time_col_array = None;
+    let mut time_col_array_with_unit = None;
 
     // Convert each column to a datum array
     for (col_idx, col_array) in record_batch.columns().iter().enumerate() {
         let col = unsafe { column_schemas.get_unchecked(col_idx) };
         // The time column requires special handling
         if is_time_column(col) {
-            time_col_array = Some(extract_time_column_from(col, col_array)?);
+            time_col_array_with_unit = Some(extract_time_column_from(col, col_array)?);
             continue;
         }
         // Get wip offset of flatbuffer through arrow::Array of non-time column
@@ -107,9 +106,10 @@ pub fn record_batch_to_points_flat_buffer(
         columns_wip_offset_without_time_col.push(wip_offset_array?)
     }
     // must contain the time column
-    let time_col_array = time_col_array.ok_or_else(|| QueryError::ColumnNotFound {
-        col: "time".to_string(),
-    })?;
+    let (time_col_array, unit) =
+        time_col_array_with_unit.ok_or_else(|| QueryError::ColumnNotFound {
+            col: "time".to_string(),
+        })?;
 
     trace::trace!(
         "time: {:?}, record num: {}, col num: {}",
@@ -118,14 +118,15 @@ pub fn record_batch_to_points_flat_buffer(
         record_batch.num_columns()
     );
 
-    construct_row_based_points(
+    let points = construct_row_based_points(
         &mut fbb,
         columns_wip_offset_without_time_col,
         &column_schemas_without_time_col,
         time_col_array,
         record_batch.num_rows(),
         table_schema,
-    )
+    )?;
+    Ok((points, unit))
 }
 
 /// Construct row-based points flatbuffer from column-based data wip_offset
@@ -145,15 +146,8 @@ fn construct_row_based_points(
         let time = unsafe { time_col_array.get_unchecked(row_idx) };
 
         // Extract tags and fields
-        let mut tags = Vec::with_capacity(fb_schema.tag_len());
-        init_tags(fbb, &mut tags, fb_schema.tag_len());
-
-        let mut tags_nullbit = BitSet::with_size(fb_schema.tag_len());
-
-        let mut fields = Vec::with_capacity(fb_schema.field_len());
-        init_field(fbb, &mut fields, fb_schema.field().len());
-
-        let mut fields_nullbits = BitSet::with_size(fb_schema.field().len());
+        let (mut tags, mut tags_nullbit) = init_tags_and_nullbits(fbb, &fb_schema);
+        let (mut fields, mut fields_nullbits) = init_fields_and_nullbits(fbb, &fb_schema);
 
         for (col_idx, df_field) in column_schemas.iter().enumerate() {
             let name = df_field.name().as_ref();
@@ -248,7 +242,7 @@ fn build_fb_schema(tskv_schema: &TskvTableSchemaRef) -> FbSchema<'_> {
                 schema.add_tag(&column.name);
             }
             ColumnType::Time(_) => continue,
-            ColumnType::Field(field_type) => schema.add_filed(
+            ColumnType::Field(field_type) => schema.add_field(
                 &column.name,
                 convert_value_type_to_fb_field_type(field_type),
             ),
@@ -286,7 +280,7 @@ macro_rules! define_extract_time_column_from_func {
             /// Throws an exception `PointUtilError::NotNullConstraint` if it contains a null value
             ///
             /// Throws an exception `PointUtilError::InvalidArrayType` if types do not match
-            fn extract_time_column_from(col: &Field, array: &ArrayRef) -> Result<Vec<Option<i64>>> {
+            fn extract_time_column_from(col: &Field, array: &ArrayRef) -> Result<(Vec<Option<i64>>, TimeUnit)> {
                 // time column cannot contain null values
                 if array.null_count() > 0 {
                     return Err(QueryError::PointErrorNotNullConstraint {
@@ -297,10 +291,10 @@ macro_rules! define_extract_time_column_from_func {
                 match array.data_type() {
                     ArrowDataType::Timestamp(unit, _) => match unit {
                         $(
-                            TimeUnit::$Kind => Ok(cast_arrow_array::<[<Timestamp $Kind Array>]>(array)?.iter().collect()),
+                            TimeUnit::$Kind => Ok((cast_arrow_array::<[<Timestamp $Kind Array>]>(array)?.iter().collect(), unit.clone())),
                         )*
                     },
-                    ArrowDataType::Int64 => Ok(cast_arrow_array::<Int64Array>(array)?.iter().collect()),
+                    ArrowDataType::Int64 => Ok((cast_arrow_array::<Int64Array>(array)?.iter().collect(), TimeUnit::Nanosecond)),
                     other => Err(QueryError::InvalidArrayType {
                         expected: "ArrowDataType for Timestamp".to_string(),
                         found: other.to_string(),

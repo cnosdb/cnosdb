@@ -6,7 +6,7 @@ mod test {
     use http_protocol::status_code;
 
     fn client() -> HttpClient {
-        HttpClient::from_addr("127.0.0.1".to_string(), 31001)
+        HttpClient::from_addr("127.0.0.1".to_string(), 8902)
     }
 
     #[tokio::test]

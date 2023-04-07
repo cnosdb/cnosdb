@@ -17,7 +17,7 @@ auth_enabled = false
 # Directory for index: $path/index/$database/
 # Directory for tsm: $path/data/$database/tsm/
 # Directory for delta: $path/data/$database/delta/
-path = '/tmp/cnosdb/1001/db'
+path = '/tmp/cnosdb/2001/db'
 max_summary_size = "128M" # 134217728
 base_file_size = "16M" # 16777216
 flush_req_channel_cap = 16
@@ -29,7 +29,7 @@ strict_write = false
 
 [wal]
 enabled = true
-path = '/tmp/cnosdb/1001/wal'
+path = '/tmp/cnosdb/2001/wal'
 wal_req_channel_cap = 64
 max_file_size = "1G" # 1073741824
 flush_trigger_total_file_size = "2G" # 2147483648
@@ -42,8 +42,7 @@ max_immutable_number = 4
 
 [log]
 level = 'info'
-path = '/tmp/cnosdb/1001/log'
-#tokio_trace = { addr = "127.0.0.1:6669"}
+path = '/tmp/cnosdb/2001/log'
 
 [security]
 # [security.tls_config]
@@ -51,17 +50,17 @@ path = '/tmp/cnosdb/1001/log'
 # private_key = "./config/tls/server.key"
 
 [cluster]
-node_id = 1001
+node_id = 2001
 name = 'cluster_xxx'
-meta_service_addr = '127.0.0.1:21001'
+meta_service_addr = '127.0.0.1:8901'
 
-http_listen_addr = '127.0.0.1:31001'
-grpc_listen_addr = '127.0.0.1:31002'
-flight_rpc_listen_addr = '127.0.0.1:31004'
+http_listen_addr = '127.0.0.1:8912'
+grpc_listen_addr = '127.0.0.1:8913'
+flight_rpc_listen_addr = '127.0.0.1:8914'
+tcp_listen_addr = '127.0.0.1:8915'
 store_metrics = true
-cold_data_server = false
 
 [hinted_off]
 enable = true
-path = '/tmp/cnosdb/1001/hh'
+path = '/tmp/cnosdb/2001/hh'
 

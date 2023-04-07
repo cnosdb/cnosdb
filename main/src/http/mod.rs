@@ -39,7 +39,7 @@ pub enum Error {
     #[snafu(display("Error parsing message: {}", source))]
     #[error_code(code = 4)]
     ParseLineProtocol {
-        source: line_protocol::Error,
+        source: protocol_parser::Error,
     },
 
     #[snafu(display("Invalid header: {}", reason))]
@@ -70,6 +70,18 @@ pub enum Error {
     #[error_code(code = 9)]
     PProfError {
         reason: String,
+    },
+
+    #[snafu(display("Error parsing message: {}", source))]
+    #[error_code(code = 10)]
+    ParseOpentsdbProtocol {
+        source: protocol_parser::Error,
+    },
+
+    #[snafu(display("Error parsing message: {}", source))]
+    #[error_code(code = 11)]
+    ParseOpentsdbJsonProtocol {
+        source: serde_json::Error,
     },
 }
 
