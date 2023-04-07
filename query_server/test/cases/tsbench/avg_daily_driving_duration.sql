@@ -69,7 +69,7 @@ FROM
     "driver"
 )
 GROUP BY 
-time_window(time, '1d'), 
+time_window(time.start, '1d'), 
 "fleet", 
 "name", 
 "driver"
@@ -152,7 +152,7 @@ FROM
     "driver"
 )
 GROUP BY 
-time_window(time, '1d'), 
+time_window(time.start, '1d'), 
 "fleet", 
 "name", 
 "driver"

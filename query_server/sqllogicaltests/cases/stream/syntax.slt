@@ -38,7 +38,7 @@ CREATE STREAM TABLE TskvTable (
 ) engine = tskv;
 
 # missing option 'db'
-statement error .*Missing option db of table tskvtabl.*
+statement error .*Missing option \[db\] of table tskvtabl.*
 CREATE STREAM TABLE TskvTable (
   time TIMESTAMP,
   name STRING,
@@ -50,7 +50,7 @@ CREATE STREAM TABLE TskvTable (
 ) engine = tskv;
 
 # missing option 'table'
-statement error .*Missing option table of table tskvtabl.*
+statement error .*Missing option \[table\] of table tskvtabl.*
 CREATE STREAM TABLE TskvTable (
   time TIMESTAMP,
   name STRING,
@@ -62,7 +62,7 @@ CREATE STREAM TABLE TskvTable (
 ) engine = tskv;
 
 # missing option 'event_time_column'
-statement error .*Missing option event_time_column of table tskvtabl.*
+statement error .*Missing option \[event_time_column\] of table tskvtabl.*
 CREATE STREAM TABLE TskvTable (
   time TIMESTAMP,
   name STRING,

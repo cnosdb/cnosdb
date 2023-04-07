@@ -446,7 +446,7 @@ pub enum QueryError {
         name: String,
     },
 
-    #[snafu(display("Missing option {} of table {}", option_name, table_name))]
+    #[snafu(display("Missing option [{}] of table {}", option_name, table_name))]
     #[error_code(code = 66)]
     MissingTableOptions {
         option_name: String,
