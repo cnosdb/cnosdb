@@ -24,6 +24,8 @@ use spi::Result;
 use trace::error;
 
 use self::trigger::executor::TriggerExecutorRef;
+use crate::extension::analyse::stream_checker::UnsupportedOperationChecker;
+use crate::extension::analyse::AnalyzerRule;
 use crate::extension::physical::optimizer_rule::add_state_store::AddStateStore;
 use crate::extension::physical::transform_rule::stream_scan::StreamScanPlanner;
 use crate::extension::physical::transform_rule::watermark::WatermarkPlanner;
@@ -71,6 +73,9 @@ impl MicroBatchStreamExecution {
 
 impl MicroBatchStreamExecution {
     fn run_stream(&self) -> Result<Job<()>> {
+        // valid plan
+        let _ = UnsupportedOperationChecker::default().analyze(&self.plan.df_plan)?;
+
         self.query_state_machine.begin_schedule();
 
         let query_state_machine = self.query_state_machine.clone();

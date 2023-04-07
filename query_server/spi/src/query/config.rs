@@ -31,7 +31,7 @@ impl FromStr for StreamTriggerInterval {
     ///
     /// ```
     /// use std::str::FromStr;
-    /// use query_server::spi::query::config::StreamTriggerInterval;
+    /// use spi::query::config::StreamTriggerInterval;
     ///
     /// let interval = StreamTriggerInterval::from_str("once").unwrap();
     /// assert_eq!(interval, StreamTriggerInterval::Once);
@@ -58,7 +58,7 @@ impl FromStr for StreamTriggerInterval {
     ///
     /// ```
     /// use std::str::FromStr;
-    /// use query_server::spi::query::config::StreamTriggerInterval;
+    /// use spi::query::config::StreamTriggerInterval;
     ///
     /// let interval = StreamTriggerInterval::from_str("1.5");
     /// assert!(interval.is_err());

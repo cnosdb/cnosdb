@@ -16,3 +16,4 @@ tonic = { workspace = true, features = ["transport", "tls"] }
 prost = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 snafu = { workspace = true }
+async-backtrace ={ workspace = true }
