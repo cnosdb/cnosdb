@@ -20,11 +20,11 @@ impl DeploymentConfig {
     }
 
     pub fn default_cpu() -> usize {
-        4
+        get_sys_cpu()
     }
 
     pub fn default_memory() -> usize {
-        16
+        get_sys_mem()
     }
 }
 
@@ -76,4 +76,22 @@ impl CheckConfig for DeploymentConfig {
             Some(ret)
         }
     }
+}
+
+fn get_sys_cpu() -> usize {
+    let mut num_cpus: usize = 4;
+    if let Ok(cpu_info) = sys_info::cpu_num() {
+        num_cpus = cpu_info as usize;
+    }
+
+    num_cpus
+}
+
+fn get_sys_mem() -> usize {
+    let mut mem: usize = 16 * 1024 * 1024;
+    if let Ok(mem_info) = sys_info::mem_info() {
+        mem = mem_info.total as usize;
+    }
+
+    mem / 1024 / 1024
 }
