@@ -3584,6 +3584,7 @@ name = "models"
 version = "2.2.0"
 dependencies = [
  "arrow-schema",
+ "async-backtrace",
  "async-trait",
  "bincode",
  "chrono",
