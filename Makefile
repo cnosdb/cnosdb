@@ -24,7 +24,9 @@ build_release:
 
 build_trace:
 	cargo clean;
-	git stash; export BACKTRACE=on; cargo build --workspace --bins --features backtrace; git reset --hard; git stash pop || true
+	git stash;
+	export BACKTRACE=on; cargo build --workspace --bins --features backtrace;
+	git reset --hard; git stash pop || true
 test:
 	cargo test --workspace --exclude e2e_test
 
