@@ -2,6 +2,10 @@
 set -e
 # Modefied default config
 sed -i "s/1000000000/10/g" ./run_cluster.sh
+sed -i "s/build/& --release/g" ./run_cluster.sh
+sed -i "s/build/& --release/g" ./meta/cluster.sh
+sed -i "s/debug/release/g" ./run_cluster.sh
+sed -i "s/debug/release/g" ./meta/cluster.sh
 
 # Start CnosDB cluster
 bash ./run_cluster.sh
