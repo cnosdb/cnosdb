@@ -46,6 +46,8 @@ bytes = { workspace = true }
 snap = { workspace = true }
 regex = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
+bincode = { workspace = true }
+dirs = { workspace = true }
 
 [features]
 default = []

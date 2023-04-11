@@ -3,24 +3,29 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
+use spi::query::dispatcher::QueryInfo;
 use spi::query::execution::{QueryExecution, QueryType};
 use spi::service::protocol::QueryId;
-use spi::QueryError;
+use spi::{QueryError, Result};
 use tokio::sync::{Semaphore, SemaphorePermit, TryAcquireError};
 use trace::{debug, warn};
+
+use super::persister::QueryPersisterRef;
 
 pub struct QueryTracker {
     queries: RwLock<HashMap<QueryId, Arc<dyn QueryExecution>>>,
     query_limit_semaphore: Semaphore,
+    query_persister: QueryPersisterRef,
 }
 
 impl QueryTracker {
-    pub fn new(query_limit: usize) -> Self {
+    pub fn new(query_limit: usize, query_persister: QueryPersisterRef) -> Self {
         let query_limit_semaphore = Semaphore::new(query_limit);
 
         Self {
             queries: RwLock::new(HashMap::new()),
             query_limit_semaphore,
+            query_persister,
         }
     }
 }
@@ -31,19 +36,17 @@ impl QueryTracker {
     /// [`QueryError::RequestLimit`]
     ///
     /// [`QueryError::Closed`] after call [`Self::close`]
-    pub fn try_track_query(
+    pub async fn try_track_query(
         &self,
         query_id: QueryId,
         query: Arc<dyn QueryExecution>,
-    ) -> std::result::Result<TrackedQuery, QueryError> {
+    ) -> Result<TrackedQuery> {
         debug!(
             "total query count: {}, current query info {:?} status {:?}",
             self.queries.read().len(),
             query.info(),
             query.status(),
         );
-
-        let _ = self.queries.write().insert(query_id, query.clone());
 
         let _permit = match self.query_limit_semaphore.try_acquire() {
             Ok(p) => p,
@@ -55,6 +58,13 @@ impl QueryTracker {
                 return Err(QueryError::Closed);
             }
         };
+
+        // store the query in memory
+        let _ = self.queries.write().insert(query_id, query.clone());
+        // persist the query if necessary
+        if query.need_persist() {
+            self.query_persister.save(query_id, query.info()).await?;
+        }
 
         Ok(TrackedQuery {
             _permit,
@@ -77,6 +87,11 @@ impl QueryTracker {
         self.queries.read().values().cloned().collect()
     }
 
+    /// all persistent queries
+    pub async fn persistent_queries(&self) -> Result<Vec<QueryInfo>> {
+        self.query_persister.queries().await
+    }
+
     /// Once closed, no new requests will be accepted
     ///
     /// After closing, tracking new requests through [`QueryTracker::try_track_query`] will return [`QueryError::Closed`]
@@ -85,7 +100,14 @@ impl QueryTracker {
     }
 
     pub fn expire_query(&self, id: &QueryId) -> Option<Arc<dyn QueryExecution>> {
-        self.queries.write().remove(id)
+        self.queries.write().remove(id).map(|q| {
+            if q.need_persist() {
+                let _ = self.query_persister.remove(id).map_err(|err| {
+                    warn!("Remove query from persister failed: {:?}", err);
+                });
+            }
+            q
+        })
     }
 }
 
@@ -131,6 +153,7 @@ mod tests {
     use spi::QueryError;
 
     use super::QueryTracker;
+    use crate::dispatcher::persister::LocalQueryPersister;
 
     struct QueryExecutionMock {}
 
@@ -162,60 +185,81 @@ mod tests {
     }
 
     fn new_query_tracker(limit: usize) -> QueryTracker {
-        QueryTracker::new(limit)
+        QueryTracker::new(
+            limit,
+            Arc::new(LocalQueryPersister::try_new("/tmp/cnosdb/query").unwrap()),
+        )
     }
 
-    #[test]
-    fn test_track_and_drop() {
+    #[tokio::test]
+    async fn test_track_and_drop() {
         let query_id = QueryId::next_id();
         let query = Arc::new(QueryExecutionMock {});
         let tracker = new_query_tracker(10);
 
-        let _tq = tracker.try_track_query(query_id, query.clone()).unwrap();
+        let _tq = tracker
+            .try_track_query(query_id, query.clone())
+            .await
+            .unwrap();
         assert_eq!(tracker._running_query_count(), 1);
 
         let query_id = QueryId::next_id();
-        let _tq = tracker.try_track_query(query_id, query.clone()).unwrap();
+        let _tq = tracker
+            .try_track_query(query_id, query.clone())
+            .await
+            .unwrap();
         assert_eq!(tracker._running_query_count(), 2);
 
         {
             // 作用域结束时，结束对当前query的追踪
             let query_id = QueryId::next_id();
-            let _tq = tracker.try_track_query(query_id, query.clone()).unwrap();
+            let _tq = tracker
+                .try_track_query(query_id, query.clone())
+                .await
+                .unwrap();
             assert_eq!(tracker._running_query_count(), 3);
         }
 
         assert_eq!(tracker._running_query_count(), 2);
 
         let query_id = QueryId::next_id();
-        let _tq = tracker.try_track_query(query_id, query).unwrap();
+        let _tq = tracker.try_track_query(query_id, query).await.unwrap();
         assert_eq!(tracker._running_query_count(), 3);
     }
 
-    #[test]
-    fn test_exceed_query_limit() {
+    #[tokio::test]
+    async fn test_exceed_query_limit() {
         let query_id = QueryId::next_id();
         let query = Arc::new(QueryExecutionMock {});
         let tracker = new_query_tracker(2);
 
-        let _tq = tracker.try_track_query(query_id, query.clone()).unwrap();
+        let _tq = tracker
+            .try_track_query(query_id, query.clone())
+            .await
+            .unwrap();
         assert_eq!(tracker._running_query_count(), 1);
 
         let query_id = QueryId::next_id();
-        let _tq = tracker.try_track_query(query_id, query.clone()).unwrap();
+        let _tq = tracker
+            .try_track_query(query_id, query.clone())
+            .await
+            .unwrap();
         assert_eq!(tracker._running_query_count(), 2);
 
         let query_id = QueryId::next_id();
-        assert!(tracker.try_track_query(query_id, query).is_err())
+        assert!(tracker.try_track_query(query_id, query).await.is_err())
     }
 
-    #[test]
-    fn test_get_query_info() {
+    #[tokio::test]
+    async fn test_get_query_info() {
         let query_id = QueryId::next_id();
         let query = Arc::new(QueryExecutionMock {});
         let tracker = new_query_tracker(2);
 
-        let _tq = tracker.try_track_query(query_id, query.clone()).unwrap();
+        let _tq = tracker
+            .try_track_query(query_id, query.clone())
+            .await
+            .unwrap();
 
         let exe = tracker.query(&query_id).unwrap();
 

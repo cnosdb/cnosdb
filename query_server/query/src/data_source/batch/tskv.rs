@@ -19,9 +19,11 @@ use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use datafusion::prelude::Column;
 use meta::error::MetaError;
+use meta::model::MetaClientRef;
 use models::meta_data::DatabaseInfo;
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
+use spi::QueryError;
 use trace::debug;
 
 use crate::data_source::sink::tskv::TskvRecordBatchSinkProvider;
@@ -38,7 +40,7 @@ use crate::extension::physical::plan_node::tskv_exec::TskvExec;
 pub struct ClusterTable {
     coord: CoordinatorRef,
     split_manager: SplitManagerRef,
-    database_info: Arc<DatabaseInfo>,
+    meta: MetaClientRef,
     schema: TskvTableSchemaRef,
 }
 
@@ -49,10 +51,14 @@ impl ClusterTable {
         projection: Option<&Vec<usize>>,
         predicate: PredicateRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        let database_info = self
+            .database_info()
+            .map_err(|err| DataFusionError::External(Box::new(err)))?;
+
         let proj_schema = self.project_schema(projection)?;
 
         let table_layout = TableLayoutHandle {
-            db: self.database_info.clone(),
+            db: database_info,
             table: self.schema.clone(),
             predicate: predicate.clone(),
         };
@@ -76,6 +82,10 @@ impl ClusterTable {
         filter: Arc<Predicate>,
         agg_with_grouping: &AggWithGrouping,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        let database_info = self
+            .database_info()
+            .map_err(|err| DataFusionError::External(Box::new(err)))?;
+
         let AggWithGrouping {
             group_expr: _,
             agg_expr,
@@ -84,7 +94,7 @@ impl ClusterTable {
         let proj_schema = SchemaRef::from(schema.deref());
 
         let table_layout = TableLayoutHandle {
-            db: self.database_info.clone(),
+            db: database_info,
             table: self.schema.clone(),
             predicate: filter.clone(),
         };
@@ -183,13 +193,13 @@ impl ClusterTable {
     pub fn new(
         coord: CoordinatorRef,
         split_manager: SplitManagerRef,
-        database_info: Arc<DatabaseInfo>,
+        meta: MetaClientRef,
         schema: TskvTableSchemaRef,
     ) -> Self {
         ClusterTable {
             coord,
             split_manager,
-            database_info,
+            meta,
             schema,
         }
     }
@@ -203,6 +213,14 @@ impl ClusterTable {
         valid_project(&self.schema, projection)
             .map_err(|err| DataFusionError::External(Box::new(err)))?;
         project_schema(&self.schema.to_arrow_schema(), projection)
+    }
+
+    fn database_info(&self) -> Result<DatabaseInfo, QueryError> {
+        self.meta
+            .get_db_info(&self.schema.db)?
+            .ok_or_else(|| QueryError::DatabaseNotFound {
+                name: self.schema.db.clone(),
+            })
     }
 }
 

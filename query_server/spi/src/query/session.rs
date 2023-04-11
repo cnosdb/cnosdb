@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,6 +23,8 @@ pub struct SessionCtx {
     tenant: String,
     default_database: String,
 
+    query_dedicated_hidden_dir: PathBuf,
+
     inner: SessionContext,
 }
 
@@ -45,12 +48,24 @@ impl SessionCtx {
     pub fn user(&self) -> &User {
         &self.user
     }
+
+    pub fn dedicated_hidden_dir(&self) -> &Path {
+        self.query_dedicated_hidden_dir.as_path()
+    }
 }
 
 #[derive(Default)]
-pub struct SessionCtxFactory {}
+pub struct SessionCtxFactory {
+    query_dedicated_hidden_dir: PathBuf,
+}
 
 impl SessionCtxFactory {
+    pub fn new(query_dedicated_hidden_dir: PathBuf) -> Self {
+        Self {
+            query_dedicated_hidden_dir,
+        }
+    }
+
     pub fn create_session_ctx(
         &self,
         session_id: impl Into<String>,
@@ -71,6 +86,7 @@ impl SessionCtxFactory {
             tenant_id,
             tenant: context.tenant().to_owned(),
             default_database: context.database().to_owned(),
+            query_dedicated_hidden_dir: self.query_dedicated_hidden_dir.clone(),
             inner: df_session_ctx,
         })
     }

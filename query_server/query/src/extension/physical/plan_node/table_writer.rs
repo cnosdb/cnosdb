@@ -79,7 +79,7 @@ impl ExecutionPlan for TableWriterExec {
     }
 
     fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
+        self.input.output_ordering()
     }
 
     fn benefits_from_input_partitioning(&self) -> bool {

@@ -97,11 +97,6 @@ pub fn create_usage_schema_view_table(
     view_table_name: &str,
     default_catalog_meta_client: MetaClientRef,
 ) -> spi::Result<Arc<dyn TableProvider>> {
-    let database_info = default_catalog_meta_client
-        .get_db_info(USAGE_SCHEMA)?
-        .ok_or_else(|| MetaError::DatabaseNotFound {
-            database: USAGE_SCHEMA.into(),
-        })?;
     let table_schema = default_catalog_meta_client
         .get_tskv_table_schema(USAGE_SCHEMA, view_table_name)?
         .ok_or_else(|| MetaError::TableNotFound {
@@ -110,7 +105,7 @@ pub fn create_usage_schema_view_table(
     let cluster_table = Arc::new(ClusterTable::new(
         coord.clone(),
         split::default_split_manager_ref(),
-        Arc::new(database_info),
+        default_catalog_meta_client,
         table_schema,
     ));
     if user.desc().is_admin() && meta.tenant_name().eq(DEFAULT_CATALOG) {
