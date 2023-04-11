@@ -7,7 +7,7 @@ use datafusion::error::Result;
 use datafusion::logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder, TableScan};
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 
-use crate::data_source::table_provider::tskv::ClusterTable;
+use crate::data_source::batch::tskv::ClusterTable;
 use crate::extension::logical::plan_node::tag_scan::TagScanPlanNode;
 
 /// Convert query statement to query tag operation

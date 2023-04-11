@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::arrow::array::ArrayRef;
-use datafusion::arrow::datatypes::DataType;
+use datafusion::arrow::datatypes::{DataType, Field};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::type_coercion::aggregates::TIMESTAMPS;
 use datafusion::logical_expr::{
@@ -11,7 +11,7 @@ use datafusion::physical_expr::functions::make_scalar_function;
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
-use super::TIME_WINDOW;
+use super::{TIME_WINDOW, WINDOW_END, WINDOW_START};
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
     let udf = new();
@@ -55,9 +55,15 @@ fn new() -> ScalarUDF {
 
     let signature = Signature::one_of(type_signatures, Volatility::Immutable);
 
-    // Struct(start, end)
-    let return_type: ReturnTypeFunction =
-        Arc::new(move |input_expr_types| Ok(Arc::new(input_expr_types[0].clone())));
+    // Struct(_start, _end)
+    let return_type: ReturnTypeFunction = Arc::new(move |input_expr_types| {
+        let window = DataType::Struct(vec![
+            Field::new(WINDOW_START, input_expr_types[0].clone(), false),
+            Field::new(WINDOW_END, input_expr_types[0].clone(), false),
+        ]);
+
+        Ok(Arc::new(window))
+    });
 
     ScalarUDF::new(TIME_WINDOW, &signature, &return_type, &func)
 }

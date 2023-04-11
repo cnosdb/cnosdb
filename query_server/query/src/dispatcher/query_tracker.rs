@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use spi::query::execution::QueryExecution;
+use spi::query::execution::{QueryExecution, QueryType};
 use spi::service::protocol::QueryId;
 use spi::QueryError;
 use tokio::sync::{Semaphore, SemaphorePermit, TryAcquireError};
@@ -84,8 +84,8 @@ impl QueryTracker {
         self.query_limit_semaphore.close();
     }
 
-    fn expire_query(&self, id: &QueryId) {
-        self.queries.write().remove(id);
+    pub fn expire_query(&self, id: &QueryId) -> Option<Arc<dyn QueryExecution>> {
+        self.queries.write().remove(id)
     }
 }
 
@@ -106,8 +106,15 @@ impl Deref for TrackedQuery<'_> {
 
 impl Drop for TrackedQuery<'_> {
     fn drop(&mut self) {
-        debug!("TrackedQuery drop: {:?}", &self.query_id);
-        self.tracker.expire_query(&self.query_id);
+        match self.query.query_type() {
+            QueryType::Batch => {
+                debug!("TrackedQuery drop: {:?}", &self.query_id);
+                let _ = self.tracker.expire_query(&self.query_id);
+            }
+            QueryType::Stream => {
+                // 流任务是常驻任务，需要手动kill
+            }
+        }
     }
 }
 

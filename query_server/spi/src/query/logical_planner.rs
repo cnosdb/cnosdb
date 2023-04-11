@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use config::TenantLimiterConfig;
 use datafusion::arrow::array::ArrayRef;
-use datafusion::arrow::datatypes::DataType;
+use datafusion::arrow::datatypes::{DataType, Schema};
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
 use datafusion::logical_expr::expr::AggregateFunction as AggregateFunctionExpr;
 use datafusion::logical_expr::type_coercion::aggregates::{
@@ -16,7 +17,7 @@ use datafusion::logical_expr::{
 };
 use datafusion::physical_plan::functions::make_scalar_function;
 use datafusion::prelude::{col, Expr};
-use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SqlOption};
+use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SqlOption, Value};
 use datafusion::sql::sqlparser::parser::ParserError;
 use lazy_static::lazy_static;
 use models::auth::privilege::{DatabasePrivilege, GlobalPrivilege, Privilege};
@@ -25,7 +26,9 @@ use models::auth::user::{UserOptions, UserOptionsBuilder};
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use models::object_reference::ResolvedTable;
 use models::oid::{Identifier, Oid};
-use models::schema::{DatabaseOptions, TableColumn, Tenant, TenantOptions, TenantOptionsBuilder};
+use models::schema::{
+    DatabaseOptions, TableColumn, Tenant, TenantOptions, TenantOptionsBuilder, Watermark,
+};
 use snafu::ResultExt;
 use tempfile::NamedTempFile;
 
@@ -43,7 +46,7 @@ use crate::{ParserSnafu, QueryError, Result};
 
 lazy_static! {
     static ref TABLE_WRITE_UDF: Arc<ScalarUDF> = Arc::new(ScalarUDF::new(
-        "not_exec_only_prevent_col_prune",
+        "rows",
         &Signature::variadic(
             STRINGS
                 .iter()
@@ -81,6 +84,12 @@ pub struct QueryPlan {
     pub df_plan: DFPlan,
 }
 
+impl QueryPlan {
+    pub fn is_explain(&self) -> bool {
+        matches!(self.df_plan, DFPlan::Explain(_) | DFPlan::Analyze(_))
+    }
+}
+
 #[derive(Clone)]
 pub enum DDLPlan {
     // e.g. drop table
@@ -94,6 +103,8 @@ pub enum DDLPlan {
     CreateExternalTable(CreateExternalTable),
 
     CreateTable(CreateTable),
+
+    CreateStreamTable(CreateStreamTable),
 
     CreateDatabase(CreateDatabase),
 
@@ -252,6 +263,18 @@ pub struct CreateTable {
     pub name: ResolvedTable,
     /// Option to not error if table already exists
     pub if_not_exists: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateStreamTable {
+    /// Option to not error if table already exists
+    pub if_not_exists: bool,
+    /// The table name
+    pub name: ResolvedTable,
+    pub schema: Schema,
+    pub watermark: Watermark,
+    pub stream_type: String,
+    pub extra_options: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -505,7 +528,12 @@ pub enum AlterTableAction {
         column_name: String,
     },
 }
-
+impl DDLPlan {
+    pub fn display(&self) -> String {
+        //TODO
+        "todo".into()
+    }
+}
 #[async_trait]
 pub trait LogicalPlanner {
     async fn create_logical_plan(
@@ -842,4 +870,17 @@ fn write_tmp_service_account_file(
     tmp.flush()?;
 
     Ok(())
+}
+
+/// Convert SqlOption s to map, and convert value to lowercase
+pub fn sql_options_to_map(opts: &[SqlOption]) -> HashMap<String, String> {
+    let mut map = HashMap::with_capacity(opts.len());
+    for SqlOption { name, value } in opts {
+        let value_str = match value {
+            Value::SingleQuotedString(s) | Value::DoubleQuotedString(s) => s.clone(),
+            _ => value.to_string().to_ascii_lowercase(),
+        };
+        map.insert(normalize_ident(name), value_str);
+    }
+    map
 }

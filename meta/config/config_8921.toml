@@ -1,0 +1,16 @@
+id = 3
+http_addr = "127.0.0.1:8921"
+
+snapshot_path = "/tmp/cnosdb/meta/snapshot"
+journal_path = "/tmp/cnosdb/meta/journal"
+snapshot_per_events = 500
+
+[log]
+level = "info"
+path = "/tmp/cnosdb/logs"
+
+[meta_init]
+cluster_name = "cluster_xxx"
+admin_user = "root"
+system_tenant = "cnosdb"
+default_database = ["public", "usage_schema"]

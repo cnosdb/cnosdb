@@ -14,11 +14,11 @@ config = { path = "../config" }
 coordinator = { path = "../coordinator" }
 http_protocol = { path = "../common/http_protocol" }
 license = { path = "../common/license" }
-line_protocol = { path = "../common/line_protocol" }
 memory_pool = { path = "../common/memory_pool" }
 meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }
 models = { path = "../common/models" }
+protocol_parser =  { path = "../common/protocol_parser" }
 protos = { path = "../common/protos" }
 query = { path = "../query_server/query" }
 spi = { path = "../query_server/spi" }
@@ -31,11 +31,11 @@ arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
 async-backtrace = { workspace = true, optional = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
-backoff = { workspace = true }
 backtrace = { workspace = true }
 base64 = { workspace = true }
 bincode = { workspace = true }
 byteorder = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 ctrlc = { workspace = true, features = ["termination"] }
@@ -65,7 +65,6 @@ tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-mult
 tokio-stream = { workspace = true, features = ["net"] }
 tonic = { workspace = true, features = ["transport", "tls"] }
 tracing-futures = { workspace = true }
-ureq = { workspace = true, features = ["json", "charset"] }
 warp = { workspace = true, features = ["tls"] }
 
 [target.'cfg(unix)'.dependencies]

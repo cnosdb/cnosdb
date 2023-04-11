@@ -23,12 +23,10 @@ blake3 = { workspace = true }
 bytes = { workspace = true }
 bzip2 = { workspace = true }
 chrono = { workspace = true }
-core_affinity = { workspace = true }
 crc32fast = { workspace = true }
 crossbeam-channel = { workspace = true }
 dashmap = { workspace = true }
 datafusion = { workspace = true }
-evmap = { workspace = true }
 flatbuffers = { workspace = true }
 flate2 = { workspace = true }
 futures = { workspace = true, features = ["std", "thread-pool"] }
@@ -41,9 +39,7 @@ num-traits = { workspace = true }
 num_cpus = { workspace = true }
 num_enum = { workspace = true }
 once_cell = { workspace = true }
-page_size = { workspace = true }
 parking_lot = { workspace = true, features = ["nightly", "send_guard"] }
-priority-queue = { workspace = true }
 q_compress = { workspace = true }
 radixdb = { workspace = true, features = ["custom-store"] }
 rand = { workspace = true }
@@ -51,7 +47,6 @@ regex = { workspace = true }
 roaring = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serial_test = { workspace = true }
 sled = { workspace = true }
 snafu = { workspace = true }
 snap = { workspace = true }
@@ -75,6 +70,7 @@ io_uring = ["rio"]
 backtrace = ["async-backtrace"]
 
 [dev-dependencies]
+serial_test = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 parking_lot = { workspace = true, features = ["nightly"] }
 rand = { workspace = true }

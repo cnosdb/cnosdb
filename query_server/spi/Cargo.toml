@@ -12,6 +12,7 @@ coordinator = { path = "../../coordinator" }
 tskv = {path = "../../tskv"}
 protos = {path = "../../common/protos"}
 config = {path = "../../config"}
+trace = { path = "../../common/trace" }
 flatbuffers = {workspace = true }
 async-trait = { workspace = true }
 datafusion = { workspace = true }
@@ -25,3 +26,4 @@ serde_json = { workspace = true }
 bytes = { workspace = true }
 snap = { workspace = true }
 lazy_static = { workspace = true }
+duration-str = { workspace = true }

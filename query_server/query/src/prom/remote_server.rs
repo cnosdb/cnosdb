@@ -5,11 +5,12 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
-use line_protocol::{parse_lines_to_points, Line};
 use meta::error::MetaError;
-use meta::model::{MetaClientRef, MetaRef};
+use meta::model::MetaClientRef;
 use models::consistency_level::ConsistencyLevel;
-use models::schema::{FieldValue, TskvTableSchema, TIME_FIELD_NAME};
+use models::schema::{Precision, TskvTableSchema, TIME_FIELD_NAME};
+use protocol_parser::lines_convert::parse_lines_to_points;
+use protocol_parser::Line;
 use protos::kv_service::WritePointsRequest;
 use protos::models_helper::{parse_proto_bytes, to_proto_bytes};
 use protos::prompb::remote::{
@@ -17,6 +18,7 @@ use protos::prompb::remote::{
 };
 use protos::prompb::types::label_matcher::Type;
 use protos::prompb::types::TimeSeries;
+use protos::FieldValue;
 use regex::Regex;
 use snap::raw::{decompress_len, max_compress_len, Decoder, Encoder};
 use snap::Result as SnapResult;
@@ -33,12 +35,15 @@ use crate::prom::DEFAULT_PROM_TABLE_NAME;
 pub struct PromRemoteSqlServer {
     db: DBMSRef,
     codec: SnappyCodec,
+    coord: CoordinatorRef,
 }
 
 #[async_trait]
 impl PromRemoteServer for PromRemoteSqlServer {
-    async fn remote_read(&self, ctx: &Context, meta: MetaRef, req: Bytes) -> Result<Vec<u8>> {
-        let meta = meta
+    async fn remote_read(&self, ctx: &Context, req: Bytes) -> Result<Vec<u8>> {
+        let meta = self
+            .coord
+            .meta_manager()
             .tenant_manager()
             .tenant_meta(ctx.tenant())
             .await
@@ -57,17 +62,18 @@ impl PromRemoteServer for PromRemoteSqlServer {
         self.serialize_read_response(read_response).await
     }
 
-    async fn remote_write(&self, req: Bytes, ctx: &Context, coord: CoordinatorRef) -> Result<()> {
+    async fn remote_write(&self, ctx: &Context, req: Bytes) -> Result<()> {
         let prom_write_request = self.deserialize_write_request(req).await?;
         let write_points_request = self
             .prom_write_request_to_write_points_request(ctx, prom_write_request)
             .await?;
         debug!("Received remote write request: {:?}", write_points_request);
 
-        coord
+        self.coord
             .write_points(
                 ctx.tenant().to_string(),
                 ConsistencyLevel::Any,
+                Precision::NS,
                 write_points_request,
             )
             .await?;
@@ -77,10 +83,11 @@ impl PromRemoteServer for PromRemoteSqlServer {
 }
 
 impl PromRemoteSqlServer {
-    pub fn new(db: DBMSRef) -> Self {
+    pub fn new(db: DBMSRef, coord: CoordinatorRef) -> Self {
         Self {
             db,
             codec: SnappyCodec::default(),
+            coord,
         }
     }
 

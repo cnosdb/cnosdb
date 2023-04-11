@@ -1,0 +1,21 @@
+[package]
+name = "protocol_parser"
+version.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+models = { path = "../models" }
+protos = { path = "../protos" }
+utils = { path = "../utils" }
+
+bytes = { workspace = true }
+serde = { workspace = true }
+snafu = { workspace = true }
+flatbuffers = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+backtrace = ["async-backtrace"]

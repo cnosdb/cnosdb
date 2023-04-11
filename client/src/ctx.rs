@@ -14,6 +14,7 @@ use crate::Result;
 pub const DEFAULT_USER: &str = "cnosdb";
 pub const DEFAULT_PASSWORD: &str = "";
 pub const DEFAULT_DATABASE: &str = "public";
+pub const DEFAULT_PRECISION: &str = "NS";
 
 pub const API_V1_SQL_PATH: &str = "/api/v1/sql";
 pub const API_V1_WRITE_PATH: &str = "/api/v1/write";
@@ -23,7 +24,9 @@ pub struct SessionConfig {
     pub connection_info: ConnectionInfo,
     pub tenant: String,
     pub database: String,
+    pub precision: String,
     pub target_partitions: Option<usize>,
+    pub stream_trigger_interval: Option<String>,
     pub fmt: PrintFormat,
     pub config_options: ConfigOptions,
 }
@@ -38,7 +41,9 @@ impl SessionConfig {
             connection_info: Default::default(),
             tenant: DEFAULT_USER.to_string(),
             database: DEFAULT_DATABASE.to_string(),
+            precision: DEFAULT_PRECISION.to_string(),
             target_partitions: None,
+            stream_trigger_interval: None,
             config_options,
             fmt: PrintFormat::Csv,
         }
@@ -73,6 +78,11 @@ impl SessionConfig {
         self
     }
 
+    pub fn with_stream_trigger_interval(mut self, stream_trigger_interval: Option<String>) -> Self {
+        self.stream_trigger_interval = stream_trigger_interval;
+        self
+    }
+
     pub fn with_host(mut self, host: String) -> Self {
         self.connection_info.host = host;
 
@@ -93,6 +103,14 @@ impl SessionConfig {
 
     pub fn with_result_format(mut self, fmt: PrintFormat) -> Self {
         self.fmt = fmt;
+
+        self
+    }
+
+    pub fn with_precision(mut self, precision: Option<String>) -> Self {
+        if let Some(precision) = precision {
+            self.precision = precision;
+        }
 
         self
     }
@@ -156,11 +174,13 @@ impl SessionContext {
         let tenant = self.session_config.tenant.clone();
         let db = self.session_config.database.clone();
         let target_partitions = self.session_config.target_partitions;
+        let stream_trigger_interval = self.session_config.stream_trigger_interval.clone();
         let param = SqlParam {
             tenant: Some(tenant),
             db: Some(db),
             chunked: None,
             target_partitions,
+            stream_trigger_interval,
         };
 
         // let param = &[("db", &self.session_config.database)];
@@ -197,8 +217,10 @@ impl SessionContext {
 
         let tenant = self.session_config.tenant.clone();
         let db = self.session_config.database.clone();
+        let precision = self.session_config.precision.clone();
 
         let param = WriteParam {
+            precision: Some(precision),
             tenant: Some(tenant),
             db: Some(db),
         };

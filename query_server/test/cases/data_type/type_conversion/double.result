@@ -10,163 +10,183 @@ test_double_conv,ta=a1,tb=b1 fa=1,fb=2 1667456411000000000
 -- LINE PROTOCOL END --
 200 OK
 
+
 -- EXECUTE SQL: explain select time from test_double_conv where fa = '12345678865'; --
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_double_conv.time
-  Filter: test_double_conv.fa = Float64(12345678865)
-    TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa = Float64(12345678865)]"
+  SubqueryAlias: test_double_conv
+    Projection: test_double_conv.time
+      Filter: test_double_conv.fa = Float64(12345678865)
+        TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa = Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: fa@1 = 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }} })}) }, projection=[time,fa]
+  ProjectionExec: expr=[time@0 as time]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: fa@1 = 12345678865
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa <> '12345678865'; --
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_double_conv.time
-  Filter: test_double_conv.fa != Float64(12345678865)
-    TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa != Float64(12345678865)]"
+  SubqueryAlias: test_double_conv
+    Projection: test_double_conv.time
+      Filter: test_double_conv.fa != Float64(12345678865)
+        TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa != Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: fa@1 != 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
+  ProjectionExec: expr=[time@0 as time]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: fa@1 != 12345678865
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
 "
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa != '12345678865'; --
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_double_conv.time
-  Filter: test_double_conv.fa != Float64(12345678865)
-    TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa != Float64(12345678865)]"
+  SubqueryAlias: test_double_conv
+    Projection: test_double_conv.time
+      Filter: test_double_conv.fa != Float64(12345678865)
+        TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa != Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: fa@1 != 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
+  ProjectionExec: expr=[time@0 as time]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: fa@1 != 12345678865
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
 "
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa < '12345678865'; --
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_double_conv.time
-  Filter: test_double_conv.fa < Float64(12345678865)
-    TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa < Float64(12345678865)]"
+  SubqueryAlias: test_double_conv
+    Projection: test_double_conv.time
+      Filter: test_double_conv.fa < Float64(12345678865)
+        TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa < Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: fa@1 < 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Above }: Range { low: Marker { data_type: Float64, value: None, bound: Above }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Below } }} })}) }, projection=[time,fa]
+  ProjectionExec: expr=[time@0 as time]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: fa@1 < 12345678865
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Above }: Range { low: Marker { data_type: Float64, value: None, bound: Above }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Below } }} })}) }, projection=[time,fa]
 "
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa <= '12345678865'; --
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_double_conv.time
-  Filter: test_double_conv.fa <= Float64(12345678865)
-    TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa <= Float64(12345678865)]"
+  SubqueryAlias: test_double_conv
+    Projection: test_double_conv.time
+      Filter: test_double_conv.fa <= Float64(12345678865)
+        TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa <= Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: fa@1 <= 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Above }: Range { low: Marker { data_type: Float64, value: None, bound: Above }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }} })}) }, projection=[time,fa]
+  ProjectionExec: expr=[time@0 as time]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: fa@1 <= 12345678865
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Above }: Range { low: Marker { data_type: Float64, value: None, bound: Above }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa > '12345678865'; --
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_double_conv.time
-  Filter: test_double_conv.fa > Float64(12345678865)
-    TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa > Float64(12345678865)]"
+  SubqueryAlias: test_double_conv
+    Projection: test_double_conv.time
+      Filter: test_double_conv.fa > Float64(12345678865)
+        TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa > Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: fa@1 > 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Above }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Above }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
+  ProjectionExec: expr=[time@0 as time]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: fa@1 > 12345678865
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Above }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Above }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
 "
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= '12345678865'; --
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_double_conv.time
-  Filter: test_double_conv.fa >= Float64(12345678865)
-    TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865)]"
+  SubqueryAlias: test_double_conv
+    Projection: test_double_conv.time
+      Filter: test_double_conv.fa >= Float64(12345678865)
+        TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: fa@1 >= 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
+  ProjectionExec: expr=[time@0 as time]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: fa@1 >= 12345678865
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
 "
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= '12345678865'; --
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_double_conv.time
-  Filter: test_double_conv.fa >= Float64(12345678865)
-    TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865)]"
+  SubqueryAlias: test_double_conv
+    Projection: test_double_conv.time
+      Filter: test_double_conv.fa >= Float64(12345678865)
+        TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: fa@1 >= 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
+  ProjectionExec: expr=[time@0 as time]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: fa@1 >= 12345678865
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: None, bound: Below } }} })}) }, projection=[time,fa]
 "
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= '1997-01-31'; --
 200 OK
 plan_type,plan
 
-
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= 'xxx'; --
 200 OK
 plan_type,plan
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa between '12345678865' and 12345678869; --
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_double_conv.time
-  Filter: test_double_conv.fa >= Float64(12345678865) AND test_double_conv.fa <= Float64(12345678869)
-    TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865), test_double_conv.fa <= Float64(12345678869)]"
+  SubqueryAlias: test_double_conv
+    Projection: test_double_conv.time
+      Filter: test_double_conv.fa >= Float64(12345678865) AND test_double_conv.fa <= Float64(12345678869)
+        TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865), test_double_conv.fa <= Float64(12345678869)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: fa@1 >= 12345678865 AND fa@1 <= 12345678869
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
+  ProjectionExec: expr=[time@0 as time]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: fa@1 >= 12345678865 AND fa@1 <= 12345678869
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa between 12345678865 and 12345678869; --
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_double_conv.time
-  Filter: test_double_conv.fa >= Float64(12345678865) AND test_double_conv.fa <= Float64(12345678869)
-    TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865), test_double_conv.fa <= Float64(12345678869)]"
+  SubqueryAlias: test_double_conv
+    Projection: test_double_conv.time
+      Filter: test_double_conv.fa >= Float64(12345678865) AND test_double_conv.fa <= Float64(12345678869)
+        TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865), test_double_conv.fa <= Float64(12345678869)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: fa@1 >= 12345678865 AND fa@1 <= 12345678869
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
+  ProjectionExec: expr=[time@0 as time]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: fa@1 >= 12345678865 AND fa@1 <= 12345678869
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa between 12345678865 and 'xxx'; --
 200 OK
 plan_type,plan
 
-
 -- EXECUTE SQL: explain select time from test_double_conv where fa in (12345678865, '12345678869'); --
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_double_conv.time
-  Filter: test_double_conv.fa = Float64(12345678869) OR test_double_conv.fa = Float64(12345678865)
-    TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa = Float64(12345678869) OR test_double_conv.fa = Float64(12345678865)]"
+  SubqueryAlias: test_double_conv
+    Projection: test_double_conv.time
+      Filter: test_double_conv.fa = Float64(12345678869) OR test_double_conv.fa = Float64(12345678865)
+        TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa = Float64(12345678869) OR test_double_conv.fa = Float64(12345678865)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: fa@1 = 12345678869 OR fa@1 = 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }, Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
+  ProjectionExec: expr=[time@0 as time]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: fa@1 = 12345678869 OR fa@1 = 12345678865
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly } }, Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
 "
-
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa in (12345678865, 'xx'); --
 200 OK
@@ -177,11 +197,14 @@ plan_type,plan
 plan_type,plan
 logical_plan,"Projection: SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
   WindowAggr: windowExpr=[[SUM(CASE WHEN test_double_conv.fa < Float64(50) AS Int64(50) THEN test_double_conv.fa ELSE Float64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING AS SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]]
-    TableScan: test_double_conv projection=[ta, fa]"
+    SubqueryAlias: test_double_conv
+      Projection: test_double_conv.ta, test_double_conv.fa
+        TableScan: test_double_conv projection=[ta, fa]"
 physical_plan,"ProjectionExec: expr=[SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING@2 as SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]
   WindowAggExec: wdw=[SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING: Ok(Field { name: ""SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"", data_type: Float64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} }), frame: WindowFrame { units: Rows, start_bound: Preceding(UInt64(NULL)), end_bound: Following(UInt64(NULL)) }]
     SortExec: [ta@0 ASC NULLS LAST]
       CoalesceBatchesExec: target_batch_size=8192
         RepartitionExec: partitioning=Hash([Column { name: ""ta"", index: 0 }], 8), input_partitions=8
-          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[ta,fa]
+          ProjectionExec: expr=[ta@0 as ta, fa@1 as fa]
+            TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[ta,fa]
 "

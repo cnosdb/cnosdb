@@ -2,7 +2,7 @@
 set -e
 
 # define environment
-export HTTP_HOST=${HTTP_HOST:-"127.0.0.1:31001"}
+export HTTP_HOST=${HTTP_HOST:-"127.0.0.1:8902"}
 export URL="http://${HTTP_HOST}/api/v1/ping"
 source "$HOME/.cargo/env"
 
@@ -17,13 +17,13 @@ function usage() {
   echo
 }
 
-CFG_PATH="./config/config_31001.toml"
+CFG_PATH="./config/config_8902.toml"
 EXE_PATH="./target/test-ci/cnosdb"
 
 TEST_DATA_DIR="/tmp/cnosdb"
 DB_DIR=${TEST_DATA_DIR}"/1001"
 LOG_DIR=${TEST_DATA_DIR}"/logs"
-LOG_PATH=${LOG_DIR}"/start_and_test.data_node.31001.log"
+LOG_PATH=${LOG_DIR}"/start_and_test.data_node.8902.log"
 
 EXE_RUN_CMD=${EXE_PATH}" run"
 CARGO_RUN_CMD="cargo run --profile test-ci -- run"
@@ -49,10 +49,10 @@ done
 
 function start_cnosdb() {
   if [ -e ${EXE_PATH} ];then
-    # nohup ./target/test-ci/cnosdb run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
+    # nohup ./target/test-ci/cnosdb run --config ./config/config_8902.toml > /tmp/cnosdb/logs/start_and_test.data_node.8902.log 2>&1&
     nohup ${EXE_RUN_CMD} --config ${CFG_PATH} > ${LOG_PATH} 2>&1&
   else
-    # nohup cargo run --profile test-ci -- run --config ./config/config_31001.toml > /tmp/cnosdb/logs/start_and_test.data_node.31001.log 2>&1&
+    # nohup cargo run --profile test-ci -- run --config ./config/config_8902.toml > /tmp/cnosdb/logs/start_and_test.data_node.8902.log 2>&1&
     nohup ${CARGO_RUN_CMD} --config ${CFG_PATH} > ${LOG_PATH} 2>&1&
   fi
   echo $!

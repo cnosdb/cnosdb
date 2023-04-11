@@ -10,11 +10,11 @@ use http_protocol::header::{
     APPLICATION_TABLE, APPLICATION_TSV, CONTENT_TYPE, STAR_STAR,
 };
 use http_protocol::status_code::OK;
-use spi::query::execution::Output;
-use spi::service::protocol::QueryHandle;
 use warp::reply::Response;
+use warp::{reject, Rejection};
 
 use super::Error as HttpError;
+use crate::http::header::Header;
 use crate::http::response::ResponseBuilder;
 
 macro_rules! batches_to_json {
@@ -121,18 +121,8 @@ impl FromStr for ResultFormat {
     }
 }
 
-pub async fn fetch_record_batches(res: QueryHandle) -> ArrowResult<Vec<RecordBatch>> {
-    let query = res.query().clone();
-    trace::trace!("try collect result for: {}", query.content());
-
-    let actual = match res.result() {
-        Output::StreamData(_, stream) => stream,
-        Output::Nil(_) => vec![],
-    };
-
-    trace::trace!("successfully collected result of {}", query.content());
-
-    Ok(actual)
+pub fn get_result_format_from_header(header: &Header) -> Result<ResultFormat, Rejection> {
+    ResultFormat::try_from(header.get_accept()).map_err(reject::custom)
 }
 
 #[cfg(test)]

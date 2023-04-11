@@ -64,34 +64,35 @@ echo "Server 2 started"
 sleep 1
 
 nohup ${PROJ_DIR}/target/debug/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_21003.toml > /tmp/cnosdb/logs/meta_node.3.log 2>&1 &
+
 echo "Server 3 started"
 sleep 1
 
 echo "Initialize server 1 as a single-node cluster"
-rpc 21001/init '{}'
+rpc 8901/init '{}'
 
 echo "Server 1 is a leader now"
 sleep 1
 
 echo "Adding node 2 and node 3 as learners, to receive log from leader node 1"
 
-rpc 21001/add-learner       '[2, "127.0.0.1:21002"]'
+rpc 8901/add-learner       '[2, "127.0.0.1:8911"]'
 echo "Node 2 added as leaner"
 sleep 1
 
-rpc 21001/add-learner       '[3, "127.0.0.1:21003"]'
+rpc 8901/add-learner       '[3, "127.0.0.1:8921"]'
 echo "Node 3 added as leaner"
 sleep 1
 
 echo "Changing membership from [1] to 3 nodes cluster: [1, 2, 3]"
 echo
-rpc 21001/change-membership '[1, 2, 3]'
+rpc 8901/change-membership '[1, 2, 3]'
 sleep 1
 echo "Membership changed"
 sleep 1
 
 echo "Get metrics from the leader"
-rpc 21001/metrics
+rpc 8901/metrics
 sleep 1
 
 #####################################################################
@@ -100,13 +101,13 @@ sleep 1
 # echo "Get metrics from the leader again"
 # sleep 1
 # echo
-# rpc 21001/metrics
+# rpc 8901/metrics
 # sleep 1
 
 # echo "Write data on leader 1"
 # sleep 1
 # echo
-# rpc 21001/write '{"Set":{"key":"foo3","value":"bar3"}}'
+# rpc 8901/write '{"Set":{"key":"foo3","value":"bar3"}}'
 # sleep 1
 # echo "Data written"
 # sleep 1
@@ -115,12 +116,12 @@ sleep 1
 # sleep 1
 # echo "Read from node 1"
 # echo
-# rpc 21001/debug
+# rpc 8901/debug
 # echo "Read from node 2"
 # echo
-# rpc 21002/debug
+# rpc 8911/debug
 # echo "Read from node 3"
 # echo
-# rpc 21003/debug
+# rpc 8921/debug
 
 # kill

@@ -10,7 +10,7 @@ pub use kv_option::Options;
 pub use kvcore::TsKv;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ColumnDomains, TimeRange};
-use models::schema::TableColumn;
+use models::schema::{Precision, TableColumn};
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 pub use summary::{print_summary_statistics, Summary, VersionEdit};
@@ -57,11 +57,17 @@ pub type EngineRef = Arc<dyn Engine>;
 
 #[async_trait]
 pub trait Engine: Send + Sync + Debug {
-    async fn write(&self, id: u32, write_batch: WritePointsRequest) -> Result<WritePointsResponse>;
+    async fn write(
+        &self,
+        id: u32,
+        precision: Precision,
+        write_batch: WritePointsRequest,
+    ) -> Result<WritePointsResponse>;
 
     async fn write_from_wal(
         &self,
         id: u32,
+        precision: Precision,
         write_batch: WritePointsRequest,
         seq: u64,
     ) -> Result<()>;

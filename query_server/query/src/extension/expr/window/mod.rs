@@ -12,6 +12,6 @@ pub fn register_window_udfs(func_manager: &mut dyn FunctionMetadataManager) -> R
 }
 
 pub const TIME_WINDOW: &str = "TIME_WINDOW";
-pub const WINDOW_COL_NAME: &str = "window";
-pub const WINDOW_START: &str = "_start";
-pub const WINDOW_END: &str = "_end";
+pub const WINDOW_COL_NAME: &str = "_window";
+pub const WINDOW_START: &str = "start";
+pub const WINDOW_END: &str = "end";

@@ -7,7 +7,7 @@ edition.workspace = true
 
 [dependencies]
 trace = { path = "../../common/trace" }
-sqllogictest ={ workspace = true }
+sqllogictest = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 arrow = { workspace = true }
@@ -16,3 +16,8 @@ tonic = { workspace = true, features = ["transport", "tls"] }
 prost = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 snafu = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
+
+[features]
+default = []
+backtrace = ["async-backtrace"]

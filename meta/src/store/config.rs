@@ -70,7 +70,7 @@ mod test {
     fn test() {
         let config_str = r#"
 id = 1
-http_addr = "127.0.0.1:21001"
+http_addr = "127.0.0.1:8901"
 
 snapshot_path = "/tmp/cnosdb/meta/snapshot"
 journal_path = "/tmp/cnosdb/meta/journal"

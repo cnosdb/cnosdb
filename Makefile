@@ -14,7 +14,7 @@ clippy_check:
 	cargo clippy --workspace  --all-targets -- -D warnings
 
 clippy:
-	cargo clippy --workspace  --all-targets --fix
+	cargo clippy --workspace  --all-targets --fix --allow-staged
 
 build:
 	cargo build --workspace --bins
@@ -24,7 +24,9 @@ build_release:
 
 build_trace:
 	cargo clean;
-	git stash; export BACKTRACE=on; cargo build --workspace --bins --features backtrace; git reset --hard; git stash pop || true
+	git stash;
+	export BACKTRACE=on; cargo build --workspace --bins --features backtrace;
+	git reset --hard; git stash pop || true
 test:
 	cargo test --workspace --exclude e2e_test
 

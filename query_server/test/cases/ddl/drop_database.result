@@ -11,7 +11,6 @@
 rows
 1
 
-
 -- EXECUTE SQL: DROP DATABASE dropdatabase; --
 200 OK
 
@@ -39,5 +38,5 @@ rows
 
 -- EXECUTE SQL: DROP DATABASE public; --
 422 Unprocessable Entity
-{"error_code":"010062","error_message":"Database \"public\" forbid drop"}
+{"error_code":"010065","error_message":"Database \"public\" forbid drop"}
 -- ERROR:  --

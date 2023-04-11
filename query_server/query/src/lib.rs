@@ -11,4 +11,5 @@ pub mod instance;
 pub mod metadata;
 pub mod prom;
 pub mod sql;
+pub mod stream;
 mod utils;

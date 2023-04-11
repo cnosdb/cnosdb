@@ -16,7 +16,7 @@ const CNOSDB_HOST_ENV: &str = "CNOSDB_HOST";
 const CNOSDB_PORT_ENV: &str = "CNOSDB_PORT";
 
 const CNOSDB_HOST_DEFAULT: &str = "localhost";
-const CNOSDB_PORT_DEFAULT: u16 = 31004;
+const CNOSDB_PORT_DEFAULT: u16 = 8904;
 const CNOSDB_USERNAME_DEFAULT: &str = "root";
 const CNOSDB_PASSWORD_DEFAULT: &str = "";
 const CNOSDB_TENANT_DEFAULT: &str = "cnosdb";

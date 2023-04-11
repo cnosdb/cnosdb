@@ -23,7 +23,7 @@ struct Args {
         short = 'P',
         long,
         help = "CnosDB server http api port",
-        default_value = "31001",
+        default_value = "8902",
         value_parser = value_parser!(u16).range(0..=65535)
     )]
     port: u16,
@@ -61,6 +61,13 @@ struct Args {
         value_parser = try_parse_target_partitions
     )]
     target_partitions: Option<usize>,
+
+    #[arg(
+        short,
+        long,
+        help = "Optionally, specify the micro batch stream trigger interval. e.g. once, 1m, 10s"
+    )]
+    stream_trigger_interval: Option<String>,
 
     #[arg(
         long,
@@ -105,6 +112,13 @@ struct Args {
 
     #[arg(short = 'W', long, help = "write linie protocol from path")]
     write_line_protocol: Option<PathBuf>,
+
+    #[arg(
+        long,
+        help = "The precision for the unix timestamps within the body protocol",
+        value_parser = try_parse_precision
+    )]
+    precision: Option<String>,
 }
 
 #[tokio::main]
@@ -130,7 +144,9 @@ pub async fn main() -> Result<(), anyhow::Error> {
         .with_tenant(args.tenant)
         .with_database(args.database)
         .with_target_partitions(args.target_partitions)
-        .with_result_format(args.format);
+        .with_stream_trigger_interval(args.stream_trigger_interval)
+        .with_result_format(args.format)
+        .with_precision(args.precision);
 
     let mut ctx = SessionContext::new(session_config);
     if let Some(ref path) = args.write_line_protocol {
@@ -197,5 +213,12 @@ fn try_parse_target_partitions(size: &str) -> std::result::Result<usize, String>
     match size.parse::<usize>() {
         Ok(s) if s > 0 => Ok(s),
         _ => Err(format!("target-partitions is not in 1..={}", usize::MAX)),
+    }
+}
+
+fn try_parse_precision(precision: &str) -> std::result::Result<String, String> {
+    match precision.to_lowercase().as_str() {
+        "ns" | "us" | "ms" => Ok(precision.to_string()),
+        _ => Err("precision must be one of ns, us, ms".to_string()),
     }
 }

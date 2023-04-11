@@ -1,0 +1,97 @@
+##########
+## DDL
+##########
+
+statement ok
+drop database if exists time_window;
+
+statement ok
+create database time_window WITH TTL '1000000d';
+
+statement ok
+drop table if exists time_window.m2;
+
+statement ok
+CREATE TABLE IF NOT EXISTS time_window.m2(f0 BIGINT , f1 DOUBLE , TAGS(t0, t1, t2) );
+
+statement ok
+drop table if exists time_window.err;
+
+statement ok
+CREATE TABLE IF NOT EXISTS time_window.err(f0 BIGINT , f1 DOUBLE , TAGS(t0, t1, t2) );
+
+##########
+## Query
+##########
+
+# prepare data
+statement ok
+INSERT time_window.m2(TIME, f0, f1, t0, t1)
+VALUES
+    ('1999-12-31 00:00:00.000', 111, 444, 'tag11', 'tag21'),
+    ('1999-12-31 00:00:00.005', 222, 333, 'tag12', 'tag22'),
+    ('1999-12-31 00:00:00.010', 333, 222, 'tag13', 'tag23'),
+    ('1999-12-31 00:00:00.015', 444, 111, 'tag14', 'tag24');
+
+statement error
+select time_window(time, '0.003ms', '0.001ms'), * from time_window.m2;
+
+statement error
+select time_window(time, '3ms', '0.001ms'), * from time_window.m2;
+
+statement error
+select time_window(time, '1ms', '366d'), * from time_window.m2;
+
+statement error
+select time_window(time, '10ms', '6ms') as window, time_window(time, '10ms', '7ms'), * 
+from time_window.m2 order by window, time;
+
+query T
+with tmp as (select time_window(time, '10ms', '6ms') as window, * from time_window.m2)
+select * from tmp order by window.start, time;
+----
+{"start": 1999-12-30T23:59:59.994, "end": 1999-12-31T00:00:00.004} 1999-12-31T00:00:00 tag11 tag21 NULL 111 444
+{"start": 1999-12-30T23:59:59.994, "end": 1999-12-31T00:00:00.004} 1999-12-31T00:00:00.005 tag12 tag22 NULL 222 333
+{"start": 1999-12-31T00:00:00, "end": 1999-12-31T00:00:00.010} 1999-12-31T00:00:00 tag11 tag21 NULL 111 444
+{"start": 1999-12-31T00:00:00, "end": 1999-12-31T00:00:00.010} 1999-12-31T00:00:00.005 tag12 tag22 NULL 222 333
+{"start": 1999-12-31T00:00:00, "end": 1999-12-31T00:00:00.010} 1999-12-31T00:00:00.010 tag13 tag23 NULL 333 222
+{"start": 1999-12-31T00:00:00.006, "end": 1999-12-31T00:00:00.016} 1999-12-31T00:00:00.010 tag13 tag23 NULL 333 222
+{"start": 1999-12-31T00:00:00.006, "end": 1999-12-31T00:00:00.016} 1999-12-31T00:00:00.015 tag14 tag24 NULL 444 111
+{"start": 1999-12-31T00:00:00.012, "end": 1999-12-31T00:00:00.022} 1999-12-31T00:00:00.015 tag14 tag24 NULL 444 111
+
+# insert max timestamp
+statement error .*Coordinator: Meta request error: Error: create bucket unknown error db:time_window 9223372036854775807.*
+INSERT time_window.err(TIME, f0, f1, t0, t1) VALUES('2262-04-11 23:47:16.854775807', 111, 444, 'tag11', 'tag21');
+
+# insert min timestamp
+statement error .*Coordinator: write expired time data not permit.*
+INSERT time_window.err(TIME, f0, f1, t0, t1) VALUES('1677-09-21 00:12:44.0', 111, 444, 'tag11', 'tag21');
+
+statement error .*Coordinator: write expired time data not permit.*
+INSERT time_window.err(TIME, f0, f1, t0, t1) VALUES('1688-09-21 00:12:44.0', 111, 444, 'tag11', 'tag21');
+
+statement error .*Coordinator: write expired time data not permit".*
+INSERT time_window.err(TIME, f0, f1, t0, t1)
+VALUES
+    ('1970-01-01T00:00:00', 111, 444, 'tag11', 'tag21'),
+    ('1980-01-01T00:00:00', 111, 444, 'tag11', 'tag21');
+
+query T
+with tmp as (select time_window(time, '10ms', '6ms') as window, * from time_window.err)
+select * from tmp order by window.start, time;
+----
+{"start": 1969-12-31T23:59:59.994, "end": 1970-01-01T00:00:00.004} 1970-01-01T00:00:00 tag11 tag21 NULL 111 444
+{"start": 1970-01-01T00:00:00, "end": 1970-01-01T00:00:00.010} 1970-01-01T00:00:00 tag11 tag21 NULL 111 444
+{"start": 1979-12-31T23:59:59.994, "end": 1980-01-01T00:00:00.004} 1980-01-01T00:00:00 tag11 tag21 NULL 111 444
+{"start": 1980-01-01T00:00:00, "end": 1980-01-01T00:00:00.010} 1980-01-01T00:00:00 tag11 tag21 NULL 111 444
+
+query T
+with tmp as (select time_window(time, '10ms', '6ms') as window, sum(f0) as sum, count(f1) 
+from time_window.err  
+group by window)
+select * from tmp order by window.start, sum;
+----
+{"start": 1969-12-31T23:59:59.994, "end": 1970-01-01T00:00:00.004} 111 1
+{"start": 1970-01-01T00:00:00, "end": 1970-01-01T00:00:00.010} 111 1
+{"start": 1979-12-31T23:59:59.994, "end": 1980-01-01T00:00:00.004} 111 1
+{"start": 1980-01-01T00:00:00, "end": 1980-01-01T00:00:00.010} 111 1

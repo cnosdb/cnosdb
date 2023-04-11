@@ -14,7 +14,7 @@ use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
 use models::predicate::domain::{self, QueryArgs, QueryExpr};
-use models::schema::TableColumn;
+use models::schema::{Precision, TableColumn};
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::*;
 use protos::models::{PingBody, PingBodyBuilder};
@@ -222,10 +222,10 @@ impl TskvServiceImpl {
             if sender.is_closed() {
                 return;
             }
-            error!("select statement execute failed: {}", err.to_string());
+            debug!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         } else {
-            info!("select statement execute success");
+            debug!("select statement execute success");
         }
     }
 
@@ -265,10 +265,13 @@ impl TskvServiceImpl {
             Arc::new(CoordServiceMetrics::new(&metrics_register)),
         );
         if let Err(err) = executor.local_node_tag_scan(vnodes).await {
-            info!("select statement execute failed: {}", err.to_string());
+            if sender.is_closed() {
+                return;
+            }
+            debug!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         } else {
-            info!("select statement execute success");
+            debug!("select statement execute success");
         }
     }
 }
@@ -284,9 +287,9 @@ impl TskvService for TskvServiceImpl {
         let ping_req = _request.into_inner();
         let ping_body = flatbuffers::root::<PingBody>(&ping_req.body);
         if let Err(e) = ping_body {
-            eprintln!("{}", e);
+            error!("{}", e);
         } else {
-            println!("ping_req:body(flatbuffer): {:?}", ping_body);
+            info!("ping_req:body(flatbuffer): {:?}", ping_body);
         }
 
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -317,7 +320,7 @@ impl TskvService for TskvServiceImpl {
                 Ok(req) => {
                     let ret = self
                         .kv_inst
-                        .write(0, req)
+                        .write(0, Precision::NS, req)
                         .await
                         .map_err(|err| tonic::Status::internal(err.to_string()));
                     resp_sender.send(ret).await.expect("successful");
@@ -351,7 +354,15 @@ impl TskvService for TskvServiceImpl {
             points: inner.data,
         };
 
-        if let Err(err) = self.kv_inst.write(inner.vnode_id, request).await {
+        if let Err(err) = self
+            .kv_inst
+            .write(
+                inner.vnode_id,
+                Precision::from(inner.precision as u8),
+                request,
+            )
+            .await
+        {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
         } else {
             info!("success write data to vnode: {}", inner.vnode_id);

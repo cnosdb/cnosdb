@@ -43,10 +43,7 @@ impl Optimizer for CascadeOptimizer {
         let optimized_physical_plan = self.physical_optimizer.optimize(physical_plan, session)?;
 
         debug!(
-            "Final physical plan:\nOutput partition count: {}\n{}\n",
-            optimized_physical_plan
-                .output_partitioning()
-                .partition_count(),
+            "Final physical plan:\n{}\n",
             displayable(optimized_physical_plan.as_ref()).indent()
         );
 
@@ -122,8 +119,8 @@ mod test {
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::ValueType;
 
+    use crate::data_source::batch::tskv::ClusterTable;
     use crate::data_source::split;
-    use crate::data_source::table_provider::tskv::ClusterTable;
 
     fn observe(_plan: &LogicalPlan, _rule: &dyn OptimizerRule) {}
 

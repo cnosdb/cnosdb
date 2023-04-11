@@ -1,0 +1,41 @@
+-- EXECUTE SQL: CREATE DATABASE db_precision WITH TTL '100000d' precision 'us'; --
+200 OK
+
+
+-- WRITE LINE PROTOCOL --
+test,ta=a1,tb=b1 fa=1,fb=2 1667456411000010001
+-- LINE PROTOCOL END --
+200 OK
+
+
+-- EXECUTE SQL: select * from test; --
+200 OK
+time,ta,tb,fa,fb
+2022-11-03T06:20:11.000010000,a1,b1,1.0,2.0
+
+-- EXECUTE SQL: drop database db_precision; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE DATABASE db_precision WITH TTL '100000d' precision 'ms'; --
+200 OK
+
+
+-- EXECUTE SQL: create table test(col bigint,); --
+200 OK
+
+
+-- EXECUTE SQL: insert into test(time, col) values (1667456411001, 10); --
+200 OK
+rows
+1
+
+-- EXECUTE SQL: select * from test; --
+200 OK
+time,col
+2022-11-03T06:20:11.001000000,10
+
+-- EXECUTE SQL: alter database db_precision set precision 'us'; --
+422 Unprocessable Entity
+{"error_code":"010003","error_message":"Semantic error: Can not alter database precision"}
+-- ERROR:  --

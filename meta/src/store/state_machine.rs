@@ -393,7 +393,7 @@ impl StateMachine {
     }
 
     pub fn process_read_command(&self, req: &ReadCommand) -> CommandResp {
-        info!("meta process read command {:?}", req);
+        debug!("meta process read command {:?}", req);
 
         match req {
             ReadCommand::DataNodes(cluster) => {
@@ -500,12 +500,12 @@ impl StateMachine {
     }
 
     pub fn process_write_command(&self, req: &WriteCommand) -> CommandResp {
-        info!("meta process write command {:?}", req);
+        debug!("meta process write command {:?}", req);
 
         match req {
             WriteCommand::Set { key, value } => {
                 let _ = self.insert(key, value);
-                info!("WRITE: {} :{}", key, value);
+                debug!("WRITE: {} :{}", key, value);
 
                 CommandResp::default()
             }

@@ -4,9 +4,8 @@ use async_trait::async_trait;
 use datafusion::common::Result;
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
-use datafusion::physical_plan::ExecutionPlan;
+use datafusion::physical_plan::{execute_stream, ExecutionPlan};
 use futures::Future;
 use models::runtime::cross_rt_stream::CrossRtStream;
 use models::runtime::executor::DedicatedExecutor;
@@ -46,18 +45,8 @@ impl Scheduler for DedicatedScheduler {
         plan: Arc<dyn ExecutionPlan>,
         context: Arc<TaskContext>,
     ) -> Result<ExecutionResults> {
-        let partition_count = plan.output_partitioning().partition_count();
-
-        let merged_plan = if partition_count > 1 {
-            Arc::new(CoalescePartitionsExec::new(plan))
-        } else {
-            plan
-        };
-
-        debug_assert_eq!(1, merged_plan.output_partitioning().partition_count());
-
         let stream = self
-            .run(async move { merged_plan.execute(0, context) })
+            .run(async move { execute_stream(plan, context) })
             .await?;
 
         let schema = stream.schema();

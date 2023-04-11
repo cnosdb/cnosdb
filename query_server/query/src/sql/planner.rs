@@ -20,7 +20,6 @@ use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
-use datafusion::datasource::{provider_as_source, source_as_provider, TableProvider};
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
@@ -52,8 +51,8 @@ use models::auth::user::User;
 use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
 use models::schema::{
-    ColumnType, DatabaseOptions, Duration, Precision, TableColumn, TableSourceAdapter, Tenant,
-    TskvTableSchema, TskvTableSchemaRef, DEFAULT_CATALOG, DEFAULT_DATABASE, TIME_FIELD,
+    ColumnType, DatabaseOptions, Duration, Precision, TableColumn, Tenant, TskvTableSchema,
+    TskvTableSchemaRef, Watermark, DEFAULT_CATALOG, DEFAULT_DATABASE, TIME_FIELD,
 };
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
@@ -71,11 +70,12 @@ use spi::query::ast::{
 };
 use spi::query::datasource::{self, UriSchema};
 use spi::query::logical_planner::{
-    parse_connection_options, sql_option_to_alter_tenant_action, sql_options_to_tenant_options,
-    sql_options_to_user_options, unset_option_to_alter_tenant_action, AlterDatabase, AlterTable,
-    AlterTableAction, AlterTenant, AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser,
-    AlterUser, AlterUserAction, ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder,
-    CopyVnode, CreateDatabase, CreateRole, CreateTable, CreateTenant, CreateUser, DDLPlan,
+    parse_connection_options, sql_option_to_alter_tenant_action, sql_options_to_map,
+    sql_options_to_tenant_options, sql_options_to_user_options,
+    unset_option_to_alter_tenant_action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
+    AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction,
+    ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder, CopyVnode, CreateDatabase,
+    CreateRole, CreateStreamTable, CreateTable, CreateTenant, CreateUser, DDLPlan,
     DatabaseObjectType, DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject,
     DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
     GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan,
@@ -86,9 +86,11 @@ use spi::{QueryError, Result};
 use trace::{debug, warn};
 use url::Url;
 
-use crate::data_source::table_provider::tskv::ClusterTable;
+use crate::data_source::source_downcast_adapter;
+use crate::data_source::stream::{get_event_time_column, get_watermark_delay};
+use crate::data_source::table_source::{TableHandle, TableSourceAdapter, TEMP_LOCATION_TABLE_NAME};
+use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::metadata::{ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
-use crate::sql::logical::planner::TableWriteExt;
 use crate::sql::parser::{merge_object_name, normalize_ident, normalize_sql_object_name};
 
 /// CnosDB SQL query planner
@@ -169,6 +171,9 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             ExtStatement::ShowStreams(_) => Err(QueryError::NotImplemented {
                 err: "ShowStreams Planner.".to_string(),
             }),
+            ExtStatement::CreateStreamTable(stmt) => {
+                self.create_stream_table_to_plan(stmt, session)
+            }
         }
     }
 
@@ -1135,13 +1140,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     }
 
     fn get_table_source(&self, table_name: &ResolvedTable) -> Result<Arc<dyn TableSource>> {
-        let table_ref = table_name.into();
-        Ok(self.schema_provider.get_table_source(table_ref)?.inner())
-    }
-
-    fn get_table_provider(&self, table_name: &ResolvedTable) -> Result<Arc<dyn TableProvider>> {
-        let table_source = self.get_table_source(table_name)?;
-        Ok(source_as_provider(&table_source)?)
+        Ok(self.schema_provider.get_table_source(table_name.into())?)
     }
 
     fn create_tenant_to_plan(&self, stmt: ast::CreateTenant) -> Result<PlanWithPrivileges> {
@@ -1477,15 +1476,74 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
+    fn create_stream_table_to_plan(
+        &self,
+        stmt: Statement,
+        session: &SessionCtx,
+    ) -> Result<PlanWithPrivileges> {
+        if let Statement::CreateTable {
+            if_not_exists,
+            name,
+            columns,
+            with_options,
+            engine,
+            ..
+        } = stmt
+        {
+            let stream_type = engine
+                .ok_or_else(|| QueryError::Analyzer {
+                    err: "Engine not found.".to_string(),
+                })?
+                .to_ascii_lowercase();
+
+            let resolved_table = object_name_to_resolved_table(session, name)?;
+            let database_name = resolved_table.database().to_string();
+
+            let extra_options = sql_options_to_map(&with_options);
+
+            let watermark = Watermark {
+                column: get_event_time_column(resolved_table.table(), &extra_options)?.into(),
+                delay: get_watermark_delay(resolved_table.table(), &extra_options)?
+                    .unwrap_or_default(),
+            };
+
+            let schema = self.df_planner.build_schema(columns)?;
+
+            let plan = Plan::DDL(DDLPlan::CreateStreamTable(CreateStreamTable {
+                if_not_exists,
+                name: resolved_table,
+                schema,
+                stream_type,
+                watermark,
+                extra_options,
+            }));
+
+            // privilege
+            return Ok(PlanWithPrivileges {
+                plan,
+                privileges: vec![Privilege::TenantObject(
+                    TenantObjectPrivilege::Database(DatabasePrivilege::Full, Some(database_name)),
+                    Some(*session.tenant_id()),
+                )],
+            });
+        }
+
+        Err(QueryError::Internal {
+            reason: format!("CreateStreamTable: {stmt}"),
+        })
+    }
+
     fn get_tskv_schema(&self, table_name: &ResolvedTable) -> Result<TskvTableSchemaRef> {
-        Ok(self
-            .get_table_provider(table_name)?
-            .as_any()
-            .downcast_ref::<ClusterTable>()
-            .ok_or_else(|| MetaError::TableNotFound {
+        let source = self.get_table_source(table_name)?;
+        let adapter = source_downcast_adapter(&source)?;
+        let result = match adapter.table_handle() {
+            TableHandle::Tskv(e) => Ok(e.table_schema()),
+            _ => Err(MetaError::TableNotFound {
                 table: table_name.to_string(),
-            })?
-            .table_schema())
+            }),
+        };
+
+        Ok(result?)
     }
 
     async fn copy_to_plan(
@@ -1519,7 +1577,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
 
                 let plan = build_copy_into_table_plan(
                     external_location_table,
-                    &target_table,
+                    target_table.clone(),
                     insert_columns.as_ref(),
                 )?;
 
@@ -1558,7 +1616,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         stmt: CopyIntoTable,
         file_format_options: FileFormatOptions,
         copy_options: CopyOptions,
-    ) -> Result<(Arc<dyn TableSource>, TableSourceAdapter, Vec<String>)> {
+    ) -> Result<(Arc<dyn TableSource>, Arc<TableSourceAdapter>, Vec<String>)> {
         let CopyIntoTable {
             location,
             ref table_name,
@@ -1592,7 +1650,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         let default_schema = if auto_infer_schema {
             None
         } else {
-            let schema = target_table_source.inner().schema();
+            let schema = target_table_source.schema();
             if insert_columns.is_empty() {
                 // Use the schema of the insert table directly
                 Some(schema)
@@ -1607,7 +1665,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             }
         };
         let external_location_table_source = build_external_location_table_source(
-            &session.inner().state(),
+            session,
             table_path,
             default_schema,
             file_format_options,
@@ -1649,7 +1707,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
 
         // 3. According to the external path, construct the external table
         let target_table = build_external_location_table_source(
-            &session.inner().state(),
+            session,
             table_path,
             Some(source_schem),
             file_format_options,
@@ -1659,7 +1717,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
 
         // 4. build final plan
         let df_plan = LogicalPlanBuilder::from(source_plan)
-            .write(target_table, "external_location_table", Default::default())?
+            .write(target_table, TEMP_LOCATION_TABLE_NAME, Default::default())?
             .build()?;
 
         Ok(Plan::Query(QueryPlan { df_plan }))
@@ -1747,13 +1805,13 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
 
 fn build_copy_into_table_plan(
     external_location_table: Arc<dyn TableSource>,
-    target_table: &TableSourceAdapter,
+    target_table: Arc<TableSourceAdapter>,
     insert_columns: &[String],
 ) -> DFResult<Plan> {
     let df_plan =
-        LogicalPlanBuilder::scan("external_location_table", external_location_table, None)?
+        LogicalPlanBuilder::scan(TEMP_LOCATION_TABLE_NAME, external_location_table, None)?
             .write(
-                target_table.inner(),
+                target_table.clone(),
                 target_table.table_name(),
                 insert_columns,
             )?
@@ -1806,7 +1864,7 @@ fn build_object_store(
 }
 
 async fn build_external_location_table_source(
-    ctx: &SessionState,
+    ctx: &SessionCtx,
     table_path: ListingTableUrl,
     default_schema: Option<SchemaRef>,
     file_format_options: FileFormatOptions,
@@ -1814,7 +1872,7 @@ async fn build_external_location_table_source(
 ) -> datafusion::common::Result<Arc<dyn TableSource>> {
     let (file_extension, file_format) = build_file_extension_and_format(file_format_options)?;
     let external_location_table = build_listing_table(
-        ctx,
+        &ctx.inner().state(),
         table_path,
         default_schema,
         file_extension,
@@ -1822,7 +1880,14 @@ async fn build_external_location_table_source(
         session_config,
     )
     .await?;
-    let external_location_table_source = provider_as_source(external_location_table);
+
+    let external_location_table_source = Arc::new(TableSourceAdapter::try_new(
+        *ctx.tenant_id(),
+        ctx.tenant(),
+        "tmp",
+        TEMP_LOCATION_TABLE_NAME,
+        external_location_table,
+    )?);
 
     Ok(external_location_table_source)
 }
@@ -2118,21 +2183,26 @@ mod tests {
 
     use datafusion::arrow::datatypes::TimeUnit::Nanosecond;
     use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+    use datafusion::datasource::TableProvider;
     use datafusion::error::Result;
     use datafusion::execution::memory_pool::UnboundedMemoryPool;
-    use datafusion::logical_expr::{Aggregate, AggregateUDF, Extension, ScalarUDF, TableSource};
+    use datafusion::logical_expr::logical_plan::AggWithGrouping;
+    use datafusion::logical_expr::{AggregateUDF, Extension, ScalarUDF, TableSource, TableType};
+    use datafusion::physical_plan::ExecutionPlan;
     use datafusion::sql::planner::ContextProvider;
     use datafusion::sql::TableReference;
     use lazy_static::__Deref;
     use meta::error::MetaError;
     use models::auth::user::{User, UserDesc, UserOptions};
     use models::codec::Encoding;
-    use models::schema::{TableSourceAdapter, Tenant};
+    use models::schema::Tenant;
     use spi::query::session::SessionCtxFactory;
     use spi::service::protocol::ContextBuilder;
 
     use super::*;
+    use crate::data_source::table_source::TableSourceAdapter;
     use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
+    use crate::metadata::ContextProviderExtension;
     use crate::sql::parser::ExtParser;
 
     #[derive(Debug)]
@@ -2159,7 +2229,7 @@ mod tests {
         fn get_table_source(
             &self,
             name: TableReference,
-        ) -> datafusion::common::Result<models::schema::TableSourceAdapter> {
+        ) -> datafusion::common::Result<Arc<TableSourceAdapter>> {
             let schema = match name.table() {
                 "test_tb" => Ok(Schema::new(vec![
                     Field::new("field_int", DataType::Int32, false),
@@ -2174,13 +2244,13 @@ mod tests {
                 Err(e) => return Err(e),
             };
 
-            Ok(TableSourceAdapter::new(
-                table,
+            Ok(Arc::new(TableSourceAdapter::try_new(
                 Oid::default(),
                 "cnosdb",
                 "public",
                 name.table(),
-            ))
+                table as Arc<dyn TableProvider>,
+            )?))
         }
     }
 
@@ -2238,6 +2308,32 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl TableProvider for TestTable {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn schema(&self) -> SchemaRef {
+            self.table_schema.clone()
+        }
+
+        fn table_type(&self) -> TableType {
+            TableType::Base
+        }
+
+        async fn scan(
+            &self,
+            _state: &SessionState,
+            _projection: Option<&Vec<usize>>,
+            _filters: &[Expr],
+            _agg_with_grouping: Option<&AggWithGrouping>,
+            _limit: Option<usize>,
+        ) -> Result<Arc<dyn ExecutionPlan>> {
+            todo!()
+        }
+    }
+
     fn session() -> SessionCtx {
         let user_desc = UserDesc::new(
             0_u128,
@@ -2249,7 +2345,7 @@ mod tests {
         let context = ContextBuilder::new(user).build();
         let pool = UnboundedMemoryPool::default();
         SessionCtxFactory::default()
-            .create_session_ctx(context, 0_u128, Arc::new(pool))
+            .create_session_ctx("", context, 0_u128, Arc::new(pool))
             .unwrap()
     }
 
@@ -2436,8 +2532,8 @@ mod tests {
 
         match plan.plan {
             Plan::Query(QueryPlan {
-                df_plan: LogicalPlan::Aggregate(Aggregate { input, .. }),
-            }) => match input.as_ref() {
+                df_plan: LogicalPlan::Extension(Extension { node }),
+            }) => match &node.inputs()[0] {
                 LogicalPlan::Extension(Extension { node }) => {
                     match node.as_any().downcast_ref::<TableWriterPlanNode>() {
                         Some(TableWriterPlanNode {

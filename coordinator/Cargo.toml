@@ -12,7 +12,7 @@ utils = { path = "../common/utils" }
 tskv = { path = "../tskv" }
 meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }
-line_protocol = { path = "../common/line_protocol" }
+protocol_parser = { path = "../common/protocol_parser" }
 
 walkdir = { workspace = true }
 datafusion = { workspace = true }
@@ -21,14 +21,12 @@ flatbuffers = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 tracing = { workspace = true }
-lazy_static = { workspace = true }
 tracing-futures = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { workspace = true, features = ["net"] }
 tokio-util = { workspace = true }
-parking_lot = { workspace = true }
 futures = { workspace = true, features = ["alloc"] }
 rust-crypto = { workspace = true }
 tower = { workspace = true }

@@ -3,7 +3,7 @@ default-members = ["main"]
 members = [
     "common/models",
     "common/protos",
-    "common/line_protocol",
+    "common/protocol_parser",
     "common/metrics",
     "common/trace",
     "common/utils",
@@ -34,7 +34,6 @@ async-backtrace = "0.2.2"
 async-recursion = "1.0.0"
 async-stream = "0.3"
 async-trait = "0.1"
-backoff = "0.4"
 backtrace = "0.3"
 base64 = { version = "0.13" }
 bincode = "1.3.3"
@@ -49,7 +48,6 @@ console-subscriber = "0.1.8"
 core_affinity = "0.5.10"
 crc32fast = "1.3.0"
 criterion = { version = "0.3.5" }
-crossbeam = "0.8"
 crossbeam-channel = "0.5"
 ctrlc = "3"
 dashmap = "5.2"
@@ -57,12 +55,11 @@ derive_builder = "0.11"
 arrow = { version = "32.0.0", features = ["prettyprint"] }
 arrow-schema = { version = "32.0.0", features = ["serde"] }
 arrow-flight = { version = "32.0.0" }
-datafusion-proto = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "0b0a9cf19690e13c8119d8931a1677fbd2ab042b" }
-datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "0b0a9cf19690e13c8119d8931a1677fbd2ab042b" }
+datafusion-proto = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "e257fa50e33e8a13c312af3c04078bc6e4742992" }
+datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "e257fa50e33e8a13c312af3c04078bc6e4742992" }
 diff = "0.1.13"
 dirs = "4.0.0"
 env_logger = "0.9"
-evmap = "10.0"
 flatbuffers = "22.9"
 flate2 = "1.0.24"
 futures = { version = "0.3", default-features = false }
@@ -81,12 +78,10 @@ once_cell = "1.12.0"
 openraft = { git = "https://github.com/datafuselabs/openraft", rev = "914fcb4dad32a2f187b808298048e9e8b912977f", features = ["serde"] }
 openssl = { version = "0.10.48", features = ["vendored"] }
 os_info = { version = "3" }
-page_size = "0.4"
 parking_lot = { version = "0.12" }
 paste = "1.0"
 pin-project = "1.0"
 pprof = { version = "0.11.0", features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
-priority-queue = "1.2.3"
 prost = "0.11.0"
 prost-build = "0.11.0"
 prost-types = { version = "0.11.2" }
@@ -112,6 +107,7 @@ tempfile = "3"
 tikv-jemalloc-ctl = "0.5"
 tikv-jemalloc-sys = { version = "0.5", features = ["stats", "profiling", "unprefixed_malloc_on_supported_platforms"] }
 tikv-jemallocator = "0.5.0"
+time = { version = "0.3.7"}
 tokio = { version = "1.21" }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7.0" }
@@ -124,7 +120,6 @@ tracing-appender = "0.2.2"
 tracing-error = "0.2.0"
 tracing-futures = "0.2"
 tracing-subscriber = "0.3.16"
-ureq = { version = "2.5.0", features = ["json", "charset"] }
 url = "2.2"
 uuid = { version = "1.1", features = ["v4"] }
 walkdir = "2.3.2"
@@ -132,6 +127,7 @@ warp = { version = "0.3" }
 winapi = "0.3.9"
 zstd = "0.11.2"
 sqllogictest = "0.13.2"
+duration-str = "0.5.0"
 
 [workspace.package]
 edition = "2021"
@@ -141,9 +137,9 @@ version = "2.2.0"
 # you can use patch,
 # which will use your local third-party library code
 
-#[patch."https://github.com/cnosdb/arrow-datafusion"]
-#datafusion = { path = "/path/to/arrow-datafusion/datafusion/core" }
-#datafusion-proto = { path = "/path/to/arrow-datafusion/datafusion/proto" }
+# [patch."https://github.com/cnosdb/arrow-datafusion"]
+# datafusion = { path = "../arrow-datafusion/datafusion/core" }
+# datafusion-proto = { path = "../arrow-datafusion/datafusion/proto" }
 [patch.crates-io]
 arrow-flight = { git = "https://github.com/cnosdb/arrow-rs.git", branch = "32.0.0" }
 

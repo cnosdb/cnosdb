@@ -15,7 +15,7 @@ use pin_project::{pin_project, pinned_drop};
 use tokio::sync::oneshot::error::RecvError;
 use tokio::sync::oneshot::Receiver;
 use tokio_util::sync::CancellationToken;
-use trace::warn;
+use trace::{debug, warn};
 
 /// Task that can be added to the executor-internal queue.
 ///
@@ -260,8 +260,12 @@ impl DedicatedExecutor {
                 }
             });
 
+            if let Err(ref err) = task_output {
+                warn!("Spawned task output error: {err}")
+            }
+
             if tx.send(task_output).is_err() {
-                warn!("Spawned task output ignored: receiver dropped")
+                debug!("Spawned task output ignored: receiver dropped")
             }
         });
         let cancel = CancellationToken::new();

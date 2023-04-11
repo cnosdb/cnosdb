@@ -5,8 +5,12 @@ use coordinator::service::CoordinatorRef;
 use derive_builder::Builder;
 use memory_pool::MemoryPoolRef;
 use models::auth::user::{User, UserInfo};
+use models::auth::AuthError;
+use models::oid::Oid;
 use snafu::ResultExt;
 use spi::query::auth::AccessControlRef;
+use spi::query::datasource::stream::checker::StreamCheckerManager;
+use spi::query::datasource::stream::StreamProviderManager;
 use spi::query::dispatcher::QueryDispatcher;
 use spi::query::session::SessionCtxFactory;
 use spi::server::dbms::DatabaseManagerSystem;
@@ -17,13 +21,16 @@ use tskv::kv_option::Options;
 
 use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
 use crate::data_source::split;
+use crate::data_source::stream::tskv::factory::{TskvStreamProviderFactory, TSKV_STREAM_PROVIDER};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::execution::scheduler::local::LocalScheduler;
+use crate::extension::expr::load_all_functions;
+use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
 
 #[derive(Builder)]
-pub struct Cnosdbms<D> {
+pub struct Cnosdbms<D: QueryDispatcher> {
     // TODO access control
     access_control: AccessControlRef,
     // query dispatcher & query execution
@@ -45,11 +52,7 @@ where
     async fn execute(&self, query: &Query) -> Result<QueryHandle> {
         let query_id = self.query_dispatcher.create_query_id();
 
-        let tenant_id = self
-            .access_control
-            .tenant_id(query.context().tenant())
-            .await
-            .context(AuthSnafu)?;
+        let tenant_id = self.get_tenant_id(query.context().tenant()).await?;
 
         let result = self
             .query_dispatcher
@@ -83,6 +86,14 @@ where
     }
 }
 
+impl<D: QueryDispatcher> Cnosdbms<D> {
+    pub(crate) async fn get_tenant_id(
+        &self,
+        tenant_name: &str,
+    ) -> std::result::Result<Oid, AuthError> {
+        self.access_control.tenant_id(tenant_name).await
+    }
+}
 pub async fn make_cnosdbms(
     coord: CoordinatorRef,
     options: Options,
@@ -95,6 +106,28 @@ pub async fn make_cnosdbms(
     let optimizer = Arc::new(CascadeOptimizerBuilder::default().build());
     // TODO wrap, and num_threads configurable
     let scheduler = Arc::new(LocalScheduler {});
+
+    // init Function Manager
+    let mut func_manager = SimpleFunctionMetadataManager::default();
+    load_all_functions(&mut func_manager)?;
+
+    // init stream provider manager
+    let mut stream_provider_manager = StreamProviderManager::default();
+    // stream provider factory of tskv
+    let tskv_stream_provider_factory = Arc::new(TskvStreamProviderFactory::new(
+        coord.clone(),
+        split_manager.clone(),
+    ));
+    stream_provider_manager.register_stream_provider_factory(
+        TSKV_STREAM_PROVIDER,
+        tskv_stream_provider_factory.clone(),
+    )?;
+
+    // init stream checker manager
+    let mut stream_checker_manager = StreamCheckerManager::default();
+    // stream table checker of tskv
+    stream_checker_manager
+        .register_stream_checker(TSKV_STREAM_PROVIDER, tskv_stream_provider_factory)?;
 
     let queries_limit = options.query.max_server_connections;
 
@@ -109,6 +142,9 @@ pub async fn make_cnosdbms(
         .with_scheduler(scheduler)
         .with_queries_limit(queries_limit)
         .with_memory_pool(memory_pool)
+        .with_func_manager(Arc::new(func_manager))
+        .with_stream_provider_manager(Arc::new(stream_provider_manager))
+        .with_stream_checker_manager(Arc::new(stream_checker_manager))
         .build()?;
 
     let mut builder = CnosdbmsBuilder::default();

@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,8 +15,28 @@ use super::session::SessionCtx;
 use crate::service::protocol::{Query, QueryId};
 use crate::Result;
 
+pub type QueryExecutionRef = Arc<dyn QueryExecution>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryType {
+    Batch,
+    Stream,
+}
+
+impl Display for QueryType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Batch => write!(f, "batch"),
+            Self::Stream => write!(f, "stream"),
+        }
+    }
+}
+
 #[async_trait]
 pub trait QueryExecution: Send + Sync {
+    fn query_type(&self) -> QueryType {
+        QueryType::Batch
+    }
     // 开始
     async fn start(&self) -> Result<Output>;
     // 停止
@@ -30,9 +51,7 @@ pub trait QueryExecution: Send + Sync {
     // 资源占用（cpu时间/内存/吞吐量等）
     // ......
 }
-// pub trait Output {
-//     fn as_any(&self) -> &dyn Any;
-// }
+
 #[derive(Clone)]
 pub enum Output {
     StreamData(SchemaRef, Vec<RecordBatch>),
@@ -55,11 +74,7 @@ impl Output {
     }
 
     pub fn num_rows(&self) -> usize {
-        self.chunk_result()
-            .iter()
-            .map(|e| e.num_rows())
-            .reduce(|p, c| p + c)
-            .unwrap_or(0)
+        self.chunk_result().iter().map(|e| e.num_rows()).sum()
     }
 
     /// Returns the number of records affected by the query operation
@@ -86,7 +101,7 @@ pub trait QueryExecutionFactory {
         &self,
         plan: Plan,
         query_state_machine: QueryStateMachineRef,
-    ) -> Arc<dyn QueryExecution>;
+    ) -> QueryExecutionRef;
 }
 
 pub type QueryStateMachineRef = Arc<QueryStateMachine>;

@@ -13,7 +13,7 @@ use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{ExpiredBucketInfo, VnodeAllInfo};
-use models::schema::DEFAULT_CATALOG;
+use models::schema::{Precision, DEFAULT_CATALOG};
 use protos::get_db_from_fb_points;
 use protos::kv_service::admin_command_request::Command::*;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
@@ -23,8 +23,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Sender};
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use trace::info;
-use tracing::error;
+use trace::{debug, error, info};
 use tskv::EngineRef;
 
 use crate::errors::*;
@@ -150,7 +149,12 @@ impl CoordService {
                 };
 
                 if let Err(e) = coord
-                    .write_points(DEFAULT_CATALOG.to_string(), ConsistencyLevel::Any, req)
+                    .write_points(
+                        DEFAULT_CATALOG.to_string(),
+                        ConsistencyLevel::Any,
+                        Precision::NS,
+                        req,
+                    )
                     .await
                 {
                     error!("write metrics to {DEFAULT_CATALOG} fail. {e}")
@@ -225,10 +229,10 @@ impl CoordService {
         );
 
         let now = tokio::time::Instant::now();
-        info!("select statement execute now: {:?}", now);
+        debug!("select statement execute now: {:?}", now);
 
         if let Err(err) = executor.execute().await.map(|_| {
-            info!(
+            debug!(
                 "select statement execute success, start at: {:?} elapsed: {:?}",
                 now,
                 now.elapsed(),
@@ -237,7 +241,7 @@ impl CoordService {
             if sender.is_closed() {
                 return;
             }
-            error!("select statement execute failed: {}", err.to_string());
+            debug!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         }
     }
@@ -288,16 +292,16 @@ impl CoordService {
         );
 
         let now = tokio::time::Instant::now();
-        info!("select statement execute now: {:?}", now);
+        debug!("select statement execute now: {:?}", now);
 
         if let Err(err) = executor.tag_scan().await.map(|_| {
-            info!(
+            debug!(
                 "select statement execute success, start at: {:?} elapsed: {:?}",
                 now,
                 now.elapsed(),
             );
         }) {
-            error!("select statement execute failed: {}", err.to_string());
+            debug!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         }
     }
@@ -342,6 +346,7 @@ impl Coordinator for CoordService {
         &self,
         tenant: String,
         level: ConsistencyLevel,
+        precision: Precision,
         request: WritePointsRequest,
     ) -> CoordinatorResult<()> {
         let limiter = self.meta.tenant_manager().limiter(&tenant).await;
@@ -362,13 +367,14 @@ impl Coordinator for CoordService {
         let req = WriteRequest {
             tenant: tenant.clone(),
             level,
+            precision,
             request,
         };
 
         let now = tokio::time::Instant::now();
-        info!("write points, now: {:?}", now);
+        debug!("write points, now: {:?}", now);
         let res = self.writer.write_points(&req).await;
-        info!(
+        debug!(
             "write points result: {:?}, start at: {:?} elapsed: {:?}",
             res,
             now,

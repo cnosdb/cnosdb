@@ -115,10 +115,10 @@ make build
 The following is a single node startup. If you need to start a cluster, see [Cluster startup process](https://docs.cnosdb.com/zh/guide/cluster/cluster.html#%E9%9B%86%E7%BE%A4%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B)
 
 ```bash
-./target/debug/cnosdb-meta --id 1 --http-addr 127.0.0.1:21001
-curl http://127.0.0.1:21001/init -d '{}'
-curl http://127.0.0.1:21001/metrics
-./target/debug/cnosdb run --config ./config/config_31001.toml
+./target/debug/cnosdb-meta --id 1 --http-addr 127.0.0.1:8901
+curl http://127.0.0.1:8901/init -d '{}'
+curl http://127.0.0.1:8901/metrics
+./target/debug/cnosdb run --config ./config/config_8902.toml
 ```
 
 #### **Run CLI**
