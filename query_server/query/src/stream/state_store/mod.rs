@@ -14,7 +14,7 @@ pub fn create_memory_state_store_factory() -> Arc<MemoryStateStoreFactory> {
 pub trait StateStoreFactory {
     type SS: StateStore;
 
-    /// TODO 通过query_id, partition_id, operator_id来唯一标识一个state
+    /// A state is uniquely identified by query_id, partition_id, operator_id
     fn get_or_default(
         &self,
         query_id: String,
@@ -30,7 +30,7 @@ pub trait StateStore {
     /// in the params can be reused, and must make copies of the data as needed for persistence.
     fn put(&self, batch: RecordBatch) -> Result<()>;
 
-    /// 移除匹配predicate的数据
+    /// Remove data that matches the predicate
     fn expire(&self, predicate: Arc<dyn PhysicalExpr>) -> Result<Vec<RecordBatch>>;
 
     /// Commit all the updates that have been made to the store, and return the new version.

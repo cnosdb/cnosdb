@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use config::ClusterConfig;
-use models::auth::role::{TenantRoleIdentifier, UserRole};
-use models::auth::user::User;
+use models::auth::role::TenantRoleIdentifier;
+use models::auth::user::{admin_user, User};
 use models::meta_data::*;
 use models::oid::Identifier;
 use models::utils::min_num;
@@ -269,7 +269,7 @@ impl MetaManager for RemoteMetaManager {
 
         // admin user
         if user_desc.is_admin() {
-            return Ok(User::new(user_desc, UserRole::Dba.to_privileges()));
+            return Ok(admin_user(user_desc));
         }
 
         // common user & with tenant

@@ -23,6 +23,7 @@ sleep 1
 rm -rf /tmp/cnosdb/1001
 rm -rf /tmp/cnosdb/2001
 rm -rf /tmp/cnosdb/meta/
+rm -rf ~/.cnosdb/query
 
 echo "*** build cnosdb ......"
 cargo build --package main --bin cnosdb

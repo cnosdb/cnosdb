@@ -90,17 +90,17 @@ test_ts_tenant1,"{""comment"":null,""limiter_config"":null}"
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"030017","error_message":"Database not found: \"cluster_schema\""}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: failed to resolve tenant:test_ts_tenant1  db: cluster_schema, table: tenants"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"030017","error_message":"Database not found: \"cluster_schema\""}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: failed to resolve tenant:test_ts_tenant1  db: cluster_schema, table: tenants"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"030017","error_message":"Database not found: \"cluster_schema\""}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: failed to resolve tenant:test_ts_tenant1  db: cluster_schema, table: tenants"}
 -- ERROR:  --

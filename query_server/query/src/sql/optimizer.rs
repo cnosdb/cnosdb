@@ -115,7 +115,7 @@ mod test {
     use datafusion::physical_plan::planner::DefaultPhysicalPlanner;
     use datafusion::physical_plan::{displayable, PhysicalPlanner};
     use datafusion::prelude::{col, count, max, min, sum, Expr, SessionConfig};
-    use models::meta_data::{BucketInfo, DatabaseInfo};
+    use meta::model::meta_client_mock::MockMetaClient;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::ValueType;
 
@@ -132,31 +132,10 @@ mod test {
     }
 
     fn test_table_scan(with_nonempty_database: bool) -> Result<LogicalPlan> {
-        #[allow(clippy::inconsistent_digit_grouping)]
-        let db_info = if with_nonempty_database {
-            DatabaseInfo {
-                buckets: vec![
-                    BucketInfo {
-                        id: 1,
-                        // 2023-01-01 00:00:00.000000000
-                        start_time: 1672502400_000_000_000_i64,
-                        // 2023-07-01 00:00:00.000000000
-                        end_time: 1688140800_000_000_000_i64,
-                        ..Default::default()
-                    },
-                    BucketInfo {
-                        id: 2,
-                        // 2023-07-01 00:00:00.000000000
-                        start_time: 1688140800_000_000_000_i64,
-                        // 2024-01-01 00:00:00.000000000
-                        end_time: 1704038400_000_000_000_i64,
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }
+        let dn_name = if with_nonempty_database {
+            "with_nonempty_database"
         } else {
-            DatabaseInfo::default()
+            "default"
         };
         let mut schema = TskvTableSchema::default();
         schema.add_column(TableColumn::new_with_default(
@@ -167,11 +146,12 @@ mod test {
             "value".to_string(),
             ColumnType::Field(ValueType::Integer),
         ));
+        schema.db = dn_name.to_string();
 
         let provider = Arc::new(ClusterTable::new(
             Arc::new(MockCoordinator::default()),
             split::default_split_manager_ref(),
-            Arc::new(db_info),
+            Arc::new(MockMetaClient::default()),
             Arc::new(schema),
         ));
 

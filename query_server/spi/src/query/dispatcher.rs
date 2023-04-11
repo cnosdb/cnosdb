@@ -3,6 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use models::auth::user::UserDesc;
 use models::oid::{Identifier, Oid};
+use serde::{Deserialize, Serialize};
 
 use super::execution::QueryState;
 use crate::query::execution::Output;
@@ -11,7 +12,7 @@ use crate::Result;
 
 #[async_trait]
 pub trait QueryDispatcher: Send + Sync {
-    fn start(&self);
+    async fn start(&self) -> Result<()>;
 
     fn stop(&self);
 
@@ -28,7 +29,7 @@ pub trait QueryDispatcher: Send + Sync {
     fn cancel_query(&self, id: &QueryId);
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueryInfo {
     query_id: QueryId,
     query: String,
@@ -69,6 +70,10 @@ impl QueryInfo {
 
     pub fn tenant_name(&self) -> &str {
         &self.tenant_name
+    }
+
+    pub fn user_desc(&self) -> &UserDesc {
+        &self.user
     }
 
     pub fn user_id(&self) -> Oid {

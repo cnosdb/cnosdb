@@ -84,12 +84,6 @@ impl StreamProviderFactory for TskvStreamProviderFactory {
         let target_db = get_target_db_name(options).unwrap_or_else(|| table.db());
         let target_table = get_target_table_name(table.name(), options)?;
 
-        let database_info =
-            meta.get_db_info(target_db)?
-                .ok_or_else(|| MetaError::DatabaseNotFound {
-                    database: target_db.into(),
-                })?;
-
         let table_schema = meta
             .get_tskv_table_schema(target_db, target_table)?
             .ok_or_else(|| MetaError::TableNotFound {
@@ -105,7 +99,7 @@ impl StreamProviderFactory for TskvStreamProviderFactory {
         let table = Arc::new(ClusterTable::new(
             self.client.clone(),
             self.split_manager.clone(),
-            Arc::new(database_info),
+            meta,
             table_schema,
         ));
 

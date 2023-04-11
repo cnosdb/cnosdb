@@ -477,6 +477,18 @@ pub enum QueryError {
     StreamTableCheckerAlreadyExists {
         stream_type: String,
     },
+
+    #[snafu(display("Serialization failed: {}", source))]
+    #[error_code(code = 70)]
+    BincodeSerialize {
+        source: GenericError,
+    },
+
+    #[snafu(display("Persist query info, error: {}", reason))]
+    #[error_code(code = 71)]
+    PersistQuery {
+        reason: String,
+    },
 }
 
 impl From<ParserError> for QueryError {

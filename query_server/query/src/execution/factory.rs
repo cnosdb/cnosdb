@@ -2,16 +2,16 @@ use std::sync::Arc;
 
 use datafusion::logical_expr::{Extension, LogicalPlan};
 use models::runtime::executor::DedicatedExecutor;
-use spi::query::config::StreamTriggerInterval;
 use spi::query::datasource::stream::checker::StreamCheckerManagerRef;
 use spi::query::execution::{QueryExecutionFactory, QueryExecutionRef, QueryStateMachineRef};
 use spi::query::logical_planner::{Plan, QueryPlan};
 use spi::query::optimizer::Optimizer;
 use spi::query::scheduler::SchedulerRef;
+use spi::QueryError;
 
 use super::query::SqlQueryExecution;
 use super::stream::trigger::executor::{TriggerExecutorFactory, TriggerExecutorFactoryRef};
-use super::stream::MicroBatchStreamExecution;
+use super::stream::{MicroBatchStreamExecutionBuilder, MicroBatchStreamExecutionDesc};
 use super::sys::SystemExecution;
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::execution::ddl::DDLExecution;
@@ -58,12 +58,14 @@ impl SqlQueryExecutionFactory {
     }
 }
 
+pub type QueryExecutionFactoryRef = Arc<dyn QueryExecutionFactory + Send + Sync>;
+
 impl QueryExecutionFactory for SqlQueryExecutionFactory {
     fn create_query_execution(
         &self,
         plan: Plan,
         state_machine: QueryStateMachineRef,
-    ) -> QueryExecutionRef {
+    ) -> Result<QueryExecutionRef, QueryError> {
         match plan {
             Plan::Query(query_plan) => {
                 // 获取执行计划中所有涉及到的stream source
@@ -74,42 +76,40 @@ impl QueryExecutionFactory for SqlQueryExecutionFactory {
                 // 2. explain
                 // 3. 非dml
                 if stream_providers.is_empty() || query_plan.is_explain() || !is_dml(&query_plan) {
-                    return Arc::new(SqlQueryExecution::new(
+                    return Ok(Arc::new(SqlQueryExecution::new(
                         state_machine,
                         query_plan,
                         self.optimizer.clone(),
                         self.scheduler.clone(),
-                    ));
+                    )));
                 }
 
                 // 流操作
-                let stream_trigger_interval = state_machine
-                    .session
-                    .inner()
-                    .state()
-                    .config()
-                    .get_extension::<StreamTriggerInterval>()
-                    .unwrap_or_else(|| Arc::new(StreamTriggerInterval::Once));
-                Arc::new(MicroBatchStreamExecution::new(
+                let options = state_machine.session.inner().state().config().into();
+                let exec = MicroBatchStreamExecutionBuilder::new(MicroBatchStreamExecutionDesc {
+                    plan: Arc::new(query_plan),
+                    options,
+                })
+                .with_stream_providers(stream_providers)
+                .build(
                     state_machine,
-                    Arc::new(query_plan),
-                    stream_providers,
                     self.scheduler.clone(),
-                    self.trigger_executor_factory
-                        .create(stream_trigger_interval.as_ref()),
+                    self.trigger_executor_factory.clone(),
                     self.runtime.clone(),
-                ))
+                )?;
+
+                Ok(Arc::new(exec))
             }
-            Plan::DDL(ddl_plan) => Arc::new(DDLExecution::new(
+            Plan::DDL(ddl_plan) => Ok(Arc::new(DDLExecution::new(
                 state_machine,
                 self.stream_checker_manager.clone(),
                 ddl_plan,
-            )),
-            Plan::SYSTEM(sys_plan) => Arc::new(SystemExecution::new(
+            ))),
+            Plan::SYSTEM(sys_plan) => Ok(Arc::new(SystemExecution::new(
                 state_machine,
                 sys_plan,
                 self.query_tracker.clone(),
-            )),
+            ))),
         }
     }
 }

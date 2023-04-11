@@ -157,17 +157,6 @@ impl MetadataProvider {
             return Ok(source.into());
         }
 
-        let database_info = self
-            .meta_client
-            .get_db_info(database_name)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?
-            .ok_or_else(|| {
-                DataFusionError::External(Box::new(MetaError::DatabaseNotFound {
-                    database: database_name.into(),
-                }))
-            })?;
-        let database_info = Arc::new(database_info);
-
         let table_handle: TableHandle = match self
             .meta_client
             .get_table_schema(database_name, table_name)
@@ -177,7 +166,7 @@ impl MetadataProvider {
                 TableSchema::TsKvTableSchema(schema) => Arc::new(ClusterTable::new(
                     self.coord.clone(),
                     self.split_manager.clone(),
-                    database_info,
+                    self.meta_client.clone(),
                     schema,
                 ))
                 .into(),

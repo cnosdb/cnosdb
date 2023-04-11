@@ -41,3 +41,7 @@ impl UuidGenerator {
         Uuid::new_v4().as_u128()
     }
 }
+
+pub fn uuid_u64() -> u64 {
+    Uuid::new_v4().as_u64_pair().0
+}

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::Local;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::error::ArrowError;
 use datafusion::common::Result as DFResult;
@@ -74,9 +73,10 @@ impl StreamProvider for TskvStreamProvider {
     /// Returns the latest (highest) available offsets
     async fn latest_available_offset(&self) -> DFResult<Option<Self::Offset>> {
         // TODO 从tskv获取最新的offset
-        // 当前使用本地时间作为offset会导致空转浪费资源
-        let offset = Local::now().naive_utc().timestamp_nanos();
-        Ok(Some(offset))
+        // 当前使用最大时间作为offset会导致空转浪费资源
+        // let offset = Local::now().naive_utc().timestamp_nanos();
+        // Ok(Some(offset))
+        Ok(Some(Self::Offset::MAX))
     }
 
     async fn scan(

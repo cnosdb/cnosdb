@@ -20,13 +20,13 @@ use datafusion::physical_plan::{
 };
 use futures::{Stream, StreamExt};
 use models::schema::Watermark;
-use spi::query::stream::watermark_tracker::WatermarkTrackerRef;
 use spi::{QueryError, Result};
 use trace::debug;
 
 use crate::extension::WATERMARK_DELAY_MS;
+use crate::stream::watermark_tracker::WatermarkTrackerRef;
 
-/// Execution plan for a Expand
+/// Execution plan for a WatermarkExec
 #[derive(Debug)]
 pub struct WatermarkExec {
     watermark: Watermark,
@@ -40,7 +40,6 @@ pub struct WatermarkExec {
 }
 
 impl WatermarkExec {
-    /// Create a projection on an input
     pub fn try_new(
         watermark: Watermark,
         watermark_tracker: WatermarkTrackerRef,
@@ -150,10 +149,11 @@ impl ExecutionPlan for WatermarkExec {
 
         let stream = WatermarkStream {
             watermark_tracker: self.watermark_tracker.clone(),
-            event_time_col_name: self.watermark.column.clone(),
+            watermark: self.watermark.clone(),
             schema: self.schema(),
             input,
             baseline_metrics,
+            max_event_time: None,
         };
 
         Ok(Box::pin(stream))
@@ -183,14 +183,15 @@ impl ExecutionPlan for WatermarkExec {
 
 struct WatermarkStream {
     watermark_tracker: WatermarkTrackerRef,
-    event_time_col_name: String,
+    watermark: Watermark,
     schema: SchemaRef,
     input: SendableRecordBatchStream,
     baseline_metrics: BaselineMetrics,
+    max_event_time: Option<i64>,
 }
 
 impl WatermarkStream {
-    fn compute_watermark(&self, batch: RecordBatch) -> DFResult<RecordBatch> {
+    fn compute_watermark(&mut self, batch: RecordBatch) -> DFResult<RecordBatch> {
         let _timer = self.baseline_metrics.elapsed_compute().timer();
 
         let batch = RecordBatch::try_new(self.schema.clone(), batch.columns().to_vec())?;
@@ -200,18 +201,18 @@ impl WatermarkStream {
         }
 
         let xx = {
-            match batch.column_by_name(&self.event_time_col_name) {
-                Some(array) => match max_timestamp(&self.event_time_col_name, array) {
+            match batch.column_by_name(&self.watermark.column) {
+                Some(array) => match max_timestamp(&self.watermark.column, array) {
                     Ok(value) => {
                         if let Some(value) = value {
-                            self.watermark_tracker.update_watermark(value);
+                            let _ = self.max_event_time.replace(value);
                         }
                         Ok(())
                     }
                     Err(err) => Err(err),
                 },
                 None => Err(QueryError::ColumnNotFound {
-                    col: self.event_time_col_name.clone(),
+                    col: self.watermark.column.clone(),
                 }),
             }
         };
@@ -228,6 +229,13 @@ impl Stream for WatermarkStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let poll = self.input.poll_next_unpin(cx).map(|x| match x {
             Some(Ok(batch)) => Some(self.compute_watermark(batch)),
+            None => {
+                if let Some(max_event_time) = self.max_event_time {
+                    self.watermark_tracker
+                        .update_watermark(max_event_time, self.watermark.delay.as_nanos() as i64);
+                }
+                x
+            }
             other => other,
         });
 
