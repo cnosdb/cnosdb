@@ -1302,6 +1302,7 @@ version = "2.2.0"
 dependencies = [
  "async-backtrace",
  "serde",
+ "sys-info",
  "toml",
 ]
 
@@ -5518,6 +5519,7 @@ dependencies = [
  "duration-str",
  "error_code",
  "flatbuffers 22.12.6",
+ "futures",
  "lazy_static",
  "meta",
  "models",

@@ -80,7 +80,7 @@ async fn describe_table(
             )
             .map_err(datafusion::error::DataFusionError::ArrowError)?;
             let batches = vec![batch];
-            Ok(Output::StreamData(schema, batches))
+            Ok(Output::ValueData(schema, batches))
         }
         TableSchema::ExternalTableSchema(external_schema) => {
             let mut name = StringBuilder::new();
@@ -99,7 +99,7 @@ async fn describe_table(
             )
             .map_err(datafusion::error::DataFusionError::ArrowError)?;
             let batches = vec![batch];
-            Ok(Output::StreamData(schema, batches))
+            Ok(Output::ValueData(schema, batches))
         }
         TableSchema::StreamTableSchema(_) => {
             // TODO refactor: direct query information_schema

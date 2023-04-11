@@ -70,5 +70,5 @@ async fn describe_database(database_name: &str, machine: QueryStateMachineRef) -
 
     let batches = vec![batch];
 
-    Ok(Output::StreamData(schema, batches))
+    Ok(Output::ValueData(schema, batches))
 }

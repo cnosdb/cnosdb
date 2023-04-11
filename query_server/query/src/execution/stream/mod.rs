@@ -149,7 +149,7 @@ impl QueryExecution for MicroBatchStreamExecution {
             schema.clone(),
             vec![Arc::new(StringArray::from_slice([id]))],
         )?;
-        Ok(Output::StreamData(schema, vec![batch]))
+        Ok(Output::ValueData(schema, vec![batch]))
     }
 
     fn cancel(&self) -> Result<()> {

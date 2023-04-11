@@ -75,7 +75,7 @@ where
         // get result metadata
         let output = query_result.result();
         let schema = output.schema();
-        let total_records = output.num_rows();
+        let total_records = output.num_rows().await;
 
         // cache result wait cli fetching
         self.result_cache.insert(result_ident.clone(), output);

@@ -7,7 +7,9 @@ use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::physical_plan::SendableRecordBatchStream;
 use meta::model::MetaRef;
+use futures::StreamExt;
 
 use super::dispatcher::{QueryInfo, QueryStatus};
 use super::logical_planner::Plan;
@@ -52,29 +54,39 @@ pub trait QueryExecution: Send + Sync {
     // ......
 }
 
-#[derive(Clone)]
 pub enum Output {
-    StreamData(SchemaRef, Vec<RecordBatch>),
+    StreamData(SchemaRef, SendableRecordBatchStream),
+    ValueData(SchemaRef, Vec<RecordBatch>),
     Nil(()),
 }
+
+unsafe impl Sync for Output{}
 
 impl Output {
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::StreamData(schema, _) => schema.clone(),
+            Self::ValueData(schema, _) => schema.clone(),
             Self::Nil(_) => Arc::new(Schema::empty()),
         }
     }
 
-    pub fn chunk_result(&self) -> &[RecordBatch] {
+    pub async fn chunk_result(self) -> Vec<RecordBatch> {
         match self {
-            Self::StreamData(_, result) => result,
-            Self::Nil(_) => &[],
+            Self::StreamData(_, result) => {
+                result.collect::<Vec<_>>().await.into_iter().flatten().collect::<Vec<_>>()
+            }
+            Self::ValueData(_, result) => result,
+            Self::Nil(_) => Vec::new(),
         }
     }
 
-    pub fn num_rows(&self) -> usize {
-        self.chunk_result().iter().map(|e| e.num_rows()).sum()
+    pub async fn num_rows(self) -> usize {
+        self.chunk_result()
+            .await
+            .iter()
+            .map(|e| e.num_rows())
+            .sum()
     }
 
     /// Returns the number of records affected by the query operation
@@ -84,13 +96,10 @@ impl Output {
     /// -1 means unknown
     ///
     /// panic! when StreamData's number of records greater than i64::Max
-    pub fn affected_rows(&self) -> i64 {
+    pub async fn affected_rows(self) -> i64 {
         match self {
-            Self::StreamData(_, result) => result
-                .iter()
-                .map(|e| e.num_rows())
-                .reduce(|p, c| p + c)
-                .unwrap_or(0) as i64,
+            Self::StreamData(..) => self.num_rows().await as i64,
+            Self::ValueData(..) => self.num_rows().await as i64,
             Self::Nil(_) => 0,
         }
     }

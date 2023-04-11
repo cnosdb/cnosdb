@@ -204,7 +204,7 @@ impl PromRemoteSqlServer {
         let inner_query = Query::new(ctx.clone(), sql.sql);
         let result = self.db.execute(&inner_query).await?;
 
-        transform_time_series(result, tag_name_indices, sample_value_idx, sample_time_idx)
+        transform_time_series(result, tag_name_indices, sample_value_idx, sample_time_idx).await
     }
 
     async fn serialize_read_response(&self, read_response: ReadResponse) -> Result<Vec<u8>> {
@@ -323,7 +323,7 @@ fn build_sql_with_table(
 }
 
 /// Convert the execution result of query to TimeSeries list of prometheus
-fn transform_time_series(
+async fn transform_time_series(
     query_handle: QueryHandle,
     tag_name_indices: Vec<usize>,
     sample_value_idx: usize,
@@ -331,7 +331,7 @@ fn transform_time_series(
 ) -> Result<Vec<TimeSeries>> {
     let result = query_handle.result();
     let schema = result.schema();
-    let batches = result.chunk_result();
+    let batches = result.chunk_result().await;
 
     let mut timeseries = HashMap::default();
     {
@@ -340,7 +340,7 @@ fn transform_time_series(
                 .build(&mut timeseries);
 
         for batch in batches {
-            writer.write(batch)?;
+            writer.write(&batch)?;
         }
     }
 
@@ -412,8 +412,8 @@ mod test {
 
     use crate::prom::remote_server::transform_time_series;
 
-    #[test]
-    fn test_transform_time_series() {
+    #[async_test]
+    async fn test_transform_time_series() {
         // define a schema.
         let schema = Arc::new(Schema::new(vec![
             Field::new(
@@ -459,7 +459,7 @@ mod test {
             tag_name_indices,
             sample_value_idx,
             sample_time_idx,
-        )
+        ).await
         .unwrap();
 
         let expect = TimeSeries {

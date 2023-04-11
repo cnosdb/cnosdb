@@ -51,5 +51,5 @@ async fn show_databases(machine: QueryStateMachineRef) -> Result<Output> {
     let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(StringArray::from(databases))])?;
     let batches = vec![batch];
 
-    Ok(Output::StreamData(schema, batches))
+    Ok(Output::ValueData(schema, batches))
 }

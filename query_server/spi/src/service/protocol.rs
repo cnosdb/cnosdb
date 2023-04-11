@@ -9,6 +9,7 @@ use trace::trace;
 use crate::query::config::StreamTriggerInterval;
 use crate::query::execution::Output;
 use crate::query::session::CnosSessionConfig;
+use futures::StreamExt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QueryId(u64);
@@ -186,7 +187,6 @@ impl Query {
     }
 }
 
-#[derive(Clone)]
 pub struct QueryHandle {
     id: QueryId,
     query: Query,
@@ -214,8 +214,10 @@ impl QueryHandle {
         trace!("try collect result for: {}", self.query.content());
 
         let actual = match self.result {
-            Output::StreamData(_, stream) => stream,
+            Output::StreamData(_, stream) => stream.collect::<Vec<_>>().await.into_iter().flatten().collect::<Vec<_>>(),
+            Output::ValueData(_, data) => data,
             Output::Nil(_) => vec![],
+
         };
 
         trace!("successfully collected result of {}", self.query.content());

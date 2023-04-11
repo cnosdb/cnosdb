@@ -61,5 +61,5 @@ async fn show_tables(
 
     let batches = vec![batch];
 
-    Ok(Output::StreamData(schema, batches))
+    Ok(Output::ValueData(schema, batches))
 }

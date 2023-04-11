@@ -40,7 +40,7 @@ impl SystemTask for ShowQueriesTask {
             )
         });
 
-        Ok(Output::StreamData(
+        Ok(Output::ValueData(
             result_builder.schema(),
             result_builder.build()?,
         ))

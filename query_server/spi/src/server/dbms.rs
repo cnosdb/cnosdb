@@ -7,8 +7,8 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::from_slice::FromSlice;
 use models::auth::role::UserRole;
 use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
-
 use crate::query::execution::Output;
+
 use crate::service::protocol::{Query, QueryHandle, QueryId};
 use crate::Result;
 
@@ -65,7 +65,7 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         Ok(QueryHandle::new(
             QueryId::next_id(),
             query.clone(),
-            Output::StreamData(schema, batches),
+            Output::ValueData(schema, batches),
         ))
     }
 

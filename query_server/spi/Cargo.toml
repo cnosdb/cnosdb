@@ -14,6 +14,7 @@ protos = {path = "../../common/protos"}
 config = {path = "../../config"}
 trace = { path = "../../common/trace" }
 flatbuffers = {workspace = true }
+futures = { workspace = true }
 async-trait = { workspace = true }
 datafusion = { workspace = true }
 snafu = { workspace = true, features = ["backtraces"] }
