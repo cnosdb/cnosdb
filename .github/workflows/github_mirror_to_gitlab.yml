@@ -11,7 +11,7 @@ jobs:
     - name: Mirrror + trigger CI
       uses: lutengda/gitlab-mirror-and-ci-action@master
       with:
-        args: "http://43.247.178.238:8280/root/cnosdb"
+        args: "http://gitlab.cnosdb.com:8280/root/cnosdb"
       env:
         FOLLOW_TAGS: "false"
         FORCE_PUSH: "true"
