@@ -55,15 +55,15 @@ echo "Start 3 uninitialized cnosdb-meta servers..."
 
 mkdir -p /tmp/cnosdb/logs
 
-nohup ${PROJ_DIR}/target/debug/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_8901.toml &> /tmp/cnosdb/logs/meta_node.1.log &
+nohup ${PROJ_DIR}/target/debug/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_8901.toml > /tmp/cnosdb/logs/meta_node.1.log 2>&1 &
 echo "Server 1 started"
 sleep 1
 
-nohup ${PROJ_DIR}/target/debug/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_8911.toml &> /tmp/cnosdb/logs/meta_node.2.log &
+nohup ${PROJ_DIR}/target/debug/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_8911.toml > /tmp/cnosdb/logs/meta_node.2.log 2>&1 &
 echo "Server 2 started"
 sleep 1
 
-nohup ${PROJ_DIR}/target/debug/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_8921.toml &> /tmp/cnosdb/logs/meta_node.3.log &
+nohup ${PROJ_DIR}/target/debug/cnosdb-meta --config ${PROJ_DIR}/meta/config/config_8921.toml > /tmp/cnosdb/logs/meta_node.3.log 2>&1 &
 echo "Server 3 started"
 sleep 1
 
