@@ -196,7 +196,7 @@ plan_type,plan
 200 OK
 plan_type,plan
 logical_plan,"Projection: SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-  WindowAggr: windowExpr=[[SUM(CASE WHEN test_double_conv.fa < Float64(50) AS Int64(50) THEN test_double_conv.fa ELSE Float64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING AS SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]]
+  WindowAggr: windowExpr=[[SUM(CASE WHEN test_double_conv.fa < Float64(50) THEN test_double_conv.fa ELSE Float64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING AS SUM(CASE WHEN test_double_conv.fa < Int64(50) THEN test_double_conv.fa ELSE Int64(0) END) PARTITION BY [test_double_conv.ta] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]]
     SubqueryAlias: test_double_conv
       Projection: test_double_conv.ta, test_double_conv.fa
         TableScan: test_double_conv projection=[ta, fa]"
