@@ -3,12 +3,10 @@
 plan_type,plan
 logical_plan,"TableWriterMerge: SUM(rows) AS rows
   TableWriter: table=external_location_table, rows(CAST(col1 AS Utf8), col2) AS rows
-    Projection: col1 AS col1, col2 AS col2
-      Projection: Int64(1) AS col1, Utf8(""xx"") AS col2
-        EmptyRelation"
+    Projection: Int64(1) AS col1, Utf8(""xx"") AS col2
+      EmptyRelation"
 physical_plan,"TableWriterMergeExec
   TableWriterExec: [file:///tmp/data/parquet_out2/]
-    ProjectionExec: expr=[col1@0 as col1, col2@1 as col2]
-      ProjectionExec: expr=[1 as col1, xx as col2]
-        EmptyExec: produce_one_row=true
+    ProjectionExec: expr=[1 as col1, xx as col2]
+      EmptyExec: produce_one_row=true
 "

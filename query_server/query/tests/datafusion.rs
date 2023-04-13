@@ -11,7 +11,7 @@ use datafusion::datasource::{self, TableProvider};
 use datafusion::execution::context::{SessionState, TaskContext};
 use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::logical_expr::{
-    LogicalPlan, LogicalPlanBuilder, TableType, UserDefinedLogicalNode,
+    LogicalPlan, LogicalPlanBuilder, TableType, UserDefinedLogicalNodeCore,
 };
 use datafusion::physical_expr::{planner, PhysicalSortExpr};
 use datafusion::physical_plan::filter::FilterExec;
@@ -289,16 +289,12 @@ impl ExecutionPlan for TableScanPlan {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct TableScanNode {
     schema: DFSchemaRef,
 }
 
-impl UserDefinedLogicalNode for TableScanNode {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
+impl UserDefinedLogicalNodeCore for TableScanNode {
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![]
     }
@@ -313,7 +309,7 @@ impl UserDefinedLogicalNode for TableScanNode {
 
     fn prevent_predicate_push_down_columns(&self) -> std::collections::HashSet<String> {
         // default (safe) is all columns in the schema.
-        self.schema()
+        self.schema
             .fields()
             .iter()
             .map(|f| f.name().clone())
@@ -324,12 +320,12 @@ impl UserDefinedLogicalNode for TableScanNode {
         todo!()
     }
 
-    fn from_template(
-        &self,
-        _exprs: &[Expr],
-        _inputs: &[LogicalPlan],
-    ) -> Arc<dyn UserDefinedLogicalNode> {
+    fn from_template(&self, _exprs: &[Expr], _inputs: &[LogicalPlan]) -> Self {
         todo!()
+    }
+
+    fn name(&self) -> &str {
+        "TableScan"
     }
 }
 

@@ -1,5 +1,5 @@
+use datafusion::common::tree_node::{RewriteRecursion, TreeNodeRewriter};
 use datafusion::error::Result;
-use datafusion::logical_expr::expr_rewriter::{ExprRewriter, RewriteRecursion};
 use datafusion::prelude::Expr;
 
 pub struct ExprReplacer<'a, F> {
@@ -12,10 +12,12 @@ impl<'a, F> ExprReplacer<'a, F> {
     }
 }
 
-impl<'a, F> ExprRewriter for ExprReplacer<'a, F>
+impl<'a, F> TreeNodeRewriter for ExprReplacer<'a, F>
 where
     F: Fn(&Expr) -> Option<Expr>,
 {
+    type N = Expr;
+
     /// Invoked before any children of `expr` are rewritten /
     /// visited. Default implementation returns `Ok(RewriteRecursion::Continue)`
     fn pre_visit(&mut self, _expr: &Expr) -> Result<RewriteRecursion> {
@@ -36,8 +38,8 @@ where
 #[cfg(test)]
 mod tests {
     use datafusion::arrow::datatypes::DataType;
+    use datafusion::common::tree_node::TreeNode;
     use datafusion::error::Result;
-    use datafusion::logical_expr::expr_rewriter::ExprRewritable;
     use datafusion::prelude::{cast, col, lit, Column, Expr};
 
     use super::ExprReplacer;

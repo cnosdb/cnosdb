@@ -34,6 +34,7 @@ mod tests {
     use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
     use datafusion::logical_expr::TableSource;
+    use datafusion::sql::TableReference;
     use meta::model::meta_client_mock::MockMetaClient;
     use models::schema::{StreamTable, Watermark};
     use spi::query::datasource::stream::StreamProviderManager;
@@ -98,7 +99,14 @@ mod tests {
         assert_eq!(&provider.watermark().column, "time");
         assert_eq!(provider.schema(), schema);
 
-        let source = TableSourceAdapter::try_new(1, "tenant", "db", "name", provider)?;
+        let source = TableSourceAdapter::try_new(
+            TableReference::bare("name"),
+            1,
+            "tenant",
+            "db",
+            "name",
+            provider,
+        )?;
 
         let plan = source.get_logical_plan().unwrap();
 

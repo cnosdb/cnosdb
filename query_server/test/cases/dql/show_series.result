@@ -1,6 +1,7 @@
 -- EXECUTE SQL: CREATE DATABASE show_series WITH TTL '100000d'; --
 200 OK
 
+
 -- WRITE LINE PROTOCOL --
 test,t0=a,t1=b,t2=c f0=1,f1="2" 0
 test,t0=a f0=1 1
@@ -10,6 +11,7 @@ test,t0=a,t1=b f0=1 4
 test,t1=b,t2=c f0=1 5
 -- LINE PROTOCOL END --
 200 OK
+
 
 -- EXECUTE SQL: INSERT INTO test(TIME, t0, f0) VALUES (6, '', 1); --
 200 OK
@@ -52,12 +54,12 @@ key
 
 -- EXECUTE SQL: SHOW SERIES FROM test ORDER BY f0; --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Schema error: No field named 'f0'. Valid fields are 'key'."}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named f0. Valid fields are key."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SHOW SERIES FROM test ORDER BY time; --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Schema error: No field named 'time'. Valid fields are 'key'."}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named time. Valid fields are key."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SHOW SERIES FROM test ORDER BY key; --

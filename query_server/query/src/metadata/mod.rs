@@ -251,9 +251,11 @@ impl ContextProviderExtension for MetadataProvider {
 
     fn get_table_source(
         &self,
-        name: TableReference,
+        table_ref: TableReference,
     ) -> datafusion::common::Result<Arc<TableSourceAdapter>> {
-        let name = name.resolve(self.session.tenant(), self.session.default_database());
+        let name = table_ref
+            .clone()
+            .resolve(self.session.tenant(), self.session.default_database());
 
         let table_name = name.table.as_ref();
         let database_name = name.schema.as_ref();
@@ -276,6 +278,7 @@ impl ContextProviderExtension for MetadataProvider {
         let table_handle = self.build_table_handle(&name)?;
 
         Ok(Arc::new(TableSourceAdapter::try_new(
+            table_ref.to_owned_reference(),
             tenant_id,
             tenant_name,
             database_name,

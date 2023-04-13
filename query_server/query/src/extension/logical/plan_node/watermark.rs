@@ -1,17 +1,16 @@
-use std::any::Any;
 use std::collections::HashSet;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
-use datafusion::prelude::Expr;
+use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
+use datafusion::prelude::{Column, Expr};
 use models::schema::Watermark;
 
 use crate::extension::{EVENT_TIME_COLUMN, WATERMARK_DELAY_MS};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct WatermarkNode {
     pub watermark: Watermark,
     pub input: Arc<LogicalPlan>,
@@ -24,7 +23,7 @@ impl WatermarkNode {
     pub fn try_new(watermark: Watermark, input: Arc<LogicalPlan>) -> Result<Self, DataFusionError> {
         let schema = input.schema();
         // find event time column
-        let idx = schema.index_of_column_by_name(None, &watermark.column)?;
+        let idx = schema.index_of_column(&Column::new_unqualified(&watermark.column))?;
         let mut metadata = input.schema().metadata().clone();
         // It will be used when the aggregate node is transferred to a physical node
         let _ = metadata.insert(EVENT_TIME_COLUMN.into(), idx.to_string());
@@ -52,11 +51,7 @@ impl Debug for WatermarkNode {
     }
 }
 
-impl UserDefinedLogicalNode for WatermarkNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
+impl UserDefinedLogicalNodeCore for WatermarkNode {
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![self.input.as_ref()]
     }
@@ -78,17 +73,17 @@ impl UserDefinedLogicalNode for WatermarkNode {
         )
     }
 
-    fn from_template(
-        &self,
-        _exprs: &[Expr],
-        inputs: &[LogicalPlan],
-    ) -> Arc<dyn UserDefinedLogicalNode> {
+    fn from_template(&self, _exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
         assert_eq!(inputs.len(), 1, "input size inconsistent");
 
-        Arc::new(self.clone())
+        self.clone()
     }
 
     fn prevent_predicate_push_down_columns(&self) -> std::collections::HashSet<String> {
         HashSet::default()
+    }
+
+    fn name(&self) -> &str {
+        "Watermark"
     }
 }

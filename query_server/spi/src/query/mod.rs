@@ -1,5 +1,6 @@
 use datafusion::arrow::datatypes::DataType;
 
+pub mod analyzer;
 pub mod ast;
 pub mod auth;
 pub mod config;

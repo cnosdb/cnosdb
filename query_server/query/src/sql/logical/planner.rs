@@ -1,3 +1,3 @@
-use crate::sql::planner::SqlPlaner;
+use crate::sql::planner::SqlPlanner;
 
-pub type DefaultLogicalPlanner<'a, S> = SqlPlaner<'a, S>;
+pub type DefaultLogicalPlanner<'a, S> = SqlPlanner<'a, S>;

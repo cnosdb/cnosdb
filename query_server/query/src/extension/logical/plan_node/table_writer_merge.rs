@@ -1,14 +1,13 @@
-use std::any::Any;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::utils::exprlist_to_fields;
-use datafusion::logical_expr::{Extension, LogicalPlan, UserDefinedLogicalNode};
+use datafusion::logical_expr::{Extension, LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct TableWriterMergePlanNode {
     pub input: Arc<LogicalPlan>,
     pub agg_expr: Vec<Expr>,
@@ -36,11 +35,7 @@ impl Debug for TableWriterMergePlanNode {
     }
 }
 
-impl UserDefinedLogicalNode for TableWriterMergePlanNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
+impl UserDefinedLogicalNodeCore for TableWriterMergePlanNode {
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![&self.input]
     }
@@ -60,17 +55,17 @@ impl UserDefinedLogicalNode for TableWriterMergePlanNode {
         Ok(())
     }
 
-    fn from_template(
-        &self,
-        exprs: &[Expr],
-        inputs: &[LogicalPlan],
-    ) -> Arc<dyn UserDefinedLogicalNode> {
+    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
         debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
-        Arc::new(TableWriterMergePlanNode {
+        TableWriterMergePlanNode {
             input: Arc::new(inputs[0].clone()),
             agg_expr: exprs.to_vec(),
             schema: self.schema.clone(),
-        })
+        }
+    }
+
+    fn name(&self) -> &str {
+        "TableWriterMerge"
     }
 }
 

@@ -1024,7 +1024,7 @@ impl Display for TenantOptions {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Watermark {
     pub column: String,
     pub delay: StdDuration,

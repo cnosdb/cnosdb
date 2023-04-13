@@ -109,6 +109,16 @@ pub trait StreamProvider {
         Ok(TableProviderFilterPushDown::Unsupported)
     }
 
+    fn supports_filters_pushdown(
+        &self,
+        filters: &[&Expr],
+    ) -> Result<Vec<TableProviderFilterPushDown>> {
+        filters
+            .iter()
+            .map(|f| self.supports_filter_pushdown(f))
+            .collect()
+    }
+
     /// true if the aggregation can be pushed down to datasource, false otherwise.
     fn supports_aggregate_pushdown(
         &self,
