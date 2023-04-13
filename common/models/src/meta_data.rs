@@ -1,12 +1,8 @@
 use std::collections::HashMap;
-use std::ffi::CString;
-use std::io;
-use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::errors::check_err;
 use crate::predicate::domain::TimeRange;
 use crate::schema::{DatabaseSchema, TableSchema};
 
@@ -250,14 +246,73 @@ pub fn allocation_replication_set(
     (group, incr_id - begin_seq)
 }
 
-pub fn get_disk_info(path_buf: &str) -> io::Result<u64> {
-    let path = path_buf;
+pub fn get_disk_info(path: &str) -> std::io::Result<u64> {
+    use std::mem::MaybeUninit;
 
-    let mut statfs = MaybeUninit::<libc::statfs>::zeroed();
-    let c_storage_path = CString::new(path).unwrap();
-    check_err(unsafe { libc::statfs(c_storage_path.as_ptr() as *const i8, statfs.as_mut_ptr()) })?;
+    use crate::errors::check_err;
 
-    let statfs = unsafe { statfs.assume_init() };
+    #[cfg(unix)]
+    {
+        use std::ffi::CString;
 
-    Ok(statfs.f_bsize as u64 * statfs.f_bfree)
+        let mut statfs = MaybeUninit::<libc::statfs>::zeroed();
+        let c_storage_path = CString::new(path).unwrap();
+        check_err(unsafe {
+            libc::statfs(c_storage_path.as_ptr() as *const i8, statfs.as_mut_ptr())
+        })?;
+
+        let statfs = unsafe { statfs.assume_init() };
+
+        Ok(statfs.f_bsize as u64 * statfs.f_bfree)
+    }
+
+    #[cfg(windows)]
+    {
+        use std::ffi::OsStr;
+        use std::os::windows::prelude::OsStrExt;
+
+        use winapi::um::winnt::{LPCWSTR, PULARGE_INTEGER, ULARGE_INTEGER, WCHAR};
+
+        // A directory on the disk.
+        // If this parameter is NULL, the function uses the root of the current disk.
+        // If this parameter is a UNC name, it must include a trailing backslash, for example, "\\MyServer\MyShare\".
+        // This parameter does not have to specify the root directory on a disk. The function accepts any directory on a disk.
+        // The calling application must have FILE_LIST_DIRECTORY access rights for this directory.
+        let dirctory_name: Vec<WCHAR> = OsStr::new(path).encode_wide().collect();
+
+        // A pointer to a variable that receives the total number of free bytes on a disk that are available to the user who is associated with the calling thread.
+        let mut free_bytes_available_to_caller = MaybeUninit::<ULARGE_INTEGER>::zeroed();
+
+        // A pointer to a variable that receives the total number of bytes on a disk that are available to the user who is associated with the calling thread.
+        let mut _total_number_of_bytes = MaybeUninit::<ULARGE_INTEGER>::zeroed();
+        // A pointer to a variable that receives the total number of bytes on a disk that are available to the user who is associated with the calling thread.
+        let mut _total_number_of_free_bytes = MaybeUninit::<ULARGE_INTEGER>::zeroed();
+        unsafe {
+            // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getdiskfreespaceexw
+            // If the function succeeds, the return value is nonzero.
+            // If the function fails, the return value is zero (0). To get extended error information, call GetLastError.
+            check_err(winapi::um::fileapi::GetDiskFreeSpaceExW(
+                dirctory_name.as_ptr() as LPCWSTR,
+                free_bytes_available_to_caller.as_mut_ptr() as PULARGE_INTEGER,
+                _total_number_of_bytes.as_mut_ptr() as PULARGE_INTEGER,
+                _total_number_of_free_bytes.as_mut_ptr() as PULARGE_INTEGER,
+            ))?;
+        }
+
+        #[cfg(target_pointer_width = "64")]
+        {
+            Ok(unsafe { *free_bytes_available_to_caller.assume_init().QuadPart() })
+        }
+
+        #[cfg(target_pointer_width = "32")]
+        {
+            let u = unsafe {
+                let free_bytes_available_to_caller = free_bytes_available_to_caller.assume_init();
+                free_bytes_available_to_caller.u()
+            };
+            let mut free_bytes = u.LowPart as u64;
+            free_bytes |= (u.HighPart as u64) << 32;
+            Ok(free_bytes)
+        }
+    }
 }

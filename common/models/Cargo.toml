@@ -13,6 +13,7 @@ trace = { path = "../trace" }
 utils = { path = "../utils" }
 
 arrow-schema = { workspace = true, features = ["serde"] }
+async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
@@ -32,7 +33,9 @@ tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
-async-backtrace = { workspace = true, optional = true }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { workspace = true }
 
 [features]
 default = []
