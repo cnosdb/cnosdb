@@ -1,14 +1,13 @@
-use std::any::Any;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use datafusion::common::{DFField, DFSchema, DFSchemaRef};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::utils::exprlist_to_fields;
-use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
+use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ExpandNode {
     pub projections: Vec<Vec<Expr>>,
     /// The incoming logical plan
@@ -68,11 +67,7 @@ impl Debug for ExpandNode {
     }
 }
 
-impl UserDefinedLogicalNode for ExpandNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
+impl UserDefinedLogicalNodeCore for ExpandNode {
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![self.input.as_ref()]
     }
@@ -104,13 +99,13 @@ impl UserDefinedLogicalNode for ExpandNode {
     }
 
     /// TODO [`PushDownProjection`] has no effect on this node
-    fn from_template(
-        &self,
-        _exprs: &[Expr],
-        inputs: &[LogicalPlan],
-    ) -> Arc<dyn UserDefinedLogicalNode> {
+    fn from_template(&self, _exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
         assert_eq!(inputs.len(), 1, "input size inconsistent");
-        Arc::new(self.clone())
+        self.clone()
+    }
+
+    fn name(&self) -> &str {
+        "Expand"
     }
 }
 

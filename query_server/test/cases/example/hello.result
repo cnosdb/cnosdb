@@ -3,33 +3,27 @@
 Int64(1),Int64(2),Int64(3),Int64(4)
 1,2,3,4
 
-
 -- EXECUTE SQL: SELECT NOT(TRUE); --
 200 OK
 NOT Boolean(true)
 false
-
 
 -- EXECUTE SQL: SELECT NOT(FALSE); --
 200 OK
 NOT Boolean(false)
 true
 
-
 -- EXECUTE SQL: SELECT TRUE; --
 200 OK
 Boolean(true)
 true
-
 
 -- EXECUTE SQL: SELECT 'Hello World'; --
 200 OK
 "Utf8(""Hello World"")"
 Hello World
 
-
 -- EXECUTE SQL: SELECT "Hello World"; --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Schema error: No field named 'Hello World'."}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named \"Hello World\"."}
 -- ERROR:  --
-

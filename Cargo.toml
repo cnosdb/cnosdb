@@ -52,11 +52,11 @@ crossbeam-channel = "0.5"
 ctrlc = "3"
 dashmap = "5.2"
 derive_builder = "0.11"
-arrow = { version = "32.0.0", features = ["prettyprint"] }
-arrow-schema = { version = "32.0.0", features = ["serde"] }
-arrow-flight = { version = "32.0.0" }
-datafusion-proto = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "e257fa50e33e8a13c312af3c04078bc6e4742992" }
-datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", rev = "e257fa50e33e8a13c312af3c04078bc6e4742992" }
+arrow = { version = "36.0.0", features = ["prettyprint"] }
+arrow-schema = { version = "36.0.0", features = ["serde"] }
+arrow-flight = { version = "36.0.0" }
+datafusion-proto = { git = "https://github.com/cnosdb/arrow-datafusion.git", branch = "22.0.0" }
+datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", branch = "22.0.0" }
 diff = "0.1.13"
 dirs = "4.0.0"
 env_logger = "0.9"

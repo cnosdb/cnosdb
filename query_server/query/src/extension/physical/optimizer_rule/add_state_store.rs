@@ -1,11 +1,11 @@
 use core::fmt::Debug;
 use std::sync::Arc;
 
+use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::aggregates::{AggregateExec, AggregateMode};
-use datafusion::physical_plan::rewrite::TreeNodeRewritable;
 use datafusion::physical_plan::{with_new_children_if_necessary, ExecutionPlan};
 
 use crate::extension::physical::plan_node::state_restore::StateRestoreExec;
@@ -78,13 +78,13 @@ where
                         let new_agg_exec =
                             with_new_children_if_necessary(plan.clone(), vec![state_save_exec])?;
 
-                        return Ok(Some(new_agg_exec));
+                        return Ok(new_agg_exec);
                     }
-                    _ => return Ok(None),
+                    _ => return Ok(Transformed::No(plan)),
                 }
             }
 
-            Ok(None)
+            Ok(Transformed::No(plan))
         })
     }
 

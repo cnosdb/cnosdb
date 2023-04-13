@@ -1,3 +1,4 @@
+#![feature(type_name_of_val)]
 extern crate core;
 
 pub mod auth;

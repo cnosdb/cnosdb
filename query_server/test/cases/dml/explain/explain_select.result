@@ -3,36 +3,25 @@
 plan_type,plan
 logical_plan,"Limit: skip=0, fetch=2
   Sort: num DESC NULLS FIRST, fetch=2
-    Projection: num, letter
-      Projection: t.column1 AS num, t.column2 AS letter
-        SubqueryAlias: t
-          Values: (Int64(9), Utf8(""nine"")), (Int64(2), Utf8(""two"")), (Int64(1), Utf8(""one"")), (Int64(3), Utf8(""three""))"
+    Projection: t.column1 AS num, t.column2 AS letter
+      SubqueryAlias: t
+        Values: (Int64(9), Utf8(""nine"")), (Int64(2), Utf8(""two"")), (Int64(1), Utf8(""one"")), (Int64(3), Utf8(""three""))"
 physical_plan,"GlobalLimitExec: skip=0, fetch=2
-  SortPreservingMergeExec: [num@0 DESC]
-    SortExec: [num@0 DESC]
-      ProjectionExec: expr=[num@0 as num, letter@1 as letter]
-        ProjectionExec: expr=[column1@0 as num, column2@1 as letter]
-          RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-            ValuesExec
+  SortExec: fetch=2, expr=[num@0 DESC]
+    ProjectionExec: expr=[column1@0 as num, column2@1 as letter]
+      ValuesExec
 "
-
 
 -- EXECUTE SQL: EXPLAIN SELECT * FROM (VALUES  (9, 'nine'),(2, 'two'), (1, 'one'), (3, 'three')) AS t (num,letter) order by num desc, letter limit 3; --
 200 OK
 plan_type,plan
 logical_plan,"Limit: skip=0, fetch=3
   Sort: num DESC NULLS FIRST, letter ASC NULLS LAST, fetch=3
-    Projection: num, letter
-      Projection: t.column1 AS num, t.column2 AS letter
-        SubqueryAlias: t
-          Values: (Int64(9), Utf8(""nine"")), (Int64(2), Utf8(""two"")), (Int64(1), Utf8(""one"")), (Int64(3), Utf8(""three""))"
+    Projection: t.column1 AS num, t.column2 AS letter
+      SubqueryAlias: t
+        Values: (Int64(9), Utf8(""nine"")), (Int64(2), Utf8(""two"")), (Int64(1), Utf8(""one"")), (Int64(3), Utf8(""three""))"
 physical_plan,"GlobalLimitExec: skip=0, fetch=3
-  SortPreservingMergeExec: [num@0 DESC,letter@1 ASC NULLS LAST]
-    SortExec: [num@0 DESC,letter@1 ASC NULLS LAST]
-      ProjectionExec: expr=[num@0 as num, letter@1 as letter]
-        ProjectionExec: expr=[column1@0 as num, column2@1 as letter]
-          RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
-            ValuesExec
+  SortExec: fetch=3, expr=[num@0 DESC,letter@1 ASC NULLS LAST]
+    ProjectionExec: expr=[column1@0 as num, column2@1 as letter]
+      ValuesExec
 "
-
-

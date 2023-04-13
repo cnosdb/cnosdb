@@ -304,6 +304,40 @@ impl TableProvider for ClusterTable {
 
         Ok(result)
     }
+
+    fn push_down_projection(&self, proj: &[usize]) -> Option<Vec<usize>> {
+        let mut contain_time = false;
+        let mut contain_field = false;
+
+        proj.iter()
+            .flat_map(|i| self.schema.column_by_index(*i))
+            .for_each(|c| {
+                if c.column_type.is_field() {
+                    contain_field = true;
+                } else if c.column_type.is_time() {
+                    contain_time = true;
+                }
+            });
+
+        if contain_time && !contain_field {
+            let new_projection = proj
+                .iter()
+                .cloned()
+                .chain(
+                    self.schema
+                        .columns()
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, c)| c.column_type.is_field())
+                        .map(|(i, _)| i),
+                )
+                .collect::<Vec<usize>>();
+
+            return Some(new_projection);
+        };
+
+        None
+    }
 }
 
 #[async_trait]

@@ -6,7 +6,7 @@ use std::str::FromStr;
 use datafusion::common::parsers::CompressionTypeVariant;
 use datafusion::sql::parser::CreateExternalTable;
 use datafusion::sql::sqlparser::ast::{
-    DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, SqlOption, TableFactor,
+    DataType, Expr, ObjectName, Offset, OrderByExpr, SqlOption, TableFactor,
 };
 use datafusion::sql::sqlparser::dialect::keywords::Keyword;
 use datafusion::sql::sqlparser::dialect::{Dialect, GenericDialect};
@@ -671,6 +671,19 @@ impl<'a> ExtParser<'a> {
         }
     }
 
+    /// Parse the ordering clause of a `CREATE EXTERNAL TABLE` SQL statement
+    pub fn parse_order_by_exprs(&mut self) -> Result<Vec<OrderByExpr>, ParserError> {
+        let mut values = vec![];
+        self.parser.expect_token(&Token::LParen)?;
+        loop {
+            values.push(self.parser.parse_order_by_expr()?);
+            if !self.parser.consume_token(&Token::Comma) {
+                self.parser.expect_token(&Token::RParen)?;
+                return Ok(values);
+            }
+        }
+    }
+
     fn parse_has_file_compression_type(&mut self) -> bool {
         self.parser
             .parse_keywords(&[Keyword::COMPRESSION, Keyword::TYPE])
@@ -735,6 +748,12 @@ impl<'a> ExtParser<'a> {
             CompressionTypeVariant::UNCOMPRESSED
         };
 
+        let order_exprs = if self.parser.parse_keywords(&[Keyword::WITH, Keyword::ORDER]) {
+            self.parse_order_by_exprs()?
+        } else {
+            vec![]
+        };
+
         self.parser.expect_keyword(Keyword::LOCATION)?;
         let location = self.parser.parse_literal_string()?;
 
@@ -749,6 +768,7 @@ impl<'a> ExtParser<'a> {
             if_not_exists,
             file_compression_type,
             options: Default::default(),
+            order_exprs,
         };
         Ok(ExtStatement::CreateExternalTable(create))
     }
@@ -969,7 +989,7 @@ impl<'a> ExtParser<'a> {
     /// ) engine = tskv;
     fn parse_create_stream_table(&mut self) -> Result<ExtStatement> {
         Ok(ExtStatement::CreateStreamTable(
-            self.parser.parse_create_table(false, false, None)?,
+            self.parser.parse_create_table(false, false, None, false)?,
         ))
     }
 
@@ -1489,62 +1509,6 @@ impl<'a> ExtParser<'a> {
 /// This is a copy of the equivalent implementation in Datafusion.
 fn parse_file_type(s: &str) -> Result<String, ParserError> {
     Ok(s.to_uppercase())
-}
-
-/// Normalize a SQL object name
-pub fn normalize_sql_object_name(sql_object_name: &ObjectName) -> String {
-    sql_object_name
-        .0
-        .iter()
-        .map(normalize_ident)
-        .collect::<Vec<String>>()
-        .join(".")
-}
-
-// Normalize an identifier to a lowercase string unless the identifier is quoted.
-pub fn normalize_ident(id: &Ident) -> String {
-    match id.quote_style {
-        Some(_) => id.value.clone(),
-        None => id.value.to_ascii_lowercase(),
-    }
-}
-
-// merge "catalog.db" and "db.table" to "catalog.db.table"
-// if a.b and b.c => a.b.c
-// if a.b and c.d => None
-pub fn merge_object_name(db: Option<ObjectName>, table: Option<ObjectName>) -> Option<ObjectName> {
-    let (db, table) = match (db, table) {
-        (Some(db), Some(table)) => (db, table),
-        (Some(db), None) => return Some(db),
-        (None, Some(table)) => return Some(table),
-        (None, None) => return None,
-    };
-
-    let mut db: Vec<Ident> = db.0;
-    let mut table: Vec<Ident> = table.0;
-    debug!("merge_object_name: db: {:#?} table: {:#?}", db, table);
-
-    if db.is_empty() {
-        return Some(ObjectName(table));
-    }
-
-    if table.len() == 1 {
-        db.append(&mut table);
-        return Some(ObjectName(db));
-    }
-
-    if let Some(db_name) = db.last() {
-        if let Some(table_db_name) = table.get(table.len() - 2) {
-            if !db_name.eq(table_db_name) {
-                return None;
-            } else {
-                let ident = table.remove(table.len() - 1);
-                db.push(ident);
-                return Some(ObjectName(db));
-            }
-        }
-    }
-    None
 }
 
 #[cfg(test)]

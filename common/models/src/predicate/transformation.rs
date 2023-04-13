@@ -2,8 +2,9 @@ use std::collections::VecDeque;
 use std::result;
 
 use datafusion::arrow::datatypes::DataType;
+use datafusion::common::tree_node::{TreeNode, TreeNodeVisitor, VisitRecursion};
+use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::expr_visitor::{ExprVisitable, ExpressionVisitor, Recursion};
 use datafusion::logical_expr::{BinaryExpr, Operator};
 use datafusion::prelude::{Column, Expr};
 use datafusion::scalar::ScalarValue;
@@ -137,8 +138,10 @@ fn get_get_range_fn(op: &Operator) -> Option<GetRangeFromDataTypeAndValue> {
     }
 }
 
-impl ExpressionVisitor for RowExpressionToDomainsVisitor<'_> {
-    fn pre_visit(self, expr: &Expr) -> Result<Recursion<Self>> {
+impl TreeNodeVisitor for RowExpressionToDomainsVisitor<'_> {
+    type N = Expr;
+
+    fn pre_visit(&mut self, expr: &Expr) -> Result<VisitRecursion> {
         // Note: expressions that can be used as and/or child nodes need to be processed.
         // Expressions returning boolean need to be processed, If the expression is not supported, push ColumnDomains::all() onto the stack.
         // If the expression supports it, return Continue directly.
@@ -162,7 +165,7 @@ impl ExpressionVisitor for RowExpressionToDomainsVisitor<'_> {
             // | Expr::Wildcard
             // | Expr::QualifiedWildcard { .. }
             // | Expr::GetIndexedField { .. } => {}
-            Expr::Column(_) | Expr::Literal(_) => Ok(Recursion::Continue(self)),
+            Expr::Column(_) | Expr::Literal(_) => Ok(VisitRecursion::Continue),
             Expr::BinaryExpr(BinaryExpr {
                 left: _,
                 op,
@@ -178,14 +181,14 @@ impl ExpressionVisitor for RowExpressionToDomainsVisitor<'_> {
                     | Operator::And
                     | Operator::Or => {
                         // support
-                        Ok(Recursion::Continue(self))
+                        Ok(VisitRecursion::Continue)
                     }
                     _ => {
                         // not support
                         self.ctx
                             .current_domain_stack
                             .push_back(ColumnDomains::all());
-                        Ok(Recursion::Stop(self))
+                        Ok(VisitRecursion::Skip)
                     }
                 }
             }
@@ -207,13 +210,13 @@ impl ExpressionVisitor for RowExpressionToDomainsVisitor<'_> {
                 self.ctx
                     .current_domain_stack
                     .push_back(ColumnDomains::all());
-                Ok(Recursion::Stop(self))
+                Ok(VisitRecursion::Skip)
             }
-            _ => Ok(Recursion::Stop(self)),
+            _ => Ok(VisitRecursion::Skip),
         }
     }
 
-    fn post_visit(self, expr: &Expr) -> datafusion::common::Result<Self> {
+    fn post_visit(&mut self, expr: &Expr) -> DFResult<VisitRecursion> {
         match expr {
             Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
                 match op {
@@ -257,14 +260,14 @@ impl ExpressionVisitor for RowExpressionToDomainsVisitor<'_> {
             _ => {}
         }
 
-        Ok(self)
+        Ok(VisitRecursion::Continue)
     }
 }
 
 impl RowExpressionToDomainsVisitor<'_> {
     pub fn expr_to_column_domains(expr: &Expr) -> Result<ColumnDomains<Column>> {
         let mut ctx = RowExpressionToDomainsVisitorContext::default();
-        expr.accept(RowExpressionToDomainsVisitor { ctx: &mut ctx })?;
+        expr.visit(&mut RowExpressionToDomainsVisitor { ctx: &mut ctx })?;
         Ok(ctx
             .current_domain_stack
             .pop_back()
