@@ -32,6 +32,10 @@ tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
 
+[features]
+default = []
+backtrace = ["async-backtrace"]
 [dev-dependencies]
 flatbuffers = { workspace = true }
