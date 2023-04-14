@@ -268,7 +268,17 @@ impl TSIndex {
 
     async fn del_series_id_from_engine(&self, sid: u32) -> IndexResult<()> {
         let mut storage_w = self.storage.write().await;
-        let series_key = self.get_series_key(sid).await?;
+        let series_key = match self.forward_cache.get_series_key_by_id(sid) {
+            Some(k) => Some(k),
+            None => match storage_w.get(&encode_series_id_key(sid))? {
+                Some(res) => {
+                    let key = SeriesKey::decode(&res)
+                        .map_err(|e| IndexError::DecodeSeriesKey { msg: e.to_string() })?;
+                    Some(key)
+                }
+                None => None,
+            },
+        };
         let _ = storage_w.delete(&encode_series_id_key(sid));
         if let Some(series_key) = series_key {
             self.forward_cache.del(sid, series_key.hash());

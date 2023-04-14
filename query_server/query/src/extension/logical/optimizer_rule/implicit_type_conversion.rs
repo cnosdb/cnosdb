@@ -168,11 +168,11 @@ impl<'a> DataTypeRewriter<'a> {
         // Ensure that the left side of the op is column
         let mut reverse = false;
         let left_type = match (&left_type, &right_type) {
-            (Some(v), None) => v,
-            (None, Some(v)) => {
+            (Some(t), None) => t,
+            (None, Some(t)) => {
                 reverse = true;
                 mem::swap(&mut left, &mut right);
-                v
+                t
             }
             _ => return Ok((left, right)),
         };
@@ -209,24 +209,37 @@ impl<'a> DataTypeRewriter<'a> {
     /// Cast `array` to the provided data type and return a new Array with
     /// type `to_type`, if possible.
     fn cast_scalar_value(value: &ScalarValue, data_type: &DataType) -> Result<ScalarValue> {
-        if let DataType::Timestamp(unit, _) = data_type {
-            if let ScalarValue::Utf8(Some(v)) = value {
-                return match unit {
-                    TimeUnit::Second => string_to_timestamp_s(v),
-                    TimeUnit::Millisecond => string_to_timestamp_ms(v),
-                    TimeUnit::Microsecond => string_to_timestamp_us(v),
-                    TimeUnit::Nanosecond => string_to_timestamp_ns(v),
-                };
-            }
+        // TODO use expr.cast(data_type) replace
+        // wait df update
+
+        if value.get_datatype().eq(data_type) {
+            return Ok(value.clone());
         }
 
-        let array = value.to_array();
-        ScalarValue::try_from_array(
-            &compute::cast_with_options(&array, data_type, &CastOptions { safe: false })
-                .map_err(DataFusionError::ArrowError)?,
-            // index: Converts a value in `array` at `index` into a ScalarValue
-            0,
-        )
+        match (data_type, value.get_datatype()) {
+            (DataType::Timestamp(unit, _), DataType::Utf8) => {
+                if let ScalarValue::Utf8(Some(v)) = value {
+                    match unit {
+                        TimeUnit::Second => string_to_timestamp_s(v),
+                        TimeUnit::Millisecond => string_to_timestamp_ms(v),
+                        TimeUnit::Microsecond => string_to_timestamp_us(v),
+                        TimeUnit::Nanosecond => string_to_timestamp_ns(v),
+                    }
+                } else {
+                    Ok(value.clone())
+                }
+            }
+            (DataType::Timestamp(_, _), _) | (DataType::Utf8, _) | (_, DataType::Utf8) => {
+                let array = value.to_array();
+                ScalarValue::try_from_array(
+                    &compute::cast_with_options(&array, data_type, &CastOptions { safe: false })
+                        .map_err(DataFusionError::ArrowError)?,
+                    // index: Converts a value in `array` at `index` into a ScalarValue
+                    0,
+                )
+            }
+            (_, _) => Ok(value.clone()),
+        }
     }
 }
 
