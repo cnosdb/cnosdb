@@ -12,6 +12,7 @@ use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::Stream;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use models::consistency_level::ConsistencyLevel;
 use models::meta_data::VnodeInfo;
 use models::predicate::domain::{self, QueryArgs, QueryExpr};
 use models::schema::{Precision, TableColumn};
@@ -318,12 +319,24 @@ impl TskvService for TskvServiceImpl {
         while let Some(result) = stream.next().await {
             match result {
                 Ok(req) => {
-                    let ret = self
-                        .kv_inst
-                        .write(0, Precision::NS, req)
+                    if let Err(err) = self
+                        .coord
+                        .write_points(
+                            "cnosdb".to_string(),
+                            ConsistencyLevel::Any,
+                            Precision::NS,
+                            req,
+                        )
                         .await
-                        .map_err(|err| tonic::Status::internal(err.to_string()));
-                    resp_sender.send(ret).await.expect("successful");
+                        .map_err(|err| tonic::Status::internal(err.to_string()))
+                    {
+                        resp_sender.send(Err(err)).await.expect("successful");
+                    } else {
+                        resp_sender
+                            .send(Ok(WritePointsResponse { points_number: 1 }))
+                            .await
+                            .expect("successful");
+                    }
                 }
                 Err(status) => {
                     match resp_sender.send(Err(status)).await {

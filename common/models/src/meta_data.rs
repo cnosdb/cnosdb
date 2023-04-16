@@ -10,6 +10,17 @@ pub type VnodeId = u32;
 pub type NodeId = u64;
 pub type ReplicationSetId = u32;
 
+pub const OPERATION_TYPE_ADD: i32 = 1;
+pub const OPERATION_TYPE_UPDATE: i32 = 2;
+pub const OPERATION_TYPE_DELETE: i32 = 3;
+#[derive(Debug, Default, Clone)]
+pub struct SubOperationLog {
+    pub opt_type: i32,
+    pub tenant: String,
+    pub db_name: String,
+    pub info: SubscriptionInfo,
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SysInfo {
     pub cpu_load: f64,
@@ -82,6 +93,14 @@ pub struct VnodeAllInfo {
     pub end_time: i64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct SubscriptionInfo {
+    pub consistency_level: u8,
+    pub name: String,
+    pub _table_name: String,
+    pub destinations: Vec<String>,
+}
+
 pub type DatabaseInfoRef = Arc<DatabaseInfo>;
 
 // CREATE DATABASE <database_name>
@@ -94,6 +113,7 @@ pub type DatabaseInfoRef = Arc<DatabaseInfo>;
 pub struct DatabaseInfo {
     pub schema: DatabaseSchema,
     pub buckets: Vec<BucketInfo>,
+    pub subs: HashMap<String, SubscriptionInfo>,
     pub tables: HashMap<String, TableSchema>,
 }
 

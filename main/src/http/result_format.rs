@@ -203,3 +203,88 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+
+    use datafusion::arrow::record_batch::RecordBatch;
+    use datafusion::parquet::arrow::ArrowWriter;
+    use datafusion::parquet::basic::Compression;
+    use datafusion::parquet::file::properties::WriterProperties;
+
+    // use protocol_parser::lines_convert::parse_lines_to_batch;
+    use crate::http::http_service::construct_write_lines_points_request;
+
+    const LINE_PROTOCOL_FILE: &str = "/Users/adminliu/test_data/test_line_pro.txt";
+
+    #[tokio::test]
+    #[ignore]
+    async fn test1() {
+        let data = std::fs::read_to_string(LINE_PROTOCOL_FILE).unwrap();
+
+        let points = construct_write_lines_points_request(
+            data.clone().into(),
+            "cnosdb_tenant.test_db_test_db_name",
+        )
+        .unwrap();
+
+        let src1: Vec<&[u8]> = vec![data.as_bytes()];
+        let mut dst1 = vec![];
+        tskv::tsm::codec::string::str_snappy_encode(&src1, &mut dst1).unwrap();
+
+        let src2: Vec<&[u8]> = vec![&points.points];
+        let mut dst2 = vec![];
+        tskv::tsm::codec::string::str_snappy_encode(&src2, &mut dst2).unwrap();
+
+        print!(
+            "=== lp: {} {} fb: {} {}  ",
+            data.len(),
+            dst1.len(),
+            points.points.len(),
+            dst2.len()
+        );
+    }
+
+    // #[tokio::test]
+    // #[ignore]
+    // async fn test2() {
+    //     let data = std::fs::read_to_string(LINE_PROTOCOL_FILE).unwrap();
+    //
+    //     let lines = line_protocol_to_lines(&data, Local::now().timestamp_nanos()).unwrap();
+    //     let batches = parse_lines_to_batch(&lines).unwrap();
+    //
+    //     //write_record_batch_to_parquet_file(&batches[0], &format!("{}.pqt", LINE_PROTOCOL_FILE));
+    //
+    //     for batch in batches {
+    //         print_record_size(&batch);
+    //     }
+    // }
+
+    fn print_record_size(record: &datafusion::arrow::record_batch::RecordBatch) {
+        let data = models::record_batch_encode(record).unwrap();
+        let src1: Vec<&[u8]> = vec![&data];
+        let mut dst1 = vec![];
+        tskv::tsm::codec::string::str_zstd_encode(&src1, &mut dst1).unwrap();
+        println!(
+            "==== print_record_size count: {}, len:{}, {}",
+            record.num_rows(),
+            data.len(),
+            dst1.len()
+        );
+    }
+
+    fn write_record_batch_to_parquet_file(rb: &RecordBatch, file_path: &str) {
+        let option = WriterProperties::builder()
+            //.set_bloom_filter_enabled(true)
+            .set_compression(Compression::SNAPPY)
+            .build();
+
+        let mut buffer = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut buffer, rb.schema(), Some(option)).unwrap();
+        writer.write(rb).unwrap();
+        writer.close().unwrap();
+        println!("=== parquet_file size: {}", buffer.len());
+
+        std::fs::write(file_path, buffer).unwrap();
+    }
+}

@@ -1,6 +1,6 @@
 #![allow(clippy::if_same_then_else)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -10,11 +10,14 @@ use models::auth::role::TenantRoleIdentifier;
 use models::auth::user::{admin_user, User};
 use models::meta_data::*;
 use models::oid::Identifier;
+use models::schema::{DatabaseSchema, TableSchema};
 use models::utils::min_num;
 use parking_lot::RwLock;
+use tokio::sync::broadcast;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use trace::info;
 
+use super::MetaClientRef;
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
 use crate::model::meta_admin::RemoteAdminMeta;
@@ -23,6 +26,7 @@ use crate::model::tenant_manager::{
 };
 use crate::model::user_manager::RemoteUserManager;
 use crate::model::{AdminMetaRef, MetaManager, TenantManagerRef, UserManagerRef};
+use crate::store::command::EntryLog;
 use crate::store::{command, key_path};
 
 #[derive(Debug)]
@@ -36,6 +40,8 @@ pub struct RemoteMetaManager {
     admin: AdminMetaRef,
     user_manager: UserManagerRef,
     tenant_manager: TenantManagerRef,
+
+    sub_change_sender: broadcast::Sender<SubOperationLog>,
 }
 
 impl RemoteMetaManager {
@@ -56,11 +62,14 @@ impl RemoteMetaManager {
             tenant_change_sender.clone(),
         ));
 
+        let (sub_change_sender, _) = broadcast::channel(1024);
+
         let manager = Arc::new(Self {
             config,
             admin,
             user_manager,
             tenant_manager,
+            sub_change_sender,
             tenant_change_sender,
             watch_tenants: Arc::new(RwLock::new(HashSet::new())),
             watch_version: Arc::new(AtomicU64::new(base_ver)),
@@ -96,14 +105,25 @@ impl RemoteMetaManager {
                         if info.name.is_empty() {
                             tenants.clear();
                         }
-                        tenants.insert(info.name);
+                        tenants.insert(info.name.clone());
+
+                        for (db_name, db) in info.data.dbs.iter() {
+                            for (_, sub) in db.subs.iter() {
+                                let _ = mgr.sub_change_sender.send(SubOperationLog {
+                                    info: sub.clone(),
+                                    opt_type: OPERATION_TYPE_ADD,
+                                    tenant: info.name.clone(),
+                                    db_name: db_name.clone(),
+                                });
+                            }
+                        }
                     } else if info.action == USE_TENANT_ACTION_DEL {
                         if info.name.is_empty() {
                             tenants.clear();
                         }
                         tenants.remove(&info.name);
                     }
-                    info.version
+                    info.data.version
                 }
 
                 None => {
@@ -182,7 +202,7 @@ impl RemoteMetaManager {
             if len > 3 && strs[2] == key_path::TENANTS {
                 let tenant_name = strs[3];
                 if let Some(client) = self.tenant_manager.get_tenant_meta(tenant_name).await {
-                    let _ = client.process_watch_log(entry).await;
+                    let _ = self.process_tenant_meta_data(client, entry).await;
                 }
             } else if len == 4 && strs[2] == key_path::DATA_NODES {
                 let _ = self.admin_meta().process_watch_log(entry).await;
@@ -190,6 +210,111 @@ impl RemoteMetaManager {
             } else if len == 4 && strs[2] == key_path::USERS {
             }
         }
+    }
+
+    async fn process_tenant_meta_data(
+        &self,
+        client: MetaClientRef,
+        entry: &EntryLog,
+    ) -> MetaResult<()> {
+        let strs: Vec<&str> = entry.key.split('/').collect();
+
+        let mut data = client.get_mut_data();
+
+        let len = strs.len();
+        if len == 8
+            && strs[6] == key_path::SCHEMAS
+            && strs[4] == key_path::DBS
+            && strs[2] == key_path::TENANTS
+        {
+            let _tenant = strs[3];
+            let db_name = strs[5];
+            let tab_name = strs[7];
+            if let Some(db) = data.dbs.get_mut(db_name) {
+                if entry.tye == command::ENTRY_LOG_TYPE_SET {
+                    if let Ok(info) = serde_json::from_str::<TableSchema>(&entry.val) {
+                        db.tables.insert(tab_name.to_string(), info);
+                    }
+                } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
+                    db.tables.remove(tab_name);
+                }
+            }
+        } else if len == 8
+            && strs[6] == key_path::SUBS
+            && strs[4] == key_path::DBS
+            && strs[2] == key_path::TENANTS
+        {
+            let tenant = strs[3];
+            let db_name = strs[5];
+            let sub_name = strs[7];
+            if let Some(db) = data.dbs.get_mut(db_name) {
+                if entry.tye == command::ENTRY_LOG_TYPE_SET {
+                    if let Ok(info) = serde_json::from_str::<SubscriptionInfo>(&entry.val) {
+                        db.subs.insert(sub_name.to_string(), info.clone());
+
+                        let _ = self.sub_change_sender.send(SubOperationLog {
+                            info,
+                            opt_type: OPERATION_TYPE_UPDATE,
+                            tenant: tenant.to_string(),
+                            db_name: db_name.to_string(),
+                        });
+                    }
+                } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
+                    db.subs.remove(sub_name);
+
+                    let _ = self.sub_change_sender.send(SubOperationLog {
+                        info: SubscriptionInfo::default(),
+                        opt_type: OPERATION_TYPE_DELETE,
+                        tenant: tenant.to_string(),
+                        db_name: db_name.to_string(),
+                    });
+                }
+            }
+        } else if len == 8
+            && strs[6] == key_path::BUCKETS
+            && strs[4] == key_path::DBS
+            && strs[2] == key_path::TENANTS
+        {
+            let _tenant = strs[3];
+            let db_name = strs[5];
+            if let Some(db) = data.dbs.get_mut(db_name) {
+                if let Ok(bucket_id) = serde_json::from_str::<u32>(strs[7]) {
+                    db.buckets.sort_by(|a, b| a.id.cmp(&b.id));
+                    if entry.tye == command::ENTRY_LOG_TYPE_SET {
+                        if let Ok(info) = serde_json::from_str::<BucketInfo>(&entry.val) {
+                            match db.buckets.binary_search_by(|v| v.id.cmp(&bucket_id)) {
+                                Ok(index) => db.buckets[index] = info,
+                                Err(index) => db.buckets.insert(index, info),
+                            }
+                        }
+                    } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
+                        if let Ok(index) = db.buckets.binary_search_by(|v| v.id.cmp(&bucket_id)) {
+                            db.buckets.remove(index);
+                        }
+                    }
+                }
+            }
+        } else if len == 6 && strs[4] == key_path::DBS && strs[2] == key_path::TENANTS {
+            let _tenant = strs[3];
+            let db_name = strs[5];
+            if entry.tye == command::ENTRY_LOG_TYPE_SET {
+                if let Ok(info) = serde_json::from_str::<DatabaseSchema>(&entry.val) {
+                    let db = data
+                        .dbs
+                        .entry(db_name.to_string())
+                        .or_insert_with(DatabaseInfo::default);
+
+                    db.schema = info;
+                }
+            } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
+                data.dbs.remove(db_name);
+            }
+        } else if len == 6 && strs[4] == key_path::USERS && strs[2] == key_path::TENANTS {
+        } else if len == 6 && strs[4] == key_path::MEMBERS && strs[2] == key_path::TENANTS {
+        } else if len == 6 && strs[4] == key_path::ROLES && strs[2] == key_path::TENANTS {
+        }
+
+        Ok(())
     }
 }
 
@@ -227,6 +352,10 @@ impl MetaManager for RemoteMetaManager {
         self.tenant_manager.expired_bucket().await
     }
 
+    async fn subscribe_sub_change(&self) -> broadcast::Receiver<SubOperationLog> {
+        self.sub_change_sender.subscribe()
+    }
+
     async fn use_tenant(&self, name: &str) -> MetaResult<()> {
         if self.watch_tenants.read().contains(name) {
             return Ok(());
@@ -249,8 +378,12 @@ impl MetaManager for RemoteMetaManager {
 
         let info = UseTenantInfo {
             name: name.to_string(),
-            version: u64::MAX,
             action: USE_TENANT_ACTION_ADD,
+            data: TenantMetaData {
+                version: u64::MAX,
+                users: HashMap::new(),
+                dbs: HashMap::new(),
+            },
         };
 
         self.tenant_change_sender

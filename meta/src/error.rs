@@ -130,9 +130,17 @@ pub enum MetaError {
     // RaftRPC{
     //     source: RPCError<ClusterNodeId, ClusterNode, Err>
     // }
-    #[snafu(display("Connect to Meta error reason: {}", msg))]
+    #[snafu(display("Connect to Server error reason: {}", msg))]
     #[error_code(code = 26)]
-    ConnectMetaError { msg: String },
+    ConnectServerError { msg: String },
+
+    #[snafu(display("Subscription {} already exists.", name))]
+    #[error_code(code = 27)]
+    SubscriptionAlreadyExists { name: String },
+
+    #[snafu(display("Subscription {} not found.", name))]
+    #[error_code(code = 28)]
+    SubscriptionNotFound { name: String },
 }
 impl MetaError {
     pub fn error_code(&self) -> &dyn ErrorCode {

@@ -10,10 +10,12 @@ use models::oid::Oid;
 
 // **    /cluster_name/tenant_name/users/name -> [UserInfo] 租户下用户信息、访问权限等
 // **    /cluster_name/tenant_name/dbs/db_name -> [DatabaseInfo] db相关信息、保留策略等
+// **    /cluster_name/tenant_name/dbs/db_name/subs/name -> [SubscriptionInfo] subscription相关信息
 // **    /cluster_name/tenant_name/dbs/db_name/buckets/id -> [BucketInfo] bucket相关信息
 // **    /cluster_name/tenant_name/dbs/db_name/schemas/name -> [TskvTableSchema] schema相关信息
 
 pub const DBS: &str = "dbs";
+pub const SUBS: &str = "subs";
 pub const USERS: &str = "users";
 pub const ROLES: &str = "roles";
 pub const BUCKETS: &str = "buckets";
@@ -71,6 +73,14 @@ impl KeyPath {
 
     pub fn tenant_db_name(cluster: &str, tenant: &str, db: &str) -> String {
         format!("/{}/tenants/{}/dbs/{}", cluster, tenant, db)
+    }
+
+    pub fn tenant_db_subs(cluster: &str, tenant: &str, db: &str) -> String {
+        format!("/{}/tenants/{}/dbs/{}/subs", cluster, tenant, db)
+    }
+
+    pub fn tenant_subs_name(cluster: &str, tenant: &str, db: &str, name: &str) -> String {
+        format!("/{}/tenants/{}/dbs/{}/subs/{}", cluster, tenant, db, name)
     }
 
     pub fn tenant_db_buckets(cluster: &str, tenant: &str, db: &str) -> String {

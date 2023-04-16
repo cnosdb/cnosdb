@@ -1468,6 +1468,7 @@ name = "coordinator"
 version = "2.2.0"
 dependencies = [
  "async-backtrace",
+ "async-channel",
  "async-trait",
  "bincode",
  "chrono",
@@ -1481,6 +1482,7 @@ dependencies = [
  "models",
  "protocol_parser",
  "protos",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "snafu",
@@ -4597,6 +4599,7 @@ version = "2.2.0"
 dependencies = [
  "async-backtrace",
  "bytes 1.4.0",
+ "datafusion",
  "flatbuffers 22.12.6",
  "models",
  "protos",

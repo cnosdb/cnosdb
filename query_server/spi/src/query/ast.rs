@@ -7,6 +7,7 @@ use datafusion::sql::sqlparser::ast::{
 };
 use datafusion::sql::sqlparser::parser::ParserError;
 use models::codec::Encoding;
+use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 
 use super::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
@@ -36,6 +37,11 @@ pub enum ExtStatement {
     DropTenantObject(DropTenantObject),
     DropGlobalObject(DropGlobalObject),
 
+    CreateSubscription(CreateSubscription),
+    DropSubscription(DropSubscription),
+    AlterSubscription(AlterSubscription),
+    ShowSubscription(ShowSubscription),
+
     GrantRevoke(GrantRevoke),
 
     DescribeTable(DescribeTable),
@@ -59,6 +65,34 @@ pub enum ExtStatement {
     MoveVnode(MoveVnode),
     CompactVnode(CompactVnode),
     ChecksumGroup(ChecksumGroup),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateSubscription {
+    pub subs_name: Ident,
+    pub db_name: ObjectName,
+    pub level: ConsistencyLevel,
+    pub addrs: Vec<Ident>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DropSubscription {
+    pub if_exist: bool,
+    pub subs_name: Ident,
+    pub db_name: ObjectName,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShowSubscription {
+    pub db_name: ObjectName,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterSubscription {
+    pub subs_name: Ident,
+    pub db_name: ObjectName,
+    pub level: ConsistencyLevel,
+    pub addrs: Vec<Ident>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

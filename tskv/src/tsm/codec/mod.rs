@@ -3,7 +3,7 @@ mod float;
 mod instance;
 mod integer;
 mod simple8b;
-mod string;
+pub mod string;
 mod timestamp;
 mod unsigned;
 

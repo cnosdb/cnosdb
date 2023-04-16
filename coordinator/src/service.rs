@@ -4,6 +4,7 @@ use std::ops::Not;
 use std::sync::Arc;
 use std::time::Duration;
 
+use config::sub_config::SubConfig;
 use config::{Config, HintedOffConfig};
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::{MetaClientRef, MetaRef};
@@ -30,6 +31,7 @@ use crate::errors::*;
 use crate::hh_queue::HintedOffManager;
 use crate::metrics::LPReporter;
 use crate::reader::{QueryExecutor, ReaderIterator};
+use crate::subscriber::SubService;
 use crate::writer::PointWriter;
 use crate::{
     status_response_to_result, Coordinator, QueryOption, VnodeManagerCmdType, WriteRequest,
@@ -44,6 +46,7 @@ pub struct CoordService {
     runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
     writer: Arc<PointWriter>,
+    sub_ser: Arc<SubService>,
     metrics: Arc<CoordServiceMetrics>,
 }
 
@@ -80,6 +83,7 @@ impl CoordService {
         meta_manager: MetaRef,
         config: Config,
         handoff_cfg: HintedOffConfig,
+        sub_config: SubConfig,
         metrics_register: Arc<MetricsRegister>,
     ) -> Arc<Self> {
         let (hh_sender, hh_receiver) = mpsc::channel(1024);
@@ -90,6 +94,8 @@ impl CoordService {
             hh_sender,
         ));
 
+        let sub_ser = SubService::new(sub_config, meta_manager.clone()).await;
+
         let hh_manager = Arc::new(HintedOffManager::new(handoff_cfg, point_writer.clone()).await);
         tokio::spawn(HintedOffManager::write_handoff_job(hh_manager, hh_receiver));
 
@@ -97,6 +103,7 @@ impl CoordService {
             runtime,
             kv_inst,
             node_id: config.node_id,
+            sub_ser,
             meta: meta_manager,
             writer: point_writer,
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
@@ -366,6 +373,7 @@ impl Coordinator for CoordService {
 
         let req = WriteRequest {
             tenant: tenant.clone(),
+            db_name: db,
             level,
             precision,
             request,
@@ -374,6 +382,7 @@ impl Coordinator for CoordService {
         let now = tokio::time::Instant::now();
         debug!("write points, now: {:?}", now);
         let res = self.writer.write_points(&req).await;
+        self.sub_ser.publish_request(req).await;
         debug!(
             "write points result: {:?}, start at: {:?} elapsed: {:?}",
             res,

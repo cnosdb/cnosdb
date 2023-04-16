@@ -804,7 +804,7 @@ async fn construct_write_context(
     Ok(context)
 }
 
-fn construct_write_lines_points_request(
+pub fn construct_write_lines_points_request(
     req: Bytes,
     db: &str,
 ) -> Result<WritePointsRequest, HttpError> {

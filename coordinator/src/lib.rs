@@ -17,6 +17,7 @@ pub mod metrics;
 pub mod reader;
 pub mod service;
 pub mod service_mock;
+pub mod subscriber;
 pub mod vnode_mgr;
 pub mod writer;
 
@@ -24,9 +25,10 @@ pub const FAILED_RESPONSE_CODE: i32 = -1;
 pub const FINISH_RESPONSE_CODE: i32 = 0;
 pub const SUCCESS_RESPONSE_CODE: i32 = 1;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WriteRequest {
     pub tenant: String,
+    pub db_name: String,
     pub level: models::consistency_level::ConsistencyLevel,
     pub precision: Precision,
     pub request: protos::kv_service::WritePointsRequest,

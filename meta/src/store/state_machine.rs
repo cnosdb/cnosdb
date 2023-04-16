@@ -380,8 +380,14 @@ impl StateMachine {
                 self.db.clone(),
             );
 
+            let subs = children_data::<SubscriptionInfo>(
+                &KeyPath::tenant_db_subs(cluster, tenant, key),
+                self.db.clone(),
+            );
+
             let info = DatabaseInfo {
                 tables,
+                subs,
                 schema: schema.clone(),
                 buckets: buckets.into_values().collect(),
             };
@@ -595,7 +601,84 @@ impl StateMachine {
                 tenant,
                 request,
             } => self.process_limiter_request(cluster, tenant, request),
+
+            WriteCommand::CreateSubscription(cluster, tenant, db, info) => {
+                self.process_create_subscription(cluster, tenant, db, info)
+            }
+            WriteCommand::UpdateSubscription(cluster, tenant, db, info) => {
+                self.process_update_subscription(cluster, tenant, db, info)
+            }
+            WriteCommand::DropSubscription(cluster, tenant, db, name) => {
+                self.process_drop_subscription(cluster, tenant, db, name)
+            }
         }
+    }
+
+    fn process_create_subscription(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        db: &str,
+        info: &SubscriptionInfo,
+    ) -> CommandResp {
+        let key = KeyPath::tenant_subs_name(cluster, tenant, db, &info.name);
+        if self.db.contains_key(&key).unwrap() {
+            let status = StatusResponse::new(META_REQUEST_SUBSCRIPTION_EXIST, "".to_string());
+
+            return serde_json::to_string(&status).unwrap();
+        }
+
+        let value = serde_json::to_string(info).unwrap();
+        let _ = self.insert(&key, &value);
+        info!("WRITE: {} :{}", key, value);
+
+        serde_json::to_string(&StatusResponse::default()).unwrap()
+    }
+
+    fn process_update_subscription(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        db: &str,
+        info: &SubscriptionInfo,
+    ) -> CommandResp {
+        let key = KeyPath::tenant_subs_name(cluster, tenant, db, &info.name);
+        if !self.db.contains_key(&key).unwrap() {
+            let status = StatusResponse::new(
+                META_REQUEST_FAILED,
+                format!("Not Found Subscription: {}", info.name),
+            );
+
+            return serde_json::to_string(&status).unwrap();
+        }
+
+        let value = serde_json::to_string(info).unwrap();
+        let _ = self.insert(&key, &value);
+        info!("WRITE: {} :{}", key, value);
+
+        serde_json::to_string(&StatusResponse::default()).unwrap()
+    }
+
+    fn process_drop_subscription(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        db: &str,
+        name: &str,
+    ) -> CommandResp {
+        let key = KeyPath::tenant_subs_name(cluster, tenant, db, name);
+        if !self.db.contains_key(&key).unwrap() {
+            let status = StatusResponse::new(
+                META_REQUEST_FAILED,
+                format!("Not Found Subscription: {}", name),
+            );
+
+            return serde_json::to_string(&status).unwrap();
+        }
+
+        let _ = self.remove(&key);
+
+        serde_json::to_string(&StatusResponse::default()).unwrap()
     }
 
     fn process_update_vnode_repl_set(&self, args: &UpdateVnodeReplSetArgs) -> CommandResp {

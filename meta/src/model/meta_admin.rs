@@ -139,7 +139,7 @@ impl AdminMeta for RemoteAdminMeta {
         let info = self.node_info_by_id(node_id).await?;
         let connector =
             Endpoint::from_shared(format!("http://{}", info.grpc_addr)).map_err(|err| {
-                MetaError::ConnectMetaError {
+                MetaError::ConnectServerError {
                     msg: err.to_string(),
                 }
             })?;
@@ -147,7 +147,7 @@ impl AdminMeta for RemoteAdminMeta {
         let channel = connector
             .connect()
             .await
-            .map_err(|err| MetaError::ConnectMetaError {
+            .map_err(|err| MetaError::ConnectServerError {
                 msg: err.to_string(),
             })?;
 

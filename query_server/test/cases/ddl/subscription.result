@@ -1,0 +1,25 @@
+-- EXECUTE SQL: create subscription test on public destinations all "127.0.0.1:31001"; --
+200 OK
+
+
+-- EXECUTE SQL: show subscription on public; --
+200 OK
+Subscription,DESTINATIONS,Concurrency
+test,127.0.0.1:31001,ALL
+
+-- EXECUTE SQL: alter subscription test on public destinations all "127.0.0.1:31001" "127.0.0.1:31002"; --
+200 OK
+
+
+-- EXECUTE SQL: show subscription on public; --
+200 OK
+Subscription,DESTINATIONS,Concurrency
+test,"127.0.0.1:31001,127.0.0.1:31002",ALL
+
+-- EXECUTE SQL: drop subscription test on public; --
+200 OK
+
+
+-- EXECUTE SQL: show subscription on public; --
+200 OK
+Subscription,DESTINATIONS,Concurrency

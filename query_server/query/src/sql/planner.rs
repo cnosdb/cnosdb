@@ -72,14 +72,14 @@ use spi::query::datasource::{self, UriSchema};
 use spi::query::logical_planner::{
     parse_connection_options, sql_option_to_alter_tenant_action, sql_options_to_map,
     sql_options_to_tenant_options, sql_options_to_user_options,
-    unset_option_to_alter_tenant_action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
-    AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction,
-    ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder, CopyVnode, CreateDatabase,
-    CreateRole, CreateStreamTable, CreateTable, CreateTenant, CreateUser, DDLPlan,
-    DatabaseObjectType, DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject,
-    DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
-    GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan,
-    TenantObjectType,
+    unset_option_to_alter_tenant_action, AlterDatabase, AlterSubscription, AlterTable,
+    AlterTableAction, AlterTenant, AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser,
+    AlterUser, AlterUserAction, ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder,
+    CopyVnode, CreateDatabase, CreateRole, CreateStreamTable, CreateSubscription, CreateTable,
+    CreateTenant, CreateUser, DDLPlan, DatabaseObjectType, DescribeDatabase, DescribeTable,
+    DropDatabaseObject, DropGlobalObject, DropSubscription, DropTenantObject, DropVnode,
+    FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType, GrantRevoke, LogicalPlanner,
+    MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan, ShowSubscription, TenantObjectType,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -122,13 +122,18 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::CreateTenant(stmt) => self.create_tenant_to_plan(stmt),
             ExtStatement::CreateUser(stmt) => self.create_user_to_plan(stmt),
             ExtStatement::CreateRole(stmt) => self.create_role_to_plan(stmt, session),
+            ExtStatement::CreateSubscription(stmt) => {
+                self.create_subscription_to_plan(stmt, session)
+            }
             ExtStatement::DropDatabaseObject(s) => self.drop_database_object_to_plan(s, session),
             ExtStatement::DropTenantObject(s) => self.drop_tenant_object_to_plan(s, session),
             ExtStatement::DropGlobalObject(s) => self.drop_global_object_to_plan(s),
+            ExtStatement::DropSubscription(s) => self.drop_subscription_to_plan(s, session),
             ExtStatement::DescribeTable(stmt) => self.table_to_describe(stmt, session),
             ExtStatement::DescribeDatabase(stmt) => self.database_to_describe(stmt, session),
             ExtStatement::ShowDatabases() => self.database_to_show(session),
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt, session),
+            ExtStatement::ShowSubscription(stmt) => self.subscription_to_show(stmt, session),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
             ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(*stmt, session),
             ExtStatement::Explain(stmt) => {
@@ -144,6 +149,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt, session),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt).await,
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt).await,
+            ExtStatement::AlterSubscription(stmt) => self.alter_subscription_to_plan(stmt, session),
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
             // system statement
             ExtStatement::ShowQueries => {
@@ -456,6 +462,35 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
         Ok(PlanWithPrivileges {
             plan: Plan::DDL(plan),
+            privileges: vec![privilege],
+        })
+    }
+
+    fn drop_subscription_to_plan(
+        &self,
+        stmt: ast::DropSubscription,
+        session: &SessionCtx,
+    ) -> Result<PlanWithPrivileges> {
+        let tenant_id = *session.tenant_id();
+        let privilege = Privilege::TenantObject(
+            TenantObjectPrivilege::Database(DatabasePrivilege::Write, None),
+            Some(tenant_id),
+        );
+
+        let ast::DropSubscription {
+            if_exist,
+            subs_name,
+            db_name,
+        } = stmt;
+        let db_name = normalize_sql_object_name(db_name)?.to_string();
+        let plan = Plan::DDL(DDLPlan::DropSubscription(DropSubscription {
+            if_exist,
+            subs_name: subs_name.value,
+            db_name,
+        }));
+
+        Ok(PlanWithPrivileges {
+            plan,
             privileges: vec![privilege],
         })
     }
@@ -802,6 +837,26 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 TenantObjectPrivilege::Database(DatabasePrivilege::Read, db_name),
                 Some(*session.tenant_id()),
             )],
+        })
+    }
+
+    fn subscription_to_show(
+        &self,
+        stmt: ast::ShowSubscription,
+        session: &SessionCtx,
+    ) -> Result<PlanWithPrivileges> {
+        let db_name = normalize_sql_object_name(stmt.db_name)?.to_string();
+
+        let tenant_id = *session.tenant_id();
+        let privilege = Privilege::TenantObject(
+            TenantObjectPrivilege::Database(DatabasePrivilege::Read, Some(db_name.clone())),
+            Some(tenant_id),
+        );
+
+        let plan = Plan::DDL(DDLPlan::ShowSubscription(ShowSubscription { db_name }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![privilege],
         })
     }
 
@@ -1233,6 +1288,38 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
+    fn create_subscription_to_plan(
+        &self,
+        stmt: ast::CreateSubscription,
+        session: &SessionCtx,
+    ) -> Result<PlanWithPrivileges> {
+        let tenant_id = *session.tenant_id();
+        let privilege = Privilege::TenantObject(
+            TenantObjectPrivilege::Database(DatabasePrivilege::Write, None),
+            Some(tenant_id),
+        );
+
+        let ast::CreateSubscription {
+            subs_name,
+            db_name,
+            level,
+            addrs,
+        } = stmt;
+        let addrs = addrs.into_iter().map(|ident| ident.value).collect();
+        let db_name = normalize_sql_object_name(db_name)?.to_string();
+        let plan = Plan::DDL(DDLPlan::CreateSubscription(CreateSubscription {
+            subs_name: subs_name.value,
+            db_name,
+            level,
+            addrs,
+        }));
+
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![privilege],
+        })
+    }
+
     async fn construct_alter_tenant_action_with_privilege(
         &self,
         tenant: Tenant,
@@ -1378,6 +1465,41 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         }));
 
         Ok(PlanWithPrivileges { plan, privileges })
+    }
+
+    fn alter_subscription_to_plan(
+        &self,
+        stmt: ast::AlterSubscription,
+        session: &SessionCtx,
+    ) -> Result<PlanWithPrivileges> {
+        let ast::AlterSubscription {
+            subs_name,
+            db_name,
+            level,
+            addrs,
+        } = stmt;
+
+        let db_name = normalize_sql_object_name(db_name)?.to_string();
+
+        let tenant_id = *session.tenant_id();
+        let privilege = Privilege::TenantObject(
+            TenantObjectPrivilege::Database(DatabasePrivilege::Full, Some(db_name.clone())),
+            Some(tenant_id),
+        );
+
+        let addrs = addrs.into_iter().map(|ident| ident.value).collect();
+
+        let plan = Plan::DDL(DDLPlan::AlterSubscription(AlterSubscription {
+            subs_name: subs_name.value,
+            db_name,
+            level,
+            addrs,
+        }));
+
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![privilege],
+        })
     }
 
     fn grant_revoke_to_plan(

@@ -9,9 +9,10 @@ edition.workspace = true
 models = { path = "../models" }
 protos = { path = "../protos" }
 utils = { path = "../utils" }
-
 bytes = { workspace = true }
 serde = { workspace = true }
+#tskv = { path = "../../tskv" }
+datafusion = { workspace = true }
 snafu = { workspace = true }
 flatbuffers = { workspace = true }
 async-backtrace = { workspace = true, optional = true }

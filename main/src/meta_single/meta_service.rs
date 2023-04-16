@@ -95,14 +95,14 @@ pub async fn watch(
 
     let now = std::time::Instant::now();
     loop {
-        let _ = tokio::time::timeout(tokio::time::Duration::from_secs(20), notify.recv()).await;
+        let _ = tokio::time::timeout(tokio::time::Duration::from_secs(2 * 60), notify.recv()).await;
 
         let watch_data = app.store.read_change_logs(&cluster, &tenants, follow_ver);
         debug!(
             "{} {}.{}: change logs: {:?} ",
             client, base_ver, follow_ver, watch_data
         );
-        if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
+        if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(3 * 60) {
             let data = serde_json::to_string(&watch_data).unwrap();
             let response: Result<CommandResp, Infallible> = Ok(data);
             return Ok(Json(response));

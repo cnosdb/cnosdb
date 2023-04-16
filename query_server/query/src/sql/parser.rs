@@ -13,16 +13,18 @@ use datafusion::sql::sqlparser::dialect::{Dialect, GenericDialect};
 use datafusion::sql::sqlparser::parser::{IsOptional, Parser, ParserError};
 use datafusion::sql::sqlparser::tokenizer::{Token, TokenWithLocation, Tokenizer};
 use models::codec::Encoding;
+use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use snafu::ResultExt;
 use spi::query::ast::{
-    self, parse_string_value, Action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
-    AlterTenantOperation, AlterUser, AlterUserOperation, ChecksumGroup, ColumnOption, CompactVnode,
-    CopyIntoLocation, CopyIntoTable, CopyTarget, CopyVnode, CreateDatabase, CreateRole,
-    CreateStream, CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase,
-    DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode, Explain,
-    ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege, ShowSeries, ShowTagBody,
-    ShowTagValues, Trigger, UriLocation, With,
+    self, parse_string_value, Action, AlterDatabase, AlterSubscription, AlterTable,
+    AlterTableAction, AlterTenant, AlterTenantOperation, AlterUser, AlterUserOperation,
+    ChecksumGroup, ColumnOption, CompactVnode, CopyIntoLocation, CopyIntoTable, CopyTarget,
+    CopyVnode, CreateDatabase, CreateRole, CreateStream, CreateSubscription, CreateTable,
+    CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase, DescribeTable, DropDatabaseObject,
+    DropGlobalObject, DropTenantObject, DropVnode, Explain, ExtStatement, GrantRevoke, MoveVnode,
+    OutputMode, Privilege, ShowSeries, ShowSubscription, ShowTagBody, ShowTagValues, Trigger,
+    UriLocation, With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -56,6 +58,10 @@ enum CnosKeyWord {
     REPLICA,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     PRECISION,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    SUBSCRIPTION,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    DESTINATIONS,
 
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     QUERIES,
@@ -149,6 +155,8 @@ impl FromStr for CnosKeyWord {
             "COMPLETE" => Ok(CnosKeyWord::COMPLETE),
             "APPEND" => Ok(CnosKeyWord::APPEND),
             "UNSET" => Ok(CnosKeyWord::UNSET),
+            "SUBSCRIPTION" => Ok(CnosKeyWord::SUBSCRIPTION),
+            "DESTINATIONS" => Ok(CnosKeyWord::DESTINATIONS),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
                 s
@@ -334,6 +342,10 @@ impl<'a> ExtParser<'a> {
                 .then_some(true)
                 .unwrap_or_default();
             Ok(ExtStatement::ShowStreams(ast::ShowStreams { verbose }))
+        } else if self.parse_cnos_keyword(CnosKeyWord::SUBSCRIPTION) {
+            self.parser.expect_keyword(Keyword::ON)?;
+            let db_name = self.parser.parse_object_name()?;
+            Ok(ExtStatement::ShowSubscription(ShowSubscription { db_name }))
         } else {
             self.expected(
                 "TABLES or DATABASES or SERIES or TAG or QUERIES or STREAMS",
@@ -530,6 +542,8 @@ impl<'a> ExtParser<'a> {
             self.parse_alter_tenant()
         } else if self.parser.parse_keyword(Keyword::USER) {
             self.parse_alter_user()
+        } else if self.parse_cnos_keyword(CnosKeyWord::SUBSCRIPTION) {
+            self.parse_alter_subscription()
         } else {
             self.expected("TABLE/DATABASE/TENANT/USER", self.parser.peek_token())
         }
@@ -660,6 +674,35 @@ impl<'a> ExtParser<'a> {
         };
 
         Ok(ExtStatement::AlterUser(AlterUser { name, operation }))
+    }
+
+    fn parse_alter_subscription(&mut self) -> Result<ExtStatement> {
+        let subs_name = self.parser.parse_identifier()?;
+        self.parser.expect_keyword(Keyword::ON)?;
+        let db_name = self.parser.parse_object_name()?;
+        if self.parse_cnos_keyword(CnosKeyWord::DESTINATIONS) {
+            let level = self.parse_consistency_level()?;
+            let addrs = self.parse_values();
+            Ok(ExtStatement::AlterSubscription(AlterSubscription {
+                subs_name,
+                db_name,
+                level,
+                addrs,
+            }))
+        } else {
+            self.expected("DESTINATIONS", self.parser.peek_token())
+        }
+    }
+
+    fn parse_consistency_level(&mut self) -> Result<ConsistencyLevel> {
+        if self.parser.parse_keyword(Keyword::ALL) {
+            Ok(ConsistencyLevel::All)
+        } else {
+            parser_err!(format!(
+                "Not support consistency level {}",
+                self.parser.peek_token()
+            ))
+        }
     }
 
     /// Parses the set of
@@ -977,6 +1020,32 @@ impl<'a> ExtParser<'a> {
         }
     }
 
+    fn parse_create_subscription(&mut self) -> Result<ExtStatement> {
+        let subs_name = self.parser.parse_identifier()?;
+        self.parser.expect_keyword(Keyword::ON)?;
+        let db_name = self.parser.parse_object_name()?;
+        if self.parse_cnos_keyword(CnosKeyWord::DESTINATIONS) {
+            let level = self.parse_consistency_level()?;
+            let addrs = self.parse_values();
+            Ok(ExtStatement::CreateSubscription(CreateSubscription {
+                subs_name,
+                db_name,
+                level,
+                addrs,
+            }))
+        } else {
+            self.expected("DESTINATIONS", self.parser.peek_token())
+        }
+    }
+
+    fn parse_values(&mut self) -> Vec<Ident> {
+        let mut values = Vec::new();
+        while let Ok(name) = self.parser.parse_identifier() {
+            values.push(name)
+        }
+        values
+    }
+
     /// e.g.
     /// CREATE STREAM TABLE TskvTable (
     ///   time TIMESTAMP
@@ -1070,6 +1139,8 @@ impl<'a> ExtParser<'a> {
             self.parse_create_role()
         } else if self.parse_cnos_keyword(CnosKeyWord::STREAM) {
             self.parse_create_stream()
+        } else if self.parse_cnos_keyword(CnosKeyWord::SUBSCRIPTION) {
+            self.parse_create_subscription()
         } else {
             self.expected("an object type after CREATE", self.parser.peek_token())
         }
@@ -1299,6 +1370,16 @@ impl<'a> ExtParser<'a> {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let name = self.parser.parse_identifier()?;
             ExtStatement::DropStream(ast::DropStream { if_exist, name })
+        } else if self.parse_cnos_keyword(CnosKeyWord::SUBSCRIPTION) {
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let name = self.parser.parse_identifier()?;
+            self.parser.expect_keyword(Keyword::ON)?;
+            let db_name = self.parser.parse_object_name()?;
+            ExtStatement::DropSubscription(ast::DropSubscription {
+                if_exist,
+                subs_name: name,
+                db_name,
+            })
         } else {
             return self.expected(
                 "TABLE,DATABASE,TENANT,USER,ROLE,VNODE,STREAM after DROP",

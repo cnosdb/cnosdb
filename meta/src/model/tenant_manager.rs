@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use models::meta_data::ExpiredBucketInfo;
+use models::meta_data::{ExpiredBucketInfo, TenantMetaData};
 use models::oid::Identifier;
 use models::schema::{Tenant, TenantOptions};
 use tokio::sync::mpsc::Sender;
@@ -13,7 +13,7 @@ use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::{LocalRequestLimiter, NoneLimiter, RequestLimiter};
 use crate::model::meta_client::RemoteMetaClient;
-use crate::model::{MetaClient, MetaClientRef, TenantManager};
+use crate::model::{MetaClientRef, TenantManager};
 use crate::store::command::{self, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND};
 
 pub const USE_TENANT_ACTION_ADD: i32 = 1;
@@ -21,8 +21,8 @@ pub const USE_TENANT_ACTION_DEL: i32 = 2;
 #[derive(Debug, Clone)]
 pub struct UseTenantInfo {
     pub name: String,
-    pub version: u64,
     pub action: i32, //1: add, 2: del
+    pub data: TenantMetaData,
 }
 
 #[derive(Debug)]
@@ -81,8 +81,8 @@ impl RemoteTenantManager {
 
         let info = UseTenantInfo {
             name: tenant_name,
-            version: client.version().await,
             action: USE_TENANT_ACTION_ADD,
+            data: client.get_data(),
         };
         let _ = self.tenant_change_sender.send(info).await;
 

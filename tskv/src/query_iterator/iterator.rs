@@ -822,7 +822,7 @@ impl RowIterator {
         Ok(builders)
     }
 
-    fn new_column_builder(
+    pub fn new_column_builder(
         column_type: &ColumnType,
         batch_size: usize,
     ) -> Result<Box<dyn ArrayBuilder>> {

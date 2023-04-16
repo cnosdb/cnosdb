@@ -23,6 +23,7 @@ use lazy_static::lazy_static;
 use models::auth::privilege::{DatabasePrivilege, GlobalPrivilege, Privilege};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserOptions, UserOptionsBuilder};
+use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use models::object_reference::ResolvedTable;
 use models::oid::{Identifier, Oid};
@@ -114,6 +115,14 @@ pub enum DDLPlan {
 
     CreateRole(CreateRole),
 
+    CreateSubscription(CreateSubscription),
+
+    DropSubscription(DropSubscription),
+
+    AlterSubscription(AlterSubscription),
+
+    ShowSubscription(ShowSubscription),
+
     DescribeTable(DescribeTable),
 
     DescribeDatabase(DescribeDatabase),
@@ -141,6 +150,34 @@ pub enum DDLPlan {
     CompactVnode(CompactVnode),
 
     ChecksumGroup(ChecksumGroup),
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateSubscription {
+    pub subs_name: String,
+    pub db_name: String,
+    pub level: ConsistencyLevel,
+    pub addrs: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DropSubscription {
+    pub if_exist: bool,
+    pub subs_name: String,
+    pub db_name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AlterSubscription {
+    pub subs_name: String,
+    pub db_name: String,
+    pub level: ConsistencyLevel,
+    pub addrs: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ShowSubscription {
+    pub db_name: String,
 }
 
 #[derive(Debug, Clone)]

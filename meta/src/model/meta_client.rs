@@ -11,7 +11,7 @@ use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifie
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
 use models::schema::{DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TskvTableSchema};
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use store::command;
 use trace::{debug, info, warn};
 
@@ -53,6 +53,10 @@ impl RemoteMetaClient {
         client.sync_all_tenant_metadata().await?;
 
         Ok(client)
+    }
+
+    pub fn get_data(&self) -> TenantMetaData {
+        self.data.read().clone()
     }
 
     async fn sync_all_tenant_metadata(&self) -> MetaResult<()> {
@@ -171,6 +175,14 @@ impl RemoteMetaClient {
 impl MetaClient for RemoteMetaClient {
     fn tenant(&self) -> &Tenant {
         &self.tenant
+    }
+
+    fn get_mut_data(&self) -> RwLockWriteGuard<TenantMetaData> {
+        self.data.write()
+    }
+
+    fn get_data(&self) -> RwLockReadGuard<TenantMetaData> {
+        self.data.read()
     }
 
     async fn add_member_with_role(
@@ -426,6 +438,69 @@ impl MetaClient for RemoteMetaClient {
                 // TODO improve response
                 Err(MetaError::CommonError { msg: status.msg })
             }
+        }
+    }
+
+    async fn create_subscription(&self, db: &str, info: &SubscriptionInfo) -> MetaResult<()> {
+        let name = info.name.to_string();
+        let req = command::WriteCommand::CreateSubscription(
+            self.cluster.clone(),
+            self.tenant_name(),
+            db.to_string(),
+            info.clone(),
+        );
+
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
+        info!("create subscription: {:?}; {:?}", req, rsp);
+
+        if rsp.code == command::META_REQUEST_SUCCESS {
+            Ok(())
+        } else if rsp.code == command::META_REQUEST_SUBSCRIPTION_EXIST {
+            Err(MetaError::SubscriptionAlreadyExists { name })
+        } else {
+            Err(MetaError::CommonError {
+                msg: rsp.to_string(),
+            })
+        }
+    }
+
+    async fn update_subscription(&self, db: &str, info: &SubscriptionInfo) -> MetaResult<()> {
+        let req = command::WriteCommand::UpdateSubscription(
+            self.cluster.clone(),
+            self.tenant_name(),
+            db.to_string(),
+            info.clone(),
+        );
+
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
+        info!("update subscription: {:?}; {:?}", req, rsp);
+
+        if rsp.code == command::META_REQUEST_SUCCESS {
+            Ok(())
+        } else {
+            Err(MetaError::CommonError {
+                msg: rsp.to_string(),
+            })
+        }
+    }
+
+    async fn drop_subscription(&self, db: &str, name: &str) -> MetaResult<()> {
+        let req = command::WriteCommand::DropSubscription(
+            self.cluster.clone(),
+            self.tenant_name(),
+            db.to_string(),
+            name.to_string(),
+        );
+
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
+        info!("update subscription: {:?}; {:?}", req, rsp);
+
+        if rsp.code == command::META_REQUEST_SUCCESS {
+            Ok(())
+        } else {
+            Err(MetaError::CommonError {
+                msg: rsp.to_string(),
+            })
         }
     }
 
@@ -834,6 +909,23 @@ impl MetaClient for RemoteMetaClient {
                     }
                 } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
                     db.tables.remove(tab_name);
+                }
+            }
+        } else if len == 8
+            && strs[6] == key_path::SUBS
+            && strs[4] == key_path::DBS
+            && strs[2] == key_path::TENANTS
+        {
+            let _tenant = strs[3];
+            let db_name = strs[5];
+            let sub_name = strs[7];
+            if let Some(db) = self.data.write().dbs.get_mut(db_name) {
+                if entry.tye == command::ENTRY_LOG_TYPE_SET {
+                    if let Ok(info) = serde_json::from_str::<SubscriptionInfo>(&entry.val) {
+                        db.subs.insert(sub_name.to_string(), info);
+                    }
+                } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
+                    db.subs.remove(sub_name);
                 }
             }
         } else if len == 8

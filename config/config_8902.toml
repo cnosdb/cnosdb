@@ -66,3 +66,8 @@ cold_data_server = false
 enable = true
 path = '/tmp/cnosdb/1001/hh'
 
+[subscription]
+buf_size = 1028
+concurrency = 8
+timeout = 300
+

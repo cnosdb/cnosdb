@@ -33,6 +33,8 @@ tonic = { workspace = true }
 chrono = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 md-5 = { workspace = true }
+async-channel = { workspace = true }
+rand = { workspace = true }
 
 [features]
 default = []

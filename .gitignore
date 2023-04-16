@@ -23,6 +23,7 @@ test_*.log
 #generated files
 common/license/private.rsa
 common/license/public.rsa
+common/protos/src/generated/protobuf_generated/schema_service.rs
 
 # Jupyter Notebook
 .ipynb_checkpoints

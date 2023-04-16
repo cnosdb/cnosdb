@@ -109,7 +109,7 @@ impl MetaHttpClient {
     {
         let mut n_retry = 3;
 
-        let ttl = tokio::time::Duration::from_secs(60);
+        let ttl = tokio::time::Duration::from_secs(5 * 60);
         loop {
             let res: Result<Resp, RPCError<ClusterNodeId, ClusterNode, Err>> =
                 match tokio::time::timeout(ttl, self.do_send_rpc_to_leader(uri, req)).await {

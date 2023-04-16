@@ -9,6 +9,7 @@ mod log_config;
 mod query_config;
 mod security_config;
 mod storage_config;
+pub mod sub_config;
 mod wal_config;
 
 use std::fs::File;
@@ -28,6 +29,7 @@ pub use crate::log_config::*;
 pub use crate::query_config::*;
 pub use crate::security_config::*;
 pub use crate::storage_config::*;
+use crate::sub_config::SubConfig;
 pub use crate::wal_config::*;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -47,6 +49,7 @@ pub struct Config {
     pub security: SecurityConfig,
     pub cluster: ClusterConfig,
     pub hinted_off: HintedOffConfig,
+    pub subscription: SubConfig,
 }
 
 impl Config {
@@ -72,6 +75,7 @@ impl Config {
         self.wal.override_by_env();
         self.cache.override_by_env();
         self.query.override_by_env();
+        self.subscription.override_by_env();
     }
 
     pub fn to_string_pretty(&self) -> String {
@@ -165,6 +169,9 @@ pub fn check_config(path: impl AsRef<Path>, show_warnings: bool) {
                 check_results.add_all(c)
             }
             if let Some(c) = cfg.hinted_off.check(&cfg) {
+                check_results.add_all(c)
+            }
+            if let Some(c) = cfg.subscription.check(&cfg) {
                 check_results.add_all(c)
             }
 
@@ -301,6 +308,11 @@ grpc_listen_port = 31008
 [hinted_off]
 enable = true
 path = '/tmp/cnosdb/hh'
+
+[subscription]
+buf_size = 1028
+concurrency = 8
+timeout = 300
 "#;
 
         let config: Config = toml::from_str(config_str).unwrap();

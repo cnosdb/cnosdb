@@ -18,19 +18,24 @@ use self::drop_global_object::DropGlobalObjectTask;
 use self::drop_tenant_object::DropTenantObjectTask;
 use self::grant_revoke::GrantRevokeTask;
 use crate::execution::ddl::alter_database::AlterDatabaseTask;
+use crate::execution::ddl::alter_subscription::AlterSubscriptionTask;
 use crate::execution::ddl::alter_table::AlterTableTask;
 use crate::execution::ddl::checksum_group::ChecksumGroupTask;
 use crate::execution::ddl::compact_vnode::CompactVnodeTask;
 use crate::execution::ddl::copy_vnode::CopyVnodeTask;
 use crate::execution::ddl::create_database::CreateDatabaseTask;
+use crate::execution::ddl::create_subscription::CreateSubscriptionTask;
 use crate::execution::ddl::describe_database::DescribeDatabaseTask;
 use crate::execution::ddl::describe_table::DescribeTableTask;
+use crate::execution::ddl::drop_subscription::DropSubscriptionTask;
 use crate::execution::ddl::drop_vnode::DropVnodeTask;
 use crate::execution::ddl::move_node::MoveVnodeTask;
 use crate::execution::ddl::show_database::ShowDatabasesTask;
+use crate::execution::ddl::show_subscription::ShowSubscriptionTask;
 use crate::execution::ddl::show_table::ShowTablesTask;
 
 mod alter_database;
+mod alter_subscription;
 mod alter_table;
 mod alter_tenant;
 mod alter_user;
@@ -41,6 +46,7 @@ mod create_database;
 mod create_external_table;
 mod create_role;
 mod create_stream_table;
+mod create_subscription;
 mod create_table;
 mod create_tenant;
 mod create_user;
@@ -48,11 +54,13 @@ mod describe_database;
 mod describe_table;
 mod drop_database_object;
 mod drop_global_object;
+mod drop_subscription;
 mod drop_tenant_object;
 mod drop_vnode;
 mod grant_revoke;
 mod move_node;
 mod show_database;
+mod show_subscription;
 mod show_table;
 
 /// Traits that DDL tasks should implement
@@ -155,6 +163,18 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::CreateTenant(sub_plan) => Box::new(CreateTenantTask::new(*sub_plan.clone())),
             DDLPlan::CreateUser(sub_plan) => Box::new(CreateUserTask::new(sub_plan.clone())),
             DDLPlan::CreateRole(sub_plan) => Box::new(CreateRoleTask::new(sub_plan.clone())),
+            DDLPlan::CreateSubscription(sub_plan) => {
+                Box::new(CreateSubscriptionTask::new(sub_plan.clone()))
+            }
+            DDLPlan::DropSubscription(sub_plan) => {
+                Box::new(DropSubscriptionTask::new(sub_plan.clone()))
+            }
+            DDLPlan::AlterSubscription(sub_plan) => {
+                Box::new(AlterSubscriptionTask::new(sub_plan.clone()))
+            }
+            DDLPlan::ShowSubscription(sub_plan) => {
+                Box::new(ShowSubscriptionTask::new(sub_plan.clone()))
+            }
             DDLPlan::DescribeDatabase(sub_plan) => {
                 Box::new(DescribeDatabaseTask::new(sub_plan.clone()))
             }

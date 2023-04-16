@@ -6,12 +6,15 @@ use std::sync::Arc;
 use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::meta_data::{
-    BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
+    BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, SubOperationLog,
+    SubscriptionInfo, TenantMetaData, VnodeAllInfo, VnodeInfo,
 };
 use models::oid::Oid;
 use models::schema::{
     DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
 };
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::broadcast;
 use tonic::transport::Channel;
 
 use crate::error::MetaResult;
@@ -74,6 +77,14 @@ impl Default for MockMetaClient {
 impl MetaClient for MockMetaClient {
     fn tenant(&self) -> &Tenant {
         &self.tenant
+    }
+
+    fn get_mut_data(&self) -> RwLockWriteGuard<TenantMetaData> {
+        todo!()
+    }
+
+    fn get_data(&self) -> RwLockReadGuard<TenantMetaData> {
+        todo!()
     }
 
     async fn create_db(&self, info: DatabaseSchema) -> MetaResult<()> {
@@ -141,6 +152,18 @@ impl MetaClient for MockMetaClient {
 
     fn database_min_ts(&self, db: &str) -> Option<i64> {
         Some(0)
+    }
+
+    async fn create_subscription(&self, db: &str, info: &SubscriptionInfo) -> MetaResult<()> {
+        Ok(())
+    }
+
+    async fn update_subscription(&self, db: &str, info: &SubscriptionInfo) -> MetaResult<()> {
+        Ok(())
+    }
+
+    async fn drop_subscription(&self, db: &str, name: &str) -> MetaResult<()> {
+        Ok(())
     }
 
     async fn locate_replcation_set_for_write(
@@ -314,6 +337,10 @@ impl MetaManager for MockMetaManager {
 
     fn tenant_manager(&self) -> TenantManagerRef {
         Arc::new(TenantManagerMock::default())
+    }
+
+    async fn subscribe_sub_change(&self) -> broadcast::Receiver<SubOperationLog> {
+        todo!()
     }
 
     async fn user_with_privileges(

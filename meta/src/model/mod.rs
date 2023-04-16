@@ -7,12 +7,15 @@ use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{User, UserDesc, UserOptions};
 use models::meta_data::{
-    BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
+    BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, SubOperationLog,
+    SubscriptionInfo, TenantMetaData, VnodeAllInfo, VnodeInfo,
 };
 use models::oid::{Identifier, Oid};
 use models::schema::{
     DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
 };
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::broadcast;
 use tonic::transport::Channel;
 
 use crate::error::MetaResult;
@@ -56,6 +59,8 @@ pub trait AdminMeta: Send + Sync + Debug {
 #[async_trait]
 pub trait MetaClient: Send + Sync + Debug {
     fn tenant(&self) -> &Tenant;
+    fn get_mut_data(&self) -> RwLockWriteGuard<TenantMetaData>;
+    fn get_data(&self) -> RwLockReadGuard<TenantMetaData>;
     fn tenant_name(&self) -> String {
         self.tenant().name().to_string()
     }
@@ -120,6 +125,10 @@ pub trait MetaClient: Send + Sync + Debug {
     fn list_tables(&self, db: &str) -> MetaResult<Vec<String>>;
     async fn drop_table(&self, db: &str, table: &str) -> MetaResult<()>;
 
+    async fn create_subscription(&self, db: &str, info: &SubscriptionInfo) -> MetaResult<()>;
+    async fn update_subscription(&self, db: &str, info: &SubscriptionInfo) -> MetaResult<()>;
+    async fn drop_subscription(&self, db: &str, name: &str) -> MetaResult<()>;
+
     async fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo>;
     async fn delete_bucket(&self, db: &str, id: u32) -> MetaResult<()>;
 
@@ -167,6 +176,8 @@ pub trait MetaManager: Send + Sync + Debug {
         user_name: &str,
         tenant_name: Option<&str>,
     ) -> MetaResult<User>;
+
+    async fn subscribe_sub_change(&self) -> broadcast::Receiver<SubOperationLog>;
 }
 
 #[async_trait]

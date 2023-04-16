@@ -252,6 +252,7 @@ impl ServiceBuilder {
             meta,
             self.config.clone(),
             self.config.hinted_off.clone(),
+            self.config.subscription.clone(),
             self.metrics_register.clone(),
         )
         .await;

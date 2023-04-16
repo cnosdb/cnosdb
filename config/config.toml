@@ -104,3 +104,8 @@ store_metrics = true
 [hinted_off]
 enable = true
 path = '/tmp/cnosdb/hh'
+
+[subscription]
+buf_size = 1028
+concurrency = 8
+timeout = 300

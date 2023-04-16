@@ -25,6 +25,15 @@ pub enum Error {
 
     #[snafu(display("{}", content))]
     Common { content: String },
+
+    #[snafu(display("New recordbatch error: {}", msg))]
+    NewRecordBatch { msg: String },
+
+    #[snafu(display("Bytes to String error: {}", msg))]
+    BytesToString { msg: String },
+
+    #[snafu(display("New Array Builder error: {}", msg))]
+    NewArrayBuilder { msg: String },
 }
 
 #[derive(Debug, PartialEq)]
@@ -99,6 +108,18 @@ impl<'a> Line<'_> {
         self.fields.sort_by(|a, b| a.0.cmp(b.0));
         self.tags.dedup_by(|a, b| a.0 == b.0);
         self.fields.dedup_by(|a, b| a.0 == b.0);
+    }
+
+    pub fn get_value(&self, key: &str) -> Option<FieldValue> {
+        if let Some(value) = self.fields.iter().find(|f| f.0 == key) {
+            return Some(value.1.clone());
+        }
+
+        if let Some(value) = self.tags.iter().find(|f| f.0 == key) {
+            return Some(FieldValue::Str(value.1.to_owned().into()));
+        }
+
+        None
     }
 }
 

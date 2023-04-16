@@ -37,6 +37,15 @@ pub enum WriteCommand {
     // cluster, node info
     AddDataNode(String, NodeInfo),
 
+    // cluster, tenant, db, subscription info
+    CreateSubscription(String, String, String, SubscriptionInfo),
+
+    // cluster, tenant, db, subscription info
+    UpdateSubscription(String, String, String, SubscriptionInfo),
+
+    // cluster, tenant, db, name
+    DropSubscription(String, String, String, String),
+
     // cluster, tenant, db schema
     CreateDB(String, String, DatabaseSchema),
 
@@ -148,6 +157,7 @@ pub const META_REQUEST_ROLE_NOT_FOUND: i32 = 8;
 pub const META_REQUEST_PRIVILEGE_EXIST: i32 = 9;
 pub const META_REQUEST_PRIVILEGE_NOT_FOUND: i32 = 10;
 pub const META_REQUEST_DB_NOT_FOUND: i32 = 11;
+pub const META_REQUEST_SUBSCRIPTION_EXIST: i32 = 12;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct StatusResponse {

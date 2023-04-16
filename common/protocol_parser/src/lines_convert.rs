@@ -7,6 +7,7 @@ use protos::{
     insert_tag, FbSchema,
 };
 
+// use tskv::query_iterator::{ArrayBuilderPtr, RowIterator};
 use crate::{FieldValue, Line};
 
 pub fn line_to_point<'a, 'fbb: 'mut_fbb, 'mut_fbb>(
@@ -109,6 +110,194 @@ pub fn parse_lines_to_points<'a>(db: &'a str, lines: &'a [Line]) -> Vec<u8> {
     fbb.finish(points, None);
     fbb.finished_data().to_vec()
 }
+
+// pub fn build_df_schema(lines: &[Line]) -> HashMap<String, (Schema, Vec<ColumnType>)> {
+//     let mut schemas = HashMap::new();
+//     for line in lines {
+//         let table = line.table;
+//         let entry = schemas
+//             .entry(table.to_string())
+//             .or_insert((Schema::new(vec![]), vec![]));
+//
+//         let schema = &mut entry.0;
+//         let columns = &mut entry.1;
+//
+//         let time_stamp_str = "time_stamp";
+//         if !schema.fields.iter().any(|f| f.name() == time_stamp_str) {
+//             columns.push(ColumnType::Time(TimeUnit::Nanosecond));
+//
+//             schema.fields.push(Field::new(
+//                 time_stamp_str.to_string(),
+//                 DataType::Timestamp(TimeUnit::Nanosecond, None),
+//                 true,
+//             ));
+//         }
+//
+//         for (k, _) in line.tags.iter() {
+//             if !schema.fields.iter().any(|f| f.name() == k) {
+//                 columns.push(ColumnType::Tag);
+//
+//                 schema
+//                     .fields
+//                     .push(Field::new(k.to_string(), DataType::Utf8, true));
+//             }
+//         }
+//         for (k, v) in line.fields.iter() {
+//             match v {
+//                 FieldValue::U64(_) => {
+//                     if !schema.fields.iter().any(|f| f.name() == k) {
+//                         columns.push(ColumnType::Field(models::ValueType::Unsigned));
+//                         schema
+//                             .fields
+//                             .push(Field::new(k.to_string(), DataType::UInt64, true));
+//                     }
+//                 }
+//                 FieldValue::I64(_) => {
+//                     if !schema.fields.iter().any(|f| f.name() == k) {
+//                         columns.push(ColumnType::Field(models::ValueType::Integer));
+//                         schema
+//                             .fields
+//                             .push(Field::new(k.to_string(), DataType::Int64, true));
+//                     }
+//                 }
+//                 FieldValue::Str(_) => {
+//                     if !schema.fields.iter().any(|f| f.name() == k) {
+//                         columns.push(ColumnType::Field(models::ValueType::String));
+//                         schema
+//                             .fields
+//                             .push(Field::new(k.to_string(), DataType::Utf8, true));
+//                     }
+//                 }
+//                 FieldValue::F64(_) => {
+//                     if !schema.fields.iter().any(|f| f.name() == k) {
+//                         columns.push(ColumnType::Field(models::ValueType::Float));
+//                         schema
+//                             .fields
+//                             .push(Field::new(k.to_string(), DataType::Float64, true));
+//                     }
+//                 }
+//                 FieldValue::Bool(_) => {
+//                     if !schema.fields.iter().any(|f| f.name() == k) {
+//                         columns.push(ColumnType::Field(models::ValueType::Boolean));
+//                         schema
+//                             .fields
+//                             .push(Field::new(k.to_string(), DataType::Boolean, true));
+//                     }
+//                 }
+//             };
+//         }
+//     }
+//
+//     schemas
+// }
+//
+// pub fn parse_lines_to_batch(lines: &[Line]) -> Result<Vec<RecordBatch>> {
+//     let table_line_index = build_table_line_index(lines);
+//     let schemas = build_df_schema(lines);
+//
+//     let mut batches = Vec::with_capacity(schemas.len());
+//     for (table_name, idxs) in table_line_index {
+//         let entry = schemas.get(table_name).unwrap();
+//
+//         let mut builder = record_batch_builder(&entry.1)?;
+//         for idx in idxs {
+//             insert_line_to_builder(&lines[idx], &entry.0, &mut builder)?;
+//         }
+//
+//         let mut cols = Vec::with_capacity(builder.len());
+//         for builder in builder.iter_mut() {
+//             cols.push(builder.ptr.finish())
+//         }
+//
+//         let batch = RecordBatch::try_new(Arc::new(entry.0.clone()), cols).map_err(|err| {
+//             Error::NewRecordBatch {
+//                 msg: err.to_string(),
+//             }
+//         })?;
+//
+//         batches.push(batch);
+//     }
+//
+//     Ok(batches)
+// }
+//
+// fn insert_line_to_builder(
+//     line: &Line,
+//     schema: &Schema,
+//     builder: &mut [ArrayBuilderPtr],
+// ) -> Result<()> {
+//     let time_stamp_str = "time_stamp";
+//     for (i, field) in schema.fields.iter().enumerate() {
+//         if field.name() == time_stamp_str {
+//             builder[i].append_primitive::<TimestampNanosecondType>(line.timestamp);
+//             continue;
+//         }
+//
+//         let value = line.get_value(field.name());
+//
+//         match field.data_type() {
+//             DataType::Boolean => {
+//                 if let Some(FieldValue::Bool(val)) = value {
+//                     builder[i].append_bool(val);
+//                 } else {
+//                     builder[i].append_null_bool();
+//                 }
+//             }
+//
+//             DataType::Int64 => {
+//                 if let Some(FieldValue::I64(val)) = value {
+//                     builder[i].append_primitive::<Int64Type>(val);
+//                 } else {
+//                     builder[i].append_primitive_null::<Int64Type>();
+//                 }
+//             }
+//
+//             DataType::UInt64 => {
+//                 if let Some(FieldValue::U64(val)) = value {
+//                     builder[i].append_primitive::<UInt64Type>(val);
+//                 } else {
+//                     builder[i].append_primitive_null::<UInt64Type>();
+//                 }
+//             }
+//
+//             DataType::Float64 => {
+//                 if let Some(FieldValue::F64(val)) = value {
+//                     builder[i].append_primitive::<Float64Type>(val);
+//                 } else {
+//                     builder[i].append_primitive_null::<Float64Type>();
+//                 }
+//             }
+//
+//             DataType::Utf8 => {
+//                 if let Some(FieldValue::Str(val)) = value {
+//                     let data =
+//                         String::from_utf8(val.to_vec()).map_err(|err| Error::BytesToString {
+//                             msg: err.to_string(),
+//                         })?;
+//                     builder[i].append_string(data);
+//                 } else {
+//                     builder[i].append_null_string();
+//                 }
+//             }
+//             _ => {}
+//         }
+//     }
+//
+//     Ok(())
+// }
+//
+// fn record_batch_builder(fields: &[ColumnType]) -> Result<Vec<ArrayBuilderPtr>> {
+//     let mut builders: Vec<ArrayBuilderPtr> = Vec::with_capacity(fields.len());
+//     for item in fields.iter() {
+//         let builder_item =
+//             RowIterator::new_column_builder(item, 1024).map_err(|err| Error::NewArrayBuilder {
+//                 msg: err.to_string(),
+//             })?;
+//         builders.push(ArrayBuilderPtr::new(builder_item, item.clone()))
+//     }
+//
+//     Ok(builders)
+// }
 
 #[cfg(test)]
 mod test {
