@@ -36,7 +36,7 @@ bench-job:
     # - echo "data is ready"
     - echo "loading data"
     - cat /data/cnosdb_iot_123_2022.gz| gunzip | load_cnosdb --urls http://127.0.0.1:8902 --workers 50
-		- echo "query low-fuel"
+    - echo "query low-fuel"
     - run_queries_cnosdb --workers 8 --urls http://172.17.0.1:8902 --file /data/queries/low-fuel.txt 
     - echo "query last-loc"
     - run_queries_cnosdb --workers 8 --urls http://172.17.0.1:8902 --file /data/queries/last-loc.txt 
