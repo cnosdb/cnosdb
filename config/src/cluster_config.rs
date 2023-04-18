@@ -26,6 +26,9 @@ pub struct ClusterConfig {
 
     #[serde(default = "ClusterConfig::default_cold_data_server")]
     pub cold_data_server: bool,
+
+    #[serde(default = "ClusterConfig::default_report_time_interval_secs")]
+    pub report_time_interval_secs: u64,
 }
 
 impl ClusterConfig {
@@ -59,6 +62,10 @@ impl ClusterConfig {
 
     fn default_cold_data_server() -> bool {
         false
+    }
+
+    fn default_report_time_interval_secs() -> u64 {
+        30
     }
 
     pub fn override_by_env(&mut self) {
@@ -107,6 +114,7 @@ impl Default for ClusterConfig {
             tcp_listen_port: Self::default_tcp_listen_port(),
             store_metrics: Self::default_store_metrics(),
             cold_data_server: Self::default_cold_data_server(),
+            report_time_interval_secs: Self::default_report_time_interval_secs(),
         }
     }
 }

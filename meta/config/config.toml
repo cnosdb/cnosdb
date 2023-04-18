@@ -15,3 +15,7 @@ cluster_name = "cluster_xxx"
 admin_user = "root"
 system_tenant = "cnosdb"
 default_database = ["public", "usage_schema"]
+
+[heartbeat]
+heartbeat_recheck_interval = 300
+heartbeat_expired_interval = 600

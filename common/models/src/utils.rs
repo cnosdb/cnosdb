@@ -54,6 +54,13 @@ pub fn now_timestamp_millis() -> i64 {
     }
 }
 
+pub fn now_timestamp_secs() -> i64 {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(n) => n.as_secs() as i64,
+        Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+    }
+}
+
 pub fn to_str(arr: &[u8]) -> String {
     String::from_utf8(arr.to_vec()).unwrap()
 }

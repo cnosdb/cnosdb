@@ -37,6 +37,9 @@ pub enum WriteCommand {
     // cluster, node info
     AddDataNode(String, NodeInfo),
 
+    //cluster, node metrics
+    AddNodeMetrics(String, NodeMetrics),
+
     // cluster, tenant, db schema
     CreateDB(String, String, DatabaseSchema),
 
@@ -115,6 +118,8 @@ pub enum WriteCommand {
 pub enum ReadCommand {
     DataNodes(String),              //cluster
     TenaneMetaData(String, String), // cluster tenant
+
+    NodeMetrics(String), //cluster
 
     // cluster, role_name, tenant_name
     CustomRole(String, String, String),

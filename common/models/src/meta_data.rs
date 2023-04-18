@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::node_info::NodeStatus;
 use crate::predicate::domain::TimeRange;
 use crate::schema::{DatabaseSchema, TableSchema};
 
@@ -31,14 +33,46 @@ pub struct UserInfo {
     pub perm: u64, //read write admin bitmap
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Default, Clone)]
+pub enum NodeAttribute {
+    #[default]
+    Hot,
+    Cold,
+}
+
+impl fmt::Display for NodeAttribute {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            NodeAttribute::Hot => write!(f, "HOT"),
+            NodeAttribute::Cold => write!(f, "COLD"),
+        }
+    }
+}
+
+impl From<String> for NodeAttribute {
+    fn from(node_attribute: String) -> Self {
+        match node_attribute.to_uppercase().as_str() {
+            "HOT" => NodeAttribute::Hot,
+            "COLD" => NodeAttribute::Cold,
+            _ => panic!("Invalid NodeAttribute:{}", node_attribute),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct NodeInfo {
     pub id: NodeId,
     pub grpc_addr: String,
     pub http_addr: String,
+    pub attribute: NodeAttribute,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct NodeMetrics {
+    pub id: NodeId,
     pub disk_free: u64,
-    pub is_cold: bool,
-    pub status: u64,
+    pub time: i64,
+    pub status: NodeStatus,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -221,8 +255,6 @@ pub fn allocation_replication_set(
     let mut incr_id = begin_seq;
     let mut index = begin_seq;
     let mut group = vec![];
-    let mut sort_nodes = nodes;
-    sort_nodes.sort_by(|a, b| b.disk_free.cmp(&a.disk_free));
 
     for _ in 0..shards {
         let mut repl_set = ReplicationSet {
@@ -234,7 +266,7 @@ pub fn allocation_replication_set(
         for _ in 0..replica {
             repl_set.vnodes.push(VnodeInfo {
                 id: incr_id,
-                node_id: sort_nodes.get((index % node_count) as usize).unwrap().id,
+                node_id: nodes.get((index % node_count) as usize).unwrap().id,
             });
             incr_id += 1;
             index += 1;
