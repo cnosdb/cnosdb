@@ -19,14 +19,18 @@ mod groups;
 #[derive(Debug, Parser)]
 #[command(author, version = "0.1.0", about, long_about = None)]
 pub struct Args {
-    /// client url
+    /// query url
     #[arg(
-        short,
+        short = 'u',
         long,
         value_parser,
-        default_value = "http://127.0.0.1:8902/api/v1/"
+        default_value = "http://127.0.0.1:8902"
     )]
-    pub client_url: Url,
+    pub query_url: Url,
+
+    #[arg(long, value_parser)]
+    /// storage url
+    pub storage_url: Option<Url>,
 
     /// work thread num
     #[arg(short, long, value_parser, default_value = "4")]
@@ -54,7 +58,8 @@ fn default_case_path() -> Result<PathBuf> {
 
 lazy_static! {
     pub static ref ARGS: Args = Args::parse();
-    pub static ref CLIENT: Client = Client::from_url(ARGS.client_url.clone());
+    pub static ref CLIENT: Client =
+        Client::from_url(ARGS.query_url.clone(), ARGS.storage_url.clone());
 }
 
 fn main() -> Result<()> {

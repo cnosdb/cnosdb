@@ -8,30 +8,42 @@ use crate::db_request::{
 };
 
 pub struct Client {
-    url: Url,
+    query_url: Url,
+    storage_url: Url,
     client: reqwest::Client,
 }
 
 impl Client {
-    pub fn from_url(url: Url) -> Client {
-        Client {
-            url,
-            client: reqwest::Client::new(),
+    pub fn from_url(query_url: Url, storage_url: Option<Url>) -> Self {
+        match storage_url {
+            Some(u) => Self {
+                query_url,
+                storage_url: u,
+                client: reqwest::Client::default(),
+            },
+            None => Self {
+                query_url: query_url.clone(),
+                storage_url: query_url,
+                client: reqwest::Client::default(),
+            },
         }
     }
 
     /// ping db succeed return true
     pub async fn ping(&self) -> bool {
-        let url = self.url.join("ping");
-        if url.is_err() {
-            return false;
+        async fn ping_url(url: &Url) -> bool {
+            let url = match url.join("api/v1/ping") {
+                Ok(u) => u,
+                Err(_) => return false,
+            };
+            if let Ok(req) = reqwest::get(url).await {
+                req.status().is_success()
+            } else {
+                false
+            }
         }
-        let url = url.unwrap();
-        if let Ok(req) = reqwest::get(url).await {
-            req.status().is_success()
-        } else {
-            false
-        }
+
+        ping_url(&self.query_url).await && ping_url(&self.storage_url).await
     }
 
     /// execute one sql at http://domain/query
@@ -247,7 +259,7 @@ impl Client {
     }
 
     fn construct_query_url(&self, instruction: &Instruction) -> Url {
-        let mut url = self.url.join("sql").unwrap();
+        let mut url = self.query_url.join("api/v1/sql").unwrap();
 
         let mut http_query = String::new();
         http_query.push_str("target_partitions=8&db=");
@@ -285,7 +297,7 @@ impl Client {
     }
 
     fn construct_write_url(&self, instruction: &Instruction) -> Url {
-        let mut url = self.url.join("write").unwrap();
+        let mut url = self.storage_url.join("api/v1/write").unwrap();
 
         let mut http_query = String::new();
         http_query.push_str("db=");
@@ -310,7 +322,7 @@ impl Client {
     }
 
     fn construct_opentsdb_write_url(&self, instruction: &Instruction) -> Url {
-        let mut url = self.url.join("opentsdb/write").unwrap();
+        let mut url = self.storage_url.join("api/v1/opentsdb/write").unwrap();
 
         let mut http_query = String::new();
         http_query.push_str("db=");
@@ -335,7 +347,7 @@ impl Client {
     }
 
     fn construct_opentsdb_json_url(&self, instruction: &Instruction) -> Url {
-        let mut url = self.url.join("opentsdb/put").unwrap();
+        let mut url = self.storage_url.join("api/v1/opentsdb/put").unwrap();
 
         let mut http_query = String::new();
         http_query.push_str("db=");

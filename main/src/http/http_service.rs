@@ -201,6 +201,8 @@ impl HttpService {
             .or(self.debug_pprof())
             .or(self.debug_jeprof())
             .or(self.prom_remote_write())
+            .or(self.write_open_tsdb())
+            .or(self.put_open_tsdb())
             .or(self.backtrace())
     }
 
