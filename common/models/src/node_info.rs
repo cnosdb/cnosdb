@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::Timestamp;
 
 #[allow(dead_code)]
@@ -18,11 +20,14 @@ pub struct Node {
     last_updated: Timestamp,
 }
 
-#[allow(dead_code)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Default, Clone)]
+
 pub enum NodeStatus {
+    #[default]
     Healthy,
     Broken,
     Unreachable,
+    NoDiskSpace,
 }
 
 #[allow(dead_code)]

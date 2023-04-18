@@ -12,7 +12,7 @@ pub mod codec;
 pub mod consistency_level;
 pub mod errors;
 pub mod meta_data;
-mod node_info;
+pub mod node_info;
 pub mod schema;
 mod series_info;
 pub mod tag;

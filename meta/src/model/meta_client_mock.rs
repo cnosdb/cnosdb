@@ -47,13 +47,15 @@ impl AdminMeta for MockAdminMeta {
         todo!()
     }
 
-    fn heartbeat(&self) {}
-
     async fn retain_id(&self, count: u32) -> MetaResult<u32> {
         Ok(0)
     }
 
     async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()> {
+        Ok(())
+    }
+
+    async fn report_node_metrics(&self) -> MetaResult<()> {
         Ok(())
     }
 }

@@ -9,15 +9,21 @@ use actix_web::{middleware, App, HttpServer};
 use clap::Parser;
 use meta::service::connection::Connections;
 use meta::service::{api, raft_api};
-use meta::store::config::Opt;
+use meta::store::command::WriteCommand;
+use meta::store::config::{HeartBeatConfig, Opt};
+use meta::store::state_machine::children_data;
 use meta::store::Store;
 use meta::{store, MetaApp, RaftStore};
-use models::utils::build_address;
+use models::meta_data::NodeMetrics;
+use models::node_info::NodeStatus;
+use models::utils::{build_address, now_timestamp_secs};
 use once_cell::sync::Lazy;
 use openraft::Config;
 use parking_lot::Mutex;
 use sled::Db;
-use trace::{init_process_global_tracing, WorkerGuard};
+use trace::{init_process_global_tracing, warn, WorkerGuard};
+
+use crate::store::key_path::KeyPath;
 
 static GLOBAL_META_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
@@ -85,6 +91,8 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
         meta_init,
     });
 
+    tokio::spawn(detect_node_heartbeat(opt.heartbeat.clone(), app.clone()));
+
     let server = HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
@@ -112,4 +120,43 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
     let x = server.bind(build_address(meta_ip, opt.port))?;
 
     x.run().await
+}
+
+async fn detect_node_heartbeat(heartbeat_config: HeartBeatConfig, app: Data<MetaApp>) {
+    let mut interval = tokio::time::interval(Duration::from_secs(
+        heartbeat_config.heartbeat_recheck_interval,
+    ));
+
+    loop {
+        interval.tick().await;
+
+        if let Ok(_leader) = app.raft.is_leader().await {
+            let sm = app.store.state_machine.write().await;
+
+            let node_metrics_list: Vec<NodeMetrics> = children_data::<NodeMetrics>(
+                &KeyPath::data_nodes_metrics(&app.meta_init.cluster_name),
+                sm.db.clone(),
+            )
+            .into_values()
+            .collect();
+
+            let time = now_timestamp_secs();
+            for node_metrics in node_metrics_list.iter() {
+                if time - heartbeat_config.heartbeat_expired_interval as i64 > node_metrics.time {
+                    let mut now_node_metrics = node_metrics.clone();
+                    now_node_metrics.status = NodeStatus::Unreachable;
+                    warn!(
+                        "Data node '{}' report heartbeat late, maybe unreachable.",
+                        node_metrics.id
+                    );
+                    let req = WriteCommand::AddNodeMetrics(
+                        app.meta_init.cluster_name.clone(),
+                        now_node_metrics,
+                    );
+
+                    sm.process_write_command(&req);
+                }
+            }
+        }
+    }
 }

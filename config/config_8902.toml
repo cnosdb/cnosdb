@@ -61,8 +61,10 @@ flight_rpc_listen_port = 8904
 tcp_listen_port = 8905
 store_metrics = true
 cold_data_server = false
+report_time_interval_secs = 120
 
 [hinted_off]
 enable = true
 path = '/tmp/cnosdb/1001/hh'
+
 

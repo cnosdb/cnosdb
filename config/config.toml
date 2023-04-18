@@ -100,6 +100,8 @@ tcp_listen_port = 8905
 
 # Whether to store metrics to the CnosDB
 store_metrics = true
+cold_data_server = true 
+report_time_interval_secs = 30
 
 [hinted_off]
 enable = true

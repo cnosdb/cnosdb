@@ -61,6 +61,7 @@ flight_rpc_listen_port = 8914
 tcp_listen_port = 8915
 store_metrics = true
 cold_data_server = false
+report_time_interval_secs = 30
 
 [hinted_off]
 enable = true

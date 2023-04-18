@@ -114,13 +114,16 @@ pub(crate) struct ServiceBuilder {
 }
 
 #[allow(unreachable_code)]
-async fn regualar_get_disk_info(meta: Arc<dyn MetaManager>) -> MetaResult<()> {
-    let mut interval = time::interval(Duration::from_secs(300));
+async fn regular_report_node_metrics(
+    meta: Arc<dyn MetaManager>,
+    report_time_interval_secs: u64,
+) -> MetaResult<()> {
+    let mut interval = time::interval(Duration::from_secs(report_time_interval_secs));
 
     loop {
         interval.tick().await;
 
-        meta.admin_meta().add_data_node().await.unwrap();
+        meta.admin_meta().report_node_metrics().await.unwrap();
     }
 
     Ok(())
@@ -134,7 +137,11 @@ impl ServiceBuilder {
     pub async fn build_storage_server(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
 
-        tokio::spawn(regualar_get_disk_info(meta.clone()));
+        meta.admin_meta().add_data_node().await.unwrap();
+        tokio::spawn(regular_report_node_metrics(
+            meta.clone(),
+            self.config.cluster.report_time_interval_secs,
+        ));
 
         let kv_inst = self
             .create_tskv(meta.clone(), self.runtime.clone(), self.memory_pool.clone())
@@ -174,7 +181,11 @@ impl ServiceBuilder {
     pub async fn build_query_storage(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
 
-        tokio::spawn(regualar_get_disk_info(meta.clone()));
+        meta.admin_meta().add_data_node().await.unwrap();
+        tokio::spawn(regular_report_node_metrics(
+            meta.clone(),
+            self.config.cluster.report_time_interval_secs,
+        ));
 
         let kv_inst = self
             .create_tskv(meta.clone(), self.runtime.clone(), self.memory_pool.clone())

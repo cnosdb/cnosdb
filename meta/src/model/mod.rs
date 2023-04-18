@@ -39,13 +39,12 @@ pub trait AdminMeta: Send + Sync + Debug {
     async fn sync_all(&self) -> MetaResult<u64>;
     async fn data_nodes(&self) -> Vec<NodeInfo>;
     async fn add_data_node(&self) -> MetaResult<()>;
+    async fn report_node_metrics(&self) -> MetaResult<()>;
     // fn del_data_node(&self, id: u64) -> MetaResult<()>;
 
     // fn meta_nodes(&self);
     // fn add_meta_node(&self, node: &NodeInfo) -> MetaResult<()>;
     // fn del_meta_node(&self, id: u64) -> MetaResult<()>;
-
-    fn heartbeat(&self); // update node status
 
     async fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo>;
     async fn get_node_conn(&self, node_id: u64) -> MetaResult<Channel>;

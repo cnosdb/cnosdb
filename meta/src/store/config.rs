@@ -23,6 +23,12 @@ impl MetaInit {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HeartBeatConfig {
+    pub heartbeat_recheck_interval: u64,
+    pub heartbeat_expired_interval: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Opt {
     pub id: u64,
     pub host: String,
@@ -32,6 +38,7 @@ pub struct Opt {
     pub snapshot_per_events: u32,
     pub log: LogConfig,
     pub meta_init: MetaInit,
+    pub heartbeat: HeartBeatConfig,
 }
 
 pub fn get_opt(path: impl AsRef<Path>) -> Opt {
@@ -87,6 +94,10 @@ cluster_name = "cluster_xxx"
 admin_user = "root"
 system_tenant = "cnosdb"
 default_database = ["public", "usage_schema"]
+
+[heartbeat]
+heartbeat_recheck_interval = 300
+heartbeat_expired_interval = 600
 "#;
 
         let config: Opt = toml::from_str(config_str).unwrap();
