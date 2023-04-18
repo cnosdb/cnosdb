@@ -6,15 +6,18 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+utils = { path = "../utils"}
 snafu = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 rand = { workspace = true }
 chrono = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
-rsa = "0.7.2"
-base64 = "0.12.3"
-rust-crypto = "0.2.36"
+rsa = { workspace = true }
+base64 = { workspace = true }
+md-5 = { workspace = true }
+aes = { workspace = true }
+cbc = { workspace = true, features = ["std"]}
 
 
 [features]

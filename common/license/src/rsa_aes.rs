@@ -2,18 +2,15 @@
 
 use std::fs;
 
-use crypto::aes;
-use crypto::aes::KeySize::KeySize256;
-use crypto::blockmodes::PkcsPadding;
-use crypto::buffer::BufferResult::BufferUnderflow;
-use crypto::buffer::{ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer};
-use crypto::digest::Digest;
-use crypto::md5::Md5;
+use aes::cipher::block_padding::Pkcs7;
+use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use md5::{Digest, Md5};
 use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPrivateKey, EncodeRsaPublicKey};
 use rsa::pkcs8::LineEnding;
 use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
+use utils::to_hex_string;
 
-use crate::LicenseResult;
+use crate::{LicenseError, LicenseResult};
 
 pub const PUBLIC_RSA_FILENAME: &str = "public.rsa";
 pub const PRIVATE_RSA_FILENAME: &str = "private.rsa";
@@ -23,61 +20,19 @@ pub struct RsaAes {}
 impl RsaAes {
     pub fn hash_md5(str: &str) -> String {
         let mut md5 = Md5::new();
-        md5.input_str(str);
-        md5.result_str()
+        md5.update(str.as_bytes());
+        to_hex_string(&md5.finalize())
     }
 
-    pub fn aes256_encrypt(data: &[u8], key: &[u8; 32], iv: &[u8; 16]) -> LicenseResult<Vec<u8>> {
-        let mut encryptor = aes::cbc_encryptor(KeySize256, key, iv, PkcsPadding);
-
-        let mut buffer = [0; 4096];
-        let mut write_buffer = RefWriteBuffer::new(&mut buffer);
-        let mut read_buffer = RefReadBuffer::new(data);
-        let mut final_result = Vec::new();
-
-        loop {
-            let result = encryptor.encrypt(&mut read_buffer, &mut write_buffer, true)?;
-            final_result.extend(
-                write_buffer
-                    .take_read_buffer()
-                    .take_remaining()
-                    .iter()
-                    .copied(),
-            );
-
-            match result {
-                BufferUnderflow => break,
-                _ => continue,
-            }
-        }
-
-        Ok(final_result)
+    pub fn aes256_encrypt(data: &[u8], key: &[u8; 32], iv: &[u8; 16]) -> Vec<u8> {
+        cbc::Encryptor::<aes::Aes256>::new(&(*key).into(), &(*iv).into())
+            .encrypt_padded_vec_mut::<Pkcs7>(data)
     }
 
     pub fn aes256_decrypt(data: &[u8], key: &[u8; 32], iv: &[u8; 16]) -> LicenseResult<Vec<u8>> {
-        let mut decryptor = aes::cbc_decryptor(KeySize256, key, iv, PkcsPadding);
-
-        let mut buffer = [0; 4096];
-        let mut write_buffer = RefWriteBuffer::new(&mut buffer);
-        let mut read_buffer = RefReadBuffer::new(data);
-        let mut final_result = Vec::new();
-
-        loop {
-            let result = decryptor.decrypt(&mut read_buffer, &mut write_buffer, true)?;
-            final_result.extend(
-                write_buffer
-                    .take_read_buffer()
-                    .take_remaining()
-                    .iter()
-                    .copied(),
-            );
-            match result {
-                BufferUnderflow => break,
-                _ => continue,
-            }
-        }
-
-        Ok(final_result)
+        cbc::Decryptor::<aes::Aes256>::new(&(*key).into(), &(*iv).into())
+            .decrypt_padded_vec_mut::<Pkcs7>(data)
+            .map_err(|e| LicenseError::CommonError { msg: e.to_string() })
     }
 
     pub fn rsa_sign(data: &[u8]) -> LicenseResult<Vec<u8>> {
@@ -176,7 +131,7 @@ mod test {
         rng.fill_bytes(&mut iv);
 
         let data = "Hello, world!";
-        let encrypted_data = RsaAes::aes256_encrypt(data.as_bytes(), &key, &iv).unwrap();
+        let encrypted_data = RsaAes::aes256_encrypt(data.as_bytes(), &key, &iv);
         let decrypted_data = RsaAes::aes256_decrypt(encrypted_data.as_slice(), &key, &iv).unwrap();
 
         let result = String::from_utf8(decrypted_data.as_slice().to_vec()).unwrap();
