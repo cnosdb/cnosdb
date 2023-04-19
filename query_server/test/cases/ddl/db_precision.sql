@@ -1,5 +1,6 @@
 --#DATABASE=db_precision
 --#SLEEP=100
+DROP DATABASE IF EXISTS db_precision;
 CREATE DATABASE db_precision WITH TTL '100000d' precision 'us';
 
 --#LP_BEGIN

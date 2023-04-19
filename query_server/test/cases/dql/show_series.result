@@ -1,3 +1,7 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS show_series; --
+200 OK
+
+
 -- EXECUTE SQL: CREATE DATABASE show_series WITH TTL '100000d'; --
 200 OK
 
@@ -25,7 +29,7 @@ rows
 
 -- EXECUTE SQL: SHOW SERIES ON public FROM show_series.test; --
 422 Unprocessable Entity
-{"error_code":"010036","error_message":"Semantic error: DB public conflict with table show_series.test"}
+{"error_code":"010009","error_message":"sql parser error: Expected end of statement, found: ."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SHOW SERIES FROM test; --

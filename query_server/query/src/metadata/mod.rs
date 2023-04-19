@@ -10,10 +10,11 @@ use datafusion::datasource::TableProvider;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
 use datafusion::sql::planner::ContextProvider;
-use datafusion::sql::{ResolvedTableReference, TableReference};
+use datafusion::sql::TableReference;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::auth::user::UserDesc;
+use models::object_reference::{Resolve, ResolvedTable};
 use models::schema::{Precision, TableSchema, Tenant, DEFAULT_CATALOG};
 use parking_lot::RwLock;
 use spi::query::datasource::stream::StreamProviderManagerRef;
@@ -143,13 +144,10 @@ impl MetadataProvider {
         Ok(None)
     }
 
-    fn build_table_handle(
-        &self,
-        name: &ResolvedTableReference<'_>,
-    ) -> datafusion::common::Result<TableHandle> {
-        let tenant_name = name.catalog.as_ref();
-        let database_name = name.schema.as_ref();
-        let table_name = name.table.as_ref();
+    fn build_table_handle(&self, name: &ResolvedTable) -> datafusion::common::Result<TableHandle> {
+        let tenant_name = name.tenant();
+        let database_name = name.database();
+        let table_name = name.table();
 
         if let Some(source) =
             self.process_system_table_source(tenant_name, database_name, table_name)?
@@ -187,7 +185,9 @@ impl MetadataProvider {
             None => {
                 return Err(DataFusionError::Plan(format!(
                     "failed to resolve tenant:{}  db: {}, table: {}",
-                    name.catalog, name.schema, name.table
+                    name.tenant(),
+                    name.database(),
+                    name.table()
                 )));
             }
         };
@@ -244,11 +244,11 @@ impl ContextProviderExtension for MetadataProvider {
     ) -> datafusion::common::Result<Arc<TableSourceAdapter>> {
         let name = table_ref
             .clone()
-            .resolve(self.session.tenant(), self.session.default_database());
+            .resolve_object(self.session.tenant(), self.session.default_database())?;
 
-        let table_name = name.table.as_ref();
-        let database_name = name.schema.as_ref();
-        let tenant_name = name.catalog.as_ref();
+        let table_name = name.table();
+        let database_name = name.database();
+        let tenant_name = name.tenant();
         let tenant_id = *self.session.tenant_id();
 
         // Cannot query across tenants
