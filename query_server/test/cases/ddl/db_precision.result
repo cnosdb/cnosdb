@@ -1,3 +1,7 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS db_precision; --
+200 OK
+
+
 -- EXECUTE SQL: CREATE DATABASE db_precision WITH TTL '100000d' precision 'us'; --
 200 OK
 

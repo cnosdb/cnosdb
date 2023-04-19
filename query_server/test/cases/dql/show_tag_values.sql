@@ -1,5 +1,6 @@
 --#DATABASE=show_tag_values
 --#SLEEP=100
+DROP DATABASE IF EXISTS show_tag_values;
 CREATE DATABASE show_tag_values WITH TTL '100000d';;
 
 
