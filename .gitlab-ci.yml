@@ -13,30 +13,14 @@ bench-job:
     # - pkill -9 cnosdb-meta
     - sleep 10
     - echo "modify default config"
-    - sed -i "s/3100/3300/g" config/config_8902.toml
-    - sed -i "s/2100/2200/g" config/config_8902.toml
     - sed -i "s/tmp/data1/g" config/config_8902.toml
-    - sed -i "s/3200/3400/g" config/config_8912.toml
-    - sed -i "s/2100/2200/g" config/config_8912.toml
     - sed -i "s/tmp/data1/g" config/config_8912.toml
     - sed -i "s/tmp/data1/g" meta/config/config_8921.toml
     - sed -i "s/tmp/data1/g" meta/config/config_8901.toml
     - sed -i "s/tmp/data1/g" meta/config/config_8911.toml
-    - sed -i "s/2100/2200/g" meta/config/config_8921.toml
-    - sed -i "s/2100/2200/g" meta/config/config_8901.toml
-    - sed -i "s/2100/2200/g" meta/config/config_8911.toml
-    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_8901.toml
-    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_8911.toml
-    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/config/config_8921.toml
     - sed -i "s/tmp/data1/g" run_cluster.sh
     - sed -i "s/1000000000/10/g" run_cluster.sh
     - sed -i "s/tmp/data1/g" meta/cluster.sh
-    - sed -i "s/ 2100/ 2200/g" meta/cluster.sh
-    - sed -i "s/:2100/:2200/g" meta/cluster.sh
-    - sed -i "s/127.0.0.1/172.17.0.1/g" config/config_8902.toml
-    - sed -i "s/127.0.0.1/172.17.0.1/g" config/config_8912.toml
-    - sed -i "s/127.0.0.1/172.17.0.1/g" meta/cluster.sh
-    - sed -i "s/127.0.0.1/172.17.0.1/g" run_cluster.sh
     - sed -i "s/debug/release/g" meta/cluster.sh
     - sed -i "s/build/& --release/g" meta/cluster.sh
     - sed -i "s/build/& --release/g" run_cluster.sh
@@ -46,9 +30,22 @@ bench-job:
     - bash ./run_cluster.sh
     - echo "cluster is running"
     - echo "create database"
-    - cnosdb-cli -P 33001 -h 172.17.0.1 -f /home/gitlab-runner/benchmark.sh 
+    - cnosdb-cli -P 8902 -h 127.0.0.1 -f /home/gitlab-runner/benchmark.sh 
     # - echo "generate data"
     # - generate_data --use-case="iot" --seed=123 --scale=100 --timestamp-start="2023-01-01T00:00:00Z"  --timestamp-end="2023-01-01T01:00:00Z" --log-interval='6.3s' --format="cnosdb" | gzip >/cnosdb_1h_data.gz
     # - echo "data is ready"
     - echo "loading data"
-    - cat /data/cnosdb_iot_123_2022.gz| gunzip | load_cnosdb --urls http://172.17.0.1:33001 --workers 50
+    - cat /data/cnosdb_iot_123_2022.gz| gunzip | load_cnosdb --urls http://127.0.0.1:8902 --workers 50
+    - echo "query low-fuel"
+    - run_queries_cnosdb --workers 8 --urls http://172.17.0.1:8902 --file /data/queries/low-fuel.txt 
+    - echo "query last-loc"
+    - run_queries_cnosdb --workers 8 --urls http://172.17.0.1:8902 --file /data/queries/last-loc.txt 
+    - echo "query high-load"
+    - run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/high-load.txt
+    - echo "query stationary-trucks"
+    - run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/stationary-trucks.txt
+    - echo "query long-driving-sessions"
+    - run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/long-driving-sessions.txt
+    - echo "query avg-daily-driving-duration"
+    - run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/avg-daily-driving-duration.txt
+    - echo "bench job Done"

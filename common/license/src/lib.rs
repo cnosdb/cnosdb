@@ -41,14 +41,6 @@ impl From<rsa::errors::Error> for LicenseError {
     }
 }
 
-impl From<crypto::symmetriccipher::SymmetricCipherError> for LicenseError {
-    fn from(err: crypto::symmetriccipher::SymmetricCipherError) -> Self {
-        LicenseError::CommonError {
-            msg: format!("aes error: {:?}", err),
-        }
-    }
-}
-
 pub type LicenseResult<T> = Result<T, LicenseError>;
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
@@ -100,7 +92,7 @@ impl LicenseConfig {
         let iv: [u8; 16] = AES_IV.as_bytes().try_into().unwrap();
         let key: [u8; 32] = AES_KEY.as_bytes().try_into().unwrap();
 
-        let enc_data = rsa_aes::RsaAes::aes256_encrypt(&data, &key, &iv)?;
+        let enc_data = rsa_aes::RsaAes::aes256_encrypt(&data, &key, &iv);
         self.signature = base64::encode(enc_data);
 
         let data = serde_json::to_string_pretty(self).expect("encode to json failed");
