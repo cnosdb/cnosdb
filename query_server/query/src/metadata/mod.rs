@@ -157,17 +157,6 @@ impl MetadataProvider {
             return Ok(source.into());
         }
 
-        let database_info = self
-            .meta_client
-            .get_db_info(database_name)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?
-            .ok_or_else(|| {
-                DataFusionError::External(Box::new(MetaError::DatabaseNotFound {
-                    database: database_name.into(),
-                }))
-            })?;
-        let database_info = Arc::new(database_info);
-
         let table_handle: TableHandle = match self
             .meta_client
             .get_table_schema(database_name, table_name)
@@ -177,7 +166,7 @@ impl MetadataProvider {
                 TableSchema::TsKvTableSchema(schema) => Arc::new(ClusterTable::new(
                     self.coord.clone(),
                     self.split_manager.clone(),
-                    database_info,
+                    self.meta_client.clone(),
                     schema,
                 ))
                 .into(),
@@ -251,9 +240,11 @@ impl ContextProviderExtension for MetadataProvider {
 
     fn get_table_source(
         &self,
-        name: TableReference,
+        table_ref: TableReference,
     ) -> datafusion::common::Result<Arc<TableSourceAdapter>> {
-        let name = name.resolve(self.session.tenant(), self.session.default_database());
+        let name = table_ref
+            .clone()
+            .resolve(self.session.tenant(), self.session.default_database());
 
         let table_name = name.table.as_ref();
         let database_name = name.schema.as_ref();
@@ -276,6 +267,7 @@ impl ContextProviderExtension for MetadataProvider {
         let table_handle = self.build_table_handle(&name)?;
 
         Ok(Arc::new(TableSourceAdapter::try_new(
+            table_ref.to_owned_reference(),
             tenant_id,
             tenant_name,
             database_name,

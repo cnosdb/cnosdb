@@ -44,14 +44,12 @@ cnosdb,explain_stream_query,tskvtablewithoutschema,BASE TABLE,STREAM,TODO
 200 OK
 plan_type,plan
 logical_plan,"Projection: tskvtable.time, tskvtable.column1, tskvtable.column6
-  SubqueryAlias: tskvtable
-    Watermark: event_time=time, delay=0ms
-      StreamScan: [tskvtable.time,tskvtable.column1,tskvtable.column6]"
+  Watermark: event_time=time, delay=0ms
+    StreamScan: [tskvtable.time,tskvtable.column1,tskvtable.column6]"
 
 -- EXECUTE SQL: explain select * from TskvTableWithoutSchema; --
 200 OK
 plan_type,plan
 logical_plan,"Projection: tskvtablewithoutschema.time, tskvtablewithoutschema.column6, tskvtablewithoutschema.column7, tskvtablewithoutschema.column1, tskvtablewithoutschema.column2, tskvtablewithoutschema.column3, tskvtablewithoutschema.column4, tskvtablewithoutschema.column5
-  SubqueryAlias: tskvtablewithoutschema
-    Watermark: event_time=time, delay=0ms
-      StreamScan: [tskvtablewithoutschema.time,tskvtablewithoutschema.column6,tskvtablewithoutschema.column7,tskvtablewithoutschema.column1,tskvtablewithoutschema.column2,tskvtablewithoutschema.column3,tskvtablewithoutschema.column4,tskvtablewithoutschema.column5]"
+  Watermark: event_time=time, delay=0ms
+    StreamScan: [tskvtablewithoutschema.time,tskvtablewithoutschema.column6,tskvtablewithoutschema.column7,tskvtablewithoutschema.column1,tskvtablewithoutschema.column2,tskvtablewithoutschema.column3,tskvtablewithoutschema.column4,tskvtablewithoutschema.column5]"

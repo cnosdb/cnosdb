@@ -23,11 +23,17 @@ use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
 use crate::data_source::split;
 use crate::data_source::stream::tskv::factory::{TskvStreamProviderFactory, TSKV_STREAM_PROVIDER};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
+use crate::dispatcher::persister::LocalQueryPersister;
+use crate::dispatcher::query_tracker::QueryTracker;
+use crate::execution::factory::SqlQueryExecutionFactory;
 use crate::execution::scheduler::local::LocalScheduler;
 use crate::extension::expr::load_all_functions;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
+
+pub const DEFAULT_CNOSDB_PATH: &str = ".cnosdb";
+pub const DEFAULT_CNOSDB_QUERY_DIRECTORY_NAME: &str = "query";
 
 #[derive(Builder)]
 pub struct Cnosdbms<D: QueryDispatcher> {
@@ -42,6 +48,10 @@ impl<D> DatabaseManagerSystem for Cnosdbms<D>
 where
     D: QueryDispatcher,
 {
+    async fn start(&self) -> Result<()> {
+        self.query_dispatcher.start().await
+    }
+
     async fn authenticate(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User> {
         self.access_control
             .access_check(user_info, tenant_name)
@@ -99,9 +109,14 @@ pub async fn make_cnosdbms(
     options: Options,
     memory_pool: MemoryPoolRef,
 ) -> Result<impl DatabaseManagerSystem> {
+    let query_dedicated_hidden_dir = dirs::home_dir()
+        .expect("Could not find user's home directory")
+        .join(DEFAULT_CNOSDB_PATH)
+        .join(DEFAULT_CNOSDB_QUERY_DIRECTORY_NAME);
+
     let split_manager = split::default_split_manager_ref();
     // TODO session config need load global system config
-    let session_factory = Arc::new(SessionCtxFactory::default());
+    let session_factory = Arc::new(SessionCtxFactory::new(query_dedicated_hidden_dir.clone()));
     let parser = Arc::new(DefaultParser::default());
     let optimizer = Arc::new(CascadeOptimizerBuilder::default().build());
     // TODO wrap, and num_threads configurable
@@ -129,7 +144,20 @@ pub async fn make_cnosdbms(
     stream_checker_manager
         .register_stream_checker(TSKV_STREAM_PROVIDER, tskv_stream_provider_factory)?;
 
-    let queries_limit = options.query.max_server_connections;
+    let query_persister = Arc::new(LocalQueryPersister::try_new(
+        query_dedicated_hidden_dir.clone(),
+    )?);
+    let query_tracker = Arc::new(QueryTracker::new(
+        options.query.max_server_connections as usize,
+        query_persister,
+    ));
+
+    let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(
+        optimizer,
+        scheduler,
+        query_tracker.clone(),
+        Arc::new(stream_checker_manager),
+    ));
 
     let meta_manager = coord.meta_manager();
 
@@ -137,14 +165,12 @@ pub async fn make_cnosdbms(
         .with_coord(coord)
         .with_split_manager(split_manager)
         .with_session_factory(session_factory)
-        .with_parser(parser)
-        .with_optimizer(optimizer)
-        .with_scheduler(scheduler)
-        .with_queries_limit(queries_limit)
         .with_memory_pool(memory_pool)
+        .with_parser(parser)
+        .with_query_execution_factory(query_execution_factory)
+        .with_query_tracker(query_tracker)
         .with_func_manager(Arc::new(func_manager))
         .with_stream_provider_manager(Arc::new(stream_provider_manager))
-        .with_stream_checker_manager(Arc::new(stream_checker_manager))
         .build()?;
 
     let mut builder = CnosdbmsBuilder::default();
@@ -162,6 +188,8 @@ pub async fn make_cnosdbms(
         .query_dispatcher(query_dispatcher)
         .build()
         .expect("build db server");
+
+    db_server.start().await?;
 
     Ok(db_server)
 }

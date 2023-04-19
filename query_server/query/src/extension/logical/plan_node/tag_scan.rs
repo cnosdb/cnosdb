@@ -1,9 +1,9 @@
-use std::any::Any;
 use std::fmt::{self, Debug};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use datafusion::common::DFSchemaRef;
-use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
+use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 
 use crate::data_source::batch::tskv::ClusterTable;
@@ -32,11 +32,29 @@ impl Debug for TagScanPlanNode {
     }
 }
 
-impl UserDefinedLogicalNode for TagScanPlanNode {
-    fn as_any(&self) -> &dyn Any {
-        self
+impl Hash for TagScanPlanNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.table_name.hash(state);
+        self.projection.hash(state);
+        self.projected_schema.hash(state);
+        self.filters.hash(state);
+        self.fetch.hash(state);
     }
+}
 
+impl PartialEq for TagScanPlanNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.table_name == other.table_name
+            && self.projection == other.projection
+            && self.projected_schema == other.projected_schema
+            && self.filters == other.filters
+            && self.fetch == other.fetch
+    }
+}
+
+impl Eq for TagScanPlanNode {}
+
+impl UserDefinedLogicalNodeCore for TagScanPlanNode {
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![]
     }
@@ -58,13 +76,13 @@ impl UserDefinedLogicalNode for TagScanPlanNode {
         )
     }
 
-    fn from_template(
-        &self,
-        exprs: &[Expr],
-        inputs: &[LogicalPlan],
-    ) -> Arc<dyn UserDefinedLogicalNode> {
+    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
         assert_eq!(inputs.len(), 0, "input size inconsistent");
         assert_eq!(exprs.len(), 0, "expr size inconsistent");
-        Arc::new(self.clone())
+        self.clone()
+    }
+
+    fn name(&self) -> &str {
+        "TagScan"
     }
 }

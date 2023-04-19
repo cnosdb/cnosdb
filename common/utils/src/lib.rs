@@ -10,3 +10,7 @@ mod dedup;
 
 #[cfg(unix)]
 pub mod pprof_tools;
+
+pub fn to_hex_string(data: &[u8]) -> String {
+    format!("{:x?}", data)
+}

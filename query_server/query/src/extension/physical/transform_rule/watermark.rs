@@ -6,11 +6,11 @@ use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
 use datafusion::physical_plan::planner::ExtensionPlanner;
 use datafusion::physical_plan::{ExecutionPlan, PhysicalPlanner};
-use spi::query::stream::watermark_tracker::WatermarkTrackerRef;
 
 use crate::extension::logical::plan_node::watermark::WatermarkNode;
 use crate::extension::physical::plan_node::watermark::WatermarkExec;
 use crate::extension::utils::downcast_plan_node;
+use crate::stream::watermark_tracker::WatermarkTrackerRef;
 
 /// Physical planner for TopK nodes
 pub struct WatermarkPlanner {

@@ -10,22 +10,24 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
 use datafusion::from_slice::FromSlice;
 use datafusion::physical_plan::displayable;
+use datafusion::prelude::SessionConfig;
 use futures::TryStreamExt;
 use models::runtime::executor::{DedicatedExecutor, Job};
 use parking_lot::Mutex;
+use spi::query::config::StreamTriggerInterval;
 use spi::query::datasource::stream::StreamProviderRef;
 use spi::query::dispatcher::{QueryInfo, QueryStatus, QueryStatusBuilder};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef, QueryType};
 use spi::query::logical_planner::QueryPlan;
 use spi::query::physical_planner::PhysicalPlanner;
 use spi::query::scheduler::SchedulerRef;
-use spi::query::stream::watermark_tracker::WatermarkTrackerRef;
 use spi::Result;
 use trace::error;
 
-use self::trigger::executor::TriggerExecutorRef;
+use self::trigger::executor::{TriggerExecutorFactoryRef, TriggerExecutorRef};
 use crate::extension::analyse::stream_checker::UnsupportedOperationChecker;
 use crate::extension::analyse::AnalyzerRule;
+use crate::extension::logical::utils::extract_stream_providers;
 use crate::extension::physical::optimizer_rule::add_state_store::AddStateStore;
 use crate::extension::physical::transform_rule::stream_scan::StreamScanPlanner;
 use crate::extension::physical::transform_rule::watermark::WatermarkPlanner;
@@ -35,6 +37,93 @@ use crate::sql::physical::planner::DefaultPhysicalPlanner;
 use crate::stream::offset_tracker::{OffsetTracker, OffsetTrackerRef};
 use crate::stream::state_store::memory::MemoryStateStoreFactory;
 use crate::stream::state_store::StateStoreFactory;
+use crate::stream::watermark_tracker::{WatermarkTracker, WatermarkTrackerRef};
+
+#[derive(Debug, Clone)]
+pub struct StreamOptions {
+    pub trigger_interval: StreamTriggerInterval,
+}
+
+impl Default for StreamOptions {
+    fn default() -> Self {
+        Self {
+            trigger_interval: StreamTriggerInterval::Once,
+        }
+    }
+}
+
+impl From<&SessionConfig> for StreamOptions {
+    fn from(value: &SessionConfig) -> Self {
+        let trigger_interval = value
+            .get_extension::<StreamTriggerInterval>()
+            .map(|e| e.as_ref().clone())
+            .unwrap_or_else(|| StreamTriggerInterval::Once);
+
+        Self { trigger_interval }
+    }
+}
+
+pub struct MicroBatchStreamExecutionDesc {
+    pub plan: Arc<QueryPlan>,
+    pub options: StreamOptions,
+}
+
+pub struct MicroBatchStreamExecutionBuilder {
+    desc: MicroBatchStreamExecutionDesc,
+    stream_providers: Option<Vec<StreamProviderRef>>,
+}
+
+impl MicroBatchStreamExecutionBuilder {
+    pub fn new(desc: MicroBatchStreamExecutionDesc) -> Self {
+        Self {
+            desc,
+            stream_providers: None,
+        }
+    }
+
+    pub fn with_stream_providers(self, stream_providers: Vec<StreamProviderRef>) -> Self {
+        Self {
+            desc: self.desc,
+            stream_providers: Some(stream_providers),
+        }
+    }
+
+    pub fn build(
+        self,
+        query_state_machine: QueryStateMachineRef,
+        scheduler: SchedulerRef,
+        trigger_executor_factory: TriggerExecutorFactoryRef,
+        runtime: Arc<DedicatedExecutor>,
+    ) -> Result<MicroBatchStreamExecution> {
+        let MicroBatchStreamExecutionDesc {
+            plan,
+            options: StreamOptions { trigger_interval },
+        } = self.desc;
+
+        let stream_providers = self
+            .stream_providers
+            .unwrap_or_else(|| extract_stream_providers(plan.as_ref()));
+
+        let trigger_executor = trigger_executor_factory.create(&trigger_interval);
+        let watermark_tracker = Arc::new(WatermarkTracker::try_new(
+            query_state_machine.query_id,
+            query_state_machine.session.dedicated_hidden_dir(),
+        )?);
+
+        Ok(MicroBatchStreamExecution {
+            query_state_machine,
+            plan,
+            stream_providers,
+            scheduler,
+            trigger_executor,
+            watermark_tracker,
+            offset_tracker: Arc::new(OffsetTracker::new()),
+            state_store_factory: Arc::new(MemoryStateStoreFactory::default()),
+            runtime,
+            abort_handle: Mutex::new(None),
+        })
+    }
+}
 
 pub struct MicroBatchStreamExecution {
     query_state_machine: QueryStateMachineRef,
@@ -44,31 +133,9 @@ pub struct MicroBatchStreamExecution {
     trigger_executor: TriggerExecutorRef,
     state_store_factory: Arc<MemoryStateStoreFactory>,
     watermark_tracker: WatermarkTrackerRef,
+    offset_tracker: OffsetTrackerRef,
     runtime: Arc<DedicatedExecutor>,
     abort_handle: Mutex<Option<Job<()>>>,
-}
-
-impl MicroBatchStreamExecution {
-    pub fn new(
-        query_state_machine: QueryStateMachineRef,
-        plan: Arc<QueryPlan>,
-        stream_providers: Vec<StreamProviderRef>,
-        scheduler: SchedulerRef,
-        trigger_executor: TriggerExecutorRef,
-        runtime: Arc<DedicatedExecutor>,
-    ) -> Self {
-        Self {
-            query_state_machine,
-            plan,
-            stream_providers,
-            scheduler,
-            trigger_executor,
-            watermark_tracker: WatermarkTrackerRef::default(),
-            state_store_factory: Arc::new(MemoryStateStoreFactory::default()),
-            runtime,
-            abort_handle: Mutex::new(None),
-        }
-    }
 }
 
 impl MicroBatchStreamExecution {
@@ -85,7 +152,7 @@ impl MicroBatchStreamExecution {
         let watermark_tracker = self.watermark_tracker.clone();
         let state_store_factory = self.state_store_factory.clone();
         let runtime = self.runtime.clone();
-        let offset_tracker = Arc::new(OffsetTracker::new());
+        let offset_tracker = self.offset_tracker.clone();
 
         let result = self.trigger_executor.schedule(
             move |current_batch_id| {
@@ -194,6 +261,10 @@ impl QueryExecution for MicroBatchStreamExecution {
         .with_error_count(self.trigger_executor.error_count())
         .build()
     }
+
+    fn need_persist(&self) -> bool {
+        true
+    }
 }
 
 struct IncrementalExecution<T> {
@@ -284,10 +355,15 @@ where
         trace::trace!("Record the commit log after the execution is complete");
         let after_process_watermark_ns = self.watermark_tracker.current_watermark_ns();
         if after_process_watermark_ns > current_watermark_ns {
-            // TODO 此处是为了兼容tskv未实现的功能，后续需要修改
-            // 处理完一个批次后watermark更新了，则对offset_tracker进行提交
-            // 如果没更新则说明没有处理数据
+            // TODO here is for compatibility with unrealized functions of tskv, which needs to be modified later
+            // After processing a batch, the watermark is updated, then submit to offset_tracker
+            // If not updated, it means that the data has not been processed
             self.offset_tracker.commit(after_process_watermark_ns);
+            // Persist watermark, in order to load the last watermark when restoring
+            self.watermark_tracker.commit(self.current_batch_id).await?;
+        } else {
+            self.watermark_tracker
+                .update_watermark(current_watermark_ns, 0);
         }
 
         Ok(())

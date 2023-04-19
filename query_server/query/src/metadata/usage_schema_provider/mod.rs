@@ -5,6 +5,7 @@ use coordinator::service::CoordinatorRef;
 use datafusion::datasource::{provider_as_source, TableProvider, ViewTable};
 use datafusion::logical_expr::{binary_expr, col, LogicalPlanBuilder, Operator};
 use datafusion::prelude::lit;
+use datafusion::sql::TableReference;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::auth::user::User;
@@ -96,11 +97,6 @@ pub fn create_usage_schema_view_table(
     view_table_name: &str,
     default_catalog_meta_client: MetaClientRef,
 ) -> spi::Result<Arc<dyn TableProvider>> {
-    let database_info = default_catalog_meta_client
-        .get_db_info(USAGE_SCHEMA)?
-        .ok_or_else(|| MetaError::DatabaseNotFound {
-            database: USAGE_SCHEMA.into(),
-        })?;
     let table_schema = default_catalog_meta_client
         .get_tskv_table_schema(USAGE_SCHEMA, view_table_name)?
         .ok_or_else(|| MetaError::TableNotFound {
@@ -109,16 +105,23 @@ pub fn create_usage_schema_view_table(
     let cluster_table = Arc::new(ClusterTable::new(
         coord.clone(),
         split::default_split_manager_ref(),
-        Arc::new(database_info),
+        default_catalog_meta_client,
         table_schema,
     ));
     if user.desc().is_admin() && meta.tenant_name().eq(DEFAULT_CATALOG) {
         return Ok(cluster_table);
     }
     let cluster_table = provider_as_source(cluster_table);
-    let builder = LogicalPlanBuilder::scan(view_table_name, cluster_table, None)?.filter(
-        binary_expr(col("tenant"), Operator::Eq, lit(meta.tenant().name())),
-    )?;
+    let builder = LogicalPlanBuilder::scan(
+        TableReference::bare(view_table_name.to_string()),
+        cluster_table,
+        None,
+    )?
+    .filter(binary_expr(
+        col("tenant"),
+        Operator::Eq,
+        lit(meta.tenant().name()),
+    ))?;
 
     let builder_copy = builder.clone();
     let cols = builder_copy

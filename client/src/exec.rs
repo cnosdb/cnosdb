@@ -110,10 +110,10 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &mut PrintO
                 }
             }
 
-            Ok(line) if use_database(&line).is_some() => {
-                if let Some(db) = use_database(&line) {
+            Ok(line) if parse_use_database(&line).is_some() => {
+                if let Some(db) = parse_use_database(&line) {
                     if connect_database(&db, ctx).await.is_err() {
-                        println!("Cannot connect to database {}.", db);
+                        println!("Cannot use database {}.", db);
                     }
                 }
             }
@@ -162,18 +162,19 @@ async fn exec_and_print(
     Ok(())
 }
 
-fn use_database(sql: &str) -> Option<String> {
+fn parse_use_database(sql: &str) -> Option<String> {
     let sql = sql.trim().trim_end_matches(';');
     if !sql[0..3].to_ascii_lowercase().eq("use") {
         return None;
     }
 
-    let sql = sql[3..].trim();
+    let database = sql[3..].trim();
 
-    if sql.starts_with('"') && sql.ends_with('"') {
-        Some(sql[1..sql.len() - 1].to_string())
+    if database.starts_with('"') && database.ends_with('"') {
+        Some(database.trim_matches('"').to_string())
     } else {
-        Some(sql.to_string())
+        // normalize ident
+        Some(database.to_ascii_lowercase())
     }
 }
 
@@ -189,7 +190,7 @@ pub async fn connect_database(database: &str, ctx: &mut SessionContext) -> Resul
     }
     let old_database = ctx.get_database().to_string();
     ctx.set_database(database);
-    ctx.sql(format!("DESCRIBE DATABASE {}", database))
+    ctx.sql(format!("DESCRIBE DATABASE \"{}\"", database))
         .await
         .map_err(|e| {
             ctx.set_database(old_database.as_str());

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::common::Result as DFResult;
+use datafusion::common::{OwnedTableReference, Result as DFResult};
 use datafusion::datasource::listing::ListingTable;
 use datafusion::datasource::{provider_as_source, TableProvider};
 use datafusion::error::DataFusionError;
@@ -27,7 +27,6 @@ pub const TEMP_LOCATION_TABLE_NAME: &str = "external_location_table";
 
 pub struct TableSourceAdapter {
     tenant_id: Oid,
-    tenant_name: String,
     database_name: String,
     table_name: String,
     table_handle: TableHandle,
@@ -37,33 +36,36 @@ pub struct TableSourceAdapter {
 
 impl TableSourceAdapter {
     pub fn try_new(
+        table_ref: impl Into<OwnedTableReference>,
         tenant_id: Oid,
-        tenant_name: impl Into<String>,
+        _tenant_name: impl Into<String>,
         database_name: impl Into<String>,
         table_name: impl Into<String>,
         table_handle: impl Into<TableHandle>,
     ) -> Result<Self, DataFusionError> {
-        let table_name = table_name.into();
+        let database_name = database_name.into();
+        let table_name: String = table_name.into();
+
         let table_handle = table_handle.into();
         let plan = match &table_handle {
             // TableScan
             TableHandle::External(t) => {
                 let table_source = provider_as_source(t.clone());
-                LogicalPlanBuilder::scan(&table_name, table_source, None)?.build()?
+                LogicalPlanBuilder::scan(table_ref, table_source, None)?.build()?
             }
             // TableScan
             TableHandle::Tskv(t) => {
                 let table_source = provider_as_source(t.clone());
-                LogicalPlanBuilder::scan(&table_name, table_source, None)?.build()?
+                LogicalPlanBuilder::scan(table_ref, table_source, None)?.build()?
             }
             // TableScan
             TableHandle::TableProvider(t) => {
                 let table_source = provider_as_source(t.clone());
-                LogicalPlanBuilder::scan(&table_name, table_source, None)?.build()?
+                LogicalPlanBuilder::scan(table_ref, table_source, None)?.build()?
             }
             // StreamScan
             TableHandle::StreamProvider(s) => {
-                LogicalPlanBuilder::stream_scan(&table_name, s.clone())?
+                LogicalPlanBuilder::stream_scan(table_ref, s.clone())?
                     .watermark(s.watermark().clone())?
                     .build()?
             }
@@ -77,8 +79,7 @@ impl TableSourceAdapter {
 
         Ok(Self {
             tenant_id,
-            tenant_name: tenant_name.into(),
-            database_name: database_name.into(),
+            database_name,
             table_name,
             table_handle,
             plan,
@@ -87,10 +88,6 @@ impl TableSourceAdapter {
 
     pub fn tenant_id(&self) -> Oid {
         self.tenant_id
-    }
-
-    pub fn tenant_name(&self) -> &str {
-        &self.tenant_name
     }
 
     pub fn database_name(&self) -> &str {
@@ -108,6 +105,10 @@ impl TableSourceAdapter {
 
 #[async_trait]
 impl TableSource for TableSourceAdapter {
+    fn name(&self) -> &str {
+        "TableSourceAdapter"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -116,8 +117,11 @@ impl TableSource for TableSourceAdapter {
         self.table_handle.schema()
     }
 
-    fn supports_filter_pushdown(&self, filter: &Expr) -> DFResult<TableProviderFilterPushDown> {
-        self.table_handle.supports_filter_pushdown(filter)
+    fn supports_filters_pushdown(
+        &self,
+        filter: &[&Expr],
+    ) -> DFResult<Vec<TableProviderFilterPushDown>> {
+        self.table_handle.supports_filters_pushdown(filter)
     }
 
     fn supports_aggregate_pushdown(
@@ -178,12 +182,15 @@ impl TableHandle {
         }
     }
 
-    pub fn supports_filter_pushdown(&self, filter: &Expr) -> DFResult<TableProviderFilterPushDown> {
+    pub fn supports_filters_pushdown(
+        &self,
+        filter: &[&Expr],
+    ) -> DFResult<Vec<TableProviderFilterPushDown>> {
         match self {
-            Self::External(t) => t.supports_filter_pushdown(filter),
-            Self::Tskv(t) => t.supports_filter_pushdown(filter),
-            Self::StreamProvider(t) => t.supports_filter_pushdown(filter),
-            Self::TableProvider(t) => t.supports_filter_pushdown(filter),
+            Self::External(t) => t.supports_filters_pushdown(filter),
+            Self::Tskv(t) => t.supports_filters_pushdown(filter),
+            Self::StreamProvider(t) => t.supports_filters_pushdown(filter),
+            Self::TableProvider(t) => t.supports_filters_pushdown(filter),
         }
     }
 

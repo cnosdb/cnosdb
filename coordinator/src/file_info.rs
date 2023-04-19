@@ -1,5 +1,4 @@
-use crypto::digest::Digest;
-use crypto::md5::Md5;
+use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
@@ -64,12 +63,12 @@ pub async fn get_file_info(name: &str) -> CoordinatorResult<FileInfo> {
             break;
         }
 
-        md5.input(&buffer[0..len]);
+        md5.update(&buffer[0..len]);
         buffer.clear();
     }
 
     Ok(FileInfo {
-        md5: md5.result_str(),
+        md5: format!("{:x?}", md5.finalize()),
         name: name.to_string(),
         size: file_meta.len(),
     })

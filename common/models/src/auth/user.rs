@@ -5,6 +5,7 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use super::privilege::{DatabasePrivilege, Privilege, PrivilegeChecker, TenantObjectPrivilege};
+use super::role::UserRole;
 use super::{rsa_utils, AuthError, Result};
 use crate::oid::{Identifier, Oid};
 
@@ -222,4 +223,9 @@ pub struct UserInfo {
     pub user: String,
     pub password: String,
     pub private_key: Option<String>,
+}
+
+pub fn admin_user(desc: UserDesc) -> User {
+    let privileges = UserRole::Dba.to_privileges();
+    User::new(desc, privileges)
 }

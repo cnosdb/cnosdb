@@ -1,23 +1,22 @@
 use std::fmt::Display;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use datafusion::arrow::record_batch::RecordBatch;
 use models::auth::user::User;
+use models::oid::uuid_u64;
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE, DEFAULT_PRECISION};
+use serde::{Deserialize, Serialize};
 use trace::trace;
 
 use crate::query::config::StreamTriggerInterval;
 use crate::query::execution::Output;
 use crate::query::session::CnosSessionConfig;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct QueryId(u64);
 
 impl QueryId {
     pub fn next_id() -> Self {
-        static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        Self(id)
+        Self(uuid_u64())
     }
 
     pub fn get(&self) -> u64 {

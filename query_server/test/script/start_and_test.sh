@@ -63,7 +63,7 @@ function wait_start() {
         sleep 2;
     done
 }
-
+# cargo run --package test -- --query-url http://127.0.0.1:8902 --storage-url http://127.0.0.1:7777
 function test() {
     echo "Testing query/test" && \
     cargo run --package test && \

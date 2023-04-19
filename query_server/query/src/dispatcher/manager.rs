@@ -4,25 +4,24 @@ use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
+use models::auth::user::admin_user;
 use models::oid::Oid;
 use models::schema::DEFAULT_CATALOG;
 use spi::query::ast::ExtStatement;
-use spi::query::datasource::stream::checker::StreamCheckerManagerRef;
 use spi::query::datasource::stream::StreamProviderManagerRef;
 use spi::query::dispatcher::{QueryDispatcher, QueryInfo, QueryStatus};
-use spi::query::execution::{Output, QueryExecutionFactory, QueryStateMachine};
+use spi::query::execution::{Output, QueryStateMachine};
 use spi::query::function::FuncMetaManagerRef;
 use spi::query::logical_planner::LogicalPlanner;
-use spi::query::optimizer::Optimizer;
 use spi::query::parser::Parser;
-use spi::query::scheduler::SchedulerRef;
 use spi::query::session::SessionCtxFactory;
-use spi::service::protocol::{Query, QueryId};
+use spi::service::protocol::{ContextBuilder, Query, QueryId};
 use spi::{QueryError, Result};
+use trace::info;
 
 use super::query_tracker::QueryTracker;
 use crate::data_source::split::SplitManagerRef;
-use crate::execution::factory::SqlQueryExecutionFactory;
+use crate::execution::factory::QueryExecutionFactoryRef;
 use crate::metadata::{ContextProviderExtension, MetadataProvider};
 use crate::sql::logical::planner::DefaultLogicalPlanner;
 
@@ -38,15 +37,39 @@ pub struct SimpleQueryDispatcher {
     // parser
     parser: Arc<dyn Parser + Send + Sync>,
     // get query execution factory
-    query_execution_factory: Arc<dyn QueryExecutionFactory + Send + Sync>,
+    query_execution_factory: QueryExecutionFactoryRef,
     func_manager: FuncMetaManagerRef,
     stream_provider_manager: StreamProviderManagerRef,
 }
 
 #[async_trait]
 impl QueryDispatcher for SimpleQueryDispatcher {
-    fn start(&self) {
-        // TODO
+    async fn start(&self) -> Result<()> {
+        // 执行被持久化的任务
+        let queries = self.query_tracker.persistent_queries().await?;
+
+        for query in queries {
+            let query_id = query.query_id();
+            let sql = query.query();
+            let tenant_name = query.tenant_name();
+            let tenant_id = query.tenant_id();
+            let user_desc = query.user_desc();
+            let user = admin_user(user_desc.to_owned());
+            let ctx = ContextBuilder::new(user)
+                .with_tenant(Some(tenant_name.to_owned()))
+                .build();
+            let query = Query::new(ctx, sql.to_owned());
+            match self.execute_query(tenant_id, query_id, &query).await {
+                Ok(_) => {
+                    info!("Re-execute persistent query: {}", query.content());
+                }
+                Err(err) => {
+                    trace::warn!("Ignore, failed to re-execute persistent query: {}", err)
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn stop(&self) {
@@ -168,11 +191,12 @@ impl SimpleQueryDispatcher {
 
         let execution = self
             .query_execution_factory
-            .create_query_execution(logical_plan, query_state_machine.clone());
+            .create_query_execution(logical_plan, query_state_machine.clone())?;
 
         // TrackedQuery.drop() is called implicitly when the value goes out of scope,
         self.query_tracker
-            .try_track_query(query_state_machine.query_id, execution)?
+            .try_track_query(query_state_machine.query_id, execution)
+            .await?
             .start()
             .await
     }
@@ -184,16 +208,13 @@ pub struct SimpleQueryDispatcherBuilder {
     split_manager: Option<SplitManagerRef>,
     session_factory: Option<Arc<SessionCtxFactory>>,
     parser: Option<Arc<dyn Parser + Send + Sync>>,
-    // cnosdb optimizer
-    optimizer: Option<Arc<dyn Optimizer + Send + Sync>>,
-    scheduler: Option<SchedulerRef>,
 
-    queries_limit: usize,
+    query_execution_factory: Option<QueryExecutionFactoryRef>,
+    query_tracker: Option<Arc<QueryTracker>>,
     memory_pool: Option<MemoryPoolRef>, // memory
 
     func_manager: Option<FuncMetaManagerRef>,
     stream_provider_manager: Option<StreamProviderManagerRef>,
-    stream_checker_manager: Option<StreamCheckerManagerRef>,
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -217,18 +238,16 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
-    pub fn with_optimizer(mut self, optimizer: Arc<dyn Optimizer + Send + Sync>) -> Self {
-        self.optimizer = Some(optimizer);
+    pub fn with_query_execution_factory(
+        mut self,
+        query_execution_factory: QueryExecutionFactoryRef,
+    ) -> Self {
+        self.query_execution_factory = Some(query_execution_factory);
         self
     }
 
-    pub fn with_scheduler(mut self, scheduler: SchedulerRef) -> Self {
-        self.scheduler = Some(scheduler);
-        self
-    }
-
-    pub fn with_queries_limit(mut self, limit: u32) -> Self {
-        self.queries_limit = limit as usize;
+    pub fn with_query_tracker(mut self, query_tracker: Arc<QueryTracker>) -> Self {
+        self.query_tracker = Some(query_tracker);
         self
     }
 
@@ -247,14 +266,6 @@ impl SimpleQueryDispatcherBuilder {
         stream_provider_manager: StreamProviderManagerRef,
     ) -> Self {
         self.stream_provider_manager = Some(stream_provider_manager);
-        self
-    }
-
-    pub fn with_stream_checker_manager(
-        mut self,
-        stream_checker_manager: StreamCheckerManagerRef,
-    ) -> Self {
-        self.stream_checker_manager = Some(stream_checker_manager);
         self
     }
 
@@ -281,16 +292,16 @@ impl SimpleQueryDispatcherBuilder {
                 err: "lost of parser".to_string(),
             })?;
 
-        let optimizer = self
-            .optimizer
-            .ok_or_else(|| QueryError::BuildQueryDispatcher {
-                err: "lost of optimizer".to_string(),
-            })?;
+        let query_execution_factory =
+            self.query_execution_factory
+                .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                    err: "lost of query_execution_factory".to_string(),
+                })?;
 
-        let scheduler = self
-            .scheduler
+        let query_tracker = self
+            .query_tracker
             .ok_or_else(|| QueryError::BuildQueryDispatcher {
-                err: "lost of scheduler".to_string(),
+                err: "lost of query_tracker".to_string(),
             })?;
 
         let func_manager = self
@@ -305,26 +316,12 @@ impl SimpleQueryDispatcherBuilder {
                     err: "lost of stream_provider_manager".to_string(),
                 })?;
 
-        let stream_checker_manager =
-            self.stream_checker_manager
-                .ok_or_else(|| QueryError::BuildQueryDispatcher {
-                    err: "lost of stream_checker_manager".to_string(),
-                })?;
-
-        let query_tracker = Arc::new(QueryTracker::new(self.queries_limit));
-        // TODO restore from metastore
-
-        let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(
-            optimizer,
-            scheduler,
-            query_tracker.clone(),
-            stream_checker_manager,
-        ));
         let memory_pool = self
             .memory_pool
             .ok_or_else(|| QueryError::BuildQueryDispatcher {
                 err: "lost of memory pool".to_string(),
             })?;
+
         Ok(SimpleQueryDispatcher {
             coord,
             split_manager,

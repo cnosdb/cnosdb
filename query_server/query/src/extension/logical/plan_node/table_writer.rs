@@ -1,11 +1,11 @@
-use std::any::Any;
 use std::fmt::{self, Debug};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::utils::exprlist_to_fields;
-use datafusion::logical_expr::{Extension, LogicalPlan, TableSource, UserDefinedLogicalNode};
+use datafusion::logical_expr::{Extension, LogicalPlan, TableSource, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 
 #[derive(Clone)]
@@ -53,11 +53,27 @@ impl Debug for TableWriterPlanNode {
     }
 }
 
-impl UserDefinedLogicalNode for TableWriterPlanNode {
-    fn as_any(&self) -> &dyn Any {
-        self
+impl Hash for TableWriterPlanNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.target_table_name.hash(state);
+        self.input.hash(state);
+        self.exprs.hash(state);
+        self.schema.hash(state);
     }
+}
 
+impl PartialEq for TableWriterPlanNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.target_table_name == other.target_table_name
+            && self.input == other.input
+            && self.exprs == other.exprs
+            && self.schema == other.schema
+    }
+}
+
+impl Eq for TableWriterPlanNode {}
+
+impl UserDefinedLogicalNodeCore for TableWriterPlanNode {
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![&self.input]
     }
@@ -82,19 +98,19 @@ impl UserDefinedLogicalNode for TableWriterPlanNode {
         Ok(())
     }
 
-    fn from_template(
-        &self,
-        exprs: &[Expr],
-        inputs: &[LogicalPlan],
-    ) -> Arc<dyn UserDefinedLogicalNode> {
+    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
         debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
-        Arc::new(TableWriterPlanNode {
+        TableWriterPlanNode {
             target_table_name: self.target_table_name.clone(),
             target_table: self.target_table.clone(),
             input: Arc::new(inputs[0].clone()),
             exprs: exprs.to_vec(),
             schema: self.schema.clone(),
-        })
+        }
+    }
+
+    fn name(&self) -> &str {
+        "TableWriter"
     }
 }
 

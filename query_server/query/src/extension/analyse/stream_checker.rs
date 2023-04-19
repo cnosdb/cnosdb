@@ -1,6 +1,7 @@
+use datafusion::common::tree_node::{TreeNode, TreeNodeVisitor, VisitRecursion};
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::{LogicalPlan, PlanVisitor};
+use datafusion::logical_expr::LogicalPlan;
 
 use super::AnalyzerRule;
 
@@ -10,7 +11,7 @@ pub struct UnsupportedOperationChecker {}
 impl AnalyzerRule for UnsupportedOperationChecker {
     fn analyze(&self, plan: &LogicalPlan) -> DFResult<Option<LogicalPlan>> {
         let mut visitor = UnsupportedOperationVisitor::default();
-        let _ = plan.accept(&mut visitor)?;
+        let _ = plan.visit(&mut visitor)?;
         Ok(None)
     }
 
@@ -24,10 +25,10 @@ struct UnsupportedOperationVisitor {
     agg_count: usize,
 }
 
-impl PlanVisitor for UnsupportedOperationVisitor {
-    type Error = DataFusionError;
+impl TreeNodeVisitor for UnsupportedOperationVisitor {
+    type N = LogicalPlan;
 
-    fn pre_visit(&mut self, plan: &LogicalPlan) -> Result<bool, Self::Error> {
+    fn pre_visit(&mut self, plan: &LogicalPlan) -> DFResult<VisitRecursion> {
         match plan {
             LogicalPlan::Aggregate(_) => {
                 self.agg_count += 1;
@@ -60,6 +61,6 @@ impl PlanVisitor for UnsupportedOperationVisitor {
             _ => {}
         }
 
-        Ok(true)
+        Ok(VisitRecursion::Continue)
     }
 }

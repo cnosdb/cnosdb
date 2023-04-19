@@ -1,3 +1,4 @@
+pub mod analyzer;
 pub mod logical;
 pub mod optimizer;
 pub mod parser;

@@ -34,7 +34,7 @@ use datafusion::logical_expr::{
 use datafusion::prelude::{col, SessionConfig};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
-use datafusion::sql::planner::{object_name_to_table_reference, SqlToRel};
+use datafusion::sql::planner::{object_name_to_table_reference, PlannerContext, SqlToRel};
 use datafusion::sql::sqlparser::ast::{
     DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, OrderByExpr, Query,
     SqlOption, Statement, TableAlias, TableFactor, TimezoneInfo,
@@ -91,18 +91,17 @@ use crate::data_source::stream::{get_event_time_column, get_watermark_delay};
 use crate::data_source::table_source::{TableHandle, TableSourceAdapter, TEMP_LOCATION_TABLE_NAME};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::metadata::{ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
-use crate::sql::parser::{merge_object_name, normalize_ident, normalize_sql_object_name};
 
 /// CnosDB SQL query planner
-pub struct SqlPlaner<'a, S: ContextProviderExtension> {
+pub struct SqlPlanner<'a, S: ContextProviderExtension> {
     schema_provider: &'a S,
     df_planner: SqlToRel<'a, S>,
 }
 
-impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
+impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     /// Create a new query planner
     pub fn new(schema_provider: &'a S) -> Self {
-        SqlPlaner {
+        SqlPlanner {
             schema_provider,
             df_planner: SqlToRel::new(schema_provider),
         }
@@ -222,8 +221,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
     /// Generate a plan for EXPLAIN ... that will print out a plan
     async fn explain_statement_to_plan(
         &self,
-        verbose: bool,
         analyze: bool,
+        verbose: bool,
         statement: ExtStatement,
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
@@ -284,18 +283,18 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             self.schema_provider.reset_access_databases(),
         );
 
-        let table_name = object_name_to_resolved_table(session, sql_object_name)?;
+        let table_ref = object_name_to_table_reference(sql_object_name, true)?;
         let columns = sql_column_names
             .iter()
             .map(normalize_ident)
             .collect::<Vec<String>>();
 
         // Get the metadata of the target table
-        let target_table = self.get_table_source(&table_name)?;
+        let target_table = self.get_table_source(table_ref.clone())?;
 
         let build_plan_func = || {
             LogicalPlanBuilder::from(source_plan)
-                .write(target_table, table_name.table(), columns.as_ref())?
+                .write(target_table, table_ref.table(), columns.as_ref())?
                 .build()
         };
 
@@ -478,6 +477,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             if_not_exists,
             file_compression_type,
             options,
+            order_exprs,
         } = statement;
 
         // semantic checks
@@ -497,12 +497,17 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         }
 
         let schema = self.df_planner.build_schema(columns)?;
+        let df_schema = schema.to_dfschema_ref()?;
+
+        let ordered_exprs =
+            self.df_planner
+                .build_order_by(order_exprs, &df_schema, &mut PlannerContext::new())?;
 
         // External tables do not support schemas at the moment, so the name is just a table name
-        let name = OwnedTableReference::Bare { table: name };
+        let name = OwnedTableReference::bare(name);
 
         Ok(PlanCreateExternalTable {
-            schema: schema.to_dfschema_ref()?,
+            schema: df_schema,
             name,
             location,
             file_type,
@@ -513,6 +518,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             definition,
             file_compression_type,
             options,
+            order_exprs: ordered_exprs,
         })
     }
 
@@ -622,7 +628,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         // get the current tenant id from the session
-        let database_name = normalize_sql_object_name(&statement.database_name);
+        let database_name = normalize_sql_object_name(&statement.database_name)?;
 
         let plan = Plan::DDL(DDLPlan::DescribeDatabase(DescribeDatabase {
             database_name: database_name.to_string(),
@@ -630,7 +636,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         // privileges
         let tenant_id = *session.tenant_id();
         let privilege = Privilege::TenantObject(
-            TenantObjectPrivilege::Database(DatabasePrivilege::Read, Some(database_name)),
+            TenantObjectPrivilege::Database(
+                DatabasePrivilege::Read,
+                Some(database_name.to_string()),
+            ),
             Some(tenant_id),
         );
         Ok(PlanWithPrivileges {
@@ -663,8 +672,9 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         statement: ASTAlterTable,
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
-        let table_name = object_name_to_resolved_table(session, statement.table_name)?;
-        let table_schema = self.get_tskv_schema(&table_name)?;
+        let table_ref = object_name_to_table_reference(statement.table_name.clone(), true)?;
+        let table_name = object_name_to_resolved_table(session, statement.table_name.clone())?;
+        let table_schema = self.get_tskv_schema(table_ref)?;
 
         let time_unit = if let ColumnType::Time(ref unit) = table_schema
             .column(TIME_FIELD)
@@ -784,7 +794,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         database: Option<ObjectName>,
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
-        let db_name = database.map(|db_name| normalize_sql_object_name(&db_name));
+        let db_name = database
+            .map(|db_name| normalize_sql_object_name(&db_name))
+            .transpose()?
+            .map(|e| e.to_string());
         let plan = Plan::DDL(DDLPlan::ShowTables(db_name.clone()));
         // privileges
         Ok(PlanWithPrivileges {
@@ -817,14 +830,16 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             }
         };
 
-        let table_name = object_name_to_resolved_table(session, table)?;
-        let table_source = self.get_table_source(&table_name)?;
-        let table_schema = self.get_tskv_schema(&table_name)?;
+        let table_ref = object_name_to_table_reference(table, true)?;
+        // TODO 后续表达式构造逻辑待优化，所以此处仅拿table重新构造TableReference
+        let table_ref = TableReference::bare(table_ref.table().to_string());
+
+        let table_source = self.get_table_source(table_ref.clone())?;
+        let table_schema = self.get_tskv_schema(table_ref.clone())?;
         let table_df_schema = table_source.schema().to_dfschema_ref()?;
 
         // build from
-        let mut plan_builder =
-            LogicalPlanBuilder::scan(&table_schema.name, table_source.clone(), None)?;
+        let mut plan_builder = LogicalPlanBuilder::scan(table_ref, table_source.clone(), None)?;
 
         // build where
         let selection = match body.selection {
@@ -913,7 +928,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
             options,
         } = stmt;
 
-        let name = normalize_sql_object_name(&name);
+        let name = normalize_sql_object_name(&name)?.to_string();
 
         // check if system database
         if name.eq_ignore_ascii_case(CLUSTER_SCHEMA)
@@ -1037,7 +1052,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 err: "Can not alter database precision".to_string(),
             });
         }
-        let database_name = normalize_sql_object_name(&name);
+        let database_name = normalize_sql_object_name(&name)?;
         let plan = Plan::DDL(DDLPlan::AlterDatabase(AlterDatabase {
             database_name: database_name.to_string(),
             database_options: options,
@@ -1045,7 +1060,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         // privileges
         let tenant_id = *session.tenant_id();
         let privilege = Privilege::TenantObject(
-            TenantObjectPrivilege::Database(DatabasePrivilege::Full, Some(database_name)),
+            TenantObjectPrivilege::Database(
+                DatabasePrivilege::Full,
+                Some(database_name.to_string()),
+            ),
             Some(tenant_id),
         );
         Ok(PlanWithPrivileges {
@@ -1139,8 +1157,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         Ok(precision)
     }
 
-    fn get_table_source(&self, table_name: &ResolvedTable) -> Result<Arc<dyn TableSource>> {
-        Ok(self.schema_provider.get_table_source(table_name.into())?)
+    fn get_table_source(&self, table_name: TableReference) -> Result<Arc<dyn TableSource>> {
+        Ok(self.schema_provider.get_table_source(table_name)?)
     }
 
     fn create_tenant_to_plan(&self, stmt: ast::CreateTenant) -> Result<PlanWithPrivileges> {
@@ -1533,13 +1551,13 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         })
     }
 
-    fn get_tskv_schema(&self, table_name: &ResolvedTable) -> Result<TskvTableSchemaRef> {
-        let source = self.get_table_source(table_name)?;
+    fn get_tskv_schema(&self, table_ref: TableReference) -> Result<TskvTableSchemaRef> {
+        let source = self.get_table_source(table_ref.clone())?;
         let adapter = source_downcast_adapter(&source)?;
         let result = match adapter.table_handle() {
             TableHandle::Tskv(e) => Ok(e.table_schema()),
             _ => Err(MetaError::TableNotFound {
-                table: table_name.to_string(),
+                table: table_ref.to_string(),
             }),
         };
 
@@ -1641,10 +1659,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
         )?;
 
         // 2. Get the metadata of the target table
-        let table_name = normalize_sql_object_name(table_name);
-        let target_table_source = self
-            .schema_provider
-            .get_table_source(TableReference::from(table_name.as_str()))?;
+        let table_name = normalize_sql_object_name(table_name)?;
+        let target_table_source = self.schema_provider.get_table_source(table_name)?;
 
         // 3. According to the external path, construct the external table
         let default_schema = if auto_infer_schema {
@@ -1735,14 +1751,17 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlaner<'a, S> {
                 ..
             } => {
                 // normalize name and alias
-                let table_name = normalize_sql_object_name(sql_object_name);
-                let table_ref: TableReference = table_name.as_str().into();
+                let table_ref = normalize_sql_object_name(sql_object_name)?;
+                let table_name = table_ref.to_string();
                 let cte = ctes.get(&table_name);
                 (
-                    match (cte, self.schema_provider.get_table_provider(table_ref)) {
+                    match (
+                        cte,
+                        self.schema_provider.get_table_provider(table_ref.clone()),
+                    ) {
                         (Some(cte_plan), _) => Ok(cte_plan.clone()),
                         (_, Ok(provider)) => {
-                            LogicalPlanBuilder::scan(&table_name, provider, None)?.build()
+                            LogicalPlanBuilder::scan(table_ref, provider, None)?.build()
                         }
                         (None, Err(e)) => Err(e),
                     }?,
@@ -1845,7 +1864,7 @@ fn build_and_register_object_store(
             schema,
             bucket.unwrap_or_default()
         );
-        runtime_env.register_object_store(schema, bucket.unwrap_or_default(), object_store);
+        runtime_env.register_object_store(url, object_store);
     }
 
     Ok(())
@@ -1882,6 +1901,7 @@ async fn build_external_location_table_source(
     .await?;
 
     let external_location_table_source = Arc::new(TableSourceAdapter::try_new(
+        TableReference::bare(TEMP_LOCATION_TABLE_NAME),
         *ctx.tenant_id(),
         ctx.tenant(),
         "tmp",
@@ -1989,17 +2009,14 @@ fn show_series_projection(
     //   all field columns will be scanned at rewrite_tag_scan,
     //   so this projection needs to be added
     if where_contain_time {
-        let exp = tags
-            .iter()
-            .map(|tag| col(Column::new(Some(&table_schema.name), &tag.name)))
-            .collect::<Vec<Expr>>();
+        let exp = tags.iter().map(|tag| col(&tag.name)).collect::<Vec<Expr>>();
         plan_builder = plan_builder.project(exp)?.distinct()?;
     };
 
     // concat tag_key=tag_value projection
     let tag_concat_expr_iter = tags.iter().map(|tag| {
         let column_expr = Box::new(Expr::Column(Column::new(
-            Some(&table_schema.name),
+            Some(table_schema.name.clone()),
             &tag.name,
         )));
         let is_null_expr = Box::new(column_expr.clone().is_null());
@@ -2064,8 +2081,8 @@ fn show_tag_value_projections(
             produce_one_row: false,
             schema: Arc::new(DFSchema::new_with_metadata(
                 vec![
-                    DFField::new(None, "key", DataType::Utf8, false),
-                    DFField::new(None, "value", DataType::Utf8, false),
+                    DFField::new_unqualified("key", DataType::Utf8, false),
+                    DFField::new_unqualified("value", DataType::Utf8, false),
                 ],
                 HashMap::new(),
             )?),
@@ -2078,7 +2095,7 @@ fn show_tag_value_projections(
     if where_contain_time {
         let exprs = tags
             .iter()
-            .map(|tag| col(Column::new(Some(&table_schema.name), &tag.name)))
+            .map(|tag| col(Column::new(Some(table_schema.name.clone()), &tag.name)))
             .collect::<Vec<Expr>>();
 
         plan_builder = plan_builder.project(exprs)?.distinct()?;
@@ -2087,7 +2104,8 @@ fn show_tag_value_projections(
     let mut projections = Vec::new();
     for tag in tags {
         let key_column = lit(&tag.name).alias("key");
-        let value_column = col(Column::new(Some(&table_schema.name), &tag.name)).alias("value");
+        let value_column =
+            col(Column::new(Some(table_schema.name.clone()), &tag.name)).alias("value");
         let projection = plan_builder
             .clone()
             .project(vec![key_column, value_column.clone()])?;
@@ -2107,7 +2125,7 @@ fn show_tag_value_projections(
 }
 
 #[async_trait]
-impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlaner<'a, S> {
+impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlanner<'a, S> {
     async fn create_logical_plan(
         &self,
         statement: ExtStatement,
@@ -2170,10 +2188,62 @@ fn object_name_to_resolved_table(
     object_name: ObjectName,
 ) -> Result<ResolvedTable> {
     let table = object_name_to_table_reference(object_name, true)?
-        .as_table_reference()
         .resolve_object(session.tenant(), session.default_database());
 
     Ok(table)
+}
+
+// merge "catalog.db" and "db.table" to "catalog.db.table"
+// if a.b and b.c => a.b.c
+// if a.b and c.d => None
+pub fn merge_object_name(db: Option<ObjectName>, table: Option<ObjectName>) -> Option<ObjectName> {
+    let (db, table) = match (db, table) {
+        (Some(db), Some(table)) => (db, table),
+        (Some(db), None) => return Some(db),
+        (None, Some(table)) => return Some(table),
+        (None, None) => return None,
+    };
+
+    let mut db: Vec<Ident> = db.0;
+    let mut table: Vec<Ident> = table.0;
+    debug!("merge_object_name: db: {:#?} table: {:#?}", db, table);
+
+    if db.is_empty() {
+        return Some(ObjectName(table));
+    }
+
+    if table.len() == 1 {
+        db.append(&mut table);
+        return Some(ObjectName(db));
+    }
+
+    if let Some(db_name) = db.last() {
+        if let Some(table_db_name) = table.get(table.len() - 2) {
+            if !db_name.eq(table_db_name) {
+                return None;
+            } else {
+                let ident = table.remove(table.len() - 1);
+                db.push(ident);
+                return Some(ObjectName(db));
+            }
+        }
+    }
+    None
+}
+
+// Normalize an identifier to a lowercase string unless the identifier is quoted.
+pub fn normalize_ident(id: &Ident) -> String {
+    match id.quote_style {
+        Some(_) => id.value.clone(),
+        None => id.value.to_ascii_lowercase(),
+    }
+}
+
+/// Normalize a SQL object name
+pub fn normalize_sql_object_name(
+    sql_object_name: &ObjectName,
+) -> Result<OwnedTableReference, DataFusionError> {
+    object_name_to_table_reference(sql_object_name.clone(), true)
 }
 
 #[cfg(test)]
@@ -2245,6 +2315,7 @@ mod tests {
             };
 
             Ok(Arc::new(TableSourceAdapter::try_new(
+                name.to_owned_reference(),
                 Oid::default(),
                 "cnosdb",
                 "public",
@@ -2355,7 +2426,7 @@ mod tests {
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
-        let planner = SqlPlaner::new(&test);
+        let planner = SqlPlanner::new(&test);
         let plan = planner
             .statement_to_plan(statements.pop_back().unwrap(), &session())
             .await
@@ -2379,7 +2450,7 @@ mod tests {
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
-        let planner = SqlPlaner::new(&test);
+        let planner = SqlPlanner::new(&test);
         let plan = planner
             .statement_to_plan(statements.pop_back().unwrap(), &session())
             .await
@@ -2454,7 +2525,7 @@ mod tests {
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
-        let planner = SqlPlaner::new(&test);
+        let planner = SqlPlanner::new(&test);
         let plan = planner
             .statement_to_plan(statements.pop_back().unwrap(), &session())
             .await
@@ -2475,7 +2546,7 @@ mod tests {
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
-        let planner = SqlPlaner::new(&test);
+        let planner = SqlPlanner::new(&test);
         let error = planner
             .statement_to_plan(statements.pop_back().unwrap(), &session())
             .await
@@ -2490,7 +2561,7 @@ mod tests {
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
-        let planner = SqlPlaner::new(&test);
+        let planner = SqlPlanner::new(&test);
         let error = planner
             .statement_to_plan(statements.pop_back().unwrap(), &session())
             .await
@@ -2505,7 +2576,7 @@ mod tests {
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
-        let planner = SqlPlaner::new(&test);
+        let planner = SqlPlanner::new(&test);
         let error = planner
             .statement_to_plan(statements.pop_back().unwrap(), &session())
             .await
@@ -2524,7 +2595,7 @@ mod tests {
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};
-        let planner = SqlPlaner::new(&test);
+        let planner = SqlPlanner::new(&test);
         let plan = planner
             .statement_to_plan(statements.pop_back().unwrap(), &session())
             .await

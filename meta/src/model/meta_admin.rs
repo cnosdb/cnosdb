@@ -5,7 +5,7 @@ use config::ClusterConfig;
 use models::meta_data::*;
 use tokio::sync::RwLock;
 use tonic::transport::{Channel, Endpoint};
-use trace::info;
+use trace::error;
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
@@ -75,20 +75,19 @@ impl AdminMeta for RemoteAdminMeta {
     }
 
     async fn add_data_node(&self) -> MetaResult<()> {
-        let mut disk_free_ = 0;
-
-        match get_disk_info(&self.path) {
-            Ok(disk_free) => disk_free_ = disk_free,
-            Err(e) => info!("{}", e),
-        }
-
-        let is_cold_server = self.config.cold_data_server;
+        let disk_free = match get_disk_info(&self.path) {
+            Ok(size) => size,
+            Err(e) => {
+                error!("Failed to get disk info:{}", e);
+                0
+            }
+        };
 
         let node = NodeInfo {
             status: 0,
             id: self.config.node_id,
-            disk_free: disk_free_,
-            is_cold: is_cold_server,
+            disk_free,
+            is_cold: self.config.cold_data_server,
             grpc_addr: self.config.grpc_listen_addr.clone(),
             http_addr: self.config.http_listen_addr.clone(),
         };

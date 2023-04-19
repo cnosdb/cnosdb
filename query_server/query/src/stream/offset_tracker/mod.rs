@@ -25,14 +25,14 @@ impl OffsetTracker {
         !self.available_offsets.read().is_empty()
     }
 
-    pub fn update_available_offset(&self, topic: String, offset: i64) {
+    pub fn update_available_offset(&self, topic: String, offset: Offset) {
         let mut available_offsets = self.available_offsets.write();
         let current_offset = self
             .processed_offsets
             .read()
             .get(&topic)
             .cloned()
-            .unwrap_or(i64::MIN);
+            .unwrap_or(Offset::MIN);
         if offset > current_offset {
             available_offsets.insert(topic, offset);
         }
@@ -58,18 +58,15 @@ impl OffsetTracker {
         source_to_range
     }
 
-    pub fn commit(&self, watermark_ns: i64) {
+    pub fn commit(&self, commit_offset: Offset) {
         // TODO 因为目前tskv表使用当前时间作为最新的可用offset，所以这里需要使用watermark_ns来保证不会丢失数据
         self.available_offsets
             .read()
             .iter()
             .for_each(|(id, offset)| {
-                let offset = cmp::min(watermark_ns, *offset);
+                let offset = cmp::min(commit_offset, *offset);
                 self.processed_offsets.write().insert(id.clone(), offset);
             });
-        // self.processed_offsets
-        // .write()
-        // .extend(self.available_offsets.read().clone());
 
         self.available_offsets.write().clear();
     }

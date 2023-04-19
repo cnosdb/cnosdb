@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use datafusion::common::{DFField, DFSchema, Result as DFResult};
+use datafusion::common::{DFField, DFSchema, OwnedTableReference, Result as DFResult};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::{
     Extension, LogicalPlan, LogicalPlanBuilder, Projection, TableSource,
@@ -24,7 +24,10 @@ pub trait LogicalPlanBuilderExt: Sized {
     /// Apply a expand with specific projections
     fn expand(self, projections: Vec<Vec<Expr>>) -> Result<Self>;
     fn watermark(self, watermark: Watermark) -> Result<Self>;
-    fn stream_scan(table_name: impl Into<String>, table_source: StreamProviderRef) -> Result<Self>;
+    fn stream_scan(
+        table_name: impl Into<OwnedTableReference>,
+        table_source: StreamProviderRef,
+    ) -> Result<Self>;
     fn write(
         self,
         target_table: Arc<dyn TableSource>,
@@ -57,10 +60,13 @@ impl LogicalPlanBuilderExt for LogicalPlanBuilder {
     }
 
     /// Convert a stream provider into a builder with a [`StreamScanPlanNode`]
-    fn stream_scan(table_name: impl Into<String>, table_source: StreamProviderRef) -> Result<Self> {
+    fn stream_scan(
+        table_name: impl Into<OwnedTableReference>,
+        table_source: StreamProviderRef,
+    ) -> Result<Self> {
         let table_name = table_name.into();
 
-        if table_name.is_empty() {
+        if table_name.table().is_empty() {
             return Err(DataFusionError::Plan(
                 "table_name cannot be empty".to_string(),
             ));
@@ -68,7 +74,7 @@ impl LogicalPlanBuilderExt for LogicalPlanBuilder {
 
         let schema = table_source.schema();
 
-        let projected_schema = DFSchema::try_from_qualified_schema(&table_name, &schema)?;
+        let projected_schema = DFSchema::try_from_qualified_schema(table_name.clone(), &schema)?;
 
         let node = Arc::new(StreamScanPlanNode {
             table_name,

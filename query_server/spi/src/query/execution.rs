@@ -49,7 +49,10 @@ pub trait QueryExecution: Send + Sync {
     fn status(&self) -> QueryStatus;
     // sql
     // 资源占用（cpu时间/内存/吞吐量等）
-    // ......
+    // 是否需要持久化query信息
+    fn need_persist(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Clone)]
@@ -101,7 +104,7 @@ pub trait QueryExecutionFactory {
         &self,
         plan: Plan,
         query_state_machine: QueryStateMachineRef,
-    ) -> QueryExecutionRef;
+    ) -> Result<QueryExecutionRef>;
 }
 
 pub type QueryStateMachineRef = Arc<QueryStateMachine>;

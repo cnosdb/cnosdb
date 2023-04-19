@@ -1,0 +1,28 @@
+ARG RUST_VERSION=1.68.2
+FROM rust:${RUST_VERSION}-slim-bullseye as builder
+
+RUN apt update \
+    && apt install --yes pkg-config openssl libssl-dev g++ cmake protobuf-compiler git
+
+RUN git clone -b v22.9.29 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers \
+    && cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
+    && make install && cd .. && rm -rf flatbuffers
+
+
+COPY . /cnosdb
+WORKDIR /cnosdb
+
+RUN cargo build --release --workspace --bin cnosdb-meta
+
+FROM ubuntu:focal
+
+ENV RUST_BACKTRACE 1
+
+COPY --from=builder /cnosdb/target/release/cnosdb-meta /usr/bin/
+
+COPY meta/config/config.toml /etc/cnosdb/cnosdb-meta.conf
+RUN chmod +x /usr/bin/cnosdb-meta
+
+CMD ["-c", "/etc/cnosdb/cnosdb-meta.conf"]
+
+ENTRYPOINT ["/bin/bash", "-c", "cnosdb-meta \"$@\"", "--"]
