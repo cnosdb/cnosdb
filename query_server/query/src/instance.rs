@@ -20,7 +20,7 @@ use spi::query::session::SessionCtxFactory;
 use spi::server::dbms::DatabaseManagerSystem;
 use spi::service::protocol::{Query, QueryHandle, QueryId};
 use spi::{AuthSnafu, Result};
-use trace::debug;
+use trace::{debug, SpanContext, SpanExt, SpanRecorder};
 use tskv::kv_option::Options;
 
 use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
@@ -64,14 +64,27 @@ where
             .context(AuthSnafu)
     }
 
-    async fn execute(&self, query: &Query) -> Result<QueryHandle> {
+    async fn execute(
+        &self,
+        query: &Query,
+        span_context: Option<SpanContext>,
+    ) -> Result<QueryHandle> {
+        let mut span_recorder = SpanRecorder::new(span_context.child_span("query execute"));
         let query_id = self.query_dispatcher.create_query_id();
+        span_recorder.set_metadata("query id", query_id.get());
 
-        let tenant_id = self.get_tenant_id(query.context().tenant()).await?;
+        let tenant_id = self
+            .get_tenant_id(query.context().tenant(), span_context)
+            .await?;
 
         let result = self
             .query_dispatcher
-            .execute_query(tenant_id, query_id, query)
+            .execute_query(
+                tenant_id,
+                query_id,
+                query,
+                span_recorder.span_ctx().cloned(),
+            )
             .await?;
 
         Ok(QueryHandle::new(query_id, query.clone(), result))
@@ -145,8 +158,16 @@ impl<D: QueryDispatcher> Cnosdbms<D> {
     pub(crate) async fn get_tenant_id(
         &self,
         tenant_name: &str,
+        span_ctx: Option<SpanContext>,
     ) -> std::result::Result<Oid, AuthError> {
-        self.access_control.tenant_id(tenant_name).await
+        let mut span_recorder = SpanRecorder::new(span_ctx.child_span("get tenant id"));
+        self.access_control
+            .tenant_id(tenant_name)
+            .await
+            .map_err(|e| {
+                span_recorder.error(e.to_string());
+                e
+            })
     }
 }
 pub async fn make_cnosdbms(
@@ -305,7 +326,7 @@ mod tests {
 
         let query = Query::new(ContextBuilder::new(user).build(), sql.to_string());
 
-        let result = db.execute(&query).await.unwrap();
+        let result = db.execute(&query, None).await.unwrap();
 
         result.result().chunk_result().await.unwrap().to_vec()
     }

@@ -83,7 +83,7 @@ use spi::query::logical_planner::{
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
-use trace::{debug, warn};
+use trace::{debug, warn, SpanExt, SpanRecorder};
 use url::Url;
 
 use crate::data_source::source_downcast_adapter;
@@ -132,6 +132,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         statement: ExtStatement,
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
+        let _ = SpanRecorder::new(
+            session
+                .get_span_ctx()
+                .child_span("statement to logical plan"),
+        );
         match statement {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt, session).await,
             ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt, session),
@@ -2446,7 +2451,7 @@ mod tests {
         let context = ContextBuilder::new(user).build();
         let pool = UnboundedMemoryPool::default();
         SessionCtxFactory::default()
-            .create_session_ctx("", context, 0_u128, Arc::new(pool))
+            .create_session_ctx("", context, 0_u128, Arc::new(pool), None)
             .unwrap()
     }
 

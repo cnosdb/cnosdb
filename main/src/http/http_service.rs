@@ -36,7 +36,7 @@ use spi::server::prom::PromRemoteServerRef;
 use spi::service::protocol::{Context, ContextBuilder, Query};
 use spi::QueryError;
 use tokio::sync::oneshot;
-use trace::{debug, error, info};
+use trace::{debug, error, info, Span, SpanContext, SpanExt, SpanRecorder, TraceCollector};
 use utils::backtrace;
 use warp::hyper::body::Bytes;
 use warp::hyper::Body;
@@ -88,6 +88,7 @@ pub struct HttpService {
     mode: ServerMode,
     metrics_register: Arc<MetricsRegister>,
     http_metrics: Arc<HttpMetrics>,
+    tracer_collector: Option<Arc<dyn TraceCollector>>,
 }
 
 impl HttpService {
@@ -100,6 +101,7 @@ impl HttpService {
         write_body_limit: u64,
         mode: ServerMode,
         metrics_register: Arc<MetricsRegister>,
+        tracer_collector: Option<Arc<dyn TraceCollector>>,
     ) -> Self {
         let prs = Arc::new(PromRemoteSqlServer::new(dbms.clone(), coord.clone()));
 
@@ -115,6 +117,7 @@ impl HttpService {
             mode,
             metrics_register: metrics_register.clone(),
             http_metrics: Arc::new(HttpMetrics::new(&metrics_register)),
+            tracer_collector,
         }
     }
 
@@ -166,6 +169,23 @@ impl HttpService {
     ) -> impl Filter<Extract = (Arc<HttpMetrics>,), Error = Infallible> + Clone {
         let metric = self.http_metrics.clone();
         warp::any().map(move || metric.clone())
+    }
+
+    fn with_new_span_recorder(
+        &self,
+        span_name: &str,
+    ) -> impl Filter<Extract = (SpanRecorder,), Error = Infallible> + Clone {
+        let tracer_collector = self.tracer_collector.clone();
+        let span_name = span_name.to_string();
+
+        let span_recorder = move || match tracer_collector.clone() {
+            Some(trace_collector) => {
+                SpanRecorder::new(Some(Span::root(span_name.clone(), trace_collector)))
+            }
+            None => SpanRecorder::new(None),
+        };
+
+        warp::any().map(span_recorder)
     }
 
     fn routes_bundle(
@@ -268,10 +288,13 @@ impl HttpService {
                             reject::custom(e)
                         })?;
                     let result_fmt = get_result_format_from_header(&header)?;
-                    let result = sql_handle(&query, &dbms, result_fmt).await.map_err(|e| {
-                        trace::error!("Failed to handle http sql request, err: {}", e);
-                        reject::custom(e)
-                    });
+                    let span_context = span_recorder.span().map(|s| s.ctx.clone());
+                    let result = sql_handle(&query, &dbms, result_fmt, span_context)
+                        .await
+                        .map_err(|e| {
+                            trace::error!("Failed to handle http sql request, err: {}", e);
+                            reject::custom(e)
+                        });
                     let tenant = query.context().tenant();
                     let db = query.context().database();
                     let user = query.context().user_info().desc().name();
@@ -901,6 +924,7 @@ async fn sql_handle(
     query: &Query,
     dbms: &DBMSRef,
     fmt: ResultFormat,
+    span_context: Option<SpanContext>,
 ) -> Result<Response, HttpError> {
     debug!("prepare to execute: {:?}", query.content());
     let handle = dbms.execute(query).await?;

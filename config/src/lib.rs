@@ -17,6 +17,7 @@ pub use crate::node_config::*;
 pub use crate::query_config::*;
 pub use crate::security_config::*;
 pub use crate::storage_config::*;
+pub use crate::trace::*;
 pub use crate::wal_config::*;
 
 mod cache_config;

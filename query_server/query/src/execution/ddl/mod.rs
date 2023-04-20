@@ -4,6 +4,7 @@ use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::DDLPlan;
 use spi::Result;
+use trace::MetaValue;
 
 use self::alter_tenant::AlterTenantTask;
 use self::alter_user::AlterUserTask;
@@ -86,6 +87,16 @@ impl QueryExecution for DDLExecution {
         let query_state_machine = &self.query_state_machine;
 
         query_state_machine.begin_schedule();
+
+        let mut span_recorder = self
+            .query_state_machine
+            .session
+            .get_child_span_recorder("execute ddl");
+
+        span_recorder.set_metadata(
+            "ddl plan",
+            MetaValue::from(self.task_factory.plan.display()),
+        );
 
         let result = self
             .task_factory

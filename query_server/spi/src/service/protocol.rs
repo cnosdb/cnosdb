@@ -72,6 +72,7 @@ pub struct Context {
     precision: String,
     chunked: bool,
     session_config: CnosSessionConfig,
+    span_ctx: SpanContext,
 }
 
 impl Context {
@@ -106,6 +107,7 @@ pub struct ContextBuilder {
     precision: String,
     chunked: bool,
     session_config: CnosSessionConfig,
+    span_ctx: SpanContext,
 }
 
 impl ContextBuilder {
@@ -117,6 +119,7 @@ impl ContextBuilder {
             database: DEFAULT_DATABASE.to_string(),
             chunked: Default::default(),
             session_config: Default::default(),
+            span_ctx: SpanContext::new_with_optional_collector(None),
         }
     }
 
@@ -170,6 +173,7 @@ impl ContextBuilder {
             precision: self.precision,
             chunked: self.chunked,
             session_config: self.session_config,
+            span_ctx: self.span_ctx,
         }
     }
 }

@@ -17,7 +17,7 @@ use spi::query::parser::Parser;
 use spi::query::session::{SessionCtx, SessionCtxFactory};
 use spi::service::protocol::{ContextBuilder, Query, QueryId};
 use spi::{QueryError, Result};
-use trace::info;
+use trace::{info, SpanContext, SpanExt, SpanRecorder, TraceCollector};
 
 use super::query_tracker::QueryTracker;
 use crate::data_source::split::SplitManagerRef;
@@ -44,6 +44,7 @@ pub struct SimpleQueryDispatcher {
     query_execution_factory: QueryExecutionFactoryRef,
     func_manager: FuncMetaManagerRef,
     stream_provider_manager: StreamProviderManagerRef,
+    trace_collector: Option<Arc<dyn TraceCollector>>,
 }
 
 #[async_trait]
@@ -63,7 +64,11 @@ impl QueryDispatcher for SimpleQueryDispatcher {
                 .with_tenant(Some(tenant_name.to_owned()))
                 .build();
             let query = Query::new(ctx, sql.to_owned());
-            match self.execute_query(tenant_id, query_id, &query).await {
+            let span_context = self.trace_collector.clone().map(SpanContext::new);
+            match self
+                .execute_query(tenant_id, query_id, &query, span_context)
+                .await
+            {
                 Ok(_) => {
                     info!("Re-execute persistent query: {}", query.content());
                 }
@@ -93,6 +98,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         tenant_id: Oid,
         query_id: QueryId,
         query: &Query,
+        span_ctx: Option<SpanContext>,
     ) -> Result<Output> {
         let query_state_machine = self
             .build_query_state_machine(tenant_id, query_id, query.clone())
@@ -119,6 +125,9 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 
         let logical_planner = DefaultLogicalPlanner::new(&scheme_provider);
 
+        drop(span_recorder);
+
+        let mut span_recorder = SpanRecorder::new(span_ctx.child_span("parse sql"));
         let statements = self.parser.parse(query.content())?;
 
         // not allow multi statement
@@ -288,6 +297,7 @@ pub struct SimpleQueryDispatcherBuilder {
 
     func_manager: Option<FuncMetaManagerRef>,
     stream_provider_manager: Option<StreamProviderManagerRef>,
+    trace_collector: Option<Arc<dyn TraceCollector>>,
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -347,6 +357,11 @@ impl SimpleQueryDispatcherBuilder {
         stream_provider_manager: StreamProviderManagerRef,
     ) -> Self {
         self.stream_provider_manager = Some(stream_provider_manager);
+        self
+    }
+
+    pub fn with_trace_collector(mut self, trace_collector: Arc<dyn TraceCollector>) -> Self {
+        self.trace_collector = Some(trace_collector);
         self
     }
 
@@ -420,6 +435,7 @@ impl SimpleQueryDispatcherBuilder {
             query_tracker,
             func_manager,
             stream_provider_manager,
+            trace_collector,
         })
     }
 }

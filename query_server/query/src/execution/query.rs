@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use datafusion::physical_plan::RecordBatchStream;
 use futures::stream::AbortHandle;
 use parking_lot::Mutex;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
@@ -8,6 +9,7 @@ use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::QueryPlan;
 use spi::query::optimizer::Optimizer;
 use spi::query::scheduler::SchedulerRef;
+use spi::query::traced_stream::TracedStream;
 use spi::{QueryError, Result};
 use trace::debug;
 
@@ -39,7 +41,7 @@ impl SqlQueryExecution {
     async fn start(&self) -> Result<Output> {
         // begin optimize
         self.query_state_machine.begin_optimize();
-        let optimized_physical_plan = self
+        let physical_plan = self
             .optimizer
             .optimize(&self.plan.df_plan, &self.query_state_machine.session)
             .await?;
@@ -50,11 +52,17 @@ impl SqlQueryExecution {
         let stream = self
             .scheduler
             .schedule(
-                optimized_physical_plan,
+                physical_plan.clone(),
                 self.query_state_machine.session.inner().task_ctx(),
             )
             .await?
             .stream();
+        let stream = TracedStream::new(
+            stream,
+            self.query_state_machine.get_child_span("traced stream"),
+            physical_plan,
+        );
+
         debug!("Success build result stream.");
         self.query_state_machine.end_schedule();
         Ok(Output::StreamData(stream))
