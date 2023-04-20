@@ -1,11 +1,20 @@
+pub mod id;
+pub mod span;
+pub mod span_ctx;
+pub mod trace_collector;
+
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use config::TokioTrace;
+pub use id::*;
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, Once};
+pub use span::*;
+pub use span_ctx::*;
 use time::UtcOffset;
+pub use trace_collector::*;
 use tracing::metadata::LevelFilter;
 pub use tracing::{debug, error, info, instrument, trace, warn};
 pub use tracing_appender::non_blocking::WorkerGuard;

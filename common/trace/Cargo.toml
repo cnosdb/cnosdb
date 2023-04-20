@@ -17,6 +17,8 @@ color-eyre = { workspace = true }
 once_cell = { workspace = true }
 console-subscriber = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
+rand = { workspace = true }
+chrono = { workspace = true }
 
 [features]
 default = []

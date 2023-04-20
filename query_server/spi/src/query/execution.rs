@@ -12,6 +12,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
+use trace::{Span, SpanExt};
 
 use super::dispatcher::{QueryInfo, QueryStatus};
 use super::logical_planner::Plan;
@@ -289,6 +290,9 @@ impl QueryStateMachine {
 
     fn translate_to(&self, state: Box<QueryState>) {
         self.state.store(Box::into_raw(state), Ordering::Relaxed);
+    }
+    pub fn get_child_span(&self, name: &'static str) -> Option<Span> {
+        self.session.get_span_ctx().child_span(name)
     }
 }
 

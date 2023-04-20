@@ -7,6 +7,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::from_slice::FromSlice;
 use models::auth::role::UserRole;
 use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
+use trace::SpanContext;
 
 use crate::query::execution::{Output, QueryStateMachine, QueryStateMachineRef};
 use crate::query::logical_planner::Plan;
@@ -54,7 +55,11 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         Ok(mock_user)
     }
 
-    async fn execute(&self, query: &Query) -> Result<QueryHandle> {
+    async fn execute(
+        &self,
+        query: &Query,
+        _span_context: Option<SpanContext>,
+    ) -> Result<QueryHandle> {
         println!("DatabaseManagerSystemMock::execute({:?})", query.content());
 
         // define a schema.

@@ -8,6 +8,7 @@ use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use models::auth::user::User;
 use models::oid::Oid;
+use trace::{SpanContext, SpanExt, SpanRecorder};
 
 use super::config::StreamTriggerInterval;
 use crate::service::protocol::Context;
@@ -52,6 +53,21 @@ impl SessionCtx {
     pub fn dedicated_hidden_dir(&self) -> &Path {
         self.query_dedicated_hidden_dir.as_path()
     }
+    pub fn df_session_ctx(&self) -> &SessionContext {
+        &self.inner
+    }
+
+    pub fn get_span_ctx(&self) -> Option<SpanContext> {
+        self.inner
+            .state()
+            .config()
+            .get_extension::<Option<SpanContext>>()
+            .and_then(|opt_span_ctx| opt_span_ctx.as_ref().clone())
+    }
+
+    pub fn get_child_span_recorder(&self, name: &'static str) -> SpanRecorder {
+        SpanRecorder::new(self.get_span_ctx().child_span(name))
+    }
 }
 
 #[derive(Default)]
@@ -72,8 +88,11 @@ impl SessionCtxFactory {
         context: Context,
         tenant_id: Oid,
         memory_pool: Arc<dyn MemoryPool>,
+        span_ctx: Option<SpanContext>,
     ) -> Result<SessionCtx> {
-        let ctx = context.session_config().to_owned();
+        let mut ctx = context.session_config().to_owned();
+        ctx.inner = ctx.inner.with_extension(Arc::new(span_ctx));
+
         let mut rt_config = RuntimeConfig::new();
         rt_config.memory_pool = Some(memory_pool);
         let rt = RuntimeEnv::new(rt_config)?;

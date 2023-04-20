@@ -26,20 +26,36 @@ impl Optimizer for CascadeOptimizer {
         plan: &LogicalPlan,
         session: &SessionCtx,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        let mut span_recorder = session.get_child_span_recorder("optimize logical plan");
+        span_recorder.set_metadata(
+            "original logical plan",
+            plan.display_indent_schema().to_string(),
+        );
         debug!("Original logical plan:\n{}\n", plan.display_indent_schema(),);
 
         let optimized_logical_plan = self.logical_optimizer.optimize(plan, session)?;
-
+        span_recorder.set_metadata(
+            "final logical plan",
+            optimized_logical_plan.display_indent_schema().to_string(),
+        );
         debug!(
             "Final logical plan:\n{}\n",
             optimized_logical_plan.display_indent_schema(),
         );
+        drop(span_recorder);
 
+        let span_recorder = session.get_child_span_recorder("create physical plan");
         let physical_plan = self
             .physical_planner
             .create_physical_plan(&optimized_logical_plan, session)
             .await?;
+        drop(span_recorder);
 
+        let mut span_recorder = session.get_child_span_recorder("optimize physical plan");
+        span_recorder.set_metadata(
+            "original physical plan",
+            displayable(physical_plan.as_ref()).indent().to_string(),
+        );
         let optimized_physical_plan = self.physical_optimizer.optimize(physical_plan, session)?;
 
         debug!(

@@ -72,3 +72,6 @@ report_time_interval_secs = 30
 enable = true
 path = '/tmp/cnosdb/2001/hh'
 
+[trace]
+[trace.log]
+path = '/tmp/cnosdb'

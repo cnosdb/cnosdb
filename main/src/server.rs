@@ -210,6 +210,21 @@ impl ServiceBuilder {
         self.build_query_storage(server).await
     }
 
+    fn build_trace_collector(&self) -> Option<Arc<dyn TraceCollector>> {
+        let mut res: Vec<Arc<dyn TraceCollector>> = Vec::new();
+        if let Some(trace_log_collector_config) = &self.config.trace.log {
+            res.push(Arc::new(LogTraceCollector::new(trace_log_collector_config)))
+        }
+        // TODO HttpCollector
+        if res.is_empty() {
+            None
+        } else if res.len() == 1 {
+            res.pop()
+        } else {
+            Some(Arc::new(CombinationTraceCollector::new(res)))
+        }
+    }
+
     async fn create_meta(&self) -> MetaRef {
         let meta: MetaRef =
             RemoteMetaManager::new(self.config.clone(), self.config.storage.path.clone()).await;
@@ -292,6 +307,7 @@ impl ServiceBuilder {
             self.config.query.write_sql_limit,
             mode,
             self.metrics_register.clone(),
+            self.build_trace_collector(),
         )
     }
 
