@@ -12,6 +12,7 @@ use meta::service::{api, raft_api};
 use meta::store::config::Opt;
 use meta::store::Store;
 use meta::{store, MetaApp, RaftStore};
+use models::utils::build_address;
 use once_cell::sync::Lazy;
 use openraft::Config;
 use parking_lot::Mutex;
@@ -20,6 +21,8 @@ use trace::{init_process_global_tracing, WorkerGuard};
 
 static GLOBAL_META_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
+
+const DEFAULT_META_IP: &str = "0.0.0.0";
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -69,10 +72,13 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
 
     let network = Connections::new();
     let raft = RaftStore::new(opt.id, config.clone(), network, store.clone());
+
+    let meta_ip = DEFAULT_META_IP.to_owned();
+    let addr = build_address(opt.host.clone(), opt.port);
     let app = Data::new(MetaApp {
         id: opt.id,
-        http_addr: opt.http_addr.clone(),
-        rpc_addr: opt.http_addr.clone(),
+        http_addr: addr.clone(),
+        rpc_addr: addr,
         raft,
         store,
         config,
@@ -103,7 +109,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
     })
     .keep_alive(Duration::from_secs(5));
 
-    let x = server.bind(opt.http_addr)?;
+    let x = server.bind(build_address(meta_ip, opt.port))?;
 
     x.run().await
 }

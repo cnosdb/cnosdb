@@ -8,6 +8,7 @@ use meta::error::MetaResult;
 use meta::model::meta_manager::RemoteMetaManager;
 use meta::model::{MetaManager, MetaRef};
 use metrics::metric_register::MetricsRegister;
+use models::utils::build_address;
 use query::instance::make_cnosdbms;
 use snafu::{Backtrace, Snafu};
 use spi::server::dbms::DBMSRef;
@@ -25,6 +26,8 @@ use crate::spi::service::ServiceRef;
 use crate::tcp::tcp_service::TcpService;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+const DEFAULT_NODE_IP: &str = "0.0.0.0";
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -123,6 +126,10 @@ async fn regualar_get_disk_info(meta: Arc<dyn MetaManager>) -> MetaResult<()> {
     Ok(())
 }
 
+fn build_default_address(port: u16) -> String {
+    build_address(DEFAULT_NODE_IP.to_owned(), port)
+}
+
 impl ServiceBuilder {
     pub async fn build_storage_server(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
@@ -197,11 +204,8 @@ impl ServiceBuilder {
     }
 
     async fn create_meta(&self) -> MetaRef {
-        let meta: MetaRef = RemoteMetaManager::new(
-            self.config.cluster.clone(),
-            self.config.storage.path.clone(),
-        )
-        .await;
+        let meta: MetaRef =
+            RemoteMetaManager::new(self.config.clone(), self.config.storage.path.clone()).await;
 
         meta
     }
@@ -246,7 +250,7 @@ impl ServiceBuilder {
             self.runtime.clone(),
             kv,
             meta,
-            self.config.cluster.clone(),
+            self.config.clone(),
             self.config.hinted_off.clone(),
             self.metrics_register.clone(),
         )
@@ -256,15 +260,14 @@ impl ServiceBuilder {
     }
 
     fn create_http(&self, dbms: DBMSRef, coord: CoordinatorRef, mode: ServerMode) -> HttpService {
-        let addr = self
-            .config
-            .cluster
-            .http_listen_addr
+        let default_http_addr = build_default_address(self.config.cluster.http_listen_port);
+
+        let addr = default_http_addr
             .to_socket_addrs()
             .map_err(|e| {
                 format!(
                     "Cannot resolve http_listen_addr '{}': {}",
-                    self.config.cluster.http_listen_addr, e
+                    default_http_addr, e
                 )
             })
             .unwrap()
@@ -286,15 +289,14 @@ impl ServiceBuilder {
     }
 
     fn create_grpc(&self, kv: EngineRef, coord: CoordinatorRef) -> GrpcService {
-        let addr = self
-            .config
-            .cluster
-            .grpc_listen_addr
+        let default_grpc_addr = build_default_address(self.config.cluster.grpc_listen_port);
+
+        let addr = default_grpc_addr
             .to_socket_addrs()
             .map_err(|e| {
                 format!(
                     "Cannot resolve grpc_listen_addr '{}': {}",
-                    self.config.cluster.grpc_listen_addr, e
+                    default_grpc_addr, e
                 )
             })
             .unwrap()
@@ -314,20 +316,22 @@ impl ServiceBuilder {
     }
 
     fn create_tcp(&self, coord: CoordinatorRef) -> TcpService {
-        TcpService::new(coord, self.config.cluster.tcp_listen_addr.clone())
+        let default_tcp_addr = build_default_address(self.config.cluster.tcp_listen_port);
+
+        TcpService::new(coord, default_tcp_addr)
     }
 
     fn create_flight_sql(&self, dbms: DBMSRef) -> FlightSqlServiceAdapter {
         let tls_config = self.config.security.tls_config.clone();
-        let addr = self
-            .config
-            .cluster
-            .flight_rpc_listen_addr
+        let default_flight_sql_addr =
+            build_default_address(self.config.cluster.flight_rpc_listen_port);
+
+        let addr = default_flight_sql_addr
             .to_socket_addrs()
             .map_err(|e| {
                 format!(
                     "Cannot resolve flight_rpc_listen_addr '{}': {}",
-                    self.config.cluster.flight_rpc_listen_addr, e
+                    default_flight_sql_addr, e
                 )
             })
             .unwrap()
