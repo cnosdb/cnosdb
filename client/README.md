@@ -24,7 +24,7 @@ OPTIONS:
             [default: table] [possible values: csv, tsv, table, json, nd-json]
 
     -h, --host <HOST>
-            CnosDB server http api host [default: 0.0.0.0]
+            CnosDB server http api host [default: localhost]
 
         --help
             Print help information
