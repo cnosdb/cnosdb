@@ -244,7 +244,7 @@ mod tests {
 
         let result = db.execute(&query).await.unwrap();
 
-        result.result().chunk_result().to_vec()
+        result.result().chunk_result().await.unwrap().to_vec()
     }
 
     #[tokio::test]

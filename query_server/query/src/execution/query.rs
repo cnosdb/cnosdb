@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::stream::AbortHandle;
-use futures::TryStreamExt;
 use parking_lot::Mutex;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
@@ -57,11 +56,8 @@ impl SqlQueryExecution {
             .await?
             .stream();
         debug!("Success build result stream.");
-        let schema_ref = stream.schema();
-        let execution_result = stream.try_collect::<Vec<_>>().await?;
         self.query_state_machine.end_schedule();
-
-        Ok(Output::StreamData(schema_ref, execution_result))
+        Ok(Output::StreamData(stream))
     }
 }
 

@@ -9,6 +9,7 @@ use models::auth::role::UserRole;
 use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
 
 use crate::query::execution::Output;
+use crate::query::recordbatch::RecordBatchStreamWrapper;
 use crate::service::protocol::{Query, QueryHandle, QueryId};
 use crate::Result;
 
@@ -65,11 +66,11 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
                 .unwrap()
             })
             .collect::<Vec<_>>();
-
+        let stream = Box::pin(RecordBatchStreamWrapper::new(schema, batches));
         Ok(QueryHandle::new(
             QueryId::next_id(),
             query.clone(),
-            Output::StreamData(schema, batches),
+            Output::StreamData(stream),
         ))
     }
 

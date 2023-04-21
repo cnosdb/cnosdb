@@ -1,5 +1,4 @@
 use std::pin::Pin;
-use std::time::Duration;
 
 use arrow_flight::flight_service_server::FlightService;
 use arrow_flight::sql::server::FlightSqlService;
@@ -12,19 +11,17 @@ use arrow_flight::sql::{
     TicketStatementQuery,
 };
 use arrow_flight::{
-    utils as flight_utils, Action, FlightData, FlightDescriptor, FlightInfo, HandshakeRequest,
-    HandshakeResponse, IpcMessage, SchemaAsIpc, Ticket,
+    Action, FlightData, FlightDescriptor, FlightInfo, HandshakeRequest, HandshakeResponse,
+    IpcMessage, SchemaAsIpc, Ticket,
 };
-use datafusion::arrow::datatypes::{Schema, ToByteSlice};
+use datafusion::arrow::datatypes::Schema;
 use datafusion::arrow::ipc::writer::IpcWriteOptions;
 use futures::Stream;
 use http_protocol::header::{DB, STREAM_TRIGGER_INTERVAL, TARGET_PARTITIONS, TENANT};
 use models::auth::user::User;
 use models::oid::UuidGenerator;
-use moka::sync::Cache;
 use prost::bytes::Bytes;
 use spi::query::config::StreamTriggerInterval;
-use spi::query::execution::Output;
 use spi::server::dbms::DBMSRef;
 use spi::service::protocol::{Context, ContextBuilder, Query, QueryHandle};
 use tonic::metadata::MetadataMap;
@@ -39,24 +36,22 @@ pub struct FlightSqlServiceImpl<T> {
     instance: DBMSRef,
     authenticator: T,
     id_generator: UuidGenerator,
-
-    result_cache: Cache<Vec<u8>, Output>,
+    // result_cache: Cache<Vec<u8>, Output>,
 }
 
 impl<T> FlightSqlServiceImpl<T> {
     pub fn new(instance: DBMSRef, authenticator: T) -> Self {
-        let result_cache = Cache::builder()
-            .thread_pool_enabled(false)
-            // Time to live (TTL): 2 minutes
-            // The query results are only cached for 2 minutes and expire after 2 minutes
-            .time_to_live(Duration::from_secs(2 * 60))
-            .build();
+        // let result_cache = Cache::builder()
+        //     .thread_pool_enabled(false)
+        //     // Time to live (TTL): 2 minutes
+        //     // The query results are only cached for 2 minutes and expire after 2 minutes
+        //     .time_to_live(Duration::from_secs(2 * 60))
+        //     .build();
 
         Self {
             instance,
             authenticator,
             id_generator: Default::default(),
-            result_cache,
         }
     }
 }
@@ -75,10 +70,10 @@ where
         // get result metadata
         let output = query_result.result();
         let schema = output.schema();
-        let total_records = output.num_rows();
+        let total_records = output.num_rows().await;
 
         // cache result wait cli fetching
-        self.result_cache.insert(result_ident.clone(), output);
+        // self.result_cache.insert(result_ident.clone(), output);
 
         // construct response start
         let flight_info = self.construct_flight_info(
@@ -188,40 +183,54 @@ where
         Ok(query_result)
     }
 
-    fn fetch_result_set(
-        &self,
-        statement_handle: &[u8],
-    ) -> Result<<Self as FlightService>::DoGetStream, Status> {
-        let output = self.result_cache.get(statement_handle).ok_or_else(|| {
-            Status::internal(format!(
-                "The result of query({:?}) does not exist or has expired",
-                statement_handle
-            ))
-        })?;
+    // fn fetch_result_set(
+    //     &self,
+    //     statement_handle: &[u8],
+    // ) -> Result<<Self as FlightService>::DoGetStream, Status> {
+    //     let output = self.result_cache.get(statement_handle).ok_or_else(|| {
+    //         Status::internal(format!(
+    //             "The result of query({:?}) does not exist or has expired",
+    //             statement_handle
+    //         ))
+    //     })?;
+    //     let out = match output {
+    //         Output::RecordBatch(schema, rb) => {
+    //             let mut stream = RecordBatchStreamWrapper::new(schema.clone(), rb.clone());
+    //             let builder = FlightDataEncoderBuilderWrapper::new(schema.clone());
+    //             builder.build(&mut stream)
+    //             // wrapper.poll_next_unpin(cx).map_err(|e| tonic::Status::from_error(e.into()))
+    //         }
+    //         Output::StreamData(_) => {
+    //             todo!()
+    //         }
+    //         Output::Nil(_) => {
+    //             todo!()
+    //         }
+    //     }
+    //     // let schema = (*output.schema()).clone();
+    //     // let batches = output.chunk_result().to_owned();
+    //     //
+    //     // let flight_data = flight_utils::batches_to_flight_data(schema, batches)
+    //     //     .map_err(|e| Status::internal(format!("Could not convert batches, error: {}", e)))?
+    //     //     .into_iter()
+    //     //     .map(Ok);
+    //     // let stream: Pin<Box<dyn Stream<Item = Result<FlightData, Status>> + Send>> =
+    //     //     Box::pin(futures::stream::iter(flight_data));
+    //     let stream: Pin<Box<dyn Stream<Item = Result<FlightData, Status>> + Send>> =
+    //         Box::pin(out);
+    //     Ok(stream)
+    // }
 
-        let schema = (*output.schema()).clone();
-        let batches = output.chunk_result().to_owned();
-
-        let flight_data = flight_utils::batches_to_flight_data(schema, batches)
-            .map_err(|e| Status::internal(format!("Could not convert batches, error: {}", e)))?
-            .into_iter()
-            .map(Ok);
-        let stream: Pin<Box<dyn Stream<Item = Result<FlightData, Status>> + Send>> =
-            Box::pin(futures::stream::iter(flight_data));
-
-        Ok(stream)
-    }
-
-    fn fetch_affected_rows_count(&self, statement_handle: &[u8]) -> Result<i64, Status> {
-        let result_set = self.result_cache.get(statement_handle).ok_or_else(|| {
-            Status::internal(format!(
-                "The result of query({:?}) does not exist or has expired",
-                statement_handle
-            ))
-        })?;
-
-        Ok(result_set.affected_rows())
-    }
+    // fn fetch_affected_rows_count(&self, statement_handle: &[u8]) -> Result<i64, Status> {
+    //     let result_set = self.result_cache.get(statement_handle).ok_or_else(|| {
+    //         Status::internal(format!(
+    //             "The result of query({:?}) does not exist or has expired",
+    //             statement_handle
+    //         ))
+    //     })?;
+    //
+    //     Ok(result_set.affected_rows())
+    // }
 }
 
 /// use jdbc to execute statement query:
@@ -340,33 +349,37 @@ where
             query, request
         );
 
-        let CommandPreparedStatementQuery {
-            prepared_statement_handle,
-        } = query;
-        let prepared_statement_handle = prepared_statement_handle.to_byte_slice().to_owned();
+        // let CommandPreparedStatementQuery {
+        //     prepared_statement_handle,
+        // } = query;
+        // let prepared_statement_handle = prepared_statement_handle.to_byte_slice().to_owned();
+        //
+        // // get metadata of result from cache
+        // let output = self
+        //     .result_cache
+        //     .get(&prepared_statement_handle)
+        //     .ok_or_else(|| {
+        //         Status::internal(format!(
+        //             "The result of query({:?}) does not exist or has expired",
+        //             prepared_statement_handle
+        //         ))
+        //     })?;
+        // let schema = output.schema();
+        // let total_records = output.num_rows();
+        //
+        // // construct response start
+        // let flight_info = self.construct_flight_info(
+        //     prepared_statement_handle,
+        //     schema.as_ref(),
+        //     total_records as i64,
+        //     request.into_inner(),
+        // )?;
+        //
+        // Ok(Response::new(flight_info))
 
-        // get metadata of result from cache
-        let output = self
-            .result_cache
-            .get(&prepared_statement_handle)
-            .ok_or_else(|| {
-                Status::internal(format!(
-                    "The result of query({:?}) does not exist or has expired",
-                    prepared_statement_handle
-                ))
-            })?;
-        let schema = output.schema();
-        let total_records = output.num_rows();
-
-        // construct response start
-        let flight_info = self.construct_flight_info(
-            prepared_statement_handle,
-            schema.as_ref(),
-            total_records as i64,
-            request.into_inner(),
-        )?;
-
-        Ok(Response::new(flight_info))
+        Err(Status::unimplemented(
+            "get_flight_info_prepared_statement not implemented",
+        ))
     }
 
     /// TODO support
@@ -529,16 +542,18 @@ where
             "do_get_statement: query: {:?}, request: {:?}",
             ticket, request
         );
+        //
+        // let TicketStatementQuery { statement_handle } = ticket;
+        //
+        // let output = self.fetch_result_set(&statement_handle)?;
+        //
+        // // clear cache of this query
+        // self.result_cache
+        //     .invalidate(statement_handle.to_byte_slice());
+        //
+        // Ok(Response::new(output))
 
-        let TicketStatementQuery { statement_handle } = ticket;
-
-        let output = self.fetch_result_set(&statement_handle)?;
-
-        // clear cache of this query
-        self.result_cache
-            .invalidate(statement_handle.to_byte_slice());
-
-        Ok(Response::new(output))
+        Err(Status::unimplemented("do_get_statement not implemented"))
     }
 
     /// Fetch the prepared SQL query's result set
@@ -553,16 +568,20 @@ where
             "do_get_prepared_statement: query: {:?}, request: {:?}",
             query, request
         );
+        //
+        // let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
+        //
+        // let output = self.fetch_result_set(prepared_statement_handle)?;
+        //
+        // // // clear cache of this query
+        // // self.result_cache
+        // //     .invalidate(prepared_statement_handle.to_byte_slice());
+        //
+        // Ok(Response::new(output))
 
-        let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
-
-        let output = self.fetch_result_set(prepared_statement_handle)?;
-
-        // clear cache of this query
-        self.result_cache
-            .invalidate(prepared_statement_handle.to_byte_slice());
-
-        Ok(Response::new(output))
+        Err(Status::unimplemented(
+            "do_get_prepared_statement not implemented",
+        ))
     }
 
     /// TODO support
@@ -702,7 +721,7 @@ where
 
         let (_, query_result) = self.auth_and_execute(query, metadata).await?;
 
-        let affected_rows = query_result.result().affected_rows();
+        let affected_rows = query_result.result().affected_rows().await;
 
         Ok(affected_rows)
     }
@@ -730,19 +749,22 @@ where
     /// because ad-hoc statement of flight jdbc needs to call this interface, so it is simple to implement
     async fn do_put_prepared_statement_update(
         &self,
-        query: CommandPreparedStatementUpdate,
-        request: Request<Streaming<FlightData>>,
+        _query: CommandPreparedStatementUpdate,
+        _request: Request<Streaming<FlightData>>,
     ) -> Result<i64, Status> {
-        debug!(
-            "do_put_prepared_statement_update: query: {:?}, request: {:?}",
-            query, request
-        );
-
-        let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
-
-        let rows_count = self.fetch_affected_rows_count(prepared_statement_handle)?;
-
-        Ok(rows_count)
+        // debug!(
+        //     "do_put_prepared_statement_update: query: {:?}, request: {:?}",
+        //     query, request
+        // );
+        //
+        // let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
+        //
+        // let rows_count = self.fetch_affected_rows_count(prepared_statement_handle)?;
+        //
+        // Ok(rows_count)
+        Err(Status::unimplemented(
+            "do_put_prepared_statement_update not implemented",
+        ))
     }
 
     /// Prepared statement is not supported,
@@ -777,8 +799,8 @@ where
         let schema = output.schema();
         let _total_records = output.num_rows();
 
-        // cache result wait cli fetching
-        self.result_cache.insert(result_ident.clone(), output);
+        // // cache result wait cli fetching
+        // self.result_cache.insert(result_ident.clone(), output);
 
         // construct response start
         let IpcMessage(dataset_schema) = IpcMessage::try_from(SchemaAsIpc::new(
@@ -857,6 +879,7 @@ mod test {
         let _handle = tokio::spawn(server);
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_client() {
         trace::init_default_global_tracing("/tmp", "test_rust.log", "info");

@@ -5597,6 +5597,7 @@ dependencies = [
 name = "spi"
 version = "2.2.0"
 dependencies = [
+ "arrow-flight",
  "async-trait",
  "bytes 1.4.0",
  "config",
@@ -5606,6 +5607,7 @@ dependencies = [
  "duration-str",
  "error_code",
  "flatbuffers 22.12.6",
+ "futures",
  "lazy_static",
  "meta",
  "models",
@@ -5616,6 +5618,7 @@ dependencies = [
  "snafu",
  "snap",
  "tempfile",
+ "tonic",
  "trace",
  "tskv",
  "url",
