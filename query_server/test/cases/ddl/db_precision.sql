@@ -19,3 +19,7 @@ insert into test(time, col) values (1667456411001, 10);
 select * from test;
 
 alter database db_precision set precision 'us';
+
+create table ms_t (value BIGINT,tags(str));
+insert into ms_t (time,str,value) values (1682049219172428000,'asd',1);
+select * from ms_t;
