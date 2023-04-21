@@ -9,6 +9,7 @@ use models::object_reference::ResolvedTable;
 use models::schema::TableSchema;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeTable;
+use spi::query::recordbatch::RecordBatchStreamWrapper;
 use spi::{QueryError, Result};
 
 use crate::execution::ddl::DDLDefinitionTask;
@@ -80,7 +81,9 @@ async fn describe_table(
             )
             .map_err(datafusion::error::DataFusionError::ArrowError)?;
             let batches = vec![batch];
-            Ok(Output::StreamData(schema, batches))
+            Ok(Output::StreamData(Box::pin(RecordBatchStreamWrapper::new(
+                schema, batches,
+            ))))
         }
         TableSchema::ExternalTableSchema(external_schema) => {
             let mut name = StringBuilder::new();
@@ -99,7 +102,9 @@ async fn describe_table(
             )
             .map_err(datafusion::error::DataFusionError::ArrowError)?;
             let batches = vec![batch];
-            Ok(Output::StreamData(schema, batches))
+            Ok(Output::StreamData(Box::pin(RecordBatchStreamWrapper::new(
+                schema, batches,
+            ))))
         }
         TableSchema::StreamTableSchema(_) => {
             // TODO refactor: direct query information_schema

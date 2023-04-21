@@ -47,7 +47,7 @@ use warp::{header, reject, Filter, Rejection, Reply};
 use super::header::Header;
 use super::Error as HttpError;
 use crate::http::metrics::HttpMetrics;
-use crate::http::response::ResponseBuilder;
+use crate::http::response::{HttpRespone, ResponseBuilder};
 use crate::http::result_format::{get_result_format_from_header, ResultFormat};
 use crate::http::QuerySnafu;
 use crate::server::ServiceHandle;
@@ -734,6 +734,7 @@ async fn construct_query(
         .with_tenant(tenant)
         .with_database(param.db)
         .with_target_partitions(param.target_partitions)
+        .with_chunked(param.chunked)
         .with_stream_trigger_interval(
             param
                 .stream_trigger_interval
@@ -875,10 +876,14 @@ async fn sql_handle(
     fmt: ResultFormat,
 ) -> Result<Response, HttpError> {
     debug!("prepare to execute: {:?}", query.content());
-    let result = dbms.execute(query).await?;
-    let batches = result.fetch_record_batches().await;
-
-    fmt.wrap_batches_to_response(&batches)
+    let handle = dbms.execute(query).await?;
+    let out = handle.result();
+    let resp = HttpRespone::new(out, fmt);
+    if !query.context().chunked() {
+        resp.wrap_batches_to_response().await
+    } else {
+        resp.wrap_stream_to_response()
+    }
 }
 
 /*************** top ****************/

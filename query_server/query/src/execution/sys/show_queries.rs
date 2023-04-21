@@ -7,6 +7,7 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
 use spi::query::execution::{Output, QueryState, QueryStateMachineRef};
+use spi::query::recordbatch::RecordBatchStreamWrapper;
 use spi::service::protocol::QueryId;
 use spi::Result;
 
@@ -39,11 +40,10 @@ impl SystemTask for ShowQueriesTask {
                 status.duration(),
             )
         });
-
-        Ok(Output::StreamData(
+        Ok(Output::StreamData(Box::pin(RecordBatchStreamWrapper::new(
             result_builder.schema(),
             result_builder.build()?,
-        ))
+        ))))
     }
 }
 

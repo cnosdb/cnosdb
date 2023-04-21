@@ -20,6 +20,7 @@ use spi::query::dispatcher::{QueryInfo, QueryStatus, QueryStatusBuilder};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef, QueryType};
 use spi::query::logical_planner::QueryPlan;
 use spi::query::physical_planner::PhysicalPlanner;
+use spi::query::recordbatch::RecordBatchStreamWrapper;
 use spi::query::scheduler::SchedulerRef;
 use spi::Result;
 use trace::error;
@@ -216,7 +217,10 @@ impl QueryExecution for MicroBatchStreamExecution {
             schema.clone(),
             vec![Arc::new(StringArray::from_slice([id]))],
         )?;
-        Ok(Output::StreamData(schema, vec![batch]))
+        Ok(Output::StreamData(Box::pin(RecordBatchStreamWrapper::new(
+            schema,
+            vec![batch],
+        ))))
     }
 
     fn cancel(&self) -> Result<()> {

@@ -1,19 +1,23 @@
 use std::fmt::Display;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::physical_plan::SendableRecordBatchStream;
+use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
 
 use super::dispatcher::{QueryInfo, QueryStatus};
 use super::logical_planner::Plan;
 use super::session::SessionCtx;
 use crate::service::protocol::{Query, QueryId};
-use crate::Result;
+use crate::{QueryError, Result};
 
 pub type QueryExecutionRef = Arc<dyn QueryExecution>;
 
@@ -55,29 +59,34 @@ pub trait QueryExecution: Send + Sync {
     }
 }
 
-#[derive(Clone)]
 pub enum Output {
-    StreamData(SchemaRef, Vec<RecordBatch>),
+    StreamData(SendableRecordBatchStream),
     Nil(()),
 }
 
 impl Output {
     pub fn schema(&self) -> SchemaRef {
         match self {
-            Self::StreamData(schema, _) => schema.clone(),
+            Self::StreamData(stream) => stream.schema(),
             Self::Nil(_) => Arc::new(Schema::empty()),
         }
     }
 
-    pub fn chunk_result(&self) -> &[RecordBatch] {
+    pub async fn chunk_result(self) -> Result<Vec<RecordBatch>> {
         match self {
-            Self::StreamData(_, result) => result,
-            Self::Nil(_) => &[],
+            Self::Nil(_) => Ok(vec![]),
+            Self::StreamData(stream) => {
+                let res: Vec<RecordBatch> = stream.try_collect::<Vec<RecordBatch>>().await?;
+                Ok(res)
+            }
         }
     }
 
-    pub fn num_rows(&self) -> usize {
-        self.chunk_result().iter().map(|e| e.num_rows()).sum()
+    pub async fn num_rows(self) -> usize {
+        match self.chunk_result().await {
+            Ok(rb) => rb.iter().map(|e| e.num_rows()).sum(),
+            Err(_) => 0,
+        }
     }
 
     /// Returns the number of records affected by the query operation
@@ -87,17 +96,81 @@ impl Output {
     /// -1 means unknown
     ///
     /// panic! when StreamData's number of records greater than i64::Max
-    pub fn affected_rows(&self) -> i64 {
-        match self {
-            Self::StreamData(_, result) => result
-                .iter()
-                .map(|e| e.num_rows())
-                .reduce(|p, c| p + c)
-                .unwrap_or(0) as i64,
-            Self::Nil(_) => 0,
+    pub async fn affected_rows(self) -> i64 {
+        self.num_rows().await as i64
+    }
+}
+
+impl Stream for Output {
+    type Item = std::result::Result<RecordBatch, QueryError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        match this {
+            Output::StreamData(stream) => stream.poll_next_unpin(cx).map_err(|e| e.into()),
+            Output::Nil(_) => Poll::Ready(None),
         }
     }
 }
+
+// pub struct FlightDataEncoderWrapper {
+//     inner: FlightDataEncoder,
+//     done: bool,
+// }
+
+// impl FlightDataEncoderWrapper {
+//     fn new(inner: FlightDataEncoder) -> Self {
+//         Self { inner, done: false }
+//     }
+// }
+
+// pub struct FlightDataEncoderBuilderWrapper {
+//     inner: FlightDataEncoderBuilder,
+// }
+
+// impl FlightDataEncoderBuilderWrapper {
+//     pub fn new(schema: SchemaRef) -> Self {
+//         Self {
+//             inner: FlightDataEncoderBuilder::new().with_schema(Arc::clone(&schema)),
+//         }
+//     }
+
+//     pub fn build<S>(self, input: S) -> FlightDataEncoderWrapper
+//         where
+//             S: Stream<Item=datafusion::common::Result<RecordBatch>> + Send + 'static,
+//     {
+//         FlightDataEncoderWrapper::new(
+//             self.inner
+//                 .build(input.map_err(|e| FlightError::ExternalError(e.into()))),
+//         )
+//     }
+// }
+
+// impl Stream for FlightDataEncoderWrapper {
+//     type Item = arrow_flight::error::Result<FlightData>;
+
+//     fn poll_next(
+//         mut self: Pin<&mut Self>,
+//         cx: &mut std::task::Context<'_>,
+//     ) -> Poll<Option<Self::Item>> {
+//         if self.done {
+//             return Poll::Ready(None);
+//         }
+
+//         let res = ready!(self.inner.poll_next_unpin(cx));
+//         match res {
+//             None => {
+//                 self.done = true;
+//                 Poll::Ready(None)
+//             }
+//             Some(Ok(data)) => Poll::Ready(Some(Ok(data))),
+//             Some(Err(e)) => {
+//                 self.done = true;
+//                 Poll::Ready(Some(Err(e)))
+//             }
+//         }
+//     }
+// }
 
 pub trait QueryExecutionFactory {
     fn create_query_execution(

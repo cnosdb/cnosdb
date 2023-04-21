@@ -12,6 +12,8 @@ use spi::query::auth::AccessControlRef;
 use spi::query::datasource::stream::checker::StreamCheckerManager;
 use spi::query::datasource::stream::StreamProviderManager;
 use spi::query::dispatcher::QueryDispatcher;
+use spi::query::execution::QueryStateMachineRef;
+use spi::query::logical_planner::Plan;
 use spi::query::session::SessionCtxFactory;
 use spi::server::dbms::DatabaseManagerSystem;
 use spi::service::protocol::{Query, QueryHandle, QueryId};
@@ -67,6 +69,46 @@ where
         let result = self
             .query_dispatcher
             .execute_query(tenant_id, query_id, query)
+            .await?;
+
+        Ok(QueryHandle::new(query_id, query.clone(), result))
+    }
+
+    async fn build_query_state_machine(&self, query: Query) -> Result<QueryStateMachineRef> {
+        let query_id = self.query_dispatcher.create_query_id();
+
+        let tenant_id = self.get_tenant_id(query.context().tenant()).await?;
+
+        let query_state_machine = self
+            .query_dispatcher
+            .build_query_state_machine(tenant_id, query_id, query)
+            .await?;
+
+        Ok(query_state_machine)
+    }
+
+    async fn build_logical_plan(
+        &self,
+        query_state_machine: QueryStateMachineRef,
+    ) -> Result<Option<Plan>> {
+        let logical_plan = self
+            .query_dispatcher
+            .build_logical_plan(query_state_machine)
+            .await?;
+
+        Ok(logical_plan)
+    }
+
+    async fn execute_logical_plan(
+        &self,
+        logical_plan: Plan,
+        query_state_machine: QueryStateMachineRef,
+    ) -> Result<QueryHandle> {
+        let query_id = query_state_machine.query_id;
+        let query = query_state_machine.query.clone();
+        let result = self
+            .query_dispatcher
+            .execute_logical_plan(logical_plan, query_state_machine)
             .await?;
 
         Ok(QueryHandle::new(query_id, query.clone(), result))
@@ -244,7 +286,7 @@ mod tests {
 
         let result = db.execute(&query).await.unwrap();
 
-        result.result().chunk_result().to_vec()
+        result.result().chunk_result().await.unwrap().to_vec()
     }
 
     #[tokio::test]

@@ -69,7 +69,14 @@ impl Client {
                 let status_code = resp.status();
                 buffer.push_str(status_code.to_string().as_str());
                 buffer.push('\n');
-                push_query_result(buffer, query, resp).await;
+                if query.is_stream_respones() {
+                    if let Err(err) = push_query_stream_result(buffer, query, resp).await {
+                        push_error(buffer, &err.to_string());
+                    }
+                } else {
+                    push_query_result(buffer, query, resp).await;
+                }
+
                 if !status_code.is_success() {
                     push_error(buffer, "");
                 } else {
@@ -276,6 +283,9 @@ impl Client {
         http_query.push_str("&precision=");
         http_query.push_str(instruction.precision().unwrap_or("NS"));
 
+        http_query.push_str("&chunked=");
+        http_query.push_str(instruction.chunked());
+
         if instruction.pretty() {
             http_query.push_str("&pretty=true");
         }
@@ -439,6 +449,33 @@ async fn push_query_result(buffer: &mut String, query: &Query, resp: Response) {
         }
         buffer.push('\n');
     }
+}
+
+async fn push_query_stream_result(
+    buffer: &mut String,
+    query: &Query,
+    mut resp: Response,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let success = resp.status().is_success();
+    let mut str = String::with_capacity(1024 * 1024);
+    while let Some(text) = resp.chunk().await? {
+        let text = String::from_utf8(text.to_vec())?;
+        str.push_str(&text);
+    }
+    if success && query.is_return_result_set() && query.instruction().sort() && !str.is_empty() {
+        let mut lines: Vec<&str> = str.lines().collect();
+        buffer.push_str(lines[0]);
+        buffer.push('\n');
+
+        let len = lines.len();
+        let result_lines = &mut lines[1..len];
+        result_lines.sort();
+        buffer.push_str(result_lines.join("\n").as_str());
+    } else {
+        buffer.push_str(str.as_str());
+    }
+    buffer.push('\n');
+    Ok(())
 }
 
 #[tokio::test]

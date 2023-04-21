@@ -1,11 +1,9 @@
 use std::fmt::Display;
 
-use datafusion::arrow::record_batch::RecordBatch;
 use models::auth::user::User;
 use models::oid::uuid_u64;
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE, DEFAULT_PRECISION};
 use serde::{Deserialize, Serialize};
-use trace::trace;
 
 use crate::query::config::StreamTriggerInterval;
 use crate::query::execution::Output;
@@ -72,6 +70,7 @@ pub struct Context {
     tenant: String,
     database: String,
     precision: String,
+    chunked: bool,
     session_config: CnosSessionConfig,
 }
 
@@ -95,6 +94,9 @@ impl Context {
     pub fn session_config(&self) -> &CnosSessionConfig {
         &self.session_config
     }
+    pub fn chunked(&self) -> bool {
+        self.chunked
+    }
 }
 
 pub struct ContextBuilder {
@@ -102,6 +104,7 @@ pub struct ContextBuilder {
     tenant: String,
     database: String,
     precision: String,
+    chunked: bool,
     session_config: CnosSessionConfig,
 }
 
@@ -112,6 +115,7 @@ impl ContextBuilder {
             precision: DEFAULT_PRECISION.to_string(),
             tenant: DEFAULT_CATALOG.to_string(),
             database: DEFAULT_DATABASE.to_string(),
+            chunked: Default::default(),
             session_config: Default::default(),
         }
     }
@@ -152,13 +156,19 @@ impl ContextBuilder {
         }
         self
     }
-
+    pub fn with_chunked(mut self, chunked: Option<bool>) -> Self {
+        if let Some(chunked) = chunked {
+            self.chunked = chunked;
+        }
+        self
+    }
     pub fn build(self) -> Context {
         Context {
             user_info: self.user_info,
             tenant: self.tenant,
             database: self.database,
             precision: self.precision,
+            chunked: self.chunked,
             session_config: self.session_config,
         }
     }
@@ -185,7 +195,7 @@ impl Query {
     }
 }
 
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct QueryHandle {
     id: QueryId,
     query: Query,
@@ -207,18 +217,5 @@ impl QueryHandle {
 
     pub fn result(self) -> Output {
         self.result
-    }
-
-    pub async fn fetch_record_batches(self) -> Vec<RecordBatch> {
-        trace!("try collect result for: {}", self.query.content());
-
-        let actual = match self.result {
-            Output::StreamData(_, stream) => stream,
-            Output::Nil(_) => vec![],
-        };
-
-        trace!("successfully collected result of {}", self.query.content());
-
-        actual
     }
 }

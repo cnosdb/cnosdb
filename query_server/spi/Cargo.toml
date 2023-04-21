@@ -6,14 +6,14 @@ edition.workspace = true
 
 [dependencies]
 models = { path = "../../common/models" }
-error_code = {path = "../../common/error_code" }
+error_code = { path = "../../common/error_code" }
 meta = { path = "../../meta" }
 coordinator = { path = "../../coordinator" }
-tskv = {path = "../../tskv"}
-protos = {path = "../../common/protos"}
-config = {path = "../../config"}
+tskv = { path = "../../tskv" }
+protos = { path = "../../common/protos" }
+config = { path = "../../config" }
 trace = { path = "../../common/trace" }
-flatbuffers = {workspace = true }
+flatbuffers = { workspace = true }
 async-trait = { workspace = true }
 datafusion = { workspace = true }
 snafu = { workspace = true, features = ["backtraces"] }
@@ -27,3 +27,6 @@ bytes = { workspace = true }
 snap = { workspace = true }
 lazy_static = { workspace = true }
 duration-str = { workspace = true }
+futures = { workspace = true }
+arrow-flight = { workspace = true }
+tonic = { workspace = true }
