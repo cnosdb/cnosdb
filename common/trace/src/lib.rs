@@ -71,10 +71,10 @@ pub fn init_global_tracing(
     let env_filter = get_env_filter(&log_level, tokio_trace);
     let local_time = OffsetTime::new(
         UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC),
-        time::format_description::well_known::Rfc3339,
+        time::format_description::well_known::Iso8601::DEFAULT,
     );
     let formatting_layer = fmt::layer()
-        .pretty()
+        .with_ansi(false)
         .with_timer(local_time.clone())
         .with_writer(std::io::stderr)
         .with_filter(LevelFilter::DEBUG);
@@ -82,6 +82,7 @@ pub fn init_global_tracing(
     let file_appender = rolling::daily(log_path, log_file_prefix_name);
     let (non_blocking_appender, guard) = non_blocking(file_appender);
     let file_layer = fmt::layer()
+        .with_ansi(false)
         .with_timer(local_time)
         .with_writer(non_blocking_appender)
         .with_filter(LevelFilter::DEBUG);
