@@ -8,7 +8,9 @@ use datafusion::from_slice::FromSlice;
 use models::auth::role::UserRole;
 use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
 
-use crate::query::execution::Output;
+use crate::query::execution::{Output, QueryStateMachineRef};
+use crate::query::logical_planner::Plan;
+use crate::query::recordbatch::RecordBatchStreamWrapper;
 use crate::service::protocol::{Query, QueryHandle, QueryId};
 use crate::Result;
 
@@ -19,6 +21,16 @@ pub trait DatabaseManagerSystem {
     async fn start(&self) -> Result<()>;
     async fn authenticate(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User>;
     async fn execute(&self, query: &Query) -> Result<QueryHandle>;
+    async fn build_query_state_machine(&self, query: Query) -> Result<QueryStateMachineRef>;
+    async fn build_logical_plan(
+        &self,
+        query_state_machine: QueryStateMachineRef,
+    ) -> Result<Option<Plan>>;
+    async fn execute_logical_plan(
+        &self,
+        logical_plan: Plan,
+        query_state_machine: QueryStateMachineRef,
+    ) -> Result<QueryHandle>;
     fn metrics(&self) -> String;
     fn cancel(&self, query_id: &QueryId);
 }
@@ -65,12 +77,31 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
                 .unwrap()
             })
             .collect::<Vec<_>>();
-
+        let stream = Box::pin(RecordBatchStreamWrapper::new(schema, batches));
         Ok(QueryHandle::new(
             QueryId::next_id(),
             query.clone(),
-            Output::StreamData(schema, batches),
+            Output::StreamData(stream),
         ))
+    }
+
+    async fn build_query_state_machine(&self, _query: Query) -> Result<QueryStateMachineRef> {
+        todo!()
+    }
+
+    async fn build_logical_plan(
+        &self,
+        _query_state_machine: QueryStateMachineRef,
+    ) -> Result<Option<Plan>> {
+        todo!()
+    }
+
+    async fn execute_logical_plan(
+        &self,
+        _logical_plan: Plan,
+        _query_state_machine: QueryStateMachineRef,
+    ) -> Result<QueryHandle> {
+        todo!()
     }
 
     fn metrics(&self) -> String {

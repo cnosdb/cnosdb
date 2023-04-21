@@ -4,7 +4,6 @@ extern crate core;
 pub mod auth;
 mod data_source;
 pub mod dispatcher;
-pub mod error;
 mod execution;
 pub mod extension;
 pub mod function;

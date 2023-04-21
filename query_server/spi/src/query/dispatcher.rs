@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -6,7 +7,8 @@ use models::oid::{Identifier, Oid};
 use serde::{Deserialize, Serialize};
 
 use super::execution::QueryState;
-use crate::query::execution::Output;
+use crate::query::execution::{Output, QueryStateMachine};
+use crate::query::logical_planner::Plan;
 use crate::service::protocol::{Query, QueryId};
 use crate::Result;
 
@@ -21,6 +23,24 @@ pub trait QueryDispatcher: Send + Sync {
     fn query_info(&self, id: &QueryId);
 
     async fn execute_query(&self, tenant_id: Oid, id: QueryId, query: &Query) -> Result<Output>;
+
+    async fn build_logical_plan(
+        &self,
+        query_state_machine: Arc<QueryStateMachine>,
+    ) -> Result<Option<Plan>>;
+
+    async fn execute_logical_plan(
+        &self,
+        logical_plan: Plan,
+        query_state_machine: Arc<QueryStateMachine>,
+    ) -> Result<Output>;
+
+    async fn build_query_state_machine(
+        &self,
+        tenant_id: Oid,
+        id: QueryId,
+        query: Query,
+    ) -> Result<Arc<QueryStateMachine>>;
 
     fn running_query_infos(&self) -> Vec<QueryInfo>;
 

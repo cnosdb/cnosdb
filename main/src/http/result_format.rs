@@ -29,11 +29,15 @@ macro_rules! batches_to_json {
     }};
 }
 
-fn batches_with_sep(batches: &[RecordBatch], delimiter: u8) -> ArrowResult<Vec<u8>> {
+fn batches_with_sep(
+    batches: &[RecordBatch],
+    delimiter: u8,
+    has_headers: bool,
+) -> ArrowResult<Vec<u8>> {
     let mut bytes = vec![];
     {
         let builder = WriterBuilder::new()
-            .has_headers(true)
+            .has_headers(has_headers)
             .with_delimiter(delimiter);
         let mut writer = builder.build(&mut bytes);
         for batch in batches {
@@ -54,7 +58,7 @@ pub enum ResultFormat {
 }
 
 impl ResultFormat {
-    fn get_http_content_type(&self) -> &'static str {
+    pub fn get_http_content_type(&self) -> &'static str {
         match self {
             Self::Csv => APPLICATION_CSV,
             Self::Tsv => APPLICATION_TSV,
@@ -64,13 +68,17 @@ impl ResultFormat {
         }
     }
 
-    pub fn format_batches(&self, batches: &[RecordBatch]) -> ArrowResult<Vec<u8>> {
+    pub fn format_batches(
+        &self,
+        batches: &[RecordBatch],
+        has_headers: bool,
+    ) -> ArrowResult<Vec<u8>> {
         if batches.is_empty() {
             return Ok(Vec::new());
         }
         match self {
-            Self::Csv => batches_with_sep(batches, b','),
-            Self::Tsv => batches_with_sep(batches, b'\t'),
+            Self::Csv => batches_with_sep(batches, b',', has_headers),
+            Self::Tsv => batches_with_sep(batches, b'\t', has_headers),
             Self::Json => batches_to_json!(ArrayWriter, batches),
             Self::NdJson => {
                 batches_to_json!(LineDelimitedWriter, batches)
@@ -79,12 +87,16 @@ impl ResultFormat {
         }
     }
 
-    pub fn wrap_batches_to_response(&self, batches: &[RecordBatch]) -> Result<Response, HttpError> {
-        let result = self
-            .format_batches(batches)
-            .map_err(|e| HttpError::FetchResult {
-                reason: format!("{}", e),
-            })?;
+    pub fn wrap_batches_to_response(
+        &self,
+        batches: &[RecordBatch],
+        has_headers: bool,
+    ) -> Result<Response, HttpError> {
+        let result =
+            self.format_batches(batches, has_headers)
+                .map_err(|e| HttpError::FetchResult {
+                    reason: format!("{}", e),
+                })?;
 
         let resp = ResponseBuilder::new(OK)
             .insert_header((CONTENT_TYPE, self.get_http_content_type()))
@@ -138,7 +150,10 @@ mod tests {
     #[test]
     fn test_format_batches_with_sep() {
         let batches = vec![];
-        assert_eq!("".as_bytes(), batches_with_sep(&batches, b',').unwrap());
+        assert_eq!(
+            "".as_bytes(),
+            batches_with_sep(&batches, b',', true).unwrap()
+        );
 
         let schema = Arc::new(Schema::new(vec![
             Field::new("a", DataType::Int32, false),
@@ -157,7 +172,7 @@ mod tests {
         .unwrap();
 
         let batches = vec![batch];
-        let r = batches_with_sep(&batches, b',').unwrap();
+        let r = batches_with_sep(&batches, b',', true).unwrap();
         assert_eq!("a,b,c\n1,4,7\n2,5,8\n3,6,9\n".as_bytes(), r);
     }
 

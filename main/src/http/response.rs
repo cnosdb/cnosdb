@@ -1,14 +1,23 @@
+use std::pin::Pin;
+use std::task::Poll;
+
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::record_batch::RecordBatch;
+use futures::{ready, Stream, StreamExt};
 use http_protocol::header::{APPLICATION_JSON, CONTENT_TYPE};
 use http_protocol::status_code::{
     BAD_REQUEST, INTERNAL_SERVER_ERROR, METHOD_NOT_ALLOWED, NOT_FOUND, OK, PAYLOAD_TOO_LARGE,
 };
 use serde::Serialize;
+use spi::query::execution::Output;
 use warp::http::header::HeaderMap;
 use warp::http::{HeaderValue, StatusCode};
 use warp::reply::Response;
-use warp::Reply;
+use warp::{hyper, Reply};
 
 use super::header::IntoHeaderPair;
+use super::result_format::ResultFormat;
+use super::Error as HttpError;
 
 #[derive(Default)]
 pub struct ResponseBuilder {
@@ -33,6 +42,16 @@ impl ResponseBuilder {
 
     pub fn build(self, body: Vec<u8>) -> Response {
         let mut res = Response::new(body.into());
+
+        *res.headers_mut() = self.headers;
+
+        *res.status_mut() = self.status_code.unwrap();
+
+        res
+    }
+
+    pub fn build_stream_response(self, body: impl Reply) -> Response {
+        let mut res = body.into_response();
 
         *res.headers_mut() = self.headers;
 
@@ -84,6 +103,92 @@ impl ResponseBuilder {
 
     pub fn payload_too_large() -> Response {
         PAYLOAD_TOO_LARGE.into_response()
+    }
+}
+
+pub struct HttpRespone {
+    result: Output,
+    format: ResultFormat,
+    done: bool,
+    schema: Option<SchemaRef>,
+}
+
+impl HttpRespone {
+    pub fn new(result: Output, format: ResultFormat) -> Self {
+        let schema = result.schema();
+        Self {
+            result,
+            format,
+            schema: Some(schema),
+            done: false,
+        }
+    }
+    pub async fn wrap_batches_to_response(self) -> Result<Response, HttpError> {
+        let actual = self.result.chunk_result().await?;
+        self.format.wrap_batches_to_response(&actual, true)
+    }
+    pub fn wrap_stream_to_response(self) -> Result<Response, HttpError> {
+        let resp = ResponseBuilder::new(OK)
+            .insert_header((CONTENT_TYPE, self.format.get_http_content_type()))
+            .build_stream_response(self);
+        Ok(resp)
+    }
+}
+
+impl Stream for HttpRespone {
+    type Item = std::result::Result<Vec<u8>, HttpError>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        loop {
+            if self.done {
+                return Poll::Ready(None);
+            }
+            let res = ready!(self.result.poll_next_unpin(cx));
+            match res {
+                None => {
+                    self.done = true;
+                    if let Some(schema) = self.schema.take() {
+                        let has_headers = !schema.fields().is_empty();
+                        let rb = RecordBatch::new_empty(schema);
+                        let buffer = self.format.format_batches(&[rb], has_headers).map_err(|e| {
+                            HttpError::FetchResult {
+                                reason: format!("{}", e),
+                            }
+                        });
+                        self.schema = None;
+                        return Poll::Ready(Some(buffer));
+                    }
+                }
+                Some(Ok(rb)) => {
+                    if rb.num_rows() > 0 {
+                        let buffer = self
+                            .format
+                            .format_batches(&[rb], self.schema.is_some())
+                            .map_err(|e| HttpError::FetchResult {
+                                reason: format!("{}", e),
+                            });
+                        self.schema = None;
+                        return Poll::Ready(Some(buffer));
+                    }
+                }
+                Some(Err(e)) => {
+                    self.done = true;
+                    return Poll::Ready(Some(Err(HttpError::FetchResult {
+                        reason: format!("{}", e),
+                    })));
+                }
+            }
+        }
+    }
+}
+
+impl Reply for HttpRespone {
+    fn into_response(self) -> Response {
+        let body = hyper::Body::wrap_stream(self);
+        Response::new(body)
     }
 }
 

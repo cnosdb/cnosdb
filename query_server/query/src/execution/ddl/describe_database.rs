@@ -7,6 +7,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use meta::error::MetaError;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeDatabase;
+use spi::query::recordbatch::RecordBatchStreamWrapper;
 use spi::Result;
 
 use crate::execution::ddl::DDLDefinitionTask;
@@ -69,6 +70,7 @@ async fn describe_database(database_name: &str, machine: QueryStateMachineRef) -
     )?;
 
     let batches = vec![batch];
-
-    Ok(Output::StreamData(schema, batches))
+    Ok(Output::StreamData(Box::pin(RecordBatchStreamWrapper::new(
+        schema, batches,
+    ))))
 }

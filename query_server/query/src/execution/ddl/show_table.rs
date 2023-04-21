@@ -12,6 +12,7 @@ use spi::query::execution::{
     Output,
     QueryStateMachineRef,
 };
+use spi::query::recordbatch::RecordBatchStreamWrapper;
 use spi::Result;
 
 use crate::execution::ddl::DDLDefinitionTask;
@@ -61,5 +62,7 @@ async fn show_tables(
 
     let batches = vec![batch];
 
-    Ok(Output::StreamData(schema, batches))
+    Ok(Output::StreamData(Box::pin(RecordBatchStreamWrapper::new(
+        schema, batches,
+    ))))
 }

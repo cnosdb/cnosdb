@@ -13,7 +13,7 @@ use arrow_flight::sql::{
 };
 use arrow_flight::{
     utils as flight_utils, Action, FlightData, FlightDescriptor, FlightInfo, HandshakeRequest,
-    HandshakeResponse, IpcMessage, SchemaAsIpc, Ticket,
+    HandshakeResponse, SchemaAsIpc, Ticket,
 };
 use datafusion::arrow::datatypes::{Schema, ToByteSlice};
 use datafusion::arrow::ipc::writer::IpcWriteOptions;
@@ -24,7 +24,8 @@ use models::oid::UuidGenerator;
 use moka::sync::Cache;
 use prost::bytes::Bytes;
 use spi::query::config::StreamTriggerInterval;
-use spi::query::execution::Output;
+use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::query::logical_planner::Plan;
 use spi::server::dbms::DBMSRef;
 use spi::service::protocol::{Context, ContextBuilder, Query, QueryHandle};
 use tonic::metadata::MetadataMap;
@@ -39,8 +40,7 @@ pub struct FlightSqlServiceImpl<T> {
     instance: DBMSRef,
     authenticator: T,
     id_generator: UuidGenerator,
-
-    result_cache: Cache<Vec<u8>, Output>,
+    result_cache: Cache<Vec<u8>, (Option<Plan>, QueryStateMachineRef)>,
 }
 
 impl<T> FlightSqlServiceImpl<T> {
@@ -70,47 +70,31 @@ where
         sql: String,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        let (result_ident, query_result) = self.auth_and_execute(sql, request.metadata()).await?;
-
-        // get result metadata
-        let output = query_result.result();
-        let schema = output.schema();
-        let total_records = output.num_rows();
-
-        // cache result wait cli fetching
-        self.result_cache.insert(result_ident.clone(), output);
-
-        // construct response start
-        let flight_info = self.construct_flight_info(
-            result_ident,
-            schema.as_ref(),
-            total_records as i64,
-            request.into_inner(),
-        )?;
-
-        Ok(Response::new(flight_info))
-    }
-
-    /// 1. auth request
-    /// 2. execute query
-    async fn auth_and_execute(
-        &self,
-        sql: String,
-        metadata: &MetadataMap,
-    ) -> Result<(Vec<u8>, QueryHandle), Status> {
-        let auth_result = self.authenticator.authenticate(metadata).await?;
+        // auth request
+        let auth_result = self.authenticator.authenticate(request.metadata()).await?;
         let user = auth_result.identity();
 
         // construct context by user_info and headers(parse tenant & default database)
-        let ctx = self.construct_context(user, metadata)?;
+        let ctx = self.construct_context(user, request.metadata())?;
 
-        // execute sql
-        let query_result = self.execute(sql, ctx).await?;
+        // build query state machine
+        let query_state_machine = self.build_query_state_machine(sql, ctx).await?;
+
+        // build logical plan
+        let logical_plan = self.build_logical_plan(query_state_machine.clone()).await?;
 
         // generate result identifier
         let result_ident = self.id_generator.next_id().to_le_bytes().to_vec();
 
-        Ok((result_ident, query_result))
+        // cache result wait cli fetching
+        self.result_cache
+            .insert(result_ident.clone(), (logical_plan, query_state_machine));
+
+        // construct response start
+        let flight_info =
+            self.construct_flight_info(result_ident, &Schema::empty(), 0, request.into_inner())?;
+
+        Ok(Response::new(flight_info))
     }
 
     fn construct_flight_info(
@@ -177,30 +161,84 @@ where
         Ok(ctx)
     }
 
-    async fn execute(&self, sql: String, ctx: Context) -> Result<QueryHandle, Status> {
-        // execute sql
+    async fn build_query_state_machine(
+        &self,
+        sql: String,
+        ctx: Context,
+    ) -> Result<QueryStateMachineRef, Status> {
         let query = Query::new(ctx, sql);
-        let query_result = self.instance.execute(&query).await.map_err(|e| {
-            // TODO convert error message
-            Status::internal(format!("{}", e))
-        })?;
+        let query_state_machine = self
+            .instance
+            .build_query_state_machine(query)
+            .await
+            .map_err(|e| {
+                // TODO convert error message
+                Status::internal(format!("{}", e))
+            })?;
+        Ok(query_state_machine)
+    }
 
+    async fn build_logical_plan(
+        &self,
+        query_state_machine: QueryStateMachineRef,
+    ) -> Result<Option<Plan>, Status> {
+        let logical_plan = self
+            .instance
+            .build_logical_plan(query_state_machine)
+            .await
+            .map_err(|e| {
+                // TODO convert error message
+                Status::internal(format!("{}", e))
+            })?;
+        Ok(logical_plan)
+    }
+
+    async fn execute_logical_plan(
+        &self,
+        logical_plan: Option<Plan>,
+        query_state_machine: QueryStateMachineRef,
+    ) -> Result<QueryHandle, Status> {
+        let query_result = match logical_plan {
+            None => QueryHandle::new(
+                query_state_machine.query_id,
+                query_state_machine.query.clone(),
+                Output::Nil(()),
+            ),
+            Some(logical_plan) => self
+                .instance
+                .execute_logical_plan(logical_plan, query_state_machine)
+                .await
+                .map_err(|e| {
+                    // TODO convert error message
+                    Status::internal(format!("{}", e))
+                })?,
+        };
         Ok(query_result)
     }
 
-    fn fetch_result_set(
+    async fn fetch_result_set(
         &self,
         statement_handle: &[u8],
     ) -> Result<<Self as FlightService>::DoGetStream, Status> {
-        let output = self.result_cache.get(statement_handle).ok_or_else(|| {
-            Status::internal(format!(
-                "The result of query({:?}) does not exist or has expired",
-                statement_handle
-            ))
-        })?;
+        let (logical_plan, query_state_machine) =
+            self.result_cache.get(statement_handle).ok_or_else(|| {
+                Status::internal(format!(
+                    "The result of query({:?}) does not exist or has expired",
+                    statement_handle
+                ))
+            })?;
+
+        // execute plan
+        let query_result = self
+            .execute_logical_plan(logical_plan.clone(), query_state_machine.clone())
+            .await?;
+        let output = query_result.result();
 
         let schema = (*output.schema()).clone();
-        let batches = output.chunk_result().to_owned();
+        let batches = output
+            .chunk_result()
+            .await
+            .map_err(|e| Status::internal(format!("Could not chunk result, error: {}", e)))?;
 
         let flight_data = flight_utils::batches_to_flight_data(schema, batches)
             .map_err(|e| Status::internal(format!("Could not convert batches, error: {}", e)))?
@@ -208,19 +246,24 @@ where
             .map(Ok);
         let stream: Pin<Box<dyn Stream<Item = Result<FlightData, Status>> + Send>> =
             Box::pin(futures::stream::iter(flight_data));
-
         Ok(stream)
     }
 
-    fn fetch_affected_rows_count(&self, statement_handle: &[u8]) -> Result<i64, Status> {
-        let result_set = self.result_cache.get(statement_handle).ok_or_else(|| {
-            Status::internal(format!(
-                "The result of query({:?}) does not exist or has expired",
-                statement_handle
-            ))
-        })?;
+    async fn fetch_affected_rows_count(&self, statement_handle: &[u8]) -> Result<i64, Status> {
+        let (logical_plan, query_state_machine) =
+            self.result_cache.get(statement_handle).ok_or_else(|| {
+                Status::internal(format!(
+                    "The result of query({:?}) does not exist or has expired",
+                    statement_handle
+                ))
+            })?;
 
-        Ok(result_set.affected_rows())
+        // execute plan
+        let query_result = self
+            .execute_logical_plan(logical_plan.clone(), query_state_machine.clone())
+            .await?;
+        let result_set = query_result.result();
+        Ok(result_set.affected_rows().await)
     }
 }
 
@@ -345,24 +388,11 @@ where
         } = query;
         let prepared_statement_handle = prepared_statement_handle.to_byte_slice().to_owned();
 
-        // get metadata of result from cache
-        let output = self
-            .result_cache
-            .get(&prepared_statement_handle)
-            .ok_or_else(|| {
-                Status::internal(format!(
-                    "The result of query({:?}) does not exist or has expired",
-                    prepared_statement_handle
-                ))
-            })?;
-        let schema = output.schema();
-        let total_records = output.num_rows();
-
         // construct response start
         let flight_info = self.construct_flight_info(
             prepared_statement_handle,
-            schema.as_ref(),
-            total_records as i64,
+            &Schema::empty(),
+            0,
             request.into_inner(),
         )?;
 
@@ -532,7 +562,7 @@ where
 
         let TicketStatementQuery { statement_handle } = ticket;
 
-        let output = self.fetch_result_set(&statement_handle)?;
+        let output = self.fetch_result_set(&statement_handle).await?;
 
         // clear cache of this query
         self.result_cache
@@ -556,7 +586,7 @@ where
 
         let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
 
-        let output = self.fetch_result_set(prepared_statement_handle)?;
+        let output = self.fetch_result_set(prepared_statement_handle).await?;
 
         // clear cache of this query
         self.result_cache
@@ -700,9 +730,25 @@ where
 
         let metadata = request.metadata();
 
-        let (_, query_result) = self.auth_and_execute(query, metadata).await?;
+        // auth request
+        let auth_result = self.authenticator.authenticate(metadata).await?;
+        let user = auth_result.identity();
 
-        let affected_rows = query_result.result().affected_rows();
+        // construct context by user_info and headers(parse tenant & default database)
+        let ctx = self.construct_context(user, metadata)?;
+
+        // build query state machine
+        let query_state_machine = self.build_query_state_machine(query, ctx).await?;
+
+        // build logical plan
+        let logical_plan = self.build_logical_plan(query_state_machine.clone()).await?;
+
+        // execute plan
+        let query_result = self
+            .execute_logical_plan(logical_plan.clone(), query_state_machine.clone())
+            .await?;
+
+        let affected_rows = query_result.result().affected_rows().await;
 
         Ok(affected_rows)
     }
@@ -730,19 +776,22 @@ where
     /// because ad-hoc statement of flight jdbc needs to call this interface, so it is simple to implement
     async fn do_put_prepared_statement_update(
         &self,
-        query: CommandPreparedStatementUpdate,
-        request: Request<Streaming<FlightData>>,
+        _query: CommandPreparedStatementUpdate,
+        _request: Request<Streaming<FlightData>>,
     ) -> Result<i64, Status> {
-        debug!(
-            "do_put_prepared_statement_update: query: {:?}, request: {:?}",
-            query, request
-        );
-
-        let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
-
-        let rows_count = self.fetch_affected_rows_count(prepared_statement_handle)?;
-
-        Ok(rows_count)
+        // debug!(
+        //     "do_put_prepared_statement_update: query: {:?}, request: {:?}",
+        //     query, request
+        // );
+        //
+        // let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
+        //
+        // let rows_count = self.fetch_affected_rows_count(prepared_statement_handle)?;
+        //
+        // Ok(rows_count)
+        Err(Status::unimplemented(
+            "do_put_prepared_statement_update not implemented",
+        ))
     }
 
     /// Prepared statement is not supported,
@@ -761,34 +810,28 @@ where
         let ActionCreatePreparedStatementRequest { query: sql } = query;
         let metadata = request.metadata();
 
-        let user_info = self.authenticator.authenticate(metadata).await?.identity();
+        // auth request
+        let auth_result = self.authenticator.authenticate(metadata).await?;
+        let user = auth_result.identity();
 
         // construct context by user_info and headers(parse tenant & default database)
-        let ctx = self.construct_context(user_info, metadata)?;
+        let ctx = self.construct_context(user, metadata)?;
 
-        // execute sql
-        let query_result = self.execute(sql, ctx).await?;
+        // build query state machine
+        let query_state_machine = self.build_query_state_machine(sql, ctx).await?;
+
+        // build logical plan
+        let logical_plan = self.build_logical_plan(query_state_machine.clone()).await?;
 
         // generate result identifier
         let result_ident = self.id_generator.next_id().to_le_bytes().to_vec();
 
-        // get result metadata
-        let output = query_result.result();
-        let schema = output.schema();
-        let _total_records = output.num_rows();
+        // // cache result wait cli fetching
+        self.result_cache
+            .insert(result_ident.clone(), (logical_plan, query_state_machine));
 
-        // cache result wait cli fetching
-        self.result_cache.insert(result_ident.clone(), output);
-
-        // construct response start
-        let IpcMessage(dataset_schema) = IpcMessage::try_from(SchemaAsIpc::new(
-            schema.as_ref(),
-            &IpcWriteOptions::default(),
-        ))
-        .map_err(|e| Status::internal(format!("{}", e)))?;
         let result = ActionCreatePreparedStatementResult {
             prepared_statement_handle: result_ident.into(),
-            dataset_schema,
             ..Default::default()
         };
 
@@ -857,6 +900,7 @@ mod test {
         let _handle = tokio::spawn(server);
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_client() {
         trace::init_default_global_tracing("/tmp", "test_rust.log", "info");

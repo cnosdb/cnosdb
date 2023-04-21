@@ -12,7 +12,7 @@ use spi::query::datasource::stream::StreamProviderManagerRef;
 use spi::query::dispatcher::{QueryDispatcher, QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryStateMachine};
 use spi::query::function::FuncMetaManagerRef;
-use spi::query::logical_planner::LogicalPlanner;
+use spi::query::logical_planner::{LogicalPlanner, Plan};
 use spi::query::parser::Parser;
 use spi::query::session::SessionCtxFactory;
 use spi::service::protocol::{ContextBuilder, Query, QueryId};
@@ -90,18 +90,30 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         query_id: QueryId,
         query: &Query,
     ) -> Result<Output> {
-        let session = self.session_factory.create_session_ctx(
-            query_id.to_string(),
-            query.context().clone(),
-            tenant_id,
-            self.memory_pool.clone(),
-        )?;
+        let query_state_machine = self
+            .build_query_state_machine(tenant_id, query_id, query.clone())
+            .await?;
+        let logical_plan = self.build_logical_plan(query_state_machine.clone()).await?;
+        let logical_plan = match logical_plan {
+            Some(plan) => plan,
+            None => return Ok(Output::Nil(())),
+        };
+        let result = self
+            .execute_logical_plan(logical_plan, query_state_machine)
+            .await?;
+        Ok(result)
+    }
+
+    async fn build_logical_plan(
+        &self,
+        query_state_machine: Arc<QueryStateMachine>,
+    ) -> Result<Option<Plan>> {
         let meta_client = self
             .coord
-            .tenant_meta(query.context().tenant())
+            .tenant_meta(query_state_machine.query.context().tenant())
             .await
             .ok_or_else(|| MetaError::TenantNotFound {
-                tenant: query.context().tenant().to_string(),
+                tenant: query_state_machine.query.context().tenant().to_string(),
             })?;
 
         let default_catalog_meta_client = self
@@ -119,39 +131,62 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             self.func_manager.clone(),
             self.stream_provider_manager.clone(),
             self.query_tracker.clone(),
-            session.clone(),
+            query_state_machine.session.clone(),
             default_catalog_meta_client,
         );
 
         let logical_planner = DefaultLogicalPlanner::new(&scheme_provider);
 
-        let statements = self.parser.parse(query.content())?;
+        let statements = self.parser.parse(query_state_machine.query.content())?;
 
         // not allow multi statement
         if statements.len() > 1 {
             return Err(QueryError::MultiStatement {
                 num: statements.len(),
-                sql: query.content().to_string(),
+                sql: query_state_machine.query.content().to_string(),
             });
         }
 
         let stmt = match statements.front() {
             Some(stmt) => stmt.clone(),
-            None => return Ok(Output::Nil(())),
+            None => return Ok(None),
         };
+
+        let logical_plan = self
+            .statement_to_logical_plan(stmt, &logical_planner, query_state_machine)
+            .await?;
+        Ok(Some(logical_plan))
+    }
+
+    async fn execute_logical_plan(
+        &self,
+        logical_plan: Plan,
+        query_state_machine: Arc<QueryStateMachine>,
+    ) -> Result<Output> {
+        self.execute_logical_plan(logical_plan, query_state_machine)
+            .await
+    }
+
+    async fn build_query_state_machine(
+        &self,
+        tenant_id: Oid,
+        query_id: QueryId,
+        query: Query,
+    ) -> Result<Arc<QueryStateMachine>> {
+        let session = self.session_factory.create_session_ctx(
+            query_id.to_string(),
+            query.context().clone(),
+            tenant_id,
+            self.memory_pool.clone(),
+        )?;
 
         let query_state_machine = Arc::new(QueryStateMachine::begin(
             query_id,
-            query.clone(),
-            session.clone(),
+            query,
+            session,
             self.coord.clone(),
         ));
-
-        let result = self
-            .execute_statement(stmt, &logical_planner, query_state_machine)
-            .await?;
-
-        Ok(result)
+        Ok(query_state_machine)
     }
 
     fn running_query_infos(&self) -> Vec<QueryInfo> {
@@ -176,12 +211,12 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 }
 
 impl SimpleQueryDispatcher {
-    async fn execute_statement<S: ContextProviderExtension + Send + Sync>(
+    async fn statement_to_logical_plan<S: ContextProviderExtension + Send + Sync>(
         &self,
         stmt: ExtStatement,
         logical_planner: &DefaultLogicalPlanner<'_, S>,
         query_state_machine: Arc<QueryStateMachine>,
-    ) -> Result<Output> {
+    ) -> Result<Plan> {
         // begin analyze
         query_state_machine.begin_analyze();
         let logical_plan = logical_planner
@@ -189,6 +224,14 @@ impl SimpleQueryDispatcher {
             .await?;
         query_state_machine.end_analyze();
 
+        Ok(logical_plan)
+    }
+
+    async fn execute_logical_plan(
+        &self,
+        logical_plan: Plan,
+        query_state_machine: Arc<QueryStateMachine>,
+    ) -> Result<Output> {
         let execution = self
             .query_execution_factory
             .create_query_execution(logical_plan, query_state_machine.clone())?;

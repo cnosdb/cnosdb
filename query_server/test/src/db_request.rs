@@ -26,6 +26,8 @@ pub struct Instruction {
     sleep: Option<u64>,
 
     precision: Option<String>,
+
+    chunked: Option<bool>,
 }
 
 impl Default for Instruction {
@@ -39,6 +41,7 @@ impl Default for Instruction {
             time_out: None,
             sleep: None,
             precision: None,
+            chunked: Some(false),
         }
     }
 }
@@ -112,6 +115,14 @@ impl Instruction {
     pub fn precision(&self) -> Option<&str> {
         self.precision.as_deref()
     }
+
+    pub fn chunked(&self) -> &str {
+        if self.chunked.unwrap_or(true) {
+            "true"
+        } else {
+            "false"
+        }
+    }
     /// parse line to modify instruction
     pub fn parse_and_change(&mut self, line: &str) {
         if let Ok((_, tenant_name)) = instruction_parse_identity("TENANT")(line) {
@@ -145,6 +156,10 @@ impl Instruction {
         if let Ok((_, precision)) = instruction_parse_identity("PRECISION")(line) {
             self.precision = Some(precision.to_string())
         }
+
+        if let Ok((_, chunked)) = instruction_parse_to::<bool>("CHUNKED")(line) {
+            self.chunked = Some(chunked)
+        }
     }
 }
 
@@ -153,6 +168,12 @@ impl Instruction {
 pub struct Query {
     instruction: Instruction,
     query: String,
+}
+
+impl Query {
+    pub fn is_stream_respones(&self) -> bool {
+        self.instruction.chunked() == "true"
+    }
 }
 
 #[derive(Clone, Debug)]
