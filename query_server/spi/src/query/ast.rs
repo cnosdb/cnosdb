@@ -41,7 +41,7 @@ pub enum ExtStatement {
     DescribeTable(DescribeTable),
     DescribeDatabase(DescribeDatabase),
     ShowDatabases(),
-    ShowTables(Option<ObjectName>),
+    ShowTables(Option<Ident>),
     ShowSeries(Box<ShowSeries>),
     ShowTagValues(Box<ShowTagValues>),
     Explain(Explain),
@@ -150,7 +150,7 @@ pub enum AlterTableAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterDatabase {
-    pub name: ObjectName,
+    pub name: Ident,
     pub options: DatabaseOptions,
 }
 
@@ -257,7 +257,7 @@ pub struct CreateTenant {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateDatabase {
-    pub name: ObjectName,
+    pub name: Ident,
     pub if_not_exists: bool,
     pub options: DatabaseOptions,
 }
@@ -317,20 +317,20 @@ pub struct DescribeTable {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeDatabase {
-    pub database_name: ObjectName,
+    pub database_name: Ident,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShowTables {
-    pub database_name: ObjectName,
+    pub database_name: Ident,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ShowTagBody {
     // on db
-    pub database_name: Option<ObjectName>,
+    pub database_name: Option<Ident>,
     // from
-    pub table: ObjectName,
+    pub table: Ident,
     // where
     pub selection: Option<Expr>,
     // order by

@@ -1,6 +1,7 @@
 --#DATABASE=cli_precision
 --#precision=us
 --#SLEEP=100
+DROP DATABASE IF EXISTS cli_precision;
 CREATE DATABASE cli_precision WITH TTL '100000d' precision 'us';
 
 --#LP_BEGIN

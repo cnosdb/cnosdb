@@ -961,7 +961,7 @@ mod test {
             let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
             let opt = kv_option::Options::from(&global_config);
             let meta_manager: MetaRef =
-                RemoteMetaManager::new(global_config.cluster, global_config.storage.path.clone())
+                RemoteMetaManager::new(global_config.clone(), global_config.storage.path.clone())
                     .await;
 
             meta_manager.admin_meta().add_data_node().await.unwrap();

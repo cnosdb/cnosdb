@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use config::ClusterConfig;
+use config::Config;
 use models::auth::role::TenantRoleIdentifier;
 use models::auth::user::{admin_user, User};
 use models::meta_data::*;
@@ -27,7 +27,7 @@ use crate::store::{command, key_path};
 
 #[derive(Debug)]
 pub struct RemoteMetaManager {
-    config: ClusterConfig,
+    config: Config,
 
     watch_version: Arc<AtomicU64>,
     tenant_change_sender: Sender<UseTenantInfo>,
@@ -39,18 +39,19 @@ pub struct RemoteMetaManager {
 }
 
 impl RemoteMetaManager {
-    pub async fn new(config: ClusterConfig, path: String) -> Arc<Self> {
+    pub async fn new(config: Config, path: String) -> Arc<Self> {
         let (tenant_change_sender, tenant_change_receiver) = mpsc::channel(1024);
 
         let admin: AdminMetaRef = Arc::new(RemoteAdminMeta::new(config.clone(), path));
         let base_ver = admin.sync_all().await.unwrap();
+        let cluster_meta = config.cluster.meta_service_addr.clone().join(";");
         let user_manager = Arc::new(RemoteUserManager::new(
-            config.name.clone(),
-            config.meta_service_addr.clone(),
+            config.cluster.name.clone(),
+            cluster_meta.clone(),
         ));
         let tenant_manager = Arc::new(RemoteTenantManager::new(
-            config.name.clone(),
-            config.meta_service_addr.clone(),
+            config.cluster.name.clone(),
+            cluster_meta,
             config.node_id,
             tenant_change_sender.clone(),
         ));
@@ -120,9 +121,15 @@ impl RemoteMetaManager {
         let tenants = mgr.watch_tenants.read().clone();
 
         let client_id = format!("watch.{}", mgr.config.node_id);
-        let mut request = (client_id, mgr.config.name.clone(), tenants, base_ver);
+        let mut request = (
+            client_id,
+            mgr.config.cluster.name.clone(),
+            tenants,
+            base_ver,
+        );
 
-        let client = MetaHttpClient::new(mgr.config.meta_service_addr.clone());
+        let cluster_meta = mgr.config.cluster.meta_service_addr.clone().join(";");
+        let client = MetaHttpClient::new(cluster_meta);
         loop {
             if let Ok(watch_data) = client.watch::<command::WatchData>(&request).await {
                 if watch_data.full_sync {
@@ -168,7 +175,7 @@ impl RemoteMetaManager {
 
             let strs: Vec<&str> = entry.key.split('/').collect();
             let len = strs.len();
-            if len < 2 || strs[1] != self.config.name {
+            if len < 2 || strs[1] != self.config.cluster.name {
                 continue;
             }
 

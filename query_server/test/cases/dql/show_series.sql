@@ -1,5 +1,6 @@
 --#DATABASE=show_series
 --#SLEEP=100
+DROP DATABASE IF EXISTS show_series;
 CREATE DATABASE show_series WITH TTL '100000d';
 
 

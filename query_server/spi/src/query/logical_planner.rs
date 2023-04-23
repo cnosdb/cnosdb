@@ -219,34 +219,6 @@ pub enum GlobalObjectType {
     Tenant,
 }
 
-// #[derive(Debug, Clone)]
-// pub struct CreateExternalTable {
-//     /// The table schema
-//     pub schema: DFSchemaRef,
-//     /// The table name
-//     pub name: String,
-//     /// The physical location
-//     pub location: String,
-//     /// The file type of physical file
-//     pub file_descriptor: FileDescriptor,
-//     /// Partition Columns
-//     pub table_partition_cols: Vec<String>,
-//     /// Option to not error if table already exists
-//     pub if_not_exists: bool,
-// }
-
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum FileDescriptor {
-//     /// Newline-delimited JSON
-//     NdJson,
-//     /// Apache Parquet columnar storage
-//     Parquet,
-//     /// Comma separated values
-//     CSV(CSVOptions),
-//     /// Avro binary records
-//     Avro,
-// }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CSVOptions {
     /// Whether the CSV file contains a header
@@ -528,12 +500,7 @@ pub enum AlterTableAction {
         column_name: String,
     },
 }
-impl DDLPlan {
-    pub fn display(&self) -> String {
-        //TODO
-        "todo".into()
-    }
-}
+
 #[async_trait]
 pub trait LogicalPlanner {
     async fn create_logical_plan(

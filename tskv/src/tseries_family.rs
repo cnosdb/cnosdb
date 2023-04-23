@@ -1348,7 +1348,7 @@ pub mod test_tseries_family {
         let config = config::get_config_for_test();
         let meta_manager: MetaRef = runtime.block_on(async {
             let meta_manager: MetaRef =
-                RemoteMetaManager::new(config.cluster, config.storage.path.clone()).await;
+                RemoteMetaManager::new(config.clone(), config.storage.path.clone()).await;
 
             meta_manager.admin_meta().add_data_node().await.unwrap();
 

@@ -25,7 +25,8 @@ impl MetaInit {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Opt {
     pub id: u64,
-    pub http_addr: String,
+    pub host: String,
+    pub port: u16,
     pub snapshot_path: String,
     pub journal_path: String,
     pub snapshot_per_events: u32,
@@ -70,7 +71,8 @@ mod test {
     fn test() {
         let config_str = r#"
 id = 1
-http_addr = "127.0.0.1:8901"
+host = "127.0.0.1"
+port = 8901
 
 snapshot_path = "/tmp/cnosdb/meta/snapshot"
 journal_path = "/tmp/cnosdb/meta/journal"
