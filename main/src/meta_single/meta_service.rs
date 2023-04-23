@@ -133,8 +133,15 @@ pub async fn run_service(cpu: usize, opt: &Config) -> std::io::Result<()> {
     let db_path = format!("{}/meta/{}.binlog", opt.storage.path, 0);
     let db = Arc::new(sled::open(db_path.clone()).unwrap());
     let state_machine = StateMachine::new(db);
+
+    let meta_service_addr = opt.cluster.meta_service_addr.clone();
+    if meta_service_addr.len() > 1 {
+        panic!("starting in singleton mode,only one meta is required");
+    }
+
+    let meta_service = opt.cluster.meta_service_addr.get(0).unwrap().clone();
     let app = Data::new(MetaApp {
-        http_addr: opt.cluster.meta_service_addr.clone(),
+        http_addr: meta_service.clone(),
         store: state_machine,
     });
 
@@ -154,7 +161,7 @@ pub async fn run_service(cpu: usize, opt: &Config) -> std::io::Result<()> {
 
     let server = server.workers(cpu);
 
-    let x = server.bind(opt.cluster.meta_service_addr.clone())?;
+    let x = server.bind(meta_service)?;
 
     tokio::spawn(x.run());
     Ok(())

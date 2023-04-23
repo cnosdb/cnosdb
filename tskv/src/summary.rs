@@ -798,7 +798,6 @@ mod test {
     use std::fs;
     use std::sync::Arc;
 
-    use config::ClusterConfig;
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_manager::RemoteMetaManager;
     use meta::model::MetaRef;
@@ -902,8 +901,7 @@ mod test {
             let _ = fs::remove_dir_all(&base_dir);
             config.storage.path = base_dir.clone();
             test_summary_recover(
-                Arc::new(Options::from(&config)),
-                config.cluster.clone(),
+                config.clone(),
                 runtime_ref.clone(),
                 flush_task_sender.clone(),
                 global_seq_task_sender.clone(),
@@ -916,8 +914,7 @@ mod test {
             let _ = fs::remove_dir_all(&base_dir);
             config.storage.path = base_dir.clone();
             test_tsf_num_recover(
-                Arc::new(Options::from(&config)),
-                config.cluster.clone(),
+                config.clone(),
                 runtime_ref.clone(),
                 flush_task_sender.clone(),
                 global_seq_task_sender.clone(),
@@ -930,8 +927,7 @@ mod test {
             let _ = fs::remove_dir_all(&base_dir);
             config.storage.path = base_dir.clone();
             test_recover_summary_with_roll_0(
-                Arc::new(Options::from(&config)),
-                config.cluster.clone(),
+                config.clone(),
                 runtime_ref.clone(),
                 summary_task_sender.clone(),
                 flush_task_sender.clone(),
@@ -945,8 +941,7 @@ mod test {
             let _ = fs::remove_dir_all(&base_dir);
             config.storage.path = base_dir.clone();
             test_recover_summary_with_roll_1(
-                Arc::new(Options::from(&config)),
-                config.cluster.clone(),
+                config.clone(),
                 runtime_ref.clone(),
                 summary_task_sender,
                 flush_task_sender,
@@ -960,16 +955,16 @@ mod test {
     }
 
     async fn test_summary_recover(
-        opt: Arc<Options>,
-        cluster_options: ClusterConfig,
+        config: config::Config,
         runtime: Arc<Runtime>,
         flush_task_sender: Sender<FlushReq>,
         global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
+        let opt = Arc::new(Options::from(&config));
         let empty_path = "";
         let meta_manager: MetaRef =
-            RemoteMetaManager::new(cluster_options.clone(), empty_path.to_string()).await;
+            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
 
         meta_manager.admin_meta().add_data_node().await.unwrap();
 
@@ -1012,16 +1007,16 @@ mod test {
     }
 
     async fn test_tsf_num_recover(
-        opt: Arc<Options>,
-        cluster_options: ClusterConfig,
+        config: config::Config,
         runtime: Arc<Runtime>,
         flush_task_sender: Sender<FlushReq>,
         global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
+        let opt = Arc::new(Options::from(&config));
         let empty_path = "";
         let meta_manager: MetaRef =
-            RemoteMetaManager::new(cluster_options.clone(), empty_path.to_string()).await;
+            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
 
         meta_manager.admin_meta().add_data_node().await.unwrap();
 
@@ -1087,17 +1082,17 @@ mod test {
     // tips : we can use a small max_summary_size
     #[allow(clippy::too_many_arguments)]
     async fn test_recover_summary_with_roll_0(
-        opt: Arc<Options>,
-        cluster_options: ClusterConfig,
+        config: config::Config,
         runtime: Arc<Runtime>,
         summary_task_sender: Sender<SummaryTask>,
         flush_task_sender: Sender<FlushReq>,
         global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
+        let opt = Arc::new(Options::from(&config));
         let empty_path = "";
         let meta_manager: MetaRef =
-            RemoteMetaManager::new(cluster_options.clone(), empty_path.to_string()).await;
+            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
 
         meta_manager.admin_meta().add_data_node().await.unwrap();
         let _ = meta_manager
@@ -1181,8 +1176,7 @@ mod test {
 
     #[allow(clippy::too_many_arguments)]
     async fn test_recover_summary_with_roll_1(
-        opt: Arc<Options>,
-        cluster_options: ClusterConfig,
+        config: config::Config,
         runtime: Arc<Runtime>,
         summary_task_sender: Sender<SummaryTask>,
         flush_task_sender: Sender<FlushReq>,
@@ -1191,9 +1185,10 @@ mod test {
     ) {
         let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
 
+        let opt = Arc::new(Options::from(&config));
         let empty_path = "";
         let meta_manager: MetaRef =
-            RemoteMetaManager::new(cluster_options.clone(), empty_path.to_string()).await;
+            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
 
         meta_manager.admin_meta().add_data_node().await.unwrap();
 

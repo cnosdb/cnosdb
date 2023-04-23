@@ -28,7 +28,7 @@ mod tests {
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let meta_manager: MetaRef = rt.block_on(RemoteMetaManager::new(
-            global_config.cluster,
+            global_config.clone(),
             global_config.storage.path,
         ));
 
