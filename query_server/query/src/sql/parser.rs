@@ -6,7 +6,7 @@ use std::str::FromStr;
 use datafusion::common::parsers::CompressionTypeVariant;
 use datafusion::sql::parser::CreateExternalTable;
 use datafusion::sql::sqlparser::ast::{
-    DataType, Expr, ObjectName, Offset, OrderByExpr, SqlOption, TableFactor,
+    DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, SqlOption, TableFactor,
 };
 use datafusion::sql::sqlparser::dialect::keywords::Keyword;
 use datafusion::sql::sqlparser::dialect::{Dialect, GenericDialect};
@@ -342,9 +342,9 @@ impl<'a> ExtParser<'a> {
         }
     }
 
-    fn parse_on_database(&mut self) -> Result<Option<ObjectName>> {
+    fn parse_on_database(&mut self) -> Result<Option<Ident>> {
         if self.parser.parse_keyword(Keyword::ON) {
-            Ok(Some(self.parser.parse_object_name()?))
+            Ok(Some(self.parser.parse_identifier()?))
         } else {
             Ok(None)
         }
@@ -418,7 +418,7 @@ impl<'a> ExtParser<'a> {
     fn parse_show_series(&mut self) -> Result<ExtStatement> {
         let database_name = self.parse_on_database()?;
         self.parser.expect_keyword(Keyword::FROM)?;
-        let table = self.parser.parse_object_name()?;
+        let table = self.parser.parse_identifier()?;
         let selection = self.parse_where()?;
         let order_by = self.parse_order_by()?;
         let (limit, offset) = self.parse_limit_offset()?;
@@ -438,7 +438,7 @@ impl<'a> ExtParser<'a> {
     fn parse_show_tag_values(&mut self) -> Result<ExtStatement> {
         let database_name = self.parse_on_database()?;
         self.parser.expect_keyword(Keyword::FROM)?;
-        let table = self.parser.parse_object_name()?;
+        let table = self.parser.parse_identifier()?;
         let with = self.parse_with()?;
         let selection = self.parse_where()?;
         let order_by = self.parse_order_by()?;
@@ -494,7 +494,7 @@ impl<'a> ExtParser<'a> {
     /// Parse a SQL DESCRIBE DATABASE statement
     fn parse_describe_database(&mut self) -> Result<ExtStatement> {
         debug!("Parse Describe DATABASE statement");
-        let database_name = self.parser.parse_object_name()?;
+        let database_name = self.parser.parse_identifier()?;
 
         let describe = DescribeDatabase { database_name };
 
@@ -597,7 +597,7 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_alter_database(&mut self) -> Result<ExtStatement> {
-        let database_name = self.parser.parse_object_name()?;
+        let database_name = self.parser.parse_identifier()?;
         self.parser.expect_keyword(Keyword::SET)?;
         let mut options = DatabaseOptions::default();
         if !self.parse_database_option(&mut options)? {
@@ -839,7 +839,7 @@ impl<'a> ExtParser<'a> {
         let if_not_exists =
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
-        let database_name = self.parser.parse_object_name()?;
+        let database_name = self.parser.parse_identifier()?;
         let options = self.parse_database_options()?;
         Ok(ExtStatement::CreateDatabase(CreateDatabase {
             name: database_name,
@@ -1816,7 +1816,7 @@ mod tests {
             ExtStatement::CreateDatabase(ref stmt) => {
                 let ans = format!("{:?}", stmt);
                 println!("{ans}");
-                let expectd = r#"CreateDatabase { name: ObjectName([Ident { value: "test", quote_style: None }]), if_not_exists: false, options: DatabaseOptions { ttl: Some("10d"), shard_num: Some(5), vnode_duration: Some("3d"), replica: Some(10), precision: Some("us") } }"#;
+                let expectd = "CreateDatabase { name: Ident { value: \"test\", quote_style: None }, if_not_exists: false, options: DatabaseOptions { ttl: Some(\"10d\"), shard_num: Some(5), vnode_duration: Some(\"3d\"), replica: Some(10), precision: Some(\"us\") } }";
                 assert_eq!(ans, expectd);
             }
             _ => panic!("impossible"),

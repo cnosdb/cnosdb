@@ -34,6 +34,10 @@ pub use crate::wal_config::*;
 pub struct Config {
     #[serde(default = "Config::default_reporting_disabled")]
     pub reporting_disabled: bool,
+    #[serde(default = "Config::default_node_id")]
+    pub node_id: u64,
+    #[serde(default = "Config::default_host")]
+    pub host: String,
     pub deployment: DeploymentConfig,
     pub query: QueryConfig,
     pub storage: StorageConfig,
@@ -50,7 +54,19 @@ impl Config {
         false
     }
 
+    fn default_node_id() -> u64 {
+        2001
+    }
+
+    fn default_host() -> String {
+        "localhost".to_string()
+    }
+
     pub fn override_by_env(&mut self) {
+        if let Ok(id) = std::env::var("CNOSDB_NODE_ID") {
+            self.node_id = id.parse::<u64>().unwrap();
+        }
+
         self.cluster.override_by_env();
         self.storage.override_by_env();
         self.wal.override_by_env();
@@ -193,6 +209,8 @@ mod test {
     fn test_parse() {
         let config_str = r#"
 #reporting_disabled = false
+node_id = 2001 
+host = "localhost"
 
 [deployment]
 mode = 'singleton'
@@ -273,12 +291,12 @@ path = 'data/log'
 [cluster]
 node_id = 100
 name = 'cluster_xxx'
-meta_service_addr = '127.0.0.1:8901'
+meta_service_addr = ["127.0.0.1:8901"]
 tenant = ''
 
-flight_rpc_listen_addr = '127.0.0.1:31006'
-http_listen_addr = '127.0.0.1:31007'
-grpc_listen_addr = '127.0.0.1:31008'
+flight_rpc_listen_port = 31006
+http_listen_port = 31007
+grpc_listen_port = 31008
 
 [hinted_off]
 enable = true

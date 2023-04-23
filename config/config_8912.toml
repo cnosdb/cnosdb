@@ -1,5 +1,7 @@
 
 #reporting_disabled = false
+node_id = 2001 
+host = "localhost"
 
 [deployment]
 #mode = 'singleton'
@@ -50,15 +52,15 @@ path = '/tmp/cnosdb/2001/log'
 # private_key = "./config/tls/server.key"
 
 [cluster]
-node_id = 2001
 name = 'cluster_xxx'
-meta_service_addr = '127.0.0.1:8901'
+meta_service_addr = ["127.0.0.1:8901"]
 
-http_listen_addr = '127.0.0.1:8912'
-grpc_listen_addr = '127.0.0.1:8913'
-flight_rpc_listen_addr = '127.0.0.1:8914'
-tcp_listen_addr = '127.0.0.1:8915'
+http_listen_port = 8912
+grpc_listen_port = 8913
+flight_rpc_listen_port = 8914
+tcp_listen_port = 8915
 store_metrics = true
+cold_data_server = false
 
 [hinted_off]
 enable = true

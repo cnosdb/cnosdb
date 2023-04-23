@@ -1,5 +1,7 @@
 
 #reporting_disabled = false
+node_id = 1001 
+host = "localhost"
 
 [deployment]
 #mode = 'singleton'
@@ -43,7 +45,6 @@ max_immutable_number = 4
 [log]
 level = 'info'
 path = '/tmp/cnosdb/1001/log'
-#tokio_trace = { addr = "127.0.0.1:6669"}
 
 [security]
 # [security.tls_config]
@@ -51,14 +52,13 @@ path = '/tmp/cnosdb/1001/log'
 # private_key = "./config/tls/server.key"
 
 [cluster]
-node_id = 1001
 name = 'cluster_xxx'
-meta_service_addr = '127.0.0.1:8901'
+meta_service_addr = ["127.0.0.1:8901"]
 
-http_listen_addr = '127.0.0.1:8902'
-grpc_listen_addr = '127.0.0.1:8903'
-flight_rpc_listen_addr = '127.0.0.1:8904'
-tcp_listen_addr = '127.0.0.1:8905'
+http_listen_port = 8902
+grpc_listen_port = 8903
+flight_rpc_listen_port = 8904
+tcp_listen_port = 8905
 store_metrics = true
 cold_data_server = false
 

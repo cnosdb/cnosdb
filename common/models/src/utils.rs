@@ -91,3 +91,7 @@ impl SeqIdGenerator {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 }
+
+pub fn build_address(address: String, port: u16) -> String {
+    format!("{}:{}", address, port)
+}
