@@ -17,6 +17,8 @@
 -- EXECUTE SQL: DROP TABLE IF EXISTS ci_location_tbl_ext_json; --
 200 OK
 
+-- EXECUTE SQL: DROP TABLE IF EXISTS local_to_table_json; --
+200 OK
 
 -- EXECUTE SQL: CREATE EXTERNAL TABLE ci_location_tbl STORED AS PARQUET LOCATION 'query_server/test/resource/parquet/part-0.parquet'; --
 200 OK
@@ -136,4 +138,20 @@ truck_3127,2022-01-01T00:00:10
 truck_3136,2022-01-01T00:00:10
 truck_3152,2022-01-01T00:00:10
 
+-- EXECUTE SQL: CREATE EXTERNAL TABLE local_to_table_json STORED AS JSON LOCATION 'file:///tmp/data/json_out/'; --
+200 OK
 
+-- EXECUTE SQL: select count(*) from local_to_table_json; --
+200 OK
+COUNT(UInt8(1))
+8192
+
+-- EXECUTE SQL: copy into local_to_table_json from 'query_server/test/resource/json/part-0.json' FILE_FORMAT = (TYPE = 'JSON', DELIMITER = ','); --
+200 OK
+rows
+10
+
+-- EXECUTE SQL: select count(*) from local_to_table_json; --
+200 OK
+COUNT(UInt8(1))
+10
