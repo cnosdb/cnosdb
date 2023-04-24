@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use coordinator::service::{CoordService, CoordinatorRef};
 use memory_pool::MemoryPoolRef;
-use meta::error::MetaResult;
 use meta::model::meta_manager::RemoteMetaManager;
 use meta::model::{MetaManager, MetaRef};
 use metrics::metric_register::MetricsRegister;
@@ -16,6 +15,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
 use tokio::time;
+use trace::error;
 use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
@@ -113,20 +113,16 @@ pub(crate) struct ServiceBuilder {
     pub metrics_register: Arc<MetricsRegister>,
 }
 
-#[allow(unreachable_code)]
-async fn regular_report_node_metrics(
-    meta: Arc<dyn MetaManager>,
-    report_time_interval_secs: u64,
-) -> MetaResult<()> {
-    let mut interval = time::interval(Duration::from_secs(report_time_interval_secs));
+async fn regular_report_node_metrics(meta: Arc<dyn MetaManager>, heartbeat_interval: u64) {
+    let mut interval = time::interval(Duration::from_secs(heartbeat_interval));
 
     loop {
         interval.tick().await;
 
-        meta.admin_meta().report_node_metrics().await.unwrap();
+        if let Err(e) = meta.admin_meta().report_node_metrics().await {
+            error!("{}", e);
+        }
     }
-
-    Ok(())
 }
 
 fn build_default_address(port: u16) -> String {
@@ -140,7 +136,7 @@ impl ServiceBuilder {
         meta.admin_meta().add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
-            self.config.cluster.report_time_interval_secs,
+            self.config.heartbeat.report_time_interval_secs,
         ));
 
         let kv_inst = self
@@ -184,7 +180,7 @@ impl ServiceBuilder {
         meta.admin_meta().add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
-            self.config.cluster.report_time_interval_secs,
+            self.config.heartbeat.report_time_interval_secs,
         ));
 
         let kv_inst = self

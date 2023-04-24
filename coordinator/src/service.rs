@@ -84,7 +84,7 @@ impl CoordService {
     ) -> Arc<Self> {
         let (hh_sender, hh_receiver) = mpsc::channel(1024);
         let point_writer = Arc::new(PointWriter::new(
-            config.node_id,
+            config.node_basic.node_id,
             kv_inst.clone(),
             meta_manager.clone(),
             hh_sender,
@@ -96,7 +96,7 @@ impl CoordService {
         let coord = Arc::new(Self {
             runtime,
             kv_inst,
-            node_id: config.node_id,
+            node_id: config.node_basic.node_id,
             meta: meta_manager,
             writer: point_writer,
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
@@ -104,7 +104,7 @@ impl CoordService {
 
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
 
-        if config.cluster.store_metrics {
+        if config.node_basic.store_metrics {
             tokio::spawn(CoordService::metrics_service(
                 coord.clone(),
                 metrics_register.clone(),

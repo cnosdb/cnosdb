@@ -1,6 +1,5 @@
 
 #reporting_disabled = false
-node_id = 2001 
 host = "localhost"
 
 [deployment]
@@ -13,6 +12,7 @@ max_server_connections = 10240
 query_sql_limit = 16777216   # 16 * 1024 * 1024
 write_sql_limit = 167772160   # 160 * 1024 * 1024
 auth_enabled = false
+store_metrics = true
 
 [storage]
 # Directory for summary: $path/summary/
@@ -59,8 +59,13 @@ http_listen_port = 8912
 grpc_listen_port = 8913
 flight_rpc_listen_port = 8914
 tcp_listen_port = 8915
-store_metrics = true
+
+[node_basic]
+node_id = 2001 
 cold_data_server = false
+store_metrics = true
+
+[heartbeat]
 report_time_interval_secs = 30
 
 [hinted_off]

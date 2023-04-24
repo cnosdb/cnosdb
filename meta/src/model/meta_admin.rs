@@ -79,13 +79,13 @@ impl AdminMeta for RemoteAdminMeta {
 
     async fn add_data_node(&self) -> MetaResult<()> {
         let mut attribute = NodeAttribute::default();
-        if self.config.cluster.cold_data_server {
+        if self.config.node_basic.cold_data_server {
             attribute = NodeAttribute::Cold;
         }
 
         let node = NodeInfo {
             attribute,
-            id: self.config.node_id,
+            id: self.config.node_basic.node_id,
             grpc_addr: build_address(
                 self.config.host.clone(),
                 self.config.cluster.grpc_listen_port,
@@ -207,13 +207,13 @@ impl AdminMeta for RemoteAdminMeta {
         }
 
         let node_metrics = NodeMetrics {
-            id: self.config.node_id,
+            id: self.config.node_basic.node_id,
             disk_free,
             time: now_timestamp_secs(),
             status,
         };
 
-        let req = command::WriteCommand::AddNodeMetrics(
+        let req = command::WriteCommand::ReportNodeMetrics(
             self.config.cluster.name.clone(),
             node_metrics.clone(),
         );

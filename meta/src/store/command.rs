@@ -38,7 +38,7 @@ pub enum WriteCommand {
     AddDataNode(String, NodeInfo),
 
     //cluster, node metrics
-    AddNodeMetrics(String, NodeMetrics),
+    ReportNodeMetrics(String, NodeMetrics),
 
     // cluster, tenant, db schema
     CreateDB(String, String, DatabaseSchema),
