@@ -726,7 +726,7 @@ pub mod tsm_reader_tests {
 
     pub(crate) async fn read_and_check(
         reader: &TsmReader,
-        expected_data: HashMap<FieldId, Vec<DataBlock>>,
+        expected_data: &HashMap<FieldId, Vec<DataBlock>>,
     ) -> Result<()> {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator() {
@@ -779,7 +779,7 @@ pub mod tsm_reader_tests {
                 DataBlock::U64 { ts: vec![9], val: vec![109], enc: DataBlockEncoding::default() },
             ]),
         ]);
-        read_and_check(&reader, expected_data).await.unwrap();
+        read_and_check(&reader, &expected_data).await.unwrap();
     }
 
     pub(crate) async fn read_opt_and_check(

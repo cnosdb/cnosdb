@@ -29,7 +29,8 @@ pub fn run(
         ));
 
         while let Some(compact_task) = receiver.recv().await {
-            let (vnode_id, flus_vnode) = match compact_task {
+            // Vnode id to compact & whether vnode be flushed before compact
+            let (vnode_id, flush_vnode) = match compact_task {
                 CompactTask::Vnode(id) => (id, false),
                 CompactTask::ColdVnode(id) => (id, true),
             };
@@ -56,7 +57,7 @@ pub fn run(
 
                     let permit = compaction_limit.clone().acquire_owned().await.unwrap();
                     runtime_inner.spawn(async move {
-                        if flus_vnode {
+                        if flush_vnode {
                             let mut tsf_wlock = tsf.write().await;
                             tsf_wlock.switch_to_immutable();
                             let flush_req = tsf_wlock.build_flush_req(true);
