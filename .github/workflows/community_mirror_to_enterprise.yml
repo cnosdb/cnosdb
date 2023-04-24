@@ -18,3 +18,4 @@ jobs:
           git push enterprise_repo HEAD:com
         env:
           GITHUB_TOKEN: ${{ secrets.ACCESS_ENTERPRISE_REPO }}
+          GIT_TOKEN: ${{ secrets.ACCESS_ENTERPRISE_REPO }}
