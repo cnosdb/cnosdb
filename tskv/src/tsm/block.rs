@@ -179,6 +179,31 @@ impl DataBlock {
         }
     }
 
+    pub fn clear(&mut self) {
+        match self {
+            DataBlock::U64 { ts, val, .. } => {
+                ts.clear();
+                val.clear();
+            }
+            DataBlock::I64 { ts, val, .. } => {
+                ts.clear();
+                val.clear();
+            }
+            DataBlock::Str { ts, val, .. } => {
+                ts.clear();
+                val.clear();
+            }
+            DataBlock::F64 { ts, val, .. } => {
+                ts.clear();
+                val.clear();
+            }
+            DataBlock::Bool { ts, val, .. } => {
+                ts.clear();
+                val.clear();
+            }
+        }
+    }
+
     pub fn time_range(&self) -> Option<(Timestamp, Timestamp)> {
         if self.is_empty() {
             return None;
@@ -335,7 +360,7 @@ impl DataBlock {
         }
     }
 
-    pub fn set_encodings(&mut self, encoding: DataBlockEncoding) {
+    pub fn set_encoding(&mut self, encoding: DataBlockEncoding) {
         match self {
             DataBlock::U64 { enc, .. } => {
                 *enc = encoding;

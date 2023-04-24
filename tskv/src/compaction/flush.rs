@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use models::codec::Encoding;
 use models::schema::TskvTableSchema;
-use models::utils::split_id;
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use snafu::ResultExt;
@@ -18,13 +17,13 @@ use utils::BloomFilter;
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalContext;
 use crate::error::{self, Result};
-use crate::memcache::{FieldVal, MemCache, SeriesData};
+use crate::memcache::{DataType, FieldVal, MemCache, SeriesData};
 use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tseries_family::Version;
 use crate::tsm::codec::DataBlockEncoding;
 use crate::tsm::{self, DataBlock, TsmWriter};
 use crate::version_set::VersionSet;
-use crate::{ColumnFileId, TseriesFamilyId};
+use crate::{ColumnFileId, LevelId, TseriesFamilyId};
 
 struct FlushingBlock {
     pub field_id: FieldId,
@@ -125,28 +124,29 @@ impl FlushTask {
         &self,
         mut caches_data: HashMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>>,
         max_level_ts: Timestamp,
-        data_block_size: usize,
+        max_data_block_size: usize,
     ) -> Result<Vec<(CompactMeta, Arc<BloomFilter>)>> {
-        let mut delta_writer: Option<TsmWriter> = None;
-        let mut tsm_writer: Option<TsmWriter> = None;
+        let mut writer = WriterWrapper::new(self.ts_family_id, max_level_ts, max_data_block_size);
 
+        let mut column_code_type_map: HashMap<ColumnId, Encoding> = HashMap::new();
+        let mut columns_value_type_map: HashMap<ColumnId, ValueType> = HashMap::new();
+        let mut column_values_map: HashMap<ColumnId, Vec<(Timestamp, FieldVal)>> = HashMap::new();
         for (sid, series_datas) in caches_data.iter_mut() {
-            let mut field_id_code_type_map = HashMap::new();
-            let mut schema_columns_value_type_map: HashMap<ColumnId, ValueType> = HashMap::new();
-            let mut column_values_map: HashMap<ColumnId, Vec<(Timestamp, FieldVal)>> =
-                HashMap::new();
+            column_code_type_map.clear();
+            columns_value_type_map.clear();
+            column_values_map.clear();
 
             // Iterates [ MemCache ] -> next_series_id -> [ SeriesData ]
             for series_data in series_datas.iter_mut() {
                 // Iterates SeriesData -> [ RowGroups{ schema_id, schema, [ RowData ] } ]
                 for (_sch_id, sch_cols, rows) in series_data.read().flat_groups() {
-                    self.build_codec_map(sch_cols.clone(), &mut field_id_code_type_map);
+                    self.build_codec_map(sch_cols.clone(), &mut column_code_type_map);
                     // Iterates [ RowData ]
                     for row in rows.iter() {
                         // Iterates RowData -> [ Option<FieldVal>, column_id ]
                         for (val, col) in row.fields.iter().zip(sch_cols.fields().iter()) {
                             if let Some(v) = val {
-                                schema_columns_value_type_map
+                                columns_value_type_map
                                     .entry(col.id)
                                     .or_insert_with(|| v.value_type());
                                 column_values_map
@@ -159,119 +159,30 @@ impl FlushTask {
                 }
             }
 
-            // Merge the collected data.
-            let merged_series_data = Self::merge_series_data(
-                *sid,
-                column_values_map,
-                schema_columns_value_type_map,
-                max_level_ts,
-                data_block_size,
-            );
+            for (col_id, values) in column_values_map.iter_mut() {
+                values.sort_by_key(|a| a.0);
+                utils::dedup_front_by_key(values, |a| a.0);
 
-            // Write the merged data into files.
-            for (field_id, dlt_blks, tsm_blks) in merged_series_data {
-                let (table_field_id, _) = split_id(field_id);
-                let encoding = DataBlockEncoding::new(
-                    Encoding::Default,
-                    field_id_code_type_map
-                        .get(&table_field_id)
-                        .copied()
-                        .unwrap_or_default(),
-                );
-
-                if !dlt_blks.is_empty() {
-                    if delta_writer.is_none() {
-                        let writer = self.new_writer(true).await?;
-                        info!("Flush: File {}(delta) been created.", writer.sequence());
-                        delta_writer = Some(writer);
-                    };
-                    let writer = delta_writer.as_mut().unwrap();
-                    for mut data_block in dlt_blks {
-                        data_block.set_encodings(encoding);
-                        writer
-                            .write_block(field_id, &data_block)
-                            .await
-                            .context(error::WriteTsmSnafu)?;
-                    }
+                let field_id = model_utils::unite_id(*col_id, *sid);
+                for (ts, v) in values.iter() {
+                    writer
+                        .write_field_value(self, &column_code_type_map, field_id, *ts, v)
+                        .await?;
                 }
-                if !tsm_blks.is_empty() {
-                    if tsm_writer.is_none() {
-                        let writer = self.new_writer(false).await?;
-                        info!("Flush: File {}(tsm) been created.", writer.sequence());
-                        tsm_writer = Some(writer);
-                    }
-                    let writer = tsm_writer.as_mut().unwrap();
-                    for mut data_block in tsm_blks {
-                        data_block.set_encodings(encoding);
-                        writer
-                            .write_block(field_id, &data_block)
-                            .await
-                            .context(error::WriteTsmSnafu)?;
-                    }
-                }
+                writer
+                    .finish_write_field(self, &column_code_type_map, field_id)
+                    .await?;
             }
         }
 
         // Flush the wrote files.
-        self.finish_flush_mem_caches(delta_writer, tsm_writer).await
+        writer.finish().await
     }
 
     fn build_codec_map(&self, schema: Arc<TskvTableSchema>, map: &mut HashMap<ColumnId, Encoding>) {
         for i in schema.columns().iter() {
             map.insert(i.id, i.encoding);
         }
-    }
-
-    /// For the collected data, sort and dedup by timestamp, and then split by max_level_ts.
-    /// Returns [ ( FieldId, Delta_DataBlocks, Tsm_DataBlocks) ]
-    fn merge_series_data(
-        series_id: SeriesId,
-        column_values: HashMap<ColumnId, Vec<(Timestamp, FieldVal)>>,
-        column_types: HashMap<ColumnId, ValueType>,
-        max_level_ts: Timestamp,
-        data_block_size: usize,
-    ) -> Vec<(FieldId, Vec<DataBlock>, Vec<DataBlock>)> {
-        let mut cols_data: Vec<(FieldId, Vec<DataBlock>, Vec<DataBlock>)> =
-            Vec::with_capacity(column_values.len());
-
-        for (col, mut values) in column_values.into_iter() {
-            if let Some(typ) = column_types.get(&col) {
-                values.sort_by_key(|a| a.0);
-                utils::dedup_front_by_key(&mut values, |a| a.0);
-
-                let field_id = model_utils::unite_id(col, series_id);
-                let mut delta_blocks = Vec::new();
-                let mut tsm_blocks = Vec::new();
-                let mut tsm_blk = DataBlock::new(data_block_size, *typ);
-                let mut delta_blk = DataBlock::new(data_block_size, *typ);
-                for (ts, v) in values {
-                    if ts > max_level_ts {
-                        tsm_blk.insert(v.data_value(ts));
-                        if tsm_blk.len() >= data_block_size {
-                            tsm_blocks.push(tsm_blk);
-                            tsm_blk = DataBlock::new(data_block_size, *typ);
-                        }
-                    } else {
-                        delta_blk.insert(v.data_value(ts));
-                        if delta_blk.len() >= data_block_size {
-                            delta_blocks.push(delta_blk);
-                            delta_blk = DataBlock::new(data_block_size, *typ);
-                        }
-                    }
-                }
-                if !delta_blk.is_empty() {
-                    delta_blocks.push(delta_blk);
-                }
-                if !tsm_blk.is_empty() {
-                    tsm_blocks.push(tsm_blk);
-                }
-                cols_data.push((field_id, delta_blocks, tsm_blocks));
-            }
-        }
-
-        // Sort by FieldId
-        cols_data.sort_by_key(|a| a.0);
-        cols_data
     }
 
     async fn new_writer(&self, is_delta: bool) -> Result<TsmWriter> {
@@ -281,65 +192,6 @@ impl FlushTask {
             &self.path_tsm
         };
         tsm::new_tsm_writer(dir, self.global_context.file_id_next(), is_delta, 0).await
-    }
-
-    /// Flush writers (if they exists) and then generate (`CompactMeta`, `Arc<BloomFilter>`)s
-    /// using writers (if they exists).
-    async fn finish_flush_mem_caches(
-        &self,
-        mut delta_writer: Option<TsmWriter>,
-        mut tsm_writer: Option<TsmWriter>,
-    ) -> Result<Vec<(CompactMeta, Arc<BloomFilter>)>> {
-        let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
-        if let Some(writer) = tsm_writer.as_mut() {
-            writer.write_index().await.context(error::WriteTsmSnafu)?;
-            writer.finish().await.context(error::WriteTsmSnafu)?;
-            info!(
-                "Flush: File: {} write finished ({} B).",
-                writer.sequence(),
-                writer.size()
-            );
-        }
-        if let Some(writer) = delta_writer.as_mut() {
-            writer.write_index().await.context(error::WriteTsmSnafu)?;
-            writer.finish().await.context(error::WriteTsmSnafu)?;
-            info!(
-                "Flush: File: {} write finished ({} B).",
-                writer.sequence(),
-                writer.size()
-            );
-        }
-
-        let mut column_file_metas = vec![];
-        if let Some(writer) = tsm_writer {
-            column_file_metas.push((
-                compact_meta_builder.build_tsm(
-                    writer.sequence(),
-                    writer.size(),
-                    1,
-                    writer.min_ts(),
-                    writer.max_ts(),
-                ),
-                Arc::new(writer.bloom_filter_cloned()),
-            ));
-        }
-        if let Some(writer) = delta_writer {
-            column_file_metas.push((
-                compact_meta_builder.build_delta(
-                    writer.sequence(),
-                    writer.size(),
-                    1,
-                    writer.min_ts(),
-                    writer.max_ts(),
-                ),
-                Arc::new(writer.bloom_filter_cloned()),
-            ));
-        }
-
-        // Sort by File id.
-        column_file_metas.sort_by_key(|c| c.0.file_id);
-
-        Ok(column_file_metas)
     }
 }
 
@@ -435,6 +287,224 @@ pub async fn run_flush_memtable_job(
     Ok(())
 }
 
+struct WriterWrapper {
+    ts_family_id: TseriesFamilyId,
+    max_level_ts: Timestamp,
+    max_data_block_size: usize,
+
+    /// Buffers of level-0 and level-1 data blocks:
+    ///
+    /// Each variant of DataBlock will be insert to a hard-coded index of buffers:
+    /// `[ [ Float, Integer, Unsigned, Boolean, Bytes ]; 2 ]`
+    buffers: [[DataBlock; 5]; 2],
+    /// Index of the inner array of buffers: [DataBlock; 5]
+    buf_idx: usize,
+    /// Pointer to leve-0 and level-1 TSM writers.
+    writers: [Option<TsmWriter>; 2],
+}
+
+impl WriterWrapper {
+    pub fn new(
+        ts_family_id: TseriesFamilyId,
+        max_level_ts: Timestamp,
+        max_data_block_size: usize,
+    ) -> Self {
+        let data_block_buffers = [
+            DataBlock::new(max_data_block_size, ValueType::Float),
+            DataBlock::new(max_data_block_size, ValueType::Integer),
+            DataBlock::new(max_data_block_size, ValueType::Unsigned),
+            DataBlock::new(max_data_block_size, ValueType::Boolean),
+            DataBlock::new(max_data_block_size, ValueType::String),
+        ];
+        Self {
+            ts_family_id,
+            max_level_ts,
+            max_data_block_size,
+
+            buffers: [data_block_buffers.clone(), data_block_buffers],
+            buf_idx: 0,
+            writers: [None, None],
+        }
+    }
+
+    pub async fn write_field_value(
+        &mut self,
+        flush_task: &FlushTask,
+        column_encoding_map: &HashMap<ColumnId, Encoding>,
+        field_id: FieldId,
+        ts: i64,
+        v: &FieldVal,
+    ) -> Result<()> {
+        if ts > self.max_level_ts {
+            // The new data, to level-1 tsm files.
+            self.write_inner(flush_task, column_encoding_map, 1, field_id, ts, v)
+                .await
+        } else {
+            // The old data, to level-0 delta files.
+            self.write_inner(flush_task, column_encoding_map, 0, field_id, ts, v)
+                .await
+        }
+    }
+
+    pub async fn finish_write_field(
+        &mut self,
+        flush_task: &FlushTask,
+        column_encoding_map: &HashMap<ColumnId, Encoding>,
+        field_id: FieldId,
+    ) -> Result<()> {
+        for (level, lvl_buffer) in self.buffers.iter_mut().enumerate() {
+            let buffer = &mut lvl_buffer[self.buf_idx];
+            if !buffer.is_empty() {
+                let (col_id, _) = model_utils::split_id(field_id);
+                let encoding = DataBlockEncoding::new(
+                    Encoding::Default,
+                    column_encoding_map
+                        .get(&col_id)
+                        .copied()
+                        .unwrap_or_default(),
+                );
+                buffer.set_encoding(encoding);
+                Self::write_data_block(
+                    &mut self.writers,
+                    flush_task,
+                    level as LevelId,
+                    field_id,
+                    buffer,
+                )
+                .await?;
+                buffer.clear();
+            }
+        }
+        self.buf_idx = 0;
+
+        Ok(())
+    }
+
+    async fn write_inner(
+        &mut self,
+        flush_task: &FlushTask,
+        column_encoding_map: &HashMap<ColumnId, Encoding>,
+        level: LevelId,
+        field_id: FieldId,
+        ts: i64,
+        v: &FieldVal,
+    ) -> Result<()> {
+        let (buffer, data) = match v {
+            FieldVal::Float(val) => {
+                self.buf_idx = 0;
+                (
+                    &mut self.buffers[level as usize][self.buf_idx],
+                    DataType::F64(ts, *val),
+                )
+            }
+            FieldVal::Integer(val) => {
+                self.buf_idx = 1;
+                (
+                    &mut self.buffers[level as usize][self.buf_idx],
+                    DataType::I64(ts, *val),
+                )
+            }
+            FieldVal::Unsigned(val) => {
+                self.buf_idx = 2;
+                (
+                    &mut self.buffers[level as usize][self.buf_idx],
+                    DataType::U64(ts, *val),
+                )
+            }
+            FieldVal::Boolean(val) => {
+                self.buf_idx = 3;
+                (
+                    &mut self.buffers[level as usize][self.buf_idx],
+                    DataType::Bool(ts, *val),
+                )
+            }
+            FieldVal::Bytes(val) => {
+                self.buf_idx = 4;
+                (
+                    &mut self.buffers[level as usize][self.buf_idx],
+                    DataType::Str(ts, val.clone()),
+                )
+            }
+        };
+        buffer.insert(data);
+        if buffer.len() > self.max_data_block_size {
+            let (col_id, _) = model_utils::split_id(field_id);
+            let encoding = DataBlockEncoding::new(
+                Encoding::Default,
+                column_encoding_map
+                    .get(&col_id)
+                    .copied()
+                    .unwrap_or_default(),
+            );
+            buffer.set_encoding(encoding);
+            Self::write_data_block(&mut self.writers, flush_task, level, field_id, buffer).await?;
+            buffer.clear();
+        }
+
+        Ok(())
+    }
+
+    async fn write_data_block(
+        writers: &mut [Option<TsmWriter>; 2],
+        flush_task: &FlushTask,
+        level: LevelId,
+        field_id: FieldId,
+        data_block: &DataBlock,
+    ) -> Result<usize> {
+        let writer_opt = &mut writers[level as usize];
+        let writer = match writer_opt.as_mut() {
+            Some(w) => w,
+            None => {
+                let writer = flush_task.new_writer(level == 0).await?;
+                info!(
+                    "Flush: File {}(level={}) been created.",
+                    writer.sequence(),
+                    level
+                );
+                writer_opt.insert(writer)
+            }
+        };
+        writer
+            .write_block(field_id, data_block)
+            .await
+            .context(error::WriteTsmSnafu)
+    }
+
+    pub async fn finish(&mut self) -> Result<Vec<(CompactMeta, Arc<BloomFilter>)>> {
+        let mut column_file_metas = Vec::with_capacity(2);
+        let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
+
+        // While delta_writer is level-0, tsm_writer is level-1.
+        for (level, writer) in self.writers.iter_mut().enumerate() {
+            if let Some(w) = writer.as_mut() {
+                w.write_index().await.context(error::WriteTsmSnafu)?;
+                w.finish().await.context(error::WriteTsmSnafu)?;
+                info!(
+                    "Flush: File: {}(level={}) write finished ({} B).",
+                    w.sequence(),
+                    level,
+                    w.size()
+                );
+                column_file_metas.push((
+                    compact_meta_builder.build(
+                        w.sequence(),
+                        w.size(),
+                        level as u32,
+                        w.min_ts(),
+                        w.max_ts(),
+                    ),
+                    Arc::new(w.bloom_filter_cloned()),
+                ));
+            }
+        }
+
+        // Sort by File id.
+        column_file_metas.sort_by_key(|c| c.0.file_id);
+
+        Ok(column_file_metas)
+    }
+}
+
 #[cfg(test)]
 pub mod flush_tests {
     use std::collections::HashMap;
@@ -443,18 +513,20 @@ pub mod flush_tests {
 
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
+    use minivec::mini_vec;
     use models::codec::Encoding;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::{utils as model_utils, ColumnId, FieldId, ValueType};
+    use models::{utils as model_utils, ColumnId, FieldId, Timestamp, ValueType};
     use parking_lot::RwLock;
     use utils::dedup_front_by_key;
 
     use super::FlushTask;
+    use crate::compaction::flush::WriterWrapper;
     use crate::context::GlobalContext;
     use crate::file_utils;
     use crate::kv_option::Options;
     use crate::memcache::test::put_rows_to_cache;
-    use crate::memcache::MemCache;
+    use crate::memcache::{FieldVal, MemCache};
     use crate::tseries_family::{LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_reader_tests::read_and_check;
@@ -509,14 +581,111 @@ pub mod flush_tests {
         let tsm_dir = dir.join("tsm");
         let delta_dir = dir.join("delta");
         let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mut caches = vec![
-            MemCache::new(1, 16, 0, &memory_pool),
-            MemCache::new(1, 16, 0, &memory_pool),
-            MemCache::new(1, 16, 0, &memory_pool),
-        ];
+        let test_case = flush_test_case_1(&memory_pool, 10);
 
+        let ts_family_id = 1;
+        let database = Arc::new("test_db".to_string());
+        let global_context = Arc::new(GlobalContext::new());
+        let options = Options::from(&config);
         #[rustfmt::skip]
-            let _skip_fmt = {
+        let version = Arc::new(Version {
+            ts_family_id,
+            database: database.clone(),
+            storage_opt: options.storage.clone(),
+            last_seq: 1,
+            max_level_ts: test_case.max_level_ts_before,
+            levels_info: LevelInfo::init_levels(database, 0, options.storage),
+            tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
+        });
+        let flush_task =
+            FlushTask::new(test_case.caches(), 1, global_context, &tsm_dir, &delta_dir);
+        let mut version_edits = vec![];
+        let mut file_metas = HashMap::new();
+        flush_task
+            .run(version, &mut version_edits, &mut file_metas)
+            .await
+            .unwrap();
+
+        assert_eq!(version_edits.len(), 1);
+        let ve = version_edits.get(0).unwrap();
+        assert_eq!(ve.max_level_ts, test_case.max_level_ts_after);
+        assert_eq!(ve.add_files.len(), test_case.add_files_num());
+        assert_eq!(
+            ve.add_files.iter().filter(|f| f.level == 0).count(),
+            test_case.level_0_files_num()
+        );
+        assert_eq!(
+            ve.add_files.iter().filter(|f| f.level == 1).count(),
+            test_case.level_1_files_num()
+        );
+        assert!(ve.del_files.is_empty());
+
+        let (mut delta_i, mut tsm_i) = (0_usize, 0_usize);
+
+        for cm in ve.add_files.iter() {
+            let i = if cm.level == 0 {
+                let i = delta_i;
+                delta_i += 1;
+                i
+            } else {
+                let i = tsm_i;
+                tsm_i += 1;
+                i
+            };
+            assert_eq!(
+                cm.file_size,
+                test_case.expected_file_size[cm.level as usize][i]
+            );
+            assert_eq!(cm.min_ts, test_case.expected_min_ts[cm.level as usize][i]);
+            assert_eq!(cm.max_ts, test_case.expected_max_ts[cm.level as usize][i]);
+            let file_path = if cm.is_delta {
+                file_utils::make_delta_file_name(&delta_dir, cm.file_id)
+            } else {
+                file_utils::make_tsm_file_name(&tsm_dir, cm.file_id)
+            };
+            let tsm_reader = TsmReader::open(file_path).await.unwrap();
+            read_and_check(&tsm_reader, &test_case.expected_data[cm.level as usize][i])
+                .await
+                .unwrap();
+        }
+    }
+
+    struct FlushTestCase {
+        caches: Vec<Arc<RwLock<MemCache>>>,
+        max_level_ts_before: Timestamp,
+        max_level_ts_after: Timestamp,
+        expected_data: [Vec<HashMap<FieldId, Vec<DataBlock>>>; 2],
+        expected_file_size: [Vec<u64>; 2],
+        expected_min_ts: [Vec<Timestamp>; 2],
+        expected_max_ts: [Vec<Timestamp>; 2],
+    }
+
+    impl FlushTestCase {
+        pub fn caches(&self) -> Vec<Arc<RwLock<MemCache>>> {
+            self.caches.to_vec()
+        }
+
+        pub fn add_files_num(&self) -> usize {
+            self.expected_file_size[0].len() + self.expected_file_size[1].len()
+        }
+
+        pub fn level_0_files_num(&self) -> usize {
+            self.expected_file_size[0].len()
+        }
+
+        pub fn level_1_files_num(&self) -> usize {
+            self.expected_file_size[1].len()
+        }
+    }
+
+    fn flush_test_case_1(memory_pool: &MemoryPoolRef, max_level_ts: Timestamp) -> FlushTestCase {
+        let mut caches = vec![
+            MemCache::new(1, 16, 0, memory_pool),
+            MemCache::new(1, 16, 0, memory_pool),
+            MemCache::new(1, 16, 0, memory_pool),
+        ];
+        #[rustfmt::skip]
+        let _skip_fmt = {
             put_rows_to_cache(&mut caches[0], 1, 1, default_table_schema(vec![0, 1, 2]), (3, 4), false);
             put_rows_to_cache(&mut caches[0], 1, 2, default_table_schema(vec![0, 1, 3]), (1, 2), false);
             put_rows_to_cache(&mut caches[0], 1, 3, default_table_schema(vec![0, 1, 2, 3]), (5, 5), true);
@@ -531,8 +700,10 @@ pub mod flush_tests {
             put_rows_to_cache(&mut caches[2], 3, 3, default_table_schema(vec![0, 1, 2, 3]), (17, 18), false);
             "skip_fmt"
         };
-
-        let max_level_ts = 10;
+        let caches = caches
+            .into_iter()
+            .map(|c| Arc::new(RwLock::new(c)))
+            .collect();
 
         // | === SeriesId: 1 === |
         // Ts:    1,    2,    3,    4,    5,    5, 6
@@ -547,7 +718,7 @@ pub mod flush_tests {
         // Col_2: None, None, 9,    10
         // Col_3: 7,    8,    None, None
         #[rustfmt::skip]
-            let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+        let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (model_utils::unite_id(0, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(1, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(2, 1), vec![DataBlock::F64 { ts: vec![3, 4, 5, 6], val: vec![3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
@@ -571,7 +742,7 @@ pub mod flush_tests {
         // Col_2: None, None, 15,   16,   None, 17, 18
         // Col_3: 13,   14,   None, None, None, 17, 18
         #[rustfmt::skip]
-            let expected_tsm_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+        let expected_tsm_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (model_utils::unite_id(0, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(1, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(2, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
@@ -582,61 +753,146 @@ pub mod flush_tests {
             (model_utils::unite_id(3, 3), vec![DataBlock::F64 { ts: vec![13, 14, 17, 18], val: vec![13.0, 14.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
         ]);
 
+        FlushTestCase {
+            caches,
+            max_level_ts_before: max_level_ts,
+            max_level_ts_after: 18,
+            expected_data: [vec![expected_delta_data], vec![expected_tsm_data]],
+            expected_file_size: [vec![377], vec![366]],
+            expected_min_ts: [vec![1], vec![11]],
+            expected_max_ts: [vec![10], vec![18]],
+        }
+    }
+
+    #[tokio::test]
+    async fn test_writer_wrapper() {
+        let dir = PathBuf::from("/tmp/test/flush/test_write_wrapper");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tsm_dir = dir.join("tsm");
+        let delta_dir = dir.join("delta");
+
         let ts_family_id = 1;
-        let database = Arc::new("test_db".to_string());
-
-        let caches = caches
-            .into_iter()
-            .map(|c| Arc::new(RwLock::new(c)))
-            .collect();
+        let max_level_ts = 10;
         let global_context = Arc::new(GlobalContext::new());
-        let options = Options::from(&config);
-        #[rustfmt::skip]
-            let version = Arc::new(Version {
+        let flush_task = FlushTask::new(
+            vec![],
             ts_family_id,
-            database: database.clone(),
-            storage_opt: options.storage.clone(),
-            last_seq: 1,
-            max_level_ts,
-            levels_info: LevelInfo::init_levels(database, 0, options.storage),
-            tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
-        });
-        let flush_task = FlushTask::new(caches, 1, global_context, &tsm_dir, &delta_dir);
-        let mut version_edits = vec![];
-        let mut file_metas = HashMap::new();
-        flush_task
-            .run(version, &mut version_edits, &mut file_metas)
-            .await
-            .unwrap();
+            global_context.clone(),
+            &tsm_dir,
+            &delta_dir,
+        );
 
-        assert_eq!(version_edits.len(), 1);
-        let ve = version_edits.get(0).unwrap();
-        assert_eq!(ve.max_level_ts, 18);
-        assert_eq!(ve.add_files.len(), 2);
-        assert!(ve.del_files.is_empty());
+        let col_enc: HashMap<ColumnId, Encoding> = HashMap::from([
+            (1, Encoding::Default),
+            (2, Encoding::Default),
+            (3, Encoding::Default),
+            (4, Encoding::Default),
+            (5, Encoding::Default),
+        ]);
 
-        let (mut tsm_reader, mut dlt_reader) = (None, None);
-        for cm in ve.add_files.iter() {
-            if cm.is_delta {
-                assert_eq!(cm.file_size, 377);
-                assert_eq!(cm.min_ts, 1);
-                assert_eq!(cm.max_ts, 10);
-                let file_path = file_utils::make_delta_file_name(&delta_dir, cm.file_id);
-                dlt_reader = Some(TsmReader::open(file_path).await.unwrap())
-            } else {
-                assert_eq!(cm.file_size, 366);
-                assert_eq!(cm.min_ts, 11);
-                assert_eq!(cm.max_ts, 18);
-                let file_path = file_utils::make_tsm_file_name(&tsm_dir, cm.file_id);
-                tsm_reader = Some(TsmReader::open(file_path).await.unwrap())
-            }
+        let mut writer = WriterWrapper::new(ts_family_id, max_level_ts, 1000);
+        let mut expected_delta_data = HashMap::new();
+        let mut expected_tsm_data = HashMap::new();
+        for sid in [1, 2, 3] {
+            #[rustfmt::skip]
+            write_one_field(
+                &mut writer, &flush_task, &col_enc, 10, model_utils::unite_id(1, sid), FieldVal::Float(1.0), &mut expected_delta_data, &mut expected_tsm_data,
+            ).await;
+            #[rustfmt::skip]
+            write_one_field(
+                &mut writer, &flush_task, &col_enc, 10, model_utils::unite_id(2, sid), FieldVal::Integer(1), &mut expected_delta_data, &mut expected_tsm_data,
+            ).await;
+            #[rustfmt::skip]
+            write_one_field(
+                &mut writer, &flush_task, &col_enc, 10, model_utils::unite_id(3, sid), FieldVal::Unsigned(1), &mut expected_delta_data, &mut expected_tsm_data,
+            ).await;
+            #[rustfmt::skip]
+            write_one_field(
+                &mut writer, &flush_task, &col_enc, 10, model_utils::unite_id(4, sid), FieldVal::Boolean(true), &mut expected_delta_data, &mut expected_tsm_data,
+            ).await;
+            #[rustfmt::skip]
+            write_one_field(
+                &mut writer, &flush_task, &col_enc, 10, model_utils::unite_id(5, sid), FieldVal::Bytes(mini_vec![1, 1]), &mut expected_delta_data, &mut expected_tsm_data,
+            ).await;
         }
 
-        read_and_check(tsm_reader.as_ref().unwrap(), expected_tsm_data)
+        let compact_metas = writer.finish().await.unwrap();
+        assert_eq!(compact_metas.len(), 2);
+        assert_eq!(compact_metas[0].0.level, 0);
+        assert_eq!(compact_metas[1].0.level, 1);
+
+        let delta_file_name =
+            file_utils::make_delta_file_name(&delta_dir, compact_metas[0].0.file_id);
+        let delta_reader = TsmReader::open(delta_file_name).await.unwrap();
+        read_and_check(&delta_reader, &expected_delta_data)
             .await
             .unwrap();
-        read_and_check(dlt_reader.as_ref().unwrap(), expected_delta_data)
+
+        let tsm_file_name = file_utils::make_tsm_file_name(&tsm_dir, compact_metas[1].0.file_id);
+        let tsm_reader = TsmReader::open(tsm_file_name).await.unwrap();
+        read_and_check(&tsm_reader, &expected_tsm_data)
             .await
             .unwrap();
+    }
+
+    /// Write one field_value as delta value, then write as tsm value,
+    /// Then flush to delta file and tsm file.
+    async fn write_one_field(
+        writer: &mut WriterWrapper,
+        flush_task: &FlushTask,
+        col_enc_map: &HashMap<ColumnId, Encoding>,
+        max_level_ts: Timestamp,
+        field_id: FieldId,
+        field_val: FieldVal,
+        expected_delta_data: &mut HashMap<FieldId, Vec<DataBlock>>,
+        expected_tsm_data: &mut HashMap<FieldId, Vec<DataBlock>>,
+    ) {
+        let i = index_by_field_val(&field_val);
+
+        // Write field_val with timestamp max_level_ts - 1.
+        let level_i = 0_usize;
+        let ts = max_level_ts - 1;
+        writer
+            .write_field_value(flush_task, col_enc_map, field_id, ts, &field_val)
+            .await
+            .unwrap();
+        assert_eq!(
+            writer.buffers[level_i][i].get(0),
+            Some(field_val.data_value(ts))
+        );
+        let mut delta_data_block = DataBlock::new(1, field_val.value_type());
+        delta_data_block.insert(field_val.data_value(ts));
+        expected_delta_data.insert(field_id, vec![delta_data_block]);
+
+        // Write field_val with timestamp max_level_ts + 1.
+        let level_i = 1_usize;
+        let ts = max_level_ts + 1;
+        writer
+            .write_field_value(flush_task, col_enc_map, field_id, ts, &field_val)
+            .await
+            .unwrap();
+        assert_eq!(
+            writer.buffers[level_i][i].get(0),
+            Some(field_val.data_value(ts))
+        );
+        let mut tsm_data_block = DataBlock::new(1, field_val.value_type());
+        tsm_data_block.insert(field_val.data_value(ts));
+        expected_tsm_data.insert(field_id, vec![tsm_data_block]);
+
+        writer
+            .finish_write_field(flush_task, col_enc_map, field_id)
+            .await
+            .unwrap();
+    }
+
+    fn index_by_field_val(field_val: &FieldVal) -> usize {
+        match field_val {
+            FieldVal::Float(_) => 0,
+            FieldVal::Integer(_) => 1,
+            FieldVal::Unsigned(_) => 2,
+            FieldVal::Boolean(_) => 3,
+            FieldVal::Bytes(_) => 4,
+        }
     }
 }

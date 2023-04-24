@@ -527,7 +527,7 @@ pub mod tsm_writer_tests {
         write_to_tsm(&tsm_file, &data).await.unwrap();
 
         let reader = TsmReader::open(tsm_file).await.unwrap();
-        read_and_check(&reader, data).await.unwrap();
+        read_and_check(&reader, &data).await.unwrap();
     }
 
     #[tokio::test]
@@ -557,6 +557,6 @@ pub mod tsm_writer_tests {
         write_to_tsm(&tsm_file, &data).await.unwrap();
 
         let reader = TsmReader::open(tsm_file).await.unwrap();
-        read_and_check(&reader, data).await.unwrap();
+        read_and_check(&reader, &data).await.unwrap();
     }
 }

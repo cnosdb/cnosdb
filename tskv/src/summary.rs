@@ -105,7 +105,7 @@ impl CompactMetaBuilder {
         Self { ts_family_id }
     }
 
-    pub fn build_tsm(
+    pub fn build(
         &self,
         file_id: u64,
         file_size: u64,
@@ -120,27 +120,7 @@ impl CompactMetaBuilder {
             level,
             min_ts,
             max_ts,
-            is_delta: false,
-            ..Default::default()
-        }
-    }
-
-    pub fn build_delta(
-        &self,
-        file_id: u64,
-        file_size: u64,
-        level: LevelId,
-        min_ts: Timestamp,
-        max_ts: Timestamp,
-    ) -> CompactMeta {
-        CompactMeta {
-            file_id,
-            file_size,
-            tsf_id: self.ts_family_id,
-            level,
-            min_ts,
-            max_ts,
-            is_delta: true,
+            is_delta: level == 0,
             ..Default::default()
         }
     }
