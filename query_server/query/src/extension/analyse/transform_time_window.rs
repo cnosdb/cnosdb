@@ -1,11 +1,12 @@
 use std::time::Duration;
 
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
+use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::config::ConfigOptions;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::utils::expand_wildcard;
 use datafusion::logical_expr::{GetIndexedField, LogicalPlan, LogicalPlanBuilder};
-use datafusion::optimizer::optimizer::ApplyOrder;
-use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
+use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::{and, cast, col, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use lazy_static::lazy_static;
@@ -27,55 +28,52 @@ lazy_static! {
 /// Convert the [`TIME_WINDOW`] function to Expand or project
 pub struct TransformTimeWindowRule;
 
-impl OptimizerRule for TransformTimeWindowRule {
-    fn try_optimize(
-        &self,
-        plan: &LogicalPlan,
-        _optimizer_config: &dyn OptimizerConfig,
-    ) -> Result<Option<LogicalPlan>> {
-        if plan.inputs().len() == 1 {
-            let child = plan.inputs()[0];
-            let child_project_exprs = expand_wildcard(child.schema().as_ref(), child)?;
-            let window_expressions = find_window_exprs(plan);
-
-            // Only support a single window expression for now
-            if window_expressions.len() > 1 {
-                return Err(DataFusionError::Plan(format!("Only support a single window expression for now, but found: {window_expressions:?}")));
-            }
-
-            if window_expressions.len() == 1 {
-                let window_expr = unsafe { window_expressions.get_unchecked(0) };
-                let window = make_time_window(window_expr)
-                    .map_err(|e| DataFusionError::External(Box::new(e)))?;
-
-                debug!("Construct time window: {:?}", window);
-
-                let window_plan = if window.is_tumbling_window() {
-                    // tumbling_window
-                    build_tumbling_window_plan(&window, child.clone(), child_project_exprs)?
-                } else {
-                    // sliding_window
-                    build_sliding_window_plan(&window, child.clone(), child_project_exprs)?
-                };
-
-                // replace current plan's exprs and child
-                let final_plan =
-                    replace_window_expr(col(WINDOW_COL_NAME).alias(&window.window_alias), plan)?
-                        .with_new_inputs(&[window_plan])?;
-                return Ok(Some(final_plan));
-            }
-        }
-
-        Ok(None)
+impl AnalyzerRule for TransformTimeWindowRule {
+    fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
+        plan.transform_up(&analyze_internal)
     }
 
     fn name(&self) -> &str {
         "transform_time_window"
     }
+}
 
-    fn apply_order(&self) -> Option<ApplyOrder> {
-        Some(ApplyOrder::BottomUp)
+fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
+    if plan.inputs().len() == 1 {
+        let child = plan.inputs()[0];
+        let child_project_exprs = expand_wildcard(child.schema().as_ref(), child)?;
+        let window_expressions = find_window_exprs(&plan);
+
+        // Only support a single window expression for now
+        if window_expressions.len() > 1 {
+            return Err(DataFusionError::Plan(format!("Only support a single window expression for now, but found: {window_expressions:?}")));
+        }
+
+        if window_expressions.len() == 1 {
+            let window_expr = unsafe { window_expressions.get_unchecked(0) };
+            let window = make_time_window(window_expr)
+                .map_err(|e| DataFusionError::External(Box::new(e)))?;
+
+            debug!("Construct time window: {:?}", window);
+
+            let window_plan = if window.is_tumbling_window() {
+                // tumbling_window
+                build_tumbling_window_plan(&window, child.clone(), child_project_exprs)?
+            } else {
+                // sliding_window
+                build_sliding_window_plan(&window, child.clone(), child_project_exprs)?
+            };
+
+            // replace current plan's exprs and child
+            let final_plan =
+                replace_window_expr(col(WINDOW_COL_NAME).alias(&window.window_alias), &plan)?
+                    .with_new_inputs(&[window_plan])?;
+
+            return Ok(Transformed::Yes(final_plan));
+        }
     }
+
+    Ok(Transformed::No(plan))
 }
 
 fn find_window_exprs(plan: &LogicalPlan) -> Vec<Expr> {
