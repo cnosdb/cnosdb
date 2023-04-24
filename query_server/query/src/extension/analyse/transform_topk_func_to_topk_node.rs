@@ -1,98 +1,82 @@
 use std::sync::Arc;
 
+use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::config::ConfigOptions;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::{expr, LogicalPlan, Projection, Sort};
-use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
+use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
 use datafusion::scalar::ScalarValue;
 
-use crate::extension::expr::{expr_utils, BOTTOM};
+use crate::extension::expr::{expr_utils, TOPK};
 
 const INVALID_EXPRS: &str = "1. There cannot be nested selection functions. 2. There cannot be multiple selection functions.";
 const INVALID_ARGUMENTS: &str =
     "Routine not match. Maybe (field_name, k). k is integer literal value. The range of values for k is [1, 255].";
 
-pub struct TransformBottomFuncToTopkNodeRule {}
+pub struct TransformTopkFuncToTopkNodeRule {}
 
-impl OptimizerRule for TransformBottomFuncToTopkNodeRule {
-    // Example rewrite pass to insert a user defined LogicalPlanNode
-    fn try_optimize(
-        &self,
-        plan: &LogicalPlan,
-        optimizer_config: &dyn OptimizerConfig,
-    ) -> Result<Option<LogicalPlan>> {
-        if let LogicalPlan::Projection(projection) = plan {
-            // check exprs and then do transform
-            if let (true, Some(bottom_function)) = (
-                //check exprs
-                valid_exprs(&projection.expr)?,
-                // extract bottom function expr, If it does not exist, return None
-                extract_bottom_function(&projection.expr),
-            ) {
-                return Ok(Some(self.do_transform(
-                    &bottom_function,
-                    projection,
-                    optimizer_config,
-                )?));
-            };
-        }
-
-        // If we didn't find the match pattern, recurse as
-        // normal and build the result.
-        datafusion::optimizer::utils::optimize_children(self, plan, optimizer_config)
+impl AnalyzerRule for TransformTopkFuncToTopkNodeRule {
+    fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
+        plan.transform_up(&analyze_internal)
     }
 
     fn name(&self) -> &str {
-        "transform_bottom_func_to_topk_node"
+        "transform_topk_func_to_topk_node"
     }
 }
 
-impl TransformBottomFuncToTopkNodeRule {
-    fn do_transform(
-        &self,
-        bottom_function: &Expr,
-        projection: &Projection,
-        optimizer_config: &dyn OptimizerConfig,
-    ) -> Result<LogicalPlan> {
-        let Projection {
-            expr,
-            input,
-            schema,
-            ..
-        } = projection;
-
-        let (field, k) = extract_args(bottom_function)?;
-
-        let sort_expr = Expr::Sort(expr::Sort {
-            /// The expression to sort on
-            expr: Box::new(field.clone()),
-            /// The direction of the sort
-            asc: true,
-            /// Whether to put Nulls before all other data values
-            nulls_first: false,
-        });
-
-        let topk_node = LogicalPlan::Sort(Sort {
-            expr: vec![sort_expr],
-            input: self
-                .try_optimize(input.as_ref(), optimizer_config)?
-                .map(Arc::new)
-                .unwrap_or_else(|| input.clone()),
-            fetch: Some(k),
-        });
-
-        // 2. construct a new projection node
-        // * replace bottom func expression with inner column expr
-        // * not construct the new set of required columns
-        let new_projection = LogicalPlan::Projection(Projection::try_new_with_schema(
-            expr_utils::replace_expr_with(expr, bottom_function, &field),
-            Arc::new(topk_node),
-            schema.clone(),
-        )?);
-
-        // 3. Assemble the new execution plan return
-        Ok(new_projection)
+fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
+    if let LogicalPlan::Projection(projection) = &plan {
+        // check exprs and then do transform
+        if let (true, Some(topk_function)) = (
+            //check exprs
+            valid_exprs(&projection.expr)?,
+            // extract topk function expr, If it does not exist, return None
+            extract_topk_function(&projection.expr),
+        ) {
+            return Ok(Transformed::Yes(do_transform(&topk_function, projection)?));
+        };
     }
+
+    Ok(Transformed::No(plan))
+}
+
+fn do_transform(topk_function: &Expr, projection: &Projection) -> Result<LogicalPlan> {
+    let Projection {
+        expr,
+        input,
+        schema,
+        ..
+    } = projection;
+
+    let (field, k) = extract_args(topk_function)?;
+
+    let sort_expr = Expr::Sort(expr::Sort {
+        /// The expression to sort on
+        expr: Box::new(field.clone()),
+        /// The direction of the sort
+        asc: false,
+        /// Whether to put Nulls before all other data values
+        nulls_first: false,
+    });
+    let topk_node = LogicalPlan::Sort(Sort {
+        expr: vec![sort_expr],
+        input: input.clone(),
+        fetch: Some(k),
+    });
+
+    // 2. construct a new projection node
+    // * replace topk func expression with inner column expr
+    // * not construct the new set of required columns
+    let new_projection = LogicalPlan::Projection(Projection::try_new_with_schema(
+        expr_utils::replace_expr_with(expr, topk_function, &field),
+        Arc::new(topk_node),
+        schema.clone(),
+    )?);
+
+    // 3. Assemble the new execution plan return
+    Ok(new_projection)
 }
 
 fn valid_exprs(exprs: &[Expr]) -> Result<bool> {
@@ -120,14 +104,14 @@ fn valid_exprs(exprs: &[Expr]) -> Result<bool> {
     )))
 }
 
-fn extract_bottom_function(exprs: &[Expr]) -> Option<Expr> {
+fn extract_topk_function(exprs: &[Expr]) -> Option<Expr> {
     expr_utils::find_exprs_in_exprs(exprs, &|nested_expr| {
         matches!(
             nested_expr,
             Expr::ScalarUDF {
                 fun,
                 ..
-            } if fun.name.eq_ignore_ascii_case(BOTTOM)
+            } if fun.name.eq_ignore_ascii_case(TOPK)
         )
     })
     .first()

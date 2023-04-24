@@ -25,13 +25,13 @@ use datafusion::optimizer::simplify_expressions::SimplifyExpressions;
 use datafusion::optimizer::single_distinct_to_groupby::SingleDistinctToGroupBy;
 use datafusion::optimizer::unwrap_cast_in_comparison::UnwrapCastInComparison;
 use datafusion::optimizer::OptimizerRule;
+use spi::query::analyzer::AnalyzerRef;
 use spi::query::session::SessionCtx;
 use spi::Result;
+use trace::debug;
 
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
-use crate::extension::logical::optimizer_rule::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
-use crate::extension::logical::optimizer_rule::transform_time_window::TransformTimeWindowRule;
-use crate::extension::logical::optimizer_rule::transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule;
+use crate::sql::analyzer::DefaultAnalyzer;
 
 pub trait LogicalOptimizer: Send + Sync {
     fn optimize(&self, plan: &LogicalPlan, session: &SessionCtx) -> Result<LogicalPlan>;
@@ -40,6 +40,9 @@ pub trait LogicalOptimizer: Send + Sync {
 }
 
 pub struct DefaultLogicalOptimizer {
+    // fit datafusion
+    // TODO refactor
+    analyzer: AnalyzerRef,
     rules: Vec<Arc<dyn OptimizerRule + Send + Sync>>,
 }
 
@@ -53,6 +56,8 @@ impl DefaultLogicalOptimizer {
 
 impl Default for DefaultLogicalOptimizer {
     fn default() -> Self {
+        let analyzer = Arc::new(DefaultAnalyzer::default());
+
         // additional optimizer rule
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = vec![
             // df default rules start
@@ -94,22 +99,23 @@ impl Default for DefaultLogicalOptimizer {
             // df default rules end
             // cnosdb rules
             Arc::new(RewriteTagScan {}),
-            Arc::new(TransformBottomFuncToTopkNodeRule {}),
-            Arc::new(TransformTopkFuncToTopkNodeRule {}),
-            Arc::new(TransformTimeWindowRule),
         ];
 
-        Self { rules }
+        Self { analyzer, rules }
     }
 }
 
 impl LogicalOptimizer for DefaultLogicalOptimizer {
     fn optimize(&self, plan: &LogicalPlan, session: &SessionCtx) -> Result<LogicalPlan> {
+        let plan = self.analyzer.analyze(plan, session)?;
+
+        debug!("Analyzed logical plan:\n{}\n", plan.display_indent_schema(),);
+
         session
             .inner()
             .state()
             .with_optimizer_rules(self.rules.clone())
-            .optimize(plan)
+            .optimize(&plan)
             .map_err(|e| e.into())
     }
 

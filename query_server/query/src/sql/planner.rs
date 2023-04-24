@@ -98,6 +98,20 @@ pub struct SqlPlanner<'a, S: ContextProviderExtension> {
     df_planner: SqlToRel<'a, S>,
 }
 
+#[async_trait]
+impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlanner<'a, S> {
+    async fn create_logical_plan(
+        &self,
+        statement: ExtStatement,
+        session: &SessionCtx,
+    ) -> Result<Plan> {
+        let PlanWithPrivileges { plan, privileges } =
+            self.statement_to_plan(statement, session).await?;
+        check_privilege(session.user(), privileges)?;
+        Ok(plan)
+    }
+}
+
 impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     /// Create a new query planner
     pub fn new(schema_provider: &'a S) -> Self {
@@ -2117,20 +2131,6 @@ fn show_tag_value_projections(
     let union_distinct = LogicalPlanBuilder::from(union).distinct()?.build()?;
 
     Ok(union_distinct)
-}
-
-#[async_trait]
-impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlanner<'a, S> {
-    async fn create_logical_plan(
-        &self,
-        statement: ExtStatement,
-        session: &SessionCtx,
-    ) -> Result<Plan> {
-        let PlanWithPrivileges { plan, privileges } =
-            self.statement_to_plan(statement, session).await?;
-        check_privilege(session.user(), privileges)?;
-        Ok(plan)
-    }
 }
 
 fn check_privilege(user: &User, privileges: Vec<Privilege<Oid>>) -> Result<()> {

@@ -101,7 +101,12 @@ impl UserDefinedLogicalNodeCore for ExpandNode {
     /// TODO [`PushDownProjection`] has no effect on this node
     fn from_template(&self, _exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
         assert_eq!(inputs.len(), 1, "input size inconsistent");
-        self.clone()
+        Self {
+            projections: self.projections.clone(),
+            input: Arc::new(inputs[0].clone()),
+            expressions: self.expressions.clone(),
+            schema: self.schema.clone(),
+        }
     }
 
     fn name(&self) -> &str {

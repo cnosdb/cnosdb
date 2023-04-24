@@ -1,8 +1,14 @@
+use std::sync::Arc;
+
 use datafusion::logical_expr::LogicalPlan;
-use datafusion::optimizer::analyzer::Analyzer as DFAnalyzer;
+use datafusion::optimizer::analyzer::{Analyzer as DFAnalyzer, AnalyzerRule};
 use spi::query::analyzer::Analyzer;
 use spi::query::session::SessionCtx;
 use spi::Result;
+
+use crate::extension::analyse::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
+use crate::extension::analyse::transform_time_window::TransformTimeWindowRule;
+use crate::extension::analyse::transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule;
 
 pub struct DefaultAnalyzer {
     inner: DFAnalyzer,
@@ -10,8 +16,14 @@ pub struct DefaultAnalyzer {
 
 impl DefaultAnalyzer {
     pub fn new() -> Self {
-        let inner = DFAnalyzer::default();
-        Self { inner }
+        let ext_rules: Vec<Arc<dyn AnalyzerRule + Send + Sync>> = vec![
+            Arc::new(TransformBottomFuncToTopkNodeRule {}),
+            Arc::new(TransformTopkFuncToTopkNodeRule {}),
+            Arc::new(TransformTimeWindowRule {}),
+        ];
+        Self {
+            inner: DFAnalyzer::with_rules(ext_rules),
+        }
     }
 }
 
