@@ -6,7 +6,7 @@ on:
 jobs:
   docker:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb' && github.ref == 'refs/heads/main'
+    if: github.repository_owner == 'lutengda' && github.repository == 'cnosdb' && github.ref == 'refs/heads/main'
     steps:
       -
         name: Set up QEMU
