@@ -6,7 +6,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'lutengda' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/main'
+    if: github.repository_owner == 'lutengda' && github.repository == 'lutengda/cnosdb' && github.ref == 'refs/heads/main'
     steps:
       - name: checkout community
         uses: actions/checkout@v2
