@@ -15,6 +15,7 @@ jobs:
           git config --global user.email "18346072982@163.com"
           git config --global user.name "lutengda"
           git remote add enterprise_repo https://github.com/lutengda/cnosdb-enterprise.git
+          ${{ secrets.ACCESS_ENTERPRISE_REPO }}
           git push enterprise_repo HEAD:com
         env:
           GITHUB_TOKEN: ${{ secrets.ACCESS_ENTERPRISE_REPO }}
