@@ -10,11 +10,7 @@ jobs:
     steps:
       - name: checkout community
         uses: actions/checkout@v2
-      - name: Push to repository B
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.ACCESS_ENTERPRISE_REPO }}
-          repository: lutengda/cnosdb-enterprise
-          branch: com
-          force: true
-          directory: .
+      - name: sync to enterprise
+        run: |
+          git remote add enterprise_repo git@github.com:lutengda/cnosdb-enterprise.git
+          git push --force enterprise_repo HEAD:com
