@@ -1,12 +1,12 @@
 name: docker build and push on time
 
 on:
-  schedule:
-    - cron: "00 01 * * 1"  
+  workflow_dispatch  
 
 jobs:
   docker:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb' && github.ref == 'refs/heads/main'
     steps:
       -
         name: Set up QEMU
@@ -26,4 +26,4 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           push: true
-          tags: cnosdb/cnosdb:community-latest
+          tags: ltd867317617/cnosdb:community-latest
