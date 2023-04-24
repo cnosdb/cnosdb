@@ -1,0 +1,18 @@
+name: community mirror to enterprise
+
+on:
+  workflow_dispatch
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'lutengda' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/main'
+    steps:
+      - name: checkout community
+        uses: actions/checkout@v2
+      - name: mirror to enterprise
+        run: |
+          git remote add enterprise_repo https://github.com/lutengda/cnosdb-enterprise.git
+          git push enterprise_repo HEAD:com
+        env:
+          GH_TOKEN: ${{ secrets.ACCESS_ENTERPRISE_REPO }}
