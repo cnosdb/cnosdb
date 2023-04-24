@@ -14,5 +14,3 @@ jobs:
         run: |
           git remote add enterprise_repo https://github.com/lutengda/cnosdb-enterprise.git
           git push enterprise_repo HEAD:com
-        env:
-          GH_TOKEN: ${{ secrets.ENTERPRISE_REPO_ACCESS_TOKEN }}
