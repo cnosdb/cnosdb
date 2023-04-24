@@ -52,7 +52,7 @@ impl RemoteMetaManager {
         let tenant_manager = Arc::new(RemoteTenantManager::new(
             config.cluster.name.clone(),
             cluster_meta,
-            config.node_id,
+            config.node_basic.node_id,
             tenant_change_sender.clone(),
         ));
 
@@ -120,7 +120,7 @@ impl RemoteMetaManager {
     pub async fn watch_data_task(mgr: Arc<RemoteMetaManager>, base_ver: u64) {
         let tenants = mgr.watch_tenants.read().clone();
 
-        let client_id = format!("watch.{}", mgr.config.node_id);
+        let client_id = format!("watch.{}", mgr.config.node_basic.node_id);
         let mut request = (
             client_id,
             mgr.config.cluster.name.clone(),
@@ -208,7 +208,7 @@ impl RemoteMetaManager {
 #[async_trait::async_trait]
 impl MetaManager for RemoteMetaManager {
     fn node_id(&self) -> u64 {
-        self.config.node_id
+        self.config.node_basic.node_id
     }
 
     fn admin_meta(&self) -> AdminMetaRef {

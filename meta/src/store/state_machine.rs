@@ -522,7 +522,7 @@ impl StateMachine {
 
             WriteCommand::AddDataNode(cluster, node) => self.process_add_date_node(cluster, node),
 
-            WriteCommand::AddNodeMetrics(cluster, node_metrics) => {
+            WriteCommand::ReportNodeMetrics(cluster, node_metrics) => {
                 self.process_add_node_metrics(cluster, node_metrics)
             }
 

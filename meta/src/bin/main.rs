@@ -149,7 +149,7 @@ async fn detect_node_heartbeat(heartbeat_config: HeartBeatConfig, app: Data<Meta
                         "Data node '{}' report heartbeat late, maybe unreachable.",
                         node_metrics.id
                     );
-                    let req = WriteCommand::AddNodeMetrics(
+                    let req = WriteCommand::ReportNodeMetrics(
                         app.meta_init.cluster_name.clone(),
                         now_node_metrics,
                     );

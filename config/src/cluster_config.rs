@@ -21,14 +21,6 @@ pub struct ClusterConfig {
     pub flight_rpc_listen_port: u16,
     #[serde(default = "ClusterConfig::default_tcp_listen_port")]
     pub tcp_listen_port: u16,
-    #[serde(default = "ClusterConfig::default_store_metrics")]
-    pub store_metrics: bool,
-
-    #[serde(default = "ClusterConfig::default_cold_data_server")]
-    pub cold_data_server: bool,
-
-    #[serde(default = "ClusterConfig::default_report_time_interval_secs")]
-    pub report_time_interval_secs: u64,
 }
 
 impl ClusterConfig {
@@ -54,18 +46,6 @@ impl ClusterConfig {
 
     fn default_tcp_listen_port() -> u16 {
         8905
-    }
-
-    fn default_store_metrics() -> bool {
-        true
-    }
-
-    fn default_cold_data_server() -> bool {
-        false
-    }
-
-    fn default_report_time_interval_secs() -> u64 {
-        30
     }
 
     pub fn override_by_env(&mut self) {
@@ -96,10 +76,6 @@ impl ClusterConfig {
         if let Ok(port) = std::env::var("CNOSDB_TCP_LISTEN_PORT") {
             self.flight_rpc_listen_port = port.parse::<u16>().unwrap();
         }
-
-        if let Ok(val) = std::env::var("CNOSDB_STORE_METRICS") {
-            self.store_metrics = val.parse::<bool>().unwrap();
-        }
     }
 }
 
@@ -112,9 +88,6 @@ impl Default for ClusterConfig {
             grpc_listen_port: Self::default_grpc_listen_port(),
             flight_rpc_listen_port: Self::default_flight_rpc_listen_port(),
             tcp_listen_port: Self::default_tcp_listen_port(),
-            store_metrics: Self::default_store_metrics(),
-            cold_data_server: Self::default_cold_data_server(),
-            report_time_interval_secs: Self::default_report_time_interval_secs(),
         }
     }
 }

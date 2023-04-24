@@ -1,6 +1,5 @@
 
 #reporting_disabled = false
-node_id = 1001 
 host = "localhost"
 
 [deployment]
@@ -59,9 +58,14 @@ http_listen_port = 8902
 grpc_listen_port = 8903
 flight_rpc_listen_port = 8904
 tcp_listen_port = 8905
-store_metrics = true
+
+[node_basic]
+node_id = 1001 
 cold_data_server = false
-report_time_interval_secs = 120
+store_metrics = true
+
+[heartbeat]
+report_time_interval_secs = 30
 
 [hinted_off]
 enable = true
