@@ -1,0 +1,22 @@
+name: community mirror to enterprise
+
+on:
+  workflow_dispatch
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'lutengda' && github.repository == 'lutengda/cnosdb' && github.ref == 'refs/heads/main'
+    steps:
+      - name: checkout community
+        uses: actions/checkout@v2
+      - name: sync to enterprise
+        run: |
+          git config --global user.email "18346072982@163.com"
+          git config --global user.name "lutengda"
+          git config --global credential.helper store
+          git config --global credential.helper 'cache --timeout=0'
+          git config --global credential.https://github.com.username lutengda
+          git config --global credential.https://github.com.password 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
+          git remote add enterprise_repo https://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@github.com/lutengda/cnosdb-enterprise.git
+          git push --force enterprise_repo HEAD:com
