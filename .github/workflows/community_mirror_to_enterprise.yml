@@ -19,4 +19,5 @@ jobs:
           git config --global credential.https://github.com.username 18346072982@163.com
           git config --global credential.https://github.com.password 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
           git remote add enterprise_repo https://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@github.com/lutengda/cnosdb-enterprise.git
+          git fetch enterprise_repo
           git push --force enterprise_repo HEAD:com
