@@ -310,11 +310,11 @@ impl WriterWrapper {
         max_data_block_size: usize,
     ) -> Self {
         let data_block_buffers = [
-            DataBlock::new(max_data_block_size, ValueType::Float),
-            DataBlock::new(max_data_block_size, ValueType::Integer),
-            DataBlock::new(max_data_block_size, ValueType::Unsigned),
-            DataBlock::new(max_data_block_size, ValueType::Boolean),
-            DataBlock::new(max_data_block_size, ValueType::String),
+            DataBlock::new(0, ValueType::Float),
+            DataBlock::new(0, ValueType::Integer),
+            DataBlock::new(0, ValueType::Unsigned),
+            DataBlock::new(0, ValueType::Boolean),
+            DataBlock::new(0, ValueType::String),
         ];
         Self {
             ts_family_id,
