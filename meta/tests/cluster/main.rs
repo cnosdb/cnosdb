@@ -371,11 +371,8 @@ fn star_meta_cluster() -> std::process::Output {
 async fn write_data_to_meta() {
     let node = NodeInfo {
         id: 111,
-        disk_free: 1000,
-        is_cold: false,
         grpc_addr: "".to_string(),
         http_addr: "127.0.0.1:8888".to_string(),
-        status: 0,
     };
     let req = command::WriteCommand::AddDataNode("cluster_xxx".to_string(), node);
     let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
