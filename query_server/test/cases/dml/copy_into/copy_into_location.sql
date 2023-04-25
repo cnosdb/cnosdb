@@ -4,6 +4,7 @@ DROP TABLE IF EXISTS ci_location_tbl_ext;
 DROP TABLE IF EXISTS ci_location_tbl2_ext;
 DROP TABLE IF EXISTS ci_location_tbl_ext_csv;
 DROP TABLE IF EXISTS ci_location_tbl_ext_json;
+DROP TABLE IF EXISTS local_to_table_json;
 
 CREATE EXTERNAL TABLE ci_location_tbl
 STORED AS PARQUET
@@ -61,3 +62,8 @@ STORED AS JSON
 LOCATION 'file:///tmp/data/json_out/';
 
 select * from ci_location_tbl_ext_json order by time,name limit 10;
+
+CREATE EXTERNAL TABLE local_to_table_json STORED AS JSON LOCATION 'file:///tmp/data/json_out/';
+select count(*) from local_to_table_json;
+copy into local_to_table_json from 'query_server/test/resource/json/part-0.json' FILE_FORMAT = (TYPE = 'JSON', DELIMITER = ',');
+select count(*) from local_to_table_json;
