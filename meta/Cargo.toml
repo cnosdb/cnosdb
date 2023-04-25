@@ -50,6 +50,7 @@ pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-p
 [features]
 default = []
 backtrace = ["async-backtrace"]
+meta_e2e_test = []
 
 [dev-dependencies]
 anyhow = "1.0.32"

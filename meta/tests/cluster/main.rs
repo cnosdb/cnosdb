@@ -1,18 +1,17 @@
 // mod test_cluster;
 
-use std::sync::Arc;
-use std::{thread, time};
-// use std::time;
-use meta::{store::command, client};
-use sysinfo::{System, SystemExt, ProcessExt};
 use std::process::Command;
+use std::sync::Arc;
+use std::{env, thread, time};
+
+use meta::store::Store;
+// use std::time;
+use meta::{client, store::command};
 // use meta::store::command::*;
 // use meta::client::*;
-
-use models::{meta_data::NodeInfo, schema::Tenant, meta_data::NodeAttribute};
-use meta::store::Store;
+use models::{meta_data::NodeAttribute, meta_data::NodeInfo, schema::Tenant};
 use openraft::Config;
-use std::env;
+use sysinfo::{ProcessExt, System, SystemExt};
 
 pub async fn new_async() -> Arc<Store> {
     let db_path = format!("{}/{}-{}.binlog", "./meta/journal", "test", "1");
@@ -22,6 +21,7 @@ pub async fn new_async() -> Arc<Store> {
     Arc::new(Store::new(db))
 }
 
+#[cfg(feature = "meta_e2e_test")]
 #[cfg(test)]
 mod tests {
     // use std::{process::Output, thread};
@@ -40,8 +40,8 @@ mod tests {
         let stdout = String::from_utf8(output.stdout).unwrap();
         assert!(stdout.contains("127.0.0.1:8888"));
         assert!(stdout.contains("test_add_tenant001"));
-        // print!("output: {:?}", output.stdout); 
-        kill_cnosdb_meta_process("cnosdb-meta");      
+        // print!("output: {:?}", output.stdout);
+        kill_cnosdb_meta_process("cnosdb-meta");
     }
 
     #[tokio::test]
@@ -51,10 +51,10 @@ mod tests {
         assert_eq!(op.status.code(), std::option::Option::Some(0));
         write_data_to_meta().await;
         let _output = Command::new("curl")
-            .args(["http://127.0.0.1:8901/dump", "-o" , "/tmp/backup.json"])
+            .args(["http://127.0.0.1:8901/dump", "-o", "/tmp/backup.json"])
             .output()
             .expect("failed to execute process");
-            drop_data_from_meta().await;
+        drop_data_from_meta().await;
         let output = check_meta_info("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
@@ -84,7 +84,7 @@ mod tests {
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
         assert!(stdout.contains("127.0.0.1:8921"));
-        let res =  env::current_dir().unwrap();
+        let res = env::current_dir().unwrap();
         let res_str: String = res.into_os_string().into_string().unwrap();
         let path = res_str + "/start_meta.sh";
         // println!("path: {}", path);
@@ -109,7 +109,7 @@ mod tests {
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
         // get current dir
-        let res =  env::current_dir().unwrap();
+        let res = env::current_dir().unwrap();
         let res_str: String = res.into_os_string().into_string().unwrap();
         let path = res_str + "/start_meta.sh";
         println!("path: {}", path);
@@ -119,7 +119,7 @@ mod tests {
             .expect("failed to execute process");
         println!("output: {:?}", output);
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        // get meta cluster info 
+        // get meta cluster info
         let output = check_meta_info_metrics("8921".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
@@ -130,7 +130,6 @@ mod tests {
         assert!(stdout.contains("127.0.0.1:8901"));
         // clean env
         kill_cnosdb_meta_process("cnosdb-meta");
-
     }
 
     #[tokio::test]
@@ -143,7 +142,7 @@ mod tests {
         let output = kill_from_part_str("config_8921.toml".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         // get current dir
-        let res =  env::current_dir().unwrap();
+        let res = env::current_dir().unwrap();
         let res_str: String = res.into_os_string().into_string().unwrap();
         let path = res_str + "/start_meta.sh";
         println!("path: {}", path);
@@ -163,11 +162,10 @@ mod tests {
         assert!(stdout.contains("127.0.0.1:8901"));
         // clean env
         kill_cnosdb_meta_process("cnosdb-meta");
-
     }
 
     #[tokio::test]
-    async fn test_cluster_leader_election(){
+    async fn test_cluster_leader_election() {
         // clean env
         kill_cnosdb_meta_process("cnosdb-meta");
         // start meta cluster
@@ -215,7 +213,6 @@ mod tests {
         assert!(stdout.contains("test_add_tenant001"));
         // clean env
         kill_cnosdb_meta_process("cnosdb-meta");
-
     }
 
     #[tokio::test]
@@ -230,7 +227,7 @@ mod tests {
         let output = kill_from_part_str("config_8901.toml".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         // sleep 3 seconds
-        thread::sleep(time::Duration::from_secs(10));   
+        thread::sleep(time::Duration::from_secs(10));
         // check first meta node log
         let output = check_meta_info_metrics("8901".to_string());
         assert_ne!(output.status.code(), std::option::Option::Some(0));
@@ -257,7 +254,7 @@ mod tests {
         // write data to meta
         write_data_to_meta().await;
         // get current dir
-        let res =  env::current_dir().unwrap();
+        let res = env::current_dir().unwrap();
         let res_str: String = res.into_os_string().into_string().unwrap();
         let path = res_str + "/start_meta.sh";
         println!("path: {}", path);
@@ -334,7 +331,6 @@ mod tests {
         assert_ne!(output.status.code(), std::option::Option::Some(0));
         // clean env
         kill_cnosdb_meta_process("cnosdb-meta");
-
     }
 }
 // fn main() {
@@ -354,20 +350,23 @@ fn kill_cnosdb_meta_process(process_name: &str) {
                 .output()
                 .expect("failed to execute process");
             println!("status: {}", output.status);
-            
         }
     }
 }
 
 fn star_meta_cluster() -> std::process::Output {
-    let res =  env::current_dir().unwrap();
+    let res = env::current_dir().unwrap();
     let res_str: String = res.into_os_string().into_string().unwrap();
     let path = res_str + "/cluster.sh";
     // println!("path: {}", path);
-    let output = Command::new("bash").arg(path).output().expect("failed to execute process");
+    let output = Command::new("bash")
+        .arg(path)
+        .output()
+        .expect("failed to execute process");
     output
 }
 
+#[cfg(feature = "meta_e2e_test")]
 async fn write_data_to_meta() {
     let node = NodeInfo {
         id: 111,
@@ -380,21 +379,30 @@ async fn write_data_to_meta() {
     let rsp = cli.write::<command::StatusResponse>(&req).await.unwrap();
     println!("=== add nodeinfo : {:?}", rsp);
     // let req = command::WriteCommand::CreateTenant(“cluster_xxx”.to_string(), (), ())
-    let req = command::WriteCommand::CreateTenant("cluster_xxx".to_string(), "test_add_tenant001".to_string(), models::schema::TenantOptions::default());
+    let req = command::WriteCommand::CreateTenant(
+        "cluster_xxx".to_string(),
+        "test_add_tenant001".to_string(),
+        models::schema::TenantOptions::default(),
+    );
     let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
-    let rsp = cli.write::<command::CommonResp<Tenant>>(&req).await.unwrap();
+    let rsp = cli
+        .write::<command::CommonResp<Tenant>>(&req)
+        .await
+        .unwrap();
     println!("=== add tenant: {:?}", rsp);
-
 }
+#[cfg(feature = "meta_e2e_test")]
 async fn drop_data_from_meta() {
-    let req = command::WriteCommand::DropTenant("cluster_xxx".to_string(), "test_add_tenant001".to_string());
+    let req = command::WriteCommand::DropTenant(
+        "cluster_xxx".to_string(),
+        "test_add_tenant001".to_string(),
+    );
     let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
     let rsp = cli.write::<command::CommonResp<bool>>(&req).await.unwrap();
     println!("=== drop tanant: {:?}", rsp);
 }
-
-
-fn backup () -> std::process::Output{
+#[cfg(feature = "meta_e2e_test")]
+fn backup() -> std::process::Output {
     let output = Command::new("curl")
         .args(["http://127.0.0.1:8901/dump"])
         .output()
@@ -402,18 +410,23 @@ fn backup () -> std::process::Output{
     println!("status: {}", output.status);
     output
 }
-
+#[cfg(feature = "meta_e2e_test")]
 fn meta_restore() -> std::process::Output {
     let output = Command::new("curl")
-        .args(["-XPOST", "http://127.0.0.1:8901/restore", "-d", "@/tmp/backup.json"])
+        .args([
+            "-XPOST",
+            "http://127.0.0.1:8901/restore",
+            "-d",
+            "@/tmp/backup.json",
+        ])
         .output()
         .expect("failed to execute process");
     println!("status: {}", output.status);
     output
 }
-
-fn check_meta_info(port:String) -> std::process::Output {
-    let url = format!("http://127.0.0.1:{}/debug", port); 
+#[cfg(feature = "meta_e2e_test")]
+fn check_meta_info(port: String) -> std::process::Output {
+    let url = format!("http://127.0.0.1:{}/debug", port);
     let output = Command::new("curl")
         .args([url.as_str()])
         .output()
@@ -421,8 +434,8 @@ fn check_meta_info(port:String) -> std::process::Output {
     println!("status: {}", output.status);
     output
 }
-
-fn check_meta_info_metrics(port:String) -> std::process::Output {
+#[cfg(feature = "meta_e2e_test")]
+fn check_meta_info_metrics(port: String) -> std::process::Output {
     let url = format!("http://127.0.0.1:{}/metrics", port);
     let output = Command::new("curl")
         .args([url.as_str()])
@@ -431,10 +444,11 @@ fn check_meta_info_metrics(port:String) -> std::process::Output {
     println!("status: {}", output.status);
     output
 }
-
-fn kill_from_part_str(part_str:String) -> std::process::Output {
+#[cfg(feature = "meta_e2e_test")]
+fn kill_from_part_str(part_str: String) -> std::process::Output {
     // let full_str = format!("ps -ef | grep {} | grep -v grep | awk '{print $2}'", part_str);
-    let full_str:String = "ps -ef | grep ".to_string() + &part_str + "| grep -v grep | awk '{print $2}'";
+    let full_str: String =
+        "ps -ef | grep ".to_string() + &part_str + "| grep -v grep | awk '{print $2}'";
     let pro = Command::new("bash")
         .args(["-c", full_str.as_str()])
         .output()
