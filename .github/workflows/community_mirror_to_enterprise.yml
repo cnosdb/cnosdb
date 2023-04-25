@@ -17,6 +17,6 @@ jobs:
           git config --global credential.helper store
           git config --global credential.helper 'cache --timeout=0'
           git config --global credential.https://github.com.username 18346072982@163.com
-          git config --global credential.https://github.com.password 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
-          git remote add enterprise_repo https://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@github.com/lutengda/cnosdb-enterprise.git
+          git config --global credential.https://github.com.password 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
+          git remote add enterprise_repo https://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@github.com/lutengda/cnosdb-enterprise.git
           git push --force enterprise_repo HEAD:com
