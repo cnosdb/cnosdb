@@ -9,7 +9,7 @@ use std::process::Command;
 // use meta::store::command::*;
 // use meta::client::*;
 
-use models::{meta_data::NodeInfo, schema::Tenant};
+use models::{meta_data::NodeInfo, schema::Tenant, meta_data::NodeAttribute};
 use meta::store::Store;
 use openraft::Config;
 use std::env;
