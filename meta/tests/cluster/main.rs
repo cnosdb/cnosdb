@@ -31,22 +31,22 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn test_backup() {
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
         write_data_to_meta().await;
         let output = backup();
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_eq!(stdout.contains("127.0.0.1:8888"), true);
-        assert_eq!(stdout.contains("test_add_tenant001"), true);
-        print!("output: {:?}", output.stdout); 
-        kill_cnosdb_meta_process(&"cnosdb-meta");      
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("127.0.0.1:8888"));
+        assert!(stdout.contains("test_add_tenant001"));
+        // print!("output: {:?}", output.stdout); 
+        kill_cnosdb_meta_process("cnosdb-meta");      
     }
 
     #[tokio::test]
     async fn test_restore() {
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
         write_data_to_meta().await;
@@ -57,24 +57,24 @@ mod tests {
             drop_data_from_meta().await;
         let output = check_meta_info("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_ne!(stdout.contains("test_add_tenant001"), true);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(!stdout.contains("test_add_tenant001"));
         let output = meta_restore();
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let output = check_meta_info("8901".to_string());
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
+        let stdout = String::from_utf8(output.stdout).unwrap();
         print!("output: {:?}", stdout);
-        assert_eq!(stdout.contains("test_add_tenant001"), true);
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        assert!(stdout.contains("test_add_tenant001"));
+        kill_cnosdb_meta_process("cnosdb-meta");
         // let output = backup();
         // assert_eq!(output.status.code(), std::option::Option::Some(0));
-        // let stdout = String::from_utf8(output.stdout.clone()).unwrap();
+        // let stdout = String::from_utf8(output.stdout).unwrap();
         // assert_eq!(stdout.contains("
     }
 
     #[tokio::test]
     async fn test_node_replace() {
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
         let output = kill_from_part_str("config_8921.toml".to_string());
@@ -82,39 +82,39 @@ mod tests {
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let output = check_meta_info_metrics("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_eq!(stdout.contains("127.0.0.1:8921"), true);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("127.0.0.1:8921"));
         let res =  env::current_dir().unwrap();
         let res_str: String = res.into_os_string().into_string().unwrap();
-        let path = res_str.clone() + "/start_meta.sh";
+        let path = res_str + "/start_meta.sh";
         // println!("path: {}", path);
         let output = Command::new("bash")
-            .arg(path.clone())
+            .arg(path)
             .output()
             .expect("failed to execute process");
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         // println!("output: {:?}", output.stdout);
         let output = check_meta_info_metrics("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_eq!(stdout.contains("127.0.0.1:8931"), true);
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("127.0.0.1:8931"));
+        kill_cnosdb_meta_process("cnosdb-meta");
     }
 
     #[tokio::test]
     async fn test_add_meta_node() {
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
         // start meta cluster
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
         // get current dir
         let res =  env::current_dir().unwrap();
         let res_str: String = res.into_os_string().into_string().unwrap();
-        let path = res_str.clone() + "/start_meta.sh";
+        let path = res_str + "/start_meta.sh";
         println!("path: {}", path);
         let output = Command::new("bash")
-            .args([path.clone(), std::string::String::from("add")])
+            .args([path, std::string::String::from("add")])
             .output()
             .expect("failed to execute process");
         println!("output: {:?}", output);
@@ -122,21 +122,21 @@ mod tests {
         // get meta cluster info 
         let output = check_meta_info_metrics("8921".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
+        let stdout = String::from_utf8(output.stdout).unwrap();
         println!("output: {:?}", stdout);
-        assert_eq!(stdout.contains("127.0.0.1:8931"), true);
-        assert_eq!(stdout.contains("127.0.0.1:8921"), true);
-        assert_eq!(stdout.contains("127.0.0.1:8911"), true);
-        assert_eq!(stdout.contains("127.0.0.1:8901"), true);
+        assert!(stdout.contains("127.0.0.1:8931"));
+        assert!(stdout.contains("127.0.0.1:8921"));
+        assert!(stdout.contains("127.0.0.1:8911"));
+        assert!(stdout.contains("127.0.0.1:8901"));
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
 
     }
 
     #[tokio::test]
     async fn test_delete_meta_node() {
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
         // start meta cluster
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
@@ -145,10 +145,10 @@ mod tests {
         // get current dir
         let res =  env::current_dir().unwrap();
         let res_str: String = res.into_os_string().into_string().unwrap();
-        let path = res_str.clone() + "/start_meta.sh";
+        let path = res_str + "/start_meta.sh";
         println!("path: {}", path);
         let output = Command::new("bash")
-            .args([path.clone(), std::string::String::from("delete")])
+            .args([path, std::string::String::from("delete")])
             .output()
             .expect("failed to execute process");
         println!("output: {:?}", output);
@@ -156,39 +156,39 @@ mod tests {
         // get meta cluster info
         let output = check_meta_info_metrics("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
+        let stdout = String::from_utf8(output.stdout).unwrap();
         println!("output: {:?}", stdout);
-        assert_ne!(stdout.contains("127.0.0.1:8921"), true);
-        assert_eq!(stdout.contains("127.0.0.1:8911"), true);
-        assert_eq!(stdout.contains("127.0.0.1:8901"), true);
+        assert!(!stdout.contains("127.0.0.1:8921"));
+        assert!(stdout.contains("127.0.0.1:8911"));
+        assert!(stdout.contains("127.0.0.1:8901"));
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
 
     }
 
     #[tokio::test]
     async fn test_cluster_leader_election(){
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
         // start meta cluster
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
         thread::sleep(time::Duration::from_secs(3));
         let output = check_meta_info_metrics("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_eq!(stdout.contains("Leader"), true);
-        assert_eq!(stdout.contains("127.0.0.1:8901"), true);
-        assert_eq!(stdout.contains("127.0.0.1:8911"), true);
-        assert_eq!(stdout.contains("127.0.0.1:8921"), true);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("Leader"));
+        assert!(stdout.contains("127.0.0.1:8901"));
+        assert!(stdout.contains("127.0.0.1:8911"));
+        assert!(stdout.contains("127.0.0.1:8921"));
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
     }
 
     #[tokio::test]
     async fn test_verify_log_replica() {
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
         // start meta cluster
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
@@ -198,30 +198,30 @@ mod tests {
         // check fist meta node log
         let output = check_meta_info("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_eq!(stdout.contains("127.0.0.1:8888"), true);
-        assert_eq!(stdout.contains("test_add_tenant001"), true);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("127.0.0.1:8888"));
+        assert!(stdout.contains("test_add_tenant001"));
         // check second meta node log
         let output = check_meta_info("8911".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_eq!(stdout.contains("127.0.0.1:8888"), true);
-        assert_eq!(stdout.contains("test_add_tenant001"), true);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("127.0.0.1:8888"));
+        assert!(stdout.contains("test_add_tenant001"));
         // check third meta node log
         let output = check_meta_info("8921".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_eq!(stdout.contains("127.0.0.1:8888"), true);
-        assert_eq!(stdout.contains("test_add_tenant001"), true);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("127.0.0.1:8888"));
+        assert!(stdout.contains("test_add_tenant001"));
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
 
     }
 
     #[tokio::test]
     async fn test_reselect_new_leader() {
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
         // start meta cluster
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
@@ -236,21 +236,21 @@ mod tests {
         assert_ne!(output.status.code(), std::option::Option::Some(0));
         let output = check_meta_info_metrics("8911".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout_node2 = String::from_utf8(output.stdout.clone()).unwrap();
+        let stdout_node2 = String::from_utf8(output.stdout).unwrap();
         let output = check_meta_info_metrics("8921".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout_node3 = String::from_utf8(output.stdout.clone()).unwrap();
+        let stdout_node3 = String::from_utf8(output.stdout).unwrap();
         let stdout = stdout_node2 + &stdout_node3;
         println!("stdout: {}", stdout);
-        assert_eq!(stdout.contains("Leader"), true);
+        assert!(stdout.contains("Leader"));
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
     }
 
     #[tokio::test]
     async fn test_cluster_scaling_log_replication() {
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
         // start meta cluster
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
@@ -259,10 +259,10 @@ mod tests {
         // get current dir
         let res =  env::current_dir().unwrap();
         let res_str: String = res.into_os_string().into_string().unwrap();
-        let path = res_str.clone() + "/start_meta.sh";
+        let path = res_str + "/start_meta.sh";
         println!("path: {}", path);
         let output = Command::new("bash")
-            .args([path.clone(), std::string::String::from("add")])
+            .args([path, std::string::String::from("add")])
             .output()
             .expect("failed to execute process");
         println!("output: {:?}", output);
@@ -272,17 +272,17 @@ mod tests {
         // check first meta node log
         let output = check_meta_info("8931".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_eq!(stdout.contains("127.0.0.1:8888"), true);
-        assert_eq!(stdout.contains("test_add_tenant001"), true);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("127.0.0.1:8888"));
+        assert!(stdout.contains("test_add_tenant001"));
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
     }
 
     #[tokio::test]
     async fn test_repeat_request_log_replica() {
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
         // start meta cluster
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
@@ -291,33 +291,33 @@ mod tests {
         // first ckeck meta log
         let output = check_meta_info("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_eq!(stdout.contains("127.0.0.1:8888"), true);
-        assert_eq!(stdout.contains("test_add_tenant001"), true);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("127.0.0.1:8888"));
+        assert!(stdout.contains("test_add_tenant001"));
         // sleep 3 seconds
         thread::sleep(time::Duration::from_secs(3));
         // second ckeck meta log
         let output = check_meta_info("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_eq!(stdout.contains("127.0.0.1:8888"), true);
-        assert_eq!(stdout.contains("test_add_tenant001"), true);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("127.0.0.1:8888"));
+        assert!(stdout.contains("test_add_tenant001"));
         // sleep 3 seconds
         thread::sleep(time::Duration::from_secs(3));
         // third ckeck meta log
         let output = check_meta_info("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
-        let stdout = String::from_utf8(output.stdout.clone()).unwrap();
-        assert_eq!(stdout.contains("127.0.0.1:8888"), true);
-        assert_eq!(stdout.contains("test_add_tenant001"), true);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("127.0.0.1:8888"));
+        assert!(stdout.contains("test_add_tenant001"));
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
     }
 
     #[tokio::test]
     async fn test_majority_failure() {
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
         // start meta cluster
         let op = star_meta_cluster();
         assert_eq!(op.status.code(), std::option::Option::Some(0));
@@ -333,7 +333,7 @@ mod tests {
         let output = check_meta_info_metrics("port_8921".to_string());
         assert_ne!(output.status.code(), std::option::Option::Some(0));
         // clean env
-        kill_cnosdb_meta_process(&"cnosdb-meta");
+        kill_cnosdb_meta_process("cnosdb-meta");
 
     }
 }
@@ -362,9 +362,9 @@ fn kill_cnosdb_meta_process(process_name: &str) {
 fn star_meta_cluster() -> std::process::Output {
     let res =  env::current_dir().unwrap();
     let res_str: String = res.into_os_string().into_string().unwrap();
-    let path = res_str.clone() + "/cluster.sh";
+    let path = res_str + "/cluster.sh";
     // println!("path: {}", path);
-    let output = Command::new("bash").arg(path.clone()).output().expect("failed to execute process");
+    let output = Command::new("bash").arg(path).output().expect("failed to execute process");
     output
 }
 
