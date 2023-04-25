@@ -373,6 +373,7 @@ async fn write_data_to_meta() {
         id: 111,
         grpc_addr: "".to_string(),
         http_addr: "127.0.0.1:8888".to_string(),
+        attribute: NodeAttribute::Hot,
     };
     let req = command::WriteCommand::AddDataNode("cluster_xxx".to_string(), node);
     let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
