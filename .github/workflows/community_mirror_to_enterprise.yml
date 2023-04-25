@@ -12,10 +12,10 @@ jobs:
         uses: actions/checkout@v2
       - name: sync to enterprise
         run: |
-          git config --global credential.helper store
-          git config --global credential.helper 'cache --timeout=0'
           git config --global user.email "18346072982@163.com"
           git config --global user.name "lutengda"
+          git config --global credential.helper store
+          git config --global credential.helper 'cache --timeout=0'
           git config --global credential.https://github.com.username lutengda
           git config --global credential.https://github.com.password ${{ secrets.ACCESS_ENTERPRISE_REPO }}
           git remote add enterprise_repo https://github.com/lutengda/cnosdb-enterprise.git
