@@ -1,5 +1,5 @@
 // mod test_cluster;
-
+#![cfg(feature = "meta_e2e_test")]
 use std::process::Command;
 use std::sync::Arc;
 use std::{env, thread, time};
@@ -338,7 +338,7 @@ mod tests {
 //     let pid = get_meta_node_pid();
 //     println!("pid: {:?}", pid);
 // }
-
+#[cfg(feature = "meta_e2e_test")]
 fn kill_cnosdb_meta_process(process_name: &str) {
     let system = System::new_all();
     let process_name = process_name;
@@ -353,7 +353,7 @@ fn kill_cnosdb_meta_process(process_name: &str) {
         }
     }
 }
-
+#[cfg(feature = "meta_e2e_test")]
 fn star_meta_cluster() -> std::process::Output {
     let res = env::current_dir().unwrap();
     let res_str: String = res.into_os_string().into_string().unwrap();
