@@ -1,3 +1,7 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS show_tag_values; --
+200 OK
+
+
 -- EXECUTE SQL: CREATE DATABASE show_tag_values WITH TTL '100000d';; --
 200 OK
 
@@ -25,7 +29,7 @@ rows
 
 -- EXECUTE SQL: SHOW TAG VALUES ON public FROM show_series.test; --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: Expected WITH, found: ;"}
+{"error_code":"010009","error_message":"sql parser error: Expected WITH, found: ."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SHOW TAG VALUES FROM test; --

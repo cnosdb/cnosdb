@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use config::ClusterConfig;
+use config::Config;
 use models::meta_data::*;
+use models::node_info::NodeStatus;
+use models::utils::{build_address, now_timestamp_secs};
 use tokio::sync::RwLock;
 use tonic::transport::{Channel, Endpoint};
 use trace::error;
@@ -15,7 +17,7 @@ use crate::store::key_path;
 
 #[derive(Debug)]
 pub struct RemoteAdminMeta {
-    config: ClusterConfig,
+    config: Config,
     data_nodes: RwLock<HashMap<u64, NodeInfo>>,
     conn_map: RwLock<HashMap<u64, Channel>>,
 
@@ -24,8 +26,9 @@ pub struct RemoteAdminMeta {
 }
 
 impl RemoteAdminMeta {
-    pub fn new(config: ClusterConfig, storage_path: String) -> Self {
-        let meta_url = config.meta_service_addr.clone();
+    pub fn new(config: Config, storage_path: String) -> Self {
+        let meta_service_addr = config.cluster.meta_service_addr.clone();
+        let meta_url = meta_service_addr.join(";");
 
         Self {
             config,
@@ -37,7 +40,7 @@ impl RemoteAdminMeta {
     }
 
     async fn sync_all_data_node(&self) -> MetaResult<u64> {
-        let req = command::ReadCommand::DataNodes(self.config.name.clone());
+        let req = command::ReadCommand::DataNodes(self.config.cluster.name.clone());
         let (resp, version) = self.client.read::<(Vec<NodeInfo>, u64)>(&req).await?;
         {
             let mut nodes = self.data_nodes.write().await;
@@ -75,24 +78,26 @@ impl AdminMeta for RemoteAdminMeta {
     }
 
     async fn add_data_node(&self) -> MetaResult<()> {
-        let disk_free = match get_disk_info(&self.path) {
-            Ok(size) => size,
-            Err(e) => {
-                error!("Failed to get disk info:{}", e);
-                0
-            }
-        };
+        let mut attribute = NodeAttribute::default();
+        if self.config.node_basic.cold_data_server {
+            attribute = NodeAttribute::Cold;
+        }
 
         let node = NodeInfo {
-            status: 0,
-            id: self.config.node_id,
-            disk_free,
-            is_cold: self.config.cold_data_server,
-            grpc_addr: self.config.grpc_listen_addr.clone(),
-            http_addr: self.config.http_listen_addr.clone(),
+            attribute,
+            id: self.config.node_basic.node_id,
+            grpc_addr: build_address(
+                self.config.host.clone(),
+                self.config.cluster.grpc_listen_port,
+            ),
+            http_addr: build_address(
+                self.config.host.clone(),
+                self.config.cluster.http_listen_port,
+            ),
         };
 
-        let req = command::WriteCommand::AddDataNode(self.config.name.clone(), node.clone());
+        let req =
+            command::WriteCommand::AddDataNode(self.config.cluster.name.clone(), node.clone());
         let rsp = self.client.write::<command::StatusResponse>(&req).await?;
         if rsp.code != command::META_REQUEST_SUCCESS {
             return Err(MetaError::CommonError {
@@ -148,7 +153,7 @@ impl AdminMeta for RemoteAdminMeta {
     }
 
     async fn retain_id(&self, count: u32) -> MetaResult<u32> {
-        let req = command::WriteCommand::RetainID(self.config.name.clone(), count);
+        let req = command::WriteCommand::RetainID(self.config.cluster.name.clone(), count);
         let rsp = self.client.write::<command::StatusResponse>(&req).await?;
         if rsp.code != command::META_REQUEST_SUCCESS {
             return Err(MetaError::CommonError {
@@ -186,5 +191,39 @@ impl AdminMeta for RemoteAdminMeta {
         Ok(())
     }
 
-    fn heartbeat(&self) {}
+    async fn report_node_metrics(&self) -> MetaResult<()> {
+        let disk_free = match get_disk_info(&self.path) {
+            Ok(size) => size,
+            Err(e) => {
+                error!("Failed to get disk info:{}", e);
+                0
+            }
+        };
+
+        let mut status = NodeStatus::default();
+        const MIN_AVALIBLE_DISK_SPACE: u64 = 1024 * 1024 * 1024;
+        if disk_free < MIN_AVALIBLE_DISK_SPACE {
+            status = NodeStatus::NoDiskSpace;
+        }
+
+        let node_metrics = NodeMetrics {
+            id: self.config.node_basic.node_id,
+            disk_free,
+            time: now_timestamp_secs(),
+            status,
+        };
+
+        let req = command::WriteCommand::ReportNodeMetrics(
+            self.config.cluster.name.clone(),
+            node_metrics.clone(),
+        );
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
+        if rsp.code != command::META_REQUEST_SUCCESS {
+            return Err(MetaError::CommonError {
+                msg: format!("report node metrics err: {} {}", rsp.code, rsp.msg),
+            });
+        }
+
+        Ok(())
+    }
 }

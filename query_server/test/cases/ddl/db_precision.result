@@ -1,3 +1,7 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS db_precision; --
+200 OK
+
+
 -- EXECUTE SQL: CREATE DATABASE db_precision WITH TTL '100000d' precision 'us'; --
 200 OK
 
@@ -39,3 +43,15 @@ time,col
 422 Unprocessable Entity
 {"error_code":"010003","error_message":"Semantic error: Can not alter database precision"}
 -- ERROR:  --
+
+-- EXECUTE SQL: create table ms_t (value BIGINT,tags(str)); --
+200 OK
+
+-- EXECUTE SQL: insert into ms_t (time,str,value) values (1682049219172428000,'asd',1); --
+200 OK
+rows
+1
+
+-- EXECUTE SQL: select * from ms_t; --
+422 Unprocessable Entity
+{"error_code":"040007","error_message":"Fetch result: Csv error: Error processing row 1, col 1: Cast error: Failed to convert 1682049219172428000 to datetime for Timestamp(Millisecond, None)"} 

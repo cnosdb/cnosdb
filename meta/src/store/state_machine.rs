@@ -5,6 +5,7 @@ use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
+use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
 use openraft::{EffectiveMembership, LogId};
@@ -405,6 +406,15 @@ impl StateMachine {
                 serde_json::to_string(&(response, self.version())).unwrap()
             }
 
+            ReadCommand::NodeMetrics(cluster) => {
+                let response: Vec<NodeMetrics> =
+                    children_data::<NodeMetrics>(&KeyPath::data_nodes(cluster), self.db.clone())
+                        .into_values()
+                        .collect();
+
+                serde_json::to_string(&response).unwrap()
+            }
+
             ReadCommand::TenaneMetaData(cluster, tenant) => TenaneMetaDataResp::new_from_data(
                 META_REQUEST_SUCCESS,
                 "".to_string(),
@@ -511,6 +521,10 @@ impl StateMachine {
             }
 
             WriteCommand::AddDataNode(cluster, node) => self.process_add_date_node(cluster, node),
+
+            WriteCommand::ReportNodeMetrics(cluster, node_metrics) => {
+                self.process_add_node_metrics(cluster, node_metrics)
+            }
 
             WriteCommand::CreateDB(cluster, tenant, schema) => {
                 self.process_create_db(cluster, tenant, schema)
@@ -657,14 +671,26 @@ impl StateMachine {
         }
     }
 
-    fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> CommandResp {
-        self.check_node_ip_address(cluster, node);
-        let key = KeyPath::data_node_id(cluster, node.id);
-        let value = serde_json::to_string(node).unwrap();
+    fn insert_kv_to_db(&self, key: String, value: String) -> CommandResp {
         let _ = self.insert(&key, &value);
         info!("WRITE: {} :{}", key, value);
 
         serde_json::to_string(&StatusResponse::default()).unwrap()
+    }
+
+    fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> CommandResp {
+        self.check_node_ip_address(cluster, node);
+        let key = KeyPath::data_node_id(cluster, node.id);
+        let value = serde_json::to_string(node).unwrap();
+
+        self.insert_kv_to_db(key, value)
+    }
+
+    fn process_add_node_metrics(&self, cluster: &str, node_metrics: &NodeMetrics) -> CommandResp {
+        let key = KeyPath::data_node_metrics(cluster, node_metrics.id);
+        let value = serde_json::to_string(&node_metrics).unwrap();
+
+        self.insert_kv_to_db(key, value)
     }
 
     fn process_drop_db(&self, cluster: &str, tenant: &str, db_name: &str) -> CommandResp {
@@ -857,6 +883,48 @@ impl StateMachine {
         .to_string()
     }
 
+    fn get_valid_node_list(&self, cluster: &str) -> Vec<NodeInfo> {
+        let node_info_list: Vec<NodeInfo> =
+            children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone())
+                .into_values()
+                .collect();
+
+        let node_metrics_list: Vec<NodeMetrics> =
+            children_data::<NodeMetrics>(&KeyPath::data_nodes_metrics(cluster), self.db.clone())
+                .into_values()
+                .collect();
+
+        let mut filter_node_list = node_info_list;
+        filter_node_list.retain(|node_info| node_info.attribute != NodeAttribute::Cold);
+
+        let mut tmp_node_list: Vec<_> = filter_node_list
+            .clone()
+            .iter()
+            .map(|a| {
+                (
+                    a.clone(),
+                    node_metrics_list.iter().find(|b| b.id == a.id).unwrap(),
+                )
+            })
+            .collect();
+
+        if tmp_node_list.is_empty() {
+            return filter_node_list;
+        }
+
+        tmp_node_list.sort_by(|(_, a), (_, b)| b.disk_free.cmp(&a.disk_free));
+
+        let mut valid_node_list = Vec::new();
+
+        for (node_info, node_metrics) in tmp_node_list.iter() {
+            if node_metrics.status == NodeStatus::Healthy {
+                valid_node_list.push(node_info.clone());
+            }
+        }
+
+        valid_node_list
+    }
+
     fn process_create_bucket(
         &self,
         cluster: &str,
@@ -892,17 +960,10 @@ impl StateMachine {
             }
         };
 
-        let node_list: Vec<NodeInfo> =
-            children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone())
-                .into_values()
-                .collect();
-
-        let mut hot_node_list = node_list.clone();
-        hot_node_list.retain(|node_info| !node_info.is_cold);
-
+        let node_list = self.get_valid_node_list(cluster);
         if node_list.is_empty()
             || db_schema.config.shard_num_or_default() == 0
-            || db_schema.config.replica_or_default() > hot_node_list.len() as u64
+            || db_schema.config.replica_or_default() > node_list.len() as u64
         {
             return TenaneMetaDataResp::new(
                 META_REQUEST_FAILED,
@@ -933,7 +994,7 @@ impl StateMachine {
                 .to_nanoseconds(),
         );
         let (group, used) = allocation_replication_set(
-            hot_node_list,
+            node_list,
             db_schema.config.shard_num_or_default() as u32,
             db_schema.config.replica_or_default() as u32,
             bucket.id + 1,

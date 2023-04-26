@@ -3,9 +3,11 @@ mod check;
 mod cluster_config;
 mod codec;
 mod deployment_config;
+mod heartbeat_config;
 mod hinted_off_config;
 mod limiter_config;
 mod log_config;
+mod nodebasic_config;
 mod query_config;
 mod security_config;
 mod storage_config;
@@ -22,9 +24,11 @@ use serde::{Deserialize, Serialize};
 pub use crate::cache_config::*;
 pub use crate::cluster_config::*;
 pub use crate::deployment_config::*;
+pub use crate::heartbeat_config::*;
 pub use crate::hinted_off_config::*;
 pub use crate::limiter_config::*;
 pub use crate::log_config::*;
+pub use crate::nodebasic_config::*;
 pub use crate::query_config::*;
 pub use crate::security_config::*;
 pub use crate::storage_config::*;
@@ -34,6 +38,8 @@ pub use crate::wal_config::*;
 pub struct Config {
     #[serde(default = "Config::default_reporting_disabled")]
     pub reporting_disabled: bool,
+    #[serde(default = "Config::default_host")]
+    pub host: String,
     pub deployment: DeploymentConfig,
     pub query: QueryConfig,
     pub storage: StorageConfig,
@@ -43,11 +49,17 @@ pub struct Config {
     pub security: SecurityConfig,
     pub cluster: ClusterConfig,
     pub hinted_off: HintedOffConfig,
+    pub heartbeat: HeartBeatConfig,
+    pub node_basic: NodeBasicConfig,
 }
 
 impl Config {
     fn default_reporting_disabled() -> bool {
         false
+    }
+
+    fn default_host() -> String {
+        "localhost".to_string()
     }
 
     pub fn override_by_env(&mut self) {
@@ -56,6 +68,7 @@ impl Config {
         self.wal.override_by_env();
         self.cache.override_by_env();
         self.query.override_by_env();
+        self.node_basic.override_by_env();
     }
 
     pub fn to_string_pretty(&self) -> String {
@@ -151,6 +164,12 @@ pub fn check_config(path: impl AsRef<Path>, show_warnings: bool) {
             if let Some(c) = cfg.hinted_off.check(&cfg) {
                 check_results.add_all(c)
             }
+            if let Some(c) = cfg.heartbeat.check(&cfg) {
+                check_results.add_all(c)
+            }
+            if let Some(c) = cfg.node_basic.check(&cfg) {
+                check_results.add_all(c)
+            }
 
             check_results.introspect();
             check_results.show_warnings = show_warnings;
@@ -193,6 +212,7 @@ mod test {
     fn test_parse() {
         let config_str = r#"
 #reporting_disabled = false
+host = "localhost"
 
 [deployment]
 mode = 'singleton'
@@ -273,12 +293,20 @@ path = 'data/log'
 [cluster]
 node_id = 100
 name = 'cluster_xxx'
-meta_service_addr = '127.0.0.1:8901'
+meta_service_addr = ["127.0.0.1:8901"]
 tenant = ''
 
-flight_rpc_listen_addr = '127.0.0.1:31006'
-http_listen_addr = '127.0.0.1:31007'
-grpc_listen_addr = '127.0.0.1:31008'
+flight_rpc_listen_port = 31006
+http_listen_port = 31007
+grpc_listen_port = 31008
+
+[node_basic]
+node_id = 1001 
+cold_data_server = false
+store_metrics = true
+
+[heartbeat]
+report_time_interval_secs = 30
 
 [hinted_off]
 enable = true

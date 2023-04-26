@@ -1,5 +1,6 @@
 id = 3
-http_addr = "127.0.0.1:8921"
+host = "127.0.0.1"
+port = 8921
 
 snapshot_path = "/tmp/cnosdb/meta/snapshot"
 journal_path = "/tmp/cnosdb/meta/journal"
@@ -14,3 +15,7 @@ cluster_name = "cluster_xxx"
 admin_user = "root"
 system_tenant = "cnosdb"
 default_database = ["public", "usage_schema"]
+
+[heartbeat]
+heartbeat_recheck_interval = 300
+heartbeat_expired_interval = 600

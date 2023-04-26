@@ -4,10 +4,10 @@ use std::time::Duration;
 
 use coordinator::service::{CoordService, CoordinatorRef};
 use memory_pool::MemoryPoolRef;
-use meta::error::MetaResult;
 use meta::model::meta_manager::RemoteMetaManager;
 use meta::model::{MetaManager, MetaRef};
 use metrics::metric_register::MetricsRegister;
+use models::utils::build_address;
 use query::instance::make_cnosdbms;
 use snafu::{Backtrace, Snafu};
 use spi::server::dbms::DBMSRef;
@@ -15,6 +15,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
 use tokio::time;
+use trace::error;
 use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
@@ -25,6 +26,8 @@ use crate::spi::service::ServiceRef;
 use crate::tcp::tcp_service::TcpService;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+const DEFAULT_NODE_IP: &str = "0.0.0.0";
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -110,24 +113,31 @@ pub(crate) struct ServiceBuilder {
     pub metrics_register: Arc<MetricsRegister>,
 }
 
-#[allow(unreachable_code)]
-async fn regualar_get_disk_info(meta: Arc<dyn MetaManager>) -> MetaResult<()> {
-    let mut interval = time::interval(Duration::from_secs(300));
+async fn regular_report_node_metrics(meta: Arc<dyn MetaManager>, heartbeat_interval: u64) {
+    let mut interval = time::interval(Duration::from_secs(heartbeat_interval));
 
     loop {
         interval.tick().await;
 
-        meta.admin_meta().add_data_node().await.unwrap();
+        if let Err(e) = meta.admin_meta().report_node_metrics().await {
+            error!("{}", e);
+        }
     }
+}
 
-    Ok(())
+fn build_default_address(port: u16) -> String {
+    build_address(DEFAULT_NODE_IP.to_owned(), port)
 }
 
 impl ServiceBuilder {
     pub async fn build_storage_server(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
 
-        tokio::spawn(regualar_get_disk_info(meta.clone()));
+        meta.admin_meta().add_data_node().await.unwrap();
+        tokio::spawn(regular_report_node_metrics(
+            meta.clone(),
+            self.config.heartbeat.report_time_interval_secs,
+        ));
 
         let kv_inst = self
             .create_tskv(meta.clone(), self.runtime.clone(), self.memory_pool.clone())
@@ -167,7 +177,11 @@ impl ServiceBuilder {
     pub async fn build_query_storage(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
 
-        tokio::spawn(regualar_get_disk_info(meta.clone()));
+        meta.admin_meta().add_data_node().await.unwrap();
+        tokio::spawn(regular_report_node_metrics(
+            meta.clone(),
+            self.config.heartbeat.report_time_interval_secs,
+        ));
 
         let kv_inst = self
             .create_tskv(meta.clone(), self.runtime.clone(), self.memory_pool.clone())
@@ -197,11 +211,8 @@ impl ServiceBuilder {
     }
 
     async fn create_meta(&self) -> MetaRef {
-        let meta: MetaRef = RemoteMetaManager::new(
-            self.config.cluster.clone(),
-            self.config.storage.path.clone(),
-        )
-        .await;
+        let meta: MetaRef =
+            RemoteMetaManager::new(self.config.clone(), self.config.storage.path.clone()).await;
 
         meta
     }
@@ -246,7 +257,7 @@ impl ServiceBuilder {
             self.runtime.clone(),
             kv,
             meta,
-            self.config.cluster.clone(),
+            self.config.clone(),
             self.config.hinted_off.clone(),
             self.metrics_register.clone(),
         )
@@ -256,15 +267,14 @@ impl ServiceBuilder {
     }
 
     fn create_http(&self, dbms: DBMSRef, coord: CoordinatorRef, mode: ServerMode) -> HttpService {
-        let addr = self
-            .config
-            .cluster
-            .http_listen_addr
+        let default_http_addr = build_default_address(self.config.cluster.http_listen_port);
+
+        let addr = default_http_addr
             .to_socket_addrs()
             .map_err(|e| {
                 format!(
                     "Cannot resolve http_listen_addr '{}': {}",
-                    self.config.cluster.http_listen_addr, e
+                    default_http_addr, e
                 )
             })
             .unwrap()
@@ -286,15 +296,14 @@ impl ServiceBuilder {
     }
 
     fn create_grpc(&self, kv: EngineRef, coord: CoordinatorRef) -> GrpcService {
-        let addr = self
-            .config
-            .cluster
-            .grpc_listen_addr
+        let default_grpc_addr = build_default_address(self.config.cluster.grpc_listen_port);
+
+        let addr = default_grpc_addr
             .to_socket_addrs()
             .map_err(|e| {
                 format!(
                     "Cannot resolve grpc_listen_addr '{}': {}",
-                    self.config.cluster.grpc_listen_addr, e
+                    default_grpc_addr, e
                 )
             })
             .unwrap()
@@ -314,20 +323,22 @@ impl ServiceBuilder {
     }
 
     fn create_tcp(&self, coord: CoordinatorRef) -> TcpService {
-        TcpService::new(coord, self.config.cluster.tcp_listen_addr.clone())
+        let default_tcp_addr = build_default_address(self.config.cluster.tcp_listen_port);
+
+        TcpService::new(coord, default_tcp_addr)
     }
 
     fn create_flight_sql(&self, dbms: DBMSRef) -> FlightSqlServiceAdapter {
         let tls_config = self.config.security.tls_config.clone();
-        let addr = self
-            .config
-            .cluster
-            .flight_rpc_listen_addr
+        let default_flight_sql_addr =
+            build_default_address(self.config.cluster.flight_rpc_listen_port);
+
+        let addr = default_flight_sql_addr
             .to_socket_addrs()
             .map_err(|e| {
                 format!(
                     "Cannot resolve flight_rpc_listen_addr '{}': {}",
-                    self.config.cluster.flight_rpc_listen_addr, e
+                    default_flight_sql_addr, e
                 )
             })
             .unwrap()

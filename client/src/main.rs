@@ -14,7 +14,7 @@ struct Args {
         short = 'H',
         long,
         help = "CnosDB server http api host",
-        default_value = "0.0.0.0",
+        default_value = "localhost",
         value_parser = try_parse_host
     )]
     host: String,

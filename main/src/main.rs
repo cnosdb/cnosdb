@@ -198,7 +198,7 @@ fn main() -> Result<(), std::io::Error> {
             memory_pool: memory_pool.clone(),
             metrics_register: Arc::new(MetricsRegister::new([(
                 "node_id",
-                config.cluster.node_id.to_string(),
+                config.node_basic.node_id.to_string(),
             )])),
         };
 

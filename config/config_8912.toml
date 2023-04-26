@@ -1,5 +1,6 @@
 
 #reporting_disabled = false
+host = "localhost"
 
 [deployment]
 #mode = 'singleton'
@@ -11,6 +12,7 @@ max_server_connections = 10240
 query_sql_limit = 16777216   # 16 * 1024 * 1024
 write_sql_limit = 167772160   # 160 * 1024 * 1024
 auth_enabled = false
+store_metrics = true
 
 [storage]
 # Directory for summary: $path/summary/
@@ -50,15 +52,21 @@ path = '/tmp/cnosdb/2001/log'
 # private_key = "./config/tls/server.key"
 
 [cluster]
-node_id = 2001
 name = 'cluster_xxx'
-meta_service_addr = '127.0.0.1:8901'
+meta_service_addr = ["127.0.0.1:8901"]
 
-http_listen_addr = '127.0.0.1:8912'
-grpc_listen_addr = '127.0.0.1:8913'
-flight_rpc_listen_addr = '127.0.0.1:8914'
-tcp_listen_addr = '127.0.0.1:8915'
+http_listen_port = 8912
+grpc_listen_port = 8913
+flight_rpc_listen_port = 8914
+tcp_listen_port = 8915
+
+[node_basic]
+node_id = 2001 
+cold_data_server = false
 store_metrics = true
+
+[heartbeat]
+report_time_interval_secs = 30
 
 [hinted_off]
 enable = true

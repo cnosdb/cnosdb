@@ -4,7 +4,7 @@ use std::ops::Not;
 use std::sync::Arc;
 use std::time::Duration;
 
-use config::{ClusterConfig, HintedOffConfig};
+use config::{Config, HintedOffConfig};
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::{MetaClientRef, MetaRef};
 use metrics::count::U64Counter;
@@ -78,13 +78,13 @@ impl CoordService {
         runtime: Arc<Runtime>,
         kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
-        cluster: ClusterConfig,
+        config: Config,
         handoff_cfg: HintedOffConfig,
         metrics_register: Arc<MetricsRegister>,
     ) -> Arc<Self> {
         let (hh_sender, hh_receiver) = mpsc::channel(1024);
         let point_writer = Arc::new(PointWriter::new(
-            cluster.node_id,
+            config.node_basic.node_id,
             kv_inst.clone(),
             meta_manager.clone(),
             hh_sender,
@@ -96,7 +96,7 @@ impl CoordService {
         let coord = Arc::new(Self {
             runtime,
             kv_inst,
-            node_id: cluster.node_id,
+            node_id: config.node_basic.node_id,
             meta: meta_manager,
             writer: point_writer,
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
@@ -104,7 +104,7 @@ impl CoordService {
 
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
 
-        if cluster.store_metrics {
+        if config.node_basic.store_metrics {
             tokio::spawn(CoordService::metrics_service(
                 coord.clone(),
                 metrics_register.clone(),

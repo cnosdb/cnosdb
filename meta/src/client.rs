@@ -223,7 +223,7 @@ mod test {
     use std::collections::HashSet;
     use std::{thread, time};
 
-    use models::meta_data::{NodeInfo, VnodeInfo};
+    use models::meta_data::{NodeAttribute, NodeInfo, VnodeInfo};
     use models::schema::DatabaseSchema;
     use tokio::sync::mpsc::channel;
     use tokio::time::timeout;
@@ -250,11 +250,9 @@ mod test {
 
         let node = NodeInfo {
             id: 111,
-            disk_free: 1000,
-            is_cold: false,
+            attribute: NodeAttribute::Hot,
             grpc_addr: "".to_string(),
             http_addr: "127.0.0.1:8888".to_string(),
-            status: 0,
         };
 
         let req = command::WriteCommand::AddDataNode(cluster.clone(), node);
