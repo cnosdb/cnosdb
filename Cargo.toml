@@ -89,6 +89,7 @@ prost = "0.11.0"
 prost-build = "0.11.0"
 prost-types = { version = "0.11.2" }
 protobuf = "3.2.0"
+psutil = "3.2.2"
 q_compress = "0.11.1"
 radixdb = "0.2.5"
 rand = "0.8"
@@ -106,6 +107,7 @@ snap = "1.0.0"
 static_assertions = "1.1"
 surf = { version = "2.3.2", features = ["curl-client", "encoding"], default-features = false }
 sys-info = "0.9.1"
+sysinfo = "0.28.4"
 tempfile = "3"
 tikv-jemalloc-ctl = "0.5"
 tikv-jemalloc-sys = { version = "0.5", features = ["stats", "profiling", "unprefixed_malloc_on_supported_platforms"] }
