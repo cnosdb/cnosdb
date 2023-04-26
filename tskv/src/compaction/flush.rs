@@ -157,7 +157,9 @@ impl FlushTask {
             }
 
             for (col_id, (value_type, values)) in column_values_map.iter_mut() {
+                // Sort by timestamp.
                 values.sort_by_key(|a| a.0);
+                // Dedup by timestamp.
                 utils::dedup_front_by_key(values, |a| a.0);
 
                 let field_id = model_utils::unite_id(*col_id, *sid);
@@ -337,23 +339,39 @@ impl WriterWrapper {
             }
         };
 
-        for (ts, val) in values {
-            let level_idx = if *ts > self.max_level_ts {
-                // The new data, to level-1 tsm files.
-                1
-            } else {
-                // The old data, to level-0 delta files.
-                0
-            };
-            let buffer = &mut self.buffers[level_idx][buf_idx];
-            buffer.insert(val.data_value(*ts));
-            if buffer.len() > self.max_data_block_size {
-                buffer.set_encoding(encoding);
-                Self::write_tsm(&mut self.writers, flush_task, level_idx, field_id, buffer).await?;
-                buffer.clear();
+        // Split values for level-0 and levle-1.
+        let splited_values = match values.binary_search_by(|v| v.0.cmp(&self.max_level_ts)) {
+            Ok(i) => {
+                if i == values.len() - 1 {
+                    [values, &[]]
+                } else {
+                    [&values[..=i], &values[(i + 1)..]]
+                }
+            }
+            Err(i) => {
+                if i == 0 {
+                    [&[], values]
+                } else if i < values.len() {
+                    [&values[..i], &values[i..]]
+                } else {
+                    [values, &[]]
+                }
+            }
+        };
+        // Fill buffer and write to disk if buffer is full.
+        for (level_idx, values) in splited_values.into_iter().enumerate() {
+            for (ts, val) in values {
+                let buffer = &mut self.buffers[level_idx][buf_idx];
+                buffer.insert(val.data_value(*ts));
+                if buffer.len() > self.max_data_block_size {
+                    buffer.set_encoding(encoding);
+                    Self::write_tsm(&mut self.writers, flush_task, level_idx, field_id, buffer)
+                        .await?;
+                    buffer.clear();
+                }
             }
         }
-
+        // Write the remaining data to disk.
         for (level, lvl_buffer) in self.buffers.iter_mut().enumerate() {
             let buffer = &mut lvl_buffer[buf_idx];
             if !buffer.is_empty() {
@@ -480,13 +498,11 @@ pub mod flush_tests {
             (1, 11), (1, 12), (2, 21), (3, 3), (2, 22), (4, 41), (4, 42),
         ];
         data.sort_by_key(|a| a.0);
-        println!("{:?}", &data);
         assert_eq!(
             &data,
             &vec![(1, 11), (1, 12), (2, 21), (2, 22), (3, 3), (4, 41), (4, 42)]
         );
         dedup_front_by_key(&mut data, |a| a.0);
-        println!("{:?}", &data);
         assert_eq!(&data, &vec![(1, 12), (2, 22), (3, 3), (4, 42)]);
     }
 
@@ -778,23 +794,23 @@ pub mod flush_tests {
         );
 
         let values = vec![
-            (max_level_ts, field_val.clone()),
-            (max_level_ts - 1, field_val.clone()),
             (max_level_ts - 2, field_val.clone()),
-            (max_level_ts + 3, field_val.clone()),
-            (max_level_ts + 2, field_val.clone()),
+            (max_level_ts - 1, field_val.clone()),
+            (max_level_ts, field_val.clone()),
             (max_level_ts + 1, field_val.clone()),
+            (max_level_ts + 2, field_val.clone()),
+            (max_level_ts + 3, field_val.clone()),
         ];
         let mut delta_data_block = DataBlock::new(1, field_val.value_type());
-        delta_data_block.insert(field_val.data_value(max_level_ts));
-        delta_data_block.insert(field_val.data_value(max_level_ts - 1));
         delta_data_block.insert(field_val.data_value(max_level_ts - 2));
+        delta_data_block.insert(field_val.data_value(max_level_ts - 1));
+        delta_data_block.insert(field_val.data_value(max_level_ts));
         expected_delta_data.insert(field_id, vec![delta_data_block]);
 
         let mut tsm_data_block = DataBlock::new(1, field_val.value_type());
-        tsm_data_block.insert(field_val.data_value(max_level_ts + 3));
-        tsm_data_block.insert(field_val.data_value(max_level_ts + 2));
         tsm_data_block.insert(field_val.data_value(max_level_ts + 1));
+        tsm_data_block.insert(field_val.data_value(max_level_ts + 2));
+        tsm_data_block.insert(field_val.data_value(max_level_ts + 3));
         expected_tsm_data.insert(field_id, vec![tsm_data_block]);
 
         writer
