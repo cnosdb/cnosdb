@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::arrow::array::ArrayRef;
-use datafusion::arrow::datatypes::{DataType, Field};
+use datafusion::arrow::datatypes::{DataType, Field, TimeUnit};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::type_coercion::aggregates::TIMESTAMPS;
 use datafusion::logical_expr::{
@@ -12,6 +12,7 @@ use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
 use super::{TIME_WINDOW, WINDOW_END, WINDOW_START};
+use crate::extension::expr::INTERVALS;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
     let udf = new();
@@ -34,22 +35,32 @@ fn new() -> ScalarUDF {
     // - slideDuration
     // - startTime
     //
-    // group by time_window(time, '10s') => group by time_window(time, '10s', '10s', '0s')
-    // group by time_window(time, '10s', '5s') => group by time_window(time, '10s', '5s', '0s')
-    // group by time_window(time, '10s', '5s', '-5s')
+    // group by time_window(time, interval '10 second') => group by time_window(time, interval '10 second', interval '5 second', '1970-01-01T00:00:00.000Z')
+    // group by time_window(time, interval '10 second', interval '5 second') => group by time_window(time, interval '10 second', interval '5 second', '1970-01-01T00:00:00.000Z')
+    // group by time_window(time, interval '10 second', interval '5 second', '1999-12-31T00:00:00.000Z')
     let type_signatures = TIMESTAMPS
         .iter()
-        .flat_map(|t| {
-            [
-                TypeSignature::Exact(vec![t.clone(), DataType::Utf8]),
-                TypeSignature::Exact(vec![t.clone(), DataType::Utf8, DataType::Utf8]),
-                TypeSignature::Exact(vec![
-                    t.clone(),
-                    DataType::Utf8,
-                    DataType::Utf8,
-                    DataType::Utf8,
-                ]),
-            ]
+        .flat_map(|first| {
+            INTERVALS.iter().flat_map(|second| {
+                INTERVALS
+                    .iter()
+                    .flat_map(|third| {
+                        [
+                            TypeSignature::Exact(vec![
+                                first.clone(),
+                                second.clone(),
+                                third.clone(),
+                            ]),
+                            TypeSignature::Exact(vec![
+                                first.clone(),
+                                second.clone(),
+                                third.clone(),
+                                DataType::Timestamp(TimeUnit::Nanosecond, None),
+                            ]),
+                        ]
+                    })
+                    .chain([TypeSignature::Exact(vec![first.clone(), second.clone()])])
+            })
         })
         .collect();
 

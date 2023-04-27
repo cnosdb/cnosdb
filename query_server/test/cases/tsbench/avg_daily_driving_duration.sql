@@ -52,7 +52,7 @@ count("mv")/ 6 as "hours driven"
 FROM 
 (
     SELECT 
-    time_window(time, '10m') as "time", 
+    time_window(time, interval '10 minute') as "time", 
     "fleet", 
     "name", 
     "driver", 
@@ -63,13 +63,13 @@ FROM
     time > '2022-01-01T00:00:00Z' 
     AND time < '2022-02-01T00:00:00Z' 
     GROUP BY 
-    time_window(time, '10m'), 
+    time_window(time, interval '10 minute'), 
     "fleet", 
     "name", 
     "driver"
 )
 GROUP BY 
-time_window(time.start, '1d'), 
+time_window(time.start, interval '1 day'), 
 "fleet", 
 "name", 
 "driver"
@@ -135,7 +135,7 @@ count("mv")/ 6 as "hours driven"
 FROM 
 (
     SELECT 
-    time_window(time, '10m') as "time", 
+    time_window(time, interval '10 minute') as "time", 
     "fleet", 
     "name", 
     "driver", 
@@ -146,13 +146,13 @@ FROM
     time > '2022-01-01T00:00:00Z' 
     AND time < '2022-02-01T00:00:00Z' 
     GROUP BY 
-    time_window(time, '10m'), 
+    time_window(time, interval '10 minute'), 
     "fleet", 
     "name", 
     "driver"
 )
 GROUP BY 
-time_window(time.start, '1d'), 
+time_window(time.start, interval '1 day'), 
 "fleet", 
 "name", 
 "driver"

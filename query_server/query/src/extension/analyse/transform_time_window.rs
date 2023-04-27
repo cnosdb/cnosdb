@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
+use datafusion::common::scalar::{dt_to_nano, mdn_to_nano, ym_to_nano};
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::config::ConfigOptions;
 use datafusion::error::{DataFusionError, Result};
@@ -19,7 +20,6 @@ use crate::extension::expr::expr_utils::find_exprs_in_exprs_deeply_nested;
 use crate::extension::expr::{TIME_WINDOW, WINDOW_COL_NAME, WINDOW_END, WINDOW_START};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::extension::logical::plan_node::LogicalPlanExt;
-use crate::utils::duration::parse_duration;
 
 lazy_static! {
     static ref INIT_TIME: Expr = lit(ScalarValue::TimestampNanosecond(Some(0), None));
@@ -90,28 +90,29 @@ fn make_time_window(expr: &Expr) -> Result<TimeWindow, QueryError> {
     let window_alias = expr.display_name()?;
     match expr {
         Expr::ScalarUDF { fun, args } if fun.name == TIME_WINDOW => {
-            if args.len() < 2 {
-                return Err(QueryError::Internal {
-                    reason: format!("Invalid signature of {TIME_WINDOW}"),
-                });
-            }
+            let mut args = args.iter();
+
             // first arg: time_column
-            let time_column = unsafe { args.get_unchecked(0) };
+            let time_column = args.next().ok_or_else(|| QueryError::Internal {
+                reason: format!("Invalid signature of {TIME_WINDOW}"),
+            })?;
             // second arg: window_duration
-            let window_duration = unsafe { args.get_unchecked(1) };
+            let window_duration = args.next().ok_or_else(|| QueryError::Internal {
+                reason: format!("Invalid signature of {TIME_WINDOW}"),
+            })?;
             let window_duration = valid_duration(parse_duration_arg(window_duration)?)?;
 
-            let time_window_builder =
+            let mut time_window_builder =
                 TimeWindowBuilder::new(window_alias, time_column.clone(), window_duration);
 
             // time_window(time, interval '10 seconds', interval '5 milliseconds')
             // third arg: slide_duration
-            if let Some(slide_duration) = args.get(2) {
+            if let Some(slide_duration) = args.next() {
                 let slide_duration = valid_duration(parse_duration_arg(slide_duration)?)?;
-                let time_window = time_window_builder
-                    .with_slide_duration(slide_duration)
-                    .build();
-                return Ok(time_window);
+                time_window_builder.with_slide_duration(slide_duration);
+
+                args.next()
+                    .map(|start_time| time_window_builder.with_start_time(start_time.clone()));
             }
 
             Ok(time_window_builder.build())
@@ -133,20 +134,24 @@ fn valid_duration(dur: Duration) -> Result<Duration, QueryError> {
 }
 
 /// Convert string time duration to [`Duration`] \
-/// Support duration unit: d | h | m | s | ms
+/// Only support [`ScalarValue::IntervalYearMonth`] | [`ScalarValue::IntervalMonthDayNano`] | [`ScalarValue::IntervalDayTime`]
 fn parse_duration_arg(expr: &Expr) -> Result<Duration, QueryError> {
-    let duration = to_string(expr).ok_or_else(|| QueryError::InvalidTimeWindowParam {
+    let nano = match expr {
+        Expr::Literal(ScalarValue::IntervalYearMonth(val)) => ym_to_nano(val),
+        Expr::Literal(ScalarValue::IntervalMonthDayNano(val)) => mdn_to_nano(val),
+        Expr::Literal(ScalarValue::IntervalDayTime(val)) => dt_to_nano(val),
+        _ => {
+            return Err(QueryError::InvalidTimeWindowParam {
+                reason: format!("Expected interval, but found {expr}"),
+            })
+        }
+    };
+
+    let duration = nano.ok_or_else(|| QueryError::InvalidTimeWindowParam {
         reason: format!("{expr}"),
     })?;
     debug!("duration str: {}", duration);
-    parse_duration(&duration).map_err(|reason| QueryError::InvalidTimeWindowParam { reason })
-}
-
-fn to_string(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Literal(lit) => Some(lit.to_string()),
-        _ => None,
-    }
+    Ok(Duration::from_nanos(duration as u64))
 }
 
 #[derive(Debug)]
@@ -157,7 +162,7 @@ struct TimeWindow {
     window_duration: Duration,
     // interval
     slide_duration: Duration,
-    start_time: i64,
+    start_time: Expr,
 }
 
 impl TimeWindow {
@@ -171,7 +176,7 @@ struct TimeWindowBuilder {
     time_column: Expr,
     window_duration: Duration,
     slide_duration: Option<Duration>,
-    start_time: Option<i64>,
+    start_time: Expr,
 }
 
 impl TimeWindowBuilder {
@@ -181,17 +186,21 @@ impl TimeWindowBuilder {
             time_column,
             window_duration,
             slide_duration: Default::default(),
-            start_time: Default::default(),
+            // Default to unix EPOCH
+            start_time: Expr::Literal(ScalarValue::TimestampNanosecond(
+                Some(0),
+                Some("+00:00".into()),
+            )),
         }
     }
 
-    pub fn with_slide_duration(mut self, slide_duration: Duration) -> Self {
+    pub fn with_slide_duration(&mut self, slide_duration: Duration) -> &mut Self {
         self.slide_duration = Some(slide_duration);
         self
     }
 
-    pub fn _with_start_time(mut self, start_time: i64) -> Self {
-        self.start_time = Some(start_time);
+    pub fn with_start_time(&mut self, start_time: Expr) -> &mut Self {
+        self.start_time = start_time;
         self
     }
 
@@ -201,7 +210,7 @@ impl TimeWindowBuilder {
             time_column: self.time_column,
             window_duration: self.window_duration,
             slide_duration: self.slide_duration.unwrap_or(self.window_duration),
-            start_time: self.start_time.unwrap_or(0),
+            start_time: self.start_time,
         }
     }
 }
@@ -228,12 +237,16 @@ fn make_window_expr(i: i64, window: &TimeWindow) -> Expr {
     // TODO may overflow
     // i64::MAX (9223372036854775807) => 2262-04-11 23:47:16.854775807
     let i64_time = cast(ns_time, DataType::Int64);
+    let i64_start_time = modulo(
+        cast(start_time.clone(), DataType::Int64),
+        window_duration.clone(),
+    );
 
     let last_start = minus(
         i64_time.clone(),
         modulo(
             // maybe overflow 2262-04-11 23:47:16.854775807 + <slide_duration>
-            plus(minus(i64_time, lit(*start_time)), slide_duration.clone()),
+            plus(minus(i64_time, i64_start_time), slide_duration.clone()),
             slide_duration.clone(),
         ),
     );
