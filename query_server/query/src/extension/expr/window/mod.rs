@@ -15,3 +15,5 @@ pub const TIME_WINDOW: &str = "TIME_WINDOW";
 pub const WINDOW_COL_NAME: &str = "_window";
 pub const WINDOW_START: &str = "start";
 pub const WINDOW_END: &str = "end";
+
+pub use time_window::{signature as time_window_signature, TIME_WINDOW_UDF};

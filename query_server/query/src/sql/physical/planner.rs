@@ -23,6 +23,7 @@ use spi::Result;
 
 use super::optimizer::PhysicalOptimizer;
 use crate::extension::physical::transform_rule::expand::ExpandPlanner;
+use crate::extension::physical::transform_rule::gapfill::GapFillPlanner;
 use crate::extension::physical::transform_rule::table_writer::TableWriterPlanner;
 use crate::extension::physical::transform_rule::tag_scan::TagScanPlanner;
 
@@ -60,6 +61,7 @@ impl Default for DefaultPhysicalPlanner {
             Arc::new(TableWriterPlanner {}),
             Arc::new(TagScanPlanner {}),
             Arc::new(ExpandPlanner::new()),
+            Arc::new(GapFillPlanner::new()),
         ];
 
         // We need to take care of the rule ordering. They may influence each other.

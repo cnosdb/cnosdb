@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
-use datafusion::logical_expr::{
-    function, BuiltinScalarFunction, ReturnTypeFunction, ScalarUDF, Volatility,
-};
+use datafusion::logical_expr::{ReturnTypeFunction, ScalarUDF, Volatility};
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
+use super::super::time_window_signature;
 use super::{unimplemented_scalar_impl, TIME_WINDOW_GAPFILL};
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
@@ -16,9 +15,9 @@ pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<Sc
 }
 
 fn new() -> ScalarUDF {
-    // DATE_BIN_GAPFILL should have the same signature as DATE_BIN,
+    // TIME_WINDOW_GAPFILL should have the same signature as DATE_BIN,
     // so that just adding _GAPFILL can turn a query into a gap-filling query.
-    let mut signatures = function::signature(&BuiltinScalarFunction::DateBin);
+    let mut signatures = time_window_signature();
     // We don't want this to be optimized away before we can give a helpful error message
     signatures.volatility = Volatility::Volatile;
 

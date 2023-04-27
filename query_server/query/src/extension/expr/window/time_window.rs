@@ -8,11 +8,14 @@ use datafusion::logical_expr::{
     ReturnTypeFunction, ScalarUDF, Signature, TypeSignature, Volatility,
 };
 use datafusion::physical_expr::functions::make_scalar_function;
+use once_cell::sync::Lazy;
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
 use super::{TIME_WINDOW, WINDOW_END, WINDOW_START};
 use crate::extension::expr::INTERVALS;
+
+pub static TIME_WINDOW_UDF: Lazy<Arc<ScalarUDF>> = Lazy::new(|| Arc::new(new()));
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
     let udf = new();
@@ -20,15 +23,8 @@ pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<Sc
     Ok(udf)
 }
 
-fn new() -> ScalarUDF {
-    let func = |_: &[ArrayRef]| {
-        Err(DataFusionError::Execution(format!(
-            "{} has no specific implementation, should be converted to Expand operator.",
-            TIME_WINDOW
-        )))
-    };
-    let func = make_scalar_function(func);
-
+/// export this function for gapfill
+pub fn signature() -> Signature {
     // time_window
     // - timeColumn
     // - windowDuration
@@ -64,7 +60,17 @@ fn new() -> ScalarUDF {
         })
         .collect();
 
-    let signature = Signature::one_of(type_signatures, Volatility::Immutable);
+    Signature::one_of(type_signatures, Volatility::Immutable)
+}
+
+fn new() -> ScalarUDF {
+    let func = |_: &[ArrayRef]| {
+        Err(DataFusionError::Execution(format!(
+            "{} has no specific implementation, should be converted to Expand operator.",
+            TIME_WINDOW
+        )))
+    };
+    let func = make_scalar_function(func);
 
     // Struct(_start, _end)
     let return_type: ReturnTypeFunction = Arc::new(move |input_expr_types| {
@@ -76,5 +82,5 @@ fn new() -> ScalarUDF {
         Ok(Arc::new(window))
     });
 
-    ScalarUDF::new(TIME_WINDOW, &signature, &return_type, &func)
+    ScalarUDF::new(TIME_WINDOW, &signature(), &return_type, &func)
 }

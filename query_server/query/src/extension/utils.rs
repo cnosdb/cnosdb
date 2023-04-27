@@ -1,3 +1,4 @@
+use std::ops::{Bound, Range};
 use std::sync::Arc;
 
 use datafusion::arrow::compute::filter_record_batch;
@@ -27,4 +28,32 @@ pub fn batch_filter(
                 // apply filter array to record batch
                 .and_then(|filter_array| Ok(filter_record_batch(batch, filter_array)?))
         })
+}
+
+pub fn try_map_range<T, U, F>(tr: &Range<T>, mut f: F) -> DFResult<Range<U>>
+where
+    F: FnMut(&T) -> DFResult<U>,
+{
+    Ok(Range {
+        start: f(&tr.start)?,
+        end: f(&tr.end)?,
+    })
+}
+
+pub fn try_map_bound<T, U, F>(bt: Bound<T>, mut f: F) -> DFResult<Bound<U>>
+where
+    F: FnMut(T) -> DFResult<U>,
+{
+    Ok(match bt {
+        Bound::Excluded(t) => Bound::Excluded(f(t)?),
+        Bound::Included(t) => Bound::Included(f(t)?),
+        Bound::Unbounded => Bound::Unbounded,
+    })
+}
+
+pub fn bound_extract<T>(b: &Bound<T>) -> Option<&T> {
+    match b {
+        Bound::Included(t) | Bound::Excluded(t) => Some(t),
+        Bound::Unbounded => None,
+    }
 }
