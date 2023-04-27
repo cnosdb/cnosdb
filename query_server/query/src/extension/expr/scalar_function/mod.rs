@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod example;
 mod gapfill;
+mod interpolate;
+mod locf;
 
 use std::sync::Arc;
 
@@ -10,12 +12,16 @@ use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
 pub const TIME_WINDOW_GAPFILL: &str = "time_window_gapfill";
+pub const LOCF: &str = "locf";
+pub const INTERPOLATE: &str = "interpolate";
 
 pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...
     // eg.
     //   example::register_udf(func_manager)?;
     gapfill::register_udf(func_manager)?;
+    locf::register_udf(func_manager)?;
+    interpolate::register_udf(func_manager)?;
     Ok(())
 }
 

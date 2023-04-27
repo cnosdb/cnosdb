@@ -10,6 +10,7 @@ mod selector_function;
 mod window;
 
 use datafusion::arrow::datatypes::{DataType, IntervalUnit};
+pub use scalar_function::{INTERPOLATE, LOCF, TIME_WINDOW_GAPFILL};
 pub use selector_function::{BOTTOM, TOPK};
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
