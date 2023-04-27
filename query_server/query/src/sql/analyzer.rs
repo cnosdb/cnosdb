@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::logical_expr::LogicalPlan;
-use datafusion::optimizer::analyzer::{Analyzer as DFAnalyzer, AnalyzerRule};
+use datafusion::optimizer::analyzer::Analyzer as DFAnalyzer;
 use spi::query::analyzer::Analyzer;
 use spi::query::session::SessionCtx;
 use spi::Result;
@@ -16,14 +16,14 @@ pub struct DefaultAnalyzer {
 
 impl DefaultAnalyzer {
     pub fn new() -> Self {
-        let ext_rules: Vec<Arc<dyn AnalyzerRule + Send + Sync>> = vec![
-            Arc::new(TransformBottomFuncToTopkNodeRule {}),
-            Arc::new(TransformTopkFuncToTopkNodeRule {}),
-            Arc::new(TransformTimeWindowRule {}),
-        ];
-        Self {
-            inner: DFAnalyzer::with_rules(ext_rules),
-        }
+        let mut analyzer = DFAnalyzer::default();
+
+        let rules = &mut analyzer.rules;
+        rules.push(Arc::new(TransformBottomFuncToTopkNodeRule {}));
+        rules.push(Arc::new(TransformTopkFuncToTopkNodeRule {}));
+        rules.push(Arc::new(TransformTimeWindowRule {}));
+
+        Self { inner: analyzer }
     }
 }
 

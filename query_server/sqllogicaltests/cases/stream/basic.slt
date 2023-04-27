@@ -74,9 +74,9 @@ statement ok
 insert into readings_agg
   select time.start, name, elevation
   from (
-    select time_window(time, '5m') as time, name, max(elevation) as elevation 
+    select time_window(time, interval '5 minute') as time, name, max(elevation) as elevation 
     from TskvTable 
-    group by name, time_window(time, '5m'));
+    group by name, time_window(time, interval '5 minute'));
 
 statement ok
 insert into readings_kv(time, name, elevation) values('2022-01-01T04:01:00', 'test', 111);
