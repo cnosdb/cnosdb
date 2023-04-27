@@ -14,7 +14,9 @@ pub use scalar_function::{INTERPOLATE, LOCF, TIME_WINDOW_GAPFILL};
 pub use selector_function::{BOTTOM, TOPK};
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
-pub use window::{TIME_WINDOW, WINDOW_COL_NAME, WINDOW_END, WINDOW_START};
+pub use window::{
+    time_window_signature, TIME_WINDOW, TIME_WINDOW_UDF, WINDOW_COL_NAME, WINDOW_END, WINDOW_START,
+};
 
 pub static INTERVALS: &[DataType] = &[
     DataType::Interval(IntervalUnit::YearMonth),

@@ -7,6 +7,7 @@ use spi::query::session::SessionCtx;
 use spi::Result;
 
 use crate::extension::analyse::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
+use crate::extension::analyse::transform_gapfill::TransformGapFill;
 use crate::extension::analyse::transform_time_window::TransformTimeWindowRule;
 use crate::extension::analyse::transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule;
 
@@ -21,6 +22,7 @@ impl DefaultAnalyzer {
         let rules = &mut analyzer.rules;
         rules.push(Arc::new(TransformBottomFuncToTopkNodeRule {}));
         rules.push(Arc::new(TransformTopkFuncToTopkNodeRule {}));
+        rules.push(Arc::new(TransformGapFill::new()));
         rules.push(Arc::new(TransformTimeWindowRule {}));
 
         Self { inner: analyzer }

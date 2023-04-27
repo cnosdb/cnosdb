@@ -48,6 +48,7 @@ regex = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 bincode = { workspace = true }
 dirs = { workspace = true }
+once_cell = { workspace = true }
 
 [features]
 default = []
