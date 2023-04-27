@@ -1814,6 +1814,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "darwin-libproc"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fb90051930c9a0f09e585762152048e23ac74d20c10590ef7cf01c0343c3046"
+dependencies = [
+ "darwin-libproc-sys",
+ "libc",
+ "memchr",
+]
+
+[[package]]
+name = "darwin-libproc-sys"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57cebb5bde66eecdd30ddc4b9cd208238b15db4982ccc72db59d699ea10867c1"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "dashmap"
 version = "5.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3566,6 +3586,7 @@ dependencies = [
  "openraft",
  "parking_lot 0.12.1",
  "pprof",
+ "psutil",
  "rand 0.8.5",
  "reqwest",
  "serde",
@@ -3574,6 +3595,7 @@ dependencies = [
  "snafu",
  "surf",
  "sys-info",
+ "sysinfo",
  "tokio",
  "toml",
  "tonic",
@@ -3782,6 +3804,15 @@ checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
 dependencies = [
  "memchr",
  "minimal-lexical",
+]
+
+[[package]]
+name = "ntapi"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8a3895c6391c39d7fe7ebc444a87eb2991b2a0bc718fdabd071eec617fc68e4"
+dependencies = [
+ "winapi",
 ]
 
 [[package]]
@@ -4336,6 +4367,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
 
 [[package]]
+name = "platforms"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8d0eef3571242013a0d5dc84861c3ae4a652e56e12adf8bdc26ff5f8cb34c94"
+
+[[package]]
 name = "plotters"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4620,6 +4657,25 @@ dependencies = [
  "tonic",
  "tonic-build",
  "utils",
+]
+
+[[package]]
+name = "psutil"
+version = "3.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f866af2b0f8e4b0d2d00aad8a9c5fc48fad33466cd99a64cbb3a4c1505f1a62d"
+dependencies = [
+ "cfg-if",
+ "darwin-libproc",
+ "derive_more",
+ "glob",
+ "mach",
+ "nix 0.23.2",
+ "num_cpus",
+ "once_cell",
+ "platforms",
+ "thiserror",
+ "unescape",
 ]
 
 [[package]]
@@ -5816,6 +5872,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sysinfo"
+version = "0.28.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4c2f3ca6693feb29a89724516f016488e9aafc7f37264f898593ee4b942f31b"
+dependencies = [
+ "cfg-if",
+ "core-foundation-sys",
+ "libc",
+ "ntapi",
+ "once_cell",
+ "rayon",
+ "winapi",
+]
+
+[[package]]
 name = "tagptr"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6507,6 +6578,12 @@ name = "typenum"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "497961ef93d974e23eb6f433eb5fe1b7930b659f06d12dec6fc44a8f554c0bba"
+
+[[package]]
+name = "unescape"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccb97dac3243214f8d8507998906ca3e2e0b900bf9bf4870477f125b82e68f6e"
 
 [[package]]
 name = "unicase"
