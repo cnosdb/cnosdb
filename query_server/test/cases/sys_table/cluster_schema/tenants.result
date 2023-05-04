@@ -13,6 +13,36 @@
 -- EXECUTE SQL: create tenant if not exists test_ts_tenant1; --
 200 OK
 
+-- EXECUTE SQL: create tenant test_ts_tenant1 with comment='this is test_ts_tenant1'; --
+422 Unprocessable Entity
+{"error_code":"030009","error_message":"The tenant test_ts_tenant1 already exists"}
+
+-- EXECUTE SQL: create tenant if not exists test_ts_tenant1 with comment='this is test_ts_tenant1'; --
+200 OK
+
+-- EXECUTE SQL: select * from cluster_schema.tenants; --
+200 OK
+tenant_name,tenant_options
+test_ts_tenant1,"{""comment"":null,""limiter_config"":null}"
+cnosdb,"{""comment"":""system tenant"",""limiter_config"":null}"
+
+-- EXECUTE SQL: alter tenant test_ts_tenant1 set comment='Ig.UZn꓃DH~Bgc.ᵵh7uaV*1lE/}\,J씟\h#f^Kr잿z'; --
+200 OK
+
+-- EXECUTE SQL: select * from cluster_schema.tenants; --
+200 OK
+tenant_name,tenant_options
+test_ts_tenant1,"{""comment"":""Ig.UZn꓃DH~Bgc.ᵵh7uaV*1lE/}\\,J씟\\h#f^Kr잿z"",""limiter_config"":null}"
+cnosdb,"{""comment"":""system tenant"",""limiter_config"":null}"
+
+-- EXECUTE SQL: ALTER TENANT test_ts_tenant1 unSET COMMENT; --
+200 OK
+
+-- EXECUTE SQL: select * from cluster_schema.tenants; --
+200 OK
+tenant_name,tenant_options
+test_ts_tenant1,"{""comment"":null,""limiter_config"":null}"
+cnosdb,"{""comment"":""system tenant"",""limiter_config"":null}"
 
 -- EXECUTE SQL: create user if not exists test_ts_u1; --
 200 OK

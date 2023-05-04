@@ -3,6 +3,14 @@ drop user if exists test_ts_u1;
 drop user if exists test_ts_u2;
 
 create tenant if not exists test_ts_tenant1;
+create tenant test_ts_tenant1 with comment='this is test_ts_tenant1';
+create tenant if not exists test_ts_tenant1 with comment='this is test_ts_tenant1';
+select * from cluster_schema.tenants;
+alter tenant test_ts_tenant1 set comment='Ig.UZn꓃DH~Bgc.ᵵh7uaV*1lE/}\,J씟\h#f^Kr잿z';
+select * from cluster_schema.tenants;
+ALTER TENANT test_ts_tenant1 unSET COMMENT;
+select * from cluster_schema.tenants;
+
 create user if not exists test_ts_u1;
 create user if not exists test_ts_u2;
 
