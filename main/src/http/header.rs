@@ -8,6 +8,7 @@ use super::Error as HttpError;
 pub struct Header {
     accept: Option<String>,
     authorization: String,
+    private_key: Option<String>,
 }
 
 impl Header {
@@ -15,6 +16,19 @@ impl Header {
         Self {
             accept,
             authorization,
+            private_key: None,
+        }
+    }
+
+    pub fn with_private_key(
+        accept: Option<String>,
+        authorization: String,
+        private_key: Option<String>,
+    ) -> Self {
+        Self {
+            accept,
+            authorization,
+            private_key,
         }
     }
 
@@ -23,6 +37,19 @@ impl Header {
     }
 
     pub fn try_get_basic_auth(&self) -> Result<UserInfo, HttpError> {
+        let private_key = self
+            .private_key
+            .as_ref()
+            .map(|e| {
+                let content = base64::decode(e).map_err(|_| HttpError::InvalidHeader {
+                    reason: format!("Can not parse private_key with base64: {}", e),
+                })?;
+                String::from_utf8(content).map_err(|err| HttpError::InvalidHeader {
+                    reason: err.to_string(),
+                })
+            })
+            .transpose()?;
+
         let auth = &self.authorization;
 
         let get_err = || {
@@ -49,7 +76,7 @@ impl Header {
                     return Ok(UserInfo {
                         user: str[0..idx].to_string(),
                         password: str[idx + 1..].to_string(),
-                        private_key: None,
+                        private_key,
                     });
                 }
             }

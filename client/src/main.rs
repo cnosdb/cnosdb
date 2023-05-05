@@ -1,5 +1,5 @@
-use std::env;
 use std::path::{Path, PathBuf};
+use std::{env, fs};
 
 use clap::{value_parser, Parser};
 use client::ctx::{SessionConfig, SessionContext};
@@ -38,6 +38,12 @@ struct Args {
 
     #[arg(short, long, help = "Password used to connect to the CnosDB")]
     password: Option<String>,
+
+    #[arg(
+        long,
+        help = "Rsa private key path for key pair authentication used to connect to the CnosDB"
+    )]
+    private_key_path: Option<String>,
 
     #[arg(
         short,
@@ -136,11 +142,17 @@ pub async fn main() -> Result<(), anyhow::Error> {
         env::set_current_dir(p).unwrap();
     };
 
+    let private_key = args.private_key_path.as_ref().map(|e| {
+        let p = Path::new(e);
+        fs::read_to_string(p).expect("Read private key file.")
+    });
+
     let session_config = SessionConfig::from_env()
         .with_host(args.host)
         .with_port(args.port)
         .with_user(args.user)
         .with_password(args.password)
+        .with_private_key(private_key)
         .with_tenant(args.tenant)
         .with_database(args.database)
         .with_target_partitions(args.target_partitions)

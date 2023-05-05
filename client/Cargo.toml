@@ -21,6 +21,7 @@ tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync
 async-backtrace = { workspace = true, optional = true }
 walkdir = { workspace = true }
 anyhow = { workspace = true }
+base64 = { workspace = true }
 
 [features]
 default = []

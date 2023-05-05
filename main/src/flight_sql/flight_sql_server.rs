@@ -900,7 +900,6 @@ mod test {
         let _handle = tokio::spawn(server);
     }
 
-    #[ignore]
     #[tokio::test]
     async fn test_client() {
         trace::init_default_global_tracing("/tmp", "test_rust.log", "info");

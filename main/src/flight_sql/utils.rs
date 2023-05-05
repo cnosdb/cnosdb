@@ -9,12 +9,9 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::ipc::{self, reader};
 use datafusion::arrow::record_batch::RecordBatch;
 use http_protocol::header::AUTHORIZATION;
-use models::auth::user::UserInfo;
 use prost::Message;
 use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::{Request, Status};
-
-use crate::http::header::Header;
 
 /// Helper method for retrieving a value from the Authorization header.
 ///
@@ -89,21 +86,6 @@ pub fn parse_authorization_header(
         .map_err(|_| "authorization not parsable".to_string())?;
 
     Ok(authorization)
-}
-
-pub fn parse_user_info(
-    request: &Request<FlightDescriptor>,
-) -> std::result::Result<UserInfo, String> {
-    let authorization = request
-        .metadata()
-        .get(AUTHORIZATION.to_string())
-        .ok_or_else(|| "authorization field not present".to_string())?
-        .to_str()
-        .map_err(|_| "authorization not parsable".to_string())?;
-
-    Header::with(None, authorization.to_string())
-        .try_get_basic_auth()
-        .map_err(|e| format!("authorization not parsable, error: {}", e))
 }
 
 pub fn endpoint(
