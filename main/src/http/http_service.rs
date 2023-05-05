@@ -11,7 +11,7 @@ use std::time::Instant;
 use chrono::Local;
 use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
-use http_protocol::header::{ACCEPT, AUTHORIZATION};
+use http_protocol::header::{ACCEPT, AUTHORIZATION, PRIVATE_KEY};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
@@ -126,8 +126,10 @@ impl HttpService {
     fn handle_header(&self) -> impl Filter<Extract = (Header,), Error = warp::Rejection> + Clone {
         header::optional::<String>(ACCEPT.as_str())
             .and(header::<String>(AUTHORIZATION.as_str()))
-            .and_then(|accept, authorization| async move {
-                let res: Result<Header, warp::Rejection> = Ok(Header::with(accept, authorization));
+            .and(header::optional::<String>(PRIVATE_KEY))
+            .and_then(|accept, authorization, private_key| async move {
+                let res: Result<Header, warp::Rejection> =
+                    Ok(Header::with_private_key(accept, authorization, private_key));
                 res
             })
     }

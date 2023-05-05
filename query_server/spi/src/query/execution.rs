@@ -194,6 +194,30 @@ pub struct QueryStateMachine {
 }
 
 impl QueryStateMachine {
+    /// only for test
+    pub fn test(query: Query) -> Self {
+        use coordinator::service_mock::MockCoordinator;
+        use datafusion::execution::memory_pool::UnboundedMemoryPool;
+
+        use super::session::SessionCtxFactory;
+
+        let factory = SessionCtxFactory::new("/tmp".into());
+        let ctx = query.context().clone();
+        QueryStateMachine::begin(
+            QueryId::next_id(),
+            query,
+            factory
+                .create_session_ctx(
+                    "session_id",
+                    ctx,
+                    0,
+                    Arc::new(UnboundedMemoryPool::default()),
+                )
+                .expect("create test session ctx"),
+            Arc::new(MockCoordinator {}),
+        )
+    }
+
     pub fn begin(
         query_id: QueryId,
         query: Query,

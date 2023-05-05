@@ -1321,6 +1321,7 @@ version = "2.2.0"
 dependencies = [
  "anyhow",
  "async-backtrace",
+ "base64 0.13.1",
  "clap 4.2.5",
  "datafusion",
  "dirs",

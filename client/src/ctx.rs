@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::anyhow;
 use datafusion::arrow::record_batch::RecordBatch;
-use http_protocol::header::ACCEPT;
+use http_protocol::header::{ACCEPT, PRIVATE_KEY};
 use http_protocol::http_client::HttpClient;
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::status_code::OK;
@@ -63,6 +63,11 @@ impl SessionConfig {
         self
     }
 
+    pub fn with_private_key(mut self, private_key: Option<String>) -> Self {
+        self.user_info.private_key = private_key;
+        self
+    }
+
     pub fn with_tenant(mut self, tenant: String) -> Self {
         self.tenant = tenant;
         self
@@ -119,6 +124,7 @@ impl SessionConfig {
 pub struct UserInfo {
     pub user: String,
     pub password: Option<String>,
+    pub private_key: Option<String>,
 }
 
 impl Default for UserInfo {
@@ -126,6 +132,7 @@ impl Default for UserInfo {
         Self {
             user: DEFAULT_USER.to_string(),
             password: None,
+            private_key: None,
         }
     }
 }
@@ -184,16 +191,20 @@ impl SessionContext {
         };
 
         // let param = &[("db", &self.session_config.database)];
-
-        let resp = self
+        let mut builder = self
             .http_client
             .post(API_V1_SQL_PATH)
             .basic_auth::<&str, &str>(&user_info.user, user_info.password.as_deref())
-            .header(ACCEPT, self.session_config.fmt.get_http_content_type())
-            .query(&param)
-            .body(sql)
-            .send()
-            .await?;
+            .header(ACCEPT, self.session_config.fmt.get_http_content_type());
+
+        builder = if let Some(key) = &user_info.private_key {
+            let key = base64::encode(key);
+            builder.header(PRIVATE_KEY, key)
+        } else {
+            builder
+        };
+
+        let resp = builder.query(&param).body(sql).send().await?;
 
         match resp.status() {
             OK => {

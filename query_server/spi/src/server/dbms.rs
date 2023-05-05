@@ -8,7 +8,7 @@ use datafusion::from_slice::FromSlice;
 use models::auth::role::UserRole;
 use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
 
-use crate::query::execution::{Output, QueryStateMachineRef};
+use crate::query::execution::{Output, QueryStateMachine, QueryStateMachineRef};
 use crate::query::logical_planner::Plan;
 use crate::query::recordbatch::RecordBatchStreamWrapper;
 use crate::service::protocol::{Query, QueryHandle, QueryId};
@@ -85,23 +85,23 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         ))
     }
 
-    async fn build_query_state_machine(&self, _query: Query) -> Result<QueryStateMachineRef> {
-        todo!()
+    async fn build_query_state_machine(&self, query: Query) -> Result<QueryStateMachineRef> {
+        Ok(Arc::new(QueryStateMachine::test(query)))
     }
 
     async fn build_logical_plan(
         &self,
         _query_state_machine: QueryStateMachineRef,
     ) -> Result<Option<Plan>> {
-        todo!()
+        Ok(None)
     }
 
     async fn execute_logical_plan(
         &self,
         _logical_plan: Plan,
-        _query_state_machine: QueryStateMachineRef,
+        query_state_machine: QueryStateMachineRef,
     ) -> Result<QueryHandle> {
-        todo!()
+        self.execute(&query_state_machine.query).await
     }
 
     fn metrics(&self) -> String {
