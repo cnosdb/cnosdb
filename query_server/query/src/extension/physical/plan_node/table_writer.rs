@@ -119,10 +119,10 @@ impl ExecutionPlan for TableWriterExec {
             context.task_id()
         );
 
-        let input = self.input.execute(partition, context)?;
-        let record_batch_sink = self
-            .record_batch_sink_provider
-            .create_batch_sink(&self.metrics, partition);
+        let input = self.input.execute(partition, context.clone())?;
+        let record_batch_sink =
+            self.record_batch_sink_provider
+                .create_batch_sink(context, &self.metrics, partition);
 
         let metrics = TableWriterMetrics::new(&self.metrics, partition);
 

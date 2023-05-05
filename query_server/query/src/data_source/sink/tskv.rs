@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use models::consistency_level::ConsistencyLevel;
 use models::schema::TskvTableSchemaRef;
@@ -75,6 +78,7 @@ impl TskvRecordBatchSinkProvider {
 impl RecordBatchSinkProvider for TskvRecordBatchSinkProvider {
     fn create_batch_sink(
         &self,
+        _context: Arc<TaskContext>,
         metrics: &ExecutionPlanMetricsSet,
         partition: usize,
     ) -> Box<dyn RecordBatchSink> {
