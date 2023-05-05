@@ -1,18 +1,3 @@
-mod cache_config;
-mod check;
-mod cluster_config;
-mod codec;
-mod deployment_config;
-mod heartbeat_config;
-mod hinted_off_config;
-mod limiter_config;
-mod log_config;
-mod nodebasic_config;
-mod query_config;
-mod security_config;
-mod storage_config;
-mod wal_config;
-
 use std::fs::File;
 use std::io;
 use std::io::Read;
@@ -28,13 +13,28 @@ pub use crate::heartbeat_config::*;
 pub use crate::hinted_off_config::*;
 pub use crate::limiter_config::*;
 pub use crate::log_config::*;
-pub use crate::nodebasic_config::*;
+pub use crate::node_config::*;
 pub use crate::query_config::*;
 pub use crate::security_config::*;
 pub use crate::storage_config::*;
 pub use crate::wal_config::*;
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+mod cache_config;
+mod check;
+mod cluster_config;
+mod codec;
+mod deployment_config;
+mod heartbeat_config;
+mod hinted_off_config;
+mod limiter_config;
+mod log_config;
+mod node_config;
+mod query_config;
+mod security_config;
+mod storage_config;
+mod wal_config;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Config {
     #[serde(default = "Config::default_reporting_disabled")]
     pub reporting_disabled: bool,
@@ -51,6 +51,26 @@ pub struct Config {
     pub hinted_off: HintedOffConfig,
     pub heartbeat: HeartBeatConfig,
     pub node_basic: NodeBasicConfig,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            reporting_disabled: Self::default_reporting_disabled(),
+            host: Self::default_host(),
+            deployment: Default::default(),
+            query: Default::default(),
+            storage: Default::default(),
+            wal: Default::default(),
+            cache: Default::default(),
+            log: Default::default(),
+            security: Default::default(),
+            cluster: Default::default(),
+            hinted_off: Default::default(),
+            heartbeat: Default::default(),
+            node_basic: Default::default(),
+        }
+    }
 }
 
 impl Config {
@@ -89,7 +109,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Result<Config, std::io::Error> {
                     err
                 )
                 .as_str(),
-            ))
+            ));
         }
     };
     let mut content = String::new();
@@ -115,7 +135,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Result<Config, std::io::Error> {
                     err
                 )
                 .as_str(),
-            ))
+            ));
         }
     };
     config.wal.introspect();
