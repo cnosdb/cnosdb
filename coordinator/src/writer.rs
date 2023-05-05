@@ -228,13 +228,13 @@ impl<'a> VnodeMapping<'a> {
         let hash_id = {
             let mut hasher = BkdrHasher::new();
             hasher.hash_with(tab_name.as_bytes());
-            if let Some(tag_name) = schema.tag_name() {
+            if let Some(tags_key) = schema.tag_name() {
                 let tag_nullbit = point.tags_nullbit().ok_or(CoordinatorError::Points {
                     msg: "point missing tag null bit".to_string(),
                 })?;
-                let len = tag_name.len();
+                let len = tags_key.len();
                 let tag_nullbit = BitSet::new_without_check(len, tag_nullbit.bytes());
-                for (idx, (tag_key, tag_value)) in tag_name
+                for (idx, (tag_key, tag_value)) in tags_key
                     .iter()
                     .zip(point.tags().ok_or(CoordinatorError::Points {
                         msg: "point missing tag value".to_string(),
@@ -348,7 +348,11 @@ impl PointWriter {
         let now = tokio::time::Instant::now();
         for (_id, points) in mapping.points.iter_mut() {
             points.finish()?;
-
+            if points.repl_set.vnodes.is_empty() {
+                return Err(CoordinatorError::CommonError {
+                    msg: "no available vnode in replication set".to_string(),
+                });
+            }
             for vnode in points.repl_set.vnodes.iter() {
                 debug!("write points on vnode {:?},  now: {:?}", vnode, now);
 
