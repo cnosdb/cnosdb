@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use models::oid;
 use object_store::aws::AmazonS3Builder;
 use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
@@ -15,14 +16,24 @@ pub mod stream;
 
 pub struct WriteContext {
     location: Path,
+    task_id: String,
     partition: usize,
     file_extension: String,
 }
 
 impl WriteContext {
-    pub fn new(location: Path, partition: usize, file_extension: String) -> Self {
+    pub fn new(
+        location: Path,
+        task_id: Option<String>,
+        partition: usize,
+        file_extension: String,
+    ) -> Self {
+        // If no task_id is specified, a uuid is used to generate one
+        let task_id = task_id.unwrap_or_else(|| oid::uuid_u64().to_string());
+
         Self {
             location,
+            task_id,
             partition,
             file_extension,
         }
@@ -30,6 +41,10 @@ impl WriteContext {
 
     pub fn location(&self) -> &Path {
         &self.location
+    }
+
+    pub fn task_id(&self) -> &str {
+        &self.task_id
     }
 
     pub fn partition(&self) -> usize {

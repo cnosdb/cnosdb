@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
-use datafusion::execution::context::SessionState;
+use datafusion::execution::context::{SessionState, TaskContext};
 use datafusion::logical_expr::TableSource;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::{ExecutionPlan, SendableRecordBatchStream};
@@ -48,6 +48,7 @@ pub trait RecordBatchSink: Send + Sync {
 pub trait RecordBatchSinkProvider: Send + Sync {
     fn create_batch_sink(
         &self,
+        context: Arc<TaskContext>,
         metrics: &ExecutionPlanMetricsSet,
         partition: usize,
     ) -> Box<dyn RecordBatchSink>;

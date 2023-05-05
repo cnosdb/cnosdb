@@ -6,6 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{pin_mut, TryStreamExt};
@@ -82,11 +83,13 @@ impl ObjectStoreSinkProvider {
 impl RecordBatchSinkProvider for ObjectStoreSinkProvider {
     fn create_batch_sink(
         &self,
+        context: Arc<TaskContext>,
         _metrics: &ExecutionPlanMetricsSet,
         partition: usize,
     ) -> Box<dyn RecordBatchSink> {
         let ctx = WriteContext::new(
             self.location.clone(),
+            context.task_id(),
             partition,
             self.file_extension.clone(),
         );
@@ -165,7 +168,8 @@ impl<'a> BufferedWriter<'a> {
         }
 
         debug!(
-            "Export partition {} data, flushing, buffered_size: {}, max_file_size: {}",
+            "Export partition {} data of task[{}], flushing, buffered_size: {}, max_file_size: {}",
+            self.ctx.task_id(),
             self.ctx.partition(),
             self.buffered_size,
             self.max_file_size
@@ -181,7 +185,8 @@ impl<'a> BufferedWriter<'a> {
 
         if bytes_writed > 0 {
             let path = self.ctx.location().child(format!(
-                "part-{}-{}{}",
+                "part-{}-{}-{}{}",
+                self.ctx.task_id(),
                 self.ctx.partition(),
                 self.file_number.fetch_add(1, Ordering::Relaxed),
                 self.ctx.file_extension()

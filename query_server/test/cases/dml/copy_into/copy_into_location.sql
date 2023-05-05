@@ -17,10 +17,17 @@ COPY INTO 'file:///tmp/data/parquet_out1/'
 FROM (select time, name from ci_location_tbl)
 file_format = (type = 'parquet');
 
+-- Export data again from subquery to external path
+COPY INTO 'file:///tmp/data/parquet_out1/' 
+FROM (select time, name from ci_location_tbl)
+file_format = (type = 'parquet');
+
 -- Create external table validation data
 CREATE EXTERNAL TABLE ci_location_tbl_ext
 STORED AS PARQUET
 LOCATION 'file:///tmp/data/parquet_out1/';
+
+select count(1) from ci_location_tbl_ext;
 
 select * from ci_location_tbl_ext order by time,name limit 10;
 
