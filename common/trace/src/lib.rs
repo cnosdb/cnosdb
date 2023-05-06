@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use config::TokioTrace;
@@ -13,9 +14,8 @@ use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::time::OffsetTime;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{fmt, EnvFilter, Layer, Registry};
+use tracing_subscriber::{filter, fmt, EnvFilter, Layer, Registry};
 
-const TOKIO_TRACE: &str = ",tokio=trace,runtime=trace";
 /// only use for unit test
 /// parameter only use for first call
 pub fn init_default_global_tracing(dir: &str, file_name: &str, level: &str) {
@@ -30,15 +30,50 @@ pub fn init_default_global_tracing(dir: &str, file_name: &str, level: &str) {
 static GLOBAL_UT_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 
-pub fn get_env_filter(log_level: &str, tokio_trace: Option<&TokioTrace>) -> EnvFilter {
-    EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        if tokio_trace.is_some() {
-            let level = log_level.to_string() + TOKIO_TRACE;
-            EnvFilter::new(level)
-        } else {
-            EnvFilter::new(log_level)
-        }
-    })
+pub fn env_filter(level: impl ToString) -> EnvFilter {
+    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level.to_string()))
+}
+
+pub fn targets_filter(level: LevelFilter, defined_tokio_trace: bool) -> filter::Targets {
+    let mut filter = filter::Targets::new()
+        .with_targets(vec![
+            // Workspace crates,
+            // make sure all workspace members are here.
+            ("client", level),
+            ("config", level),
+            ("coordinator", level),
+            ("e2e_test", level),
+            ("error_code", level),
+            ("error_code_macro", level),
+            ("http_protocol", level),
+            ("limiter_bucket", level),
+            ("lru_cache", level),
+            ("main", level),
+            ("memory_pool", level),
+            ("meta", level),
+            ("metrics", level),
+            ("models", level),
+            ("protos", level),
+            ("protocol_parser", level),
+            ("query", level),
+            ("spi", level),
+            ("sqllogicaltests", level),
+            ("test", level),
+            ("trace", level),
+            ("tskv", level),
+            ("utils", level),
+        ])
+        .with_targets(vec![
+            // Third-party crates
+            ("actix_web::middleware::logger", LevelFilter::WARN),
+        ]);
+    if defined_tokio_trace {
+        filter = filter.with_targets(vec![
+            ("tokio", LevelFilter::TRACE),
+            ("runtime", LevelFilter::TRACE),
+        ]);
+    }
+    filter
 }
 
 pub fn init_process_global_tracing(
@@ -67,8 +102,8 @@ pub fn init_global_tracing(
     log_file_prefix_name: &str,
     tokio_trace: Option<&TokioTrace>,
 ) -> Vec<WorkerGuard> {
-    let log_level = log_level.to_string() + ",actix_web::middleware::logger=warn";
-    let env_filter = get_env_filter(&log_level, tokio_trace);
+    let tracing_level = LevelFilter::from_str(log_level).unwrap_or(LevelFilter::WARN);
+
     let local_time = OffsetTime::new(
         UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC),
         time::format_description::well_known::Iso8601::DEFAULT,
@@ -90,10 +125,11 @@ pub fn init_global_tracing(
     let guards = vec![guard];
 
     let registry_builder = Registry::default()
-        .with(env_filter)
+        .with(env_filter(tracing_level))
         .with(ErrorLayer::default())
         .with(formatting_layer)
-        .with(file_layer);
+        .with(file_layer)
+        .with(targets_filter(tracing_level, tokio_trace.is_some()));
 
     if let Some(tokio_trace) = tokio_trace {
         let console_layer = console_subscriber::ConsoleLayer::builder()
