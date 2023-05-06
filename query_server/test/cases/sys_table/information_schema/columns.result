@@ -57,7 +57,7 @@ test_cols_tenant1,public2,test_info_schema_tbl2,column4,FIELD,6,NULL,true,BOOLEA
 test_cols_tenant1,public2,test_info_schema_tbl2,column5,FIELD,7,NULL,true,DOUBLE,GORILLA
 test_cols_tenant1,public2,test_info_schema_tbl2,column6,TAG,1,NULL,true,STRING,DEFAULT
 test_cols_tenant1,public2,test_info_schema_tbl2,column7,TAG,2,NULL,true,STRING,DEFAULT
-test_cols_tenant1,public2,test_info_schema_tbl2,time,TIME,0,NULL,false,TIMESTAMP,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,time,TIME,0,NULL,false,TIMESTAMP(NANOSECOND),DEFAULT
 
 -- EXECUTE SQL: select * from information_schema.columns; --
 -- AFTER_SORT --
@@ -70,7 +70,7 @@ test_cols_tenant1,public2,test_info_schema_tbl2,column4,FIELD,6,NULL,true,BOOLEA
 test_cols_tenant1,public2,test_info_schema_tbl2,column5,FIELD,7,NULL,true,DOUBLE,GORILLA
 test_cols_tenant1,public2,test_info_schema_tbl2,column6,TAG,1,NULL,true,STRING,DEFAULT
 test_cols_tenant1,public2,test_info_schema_tbl2,column7,TAG,2,NULL,true,STRING,DEFAULT
-test_cols_tenant1,public2,test_info_schema_tbl2,time,TIME,0,NULL,false,TIMESTAMP,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,time,TIME,0,NULL,false,TIMESTAMP(NANOSECOND),DEFAULT
 
 -- EXECUTE SQL: select * from information_schema.columns; --
 -- AFTER_SORT --
@@ -83,5 +83,5 @@ test_cols_tenant1,public2,test_info_schema_tbl2,column4,FIELD,6,NULL,true,BOOLEA
 test_cols_tenant1,public2,test_info_schema_tbl2,column5,FIELD,7,NULL,true,DOUBLE,GORILLA
 test_cols_tenant1,public2,test_info_schema_tbl2,column6,TAG,1,NULL,true,STRING,DEFAULT
 test_cols_tenant1,public2,test_info_schema_tbl2,column7,TAG,2,NULL,true,STRING,DEFAULT
-test_cols_tenant1,public2,test_info_schema_tbl2,time,TIME,0,NULL,false,TIMESTAMP,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,time,TIME,0,NULL,false,TIMESTAMP(NANOSECOND),DEFAULT
 

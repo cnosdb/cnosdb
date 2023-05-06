@@ -540,7 +540,12 @@ impl ColumnType {
     pub fn to_sql_type_str(&self) -> &'static str {
         match self {
             Self::Tag => "STRING",
-            Self::Time(_) => "TIMESTAMP",
+            Self::Time(unit) => match unit {
+                TimeUnit::Second => "TIMESTAMP(SECOND)",
+                TimeUnit::Millisecond => "TIMESTAMP(MILLISECOND)",
+                TimeUnit::Microsecond => "TIMESTAMP(MICROSECOND)",
+                TimeUnit::Nanosecond => "TIMESTAMP(NANOSECOND)",
+            },
             Self::Field(value_type) => match value_type {
                 ValueType::String => "STRING",
                 ValueType::Integer => "BIGINT",

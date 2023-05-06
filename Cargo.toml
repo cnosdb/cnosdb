@@ -145,8 +145,6 @@ version = "2.2.0"
 # [patch."https://github.com/cnosdb/arrow-datafusion"]
 # datafusion = { path = "../arrow-datafusion/datafusion/core" }
 # datafusion-proto = { path = "../arrow-datafusion/datafusion/proto" }
-[patch.crates-io]
-arrow-flight = { git = "https://github.com/cnosdb/arrow-rs.git", branch = "32.0.0" }
 
 [profile.dev]
 codegen-units = 16
