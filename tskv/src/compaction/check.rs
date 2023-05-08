@@ -1,20 +1,26 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Display, Write};
-use std::rc::Rc;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use blake3::Hasher;
 use chrono::{Duration, DurationRound, NaiveDateTime};
+use datafusion::arrow::array::{Int64Array, StringBuilder, UInt32Array};
+use datafusion::arrow::datatypes::{
+    DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef,
+};
+use datafusion::arrow::record_batch::RecordBatch;
 use models::predicate::domain::TimeRange;
 use models::schema::ColumnType;
 use models::{utils, ColumnId, FieldId, Timestamp};
 use snafu::ResultExt;
+use tokio::sync::RwLock;
 use trace::warn;
 
 use crate::compaction::{CompactIterator, CompactingBlock};
-use crate::database::Database;
 use crate::error::{self, Error, Result};
 use crate::schema::schemas::DBschemas;
+use crate::tseries_family::TseriesFamily;
 use crate::tsm::{DataBlock, TsmReader};
 use crate::TseriesFamilyId;
 
@@ -30,8 +36,8 @@ pub fn hash_to_string(hash: Hash) -> String {
 
 #[derive(Default, Debug)]
 pub struct TableHashTreeNode {
-    table: String,
-    columns: Vec<ColumnHashTreeNode>,
+    pub table: String,
+    pub columns: Vec<ColumnHashTreeNode>,
 }
 
 impl TableHashTreeNode {
@@ -61,8 +67,8 @@ impl Display for TableHashTreeNode {
 
 #[derive(Default, Debug)]
 pub struct ColumnHashTreeNode {
-    column: String,
-    values: Vec<TimeRangeHashTreeNode>,
+    pub column: String,
+    pub values: Vec<TimeRangeHashTreeNode>,
 }
 
 impl ColumnHashTreeNode {
@@ -92,9 +98,9 @@ impl Display for ColumnHashTreeNode {
 
 #[derive(Default, Debug)]
 pub struct TimeRangeHashTreeNode {
-    min_ts: Timestamp,
-    max_ts: Timestamp,
-    hash: Hash,
+    pub min_ts: Timestamp,
+    pub max_ts: Timestamp,
+    pub hash: Hash,
 }
 
 impl TimeRangeHashTreeNode {
@@ -121,28 +127,72 @@ impl Display for TimeRangeHashTreeNode {
     }
 }
 
-pub(crate) async fn get_ts_family_hash_tree(
-    database: &Database,
-    ts_family_id: TseriesFamilyId,
+pub fn vnode_checksum_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        ArrowField::new("VNODE_ID", ArrowDataType::UInt32, false),
+        ArrowField::new("TABLE", ArrowDataType::Utf8, false),
+        ArrowField::new("COLUMN", ArrowDataType::Utf8, false),
+        ArrowField::new("MIN_TIME", ArrowDataType::Int64, false),
+        ArrowField::new("MAX_TIME", ArrowDataType::Int64, false),
+        ArrowField::new("CHECK_SUM", ArrowDataType::Utf8, false),
+    ]))
+}
+
+pub(crate) async fn vnode_checksum(
+    ts_family: Arc<RwLock<TseriesFamily>>,
+    schemas: Arc<DBschemas>,
+) -> Result<RecordBatch> {
+    let vnode_id = ts_family.read().await.tf_id();
+    let tree_nodes = ts_family_hash_tree(ts_family, schemas).await?;
+
+    let capacity = 1024;
+    let mut vnode_id_array = UInt32Array::builder(capacity);
+    let mut table_array = StringBuilder::new();
+    let mut column_array = StringBuilder::new();
+    let mut min_time_array = Int64Array::builder(capacity);
+    let mut max_time_array = Int64Array::builder(capacity);
+    let mut check_sum_array = StringBuilder::new();
+    for tn in tree_nodes {
+        for col in tn.columns {
+            for tr in col.values {
+                vnode_id_array.append_value(vnode_id);
+                table_array.append_value(tn.table.as_str());
+                column_array.append_value(col.column.as_str());
+                min_time_array.append_value(tr.min_ts);
+                max_time_array.append_value(tr.max_ts);
+                check_sum_array.append_value(hash_to_string(tr.hash));
+            }
+        }
+    }
+
+    RecordBatch::try_new(
+        vnode_checksum_schema(),
+        vec![
+            Arc::new(vnode_id_array.finish()),
+            Arc::new(table_array.finish()),
+            Arc::new(column_array.finish()),
+            Arc::new(min_time_array.finish()),
+            Arc::new(max_time_array.finish()),
+            Arc::new(check_sum_array.finish()),
+        ],
+    )
+    .map_err(|err| Error::CommonError {
+        reason: format!("get checksum fail, {}", err),
+    })
+}
+
+pub(crate) async fn ts_family_hash_tree(
+    ts_family: Arc<RwLock<TseriesFamily>>,
+    schemas: Arc<DBschemas>,
 ) -> Result<Vec<TableHashTreeNode>> {
     const MAX_DATA_BLOCK_SIZE: u32 = 1000;
 
-    let ts_family = match database.get_tsfamily(ts_family_id) {
-        Some(t) => t,
-        None => {
-            return Err(Error::InvalidParam {
-                reason: format!("can not find ts_family '{}'", ts_family_id),
-            });
-        }
-    };
-
-    let schemas = database.get_schemas();
-    let mut cid_table_name_map: HashMap<ColumnId, Rc<String>> = HashMap::new();
+    let mut cid_table_name_map: HashMap<ColumnId, Arc<String>> = HashMap::new();
     let mut cid_col_name_map: HashMap<ColumnId, String> = HashMap::new();
     for tab in schemas.list_tables()? {
         match schemas.get_table_schema(&tab)? {
             Some(sch) => {
-                let shared_tab = Rc::new(tab);
+                let shared_tab = Arc::new(tab);
                 for col in sch.columns() {
                     if matches!(col.column_type, ColumnType::Field(_)) {
                         cid_table_name_map.insert(col.id, shared_tab.clone());
@@ -155,19 +205,20 @@ pub(crate) async fn get_ts_family_hash_tree(
             }
         }
     }
-    let time_range_nanosec = get_default_time_range(schemas)?;
+    let time_range_nanosec = default_time_range(schemas)?;
 
     let (version, ts_family_id) = {
         let ts_family_rlock = ts_family.read().await;
         (ts_family_rlock.version(), ts_family_rlock.tf_id())
     };
     let mut readers: Vec<Arc<TsmReader>> = Vec::new();
-    for path in version
+    let tsm_paths: Vec<PathBuf> = version
         .levels_info()
         .iter()
         .flat_map(|l| l.files.iter().map(|f| f.file_path()))
-    {
-        let r = version.get_tsm_reader(path).await?;
+        .collect();
+    for p in tsm_paths {
+        let r = version.get_tsm_reader(p).await?;
         readers.push(r);
     }
 
@@ -227,7 +278,7 @@ pub(crate) async fn get_ts_family_hash_tree(
         .collect::<Vec<TableHashTreeNode>>())
 }
 
-fn get_default_time_range(db_schemas: Arc<DBschemas>) -> Result<i64> {
+fn default_time_range(db_schemas: Arc<DBschemas>) -> Result<i64> {
     let db_schema = db_schemas.db_schema().context(error::SchemaSnafu)?;
     let _tenant_name = db_schema.tenant_name();
     let _database_name = db_schema.database_name();
@@ -445,7 +496,9 @@ mod test {
     use tokio::runtime;
 
     use super::{calc_block_partial_time_range, find_timestamp, hash_partial_datablock, Hash};
-    use crate::compaction::check::{get_default_time_range, TimeRangeHashTreeNode};
+    use crate::compaction::check::{
+        default_time_range, ts_family_hash_tree, TimeRangeHashTreeNode,
+    };
     use crate::context::GlobalContext;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
@@ -952,7 +1005,7 @@ mod test {
                     panic!("created database '{}' exists: {:?}", &database_name, e)
                 });
             let schemas = database_ref.read().await.get_schemas();
-            let time_range_nanosec = get_default_time_range(schemas).unwrap();
+            let time_range_nanosec = default_time_range(schemas.clone()).unwrap();
             let ts_family_ref = database_ref
                 .read()
                 .await
@@ -1008,12 +1061,7 @@ mod test {
             }
 
             // Get hash values and check them.
-            let trees = database_ref
-                .read()
-                .await
-                .get_ts_family_hash_tree(ts_family_id)
-                .await
-                .unwrap();
+            let trees = ts_family_hash_tree(ts_family_ref, schemas).await.unwrap();
             assert_eq!(trees.len(), 1);
             assert_eq!(trees[0].table, table_name);
             assert_eq!(trees[0].columns.len(), 5);

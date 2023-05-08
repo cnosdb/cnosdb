@@ -19,7 +19,7 @@ use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info};
 use utils::BloomFilter;
 
-use crate::compaction::{check, CompactTask, FlushReq};
+use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalContext;
 use crate::error::{self, Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
@@ -495,13 +495,6 @@ impl Database {
 
     pub fn get_schema(&self) -> Result<DatabaseSchema> {
         Ok(self.schemas.db_schema()?)
-    }
-
-    pub async fn get_ts_family_hash_tree(
-        &self,
-        ts_family_id: TseriesFamilyId,
-    ) -> Result<Vec<check::TableHashTreeNode>> {
-        check::get_ts_family_hash_tree(self, ts_family_id).await
     }
 
     pub fn owner(&self) -> Arc<String> {

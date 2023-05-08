@@ -178,7 +178,7 @@ impl MetaClient for MockMetaClient {
         todo!()
     }
 
-    async fn reasign_member_role(
+    async fn reassign_member_role(
         &self,
         user_id: Oid,
         role: TenantRoleIdentifier,
@@ -229,6 +229,10 @@ impl MetaClient for MockMetaClient {
 
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         vec![]
+    }
+
+    fn get_replication_set(&self, repl_id: u32) -> Option<ReplicationSet> {
+        todo!()
     }
 
     async fn update_replication_set(

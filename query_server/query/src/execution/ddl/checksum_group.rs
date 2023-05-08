@@ -1,8 +1,9 @@
 use async_trait::async_trait;
-use meta::error::MetaError;
+use coordinator::VnodeSummarizerCmdType;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::ChecksumGroup;
-use spi::{QueryError, Result};
+use spi::query::recordbatch::RecordBatchStreamWrapper;
+use spi::Result;
 
 use super::DDLDefinitionTask;
 
@@ -20,20 +21,13 @@ impl ChecksumGroupTask {
 #[async_trait]
 impl DDLDefinitionTask for ChecksumGroupTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        let ChecksumGroup {
-            replication_set_id: _,
-        } = self.stmt;
+        let replication_set_id = self.stmt.replication_set_id;
         let tenant = query_state_machine.session.tenant();
-        let _meta = query_state_machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .await
-            .ok_or_else(|| QueryError::Meta {
-                source: MetaError::TenantNotFound {
-                    tenant: tenant.to_string(),
-                },
-            })?;
-        todo!()
+
+        let coord = query_state_machine.coord.clone();
+        let cmd_type = VnodeSummarizerCmdType::Checksum(replication_set_id);
+        let checksums = coord.vnode_summarizer(tenant, cmd_type).await?;
+        let stream = RecordBatchStreamWrapper::new(tskv::vnode_checksum_schema(), checksums);
+        Ok(Output::StreamData(Box::pin(stream)))
     }
 }
