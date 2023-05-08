@@ -3,6 +3,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::meta_client_mock::{MockMetaClient, MockMetaManager};
 use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
@@ -14,7 +15,7 @@ use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
 use crate::reader::ReaderIterator;
-use crate::{Coordinator, VnodeManagerCmdType};
+use crate::{Coordinator, VnodeManagerCmdType, VnodeSummarizerCmdType};
 
 #[derive(Debug, Default)]
 pub struct MockCoordinator {}
@@ -67,5 +68,13 @@ impl Coordinator for MockCoordinator {
         cmd_type: VnodeManagerCmdType,
     ) -> CoordinatorResult<()> {
         Ok(())
+    }
+
+    async fn vnode_summarizer(
+        &self,
+        tenant: &str,
+        cmd_type: VnodeSummarizerCmdType,
+    ) -> CoordinatorResult<Vec<RecordBatch>> {
+        Ok(vec![])
     }
 }

@@ -12,7 +12,8 @@ use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::consistency_level::ConsistencyLevel;
-use models::meta_data::{ExpiredBucketInfo, VnodeAllInfo};
+use models::meta_data::{ExpiredBucketInfo, ReplicationSet, VnodeAllInfo};
+use models::record_batch_decode;
 use models::schema::{Precision, DEFAULT_CATALOG};
 use protos::get_db_from_fb_points;
 use protos::kv_service::admin_command_request::Command::*;
@@ -32,7 +33,8 @@ use crate::metrics::LPReporter;
 use crate::reader::{QueryExecutor, ReaderIterator};
 use crate::writer::PointWriter;
 use crate::{
-    status_response_to_result, Coordinator, QueryOption, VnodeManagerCmdType, WriteRequest,
+    status_response_to_result, Coordinator, QueryOption, VnodeManagerCmdType,
+    VnodeSummarizerCmdType, WriteRequest,
 };
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
@@ -224,6 +226,25 @@ impl CoordService {
         }
     }
 
+    async fn get_replication_set(
+        &self,
+        tenant: &str,
+        replication_set_id: u32,
+    ) -> CoordinatorResult<ReplicationSet> {
+        match self.tenant_meta(tenant).await {
+            Some(meta_client) => match meta_client.get_replication_set(replication_set_id) {
+                Some(repl_set) => Ok(repl_set),
+                None => Err(CoordinatorError::ReplicationSetNotFound {
+                    id: replication_set_id,
+                }),
+            },
+
+            None => Err(CoordinatorError::TenantNotFound {
+                name: tenant.to_string(),
+            }),
+        }
+    }
+
     async fn select_statement_request(
         self,
         option: QueryOption,
@@ -337,6 +358,25 @@ impl CoordService {
 
         let response = client.exec_admin_command(request).await?.into_inner();
         status_response_to_result(&response)
+    }
+
+    async fn exec_admin_fetch_command_on_node(
+        &self,
+        node_id: u64,
+        req: AdminFetchCommandRequest,
+    ) -> CoordinatorResult<RecordBatch> {
+        let channel = self.meta.admin_meta().get_node_conn(node_id).await?;
+
+        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
+
+        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let request = tonic::Request::new(req.clone());
+
+        let response = client.exec_admin_fetch_command(request).await?.into_inner();
+        match record_batch_decode(&response.data) {
+            Ok(r) => Ok(r),
+            Err(e) => Err(CoordinatorError::ArrowError { source: e }),
+        }
     }
 }
 
@@ -528,6 +568,53 @@ impl Coordinator for CoordService {
             }
         };
 
-        self.exec_admin_command_on_node(req_node_id, grpc_req).await
+        self.exec_admin_command_on_node(req_node_id, grpc_req)
+            .await
+            .map(|_| ())
+    }
+
+    async fn vnode_summarizer(
+        &self,
+        tenant: &str,
+        cmd_type: VnodeSummarizerCmdType,
+    ) -> CoordinatorResult<Vec<RecordBatch>> {
+        match cmd_type {
+            VnodeSummarizerCmdType::Checksum(replication_set_id) => {
+                let replication_set = self.get_replication_set(tenant, replication_set_id).await?;
+
+                // Group vnode ids by node id.
+                let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
+                for vnode in replication_set.vnodes {
+                    node_vnode_ids_map
+                        .entry(vnode.node_id)
+                        .or_default()
+                        .push(vnode.id);
+                }
+
+                let meta = self.meta.admin_meta();
+                let nodes = meta.data_nodes().await;
+
+                // Send grouped vnode ids to nodes.
+                let mut req_futures = vec![];
+                for node in nodes {
+                    if let Some(vnode_ids) = node_vnode_ids_map.remove(&node.id) {
+                        for vnode_id in vnode_ids {
+                            let cmd = AdminFetchCommandRequest {
+                                tenant: tenant.to_string(),
+                                command: Some(
+                                    admin_fetch_command_request::Command::FetchVnodeChecksum(
+                                        FetchVnodeChecksumRequest { vnode_id },
+                                    ),
+                                ),
+                            };
+                            req_futures.push(self.exec_admin_fetch_command_on_node(node.id, cmd));
+                        }
+                    }
+                }
+                let record_batches = futures::future::try_join_all(req_futures).await?;
+
+                return Ok(record_batches);
+            }
+        }
     }
 }

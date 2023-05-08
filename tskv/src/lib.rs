@@ -5,20 +5,22 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-pub use error::{Error, Result};
-pub use kv_option::Options;
-pub use kvcore::TsKv;
+pub use compaction::check::vnode_checksum_schema;
+use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{Precision, TableColumn};
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
-pub use summary::{print_summary_statistics, Summary, VersionEdit};
-pub use tsm::print_tsm_statistics;
-pub use wal::print_wal_statistics;
 
+pub use crate::error::{Error, Result};
+pub use crate::kv_option::Options;
 use crate::kv_option::StorageOptions;
+pub use crate::kvcore::TsKv;
+pub use crate::summary::{print_summary_statistics, Summary, VersionEdit};
 use crate::tseries_family::SuperVersion;
+pub use crate::tsm::print_tsm_statistics;
+pub use crate::wal::print_wal_statistics;
 
 pub mod byte_utils;
 mod compaction;
@@ -159,6 +161,8 @@ pub trait Engine: Send + Sync + Debug {
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
 
     async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()>;
+
+    async fn get_vnode_hash_tree(&self, vnode_id: VnodeId) -> Result<RecordBatch>;
 
     async fn close(&self);
 }
