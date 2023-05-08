@@ -714,11 +714,11 @@ impl DatabaseOptions {
         precision: Option<Precision>,
     ) -> Self {
         DatabaseOptions {
-            ttl: ttl,
-            shard_num: shard_num,
-            vnode_duration: vnode_duration,
-            replica: replica,
-            precision: precision,
+            ttl,
+            shard_num,
+            vnode_duration,
+            replica,
+            precision,
         }
     }
 
