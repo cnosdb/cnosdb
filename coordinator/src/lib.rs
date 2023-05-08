@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
 use models::schema::Precision;
@@ -34,14 +35,20 @@ pub struct WriteRequest {
 
 #[derive(Debug, Clone)]
 pub enum VnodeManagerCmdType {
-    // vnode id, dst node id
+    /// vnode id, dst node id
     Copy(u32, u64),
-    // vnode id, dst node id
+    /// vnode id, dst node id
     Move(u32, u64),
-    // vnode id
+    /// vnode id
     Drop(u32),
-    // vnode is list
+    /// vnode id list
     Compact(Vec<u32>),
+}
+
+#[derive(Debug, Clone)]
+pub enum VnodeSummarizerCmdType {
+    /// replication set id
+    Checksum(u32),
 }
 
 pub fn status_response_to_result(
@@ -77,9 +84,17 @@ pub trait Coordinator: Send + Sync + Debug {
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()>;
 
+    /// A manager to manage vnode.
     async fn vnode_manager(
         &self,
         tenant: &str,
         cmd_type: VnodeManagerCmdType,
     ) -> CoordinatorResult<()>;
+
+    /// A summarizer to summarize vnode info.
+    async fn vnode_summarizer(
+        &self,
+        tenant: &str,
+        cmd_type: VnodeSummarizerCmdType,
+    ) -> CoordinatorResult<Vec<RecordBatch>>;
 }

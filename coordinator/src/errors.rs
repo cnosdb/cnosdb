@@ -142,6 +142,12 @@ pub enum CoordinatorError {
     FBPoints {
         source: PointsError,
     },
+
+    #[snafu(display("ReplicationSet not found: {}", id))]
+    #[error_code(code = 22)]
+    ReplicationSetNotFound {
+        id: u32,
+    },
 }
 
 impl From<PointsError> for CoordinatorError {

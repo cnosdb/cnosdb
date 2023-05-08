@@ -3,10 +3,12 @@ use std::panic;
 use std::sync::Arc;
 use std::time::Duration;
 
+use datafusion::arrow::record_batch::RecordBatch;
 use memory_pool::{MemoryPool, MemoryPoolRef};
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::codec::Encoding;
+use models::meta_data::VnodeId;
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{make_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
@@ -21,7 +23,7 @@ use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn};
 
 use crate::compaction::{
-    self, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
+    self, check, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
 };
 use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
 use crate::database::Database;
@@ -613,8 +615,7 @@ impl Engine for TsKv {
                         self.summary_task_sender.clone(),
                         Some(self.compact_task_sender.clone()),
                     )
-                    .await
-                    .unwrap()
+                    .await?;
                 }
             }
 
@@ -955,6 +956,35 @@ impl Engine for TsKv {
         }
 
         Ok(())
+    }
+
+    async fn get_vnode_hash_tree(&self, vnode_id: VnodeId) -> Result<RecordBatch> {
+        for database in self.version_set.read().await.get_all_db().values() {
+            let db = database.read().await;
+            if let Some(vnode) = db.ts_families().get(&vnode_id).cloned() {
+                let schemas = db.get_schemas();
+                drop(db);
+                let request = {
+                    let mut tsfamily = vnode.write().await;
+                    tsfamily.switch_to_immutable();
+                    tsfamily.build_flush_req(true)
+                };
+
+                if let Some(req) = request {
+                    run_flush_memtable_job(
+                        req,
+                        self.global_ctx.clone(),
+                        self.version_set.clone(),
+                        self.summary_task_sender.clone(),
+                        Some(self.compact_task_sender.clone()),
+                    )
+                    .await?
+                }
+                return check::vnode_checksum(vnode, schemas).await;
+            }
+        }
+
+        Ok(RecordBatch::new_empty(check::vnode_checksum_schema()))
     }
 
     async fn close(&self) {

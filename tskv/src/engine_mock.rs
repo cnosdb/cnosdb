@@ -4,6 +4,8 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use datafusion::arrow::record_batch::RecordBatch;
+use models::meta_data::VnodeId;
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{Precision, TableColumn};
 use models::{ColumnId, SeriesId, SeriesKey};
@@ -190,6 +192,10 @@ impl Engine for MockEngine {
     }
 
     async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()> {
+        todo!()
+    }
+
+    async fn get_vnode_hash_tree(&self, vnode_ids: VnodeId) -> Result<RecordBatch> {
         todo!()
     }
 

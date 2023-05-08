@@ -14,6 +14,7 @@ use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
 use models::predicate::domain::{self, QueryArgs, QueryExpr};
+use models::record_batch_encode;
 use models::schema::{Precision, TableColumn};
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::*;
@@ -182,6 +183,21 @@ impl TskvServiceImpl {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
         } else {
             self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
+
+    async fn admin_fetch_vnode_checksum(
+        &self,
+        _tenant: &str,
+        request: &FetchVnodeChecksumRequest,
+    ) -> Result<tonic::Response<BatchBytesResponse>, tonic::Status> {
+        match self.kv_inst.get_vnode_hash_tree(request.vnode_id).await {
+            Ok(record) => match record_batch_encode(&record) {
+                Ok(bytes) => self.bytes_response(SUCCESS_RESPONSE_CODE, bytes),
+                Err(_) => self.bytes_response(FAILED_RESPONSE_CODE, vec![]),
+            },
+            // TODO(zipper): Add error message in BatchBytesResponse
+            Err(_) => self.bytes_response(FAILED_RESPONSE_CODE, vec![]),
         }
     }
 
@@ -411,6 +427,24 @@ impl TskvService for TskvServiceImpl {
             resp
         } else {
             self.status_response(FAILED_RESPONSE_CODE, "Command is None".to_string())
+        }
+    }
+
+    async fn exec_admin_fetch_command(
+        &self,
+        request: Request<AdminFetchCommandRequest>,
+    ) -> Result<Response<BatchBytesResponse>, Status> {
+        let inner = request.into_inner();
+
+        if let Some(command) = inner.command {
+            match &command {
+                admin_fetch_command_request::Command::FetchVnodeChecksum(command) => {
+                    self.admin_fetch_vnode_checksum(&inner.tenant, command)
+                        .await
+                }
+            }
+        } else {
+            self.bytes_response(FAILED_RESPONSE_CODE, vec![])
         }
     }
 
