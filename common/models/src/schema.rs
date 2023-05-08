@@ -540,12 +540,7 @@ impl ColumnType {
     pub fn to_sql_type_str(&self) -> &'static str {
         match self {
             Self::Tag => "STRING",
-            Self::Time(unit) => match unit {
-                TimeUnit::Second => "TIMESTAMP(SECOND)",
-                TimeUnit::Millisecond => "TIMESTAMP(MILLISECOND)",
-                TimeUnit::Microsecond => "TIMESTAMP(MICROSECOND)",
-                TimeUnit::Nanosecond => "TIMESTAMP(NANOSECOND)",
-            },
+            Self::Time(_) => "TIMESTAMP",
             Self::Field(value_type) => match value_type {
                 ValueType::String => "STRING",
                 ValueType::Integer => "BIGINT",
@@ -610,6 +605,18 @@ impl DatabaseSchema {
             tenant: tenant_name.to_string(),
             database: database_name.to_string(),
             config: DatabaseOptions::default(),
+        }
+    }
+
+    pub fn new_with_options(
+        tenant_name: &str,
+        database_name: &str,
+        options: DatabaseOptions,
+    ) -> Self {
+        DatabaseSchema {
+            tenant: tenant_name.to_string(),
+            database: database_name.to_string(),
+            config: options,
         }
     }
 
@@ -698,6 +705,22 @@ impl DatabaseOptions {
         unit: DurationUnit::Day,
     };
     pub const DEFAULT_PRECISION: Precision = Precision::NS;
+
+    pub fn new(
+        ttl: Option<Duration>,
+        shard_num: Option<u64>,
+        vnode_duration: Option<Duration>,
+        replica: Option<u64>,
+        precision: Option<Precision>,
+    ) -> Self {
+        DatabaseOptions {
+            ttl: ttl,
+            shard_num: shard_num,
+            vnode_duration: vnode_duration,
+            replica: replica,
+            precision: precision,
+        }
+    }
 
     pub fn ttl(&self) -> &Option<Duration> {
         &self.ttl

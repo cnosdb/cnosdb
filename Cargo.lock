@@ -2246,9 +2246,13 @@ name = "e2e_test"
 version = "2.2.0"
 dependencies = [
  "actix-rt",
+ "arrow-schema",
  "flatbuffers 22.12.6",
  "http_protocol",
+ "meta",
+ "models",
  "protos",
+ "sysinfo",
  "tokio",
  "tokio-stream",
  "tonic",

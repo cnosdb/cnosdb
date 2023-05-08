@@ -8,10 +8,15 @@ edition.workspace = true
 [dependencies]
 actix-rt = { workspace = true }
 protos = { path = "../common/protos", features = ["test"] }
+models = { path = "../common/models" }
+meta = { path = "../meta" }
+sysinfo = {workspace = true, optional = false}
+arrow-schema = {workspace = true, optional = false}
 
 [dev-dependencies]
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
-
+meta = { path = "../meta" }
+models = { path = "../common/models" }
 flatbuffers = { workspace = true }
 tonic = { workspace = true, features = ["tls", "transport"] }
 tokio = { workspace = true, features = ["full"] }

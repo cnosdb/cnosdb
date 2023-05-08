@@ -41,4 +41,4 @@ nohup ./target/debug/cnosdb run --config ./config/config_8912.toml > /tmp/cnosdb
 
 echo "\n*** CnosDB Data Server Cluster is running ......"
 
-sleep 1000000000
+sleep 10
