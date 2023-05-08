@@ -1065,7 +1065,7 @@ impl StateMachine {
             match serde_json::from_slice::<UserDesc>(&e) {
                 Ok(old_user_desc) => {
                     let old_options = old_user_desc.options().to_owned();
-                    let new_options = old_options.merge(user_options.clone());
+                    let new_options = user_options.clone().merge(old_options);
 
                     let new_user_desc = UserDesc::new(
                         *old_user_desc.id(),

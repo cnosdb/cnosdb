@@ -1,0 +1,38 @@
+statement ok
+create user if not exists test_alter_options_u;
+
+statement ok
+alter user test_alter_options_u set comment = 'xxx ccc';
+
+# import data to tskv table
+query I
+select * from cluster_schema.users where user_name = 'test_alter_options_u';
+----
+test_alter_options_u false {"password":"*****","must_change_password":null,"rsa_public_key":null,"comment":"xxx ccc"}
+
+statement ok
+alter user test_alter_options_u set comment = 'ooo ooo';
+
+# import data to tskv table
+query I
+select * from cluster_schema.users where user_name = 'test_alter_options_u';
+----
+test_alter_options_u false {"password":"*****","must_change_password":null,"rsa_public_key":null,"comment":"ooo ooo"}
+
+statement ok
+alter user test_alter_options_u set must_change_password = false;
+
+# import data to tskv table
+query I
+select * from cluster_schema.users where user_name = 'test_alter_options_u';
+----
+test_alter_options_u false {"password":"*****","must_change_password":false,"rsa_public_key":null,"comment":"ooo ooo"}
+
+statement ok
+alter user test_alter_options_u set must_change_password = true;
+
+# import data to tskv table
+query I
+select * from cluster_schema.users where user_name = 'test_alter_options_u';
+----
+test_alter_options_u false {"password":"*****","must_change_password":true,"rsa_public_key":null,"comment":"ooo ooo"}
