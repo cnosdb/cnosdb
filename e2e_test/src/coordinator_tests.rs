@@ -25,7 +25,7 @@ mod tests {
         super::kill_process("cnosdb");
         // start cluster
         let opt: Output = super::start_cluster().await;
-        assert_eq!(opt.status.code(), Some(0));
+        assert!(opt.status.code() == Some(0));
         // create  tenants
         super::prepare().await;
         super::prepare_data().await;
@@ -35,14 +35,8 @@ mod tests {
             let output = super::query(tenant, db).await;
             assert!(output.status.code() == Some(0));
             println!("output: {}", String::from_utf8_lossy(&output.stdout));
-            assert_eq!(
-                String::from_utf8_lossy(&output.stdout).contains("100"),
-                true
-            );
-            assert_eq!(
-                String::from_utf8_lossy(&output.stdout).contains("200 OK"),
-                true
-            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("100"));
+            assert!(String::from_utf8_lossy(&output.stdout).contains("200 OK"));
         }
 
         // clean env
@@ -57,16 +51,16 @@ mod tests {
         super::kill_process("cnosdb");
         // start cluster
         let opt: Output = super::start_cluster().await;
-        assert_eq!(opt.status.code(), Some(0));
+        assert!(opt.status.code() == Some(0));
         // database option schema
         let dboption = DatabaseOptions::new(
-            Duration::new(&"365"),
+            Duration::new("365"),
             Some(2),
-            Duration::new(&"365"),
+            Duration::new("365"),
             Some(2),
             Some(Precision::NS),
         );
-        let dbschema = DatabaseSchema::new_with_options(&"cnosdb", &"db1", dboption);
+        let dbschema = DatabaseSchema::new_with_options("cnosdb", "db1", dboption);
         let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
 
         let req = command::WriteCommand::CreateDB(
@@ -79,7 +73,7 @@ mod tests {
             .write::<command::TenaneMetaDataResp>(&req)
             .await
             .unwrap();
-        let api = format!(r#"http://127.0.0.1:8901/debug"#);
+        let api = "http://127.0.0.1:8901/debug".to_string();
         let output = Command::new("curl")
             .args([&api])
             .output()
@@ -100,16 +94,16 @@ mod tests {
         super::kill_process("cnosdb");
         // start cluster
         let opt: Output = super::start_cluster().await;
-        assert_eq!(opt.status.code(), Some(0));
+        assert!(opt.status.code() == Some(0));
         // database option schema
         let dboption = DatabaseOptions::new(
-            Duration::new(&"365"),
+            Duration::new("365"),
             Some(2),
-            Duration::new(&"365"),
+            Duration::new("365"),
             Some(2),
             Some(Precision::NS),
         );
-        let dbschema = DatabaseSchema::new_with_options(&"cnosdb", &"db1", dboption);
+        let dbschema = DatabaseSchema::new_with_options("cnosdb", "db1", dboption);
         let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
 
         let req = command::WriteCommand::CreateDB(
@@ -122,7 +116,7 @@ mod tests {
             .write::<command::TenaneMetaDataResp>(&req)
             .await
             .unwrap();
-        let api = format!(r#"http://127.0.0.1:8901/debug"#);
+        let api = "http://127.0.0.1:8901/debug".to_string();
         let output = Command::new("curl")
             .args([&api])
             .output()
@@ -143,16 +137,16 @@ mod tests {
         super::kill_process("cnosdb");
         // start cluster
         let opt: Output = super::start_cluster().await;
-        assert_eq!(opt.status.code(), Some(0));
+        assert!(opt.status.code() == Some(0));
         // database option schema
         let dboption = DatabaseOptions::new(
-            Duration::new(&"1"),
+            Duration::new("1"),
             Some(2),
-            Duration::new(&"365"),
+            Duration::new("365"),
             Some(2),
             Some(Precision::NS),
         );
-        let dbschema = DatabaseSchema::new_with_options(&"cnosdb", &"db1", dboption);
+        let dbschema = DatabaseSchema::new_with_options("cnosdb", "db1", dboption);
         let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
 
         let req = command::WriteCommand::CreateDB(
@@ -165,7 +159,7 @@ mod tests {
             .write::<command::TenaneMetaDataResp>(&req)
             .await
             .unwrap();
-        let api = format!(r#"http://127.0.0.1:8901/debug"#);
+        let api = "http://127.0.0.1:8901/debug".to_string();
         let output = Command::new("curl")
             .args([&api])
             .output()
@@ -174,7 +168,7 @@ mod tests {
         print!("output: {}", String::from_utf8_lossy(&output.stdout));
         assert!(String::from_utf8_lossy(&output.stdout).contains("\"time_num\":1"));
         // write data
-        let api: String = format!(r#"http://127.0.0.1:8902/api/v1/write?db=db1"#);
+        let api: String = "http://127.0.0.1:8902/api/v1/write?db=db1".to_string();
         let output = Command::new("curl")
             .args([
                 "-i",
@@ -183,7 +177,7 @@ mod tests {
                 "-XPOST",
                 &api,
                 "-d",
-                &format!("tb1,tag1=tag1,tag2=tag2 field1=1 1683259054000000000"),
+                "tb1,tag1=tag1,tag2=tag2 field1=1 1683259054000000000",
             ])
             .output()
             .expect("failed to execute process");
@@ -200,7 +194,7 @@ mod tests {
                 "-XPOST",
                 &api,
                 "-d",
-                &format!("tb1,tag1=tag1,tag2=tag2 field1=2"),
+                "tb1,tag1=tag1,tag2=tag2 field1=2",
             ])
             .output()
             .expect("failed to execute process");
@@ -219,16 +213,16 @@ mod tests {
         super::kill_process("cnosdb");
         // start cluster
         let opt: Output = super::start_cluster().await;
-        assert_eq!(opt.status.code(), Some(0));
+        assert!(opt.status.code() == Some(0));
         // database option schema
         let dboption = DatabaseOptions::new(
-            Duration::new(&"1"),
+            Duration::new("1"),
             Some(2),
-            Duration::new(&"365"),
+            Duration::new("365"),
             Some(2),
             Some(Precision::NS),
         );
-        let dbschema = DatabaseSchema::new_with_options(&"cnosdb", &"db1", dboption);
+        let dbschema = DatabaseSchema::new_with_options("cnosdb", "db1", dboption);
         let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
 
         let req = command::WriteCommand::CreateDB(
