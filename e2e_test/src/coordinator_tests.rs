@@ -5,11 +5,8 @@ use std::thread;
 
 // pub use arrow_schema::datatype;
 use meta::{client, store::command};
-use models::schema::{
-    DatabaseSchema, Tenant,
-};
+use models::schema::{DatabaseSchema, Tenant};
 use sysinfo::{ProcessExt, System, SystemExt};
-
 
 // #[cfg(feature = "cn_e2e_test")]
 #[cfg(test)]
@@ -378,4 +375,3 @@ async fn query(tenant: String, db: String) -> std::process::Output {
         .expect("failed to execute process");
     output
 }
-
