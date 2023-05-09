@@ -3,7 +3,7 @@ use std::fmt::{Display, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use blake3::Hasher;
+use blake3::{hash, Hasher};
 use chrono::{Duration, DurationRound, NaiveDateTime};
 use datafusion::arrow::array::{Int64Array, StringBuilder, UInt32Array};
 use datafusion::arrow::datatypes::{
@@ -51,6 +51,14 @@ impl TableHashTreeNode {
     pub fn push(&mut self, value: ColumnHashTreeNode) {
         self.columns.push(value);
     }
+
+    pub fn checksum(&self) -> Hash {
+        let mut hasher = Hasher::new();
+        for v in self.columns.iter() {
+            hasher.update(&v.checksum());
+        }
+        hasher.finalize().into()
+    }
 }
 
 impl Display for TableHashTreeNode {
@@ -82,6 +90,14 @@ impl ColumnHashTreeNode {
     pub fn push(&mut self, value: TimeRangeHashTreeNode) {
         self.values.push(value);
     }
+
+    pub fn checksum(&self) -> Hash {
+        let mut hasher = Hasher::new();
+        for v in self.values.iter() {
+            hasher.update(&v.hash);
+        }
+        hasher.finalize().into()
+    }
 }
 
 impl Display for ColumnHashTreeNode {
@@ -111,6 +127,10 @@ impl TimeRangeHashTreeNode {
             hash,
         }
     }
+
+    pub fn checksum(&self) -> Hash {
+        self.hash
+    }
 }
 
 impl Display for TimeRangeHashTreeNode {
@@ -127,13 +147,21 @@ impl Display for TimeRangeHashTreeNode {
     }
 }
 
-pub fn vnode_checksum_schema() -> SchemaRef {
+// pub fn vnode_table_column_time_range_checksum_schema() -> SchemaRef {
+//     Arc::new(Schema::new(vec![
+//         ArrowField::new("VNODE_ID", ArrowDataType::UInt32, false),
+//         ArrowField::new("TABLE", ArrowDataType::Utf8, false),
+//         ArrowField::new("COLUMN", ArrowDataType::Utf8, false),
+//         ArrowField::new("MIN_TIME", ArrowDataType::Int64, false),
+//         ArrowField::new("MAX_TIME", ArrowDataType::Int64, false),
+//         ArrowField::new("CHECK_SUM", ArrowDataType::Utf8, false),
+//     ]))
+// }
+
+pub fn vnode_table_checksum_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         ArrowField::new("VNODE_ID", ArrowDataType::UInt32, false),
         ArrowField::new("TABLE", ArrowDataType::Utf8, false),
-        ArrowField::new("COLUMN", ArrowDataType::Utf8, false),
-        ArrowField::new("MIN_TIME", ArrowDataType::Int64, false),
-        ArrowField::new("MAX_TIME", ArrowDataType::Int64, false),
         ArrowField::new("CHECK_SUM", ArrowDataType::Utf8, false),
     ]))
 }
@@ -148,31 +176,18 @@ pub(crate) async fn vnode_checksum(
     let capacity = 1024;
     let mut vnode_id_array = UInt32Array::builder(capacity);
     let mut table_array = StringBuilder::new();
-    let mut column_array = StringBuilder::new();
-    let mut min_time_array = Int64Array::builder(capacity);
-    let mut max_time_array = Int64Array::builder(capacity);
     let mut check_sum_array = StringBuilder::new();
     for tn in tree_nodes {
-        for col in tn.columns {
-            for tr in col.values {
-                vnode_id_array.append_value(vnode_id);
-                table_array.append_value(tn.table.as_str());
-                column_array.append_value(col.column.as_str());
-                min_time_array.append_value(tr.min_ts);
-                max_time_array.append_value(tr.max_ts);
-                check_sum_array.append_value(hash_to_string(tr.hash));
-            }
-        }
+        vnode_id_array.append_value(vnode_id);
+        table_array.append_value(tn.table.as_str());
+        check_sum_array.append_value(hash_to_string(tn.checksum()));
     }
 
     RecordBatch::try_new(
-        vnode_checksum_schema(),
+        vnode_table_checksum_schema(),
         vec![
             Arc::new(vnode_id_array.finish()),
             Arc::new(table_array.finish()),
-            Arc::new(column_array.finish()),
-            Arc::new(min_time_array.finish()),
-            Arc::new(max_time_array.finish()),
             Arc::new(check_sum_array.finish()),
         ],
     )
@@ -222,7 +237,7 @@ pub(crate) async fn ts_family_hash_tree(
         readers.push(r);
     }
 
-    // Build a compact iterator, read data, slite by time range and then calculate hash.
+    // Build a compact iterator, read data, split by time range and then calculate hash.
     let iter = CompactIterator::new(readers, MAX_DATA_BLOCK_SIZE, true);
     let (fid_tr_hash_val_map, mut cid_fid_count_map) =
         read_from_compact_iterator(iter, ts_family_id, time_range_nanosec, &cid_col_name_map)
@@ -383,7 +398,6 @@ async fn read_from_compact_iterator(
 )> {
     let time_range = Duration::nanoseconds(time_range_nanosec);
     let mut fid_tr_hash_val_map: HashMap<FieldId, Vec<(TimeRange, Hash)>> = HashMap::new();
-    let mut cid_fid_count_map: HashMap<ColumnId, usize> = HashMap::new();
     let mut last_hashed_tr_fid: Option<(TimeRange, FieldId)> = None;
     let mut hasher = Hasher::new();
     loop {
@@ -400,7 +414,6 @@ async fn read_from_compact_iterator(
                     if !cid_col_name_map.contains_key(&column_id) {
                         continue;
                     }
-                    *cid_fid_count_map.entry(column_id).or_default() += 1;
 
                     // Check if there is last hash value that not stored.
                     if let Some((time_range, last_fid)) = last_hashed_tr_fid {
@@ -466,6 +479,11 @@ async fn read_from_compact_iterator(
             .entry(last_fid)
             .or_default()
             .push((tr, hasher.finalize().into()));
+    }
+    let mut cid_fid_count_map: HashMap<ColumnId, usize> = HashMap::new();
+    for fid in fid_tr_hash_val_map.keys() {
+        let (cid, _) = utils::split_id(*fid);
+        *cid_fid_count_map.entry(cid).or_default() += 1;
     }
 
     Ok((fid_tr_hash_val_map, cid_fid_count_map))

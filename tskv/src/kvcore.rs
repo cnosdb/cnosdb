@@ -984,7 +984,7 @@ impl Engine for TsKv {
             }
         }
 
-        Ok(RecordBatch::new_empty(check::vnode_checksum_schema()))
+        Ok(RecordBatch::new_empty(check::vnode_table_checksum_schema()))
     }
 
     async fn close(&self) {
