@@ -7,17 +7,26 @@ edition.workspace = true
 
 [dependencies]
 actix-rt = { workspace = true }
+arrow-schema = { workspace = true, optional = false }
+meta = { path = "../meta" }
+models = { path = "../common/models" }
 protos = { path = "../common/protos", features = ["test"] }
+sysinfo = { workspace = true, optional = false }
 
 [dev-dependencies]
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
+meta = { path = "../meta" }
 models = { path = "../common/models" }
 
-flatbuffers = { workspace = true }
-tonic = { workspace = true, features = ["tls", "transport"] }
-tokio = { workspace = true, features = ["full"] }
-tokio-stream = { workspace = true }
-datafusion = { workspace = true }
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
+datafusion = { workspace = true }
+flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 protobuf = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tokio-stream = { workspace = true }
+tonic = { workspace = true, features = ["tls", "transport"] }
+
+[features]
+default = []
+coorfinator_e2e_test = []
