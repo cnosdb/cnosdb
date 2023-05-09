@@ -68,7 +68,9 @@ function test() {
     echo "Testing query/test" && \
     cargo run --package test && \
     echo "Testing e2e_test" && \
-    cargo test --package e2e_test && \
+    # cargo test --package e2e_test && \
+    cargo test --package e2e_test  -- http_api_tests::test  && \
+    cargo test --package e2e_test  -- kv_service_tests::test  && \
     cargo run --package sqllogicaltests
 }
 

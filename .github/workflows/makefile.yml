@@ -134,3 +134,26 @@ jobs:
         run: |
           cd meta && cargo test --features=meta_e2e_test tests -- --test-threads  1
 
+  integration-test-cn:
+    name: "Integration Test cn"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Setup timezone
+        uses: zcong1993/setup-timezone@master
+        with:
+          timezone: Asia/Shanghai
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+        with:
+          rust-version: ${{ matrix.rust }}
+
+      - name: Test
+        shell: bash
+        run: |
+          cargo test --package e2e_test  -- coordinator_tests::tests --test-threads 1
