@@ -99,6 +99,13 @@ fn plan_gap_fill(
         execution_props,
     )?;
 
+    let sliding = create_physical_expr(
+        &gap_fill.params.sliding,
+        input_dfschema,
+        input_schema,
+        execution_props,
+    )?;
+
     let time_range = &gap_fill.params.time_range;
     let time_range = try_map_range(time_range, |b| {
         try_map_bound(b.as_ref(), |e| {
@@ -125,7 +132,14 @@ fn plan_gap_fill(
         })
         .collect::<Result<Vec<(Arc<dyn PhysicalExpr>, FillStrategy)>>>()?;
 
-    let params = GapFillExecParams::new(stride, time_column, origin, time_range, fill_strategy);
+    let params = GapFillExecParams::new(
+        stride,
+        sliding,
+        time_column,
+        origin,
+        time_range,
+        fill_strategy,
+    );
     GapFillExec::try_new(
         Arc::clone(&physical_inputs[0]),
         group_expr,

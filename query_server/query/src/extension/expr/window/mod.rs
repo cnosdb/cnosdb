@@ -16,4 +16,7 @@ pub const WINDOW_COL_NAME: &str = "_window";
 pub const WINDOW_START: &str = "start";
 pub const WINDOW_END: &str = "end";
 
-pub use time_window::{signature as time_window_signature, TIME_WINDOW_UDF};
+pub use time_window::{
+    ceil_sliding_window, floor_sliding_window, signature as time_window_signature,
+    DEFAULT_TIME_WINDOW_START, TIME_WINDOW_UDF,
+};

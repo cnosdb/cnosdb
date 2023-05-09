@@ -10,20 +10,17 @@ use datafusion::logical_expr::{GetIndexedField, LogicalPlan, LogicalPlanBuilder}
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::{and, cast, col, lit, Expr};
 use datafusion::scalar::ScalarValue;
-use lazy_static::lazy_static;
 use models::duration::DAY;
 use spi::QueryError;
 use trace::debug;
 
 use crate::extension::expr::expr_fn::{ge, is_not_null, lt, minus, modulo, multiply, plus};
 use crate::extension::expr::expr_utils::find_exprs_in_exprs_deeply_nested;
-use crate::extension::expr::{TIME_WINDOW, WINDOW_COL_NAME, WINDOW_END, WINDOW_START};
+use crate::extension::expr::{
+    DEFAULT_TIME_WINDOW_START, TIME_WINDOW, WINDOW_COL_NAME, WINDOW_END, WINDOW_START,
+};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::extension::logical::plan_node::LogicalPlanExt;
-
-lazy_static! {
-    static ref INIT_TIME: Expr = lit(ScalarValue::TimestampNanosecond(Some(0), None));
-}
 
 /// Convert the [`TIME_WINDOW`] function to Expand or project
 pub struct TransformTimeWindowRule;
@@ -155,7 +152,7 @@ fn parse_duration_arg(expr: &Expr) -> Result<Duration, QueryError> {
 }
 
 #[derive(Debug)]
-struct TimeWindow {
+pub struct TimeWindow {
     window_alias: String,
     time_column: Expr,
     // interval, such as: '5s'
@@ -166,6 +163,22 @@ struct TimeWindow {
 }
 
 impl TimeWindow {
+    pub fn new(
+        window_alias: impl Into<String>,
+        time_column: Expr,
+        window_duration: Duration,
+        slide_duration: Duration,
+        start_time: Expr,
+    ) -> Self {
+        Self {
+            window_alias: window_alias.into(),
+            time_column,
+            window_duration,
+            slide_duration,
+            start_time,
+        }
+    }
+
     fn is_tumbling_window(&self) -> bool {
         self.window_duration == self.slide_duration
     }
@@ -187,10 +200,7 @@ impl TimeWindowBuilder {
             window_duration,
             slide_duration: Default::default(),
             // Default to unix EPOCH
-            start_time: Expr::Literal(ScalarValue::TimestampNanosecond(
-                Some(0),
-                Some("+00:00".into()),
-            )),
+            start_time: Expr::Literal(DEFAULT_TIME_WINDOW_START.clone()),
         }
     }
 
@@ -218,7 +228,7 @@ impl TimeWindowBuilder {
 /// Generate a window start expression(alias name [`WINDOW_START`])
 /// and a window end expression(alias name [`WINDOW_END`])
 /// based on the given [`TimeWindow`] parameter
-fn make_window_expr(i: i64, window: &TimeWindow) -> Expr {
+pub fn make_window_expr(i: i64, window: &TimeWindow) -> Expr {
     let TimeWindow {
         time_column,
         window_duration,
@@ -311,6 +321,14 @@ fn build_sliding_window_plan(
     let slide_ns = slide_duration.as_nanos();
     // prevent window_duration + slide_duration from overflowing
     let overlapping_windows = (window_ns + slide_ns - 1) / slide_ns;
+
+    // Do not allow windows to overlap too much
+    if overlapping_windows > 100 {
+        return Err(DataFusionError::Plan(format!(
+            "Too many overlapping windows: {}",
+            overlapping_windows
+        )));
+    }
 
     let windows = (0..overlapping_windows)
         .map(|i| make_window_expr(i as i64, window))
