@@ -145,7 +145,7 @@ impl MetaClient for MockMetaClient {
         Some(0)
     }
 
-    async fn locate_replcation_set_for_write(
+    async fn locate_replication_set_for_write(
         &self,
         db: &str,
         hash_id: u64,
@@ -178,7 +178,7 @@ impl MetaClient for MockMetaClient {
         todo!()
     }
 
-    async fn reasign_member_role(
+    async fn reassign_member_role(
         &self,
         user_id: Oid,
         role: TenantRoleIdentifier,
@@ -229,6 +229,10 @@ impl MetaClient for MockMetaClient {
 
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         vec![]
+    }
+
+    fn get_replication_set(&self, repl_id: u32) -> Option<ReplicationSet> {
+        todo!()
     }
 
     async fn update_replication_set(

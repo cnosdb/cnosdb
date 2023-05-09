@@ -65,17 +65,17 @@ impl DDLDefinitionTask for AlterTenantTask {
                 // user_id: Oid,
                 // role: TenantRoleIdentifier,
                 // tenant_id: Oid,
-                // fn reasign_member_role_in_tenant(
+                // fn reassign_member_role_in_tenant(
                 //     &mut self,
                 //     user_id: Oid,
                 //     role: TenantRoleIdentifier,
                 //     tenant_id: Oid,
                 // ) -> Result<()>;
                 debug!(
-                    "Reasign role {:?} of user {} in tenant {}",
+                    "Reassign role {:?} of user {} in tenant {}",
                     role, user_id, tenant_name
                 );
-                meta.reasign_member_role(*user_id, role.clone()).await?;
+                meta.reassign_member_role(*user_id, role.clone()).await?;
                 // .context(MetaSnafu)?;
             }
             AlterTenantAction::RemoveUser(user_id) => {

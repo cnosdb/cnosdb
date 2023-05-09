@@ -215,8 +215,8 @@ impl CoordService {
         replication_set_id: u32,
     ) -> CoordinatorResult<ReplicationSet> {
         match self.tenant_meta(tenant).await {
-            Some(meta_client) => match meta_client.get_vnode_repl_set(replication_set_id) {
-                Some(all_info) => Ok(all_info),
+            Some(meta_client) => match meta_client.get_replication_set(replication_set_id) {
+                Some(repl_set) => Ok(repl_set),
                 None => Err(CoordinatorError::ReplicationSetNotFound {
                     id: replication_set_id,
                 }),
