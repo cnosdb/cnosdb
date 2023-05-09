@@ -776,7 +776,7 @@ impl Cursor {
         }
 
         // last_ts is the last timestamp that will fit in the output batch
-        let last_ts = next_ts + (output_row_count - 1) as i64 * params.stride;
+        let last_ts = next_ts + (output_row_count - 1) as i64 * params.sliding;
 
         loop {
             if self.next_input_offset >= series_end {
@@ -791,14 +791,14 @@ impl Cursor {
                     series_end_offset: series_end,
                     ts: next_ts,
                 })?;
-                next_ts += params.stride;
+                next_ts += params.sliding;
             }
             vec_builder.push(RowStatus::Present {
                 series_end_offset: series_end,
                 offset: self.next_input_offset,
                 ts: next_ts,
             })?;
-            next_ts += params.stride;
+            next_ts += params.sliding;
             self.next_input_offset += 1;
         }
 
@@ -808,10 +808,10 @@ impl Cursor {
                 series_end_offset: series_end,
                 ts: next_ts,
             })?;
-            next_ts += params.stride;
+            next_ts += params.sliding;
         }
 
-        self.next_ts = Some(last_ts + params.stride);
+        self.next_ts = Some(last_ts + params.sliding);
         self.remaining_output_batch_size -= output_row_count;
         Ok(())
     }

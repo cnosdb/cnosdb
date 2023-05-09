@@ -15,7 +15,8 @@ pub use selector_function::{BOTTOM, TOPK};
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 pub use window::{
-    time_window_signature, TIME_WINDOW, TIME_WINDOW_UDF, WINDOW_COL_NAME, WINDOW_END, WINDOW_START,
+    ceil_sliding_window, floor_sliding_window, time_window_signature, DEFAULT_TIME_WINDOW_START,
+    TIME_WINDOW, TIME_WINDOW_UDF, WINDOW_COL_NAME, WINDOW_END, WINDOW_START,
 };
 
 pub static INTERVALS: &[DataType] = &[

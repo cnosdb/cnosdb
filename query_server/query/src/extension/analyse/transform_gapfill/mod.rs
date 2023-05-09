@@ -193,12 +193,6 @@ fn build_gapfill_node(
             "slide_duration argument to TIME_WINDOW_GAPFILL",
             slide_duration,
         )?;
-        // TODO not support sliding window yet
-        if !slide_duration.eq(&window_duration) {
-            return Err(DataFusionError::NotImplemented(format!(
-                "{TIME_WINDOW_GAPFILL} for sliding window"
-            )));
-        }
 
         // Ensure that origin argument is a scalar
         origin = args_iter.next();
@@ -236,7 +230,8 @@ fn build_gapfill_node(
             new_group_expr,
             aggr_expr,
             GapFillParams {
-                stride: window_duration,
+                stride: window_duration.clone(),
+                sliding: slide_duration.unwrap_or(window_duration),
                 time_column,
                 origin,
                 time_range,
@@ -319,7 +314,7 @@ fn replace_time_window_gapfill(group_expr: &[Expr]) -> Result<Option<RewriteInfo
     }
     let time_window_gapfill_index = dbg_idx.expect("should be found exactly one call");
 
-    let mut rewriter = DateBinGapfillRewriter { args: None };
+    let mut rewriter = TimeWindowGapfillRewriter { args: None };
     let group_expr = group_expr
         .iter()
         .enumerate()
@@ -340,11 +335,11 @@ fn replace_time_window_gapfill(group_expr: &[Expr]) -> Result<Option<RewriteInfo
     }))
 }
 
-struct DateBinGapfillRewriter {
+struct TimeWindowGapfillRewriter {
     args: Option<Vec<Expr>>,
 }
 
-impl TreeNodeRewriter for DateBinGapfillRewriter {
+impl TreeNodeRewriter for TimeWindowGapfillRewriter {
     type N = Expr;
     fn pre_visit(&mut self, expr: &Expr) -> Result<RewriteRecursion> {
         match expr {

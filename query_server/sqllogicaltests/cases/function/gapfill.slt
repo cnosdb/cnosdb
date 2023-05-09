@@ -216,3 +216,302 @@ where time between timestamp '1999-12-31T00:00:00.000Z' and timestamp '1999-12-3
 group by four_minute;
 ----
 1999-12-30T23:59:59.999954455 111 111.0 8
+
+statement ok
+INSERT gapfill_db.m2(TIME, f0, f1, t0, t1)
+VALUES
+    ('1999-12-31 00:00:00.055', 1, 222, 'tag14', 'tag24');
+
+# gap filling works with sliding window
+query 
+SELECT
+  t0,
+  time_window_gapfill(time, interval '10 milliseconds', interval '5 milliseconds') as minute,
+  locf(avg(f1))
+from gapfill_db.m2
+where time between timestamp '1999-12-31T00:00:00.000Z' and timestamp '1999-12-31T00:00:00.055Z'
+group by t0, minute;
+----
+tag11 1999-12-30T23:59:59.995 444.0
+tag11 1999-12-31T00:00:00 444.0
+tag11 1999-12-31T00:00:00.005 444.0
+tag11 1999-12-31T00:00:00.010 444.0
+tag11 1999-12-31T00:00:00.015 555.0
+tag11 1999-12-31T00:00:00.020 555.0
+tag11 1999-12-31T00:00:00.025 555.0
+tag11 1999-12-31T00:00:00.030 555.0
+tag11 1999-12-31T00:00:00.035 555.0
+tag11 1999-12-31T00:00:00.040 555.0
+tag11 1999-12-31T00:00:00.045 555.0
+tag11 1999-12-31T00:00:00.050 555.0
+tag11 1999-12-31T00:00:00.055 555.0
+tag12 1999-12-30T23:59:59.995 NULL
+tag12 1999-12-31T00:00:00 333.0
+tag12 1999-12-31T00:00:00.005 333.0
+tag12 1999-12-31T00:00:00.010 333.0
+tag12 1999-12-31T00:00:00.015 333.0
+tag12 1999-12-31T00:00:00.020 444.0
+tag12 1999-12-31T00:00:00.025 444.0
+tag12 1999-12-31T00:00:00.030 444.0
+tag12 1999-12-31T00:00:00.035 444.0
+tag12 1999-12-31T00:00:00.040 444.0
+tag12 1999-12-31T00:00:00.045 444.0
+tag12 1999-12-31T00:00:00.050 444.0
+tag12 1999-12-31T00:00:00.055 444.0
+tag13 1999-12-30T23:59:59.995 NULL
+tag13 1999-12-31T00:00:00 NULL
+tag13 1999-12-31T00:00:00.005 222.0
+tag13 1999-12-31T00:00:00.010 222.0
+tag13 1999-12-31T00:00:00.015 222.0
+tag13 1999-12-31T00:00:00.020 222.0
+tag13 1999-12-31T00:00:00.025 333.0
+tag13 1999-12-31T00:00:00.030 333.0
+tag13 1999-12-31T00:00:00.035 333.0
+tag13 1999-12-31T00:00:00.040 333.0
+tag13 1999-12-31T00:00:00.045 333.0
+tag13 1999-12-31T00:00:00.050 333.0
+tag13 1999-12-31T00:00:00.055 333.0
+tag14 1999-12-30T23:59:59.995 NULL
+tag14 1999-12-31T00:00:00 NULL
+tag14 1999-12-31T00:00:00.005 NULL
+tag14 1999-12-31T00:00:00.010 111.0
+tag14 1999-12-31T00:00:00.015 111.0
+tag14 1999-12-31T00:00:00.020 111.0
+tag14 1999-12-31T00:00:00.025 111.0
+tag14 1999-12-31T00:00:00.030 222.0
+tag14 1999-12-31T00:00:00.035 222.0
+tag14 1999-12-31T00:00:00.040 222.0
+tag14 1999-12-31T00:00:00.045 222.0
+tag14 1999-12-31T00:00:00.050 222.0
+tag14 1999-12-31T00:00:00.055 222.0
+
+# gap filling works with sliding window
+query 
+SELECT
+  t0,
+  time_window_gapfill(time, interval '10 milliseconds', interval '5 milliseconds') as minute,
+  locf(avg(f1))
+from gapfill_db.m2
+where time between timestamp '1999-12-31T00:00:00.020Z' and timestamp '1999-12-31T00:00:00.055Z'
+group by t0, minute;
+----
+tag11 1999-12-31T00:00:00.015 555.0
+tag11 1999-12-31T00:00:00.020 555.0
+tag11 1999-12-31T00:00:00.025 555.0
+tag11 1999-12-31T00:00:00.030 555.0
+tag11 1999-12-31T00:00:00.035 555.0
+tag11 1999-12-31T00:00:00.040 555.0
+tag11 1999-12-31T00:00:00.045 555.0
+tag11 1999-12-31T00:00:00.050 555.0
+tag11 1999-12-31T00:00:00.055 555.0
+tag12 1999-12-31T00:00:00.015 NULL
+tag12 1999-12-31T00:00:00.020 444.0
+tag12 1999-12-31T00:00:00.025 444.0
+tag12 1999-12-31T00:00:00.030 444.0
+tag12 1999-12-31T00:00:00.035 444.0
+tag12 1999-12-31T00:00:00.040 444.0
+tag12 1999-12-31T00:00:00.045 444.0
+tag12 1999-12-31T00:00:00.050 444.0
+tag12 1999-12-31T00:00:00.055 444.0
+tag13 1999-12-31T00:00:00.015 NULL
+tag13 1999-12-31T00:00:00.020 NULL
+tag13 1999-12-31T00:00:00.025 333.0
+tag13 1999-12-31T00:00:00.030 333.0
+tag13 1999-12-31T00:00:00.035 333.0
+tag13 1999-12-31T00:00:00.040 333.0
+tag13 1999-12-31T00:00:00.045 333.0
+tag13 1999-12-31T00:00:00.050 333.0
+tag13 1999-12-31T00:00:00.055 333.0
+tag14 1999-12-31T00:00:00.015 NULL
+tag14 1999-12-31T00:00:00.020 NULL
+tag14 1999-12-31T00:00:00.025 NULL
+tag14 1999-12-31T00:00:00.030 222.0
+tag14 1999-12-31T00:00:00.035 222.0
+tag14 1999-12-31T00:00:00.040 222.0
+tag14 1999-12-31T00:00:00.045 222.0
+tag14 1999-12-31T00:00:00.050 222.0
+tag14 1999-12-31T00:00:00.055 222.0
+
+# gap filling works with sliding window and start time
+query 
+SELECT
+  t0,
+  time_window_gapfill(time, interval '10 milliseconds', interval '5 milliseconds', timestamp '1970-01-01T00:00:00.002Z') as minute,
+  locf(avg(f1))
+from gapfill_db.m2
+where time between timestamp '1999-12-31T00:00:00.000Z' and timestamp '1999-12-31T00:00:00.055Z'
+group by t0, minute;
+----
+tag11 1999-12-30T23:59:59.992 444.0
+tag11 1999-12-30T23:59:59.997 444.0
+tag11 1999-12-31T00:00:00.002 444.0
+tag11 1999-12-31T00:00:00.007 444.0
+tag11 1999-12-31T00:00:00.012 555.0
+tag11 1999-12-31T00:00:00.017 555.0
+tag11 1999-12-31T00:00:00.022 555.0
+tag11 1999-12-31T00:00:00.027 555.0
+tag11 1999-12-31T00:00:00.032 555.0
+tag11 1999-12-31T00:00:00.037 555.0
+tag11 1999-12-31T00:00:00.042 555.0
+tag11 1999-12-31T00:00:00.047 555.0
+tag11 1999-12-31T00:00:00.052 555.0
+tag12 1999-12-30T23:59:59.992 NULL
+tag12 1999-12-30T23:59:59.997 333.0
+tag12 1999-12-31T00:00:00.002 333.0
+tag12 1999-12-31T00:00:00.007 333.0
+tag12 1999-12-31T00:00:00.012 333.0
+tag12 1999-12-31T00:00:00.017 444.0
+tag12 1999-12-31T00:00:00.022 444.0
+tag12 1999-12-31T00:00:00.027 444.0
+tag12 1999-12-31T00:00:00.032 444.0
+tag12 1999-12-31T00:00:00.037 444.0
+tag12 1999-12-31T00:00:00.042 444.0
+tag12 1999-12-31T00:00:00.047 444.0
+tag12 1999-12-31T00:00:00.052 444.0
+tag13 1999-12-30T23:59:59.992 NULL
+tag13 1999-12-30T23:59:59.997 NULL
+tag13 1999-12-31T00:00:00.002 222.0
+tag13 1999-12-31T00:00:00.007 222.0
+tag13 1999-12-31T00:00:00.012 222.0
+tag13 1999-12-31T00:00:00.017 222.0
+tag13 1999-12-31T00:00:00.022 333.0
+tag13 1999-12-31T00:00:00.027 333.0
+tag13 1999-12-31T00:00:00.032 333.0
+tag13 1999-12-31T00:00:00.037 333.0
+tag13 1999-12-31T00:00:00.042 333.0
+tag13 1999-12-31T00:00:00.047 333.0
+tag13 1999-12-31T00:00:00.052 333.0
+tag14 1999-12-30T23:59:59.992 NULL
+tag14 1999-12-30T23:59:59.997 NULL
+tag14 1999-12-31T00:00:00.002 NULL
+tag14 1999-12-31T00:00:00.007 111.0
+tag14 1999-12-31T00:00:00.012 111.0
+tag14 1999-12-31T00:00:00.017 111.0
+tag14 1999-12-31T00:00:00.022 111.0
+tag14 1999-12-31T00:00:00.027 222.0
+tag14 1999-12-31T00:00:00.032 222.0
+tag14 1999-12-31T00:00:00.037 222.0
+tag14 1999-12-31T00:00:00.042 222.0
+tag14 1999-12-31T00:00:00.047 222.0
+tag14 1999-12-31T00:00:00.052 222.0
+
+# gap filling works with sliding window
+query 
+SELECT
+  t0,
+  time_window_gapfill(time, interval '5 milliseconds', interval '10 milliseconds') as minute,
+  locf(avg(f1))
+from gapfill_db.m2
+where time between timestamp '1999-12-31T00:00:00.000Z' and timestamp '1999-12-31T00:00:00.055Z'
+group by t0, minute;
+----
+tag11 1999-12-31T00:00:00 444.0
+tag11 1999-12-31T00:00:00.010 444.0
+tag11 1999-12-31T00:00:00.020 555.0
+tag11 1999-12-31T00:00:00.030 555.0
+tag11 1999-12-31T00:00:00.040 555.0
+tag11 1999-12-31T00:00:00.050 555.0
+tag13 1999-12-31T00:00:00 NULL
+tag13 1999-12-31T00:00:00.010 222.0
+tag13 1999-12-31T00:00:00.020 222.0
+tag13 1999-12-31T00:00:00.030 333.0
+tag13 1999-12-31T00:00:00.040 333.0
+tag13 1999-12-31T00:00:00.050 333.0
+
+# gap filling works with sliding window and start time
+query 
+SELECT
+  t0,
+  time_window_gapfill(time, interval '5 milliseconds', interval '10 milliseconds', timestamp '1970-01-01T00:00:00.002Z') as minute,
+  locf(avg(f1))
+from gapfill_db.m2
+where time between timestamp '1999-12-31T00:00:00.000Z' and timestamp '1999-12-31T00:00:00.055Z'
+group by t0, minute;
+----
+tag12 1999-12-31T00:00:00.002 333.0
+tag12 1999-12-31T00:00:00.012 333.0
+tag12 1999-12-31T00:00:00.022 444.0
+tag12 1999-12-31T00:00:00.032 444.0
+tag12 1999-12-31T00:00:00.042 444.0
+tag12 1999-12-31T00:00:00.052 444.0
+tag14 1999-12-31T00:00:00.002 NULL
+tag14 1999-12-31T00:00:00.012 111.0
+tag14 1999-12-31T00:00:00.022 111.0
+tag14 1999-12-31T00:00:00.032 222.0
+tag14 1999-12-31T00:00:00.042 222.0
+tag14 1999-12-31T00:00:00.052 222.0
+
+# gap filling works with sliding window and start time
+query 
+SELECT
+  t0,
+  time_window_gapfill(time, interval '5 milliseconds', interval '10 milliseconds', timestamp '1970-01-01T00:00:00.002Z') as minute,
+  interpolate(avg(f1))
+from gapfill_db.m2
+where time between timestamp '1999-12-31T00:00:00.000Z' and timestamp '1999-12-31T00:00:00.055Z'
+group by t0, minute;
+----
+tag12 1999-12-31T00:00:00.002 333.0
+tag12 1999-12-31T00:00:00.012 388.5
+tag12 1999-12-31T00:00:00.022 444.0
+tag12 1999-12-31T00:00:00.032 NULL
+tag12 1999-12-31T00:00:00.042 NULL
+tag12 1999-12-31T00:00:00.052 NULL
+tag14 1999-12-31T00:00:00.002 NULL
+tag14 1999-12-31T00:00:00.012 111.0
+tag14 1999-12-31T00:00:00.022 166.5
+tag14 1999-12-31T00:00:00.032 222.0
+tag14 1999-12-31T00:00:00.042 222.0
+tag14 1999-12-31T00:00:00.052 222.0
+
+# Too many overlapping windows
+query error Arrow error: Io error: Status \{ code: Internal, message: "Datafusion: Error during planning: Too many overlapping windows: 500000000", .*
+SELECT
+  t0,
+  time_window_gapfill(time, interval '5000000000 milliseconds', interval '10 milliseconds', timestamp '1970-01-01T00:00:00.002Z') as minute,
+  interpolate(avg(f1))
+from gapfill_db.m2
+where time between timestamp '1999-12-31T00:00:00.000Z' and timestamp '1999-12-31T00:00:00.055Z'
+group by t0, minute;
+
+# no data falls in the window
+statement ok
+SELECT
+  t0,
+  time_window_gapfill(time, interval '5 milliseconds', interval '5000000000 milliseconds', timestamp '1970-01-01T00:00:00.002Z') as minute,
+  interpolate(avg(f1))
+from gapfill_db.m2
+where time between timestamp '1999-12-31T00:00:00.000Z' and timestamp '1999-12-31T00:00:00.055Z'
+group by t0, minute;
+
+# Too many overlapping windows
+query error Arrow error: Io error: Status \{ code: Internal, message: "Datafusion: Error during planning: Too many overlapping windows: 101", .*
+SELECT
+  t0,
+  time_window_gapfill(time, interval '101 milliseconds', interval '1 milliseconds', timestamp '1970-01-01T00:00:00.002Z') as minute,
+  interpolate(avg(f1))
+from gapfill_db.m2
+where time between timestamp '1999-12-31T00:00:00.000Z' and timestamp '1999-12-31T00:00:00.055Z'
+group by t0, minute;
+
+# Maximum bounds of overlapping windows
+query 
+SELECT
+  t0,
+  time_window_gapfill(time, interval '100 milliseconds', interval '1 milliseconds', timestamp '1970-01-01T00:00:00.002Z') as minute,
+  interpolate(avg(f1))
+from gapfill_db.m2
+where time between timestamp '1999-12-31T00:00:00.000Z' and timestamp '1999-12-31T00:00:00.055Z'
+group by t0, minute
+limit 10;
+----
+tag11 1999-12-30T23:59:59.901 444.0
+tag11 1999-12-30T23:59:59.902 444.0
+tag11 1999-12-30T23:59:59.903 444.0
+tag11 1999-12-30T23:59:59.904 444.0
+tag11 1999-12-30T23:59:59.905 444.0
+tag11 1999-12-30T23:59:59.906 444.0
+tag11 1999-12-30T23:59:59.907 444.0
+tag11 1999-12-30T23:59:59.908 444.0
+tag11 1999-12-30T23:59:59.909 444.0
+tag11 1999-12-30T23:59:59.910 444.0

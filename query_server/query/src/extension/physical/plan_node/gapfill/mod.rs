@@ -47,6 +47,8 @@ pub struct GapFillExec {
 pub struct GapFillExecParams {
     /// The uniform interval of incoming timestamps
     stride: Arc<dyn PhysicalExpr>,
+    /// The sliding interval of incoming timestamps
+    sliding: Arc<dyn PhysicalExpr>,
     /// The timestamp column produced by date_bin
     time_column: Column,
     /// The origin argument from the all to TIME_WINDOW_GAPFILL
@@ -62,6 +64,7 @@ pub struct GapFillExecParams {
 impl GapFillExecParams {
     pub fn new(
         stride: Arc<dyn PhysicalExpr>,
+        sliding: Arc<dyn PhysicalExpr>,
         time_column: Column,
         origin: Option<Arc<dyn PhysicalExpr>>,
         time_range: Range<Bound<Arc<dyn PhysicalExpr>>>,
@@ -69,6 +72,7 @@ impl GapFillExecParams {
     ) -> Self {
         Self {
             stride,
+            sliding,
             time_column,
             origin,
             time_range,
