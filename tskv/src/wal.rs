@@ -362,7 +362,7 @@ impl WalManager {
         Ok(())
     }
 
-    async fn check_to_delete(&mut self) {
+    pub async fn check_to_delete(&mut self) {
         let min_seq = self.global_seq_ctx.min_seq();
         let mut old_files_to_delete: Vec<u64> = Vec::new();
         for (old_file_id, old_file_max_seq) in self.old_file_max_sequence.iter() {

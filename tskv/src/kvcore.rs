@@ -219,6 +219,7 @@ impl TsKv {
             version_set: Arc<RwLock<VersionSet>>,
             wal_manager: &WalManager,
         ) {
+            // TODO(zipper): This may cause flushing too frequent.
             if wal_manager.is_total_file_size_exceed() {
                 version_set.read().await.send_flush_req().await;
             }
@@ -811,11 +812,7 @@ impl Engine for TsKv {
             // TODO: Send file_metas to the destination node.
             let mut file_metas = HashMap::new();
             if let Some(tsf) = db.get_tsfamily(vnode_id) {
-                let ve = tsf.read().await.snapshot(
-                    self.global_ctx.last_seq(),
-                    db.owner(),
-                    &mut file_metas,
-                );
+                let ve = tsf.read().await.snapshot(db.owner(), &mut file_metas);
                 Ok(Some(ve))
             } else {
                 warn!(

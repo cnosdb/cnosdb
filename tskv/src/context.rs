@@ -72,13 +72,15 @@ pub struct GlobalSequenceContext {
 }
 
 impl GlobalSequenceContext {
-    pub fn new(min_seq: u64, tsf_seq_map: HashMap<TseriesFamilyId, u64>) -> Self {
+    pub fn new(tsf_seq_map: HashMap<TseriesFamilyId, u64>) -> Self {
+        let mut inner = GlobalSequenceContextInner {
+            min_seq: 0_u64,
+            tsf_seq_map,
+        };
+        inner.reset_min_seq();
         Self {
-            min_seq: AtomicU64::new(min_seq),
-            inner: Arc::new(RwLock::new(GlobalSequenceContextInner {
-                min_seq,
-                tsf_seq_map,
-            })),
+            min_seq: AtomicU64::new(inner.min_seq),
+            inner: Arc::new(RwLock::new(inner)),
         }
     }
 
@@ -181,7 +183,16 @@ mod test_context {
     use super::GlobalSequenceContext;
 
     #[test]
-    fn test_global_sequence_context() {
+    fn test_global_sequence_context_new() {
+        let ctx = GlobalSequenceContext::new(HashMap::from([(1, 2), (2, 3), (3, 4)]));
+        assert_eq!(ctx.min_seq(), 2);
+
+        let ctx = GlobalSequenceContext::new(HashMap::new());
+        assert_eq!(ctx.min_seq(), 0);
+    }
+
+    #[test]
+    fn test_global_sequence_context_next_stage() {
         let ctx = GlobalSequenceContext::empty();
         assert_eq!(ctx.min_seq(), 0);
 
