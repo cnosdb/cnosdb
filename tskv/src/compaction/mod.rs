@@ -34,11 +34,7 @@ pub struct CompactReq {
 
 #[derive(Debug)]
 pub struct FlushReq {
-    pub mems: Vec<(TseriesFamilyId, Arc<RwLock<MemCache>>)>,
-}
-
-impl FlushReq {
-    pub fn new(mems: Vec<(TseriesFamilyId, Arc<RwLock<MemCache>>)>) -> Self {
-        Self { mems }
-    }
+    pub ts_family_id: TseriesFamilyId,
+    pub mems: Vec<Arc<RwLock<MemCache>>>,
+    pub force_flush: bool,
 }

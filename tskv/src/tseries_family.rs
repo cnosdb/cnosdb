@@ -765,12 +765,11 @@ impl TseriesFamily {
     /// are not flushing or flushed should be greater than configuration `max_immutable_number`.
     /// If argument `force` is set to true, then do not check the total count.
     pub(crate) fn build_flush_req(&mut self, force: bool) -> Option<FlushReq> {
-        let mut filtered_caches: Vec<(TseriesFamilyId, Arc<RwLock<MemCache>>)> = self
+        let mut filtered_caches: Vec<Arc<RwLock<MemCache>>> = self
             .immut_cache
             .iter()
             .filter(|c| !c.read().is_flushing())
             .cloned()
-            .map(|c| (self.tf_id, c))
             .collect();
 
         if !force && filtered_caches.len() < self.cache_opt.max_immutable_number as usize {
@@ -778,13 +777,15 @@ impl TseriesFamily {
         }
 
         // Mark these caches marked as `flushing` in current thread and collect them.
-        filtered_caches.retain(|(_, c)| c.read().mark_flushing());
+        filtered_caches.retain(|c| c.read().mark_flushing());
         if filtered_caches.is_empty() {
             return None;
         }
 
         Some(FlushReq {
+            ts_family_id: self.tf_id,
             mems: filtered_caches,
+            force_flush: force,
         })
     }
 
@@ -1003,7 +1004,7 @@ pub mod test_tseries_family {
     use super::{ColumnFile, LevelInfo};
     use crate::compaction::flush_tests::default_table_schema;
     use crate::compaction::{run_flush_memtable_job, FlushReq};
-    use crate::context::GlobalContext;
+    use crate::context::{GlobalContext, GlobalSequenceContext};
     use crate::file_utils::make_tsm_file_name;
     use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
@@ -1042,16 +1043,18 @@ pub mod test_tseries_family {
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
-        let levels = [
+            let levels = [
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
             LevelInfo {
                 files: vec![
                     Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
                 ],
-                database: database.clone(), tsf_id: 1,
+                database: database.clone(),
+                tsf_id: 1,
                 storage_opt: opt.storage.clone(),
                 level: 1,
-                cur_size: 100, max_size: 1000,
+                cur_size: 100,
+                max_size: 1000,
                 time_range: TimeRange::new(3001, 3100),
             },
             LevelInfo {
@@ -1059,10 +1062,12 @@ pub mod test_tseries_family {
                     Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file_name(&tsm_dir, 1))),
                     Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
                 ],
-                database: database.clone(), tsf_id: 1,
+                database: database.clone(),
+                tsf_id: 1,
                 storage_opt: opt.storage.clone(),
                 level: 2,
-                cur_size: 2000, max_size: 10000,
+                cur_size: 2000,
+                max_size: 10000,
                 time_range: TimeRange::new(1, 2000),
             },
             LevelInfo::init(database.clone(), 3, 0, opt.storage.clone()),
@@ -1070,14 +1075,20 @@ pub mod test_tseries_family {
         ];
         let tsm_reader_cache = Arc::new(ShardedCache::with_capacity(16));
         #[rustfmt::skip]
-        let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3100, tsm_reader_cache);
+            let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3100, tsm_reader_cache);
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
-                file_id: 4, file_size: 100, tsf_id: 1, level: 1,
-                min_ts: 3051, max_ts: 3150, high_seq: 2, low_seq: 2,
+                file_id: 4,
+                file_size: 100,
+                tsf_id: 1,
+                level: 1,
+                min_ts: 3051,
+                max_ts: 3150,
+                high_seq: 2,
+                low_seq: 2,
                 is_delta: false,
             },
             3100,
@@ -1127,38 +1138,54 @@ pub mod test_tseries_family {
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
-        let levels = [
+            let levels = [
             LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
             LevelInfo {
                 files: vec![
                     Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
                     Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, make_tsm_file_name(&tsm_dir, 4))),
                 ],
-                database: database.clone(), tsf_id: 1, storage_opt: opt.storage.clone(), level: 1,
-                cur_size: 100, max_size: 1000, time_range: TimeRange::new(3001, 3150),
+                database: database.clone(),
+                tsf_id: 1,
+                storage_opt: opt.storage.clone(),
+                level: 1,
+                cur_size: 100,
+                max_size: 1000,
+                time_range: TimeRange::new(3001, 3150),
             },
             LevelInfo {
                 files: vec![
                     Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file_name(&tsm_dir, 1))),
                     Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
                 ],
-                database: database.clone(), tsf_id: 1, storage_opt: opt.storage.clone(), level: 2,
-                cur_size: 2000, max_size: 10000, time_range: TimeRange::new(1, 2000),
+                database: database.clone(),
+                tsf_id: 1,
+                storage_opt: opt.storage.clone(),
+                level: 2,
+                cur_size: 2000,
+                max_size: 10000,
+                time_range: TimeRange::new(1, 2000),
             },
             LevelInfo::init(database.clone(), 3, 1, opt.storage.clone()),
             LevelInfo::init(database.clone(), 4, 1, opt.storage.clone()),
         ];
         let tsm_reader_cache = Arc::new(ShardedCache::with_capacity(16));
         #[rustfmt::skip]
-        let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
+            let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
 
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
-                file_id: 5, file_size: 150, tsf_id: 1, level: 2,
-                min_ts: 3001, max_ts: 3150, high_seq: 2, low_seq: 2,
+                file_id: 5,
+                file_size: 150,
+                tsf_id: 1,
+                level: 2,
+                min_ts: 3001,
+                max_ts: 3150,
+                high_seq: 2,
+                low_seq: 2,
                 is_delta: false,
             },
             3150,
@@ -1166,8 +1193,14 @@ pub mod test_tseries_family {
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
-                file_id: 6, file_size: 2000, tsf_id: 1, level: 3,
-                min_ts: 1, max_ts: 2000, high_seq: 2, low_seq: 2,
+                file_id: 6,
+                file_size: 2000,
+                tsf_id: 1,
+                level: 3,
+                min_ts: 1,
+                max_ts: 2000,
+                high_seq: 2,
+                low_seq: 2,
                 is_delta: false,
             },
             3150,
@@ -1379,8 +1412,12 @@ pub mod test_tseries_family {
         mem.write_group(1, 0, row_group).unwrap();
 
         let mem = Arc::new(RwLock::new(mem));
-        let req_mem = vec![(0, mem)];
-        let flush_seq = FlushReq { mems: req_mem };
+        let req_mem = vec![mem];
+        let flush_seq = FlushReq {
+            ts_family_id: 0,
+            mems: req_mem,
+            force_flush: false,
+        };
 
         let dir = "/tmp/test/ts_family/read_with_tomb";
         let _ = std::fs::remove_dir(dir);
@@ -1391,7 +1428,8 @@ pub mod test_tseries_family {
 
         let tenant = "cnosdb".to_string();
         let database = "test_db".to_string();
-        let kernel = Arc::new(GlobalContext::new());
+        let global_ctx = Arc::new(GlobalContext::new());
+        let global_seq_ctx = GlobalSequenceContext::empty();
         let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
         let (compact_task_sender, _compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
@@ -1445,7 +1483,8 @@ pub mod test_tseries_family {
 
             run_flush_memtable_job(
                 flush_seq,
-                kernel,
+                global_ctx,
+                global_seq_ctx,
                 version_set.clone(),
                 summary_task_sender,
                 Some(compact_task_sender),
