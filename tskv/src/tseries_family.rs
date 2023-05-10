@@ -895,23 +895,23 @@ impl TseriesFamily {
         self.cancellation_token.cancel();
     }
 
-    /// Snashots last version before `last_seq` of this vnode.
+    /// Snapshots last version before `last_seq` of this vnode.
     ///
     /// Db-files' index data (field-id filter) will be inserted into `file_metas`.
     pub fn snapshot(
         &self,
-        last_seq: u64,
         owner: Arc<String>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     ) -> VersionEdit {
-        let mut version_edit = VersionEdit::new_add_vnode(self.tf_id, owner.as_ref().clone());
+        let mut version_edit =
+            VersionEdit::new_add_vnode(self.tf_id, owner.as_ref().clone(), self.seq_no);
         let version = self.version();
         let max_level_ts = version.max_level_ts;
         for files in version.levels_info.iter() {
             for file in files.files.iter() {
                 let mut meta = CompactMeta::from(file.as_ref());
                 meta.tsf_id = files.tsf_id;
-                meta.high_seq = last_seq;
+                meta.high_seq = self.seq_no;
                 version_edit.add_file(meta, max_level_ts);
                 file_metas.insert(file.file_id, file.field_id_filter.clone());
             }
