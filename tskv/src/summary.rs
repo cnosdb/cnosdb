@@ -168,11 +168,13 @@ impl VersionEdit {
         }
     }
 
-    pub fn new_add_vnode(vnode_id: u32, owner: String) -> Self {
+    pub fn new_add_vnode(vnode_id: u32, owner: String, seq_no: u64) -> Self {
         Self {
             tsf_id: vnode_id,
             tsf_name: owner,
             add_tsf: true,
+            has_seq_no: true,
+            seq_no,
             ..Default::default()
         }
     }
@@ -567,7 +569,7 @@ impl Summary {
         if self.writer.file_size() >= self.opt.storage.max_summary_size {
             let (edits, file_metas) = {
                 let vs = self.version_set.read().await;
-                vs.snapshot(self.ctx.last_seq()).await
+                vs.snapshot().await
             };
 
             let new_path = &file_utils::make_summary_file_tmp(self.opt.storage.summary_dir());
@@ -966,7 +968,7 @@ mod test {
         )
         .await
         .unwrap();
-        let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
+        let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string(), 0);
         summary
             .apply_version_edit(vec![edit], HashMap::new(), HashMap::new())
             .await
@@ -1019,7 +1021,7 @@ mod test {
         .await
         .unwrap();
 
-        let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string());
+        let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string(), 0);
         summary
             .apply_version_edit(vec![edit], HashMap::new(), HashMap::new())
             .await
@@ -1119,7 +1121,7 @@ mod test {
                     compact_task_sender.clone(),
                 )
                 .await;
-            let edit = VersionEdit::new_add_vnode(i, make_owner("cnosdb", &database));
+            let edit = VersionEdit::new_add_vnode(i, make_owner("cnosdb", &database), 0);
             edits.push(edit.clone());
         }
 
@@ -1215,7 +1217,7 @@ mod test {
             .await;
 
         let mut edits = vec![];
-        let edit = VersionEdit::new_add_vnode(10, "cnosdb.hello".to_string());
+        let edit = VersionEdit::new_add_vnode(10, "cnosdb.hello".to_string(), 0);
         edits.push(edit);
 
         for _ in 0..100 {
