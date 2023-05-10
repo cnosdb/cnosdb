@@ -127,6 +127,8 @@ impl Database {
         let (seq_no, version_edits, file_metas) = match version_edit {
             Some(mut ve) => {
                 ve.tsf_id = tsf_id;
+                ve.has_seq_no = true;
+                ve.seq_no = seq_no;
                 let mut file_metas = HashMap::with_capacity(ve.add_files.len());
                 for f in ve.add_files.iter_mut() {
                     f.tsf_id = tsf_id;
