@@ -117,6 +117,7 @@ impl TsKv {
         core.run_flush_job(
             flush_task_receiver,
             summary.global_context(),
+            global_seq_ctx.clone(),
             summary.version_set(),
             summary_task_sender.clone(),
             compact_task_sender.clone(),
@@ -126,6 +127,7 @@ impl TsKv {
             runtime,
             compact_task_receiver,
             summary.global_context(),
+            global_seq_ctx.clone(),
             summary.version_set(),
             summary_task_sender.clone(),
         );
@@ -289,6 +291,7 @@ impl TsKv {
         &self,
         mut receiver: Receiver<FlushReq>,
         ctx: Arc<GlobalContext>,
+        seq_ctx: Arc<GlobalSequenceContext>,
         version_set: Arc<RwLock<VersionSet>>,
         summary_task_sender: Sender<SummaryTask>,
         compact_task_sender: Sender<CompactTask>,
@@ -300,6 +303,7 @@ impl TsKv {
                 runtime.spawn(run_flush_memtable_job(
                     x,
                     ctx.clone(),
+                    seq_ctx.clone(),
                     version_set.clone(),
                     summary_task_sender.clone(),
                     Some(compact_task_sender.clone()),
@@ -611,6 +615,7 @@ impl Engine for TsKv {
                     run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
+                        self.global_seq_ctx.clone(),
                         self.version_set.clone(),
                         self.summary_task_sender.clone(),
                         Some(self.compact_task_sender.clone()),
@@ -913,6 +918,7 @@ impl Engine for TsKv {
                     if let Err(e) = run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
+                        self.global_seq_ctx.clone(),
                         self.version_set.clone(),
                         self.summary_task_sender.clone(),
                         None,

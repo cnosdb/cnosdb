@@ -14,7 +14,7 @@ use trace::{error, info, warn};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
-use crate::context::GlobalContext;
+use crate::context::{GlobalContext, GlobalSequenceContext};
 use crate::error::{self, Result};
 use crate::memcache::{FieldVal, MemCache, SeriesData};
 use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
@@ -190,78 +190,78 @@ impl FlushTask {
 pub async fn run_flush_memtable_job(
     req: FlushReq,
     global_context: Arc<GlobalContext>,
+    global_sequence_context: Arc<GlobalSequenceContext>,
     version_set: Arc<tokio::sync::RwLock<VersionSet>>,
     summary_task_sender: Sender<SummaryTask>,
     compact_task_sender: Option<Sender<CompactTask>>,
 ) -> Result<()> {
-    let mut all_mems = vec![];
-    let mut tsf_caches: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> =
-        HashMap::with_capacity(req.mems.len());
-    {
-        info!("Flush: Running flush job on {} MemCaches", req.mems.len());
-        if req.mems.is_empty() {
-            return Ok(());
-        }
-        for (tf, mem) in req.mems {
-            tsf_caches.entry(tf).or_default().push(mem);
-        }
-    }
+    info!(
+        "Flush: Running flush job for {} of {} MemCaches",
+        req.ts_family_id,
+        req.mems.len()
+    );
 
     let mut version_edits: Vec<VersionEdit> = vec![];
     let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
-    for (tsf_id, caches) in tsf_caches.iter() {
-        if caches.is_empty() {
-            continue;
-        }
-        let tsf_warp = version_set
-            .read()
-            .await
-            .get_tsfamily_by_tf_id(*tsf_id)
-            .await;
-        if let Some(tsf) = tsf_warp {
-            // todo: build path by vnode data
-            let (storage_opt, version, database) = {
-                let tsf_rlock = tsf.read().await;
-                tsf_rlock.update_last_modified().await;
-                (
-                    tsf_rlock.storage_opt(),
-                    tsf_rlock.version(),
-                    tsf_rlock.database(),
-                )
-            };
 
-            let path_tsm = storage_opt.tsm_dir(&database, *tsf_id);
-            let path_delta = storage_opt.delta_dir(&database, *tsf_id);
+    let get_tsf_result = version_set
+        .read()
+        .await
+        .get_tsfamily_by_tf_id(req.ts_family_id)
+        .await;
+    if let Some(tsf) = get_tsf_result {
+        // todo: build path by vnode data
+        let (storage_opt, version, database) = {
+            let tsf_rlock = tsf.read().await;
+            tsf_rlock.update_last_modified().await;
+            (
+                tsf_rlock.storage_opt(),
+                tsf_rlock.version(),
+                tsf_rlock.database(),
+            )
+        };
 
-            let flush_task = FlushTask::new(
-                caches.clone(),
-                *tsf_id,
-                global_context.clone(),
-                path_tsm,
-                path_delta,
-            );
-            all_mems.extend(flush_task.mem_caches.clone());
+        let path_tsm = storage_opt.tsm_dir(&database, req.ts_family_id);
+        let path_delta = storage_opt.delta_dir(&database, req.ts_family_id);
 
-            // TODO: Make flush tasks run in parallel.
-            flush_task
-                .run(version, &mut version_edits, &mut file_metas)
-                .await?;
+        let flush_task = FlushTask::new(
+            req.mems.clone(),
+            req.ts_family_id,
+            global_context.clone(),
+            path_tsm,
+            path_delta,
+        );
 
-            tsf.read().await.update_last_modified().await;
+        flush_task
+            .run(version, &mut version_edits, &mut file_metas)
+            .await?;
 
-            if let Some(sender) = compact_task_sender.as_ref() {
-                let _ = sender.send(CompactTask::Vnode(*tsf_id)).await;
-            }
+        tsf.read().await.update_last_modified().await;
+
+        if let Some(sender) = compact_task_sender.as_ref() {
+            let _ = sender.send(CompactTask::Vnode(req.ts_family_id)).await;
         }
     }
 
-    info!("Flush: Flush finished, version edits: {:?}", version_edits);
+    // If there are no data flushed but it's a force flush,
+    // just write an empty VersionEdit with the max seq_no to the summary.
+    if version_edits.is_empty() && req.force_flush {
+        let mut ve = VersionEdit::new(req.ts_family_id);
+        ve.has_seq_no = true;
+        ve.seq_no = global_sequence_context.max_seq();
+        version_edits.push(ve);
+    }
+
+    info!(
+        "Flush: Flush for {} finished, version edits: {:?}",
+        req.ts_family_id, version_edits
+    );
 
     let (task_state_sender, task_state_receiver) = oneshot::channel();
     let task = SummaryTask::new(
         version_edits,
         Some(file_metas),
-        Some(tsf_caches),
+        Some(HashMap::from([(req.ts_family_id, req.mems)])),
         task_state_sender,
     );
 
@@ -526,7 +526,7 @@ pub mod flush_tests {
         let global_context = Arc::new(GlobalContext::new());
         let options = Options::from(&config);
         #[rustfmt::skip]
-        let version = Arc::new(Version {
+            let version = Arc::new(Version {
             ts_family_id,
             database: database.clone(),
             storage_opt: options.storage.clone(),
@@ -623,7 +623,7 @@ pub mod flush_tests {
             MemCache::new(1, 16, 0, memory_pool),
         ];
         #[rustfmt::skip]
-        let _skip_fmt = {
+            let _skip_fmt = {
             put_rows_to_cache(&mut caches[0], 1, 1, default_table_schema(vec![0, 1, 2]), (3, 4), false);
             put_rows_to_cache(&mut caches[0], 1, 2, default_table_schema(vec![0, 1, 3]), (1, 2), false);
             put_rows_to_cache(&mut caches[0], 1, 3, default_table_schema(vec![0, 1, 2, 3]), (5, 5), true);
@@ -656,7 +656,7 @@ pub mod flush_tests {
         // Col_2: None, None, 9,    10
         // Col_3: 7,    8,    None, None
         #[rustfmt::skip]
-        let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+            let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (model_utils::unite_id(0, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(1, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(2, 1), vec![DataBlock::F64 { ts: vec![3, 4, 5, 6], val: vec![3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
@@ -680,7 +680,7 @@ pub mod flush_tests {
         // Col_2: None, None, 15,   16,   None, 17, 18
         // Col_3: 13,   14,   None, None, None, 17, 18
         #[rustfmt::skip]
-        let expected_tsm_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+            let expected_tsm_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (model_utils::unite_id(0, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(1, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(2, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
