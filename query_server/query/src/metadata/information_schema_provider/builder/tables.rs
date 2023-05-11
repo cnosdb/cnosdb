@@ -58,7 +58,7 @@ impl InformationSchemaTablesBuilder {
         self.database_names.append_value(database_name.as_ref());
         self.table_names.append_value(table_name.as_ref());
         self.table_types.append_value(match table_type {
-            TableType::Base => "BASE TABLE",
+            TableType::Base => "TABLE",
             TableType::View => "VIEW",
             TableType::Temporary => "LOCAL TEMPORARY",
         });

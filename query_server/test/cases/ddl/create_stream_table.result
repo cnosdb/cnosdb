@@ -18,4 +18,4 @@
 -- EXECUTE SQL: select * from information_schema.tables where table_database = 'createstreamtable' order by table_name; --
 200 OK
 table_tenant,table_database,table_name,table_type,table_engine,table_options
-cnosdb,createstreamtable,test0,BASE TABLE,TSKV,TODO
+cnosdb,createstreamtable,test0,TABLE,TSKV,TODO
