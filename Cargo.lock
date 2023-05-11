@@ -2247,7 +2247,10 @@ name = "e2e_test"
 version = "2.3.0"
 dependencies = [
  "actix-rt",
+ "arrow-flight",
+ "datafusion",
  "flatbuffers 22.12.6",
+ "futures",
  "http_protocol",
  "protos",
  "tokio",

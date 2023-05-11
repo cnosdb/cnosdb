@@ -36,9 +36,9 @@
 -- EXECUTE SQL: select * from information_schema.tables where table_database = 'explain_stream_query' order by table_name; --
 200 OK
 table_tenant,table_database,table_name,table_type,table_engine,table_options
-cnosdb,explain_stream_query,test0,BASE TABLE,TSKV,TODO
-cnosdb,explain_stream_query,tskvtable,BASE TABLE,STREAM,TODO
-cnosdb,explain_stream_query,tskvtablewithoutschema,BASE TABLE,STREAM,TODO
+cnosdb,explain_stream_query,test0,TABLE,TSKV,TODO
+cnosdb,explain_stream_query,tskvtable,TABLE,STREAM,TODO
+cnosdb,explain_stream_query,tskvtablewithoutschema,TABLE,STREAM,TODO
 
 -- EXECUTE SQL: explain select * from TskvTable; --
 200 OK

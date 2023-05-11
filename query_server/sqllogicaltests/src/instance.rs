@@ -78,7 +78,7 @@ async fn run_query(
         target_partitions,
     } = options;
 
-    let channel = fligjt_channel(host, *port).await?;
+    let channel = flight_channel(host, *port).await?;
 
     let mut client = FlightSqlServiceClient::new(channel);
     client.set_header("TENANT", tenant);
@@ -108,7 +108,7 @@ async fn run_query(
     Ok((schema, batches))
 }
 
-async fn fligjt_channel(host: &str, port: u16) -> Result<Channel> {
+async fn flight_channel(host: &str, port: u16) -> Result<Channel> {
     let endpoint = Endpoint::new(format!("http://{}:{}", host, port))
         .map_err(|_| ArrowError::IoError("Cannot create endpoint".to_string()))?
         .connect_timeout(Duration::from_secs(20))
