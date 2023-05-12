@@ -318,10 +318,6 @@ impl WalManager {
         })
     }
 
-    pub fn current_seq_no(&self) -> u64 {
-        self.current_file.max_sequence
-    }
-
     async fn roll_wal_file(&mut self, max_file_size: u64) -> Result<()> {
         if self.current_file.size > max_file_size {
             info!(
@@ -522,6 +518,10 @@ impl WalManager {
     /// Close current record file, return count of bytes appended as footer.
     pub async fn close(self) -> Result<usize> {
         self.current_file.close().await
+    }
+
+    pub fn current_seq_no(&self) -> u64 {
+        self.current_file.max_sequence
     }
 
     pub fn sync_interval(&self) -> std::time::Duration {
