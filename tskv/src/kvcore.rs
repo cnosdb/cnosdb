@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::panic;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use memory_pool::{MemoryPool, MemoryPoolRef};
 use meta::model::MetaRef;
@@ -221,9 +221,16 @@ impl TsKv {
         async fn on_tick_check_total_size(
             version_set: Arc<RwLock<VersionSet>>,
             wal_manager: &mut WalManager,
+            check_to_flush_duration: &Duration,
+            check_to_flush_instant: &mut Instant,
         ) {
-            // TODO(zipper): This may cause flushing too frequent.
+            // TODO(zipper): This is not a good way to prevent too frequent flushing.
+            if check_to_flush_instant.elapsed().lt(check_to_flush_duration) {
+                return;
+            }
+            *check_to_flush_instant = Instant::now();
             if wal_manager.is_total_file_size_exceed() {
+                warn!("WAL total file size({}) exceed flush_trigger_total_file_size, force flushing all vnodes.", wal_manager.total_file_size());
                 version_set.read().await.send_flush_req().await;
                 wal_manager.check_to_delete().await;
             }
@@ -245,6 +252,8 @@ impl TsKv {
 
             let sync_interval = wal_manager.sync_interval();
             let mut check_total_size_ticker = tokio::time::interval(Duration::from_secs(10));
+            let check_to_flush_duration = Duration::from_secs(60);
+            let mut check_to_flush_instant = Instant::now();
             if sync_interval == Duration::ZERO {
                 loop {
                     tokio::select! {
@@ -255,7 +264,10 @@ impl TsKv {
                             }
                         }
                         _ = check_total_size_ticker.tick() => {
-                            on_tick_check_total_size(version_set.clone(), &mut wal_manager).await;
+                            on_tick_check_total_size(
+                                version_set.clone(), &mut wal_manager,
+                                &check_to_flush_duration, &mut check_to_flush_instant,
+                            ).await;
                         }
                         _ = close_receiver.recv() => {
                             on_cancel(wal_manager).await;
@@ -277,7 +289,10 @@ impl TsKv {
                             on_tick_sync(&wal_manager).await;
                         }
                         _ = check_total_size_ticker.tick() => {
-                            on_tick_check_total_size(version_set.clone(), &mut wal_manager).await;
+                            on_tick_check_total_size(
+                                version_set.clone(), &mut wal_manager,
+                                &check_to_flush_duration, &mut check_to_flush_instant,
+                            ).await;
                         }
                         _ = close_receiver.recv() => {
                             on_cancel(wal_manager).await;
