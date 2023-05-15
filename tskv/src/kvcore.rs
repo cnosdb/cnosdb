@@ -295,6 +295,7 @@ impl TsKv {
         let runtime = self.runtime.clone();
         let f = async move {
             while let Some(x) = receiver.recv().await {
+                // TODO(zipper): this make config `flush_req_channel_cap` wasted
                 runtime.spawn(run_flush_memtable_job(
                     x,
                     ctx.clone(),
