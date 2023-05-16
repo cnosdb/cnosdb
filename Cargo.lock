@@ -3660,7 +3660,6 @@ dependencies = [
  "serde_json",
  "sled",
  "snafu",
- "surf",
  "sys-info",
  "sysinfo",
  "tokio",
