@@ -6,14 +6,16 @@ use std::fmt;
 use std::fmt::Display;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime};
 
+use chrono::prelude::*;
 use chrono::Local;
 use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION, PRIVATE_KEY};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
+use lru_cache::LruCache;
 use meta::error::MetaError;
 use metrics::metric_register::MetricsRegister;
 use metrics::prom_reporter::PromReporter;
@@ -86,6 +88,8 @@ pub struct HttpService {
     query_body_limit: u64,
     write_body_limit: u64,
     mode: ServerMode,
+    cache: LruCache,
+    tenant_ttl: Duration,
     metrics_register: Arc<MetricsRegister>,
     http_metrics: Arc<HttpMetrics>,
 }
@@ -95,6 +99,7 @@ impl HttpService {
         dbms: DBMSRef,
         coord: CoordinatorRef,
         addr: SocketAddr,
+        cache: LruCache,
         tls_config: Option<TLSConfig>,
         query_body_limit: u64,
         write_body_limit: u64,
@@ -102,7 +107,7 @@ impl HttpService {
         metrics_register: Arc<MetricsRegister>,
     ) -> Self {
         let prs = Arc::new(PromRemoteSqlServer::new(dbms.clone(), coord.clone()));
-
+        let tenant_ttl = Duration::from_secs(60);
         Self {
             tls_config,
             addr,
@@ -113,6 +118,8 @@ impl HttpService {
             query_body_limit,
             write_body_limit,
             mode,
+            cache,
+            tenant_ttl,
             metrics_register: metrics_register.clone(),
             http_metrics: Arc::new(HttpMetrics::new(&metrics_register)),
         }
@@ -218,6 +225,24 @@ impl HttpService {
                 warp::reply::json(&resp)
             })
     }
+
+    fn tenant_usage(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "tenant" / "history")
+            .and(warp::get().or(warp::head()))
+            .map(|_| {
+                let mut resp = HashMap::new();
+                for key in self.cache.keys() {
+                    let tenant = key.split('-').next().unwrap().to_string();
+                    let count = resp.entry(tenant).or_insert(0);
+                    *count += 1;
+                }
+
+                warp::reply::json(&resp)
+            })
+    }
+
     fn backtrace(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -268,6 +293,10 @@ impl HttpService {
                     let tenant = query.context().tenant();
                     let db = query.context().database();
                     let user = query.context().user_info().desc().name();
+
+                    let current_time = Local::now();
+                    let tenant_svc_key = format!("{}-{}", tenant, current_time);
+                    self.cache.insert(tenant_svc_key, "sql", self.tenant_ttl);
 
                     metrics.queries_inc(tenant, user, db);
 
@@ -324,6 +353,10 @@ impl HttpService {
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
+                    let current_time = Local::now();
+                    let tenant_svc_key = format!("{}-{}", tenant, current_time);
+                    self.cache.insert(tenant_svc_key, "write", self.tenant_ttl);
+
                     metrics.writes_inc(tenant, user, db);
 
                     sample_point_write_duration(
@@ -378,6 +411,11 @@ impl HttpService {
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
+                    let current_time = Local::now();
+                    let tenant_svc_key = format!("{}-{}", tenant, current_time);
+                    self.cache
+                        .insert(tenant_svc_key, "opentsdb_write", self.tenant_ttl);
+
                     metrics.writes_inc(tenant, user, db);
 
                     sample_point_write_duration(
@@ -418,7 +456,6 @@ impl HttpService {
 
                     let req = construct_write_tsdb_points_json_request(req, &ctx)
                         .map_err(reject::custom)?;
-
                     let resp: Result<(), HttpError> = coord
                         .write_points(
                             ctx.tenant().to_string(),
@@ -428,12 +465,15 @@ impl HttpService {
                         )
                         .await
                         .map_err(|e| e.into());
-
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    metrics.writes_inc(tenant, user, db);
+                    let current_time = Local::now();
+                    let tenant_svc_key = format!("{}-{}", tenant, current_time);
+                    self.cache
+                        .insert(tenant_svc_key, "opentsdb_put", self.tenant_ttl);
 
+                    metrics.writes_inc(tenant, user, db);
                     sample_point_write_duration(
                         tenant,
                         db,
@@ -566,6 +606,11 @@ impl HttpService {
                             reject::custom(HttpError::from(e))
                         });
 
+                    let current_time = Local::now();
+                    let tenant_svc_key = format!("{}-{}", tenant, current_time);
+                    self.cache
+                        .insert(tenant_svc_key, "prom_read", self.tenant_ttl);
+
                     sample_query_read_duration(
                         context.tenant(),
                         context.database(),
@@ -618,6 +663,11 @@ impl HttpService {
 
                     let (tenant, user, db) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
+
+                    let current_time = Local::now();
+                    let tenant_svc_key = format!("{}-{}", tenant, current_time);
+                    self.cache
+                        .insert(tenant_svc_key, "prom_write", self.tenant_ttl);
 
                     metrics.writes_inc(tenant, user, db);
 

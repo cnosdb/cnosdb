@@ -1,8 +1,10 @@
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
 use coordinator::service::{CoordService, CoordinatorRef};
+use lru::LruCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::meta_manager::RemoteMetaManager;
 use meta::model::{MetaManager, MetaRef};
@@ -267,6 +269,8 @@ impl ServiceBuilder {
     }
 
     fn create_http(&self, dbms: DBMSRef, coord: CoordinatorRef, mode: ServerMode) -> HttpService {
+        let mut cache = LruCache::new(None);
+
         let default_http_addr = build_default_address(self.config.cluster.http_listen_port);
 
         let addr = default_http_addr
@@ -287,6 +291,7 @@ impl ServiceBuilder {
             dbms,
             coord,
             addr,
+            cache,
             self.config.security.tls_config.clone(),
             self.config.query.query_sql_limit,
             self.config.query.write_sql_limit,
