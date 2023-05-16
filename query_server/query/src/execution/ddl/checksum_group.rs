@@ -27,7 +27,7 @@ impl DDLDefinitionTask for ChecksumGroupTask {
         let coord = query_state_machine.coord.clone();
         let cmd_type = VnodeSummarizerCmdType::Checksum(replication_set_id);
         let checksums = coord.vnode_summarizer(tenant, cmd_type).await?;
-        let stream = RecordBatchStreamWrapper::new(tskv::vnode_checksum_schema(), checksums);
+        let stream = RecordBatchStreamWrapper::new(tskv::vnode_table_checksum_schema(), checksums);
         Ok(Output::StreamData(Box::pin(stream)))
     }
 }

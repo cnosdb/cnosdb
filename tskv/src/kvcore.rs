@@ -1000,7 +1000,6 @@ impl Engine for TsKv {
         for database in self.version_set.read().await.get_all_db().values() {
             let db = database.read().await;
             if let Some(vnode) = db.ts_families().get(&vnode_id).cloned() {
-                let schemas = db.get_schemas();
                 drop(db);
                 let request = {
                     let mut tsfamily = vnode.write().await;
@@ -1020,11 +1019,11 @@ impl Engine for TsKv {
                     )
                     .await?
                 }
-                return check::vnode_checksum(vnode, schemas).await;
+                return check::vnode_checksum(vnode).await;
             }
         }
 
-        Ok(RecordBatch::new_empty(check::vnode_checksum_schema()))
+        Ok(RecordBatch::new_empty(check::vnode_table_checksum_schema()))
     }
 
     async fn close(&self) {
@@ -1041,6 +1040,18 @@ impl Engine for TsKv {
 
 #[cfg(test)]
 impl TsKv {
+    pub(crate) fn global_ctx(&self) -> Arc<GlobalContext> {
+        self.global_ctx.clone()
+    }
+
+    pub(crate) fn global_sql_ctx(&self) -> Arc<GlobalSequenceContext> {
+        self.global_seq_ctx.clone()
+    }
+
+    pub(crate) fn version_set(&self) -> Arc<RwLock<VersionSet>> {
+        self.version_set.clone()
+    }
+
     pub(crate) fn summary_task_sender(&self) -> Sender<SummaryTask> {
         self.summary_task_sender.clone()
     }
