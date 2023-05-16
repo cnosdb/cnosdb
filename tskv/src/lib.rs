@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-pub use compaction::check::vnode_checksum_schema;
+pub use compaction::check::vnode_table_checksum_schema;
 use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ColumnDomains, TimeRange};
