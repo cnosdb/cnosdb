@@ -25,7 +25,7 @@ spi = { path = "../query_server/spi" }
 trace = { path = "../common/trace" }
 tskv = { path = "../tskv" }
 utils = { path = "../common/utils" }
-lru = "0.10"
+ttl_cache = "0.5.1"
 
 actix-web = { workspace = true }
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }

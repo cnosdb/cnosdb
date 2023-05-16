@@ -5,17 +5,15 @@ use std::convert::Infallible;
 use std::fmt;
 use std::fmt::Display;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use chrono::prelude::*;
 use chrono::Local;
 use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION, PRIVATE_KEY};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
-use lru_cache::LruCache;
 use meta::error::MetaError;
 use metrics::metric_register::MetricsRegister;
 use metrics::prom_reporter::PromReporter;
@@ -39,6 +37,7 @@ use spi::service::protocol::{Context, ContextBuilder, Query};
 use spi::QueryError;
 use tokio::sync::oneshot;
 use trace::{debug, error, info};
+use ttl_cache::TtlCache;
 use utils::backtrace;
 use warp::hyper::body::Bytes;
 use warp::hyper::Body;
@@ -88,8 +87,7 @@ pub struct HttpService {
     query_body_limit: u64,
     write_body_limit: u64,
     mode: ServerMode,
-    cache: LruCache,
-    tenant_ttl: Duration,
+    cache: Arc<Mutex<TtlCache<String, String>>>,
     metrics_register: Arc<MetricsRegister>,
     http_metrics: Arc<HttpMetrics>,
 }
@@ -99,7 +97,7 @@ impl HttpService {
         dbms: DBMSRef,
         coord: CoordinatorRef,
         addr: SocketAddr,
-        cache: LruCache,
+        cache: Arc<Mutex<TtlCache<String, String>>>,
         tls_config: Option<TLSConfig>,
         query_body_limit: u64,
         write_body_limit: u64,
@@ -107,7 +105,6 @@ impl HttpService {
         metrics_register: Arc<MetricsRegister>,
     ) -> Self {
         let prs = Arc::new(PromRemoteSqlServer::new(dbms.clone(), coord.clone()));
-        let tenant_ttl = Duration::from_secs(60);
         Self {
             tls_config,
             addr,
@@ -119,7 +116,6 @@ impl HttpService {
             write_body_limit,
             mode,
             cache,
-            tenant_ttl,
             metrics_register: metrics_register.clone(),
             http_metrics: Arc::new(HttpMetrics::new(&metrics_register)),
         }
@@ -163,6 +159,14 @@ impl HttpService {
         warp::any().map(move || register.clone())
     }
 
+    fn with_usage_cache(
+        &self,
+    ) -> impl Filter<Extract = (Arc<Mutex<TtlCache<String, String>>>,), Error = Infallible> + Clone
+    {
+        let cache = self.cache.clone();
+        warp::any().map(move || cache.clone())
+    }
+
     fn with_http_metrics(
         &self,
     ) -> impl Filter<Extract = (Arc<HttpMetrics>,), Error = Infallible> + Clone {
@@ -184,6 +188,7 @@ impl HttpService {
             .or(self.prom_remote_write())
             .or(self.backtrace())
             .or(self.write_open_tsdb())
+            .or(self.tenant_usage())
             .or(self.put_open_tsdb())
     }
 
@@ -197,6 +202,7 @@ impl HttpService {
             .or(self.debug_pprof())
             .or(self.debug_jeprof())
             .or(self.prom_remote_read())
+            .or(self.tenant_usage())
             .or(self.backtrace())
     }
 
@@ -212,6 +218,7 @@ impl HttpService {
             .or(self.prom_remote_write())
             .or(self.write_open_tsdb())
             .or(self.put_open_tsdb())
+            .or(self.tenant_usage())
             .or(self.backtrace())
     }
 
@@ -229,12 +236,17 @@ impl HttpService {
     fn tenant_usage(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("api" / "v1" / "tenant" / "history")
-            .and(warp::get().or(warp::head()))
-            .map(|_| {
+        warp::path!("api" / "v1" / "tenant" / "usage")
+            .and(warp::get())
+            .and(self.with_usage_cache())
+            .map(|cache: Arc<Mutex<TtlCache<String, String>>>| {
                 let mut resp = HashMap::new();
-                for key in self.cache.keys() {
-                    let tenant = key.split('-').next().unwrap().to_string();
+                let mut cache_guard = cache.lock().unwrap();
+
+                let tenants: Vec<&String> = cache_guard.iter().map(|(key, _)| key).collect();
+
+                for tenant in tenants {
+                    let tenant = tenant.splitn(2, '-').next().unwrap().to_string();
                     let count = resp.entry(tenant).or_insert(0);
                     *count += 1;
                 }
@@ -265,12 +277,14 @@ impl HttpService {
             .and(self.handle_header())
             .and(warp::query::<SqlParam>())
             .and(self.with_dbms())
+            .and(self.with_usage_cache())
             .and(self.with_http_metrics())
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: SqlParam,
                  dbms: DBMSRef,
+                 cache: Arc<Mutex<TtlCache<String, String>>>,
                  metrics: Arc<HttpMetrics>| async move {
                     let start = Instant::now();
                     debug!(
@@ -294,9 +308,14 @@ impl HttpService {
                     let db = query.context().database();
                     let user = query.context().user_info().desc().name();
 
-                    let current_time = Local::now();
+                    let current_time = Local::now().timestamp();
                     let tenant_svc_key = format!("{}-{}", tenant, current_time);
-                    self.cache.insert(tenant_svc_key, "sql", self.tenant_ttl);
+                    let tenant_ttl = Duration::from_secs(60);
+
+                    cache
+                        .lock()
+                        .unwrap()
+                        .insert(tenant_svc_key, "sql".to_string(), tenant_ttl);
 
                     metrics.queries_inc(tenant, user, db);
 
@@ -322,6 +341,7 @@ impl HttpService {
             .and(warp::query::<WriteParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
+            .and(self.with_usage_cache())
             .and(self.with_http_metrics())
             .and_then(
                 |req: Bytes,
@@ -329,6 +349,7 @@ impl HttpService {
                  param: WriteParam,
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
+                 cache: Arc<Mutex<TtlCache<String, String>>>,
                  metrics: Arc<HttpMetrics>| async move {
                     let start = Instant::now();
                     let ctx = construct_write_context(header, param, dbms, coord.clone())
@@ -353,9 +374,14 @@ impl HttpService {
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    let current_time = Local::now();
+                    let current_time = Local::now().timestamp();
                     let tenant_svc_key = format!("{}-{}", tenant, current_time);
-                    self.cache.insert(tenant_svc_key, "write", self.tenant_ttl);
+                    let tenant_ttl = Duration::from_secs(60);
+
+                    cache
+                        .lock()
+                        .unwrap()
+                        .insert(tenant_svc_key, "write".to_string(), tenant_ttl);
 
                     metrics.writes_inc(tenant, user, db);
 
@@ -381,6 +407,7 @@ impl HttpService {
             .and(warp::query::<WriteParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
+            .and(self.with_usage_cache())
             .and(self.with_http_metrics())
             .and_then(
                 |req: Bytes,
@@ -388,6 +415,7 @@ impl HttpService {
                  param: WriteParam,
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
+                 cache: Arc<Mutex<TtlCache<String, String>>>,
                  metrics: Arc<HttpMetrics>| async move {
                     let start = Instant::now();
                     let ctx = construct_write_context(header, param, dbms, coord.clone())
@@ -411,10 +439,15 @@ impl HttpService {
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    let current_time = Local::now();
+                    let current_time = Local::now().timestamp();
                     let tenant_svc_key = format!("{}-{}", tenant, current_time);
-                    self.cache
-                        .insert(tenant_svc_key, "opentsdb_write", self.tenant_ttl);
+                    let tenant_ttl = Duration::from_secs(60);
+
+                    cache.lock().unwrap().insert(
+                        tenant_svc_key,
+                        "opentsdb_write".to_string(),
+                        tenant_ttl,
+                    );
 
                     metrics.writes_inc(tenant, user, db);
 
@@ -440,6 +473,7 @@ impl HttpService {
             .and(warp::query::<WriteParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
+            .and(self.with_usage_cache())
             .and(self.with_http_metrics())
             .and_then(
                 |req: Bytes,
@@ -447,6 +481,7 @@ impl HttpService {
                  param: WriteParam,
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
+                 cache: Arc<Mutex<TtlCache<String, String>>>,
                  metrics: Arc<HttpMetrics>| async move {
                     let start = Instant::now();
                     let ctx = construct_write_context(header, param, dbms, coord.clone())
@@ -468,10 +503,15 @@ impl HttpService {
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    let current_time = Local::now();
+                    let current_time = Local::now().timestamp();
                     let tenant_svc_key = format!("{}-{}", tenant, current_time);
-                    self.cache
-                        .insert(tenant_svc_key, "opentsdb_put", self.tenant_ttl);
+                    let tenant_ttl = Duration::from_secs(60);
+
+                    cache.lock().unwrap().insert(
+                        tenant_svc_key,
+                        "opentsdb_put".to_string(),
+                        tenant_ttl,
+                    );
 
                     metrics.writes_inc(tenant, user, db);
                     sample_point_write_duration(
@@ -571,12 +611,14 @@ impl HttpService {
             .and(self.handle_header())
             .and(warp::query::<SqlParam>())
             .and(self.with_dbms())
+            .and(self.with_usage_cache())
             .and(self.with_prom_remote_server())
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: SqlParam,
                  dbms: DBMSRef,
+                 cache: Arc<Mutex<TtlCache<String, String>>>,
                  prs: PromRemoteServerRef| async move {
                     let start = Instant::now();
                     debug!(
@@ -587,6 +629,8 @@ impl HttpService {
                     // Parse req、header and param to construct query request
                     let user_info = header.try_get_basic_auth().map_err(reject::custom)?;
                     let tenant = param.tenant;
+                    let current_time = Local::now().timestamp();
+                    let tenant_svc_key = format!("{}-{}", tenant.clone().unwrap(), current_time);
                     let user = dbms
                         .authenticate(&user_info, tenant.as_deref())
                         .await
@@ -606,10 +650,13 @@ impl HttpService {
                             reject::custom(HttpError::from(e))
                         });
 
-                    let current_time = Local::now();
-                    let tenant_svc_key = format!("{}-{}", tenant, current_time);
-                    self.cache
-                        .insert(tenant_svc_key, "prom_read", self.tenant_ttl);
+                    let tenant_ttl = Duration::from_secs(60);
+
+                    cache.lock().unwrap().insert(
+                        tenant_svc_key,
+                        "prom_read".to_string(),
+                        tenant_ttl,
+                    );
 
                     sample_query_read_duration(
                         context.tenant(),
@@ -634,6 +681,7 @@ impl HttpService {
             .and(self.with_coord())
             .and(self.with_dbms())
             .and(self.with_prom_remote_server())
+            .and(self.with_usage_cache())
             .and(self.with_http_metrics())
             .and_then(
                 |req: Bytes,
@@ -642,6 +690,7 @@ impl HttpService {
                  coord: CoordinatorRef,
                  dbms: DBMSRef,
                  prs: PromRemoteServerRef,
+                 cache: Arc<Mutex<TtlCache<String, String>>>,
                  metrics: Arc<HttpMetrics>| async move {
                     let start = Instant::now();
                     debug!(
@@ -664,10 +713,15 @@ impl HttpService {
                     let (tenant, user, db) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    let current_time = Local::now();
+                    let current_time = Local::now().timestamp();
                     let tenant_svc_key = format!("{}-{}", tenant, current_time);
-                    self.cache
-                        .insert(tenant_svc_key, "prom_write", self.tenant_ttl);
+                    let tenant_ttl = Duration::from_secs(60);
+
+                    cache.lock().unwrap().insert(
+                        tenant_svc_key,
+                        "prom_write".to_string(),
+                        tenant_ttl,
+                    );
 
                     metrics.writes_inc(tenant, user, db);
 

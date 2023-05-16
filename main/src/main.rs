@@ -3,6 +3,7 @@
 use std::fmt::Display;
 use std::path::Path;
 use std::str::FromStr;
+use std::sync;
 use std::sync::Arc;
 
 use clap::{command, Args, Parser, Subcommand, ValueEnum};
@@ -14,6 +15,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use tokio::runtime::Runtime;
 use trace::{info, init_process_global_tracing, WorkerGuard};
+use ttl_cache::TtlCache;
 
 use crate::report::ReportService;
 
@@ -190,6 +192,9 @@ fn main() -> Result<(), std::io::Error> {
     let runtime = Arc::new(init_runtime(Some(config.deployment.cpu))?);
     let mem_bytes = run_args.cpu.unwrap_or(config.deployment.memory) * 1024 * 1024 * 1024;
     let memory_pool = Arc::new(GreedyMemoryPool::new(mem_bytes));
+    let usage_cache = Arc::new(sync::Mutex::new(TtlCache::<String, String>::new(
+        std::u16::MAX.into(),
+    )));
     runtime.clone().block_on(async move {
         let builder = server::ServiceBuilder {
             cpu: config.deployment.cpu,
@@ -200,6 +205,7 @@ fn main() -> Result<(), std::io::Error> {
                 "node_id",
                 config.node_basic.node_id.to_string(),
             )])),
+            usage_cache: usage_cache,
         };
 
         let mut server = server::Server::default();

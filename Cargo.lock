@@ -3381,6 +3381,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "linked-hash-map"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3435,15 +3441,6 @@ dependencies = [
  "scoped-tls",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "lru"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03f1160296536f10c833a82dca22267d5486734230d47bf00bf435885814ba1e"
-dependencies = [
- "hashbrown 0.13.2",
 ]
 
 [[package]]
@@ -3525,7 +3522,6 @@ dependencies = [
  "lazy_static",
  "libc",
  "license",
- "lru",
  "memory_pool",
  "meta",
  "metrics",
@@ -3558,6 +3554,7 @@ dependencies = [
  "trace",
  "tracing-futures",
  "tskv",
+ "ttl_cache",
  "utils",
  "warp",
 ]
@@ -6647,6 +6644,15 @@ dependencies = [
  "walkdir",
  "winapi",
  "zstd 0.11.2+zstd.1.5.2",
+]
+
+[[package]]
+name = "ttl_cache"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4189890526f0168710b6ee65ceaedf1460c48a14318ceec933cb26baa492096a"
+dependencies = [
+ "linked-hash-map",
 ]
 
 [[package]]

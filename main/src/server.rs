@@ -1,10 +1,8 @@
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::num::NonZeroUsize;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use coordinator::service::{CoordService, CoordinatorRef};
-use lru::LruCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::meta_manager::RemoteMetaManager;
 use meta::model::{MetaManager, MetaRef};
@@ -19,6 +17,7 @@ use tokio::task::JoinHandle;
 use tokio::time;
 use trace::error;
 use tskv::{EngineRef, TsKv};
+use ttl_cache::TtlCache;
 
 use crate::flight_sql::FlightSqlServiceAdapter;
 use crate::http::http_service::{HttpService, ServerMode};
@@ -113,6 +112,7 @@ pub(crate) struct ServiceBuilder {
     pub runtime: Arc<Runtime>,
     pub memory_pool: MemoryPoolRef,
     pub metrics_register: Arc<MetricsRegister>,
+    pub usage_cache: Arc<Mutex<TtlCache<String, String>>>,
 }
 
 async fn regular_report_node_metrics(meta: Arc<dyn MetaManager>, heartbeat_interval: u64) {
@@ -269,8 +269,6 @@ impl ServiceBuilder {
     }
 
     fn create_http(&self, dbms: DBMSRef, coord: CoordinatorRef, mode: ServerMode) -> HttpService {
-        let mut cache = LruCache::new(None);
-
         let default_http_addr = build_default_address(self.config.cluster.http_listen_port);
 
         let addr = default_http_addr
@@ -291,7 +289,7 @@ impl ServiceBuilder {
             dbms,
             coord,
             addr,
-            cache,
+            self.usage_cache.clone(),
             self.config.security.tls_config.clone(),
             self.config.query.query_sql_limit,
             self.config.query.write_sql_limit,
