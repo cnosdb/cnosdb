@@ -246,7 +246,7 @@ impl HttpService {
                 let tenants: Vec<&String> = cache_guard.iter().map(|(key, _)| key).collect();
 
                 for tenant in tenants {
-                    let tenant = tenant.splitn(2, '-').next().unwrap().to_string();
+                    let tenant = tenant.split('-').next().unwrap().to_string();
                     let count = resp.entry(tenant).or_insert(0);
                     *count += 1;
                 }

@@ -205,7 +205,7 @@ fn main() -> Result<(), std::io::Error> {
                 "node_id",
                 config.node_basic.node_id.to_string(),
             )])),
-            usage_cache: usage_cache,
+            usage_cache,
         };
 
         let mut server = server::Server::default();
