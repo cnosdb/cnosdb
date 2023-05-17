@@ -441,12 +441,12 @@ impl QueryExecutor {
         )?;
         for bucket in buckets.iter() {
             for repl in bucket.shard_group.iter() {
-                if repl.vnodes.is_empty() {
+                if repl.vnode_list.is_empty() {
                     continue;
                 }
 
-                let random = now_timestamp_nanos() as usize % repl.vnodes.len();
-                let vnode = repl.vnodes[random].clone();
+                let random = now_timestamp_nanos() as usize % repl.vnode_list.len();
+                let vnode = repl.vnode_list[random].clone();
 
                 let list = vnode_mapping.entry(vnode.node_id).or_default();
                 list.push(vnode);
@@ -478,15 +478,15 @@ impl QueryExecutor {
                 .get_vnode_repl_set(item.id)
                 .ok_or(CoordinatorError::VnodeNotFound { id: item.id })?;
 
-            repl.vnodes.retain(|x| x.node_id != item.node_id);
-            if repl.vnodes.is_empty() {
+            repl.vnode_list.retain(|x| x.node_id != item.node_id);
+            if repl.vnode_list.is_empty() {
                 return Err(CoordinatorError::CommonError {
                     msg: format!("try map vnode:{} failed,not found replication", item.id),
                 });
             }
 
-            let random = now_timestamp_nanos() as usize % repl.vnodes.len();
-            let vnode = repl.vnodes[random].clone();
+            let random = now_timestamp_nanos() as usize % repl.vnode_list.len();
+            let vnode = repl.vnode_list[random].clone();
 
             let list = vnode_mapping.entry(vnode.node_id).or_default();
             list.push(vnode);

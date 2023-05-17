@@ -2,6 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use meta::model::MetaRef;
+use models::meta_data::VnodeStatus::Moving;
 use models::meta_data::{VnodeAllInfo, VnodeInfo};
 use protos::kv_service::admin_command_request::Command::DelVnode;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
@@ -51,20 +52,24 @@ impl VnodeManager {
         )?;
 
         let new_id = admin_meta.retain_id(1).await?;
-        let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
+        let mut all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
         info!(
             "Begin Copy Vnode:{} from: {} to: {}; new id: {}",
             vnode_id, all_info.node_id, self.node_id, new_id
         );
-
+        all_info.set_status(Moving);
+        meta_client.update_vnode(&all_info).await?;
         let owner = models::schema::make_owner(&all_info.tenant, &all_info.db_name);
         let path = self
             .kv_inst
             .get_storage_options()
             .ts_family_dir(&owner, new_id);
 
-        let node_id = all_info.node_id;
-        let channel = self.meta.admin_meta().get_node_conn(node_id).await?;
+        let channel = self
+            .meta
+            .admin_meta()
+            .get_node_conn(all_info.node_id)
+            .await?;
         let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
 
@@ -76,10 +81,7 @@ impl VnodeManager {
             return Err(err);
         }
 
-        let add_repl = vec![VnodeInfo {
-            id: new_id,
-            node_id: self.node_id,
-        }];
+        let add_repl = vec![VnodeInfo::new(new_id, self.node_id)];
         meta_client
             .update_replication_set(
                 &all_info.db_name,
@@ -94,6 +96,9 @@ impl VnodeManager {
         self.kv_inst
             .apply_vnode_summary(tenant, &all_info.db_name, new_id, ve)
             .await?;
+
+        all_info.set_status(Moving);
+        meta_client.update_vnode(&all_info).await?;
 
         Ok(())
     }
@@ -124,6 +129,7 @@ impl VnodeManager {
         let del_repl = vec![VnodeInfo {
             id: vnode_id,
             node_id: all_info.node_id,
+            status: Default::default(),
         }];
         meta_client
             .update_replication_set(

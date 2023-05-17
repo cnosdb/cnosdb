@@ -21,14 +21,14 @@ use super::Error as HttpError;
 
 #[derive(Default)]
 pub struct ResponseBuilder {
-    status_code: Option<StatusCode>,
+    status_code: StatusCode,
     headers: HeaderMap<HeaderValue>,
 }
 
 impl ResponseBuilder {
     pub fn new(status_code: StatusCode) -> Self {
         Self {
-            status_code: Some(status_code),
+            status_code,
             ..Default::default()
         }
     }
@@ -45,7 +45,7 @@ impl ResponseBuilder {
 
         *res.headers_mut() = self.headers;
 
-        *res.status_mut() = self.status_code.unwrap();
+        *res.status_mut() = self.status_code;
 
         res
     }
@@ -55,7 +55,7 @@ impl ResponseBuilder {
 
         *res.headers_mut() = self.headers;
 
-        *res.status_mut() = self.status_code.unwrap();
+        *res.status_mut() = self.status_code;
 
         res
     }
@@ -106,14 +106,14 @@ impl ResponseBuilder {
     }
 }
 
-pub struct HttpRespone {
+pub struct HttpResponse {
     result: Output,
     format: ResultFormat,
     done: bool,
     schema: Option<SchemaRef>,
 }
 
-impl HttpRespone {
+impl HttpResponse {
     pub fn new(result: Output, format: ResultFormat) -> Self {
         let schema = result.schema();
         Self {
@@ -135,7 +135,7 @@ impl HttpRespone {
     }
 }
 
-impl Stream for HttpRespone {
+impl Stream for HttpResponse {
     type Item = std::result::Result<Vec<u8>, HttpError>;
 
     fn poll_next(
@@ -185,7 +185,7 @@ impl Stream for HttpRespone {
     }
 }
 
-impl Reply for HttpRespone {
+impl Reply for HttpResponse {
     fn into_response(self) -> Response {
         let body = hyper::Body::wrap_stream(self);
         Response::new(body)

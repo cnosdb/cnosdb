@@ -21,13 +21,13 @@ pub struct Node {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Default, Clone)]
-
 pub enum NodeStatus {
     #[default]
     Healthy,
     Broken,
     Unreachable,
     NoDiskSpace,
+    Cordon,
 }
 
 #[allow(dead_code)]
@@ -40,7 +40,10 @@ pub struct Location {
 
 #[allow(dead_code)]
 pub struct Flavor {
-    memory: f64, // M
-    cpu: f64,    // core
-    disk: f64,   // G
+    // M
+    memory: f64,
+    // core
+    cpu: f64,
+    // G
+    disk: f64,
 }
