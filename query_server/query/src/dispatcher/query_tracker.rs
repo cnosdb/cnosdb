@@ -1,30 +1,35 @@
 use std::collections::HashMap;
 use std::ops::Deref;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
+use async_trait::async_trait;
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::common::Result as DFResult;
+use datafusion::physical_plan::{RecordBatchStream, SendableRecordBatchStream};
+use futures::{Stream, StreamExt};
 use parking_lot::RwLock;
-use spi::query::dispatcher::QueryInfo;
-use spi::query::execution::{QueryExecution, QueryType};
+use spi::query::dispatcher::{QueryInfo, QueryStatus};
+use spi::query::execution::{Output, QueryExecution, QueryExecutionRef, QueryType};
 use spi::service::protocol::QueryId;
 use spi::{QueryError, Result};
-use tokio::sync::{Semaphore, SemaphorePermit, TryAcquireError};
 use trace::{debug, warn};
 
 use super::persister::QueryPersisterRef;
 
 pub struct QueryTracker {
     queries: RwLock<HashMap<QueryId, Arc<dyn QueryExecution>>>,
-    query_limit_semaphore: Semaphore,
+    query_limit: usize,
     query_persister: QueryPersisterRef,
 }
 
 impl QueryTracker {
     pub fn new(query_limit: usize, query_persister: QueryPersisterRef) -> Self {
-        let query_limit_semaphore = Semaphore::new(query_limit);
-
         Self {
             queries: RwLock::new(HashMap::new()),
-            query_limit_semaphore,
+            query_limit,
             query_persister,
         }
     }
@@ -33,11 +38,12 @@ impl QueryTracker {
 impl QueryTracker {
     /// track a query
     ///
-    /// [`QueryError::RequestLimit`]
+    /// Returns [`TrackedQuery`], which holds a [`QueryExecutionTrackedProxy`] internally.
     ///
-    /// [`QueryError::Closed`] after call [`Self::close`]
+    /// Errors:
+    ///     [`QueryError::RequestLimit`]
     pub async fn try_track_query(
-        &self,
+        self: &Arc<Self>,
         query_id: QueryId,
         query: Arc<dyn QueryExecution>,
     ) -> Result<TrackedQuery> {
@@ -48,30 +54,22 @@ impl QueryTracker {
             query.status(),
         );
 
-        let _permit = match self.query_limit_semaphore.try_acquire() {
-            Ok(p) => p,
-            Err(TryAcquireError::NoPermits) => {
-                warn!("simultaneous request limit exceeded - dropping request");
-                return Err(QueryError::RequestLimit);
-            }
-            Err(TryAcquireError::Closed) => {
-                return Err(QueryError::Closed);
+        self.save_query(query_id, query.clone()).await?;
+
+        let query = match query.query_type() {
+            // 封装一层代理，用于在释放query result stream时，从tracker中移除
+            QueryType::Batch => Arc::new(QueryExecutionTrackedProxy {
+                inner: query,
+                query_id,
+                tracker: self.clone(),
+            }),
+            QueryType::Stream => {
+                // 流任务是常驻任务，需要手动kill，不需要在这里做代理
+                query
             }
         };
 
-        // store the query in memory
-        let _ = self.queries.write().insert(query_id, query.clone());
-        // persist the query if necessary
-        if query.need_persist() {
-            self.query_persister.save(query_id, query.info()).await?;
-        }
-
-        Ok(TrackedQuery {
-            _permit,
-            tracker: self,
-            query_id,
-            query,
-        })
+        Ok(TrackedQuery { query })
     }
 
     pub fn query(&self, id: &QueryId) -> Option<Arc<dyn QueryExecution>> {
@@ -96,7 +94,7 @@ impl QueryTracker {
     ///
     /// After closing, tracking new requests through [`QueryTracker::try_track_query`] will return [`QueryError::Closed`]
     pub fn _close(&self) {
-        self.query_limit_semaphore.close();
+        // pass
     }
 
     pub fn expire_query(&self, id: &QueryId) -> Option<Arc<dyn QueryExecution>> {
@@ -109,16 +107,37 @@ impl QueryTracker {
             q
         })
     }
+
+    async fn save_query(&self, query_id: QueryId, query: Arc<dyn QueryExecution>) -> Result<()> {
+        if self.queries.read().len() >= self.query_limit {
+            warn!("simultaneous request limit exceeded - dropping request");
+            return Err(QueryError::RequestLimit);
+        }
+
+        {
+            // store the query in memory
+            let mut wqueries = self.queries.write();
+            if wqueries.len() >= self.query_limit {
+                warn!("simultaneous request limit exceeded - dropping request");
+                return Err(QueryError::RequestLimit);
+            }
+            let _ = wqueries.insert(query_id, query.clone());
+        }
+
+        // persist the query if necessary
+        if query.need_persist() {
+            self.query_persister.save(query_id, query.info()).await?;
+        }
+
+        Ok(())
+    }
 }
 
-pub struct TrackedQuery<'a> {
-    _permit: SemaphorePermit<'a>,
-    tracker: &'a QueryTracker,
-    query_id: QueryId,
-    query: Arc<dyn QueryExecution>,
+pub struct TrackedQuery {
+    query: QueryExecutionRef,
 }
 
-impl Deref for TrackedQuery<'_> {
+impl Deref for TrackedQuery {
     type Target = dyn QueryExecution;
 
     fn deref(&self) -> &Self::Target {
@@ -126,17 +145,89 @@ impl Deref for TrackedQuery<'_> {
     }
 }
 
-impl Drop for TrackedQuery<'_> {
-    fn drop(&mut self) {
-        match self.query.query_type() {
-            QueryType::Batch => {
-                debug!("TrackedQuery drop: {:?}", &self.query_id);
-                let _ = self.tracker.expire_query(&self.query_id);
+/// A proxy for [`QueryExecution`] that tracks the query's lifecycle
+///
+/// When the query result is a stream, it will be wrapped with [`TrackedRecordBatchStream`] to track the record batch stream
+pub struct QueryExecutionTrackedProxy {
+    inner: QueryExecutionRef,
+    query_id: QueryId,
+    tracker: Arc<QueryTracker>,
+}
+
+#[async_trait]
+impl QueryExecution for QueryExecutionTrackedProxy {
+    fn query_type(&self) -> QueryType {
+        self.inner.query_type()
+    }
+
+    async fn start(&self) -> Result<Output> {
+        match self.inner.start().await {
+            Ok(Output::StreamData(stream)) => {
+                debug!("Track RecordBatchStream: {:?}", self.query_id);
+                Ok(Output::StreamData(Box::pin(TrackedRecordBatchStream {
+                    inner: stream,
+                    query_id: self.query_id,
+                    tracker: self.tracker.clone(),
+                })))
             }
-            QueryType::Stream => {
-                // 流任务是常驻任务，需要手动kill
+            Ok(nil @ Output::Nil(_)) => {
+                debug!("Query drop: {:?}", self.query_id);
+                let _ = self.tracker.expire_query(&self.query_id);
+                Ok(nil)
+            }
+            Err(err) => {
+                // query error, remove from tracker
+                debug!(
+                    "Query {:?} error: {:?}, remove from tracker",
+                    self.query_id, err
+                );
+                let _ = self.tracker.expire_query(&self.query_id);
+                Err(err)
             }
         }
+    }
+
+    fn cancel(&self) -> Result<()> {
+        self.inner.cancel()
+    }
+
+    fn info(&self) -> QueryInfo {
+        self.inner.info()
+    }
+
+    fn status(&self) -> QueryStatus {
+        self.inner.status()
+    }
+
+    fn need_persist(&self) -> bool {
+        self.inner.need_persist()
+    }
+}
+
+pub struct TrackedRecordBatchStream {
+    inner: SendableRecordBatchStream,
+    query_id: QueryId,
+    tracker: Arc<QueryTracker>,
+}
+
+impl RecordBatchStream for TrackedRecordBatchStream {
+    fn schema(&self) -> SchemaRef {
+        self.inner.schema()
+    }
+}
+
+impl Stream for TrackedRecordBatchStream {
+    type Item = DFResult<RecordBatch>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.inner.poll_next_unpin(cx)
+    }
+}
+
+impl Drop for TrackedRecordBatchStream {
+    fn drop(&mut self) {
+        debug!("Query drop: {:?}", self.query_id);
+        let _ = self.tracker.expire_query(&self.query_id);
     }
 }
 
@@ -146,6 +237,8 @@ mod tests {
     use std::time::Duration;
 
     use async_trait::async_trait;
+    use datafusion::arrow::datatypes::Schema;
+    use datafusion::physical_plan::EmptyRecordBatchStream;
     use models::auth::user::{UserDesc, UserOptions};
     use spi::query::dispatcher::{QueryInfo, QueryStatus};
     use spi::query::execution::{Output, QueryExecution, QueryState, RUNNING};
@@ -160,7 +253,9 @@ mod tests {
     #[async_trait]
     impl QueryExecution for QueryExecutionMock {
         async fn start(&self) -> std::result::Result<Output, QueryError> {
-            Ok(Output::Nil(()))
+            Ok(Output::StreamData(Box::pin(EmptyRecordBatchStream::new(
+                Arc::new(Schema::empty()),
+            ))))
         }
         fn cancel(&self) -> std::result::Result<(), QueryError> {
             Ok(())
@@ -195,7 +290,7 @@ mod tests {
     async fn test_track_and_drop() {
         let query_id = QueryId::next_id();
         let query = Arc::new(QueryExecutionMock {});
-        let tracker = new_query_tracker(10);
+        let tracker = Arc::new(new_query_tracker(10));
 
         let _tq = tracker
             .try_track_query(query_id, query.clone())
@@ -211,13 +306,15 @@ mod tests {
         assert_eq!(tracker._running_query_count(), 2);
 
         {
-            // 作用域结束时，结束对当前query的追踪
+            // 作用域结束时，不会结束对当前query的追踪
             let query_id = QueryId::next_id();
             let _tq = tracker
                 .try_track_query(query_id, query.clone())
                 .await
                 .unwrap();
             assert_eq!(tracker._running_query_count(), 3);
+            // 需有主动调用expire_query
+            let _ = tracker.expire_query(&query_id);
         }
 
         assert_eq!(tracker._running_query_count(), 2);
@@ -228,10 +325,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_track_stream_result_and_drop() {
+        let query = Arc::new(QueryExecutionMock {});
+        let tracker = Arc::new(new_query_tracker(10));
+
+        let output = {
+            let query_id = QueryId::next_id();
+            let tq = tracker
+                .try_track_query(query_id, query.clone())
+                .await
+                .unwrap();
+            tq.start().await.unwrap()
+        };
+        assert_eq!(tracker._running_query_count(), 1);
+        // 释放output，结束对当前query的追踪
+        drop(output);
+        assert_eq!(tracker._running_query_count(), 0);
+    }
+
+    #[tokio::test]
     async fn test_exceed_query_limit() {
         let query_id = QueryId::next_id();
         let query = Arc::new(QueryExecutionMock {});
-        let tracker = new_query_tracker(2);
+        let tracker = Arc::new(new_query_tracker(2));
 
         let _tq = tracker
             .try_track_query(query_id, query.clone())
@@ -254,7 +370,7 @@ mod tests {
     async fn test_get_query_info() {
         let query_id = QueryId::next_id();
         let query = Arc::new(QueryExecutionMock {});
-        let tracker = new_query_tracker(2);
+        let tracker = Arc::new(new_query_tracker(2));
 
         let _tq = tracker
             .try_track_query(query_id, query.clone())
