@@ -94,26 +94,60 @@ impl BucketInfo {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct ReplicationSet {
     pub id: ReplicationSetId,
-    pub vnodes: Vec<VnodeInfo>,
+    pub vnode_list: Vec<VnodeInfo>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct VnodeInfo {
     pub id: VnodeId,
-    pub node_id: u64,
+    pub node_id: NodeId,
+    pub status: VnodeStatus,
+}
+
+impl VnodeInfo {
+    pub fn new(id: VnodeId, node_id: NodeId) -> Self {
+        Self {
+            id,
+            node_id,
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+pub enum VnodeStatus {
+    #[default]
+    Running,
+    Moving,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct VnodeAllInfo {
-    pub vnode_id: u32,
-    pub node_id: u64,
+    pub vnode_id: VnodeId,
+    pub node_id: NodeId,
     pub repl_set_id: u32,
     pub bucket_id: u32,
     pub db_name: String,
     pub tenant: String,
-
+    pub status: VnodeStatus,
     pub start_time: i64,
     pub end_time: i64,
+}
+
+impl VnodeAllInfo {
+    pub fn set_status(&mut self, status: VnodeStatus) {
+        self.status = status;
+    }
+}
+
+impl From<VnodeAllInfo> for VnodeInfo {
+    fn from(value: VnodeAllInfo) -> Self {
+        VnodeInfo {
+            id: value.vnode_id,
+            node_id: value.node_id,
+            status: value.status,
+        }
+    }
 }
 
 pub type DatabaseInfoRef = Arc<DatabaseInfo>;
@@ -259,15 +293,12 @@ pub fn allocation_replication_set(
     for _ in 0..shards {
         let mut repl_set = ReplicationSet {
             id: incr_id,
-            vnodes: vec![],
+            vnode_list: vec![],
         };
         incr_id += 1;
 
         for _ in 0..replica {
-            repl_set.vnodes.push(VnodeInfo {
-                id: incr_id,
-                node_id: nodes.get((index % node_count) as usize).unwrap().id,
-            });
+            repl_set.vnode_list.push(VnodeInfo::new(incr_id, nodes.get((index % node_count) as usize).unwrap().id));
             incr_id += 1;
             index += 1;
         }

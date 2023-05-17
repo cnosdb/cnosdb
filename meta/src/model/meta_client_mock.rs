@@ -145,7 +145,7 @@ impl MetaClient for MockMetaClient {
         Some(0)
     }
 
-    async fn locate_replcation_set_for_write(
+    async fn locate_replication_set_for_write(
         &self,
         db: &str,
         hash_id: u64,
@@ -248,6 +248,10 @@ impl MetaClient for MockMetaClient {
 
     async fn version(&self) -> u64 {
         0
+    }
+
+    async fn update_vnode(&self, info: &VnodeAllInfo) -> MetaResult<()> {
+        Ok(())
     }
 
     fn get_vnode_all_info(&self, id: u32) -> Option<VnodeAllInfo> {

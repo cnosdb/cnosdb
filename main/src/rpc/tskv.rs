@@ -207,7 +207,7 @@ impl TskvServiceImpl {
         let node_id = meta.node_id();
         let mut vnodes = Vec::with_capacity(args.vnode_ids.len());
         for id in args.vnode_ids.iter() {
-            vnodes.push(VnodeInfo { id: *id, node_id })
+            vnodes.push(VnodeInfo::new(*id, node_id))
         }
 
         let executor = QueryExecutor::new(
@@ -253,7 +253,7 @@ impl TskvServiceImpl {
         let vnodes = args
             .vnode_ids
             .iter()
-            .map(|id| VnodeInfo { id: *id, node_id })
+            .map(|id| VnodeInfo::new(*id, node_id))
             .collect::<Vec<_>>();
 
         let executor = QueryExecutor::new(
@@ -448,7 +448,7 @@ impl TskvService for TskvServiceImpl {
 
         if let Err(err) = self
             .kv_inst
-            .flush_tsfamily(&inner.tenant, &inner.db, inner.vnode_id)
+            .prepare_move_vnode(&inner.tenant, &inner.db, inner.vnode_id)
             .await
         {
             return Err(tonic::Status::new(tonic::Code::Internal, err.to_string()));

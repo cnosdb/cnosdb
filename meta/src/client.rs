@@ -304,16 +304,10 @@ mod test {
             db_name,
             bucket_id: 8,
             repl_id: 9,
-            del_info: vec![VnodeInfo { id: 11, node_id: 0 }],
+            del_info: vec![VnodeInfo::new(11,0)],
             add_info: vec![
-                VnodeInfo {
-                    id: 333,
-                    node_id: 1333,
-                },
-                VnodeInfo {
-                    id: 444,
-                    node_id: 1444,
-                },
+                VnodeInfo::new(333, 1333),
+                VnodeInfo::new(444, 1444),
             ],
         };
 

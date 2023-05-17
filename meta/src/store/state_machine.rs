@@ -604,6 +604,7 @@ impl StateMachine {
             }
             WriteCommand::RetainID(cluster, count) => self.process_retain_id(cluster, *count),
             WriteCommand::UpdateVnodeReplSet(args) => self.process_update_vnode_repl_set(args),
+            WriteCommand::UpdateVnode(args) => self.process_update_vnode(args),
             WriteCommand::LimiterRequest {
                 cluster,
                 tenant,
@@ -611,7 +612,41 @@ impl StateMachine {
             } => self.process_limiter_request(cluster, tenant, request),
         }
     }
+    fn process_update_vnode(&self, args: &UpdateVnodeArgs) -> CommandResp {
+        let mut status = StatusResponse::new(META_REQUEST_FAILED, "".to_string());
 
+        let key = key_path::KeyPath::tenant_bucket_id(
+            &args.cluster,
+            &args.vnode_info.tenant,
+            &args.vnode_info.db_name,
+            args.vnode_info.bucket_id,
+        );
+        let mut bucket = match get_struct::<BucketInfo>(&key, self.db.clone()) {
+            Some(b) => b,
+            None => {
+                status.msg = format!("not found buckt: {}", args.vnode_info.bucket_id);
+                return serde_json::to_string(&status).unwrap();
+            }
+        };
+
+        for set in bucket.shard_group.iter_mut() {
+            if set.id != args.vnode_info.repl_set_id {
+                continue;
+            }
+            for vnode in set.vnode_list.iter_mut() {
+                if vnode.id == args.vnode_info.vnode_id {
+                    vnode.status = args.vnode_info.status.clone();
+                    break;
+                }
+            }
+        }
+        let val = serde_json::to_string(&bucket).unwrap();
+        self.insert(&key, &val).unwrap();
+        info!("WRITE: {} :{}", key, val);
+
+        status.code = META_REQUEST_SUCCESS;
+        serde_json::to_string(&status).unwrap()
+    }
     fn process_update_vnode_repl_set(&self, args: &UpdateVnodeReplSetArgs) -> CommandResp {
         let mut status = StatusResponse::new(META_REQUEST_FAILED, "".to_string());
 
@@ -635,11 +670,11 @@ impl StateMachine {
             }
 
             for info in args.del_info.iter() {
-                set.vnodes.retain(|item| item.id != info.id);
+                set.vnode_list.retain(|item| item.id != info.id);
             }
 
             for info in args.add_info.iter() {
-                set.vnodes.push(info.clone());
+                set.vnode_list.push(info.clone());
             }
         }
 
@@ -659,27 +694,34 @@ impl StateMachine {
         serde_json::to_string(&status).unwrap()
     }
 
-    fn check_node_ip_address(&self, cluster: &str, node: &NodeInfo) {
+    fn check_node_ip_address(&self, cluster: &str, node: &NodeInfo) -> bool {
         for value in
             children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone()).values()
         {
             if value.id != node.id
                 && (value.http_addr == node.http_addr || value.grpc_addr == node.grpc_addr)
             {
-                error!("ip address has been added, the added node is : {:?}", value);
+                error!(
+                    "ip address has been added, add node failed, the added node is : {:?}",
+                    value
+                );
+                return false;
             }
         }
+        true
     }
 
     fn insert_kv_to_db(&self, key: String, value: String) -> CommandResp {
         let _ = self.insert(&key, &value);
         info!("WRITE: {} :{}", key, value);
 
-        serde_json::to_string(&StatusResponse::default()).unwrap()
+        serde_json::to_string(&StatusResponse::default()).unwrap_or("".to_string())
     }
 
     fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> CommandResp {
-        self.check_node_ip_address(cluster, node);
+        if !self.check_node_ip_address(cluster, node) {
+            return StatusResponse::new(META_REQUEST_FAILED, "".to_string()).to_string();
+        }
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = serde_json::to_string(node).unwrap();
 
@@ -866,7 +908,7 @@ impl StateMachine {
                         "not support update external table".to_string(),
                         self.to_tenant_meta_data(cluster, tenant).unwrap(),
                     )
-                    .to_string()
+                    .to_string();
                 }
             }
         }

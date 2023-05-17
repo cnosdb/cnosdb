@@ -720,11 +720,12 @@ impl MetaClient for RemoteMetaClient {
         for (db_name, db_info) in data.dbs.iter() {
             for bucket in db_info.buckets.iter() {
                 for repl_set in bucket.shard_group.iter() {
-                    for vnode_info in repl_set.vnodes.iter() {
+                    for vnode_info in repl_set.vnode_list.iter() {
                         if vnode_info.id == id {
                             return Some(VnodeAllInfo {
                                 vnode_id: vnode_info.id,
                                 node_id: vnode_info.node_id,
+                                status: vnode_info.status.clone(),
                                 repl_set_id: repl_set.id,
                                 bucket_id: bucket.id,
                                 db_name: db_name.clone(),
@@ -747,7 +748,7 @@ impl MetaClient for RemoteMetaClient {
         for (_db_name, db_info) in data.dbs.iter() {
             for bucket in db_info.buckets.iter() {
                 for repl_set in bucket.shard_group.iter() {
-                    for vnode_info in repl_set.vnodes.iter() {
+                    for vnode_info in repl_set.vnode_list.iter() {
                         if vnode_info.id == id {
                             return Some(repl_set.clone());
                         }
@@ -765,7 +766,7 @@ impl MetaClient for RemoteMetaClient {
         Ok(buckets)
     }
 
-    async fn locate_replcation_set_for_write(
+    async fn locate_replication_set_for_write(
         &self,
         db: &str,
         hash_id: u64,
@@ -778,6 +779,25 @@ impl MetaClient for RemoteMetaClient {
         let bucket = self.create_bucket(db, ts).await?;
 
         Ok(bucket.vnode_for(hash_id))
+    }
+
+    async fn update_vnode(&self, info: &VnodeAllInfo) -> MetaResult<()> {
+        let args = command::UpdateVnodeArgs {
+            cluster: self.cluster.clone(),
+            vnode_info: info.clone(),
+        };
+        let req = command::WriteCommand::UpdateVnode(args);
+
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
+        info!("update replication set: {:?}; {:?}", req, rsp);
+
+        if rsp.code == command::META_REQUEST_SUCCESS {
+            Ok(())
+        } else {
+            Err(MetaError::CommonError {
+                msg: rsp.to_string(),
+            })
+        }
     }
 
     async fn update_replication_set(

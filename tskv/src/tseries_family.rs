@@ -8,6 +8,7 @@ use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
+use models::meta_data::VnodeStatus;
 use models::predicate::domain::TimeRange;
 use models::schema::{split_owner, TableColumn};
 use models::{FieldId, SchemaId, SeriesId, Timestamp};
@@ -26,6 +27,7 @@ use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::{DataBlock, TsmReader, TsmTombstone};
+use crate::Error::CommonError;
 use crate::{ColumnFileId, LevelId, TseriesFamilyId};
 
 #[derive(Debug)]
@@ -643,6 +645,7 @@ pub struct TseriesFamily {
     cancellation_token: CancellationToken,
     memory_pool: MemoryPoolRef,
     tsf_metrics: TsfMetrics,
+    status: VnodeStatus,
 }
 
 impl TseriesFamily {
@@ -688,6 +691,7 @@ impl TseriesFamily {
             cancellation_token: CancellationToken::new(),
             memory_pool,
             tsf_metrics: TsfMetrics::new(register, database.as_str(), tf_id as u64),
+            status: VnodeStatus::Running,
         }
     }
 
@@ -805,6 +809,11 @@ impl TseriesFamily {
         seq: u64,
         points: HashMap<(SeriesId, SchemaId), RowGroup>,
     ) -> Result<u64> {
+        if self.status == VnodeStatus::Moving {
+            return Err(CommonError {
+                reason: "vnode is moving please retry later".to_string(),
+            });
+        }
         let mut res = 0;
         for ((sid, _schema_id), group) in points {
             let mem = self.super_version.caches.mut_cache.read();
@@ -829,6 +838,10 @@ impl TseriesFamily {
 
     pub async fn update_last_modified(&self) {
         *self.last_modified.write().await = Some(Instant::now());
+    }
+
+    pub fn update_status(&mut self, status: VnodeStatus) {
+        self.status = status;
     }
 
     pub fn delete_columns(&self, field_ids: &[FieldId]) {
@@ -975,6 +988,9 @@ impl TseriesFamily {
             .map(|c| c.read().cache_size())
             .sum::<u64>()
             + self.mut_cache.read().cache_size()
+    }
+    pub fn is_can_compaction(&self) -> bool {
+        self.status == VnodeStatus::Running
     }
 }
 

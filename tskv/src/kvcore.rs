@@ -7,6 +7,7 @@ use memory_pool::{MemoryPool, MemoryPoolRef};
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::codec::Encoding;
+use models::meta_data::VnodeStatus;
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{make_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
@@ -603,6 +604,15 @@ impl Engine for TsKv {
         Ok(())
     }
 
+    async fn prepare_move_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()> {
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            if let Some(tsfamily) = db.read().await.get_tsfamily(vnode_id) {
+                tsfamily.write().await.update_status(VnodeStatus::Moving);
+            }
+        }
+        self.flush_tsfamily(tenant, database, vnode_id).await
+    }
+
     async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             if let Some(tsfamily) = db.read().await.get_tsfamily(id) {
@@ -819,6 +829,8 @@ impl Engine for TsKv {
             let mut file_metas = HashMap::new();
             if let Some(tsf) = db.get_tsfamily(vnode_id) {
                 let ve = tsf.read().await.snapshot(db.owner(), &mut file_metas);
+                // it used for move vnode, set vnode status running at last
+                tsf.write().await.update_status(VnodeStatus::Running);
                 Ok(Some(ve))
             } else {
                 warn!(

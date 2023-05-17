@@ -26,6 +26,12 @@ pub struct UpdateVnodeReplSetArgs {
     pub add_info: Vec<VnodeInfo>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UpdateVnodeArgs {
+    pub cluster: String,
+    pub vnode_info: VnodeAllInfo,
+}
+
 /******************* write command *************************/
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WriteCommand {
@@ -34,6 +40,7 @@ pub enum WriteCommand {
 
     UpdateVnodeReplSet(UpdateVnodeReplSetArgs),
 
+    UpdateVnode(UpdateVnodeArgs),
     // cluster, node info
     AddDataNode(String, NodeInfo),
 
@@ -168,7 +175,7 @@ impl StatusResponse {
 
 impl ToString for StatusResponse {
     fn to_string(&self) -> String {
-        serde_json::to_string(&self).unwrap()
+        serde_json::to_string(&self).unwrap_or("".to_string())
     }
 }
 

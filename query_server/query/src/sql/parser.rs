@@ -516,7 +516,7 @@ impl<'a> ExtParser<'a> {
         } else if self.parser.parse_keyword(Keyword::DATABASE) {
             self.parse_describe_database()
         } else {
-            self.expected("tables/databases", self.parser.peek_token())
+            self.expected("table/database", self.parser.peek_token())
         }
     }
 

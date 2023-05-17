@@ -47,7 +47,7 @@ use warp::{header, reject, Filter, Rejection, Reply};
 use super::header::Header;
 use super::Error as HttpError;
 use crate::http::metrics::HttpMetrics;
-use crate::http::response::{HttpRespone, ResponseBuilder};
+use crate::http::response::{HttpResponse, ResponseBuilder};
 use crate::http::result_format::{get_result_format_from_header, ResultFormat};
 use crate::http::QuerySnafu;
 use crate::server::ServiceHandle;
@@ -880,7 +880,7 @@ async fn sql_handle(
     debug!("prepare to execute: {:?}", query.content());
     let handle = dbms.execute(query).await?;
     let out = handle.result();
-    let resp = HttpRespone::new(out, fmt);
+    let resp = HttpResponse::new(out, fmt);
     if !query.context().chunked() {
         resp.wrap_batches_to_response().await
     } else {

@@ -43,7 +43,9 @@ pub fn run(
             if let Some(tsf) = ts_family {
                 info!("Starting compaction on ts_family {}", vnode_id);
                 let start = Instant::now();
-
+                if !tsf.read().await.is_can_compaction() {
+                    return;
+                }
                 let picker = LevelCompactionPicker::new(storage_opt.clone());
                 let version = tsf.read().await.version();
                 let compact_req = picker.pick_compaction(version);

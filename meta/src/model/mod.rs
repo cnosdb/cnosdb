@@ -130,7 +130,7 @@ pub trait MetaClient: Send + Sync + Debug {
 
     fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>>;
 
-    async fn locate_replcation_set_for_write(
+    async fn locate_replication_set_for_write(
         &self,
         db: &str,
         hash_id: u64,
@@ -151,6 +151,8 @@ pub trait MetaClient: Send + Sync + Debug {
     async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()>;
 
     fn print_data(&self) -> String;
+
+    async fn update_vnode(&self, info: &VnodeAllInfo) -> MetaResult<()>;
 }
 
 #[async_trait]
