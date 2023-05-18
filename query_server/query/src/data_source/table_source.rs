@@ -1,5 +1,7 @@
 use std::any::Any;
+use std::fmt::Display;
 use std::sync::Arc;
+use std::write;
 
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
@@ -14,7 +16,6 @@ use datafusion::logical_expr::{
 };
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::Expr;
-use models::oid::Oid;
 use spi::query::datasource::stream::StreamProviderRef;
 use trace::{debug, warn};
 
@@ -26,7 +27,6 @@ use crate::extension::physical::plan_node::table_writer::TableWriterExec;
 pub const TEMP_LOCATION_TABLE_NAME: &str = "external_location_table";
 
 pub struct TableSourceAdapter {
-    tenant_id: Oid,
     database_name: String,
     table_name: String,
     table_handle: TableHandle,
@@ -37,8 +37,6 @@ pub struct TableSourceAdapter {
 impl TableSourceAdapter {
     pub fn try_new(
         table_ref: impl Into<OwnedTableReference>,
-        tenant_id: Oid,
-        _tenant_name: impl Into<String>,
         database_name: impl Into<String>,
         table_name: impl Into<String>,
         table_handle: impl Into<TableHandle>,
@@ -61,7 +59,11 @@ impl TableSourceAdapter {
             // TableScan
             TableHandle::TableProvider(t) => {
                 let table_source = provider_as_source(t.clone());
-                LogicalPlanBuilder::scan(table_ref, table_source, None)?.build()?
+                if let Some(plan) = table_source.get_logical_plan() {
+                    LogicalPlanBuilder::from(plan.clone()).build()?
+                } else {
+                    LogicalPlanBuilder::scan(table_ref, table_source, None)?.build()?
+                }
             }
             // StreamScan
             TableHandle::StreamProvider(s) => {
@@ -78,16 +80,11 @@ impl TableSourceAdapter {
         );
 
         Ok(Self {
-            tenant_id,
             database_name,
             table_name,
             table_handle,
             plan,
         })
-    }
-
-    pub fn tenant_id(&self) -> Oid {
-        self.tenant_id
     }
 
     pub fn database_name(&self) -> &str {
@@ -229,5 +226,16 @@ impl From<Arc<ClusterTable>> for TableHandle {
 impl From<StreamProviderRef<i64>> for TableHandle {
     fn from(value: StreamProviderRef<i64>) -> Self {
         TableHandle::StreamProvider(value)
+    }
+}
+
+impl Display for TableHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::External(e) => write!(f, "External({:?})", e.table_paths()),
+            Self::StreamProvider(_) => write!(f, "StreamProvider"),
+            Self::TableProvider(_) => write!(f, "TableProvider"),
+            Self::Tskv(e) => write!(f, "Tskv({})", e.table_schema().name),
+        }
     }
 }

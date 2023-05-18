@@ -4,9 +4,11 @@ use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use derive_builder::Builder;
 use memory_pool::MemoryPoolRef;
+use meta::error::MetaError;
 use models::auth::user::{User, UserInfo};
 use models::auth::AuthError;
 use models::oid::Oid;
+use models::schema::DEFAULT_CATALOG;
 use snafu::ResultExt;
 use spi::query::auth::AccessControlRef;
 use spi::query::datasource::stream::checker::StreamCheckerManager;
@@ -22,7 +24,7 @@ use trace::debug;
 use tskv::kv_option::Options;
 
 use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
-use crate::data_source::split;
+use crate::data_source::split::SplitManager;
 use crate::data_source::stream::tskv::factory::{TskvStreamProviderFactory, TSKV_STREAM_PROVIDER};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::dispatcher::persister::LocalQueryPersister;
@@ -31,6 +33,7 @@ use crate::execution::factory::SqlQueryExecutionFactory;
 use crate::execution::scheduler::local::LocalScheduler;
 use crate::extension::expr::load_all_functions;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
+use crate::metadata::BaseTableProvider;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
 
@@ -156,7 +159,7 @@ pub async fn make_cnosdbms(
         .join(DEFAULT_CNOSDB_PATH)
         .join(DEFAULT_CNOSDB_QUERY_DIRECTORY_NAME);
 
-    let split_manager = split::default_split_manager_ref();
+    let split_manager = Arc::new(SplitManager::new(coord.clone()));
     // TODO session config need load global system config
     let session_factory = Arc::new(SessionCtxFactory::new(query_dedicated_hidden_dir.clone()));
     let parser = Arc::new(DefaultParser::default());
@@ -203,8 +206,26 @@ pub async fn make_cnosdbms(
 
     let meta_manager = coord.meta_manager();
 
+    let default_meta_client =
+        coord
+            .tenant_meta(DEFAULT_CATALOG)
+            .await
+            .ok_or_else(|| MetaError::TenantNotFound {
+                tenant: DEFAULT_CATALOG.to_string(),
+            })?;
+
+    let stream_provider_manager: Arc<StreamProviderManager> = Arc::new(stream_provider_manager);
+
+    let default_table_provider = Arc::new(BaseTableProvider::new(
+        coord.clone(),
+        split_manager.clone(),
+        default_meta_client,
+        stream_provider_manager.clone(),
+    ));
+
     let query_dispatcher = SimpleQueryDispatcherBuilder::default()
         .with_coord(coord)
+        .with_default_table_provider(default_table_provider)
         .with_split_manager(split_manager)
         .with_session_factory(session_factory)
         .with_memory_pool(memory_pool)
@@ -212,7 +233,7 @@ pub async fn make_cnosdbms(
         .with_query_execution_factory(query_execution_factory)
         .with_query_tracker(query_tracker)
         .with_func_manager(Arc::new(func_manager))
-        .with_stream_provider_manager(Arc::new(stream_provider_manager))
+        .with_stream_provider_manager(stream_provider_manager)
         .build()?;
 
     let mut builder = CnosdbmsBuilder::default();
