@@ -3,7 +3,6 @@
 TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
 365 Days,1,365 Days,1,NS
 
-
 -- EXECUTE SQL: DESCRIBE TABLE coord_data_in; --
 200 OK
 COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,COMPRESSION_CODEC
@@ -13,4 +12,46 @@ node_id,STRING,TAG,DEFAULT
 tenant,STRING,TAG,DEFAULT
 value,BIGINT UNSIGNED,FIELD,DEFAULT
 
+-- EXECUTE SQL: drop tenant if exists test_coord_data_in; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_cdi_u1; --
+200 OK
+
+
+-- EXECUTE SQL: create tenant if not exists test_coord_data_in; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_cdi_u1; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_coord_data_in add user test_cdi_u1 as owner; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant cnosdb add user test_cdi_u1 as owner; --
+200 OK
+
+
+-- EXECUTE SQL: select * from usage_schema.coord_data_in where false; --
+-- AFTER_SORT --
+200 OK
+
+
+-- EXECUTE SQL: select * from usage_schema.coord_data_in where false; --
+-- AFTER_SORT --
+200 OK
+
+
+-- EXECUTE SQL: select * from usage_schema.coord_data_in where false; --
+-- AFTER_SORT --
+200 OK
+
+
+-- EXECUTE SQL: select * from usage_schema.coord_data_in where false; --
+-- AFTER_SORT --
+200 OK
 

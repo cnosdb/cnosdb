@@ -96,7 +96,7 @@ time,column6,column7,column1,column2,column3,column4,column5
 -- EXECUTE SQL: select ALL * from public.test0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: failed to resolve tenant:cnosdb  db: public, table: test0"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: test0"}
 -- ERROR:  --
 
 -- EXECUTE SQL: ALTER TABLE test0 DROP column2; --
@@ -200,7 +200,7 @@ time,column6,column7,column1,column3,column4,column5,column8
 -- EXECUTE SQL: SELECT ALL * FROM test0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: failed to resolve tenant:cnosdb  db: createtable, table: test0"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: cnosdb db: createtable, table: test0"}
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE TABLE test0( column1 BIGINT CODEC(DELTA), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column8, column7)); --

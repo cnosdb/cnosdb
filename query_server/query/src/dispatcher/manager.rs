@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
+use meta::model::MetaClientRef;
 use models::auth::user::admin_user;
 use models::oid::Oid;
-use models::schema::DEFAULT_CATALOG;
 use spi::query::ast::ExtStatement;
 use spi::query::datasource::stream::StreamProviderManagerRef;
 use spi::query::dispatcher::{QueryDispatcher, QueryInfo, QueryStatus};
@@ -14,7 +14,7 @@ use spi::query::execution::{Output, QueryStateMachine};
 use spi::query::function::FuncMetaManagerRef;
 use spi::query::logical_planner::{LogicalPlanner, Plan};
 use spi::query::parser::Parser;
-use spi::query::session::SessionCtxFactory;
+use spi::query::session::{SessionCtx, SessionCtxFactory};
 use spi::service::protocol::{ContextBuilder, Query, QueryId};
 use spi::{QueryError, Result};
 use trace::info;
@@ -22,12 +22,16 @@ use trace::info;
 use super::query_tracker::QueryTracker;
 use crate::data_source::split::SplitManagerRef;
 use crate::execution::factory::QueryExecutionFactoryRef;
-use crate::metadata::{ContextProviderExtension, MetadataProvider};
+use crate::metadata::{
+    BaseTableProvider, ContextProviderExtension, MetadataProvider, TableHandleProviderRef,
+};
 use crate::sql::logical::planner::DefaultLogicalPlanner;
 
 #[derive(Clone)]
 pub struct SimpleQueryDispatcher {
     coord: CoordinatorRef,
+    // client for default tenant
+    default_table_provider: TableHandleProviderRef,
     split_manager: SplitManagerRef,
     session_factory: Arc<SessionCtxFactory>,
     // memory pool
@@ -108,36 +112,14 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         &self,
         query_state_machine: Arc<QueryStateMachine>,
     ) -> Result<Option<Plan>> {
-        let meta_client = self
-            .coord
-            .tenant_meta(query_state_machine.query.context().tenant())
-            .await
-            .ok_or_else(|| MetaError::TenantNotFound {
-                tenant: query_state_machine.query.context().tenant().to_string(),
-            })?;
+        let session = &query_state_machine.session;
+        let query = &query_state_machine.query;
 
-        let default_catalog_meta_client = self
-            .coord
-            .tenant_meta(DEFAULT_CATALOG)
-            .await
-            .ok_or_else(|| MetaError::TenantNotFound {
-                tenant: DEFAULT_CATALOG.to_string(),
-            })?;
-
-        let scheme_provider = MetadataProvider::new(
-            self.coord.clone(),
-            self.split_manager.clone(),
-            meta_client,
-            self.func_manager.clone(),
-            self.stream_provider_manager.clone(),
-            self.query_tracker.clone(),
-            query_state_machine.session.clone(),
-            default_catalog_meta_client,
-        );
+        let scheme_provider = self.build_scheme_provider(session).await?;
 
         let logical_planner = DefaultLogicalPlanner::new(&scheme_provider);
 
-        let statements = self.parser.parse(query_state_machine.query.content())?;
+        let statements = self.parser.parse(query.content())?;
 
         // not allow multi statement
         if statements.len() > 1 {
@@ -243,11 +225,59 @@ impl SimpleQueryDispatcher {
             .start()
             .await
     }
+
+    async fn build_scheme_provider(&self, session: &SessionCtx) -> Result<MetadataProvider> {
+        let meta_client = self.build_current_session_meta_client(session).await?;
+        let current_session_table_provider =
+            self.build_table_handle_provider(meta_client.clone())?;
+        let metadata_provider = MetadataProvider::new(
+            self.coord.clone(),
+            meta_client,
+            current_session_table_provider,
+            self.default_table_provider.clone(),
+            self.func_manager.clone(),
+            self.query_tracker.clone(),
+            session.clone(),
+        );
+
+        Ok(metadata_provider)
+    }
+
+    async fn build_current_session_meta_client(
+        &self,
+        session: &SessionCtx,
+    ) -> Result<MetaClientRef> {
+        let meta_client = self
+            .coord
+            .tenant_meta(session.tenant())
+            .await
+            .ok_or_else(|| MetaError::TenantNotFound {
+                tenant: session.tenant().to_string(),
+            })?;
+
+        Ok(meta_client)
+    }
+
+    fn build_table_handle_provider(
+        &self,
+        meta_client: MetaClientRef,
+    ) -> Result<TableHandleProviderRef> {
+        let current_session_table_provider: Arc<BaseTableProvider> =
+            Arc::new(BaseTableProvider::new(
+                self.coord.clone(),
+                self.split_manager.clone(),
+                meta_client.clone(),
+                self.stream_provider_manager.clone(),
+            ));
+
+        Ok(current_session_table_provider)
+    }
 }
 
 #[derive(Default, Clone)]
 pub struct SimpleQueryDispatcherBuilder {
     coord: Option<CoordinatorRef>,
+    default_table_provider: Option<TableHandleProviderRef>,
     split_manager: Option<SplitManagerRef>,
     session_factory: Option<Arc<SessionCtxFactory>>,
     parser: Option<Arc<dyn Parser + Send + Sync>>,
@@ -263,6 +293,14 @@ pub struct SimpleQueryDispatcherBuilder {
 impl SimpleQueryDispatcherBuilder {
     pub fn with_coord(mut self, coord: CoordinatorRef) -> Self {
         self.coord = Some(coord);
+        self
+    }
+
+    pub fn with_default_table_provider(
+        mut self,
+        default_table_provider: TableHandleProviderRef,
+    ) -> Self {
+        self.default_table_provider = Some(default_table_provider);
         self
     }
 
@@ -365,8 +403,15 @@ impl SimpleQueryDispatcherBuilder {
                 err: "lost of memory pool".to_string(),
             })?;
 
+        let default_table_provider =
+            self.default_table_provider
+                .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                    err: "lost of default_table_provider".to_string(),
+                })?;
+
         Ok(SimpleQueryDispatcher {
             coord,
+            default_table_provider,
             split_manager,
             session_factory,
             memory_pool,

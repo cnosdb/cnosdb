@@ -150,7 +150,7 @@ mod test {
 
         let provider = Arc::new(ClusterTable::new(
             Arc::new(MockCoordinator::default()),
-            split::default_split_manager_ref(),
+            split::default_split_manager_ref_only_for_test(),
             Arc::new(MockMetaClient::default()),
             Arc::new(schema),
         ));
