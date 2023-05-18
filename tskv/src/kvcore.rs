@@ -824,7 +824,10 @@ impl Engine for TsKv {
         {
             Ok(Some(tsf.read().await.super_version()))
         } else {
-            info!("ts_family with db name '{}' not found.", database);
+            info!(
+                "ts_family {} with db name '{}' not found.",
+                vnode_id, database
+            );
             Ok(None)
         }
     }
@@ -851,8 +854,8 @@ impl Engine for TsKv {
                 Ok(Some(ve))
             } else {
                 warn!(
-                    "ts_family with db name '{}.{}' not found.",
-                    tenant, database
+                    "ts_family {} with db name '{}.{}' not found.",
+                    vnode_id, tenant, database
                 );
                 Ok(None)
             }

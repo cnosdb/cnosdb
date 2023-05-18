@@ -151,6 +151,8 @@ struct WalWriter {
 }
 
 impl WalWriter {
+    /// Opens a wal file at path, returns a WalWriter with id and config.
+    /// If wal file doesn't exist, create new wal file and set it's min_log_sequence(default 0).
     pub async fn open(
         config: Arc<WalOptions>,
         id: u64,
