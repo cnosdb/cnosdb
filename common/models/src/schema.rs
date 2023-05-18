@@ -682,7 +682,7 @@ pub struct DatabaseOptions {
     vnode_duration: Option<Duration>,
 
     replica: Option<u64>,
-    // timestamp percision
+    // timestamp precision
     precision: Option<Precision>,
 }
 
