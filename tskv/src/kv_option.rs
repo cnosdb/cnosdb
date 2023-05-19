@@ -9,10 +9,11 @@ use config::Config;
 use crate::TseriesFamilyId;
 
 const SUMMARY_PATH: &str = "summary";
-const INDEX_PATH: &str = "index";
+pub const INDEX_PATH: &str = "index";
 const DATA_PATH: &str = "data";
-const TSM_PATH: &str = "tsm";
-const DELTA_PATH: &str = "delta";
+pub const TSM_PATH: &str = "tsm";
+pub const DELTA_PATH: &str = "delta";
+pub const MOVE_PATH: &str = "move";
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -77,6 +78,12 @@ impl StorageOptions {
         self.database_dir(database)
             .join(ts_family_id.to_string())
             .join(TSM_PATH)
+    }
+
+    pub fn move_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.database_dir(database)
+            .join(ts_family_id.to_string())
+            .join(MOVE_PATH)
     }
 
     pub fn delta_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {

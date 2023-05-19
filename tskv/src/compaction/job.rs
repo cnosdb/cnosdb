@@ -43,7 +43,8 @@ pub fn run(
             if let Some(tsf) = ts_family {
                 info!("Starting compaction on ts_family {}", vnode_id);
                 let start = Instant::now();
-                if !tsf.read().await.is_can_compaction() {
+                if !tsf.read().await.can_compaction() {
+                    info!("forbidden compaction on moving vnode {}", vnode_id);
                     return;
                 }
                 let picker = LevelCompactionPicker::new(storage_opt.clone());

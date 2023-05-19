@@ -165,7 +165,7 @@ impl CoordService {
 
     async fn delete_expired_bucket(&self, info: &ExpiredBucketInfo) -> CoordinatorResult<()> {
         for repl_set in info.bucket.shard_group.iter() {
-            for vnode in repl_set.vnode_list.iter() {
+            for vnode in repl_set.vnodes.iter() {
                 let cmd = AdminCommandRequest {
                     tenant: info.tenant.clone(),
                     command: Some(DelVnode(DeleteVnodeRequest {

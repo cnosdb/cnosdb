@@ -446,6 +446,7 @@ mod test {
 
     use super::{calc_block_partial_time_range, find_timestamp, hash_partial_datablock, Hash};
     use crate::compaction::check::{get_default_time_range, TimeRangeHashTreeNode};
+    use crate::context::GlobalContext;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
     use crate::{Engine, Options, TsKv, TseriesFamilyId};
@@ -925,6 +926,7 @@ mod test {
                 .await
                 .unwrap();
             let mut db = db.write().await;
+            let cxt = Arc::new(GlobalContext::new());
             let tsf = db
                 .add_tsfamily(
                     ts_family_id,
@@ -933,8 +935,10 @@ mod test {
                     engine.summary_task_sender(),
                     engine.flush_task_sender(),
                     engine.compact_task_sender(),
+                    cxt.clone(),
                 )
-                .await;
+                .await
+                .unwrap();
             let tsf = tsf.read().await;
             assert_eq!(1, tsf.tf_id());
         });

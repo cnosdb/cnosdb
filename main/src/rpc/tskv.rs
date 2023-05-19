@@ -448,7 +448,7 @@ impl TskvService for TskvServiceImpl {
 
         if let Err(err) = self
             .kv_inst
-            .prepare_move_vnode(&inner.tenant, &inner.db, inner.vnode_id)
+            .prepare_copy_vnode(&inner.tenant, &inner.db, inner.vnode_id)
             .await
         {
             return Err(tonic::Status::new(tonic::Code::Internal, err.to_string()));

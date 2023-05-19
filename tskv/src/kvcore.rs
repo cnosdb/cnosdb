@@ -385,18 +385,20 @@ impl TsKv {
         let opt_tsf = db.read().await.get_tsfamily(id);
         match opt_tsf {
             Some(v) => Ok(v),
-            None => Ok(db
-                .write()
-                .await
-                .add_tsfamily(
-                    id,
-                    seq,
-                    ve,
-                    self.summary_task_sender.clone(),
-                    self.flush_task_sender.clone(),
-                    self.compact_task_sender.clone(),
-                )
-                .await),
+            None => {
+                db.write()
+                    .await
+                    .add_tsfamily(
+                        id,
+                        seq,
+                        ve,
+                        self.summary_task_sender.clone(),
+                        self.flush_task_sender.clone(),
+                        self.compact_task_sender.clone(),
+                        self.global_ctx.clone(),
+                    )
+                    .await
+            }
         }
     }
 
@@ -604,10 +606,10 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    async fn prepare_move_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()> {
+    async fn prepare_copy_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             if let Some(tsfamily) = db.read().await.get_tsfamily(vnode_id) {
-                tsfamily.write().await.update_status(VnodeStatus::Moving);
+                tsfamily.write().await.update_status(VnodeStatus::Copying);
             }
         }
         self.flush_tsfamily(tenant, database, vnode_id).await
@@ -861,15 +863,12 @@ impl Engine for TsKv {
         }
 
         let db = self.get_db_or_else_create(tenant, database).await?;
-        self.get_ts_index_or_else_create(db.clone(), vnode_id)
-            .await?;
-
         let mut db_wlock = db.write().await;
         // If there is a ts_family here, delete and re-build it.
         if db_wlock.get_tsfamily(vnode_id).is_some() {
-            db_wlock
-                .del_tsfamily(vnode_id, self.summary_task_sender.clone())
-                .await;
+            return Err(Error::CommonError {
+                reason: format!("vnode:{}, already exist", vnode_id),
+            });
         }
 
         db_wlock
@@ -880,8 +879,10 @@ impl Engine for TsKv {
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
                 self.compact_task_sender.clone(),
+                self.global_ctx.clone(),
             )
-            .await;
+            .await?;
+        db_wlock.get_ts_index_or_add(vnode_id).await?;
         Ok(())
     }
 
