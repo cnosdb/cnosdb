@@ -117,6 +117,7 @@ impl TsKv {
         core.run_flush_job(
             flush_task_receiver,
             summary.global_context(),
+            global_seq_ctx.clone(),
             summary.version_set(),
             summary_task_sender.clone(),
             compact_task_sender.clone(),
@@ -126,6 +127,7 @@ impl TsKv {
             runtime,
             compact_task_receiver,
             summary.global_context(),
+            global_seq_ctx.clone(),
             summary.version_set(),
             summary_task_sender.clone(),
         );
@@ -217,10 +219,12 @@ impl TsKv {
 
         async fn on_tick_check_total_size(
             version_set: Arc<RwLock<VersionSet>>,
-            wal_manager: &WalManager,
+            wal_manager: &mut WalManager,
         ) {
+            // TODO(zipper): This may cause flushing too frequent.
             if wal_manager.is_total_file_size_exceed() {
                 version_set.read().await.send_flush_req().await;
+                wal_manager.check_to_delete().await;
             }
         }
 
@@ -250,7 +254,7 @@ impl TsKv {
                             }
                         }
                         _ = check_total_size_ticker.tick() => {
-                            on_tick_check_total_size(version_set.clone(), &wal_manager).await;
+                            on_tick_check_total_size(version_set.clone(), &mut wal_manager).await;
                         }
                         _ = close_receiver.recv() => {
                             on_cancel(wal_manager).await;
@@ -272,7 +276,7 @@ impl TsKv {
                             on_tick_sync(&wal_manager).await;
                         }
                         _ = check_total_size_ticker.tick() => {
-                            on_tick_check_total_size(version_set.clone(), &wal_manager).await;
+                            on_tick_check_total_size(version_set.clone(), &mut wal_manager).await;
                         }
                         _ = close_receiver.recv() => {
                             on_cancel(wal_manager).await;
@@ -288,6 +292,7 @@ impl TsKv {
         &self,
         mut receiver: Receiver<FlushReq>,
         ctx: Arc<GlobalContext>,
+        seq_ctx: Arc<GlobalSequenceContext>,
         version_set: Arc<RwLock<VersionSet>>,
         summary_task_sender: Sender<SummaryTask>,
         compact_task_sender: Sender<CompactTask>,
@@ -295,9 +300,11 @@ impl TsKv {
         let runtime = self.runtime.clone();
         let f = async move {
             while let Some(x) = receiver.recv().await {
+                // TODO(zipper): this make config `flush_req_channel_cap` wasted
                 runtime.spawn(run_flush_memtable_job(
                     x,
                     ctx.clone(),
+                    seq_ctx.clone(),
                     version_set.clone(),
                     summary_task_sender.clone(),
                     Some(compact_task_sender.clone()),
@@ -609,6 +616,7 @@ impl Engine for TsKv {
                     run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
+                        self.global_seq_ctx.clone(),
                         self.version_set.clone(),
                         self.summary_task_sender.clone(),
                         Some(self.compact_task_sender.clone()),
@@ -810,11 +818,7 @@ impl Engine for TsKv {
             // TODO: Send file_metas to the destination node.
             let mut file_metas = HashMap::new();
             if let Some(tsf) = db.get_tsfamily(vnode_id) {
-                let ve = tsf.read().await.snapshot(
-                    self.global_ctx.last_seq(),
-                    db.owner(),
-                    &mut file_metas,
-                );
+                let ve = tsf.read().await.snapshot(db.owner(), &mut file_metas);
                 Ok(Some(ve))
             } else {
                 warn!(
@@ -859,7 +863,7 @@ impl Engine for TsKv {
         db_wlock
             .add_tsfamily(
                 vnode_id,
-                0,
+                self.global_seq_ctx.max_seq(),
                 Some(summary),
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
@@ -915,6 +919,7 @@ impl Engine for TsKv {
                     if let Err(e) = run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
+                        self.global_seq_ctx.clone(),
                         self.version_set.clone(),
                         self.summary_task_sender.clone(),
                         None,

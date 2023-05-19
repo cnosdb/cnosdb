@@ -40,7 +40,7 @@ mod tests {
     use spi::query::datasource::stream::StreamProviderManager;
     use spi::QueryError;
 
-    use crate::data_source::split::default_split_manager_ref;
+    use crate::data_source::split::default_split_manager_ref_only_for_test;
     use crate::data_source::stream::tskv::factory::TskvStreamProviderFactory;
     use crate::data_source::stream::tskv::{STREAM_DB_KEY, STREAM_TABLE_KEY};
     use crate::data_source::table_source::TableSourceAdapter;
@@ -48,7 +48,7 @@ mod tests {
     #[test]
     fn test_tskv() -> Result<(), QueryError> {
         let mut manager = StreamProviderManager::default();
-        let split_m = default_split_manager_ref();
+        let split_m = default_split_manager_ref_only_for_test();
         let coord = Arc::new(MockCoordinator::default());
         let meta = Arc::new(MockMetaClient::default());
         let factory = Arc::new(TskvStreamProviderFactory::new(coord, split_m));
@@ -99,14 +99,8 @@ mod tests {
         assert_eq!(&provider.watermark().column, "time");
         assert_eq!(provider.schema(), schema);
 
-        let source = TableSourceAdapter::try_new(
-            TableReference::bare("name"),
-            1,
-            "tenant",
-            "db",
-            "name",
-            provider,
-        )?;
+        let source =
+            TableSourceAdapter::try_new(TableReference::bare("name"), "db", "name", provider)?;
 
         let plan = source.get_logical_plan().unwrap();
 

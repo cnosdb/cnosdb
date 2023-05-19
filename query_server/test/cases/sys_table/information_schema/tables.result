@@ -46,17 +46,17 @@
 -- AFTER_SORT --
 200 OK
 table_tenant,table_database,table_name,table_type,table_engine,table_options
-test_tbls_tenant1,test_tbls_db1,test_info_schema_tbl,BASE TABLE,TSKV,TODO
+test_tbls_tenant1,test_tbls_db1,test_info_schema_tbl,TABLE,TSKV,TODO
 
 -- EXECUTE SQL: select * from information_schema.tables; --
 -- AFTER_SORT --
 200 OK
 table_tenant,table_database,table_name,table_type,table_engine,table_options
-test_tbls_tenant1,test_tbls_db1,test_info_schema_tbl,BASE TABLE,TSKV,TODO
+test_tbls_tenant1,test_tbls_db1,test_info_schema_tbl,TABLE,TSKV,TODO
 
 -- EXECUTE SQL: select * from information_schema.tables; --
 -- AFTER_SORT --
 200 OK
 table_tenant,table_database,table_name,table_type,table_engine,table_options
-test_tbls_tenant1,test_tbls_db1,test_info_schema_tbl,BASE TABLE,TSKV,TODO
+test_tbls_tenant1,test_tbls_db1,test_info_schema_tbl,TABLE,TSKV,TODO
 

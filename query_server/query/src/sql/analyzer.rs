@@ -6,6 +6,7 @@ use spi::query::analyzer::Analyzer;
 use spi::query::session::SessionCtx;
 use spi::Result;
 
+use crate::extension::analyse::initial_plan_checker::InitialPlanChecker;
 use crate::extension::analyse::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
 use crate::extension::analyse::transform_gapfill::TransformGapFill;
 use crate::extension::analyse::transform_time_window::TransformTimeWindowRule;
@@ -20,6 +21,7 @@ impl DefaultAnalyzer {
         let mut analyzer = DFAnalyzer::default();
 
         let rules = &mut analyzer.rules;
+        rules.push(Arc::new(InitialPlanChecker {}));
         rules.push(Arc::new(TransformBottomFuncToTopkNodeRule {}));
         rules.push(Arc::new(TransformTopkFuncToTopkNodeRule {}));
         rules.push(Arc::new(TransformGapFill::new()));

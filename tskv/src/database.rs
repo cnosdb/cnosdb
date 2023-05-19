@@ -127,6 +127,8 @@ impl Database {
         let (seq_no, version_edits, file_metas) = match version_edit {
             Some(mut ve) => {
                 ve.tsf_id = tsf_id;
+                ve.has_seq_no = true;
+                ve.seq_no = seq_no;
                 let mut file_metas = HashMap::with_capacity(ve.add_files.len());
                 for f in ve.add_files.iter_mut() {
                     f.tsf_id = tsf_id;
@@ -143,6 +145,7 @@ impl Database {
                 vec![VersionEdit::new_add_vnode(
                     tsf_id,
                     self.owner.as_ref().clone(),
+                    seq_no,
                 )],
                 None,
             ),
@@ -393,25 +396,18 @@ impl Database {
     /// (field-id filter) of db-files.
     pub async fn snapshot(
         &self,
-        last_seq: u64,
         vnode_id: Option<TseriesFamilyId>,
         version_edits: &mut Vec<VersionEdit>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     ) {
         if let Some(tsf_id) = vnode_id.as_ref() {
             if let Some(tsf) = self.ts_families.get(tsf_id) {
-                let ve = tsf
-                    .read()
-                    .await
-                    .snapshot(last_seq, self.owner.clone(), file_metas);
+                let ve = tsf.read().await.snapshot(self.owner.clone(), file_metas);
                 version_edits.push(ve);
             }
         } else {
             for tsf in self.ts_families.values() {
-                let ve = tsf
-                    .read()
-                    .await
-                    .snapshot(last_seq, self.owner.clone(), file_metas);
+                let ve = tsf.read().await.snapshot(self.owner.clone(), file_metas);
                 version_edits.push(ve);
             }
         }

@@ -67,7 +67,7 @@ where
 {
     async fn precess_statement_query_req(
         &self,
-        sql: String,
+        sql: impl Into<String>,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
         // auth request
@@ -78,7 +78,7 @@ where
         let ctx = self.construct_context(user, request.metadata())?;
 
         // build query state machine
-        let query_state_machine = self.build_query_state_machine(sql, ctx).await?;
+        let query_state_machine = self.build_query_state_machine(sql.into(), ctx).await?;
 
         // build logical plan
         let logical_plan = self.build_logical_plan(query_state_machine.clone()).await?;
@@ -163,10 +163,10 @@ where
 
     async fn build_query_state_machine(
         &self,
-        sql: String,
+        sql: impl Into<String>,
         ctx: Context,
     ) -> Result<QueryStateMachineRef, Status> {
-        let query = Query::new(ctx, sql);
+        let query = Query::new(ctx, sql.into());
         let query_state_machine = self
             .instance
             .build_query_state_machine(query)
@@ -399,8 +399,6 @@ where
         Ok(Response::new(flight_info))
     }
 
-    /// TODO support
-    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_catalogs(
         &self,
         query: CommandGetCatalogs,
@@ -411,13 +409,18 @@ where
             query, request
         );
 
-        Err(Status::unimplemented(
-            "get_flight_info_catalogs not implemented",
-        ))
+        self.precess_statement_query_req(
+            "SELECT 
+                TENANT_NAME AS TABLE_CAT 
+            FROM 
+                CLUSTER_SCHEMA.TENANTS 
+            ORDER BY 
+                TABLE_CAT",
+            request,
+        )
+        .await
     }
 
-    /// TODO support
-    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_schemas(
         &self,
         query: CommandGetDbSchemas,
@@ -428,13 +431,38 @@ where
             query, request
         );
 
-        Err(Status::unimplemented(
-            "get_flight_info_schemas not implemented",
-        ))
+        let CommandGetDbSchemas {
+            catalog,
+            db_schema_filter_pattern,
+        } = query;
+
+        let mut filters = vec![];
+        let _ = catalog.map(|e| filters.push(format!("TABLE_CATALOG = '{}'", e)));
+        let _ =
+            db_schema_filter_pattern.map(|e| filters.push(format!("DATABASE_NAME LIKE '{e}'",)));
+
+        let filter = if filters.is_empty() {
+            "".to_string()
+        } else {
+            format!("WHERE {}", filters.join(" AND "))
+        };
+
+        self.precess_statement_query_req(
+            format!(
+                "SELECT
+                    DATABASE_NAME AS TABLE_SCHEM,
+                    TENANT_NAME AS TABLE_CATALOG
+                FROM
+                    INFORMATION_SCHEMA.DATABASES
+                {filter}
+                ORDER BY
+                    TABLE_CATALOG, TABLE_SCHEM"
+            ),
+            request,
+        )
+        .await
     }
 
-    /// TODO support
-    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_tables(
         &self,
         query: CommandGetTables,
@@ -445,13 +473,52 @@ where
             query, request
         );
 
-        Err(Status::unimplemented(
-            "get_flight_info_tables not implemented",
-        ))
+        let CommandGetTables {
+            catalog,
+            db_schema_filter_pattern,
+            table_name_filter_pattern,
+            table_types,
+            include_schema: _,
+        } = query;
+
+        let mut filters = vec![];
+        let _ = catalog.map(|e| filters.push(format!("TABLE_CATALOG = '{}'", e)));
+        let _ =
+            db_schema_filter_pattern.map(|e| filters.push(format!("TABLE_DATABASE LIKE '{e}'")));
+        let _ = table_name_filter_pattern.map(|e| filters.push(format!("TABLE_NAME LIKE '{e}'")));
+        if !table_types.is_empty() {
+            let table_types = table_types
+                .iter()
+                .map(|e| format!("'{}'", e))
+                .collect::<Vec<_>>()
+                .join(",");
+            filters.push(format!("TABLE_TYPE IN ({})", table_types));
+        }
+
+        let filter = if filters.is_empty() {
+            "".to_string()
+        } else {
+            format!("WHERE {}", filters.join(" AND "))
+        };
+
+        let sql = format!(
+            "SELECT
+                TABLE_TENANT as TABLE_CAT,
+                TABLE_DATABASE as TABLE_SCHEM,
+                TABLE_NAME,
+                TABLE_TYPE
+            FROM
+                INFORMATION_SCHEMA.TABLES
+            {filter}
+            ORDER BY
+                TABLE_TYPE, TABLE_CAT, TABLE_SCHEM, TABLE_NAME"
+        );
+
+        trace::warn!("CommandGetTables:\n{sql}");
+
+        self.precess_statement_query_req(sql, request).await
     }
 
-    /// TODO support
-    /// wait for <https://github.com/cnosdb/cnosdb/issues/642>
     async fn get_flight_info_table_types(
         &self,
         query: CommandGetTableTypes,
@@ -462,9 +529,13 @@ where
             query, request
         );
 
-        Err(Status::unimplemented(
-            "get_flight_info_table_types not implemented",
-        ))
+        self.precess_statement_query_req(
+            "SELECT TABLE_TYPE 
+            FROM 
+                (VALUES('TABLE'),('VIEW'),('LOCAL TEMPORARY')) t(TABLE_TYPE)",
+            request,
+        )
+        .await
     }
 
     /// not support

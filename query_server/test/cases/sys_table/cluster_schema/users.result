@@ -68,17 +68,17 @@ test_us_u2,false,"{""password"":""*****"",""must_change_password"":null,""rsa_pu
 -- EXECUTE SQL: select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: failed to resolve tenant:test_us_tenant1  db: cluster_schema, table: users"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: test_us_tenant1 db: cluster_schema, table: users"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: failed to resolve tenant:test_us_tenant1  db: cluster_schema, table: users"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: test_us_tenant1 db: cluster_schema, table: users"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: failed to resolve tenant:test_us_tenant1  db: cluster_schema, table: users"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: test_us_tenant1 db: cluster_schema, table: users"}
 -- ERROR:  --

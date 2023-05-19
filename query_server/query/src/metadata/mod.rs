@@ -4,8 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::DataType;
+use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
-use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
 use datafusion::datasource::TableProvider;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
@@ -15,21 +15,20 @@ use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::auth::user::UserDesc;
 use models::object_reference::{Resolve, ResolvedTable};
-use models::schema::{Precision, TableSchema, Tenant, DEFAULT_CATALOG};
+use models::schema::{Precision, Tenant, DEFAULT_CATALOG};
 use parking_lot::RwLock;
-use spi::query::datasource::stream::StreamProviderManagerRef;
 use spi::query::function::FuncMetaManagerRef;
 use spi::query::session::SessionCtx;
 pub use usage_schema_provider::{USAGE_SCHEMA, USAGE_SCHEMA_VNODE_DISK_STORAGE};
 
+pub use self::base_table::BaseTableProvider;
 use self::cluster_schema_provider::ClusterSchemaProvider;
 use self::information_schema_provider::InformationSchemaProvider;
-use crate::data_source::batch::tskv::ClusterTable;
-use crate::data_source::split::SplitManagerRef;
 use crate::data_source::table_source::{TableHandle, TableSourceAdapter};
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::metadata::usage_schema_provider::UsageSchemaProvider;
 
+mod base_table;
 mod cluster_schema_provider;
 mod information_schema_provider;
 mod usage_schema_provider;
@@ -53,44 +52,48 @@ pub trait ContextProviderExtension: ContextProvider {
     ) -> datafusion::common::Result<Arc<TableSourceAdapter>>;
 }
 
+pub type TableHandleProviderRef = Arc<dyn TableHandleProvider + Send + Sync>;
+
+pub trait TableHandleProvider {
+    fn build_table_handle(&self, ddatabase_name: &str, table_name: &str) -> DFResult<TableHandle>;
+}
+
 pub struct MetadataProvider {
     session: SessionCtx,
     config_options: ConfigOptions,
     coord: CoordinatorRef,
-    split_manager: SplitManagerRef,
     meta_client: MetaClientRef,
     func_manager: FuncMetaManagerRef,
-    stream_provider_manager: StreamProviderManagerRef,
     information_schema_provider: InformationSchemaProvider,
     cluster_schema_provider: ClusterSchemaProvider,
     usage_schema_provider: UsageSchemaProvider,
     access_databases: RwLock<DatabaseSet>,
+    // tskv/external
+    current_session_table_provider: TableHandleProviderRef,
 }
 
 impl MetadataProvider {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         coord: CoordinatorRef,
-        split_manager: SplitManagerRef,
         meta_client: MetaClientRef,
+        current_session_table_provider: TableHandleProviderRef,
+        default_table_provider: TableHandleProviderRef,
         func_manager: FuncMetaManagerRef,
-        stream_provider_manager: StreamProviderManagerRef,
         query_tracker: Arc<QueryTracker>,
         session: SessionCtx,
-        default_meta: MetaClientRef,
     ) -> Self {
         Self {
+            current_session_table_provider,
             coord,
-            split_manager,
             // TODO refactor
             config_options: session.inner().state().config_options().clone(),
             session,
             meta_client,
             func_manager,
-            stream_provider_manager,
             information_schema_provider: InformationSchemaProvider::new(query_tracker),
             cluster_schema_provider: ClusterSchemaProvider::new(),
-            usage_schema_provider: UsageSchemaProvider::new(default_meta),
+            usage_schema_provider: UsageSchemaProvider::new(default_table_provider),
             access_databases: Default::default(),
         }
     }
@@ -117,12 +120,7 @@ impl MetadataProvider {
         if database_name.eq_ignore_ascii_case(self.usage_schema_provider.name()) {
             let table_provider = self
                 .usage_schema_provider
-                .table(
-                    table_name,
-                    self.session.user(),
-                    self.coord.clone(),
-                    self.meta_client.clone(),
-                )
+                .table(&self.session, table_name)
                 .map_err(|e| DataFusionError::External(Box::new(e)))?;
             return Ok(Some(table_provider));
         }
@@ -155,44 +153,8 @@ impl MetadataProvider {
             return Ok(source.into());
         }
 
-        let table_handle: TableHandle = match self
-            .meta_client
-            .get_table_schema(database_name, table_name)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?
-        {
-            Some(table) => match table {
-                TableSchema::TsKvTableSchema(schema) => Arc::new(ClusterTable::new(
-                    self.coord.clone(),
-                    self.split_manager.clone(),
-                    self.meta_client.clone(),
-                    schema,
-                ))
-                .into(),
-                TableSchema::ExternalTableSchema(schema) => {
-                    let table_path = ListingTableUrl::parse(&schema.location)?;
-                    let options = schema.table_options()?;
-                    let config = ListingTableConfig::new(table_path)
-                        .with_listing_options(options)
-                        .with_schema(Arc::new(schema.schema.clone()));
-                    Arc::new(ListingTable::try_new(config)?).into()
-                }
-                TableSchema::StreamTableSchema(table) => self
-                    .stream_provider_manager
-                    .create_provider(self.meta_client.clone(), table.as_ref())
-                    .map_err(|e| DataFusionError::External(Box::new(e)))?
-                    .into(),
-            },
-            None => {
-                return Err(DataFusionError::Plan(format!(
-                    "failed to resolve tenant:{}  db: {}, table: {}",
-                    name.tenant(),
-                    name.database(),
-                    name.table()
-                )));
-            }
-        };
-
-        Ok(table_handle)
+        self.current_session_table_provider
+            .build_table_handle(database_name, table_name)
     }
 }
 
@@ -249,7 +211,6 @@ impl ContextProviderExtension for MetadataProvider {
         let table_name = name.table();
         let database_name = name.database();
         let tenant_name = name.tenant();
-        let tenant_id = *self.session.tenant_id();
 
         // Cannot query across tenants
         if self.session.tenant() != tenant_name {
@@ -268,8 +229,6 @@ impl ContextProviderExtension for MetadataProvider {
 
         Ok(Arc::new(TableSourceAdapter::try_new(
             table_ref.to_owned_reference(),
-            tenant_id,
-            tenant_name,
             database_name,
             table_name,
             table_handle,

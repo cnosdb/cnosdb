@@ -1909,8 +1909,6 @@ async fn build_external_location_table_source(
 
     let external_location_table_source = Arc::new(TableSourceAdapter::try_new(
         TableReference::bare(TEMP_LOCATION_TABLE_NAME),
-        *ctx.tenant_id(),
-        ctx.tenant(),
         "tmp",
         TEMP_LOCATION_TABLE_NAME,
         external_location_table,
@@ -2311,8 +2309,6 @@ mod tests {
 
             Ok(Arc::new(TableSourceAdapter::try_new(
                 name.to_owned_reference(),
-                Oid::default(),
-                "cnosdb",
                 "public",
                 name.table(),
                 table as Arc<dyn TableProvider>,

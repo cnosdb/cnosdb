@@ -13,12 +13,15 @@
 -- EXECUTE SQL: create tenant if not exists test_ts_tenant1; --
 200 OK
 
+
 -- EXECUTE SQL: create tenant test_ts_tenant1 with comment='this is test_ts_tenant1'; --
 422 Unprocessable Entity
 {"error_code":"030009","error_message":"The tenant test_ts_tenant1 already exists"}
+-- ERROR:  --
 
 -- EXECUTE SQL: create tenant if not exists test_ts_tenant1 with comment='this is test_ts_tenant1'; --
 200 OK
+
 
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 200 OK
@@ -117,17 +120,17 @@ test_ts_tenant1,"{""comment"":null,""limiter_config"":null}"
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: failed to resolve tenant:test_ts_tenant1  db: cluster_schema, table: tenants"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: test_ts_tenant1 db: cluster_schema, table: tenants"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: failed to resolve tenant:test_ts_tenant1  db: cluster_schema, table: tenants"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: test_ts_tenant1 db: cluster_schema, table: tenants"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: failed to resolve tenant:test_ts_tenant1  db: cluster_schema, table: tenants"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: test_ts_tenant1 db: cluster_schema, table: tenants"}
 -- ERROR:  --

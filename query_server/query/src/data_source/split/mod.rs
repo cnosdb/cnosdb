@@ -1,6 +1,7 @@
 use std::cmp;
 use std::sync::Arc;
 
+use coordinator::service::CoordinatorRef;
 use datafusion::execution::context::SessionState;
 use models::predicate::domain::TimeRange;
 use models::predicate::utils::filter_to_time_ranges;
@@ -13,14 +14,21 @@ pub mod tskv;
 
 pub type SplitManagerRef = Arc<SplitManager>;
 
-pub fn default_split_manager_ref() -> SplitManagerRef {
-    Arc::new(SplitManager::default())
+#[cfg(test)]
+pub fn default_split_manager_ref_only_for_test() -> SplitManagerRef {
+    use coordinator::service_mock::MockCoordinator;
+    Arc::new(SplitManager::new(Arc::new(MockCoordinator::default())))
 }
 
-#[derive(Default)]
+#[non_exhaustive]
 pub struct SplitManager {}
 
 impl SplitManager {
+    pub fn new(_coord: CoordinatorRef) -> Self {
+        // TODO: use coordinator to get splits
+        Self {}
+    }
+
     pub fn splits(&self, ctx: &SessionState, table_layout: TableLayoutHandle) -> Vec<Split> {
         let TableLayoutHandle {
             db,

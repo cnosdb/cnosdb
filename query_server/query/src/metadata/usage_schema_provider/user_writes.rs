@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use coordinator::service::CoordinatorRef;
 use datafusion::datasource::TableProvider;
-use meta::model::MetaClientRef;
-use models::auth::user::User;
+use spi::query::session::SessionCtx;
 
 use crate::metadata::usage_schema_provider::{
     create_usage_schema_view_table, UsageSchemaTableFactory,
 };
+use crate::metadata::TableHandleProviderRef;
 
 pub const USAGE_SCHEMA_USER_WRITES: &str = "user_writes";
 
@@ -19,11 +18,9 @@ impl UsageSchemaTableFactory for UserWrites {
     }
     fn create(
         &self,
-        user: &User,
-        coord: CoordinatorRef,
-        meta: MetaClientRef,
-        default_catalog: MetaClientRef,
+        session: &SessionCtx,
+        base_table_provider: &TableHandleProviderRef,
     ) -> spi::Result<Arc<dyn TableProvider>> {
-        create_usage_schema_view_table(user, coord, meta, USAGE_SCHEMA_USER_WRITES, default_catalog)
+        create_usage_schema_view_table(session, base_table_provider, USAGE_SCHEMA_USER_WRITES)
     }
 }

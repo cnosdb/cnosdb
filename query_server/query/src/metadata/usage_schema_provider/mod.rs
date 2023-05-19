@@ -1,21 +1,17 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use coordinator::service::CoordinatorRef;
 use datafusion::datasource::{provider_as_source, TableProvider, ViewTable};
 use datafusion::logical_expr::{binary_expr, col, LogicalPlanBuilder, Operator};
 use datafusion::prelude::lit;
-use datafusion::sql::TableReference;
 use meta::error::MetaError;
-use meta::model::MetaClientRef;
-use models::auth::user::User;
-use models::oid::Identifier;
 use models::schema::DEFAULT_CATALOG;
-use spi::Result;
+use spi::query::session::SessionCtx;
+use spi::{QueryError, Result};
 pub use vnode_disk_storage::USAGE_SCHEMA_VNODE_DISK_STORAGE;
 
-use crate::data_source::batch::tskv::ClusterTable;
-use crate::data_source::split;
+use super::TableHandleProviderRef;
+use crate::data_source::table_source::TableHandle;
 use crate::metadata::usage_schema_provider::coord_data_in::CoordDataIn;
 use crate::metadata::usage_schema_provider::coord_data_out::CoordDataOut;
 use crate::metadata::usage_schema_provider::user_queries::UserQueries;
@@ -33,15 +29,15 @@ mod vnode_disk_storage;
 pub const USAGE_SCHEMA: &str = "usage_schema";
 
 pub struct UsageSchemaProvider {
-    tenant_meta: MetaClientRef,
     table_factories: HashMap<String, BoxUsageSchemaTableFactory>,
+    default_table_provider: TableHandleProviderRef,
 }
 
 impl UsageSchemaProvider {
-    pub fn new(default_meta_client: MetaClientRef) -> Self {
+    pub fn new(default_table_provider: TableHandleProviderRef) -> Self {
         let mut provider = Self {
-            tenant_meta: default_meta_client,
             table_factories: Default::default(),
+            default_table_provider,
         };
         provider.register_table_factory(Box::new(VnodeDiskStorage {}));
         provider.register_table_factory(Box::new(VnodeCacheSize {}));
@@ -62,18 +58,12 @@ impl UsageSchemaProvider {
         USAGE_SCHEMA
     }
 
-    pub fn table(
-        &self,
-        name: &str,
-        user: &User,
-        coord: CoordinatorRef,
-        meta: MetaClientRef,
-    ) -> Result<Arc<dyn TableProvider>> {
+    pub fn table(&self, session: &SessionCtx, name: &str) -> Result<Arc<dyn TableProvider>> {
         let usage_schema_table = self
             .table_factories
             .get(name)
             .ok_or_else(|| MetaError::TableNotFound { table: name.into() })?;
-        usage_schema_table.create(user, coord.clone(), meta.clone(), self.tenant_meta.clone())
+        usage_schema_table.create(session, &self.default_table_provider)
     }
 }
 
@@ -83,54 +73,45 @@ pub trait UsageSchemaTableFactory {
     fn table_name(&self) -> &str;
     fn create(
         &self,
-        user: &User,
-        coord: CoordinatorRef,
-        meta: MetaClientRef,
-        default_catalog: MetaClientRef,
+        session: &SessionCtx,
+        base_table_provider: &TableHandleProviderRef,
     ) -> Result<Arc<dyn TableProvider>>;
 }
 
 pub fn create_usage_schema_view_table(
-    user: &User,
-    coord: CoordinatorRef,
-    meta: MetaClientRef,
+    session: &SessionCtx,
+    default_table_provider: &TableHandleProviderRef,
     view_table_name: &str,
-    default_catalog_meta_client: MetaClientRef,
 ) -> spi::Result<Arc<dyn TableProvider>> {
-    let table_schema = default_catalog_meta_client
-        .get_tskv_table_schema(USAGE_SCHEMA, view_table_name)?
-        .ok_or_else(|| MetaError::TableNotFound {
-            table: view_table_name.into(),
-        })?;
-    let cluster_table = Arc::new(ClusterTable::new(
-        coord.clone(),
-        split::default_split_manager_ref(),
-        default_catalog_meta_client,
-        table_schema,
-    ));
-    if user.desc().is_admin() && meta.tenant_name().eq(DEFAULT_CATALOG) {
-        return Ok(cluster_table);
-    }
-    let cluster_table = provider_as_source(cluster_table);
-    let builder = LogicalPlanBuilder::scan(
-        TableReference::bare(view_table_name.to_string()),
-        cluster_table,
-        None,
-    )?
-    .filter(binary_expr(
-        col("tenant"),
-        Operator::Eq,
-        lit(meta.tenant().name()),
-    ))?;
+    let tenant_name = session.tenant();
+    let table_handle = default_table_provider.build_table_handle(USAGE_SCHEMA, view_table_name)?;
 
-    let builder_copy = builder.clone();
-    let cols = builder_copy
+    let table_source = match table_handle {
+        TableHandle::Tskv(table_provider) => provider_as_source(table_provider),
+        other => {
+            return Err(QueryError::Internal {
+                reason: format!("Usage schema data source is tskv, but found: {}", other),
+            });
+        }
+    };
+
+    let builder = LogicalPlanBuilder::scan(view_table_name.to_string(), table_source, None)?;
+
+    let builder = if session.user().desc().is_admin() && tenant_name.eq(DEFAULT_CATALOG) {
+        // do nothing
+        builder
+    } else {
+        builder.filter(binary_expr(col("tenant"), Operator::Eq, lit(tenant_name)))?
+    };
+
+    let cols = builder
         .schema()
         .fields()
         .iter()
         .filter(|f| f.name().ne("tenant"))
         .map(|f| col(f.name()));
 
-    let logical_plan = builder.project(cols)?.build()?;
+    let logical_plan = builder.clone().project(cols)?.build()?;
+
     Ok(Arc::new(ViewTable::try_new(logical_plan, None)?))
 }

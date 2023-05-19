@@ -30,6 +30,8 @@ pub struct GapFill {
 pub struct GapFillParams {
     /// The stride argument from the call to TIME_WINDOW_GAPFILL
     pub stride: Expr,
+    /// The sliding argument from the call to TIME_WINDOW_GAPFILL
+    pub sliding: Expr,
     /// The source time column
     pub time_column: Expr,
     /// The origin argument from the call to TIME_WINDOW_GAPFILL
@@ -67,7 +69,11 @@ pub enum FillStrategy {
 impl GapFillParams {
     // Extract the expressions so they can be optimized.
     fn expressions(&self) -> Vec<Expr> {
-        let mut exprs = vec![self.stride.clone(), self.time_column.clone()];
+        let mut exprs = vec![
+            self.stride.clone(),
+            self.sliding.clone(),
+            self.time_column.clone(),
+        ];
         if let Some(e) = self.origin.as_ref() {
             exprs.push(e.clone())
         }
@@ -90,6 +96,7 @@ impl GapFillParams {
         );
         let mut iter = exprs.iter().cloned();
         let stride = iter.next().unwrap();
+        let sliding = iter.next().unwrap();
         let time_column = iter.next().unwrap();
         let origin = self.origin.as_ref().map(|_| iter.next().unwrap());
         let time_range = try_map_range(&self.time_range, |b| {
@@ -112,6 +119,7 @@ impl GapFillParams {
 
         Self {
             stride,
+            sliding,
             time_column,
             origin,
             time_range,

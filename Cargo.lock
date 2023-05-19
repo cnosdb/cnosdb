@@ -1317,7 +1317,7 @@ checksum = "8a2dd5a6fe8c6e3502f568a6353e5273bbb15193ad9a89e457b9970798efbea1"
 
 [[package]]
 name = "client"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "anyhow",
  "async-backtrace",
@@ -1408,7 +1408,7 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "serde",
@@ -1528,7 +1528,7 @@ dependencies = [
 
 [[package]]
 name = "coordinator"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "async-trait",
@@ -1912,7 +1912,7 @@ dependencies = [
 [[package]]
 name = "datafusion"
 version = "22.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#3689780c199cc36780ffb644406d4f4788cb808b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#fb2cd91e8de5d2ca3fa7f397615dd4a7b2e7bb38"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1959,7 +1959,7 @@ dependencies = [
 [[package]]
 name = "datafusion-common"
 version = "22.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#3689780c199cc36780ffb644406d4f4788cb808b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#fb2cd91e8de5d2ca3fa7f397615dd4a7b2e7bb38"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -1973,7 +1973,7 @@ dependencies = [
 [[package]]
 name = "datafusion-execution"
 version = "22.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#3689780c199cc36780ffb644406d4f4788cb808b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#fb2cd91e8de5d2ca3fa7f397615dd4a7b2e7bb38"
 dependencies = [
  "dashmap",
  "datafusion-common",
@@ -1990,7 +1990,7 @@ dependencies = [
 [[package]]
 name = "datafusion-expr"
 version = "22.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#3689780c199cc36780ffb644406d4f4788cb808b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#fb2cd91e8de5d2ca3fa7f397615dd4a7b2e7bb38"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -2001,7 +2001,7 @@ dependencies = [
 [[package]]
 name = "datafusion-optimizer"
 version = "22.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#3689780c199cc36780ffb644406d4f4788cb808b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#fb2cd91e8de5d2ca3fa7f397615dd4a7b2e7bb38"
 dependencies = [
  "arrow",
  "async-trait",
@@ -2018,7 +2018,7 @@ dependencies = [
 [[package]]
 name = "datafusion-physical-expr"
 version = "22.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#3689780c199cc36780ffb644406d4f4788cb808b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#fb2cd91e8de5d2ca3fa7f397615dd4a7b2e7bb38"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -2049,7 +2049,7 @@ dependencies = [
 [[package]]
 name = "datafusion-proto"
 version = "22.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#3689780c199cc36780ffb644406d4f4788cb808b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#fb2cd91e8de5d2ca3fa7f397615dd4a7b2e7bb38"
 dependencies = [
  "arrow",
  "chrono",
@@ -2063,7 +2063,7 @@ dependencies = [
 [[package]]
 name = "datafusion-row"
 version = "22.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#3689780c199cc36780ffb644406d4f4788cb808b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#fb2cd91e8de5d2ca3fa7f397615dd4a7b2e7bb38"
 dependencies = [
  "arrow",
  "datafusion-common",
@@ -2074,7 +2074,7 @@ dependencies = [
 [[package]]
 name = "datafusion-sql"
 version = "22.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#3689780c199cc36780ffb644406d4f4788cb808b"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=22.0.0#fb2cd91e8de5d2ca3fa7f397615dd4a7b2e7bb38"
 dependencies = [
  "arrow",
  "arrow-schema",
@@ -2244,11 +2244,14 @@ dependencies = [
 
 [[package]]
 name = "e2e_test"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "actix-rt",
  "arrow-schema",
+ "arrow-flight",
+ "datafusion",
  "flatbuffers 22.12.6",
+ "futures",
  "http_protocol",
  "meta",
  "models",
@@ -2361,7 +2364,7 @@ dependencies = [
 
 [[package]]
 name = "error_code"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "error_code_macro",
@@ -2370,7 +2373,7 @@ dependencies = [
 
 [[package]]
 name = "error_code_macro"
-version = "0.1.0"
+version = "2.3.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2915,7 +2918,7 @@ dependencies = [
 
 [[package]]
 name = "http_protocol"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "models",
@@ -3344,7 +3347,7 @@ dependencies = [
 
 [[package]]
 name = "license"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "aes 0.8.2",
  "async-backtrace",
@@ -3362,7 +3365,7 @@ dependencies = [
 
 [[package]]
 name = "limiter_bucket"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "bincode",
@@ -3440,7 +3443,7 @@ dependencies = [
 
 [[package]]
 name = "lru_cache"
-version = "0.1.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "criterion",
@@ -3492,7 +3495,7 @@ dependencies = [
 
 [[package]]
 name = "main"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "actix-web",
  "arrow-flight",
@@ -3628,7 +3631,7 @@ dependencies = [
 
 [[package]]
 name = "memory_pool"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "datafusion",
@@ -3636,7 +3639,7 @@ dependencies = [
 
 [[package]]
 name = "meta"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3677,7 +3680,7 @@ dependencies = [
 
 [[package]]
 name = "metrics"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "once_cell",
@@ -3737,7 +3740,7 @@ dependencies = [
 
 [[package]]
 name = "models"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "arrow-schema",
  "async-backtrace",
@@ -4697,7 +4700,7 @@ dependencies = [
 
 [[package]]
 name = "protocol_parser"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "bytes 1.4.0",
@@ -4711,7 +4714,7 @@ dependencies = [
 
 [[package]]
 name = "protos"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "chrono",
@@ -4780,7 +4783,7 @@ dependencies = [
 
 [[package]]
 name = "query"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "async-recursion",
@@ -5656,7 +5659,7 @@ dependencies = [
 
 [[package]]
 name = "spi"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "arrow-flight",
  "async-trait",
@@ -5712,7 +5715,7 @@ dependencies = [
 
 [[package]]
 name = "sqllogicaltests"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "arrow",
  "arrow-flight",
@@ -6013,7 +6016,7 @@ dependencies = [
 
 [[package]]
 name = "test"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "clap 4.2.5",
@@ -6456,7 +6459,7 @@ checksum = "b6bc1c9ce2b5135ac7f93c72918fc37feb872bdc6a5533a8b85eb4b86bfdae52"
 
 [[package]]
 name = "trace"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "color-eyre",
@@ -6580,7 +6583,7 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 
 [[package]]
 name = "tskv"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "async-recursion",
@@ -6771,7 +6774,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "utils"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-backtrace",
  "libc",

@@ -196,16 +196,13 @@ impl VersionSet {
     /// Generated data is `VersionEdit`s for all vnodes and db-files,
     /// and `HashMap<ColumnFileId, Arc<BloomFilter>>` for index data
     /// (field-id filter) of db-files.
-    pub async fn snapshot(
-        &self,
-        last_seq: u64,
-    ) -> (Vec<VersionEdit>, HashMap<ColumnFileId, Arc<BloomFilter>>) {
+    pub async fn snapshot(&self) -> (Vec<VersionEdit>, HashMap<ColumnFileId, Arc<BloomFilter>>) {
         let mut version_edits = vec![];
         let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
         for db in self.dbs.values() {
             db.read()
                 .await
-                .snapshot(last_seq, None, &mut version_edits, &mut file_metas)
+                .snapshot(None, &mut version_edits, &mut file_metas)
                 .await;
         }
         (version_edits, file_metas)
@@ -230,17 +227,14 @@ impl VersionSet {
     /// Get GlobalSequenceContext to store current minimum sequence number of all TseriesFamilies,
     /// one use is fetching wal files which could be deleted.
     pub async fn get_global_sequence_context(&self) -> GlobalSequenceContext {
-        let mut min_seq = 0_u64;
         let mut tsf_seq_map: HashMap<TseriesFamilyId, u64> = HashMap::new();
         for (_, database) in self.dbs.iter() {
             for (tsf_id, tsf) in database.read().await.ts_families().iter() {
-                let tsf = tsf.read().await;
-                min_seq = min_seq.min(tsf.seq_no());
-                tsf_seq_map.insert(*tsf_id, tsf.seq_no());
+                tsf_seq_map.insert(*tsf_id, tsf.read().await.seq_no());
             }
         }
 
-        GlobalSequenceContext::new(min_seq, tsf_seq_map)
+        GlobalSequenceContext::new(tsf_seq_map)
     }
 }
 
