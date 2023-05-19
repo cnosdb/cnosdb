@@ -391,7 +391,11 @@ impl WriterWrapper {
             Some(w) => w,
             None => {
                 let writer = flush_task.new_tsm_writer(level == 0).await?;
-                info!("Flush: create file {}(level={}).", writer.sequence(), level);
+                info!(
+                    "Flush: File: {} been created (level={}).",
+                    writer.sequence(),
+                    level
+                );
                 writer_opt.insert(writer)
             }
         };
@@ -411,7 +415,7 @@ impl WriterWrapper {
                 w.write_index().await.context(error::WriteTsmSnafu)?;
                 w.finish().await.context(error::WriteTsmSnafu)?;
                 info!(
-                    "Flush: File: {}(level={}) write finished ({} B).",
+                    "Flush: File: {} write finished (level: {}, {} B).",
                     w.sequence(),
                     level,
                     w.size()
