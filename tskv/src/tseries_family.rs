@@ -695,12 +695,6 @@ impl TseriesFamily {
         }
     }
 
-    pub fn switch_memcache(&mut self, cache: Arc<RwLock<MemCache>>) {
-        self.immut_cache.push(self.mut_cache.clone());
-        self.new_super_version(self.version.clone());
-        self.mut_cache = cache;
-    }
-
     fn new_super_version(&mut self, version: Arc<Version>) {
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
         self.tsf_metrics.record_disk_storage(self.disk_storage());
@@ -809,14 +803,14 @@ impl TseriesFamily {
         seq: u64,
         points: HashMap<(SeriesId, SchemaId), RowGroup>,
     ) -> Result<u64> {
-        if self.status == VnodeStatus::Moving {
+        if self.status == VnodeStatus::Copying {
             return Err(CommonError {
                 reason: "vnode is moving please retry later".to_string(),
             });
         }
         let mut res = 0;
         for ((sid, _schema_id), group) in points {
-            let mem = self.super_version.caches.mut_cache.read();
+            let mem = self.mut_cache.read();
             res += group.rows.len();
             mem.write_group(sid, seq, group)?;
         }
@@ -824,7 +818,7 @@ impl TseriesFamily {
     }
 
     pub async fn check_to_flush(&mut self) {
-        if self.super_version.caches.mut_cache.read().is_full() {
+        if self.mut_cache.read().is_full() {
             info!(
                 "mut_cache is full, switch to immutable. current pool_size : {}",
                 self.memory_pool.reserved()
@@ -989,7 +983,7 @@ impl TseriesFamily {
             .sum::<u64>()
             + self.mut_cache.read().cache_size()
     }
-    pub fn is_can_compaction(&self) -> bool {
+    pub fn can_compaction(&self) -> bool {
         self.status == VnodeStatus::Running
     }
 }
@@ -1480,7 +1474,7 @@ pub mod test_tseries_family {
                 .await
                 .get_db(&tenant, &database)
                 .unwrap();
-
+            let cxt = Arc::new(GlobalContext::new());
             let ts_family_id = db
                 .write()
                 .await
@@ -1491,8 +1485,10 @@ pub mod test_tseries_family {
                     summary_task_sender.clone(),
                     flush_task_sender.clone(),
                     compact_task_sender.clone(),
+                    cxt.clone(),
                 )
                 .await
+                .unwrap()
                 .read()
                 .await
                 .tf_id();

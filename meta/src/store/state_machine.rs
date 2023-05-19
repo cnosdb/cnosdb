@@ -633,7 +633,7 @@ impl StateMachine {
             if set.id != args.vnode_info.repl_set_id {
                 continue;
             }
-            for vnode in set.vnode_list.iter_mut() {
+            for vnode in set.vnodes.iter_mut() {
                 if vnode.id == args.vnode_info.vnode_id {
                     vnode.status = args.vnode_info.status.clone();
                     break;
@@ -670,11 +670,11 @@ impl StateMachine {
             }
 
             for info in args.del_info.iter() {
-                set.vnode_list.retain(|item| item.id != info.id);
+                set.vnodes.retain(|item| item.id != info.id);
             }
 
             for info in args.add_info.iter() {
-                set.vnode_list.push(info.clone());
+                set.vnodes.push(info.clone());
             }
         }
 

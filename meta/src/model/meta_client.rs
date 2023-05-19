@@ -720,7 +720,7 @@ impl MetaClient for RemoteMetaClient {
         for (db_name, db_info) in data.dbs.iter() {
             for bucket in db_info.buckets.iter() {
                 for repl_set in bucket.shard_group.iter() {
-                    for vnode_info in repl_set.vnode_list.iter() {
+                    for vnode_info in repl_set.vnodes.iter() {
                         if vnode_info.id == id {
                             return Some(VnodeAllInfo {
                                 vnode_id: vnode_info.id,
@@ -748,7 +748,7 @@ impl MetaClient for RemoteMetaClient {
         for (_db_name, db_info) in data.dbs.iter() {
             for bucket in db_info.buckets.iter() {
                 for repl_set in bucket.shard_group.iter() {
-                    for vnode_info in repl_set.vnode_list.iter() {
+                    for vnode_info in repl_set.vnodes.iter() {
                         if vnode_info.id == id {
                             return Some(repl_set.clone());
                         }

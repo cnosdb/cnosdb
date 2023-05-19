@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use meta::model::MetaRef;
-use models::meta_data::VnodeStatus::Moving;
+use models::meta_data::VnodeStatus::{Copying, Running};
 use models::meta_data::{VnodeAllInfo, VnodeInfo};
 use protos::kv_service::admin_command_request::Command::DelVnode;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
@@ -57,13 +57,10 @@ impl VnodeManager {
             "Begin Copy Vnode:{} from: {} to: {}; new id: {}",
             vnode_id, all_info.node_id, self.node_id, new_id
         );
-        all_info.set_status(Moving);
+        all_info.set_status(Copying);
         meta_client.update_vnode(&all_info).await?;
         let owner = models::schema::make_owner(&all_info.tenant, &all_info.db_name);
-        let path = self
-            .kv_inst
-            .get_storage_options()
-            .ts_family_dir(&owner, new_id);
+        let path = self.kv_inst.get_storage_options().move_dir(&owner, new_id);
 
         let channel = self
             .meta
@@ -97,7 +94,7 @@ impl VnodeManager {
             .apply_vnode_summary(tenant, &all_info.db_name, new_id, ve)
             .await?;
 
-        all_info.set_status(Moving);
+        all_info.set_status(Running);
         meta_client.update_vnode(&all_info).await?;
 
         Ok(())

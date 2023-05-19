@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use lazy_static::lazy_static;
 use regex::Regex;
+use tokio::fs;
 
 use crate::file_system::file_manager;
 use crate::{Error, Result};
@@ -16,7 +17,6 @@ lazy_static! {
 }
 
 // Summary file.
-
 pub fn make_summary_file(path: impl AsRef<Path>, number: u64) -> PathBuf {
     let p = format!("summary-{:06}", number);
     path.as_ref().join(p)
@@ -29,6 +29,13 @@ pub fn make_summary_file_tmp(path: impl AsRef<Path>) -> PathBuf {
 
 pub fn check_summary_file_name(file_name: &str) -> bool {
     SUMMARY_FILE_NAME_PATTERN.is_match(file_name)
+}
+
+pub async fn rename(old_name: impl AsRef<Path>, new_name: impl AsRef<Path>) -> Result<()> {
+    fs::create_dir_all(new_name.as_ref().parent().unwrap()).await?;
+    fs::rename(old_name, new_name)
+        .await
+        .map_err(|e| Error::IO { source: e })
 }
 
 pub fn get_summary_file_id(file_name: &str) -> Result<u64> {
@@ -75,7 +82,6 @@ pub fn get_index_binlog_file_id(file_name: &str) -> Result<u64> {
 }
 
 // WAL (write ahead log) file.
-
 pub fn make_wal_file(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
     let p = format!("_{:06}.wal", sequence);
     path.as_ref().join(p)
@@ -102,7 +108,6 @@ pub fn get_wal_file_id(file_name: &str) -> Result<u64> {
 }
 
 // TSM file
-
 pub fn make_tsm_file_name(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
     let p = format!("_{:06}.tsm", sequence);
     path.as_ref().join(p)
@@ -133,48 +138,18 @@ pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
 }
 
 // TSM tombstone file
-
 pub fn make_tsm_tombstone_file_name(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
     let p = format!("_{:06}.tombstone", sequence);
     path.as_ref().join(p)
 }
 
 // delta file
-
 pub fn make_delta_file_name(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
     let p = format!("_{:06}.delta", sequence);
     path.as_ref().join(p)
 }
 
-// Schema file
-
-pub fn make_schema_file(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
-    let p = format!("_{:06}.schema", sequence);
-    path.as_ref().join(p)
-}
-
-pub fn check_schema_file(file_name: &str) -> bool {
-    SCHEMA_FILE_NAME_PATTERN.is_match(file_name)
-}
-
-pub fn get_schema_file_id(file_name: &str) -> Result<u64> {
-    if !check_schema_file(file_name) {
-        return Err(Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "schema file name does not contain an id".to_string(),
-        });
-    }
-    let file_number = &file_name[1..7];
-    file_number
-        .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "schema file name contains an invalid id".to_string(),
-        })
-}
-
 // Common
-
 pub fn get_max_sequence_file_name<F>(
     dir: impl AsRef<Path>,
     get_sequence: F,
@@ -264,14 +239,14 @@ pub fn get_file_id_range(dir: impl AsRef<Path>, suffix: &str) -> Option<(u64, u6
 
     Some((min_id, max_id))
 }
+
 #[cfg(test)]
 mod test {
     use std::path::PathBuf;
 
     use super::{check_summary_file_name, make_summary_file};
     use crate::file_utils::{
-        check_schema_file, check_wal_file_name, get_schema_file_id, get_summary_file_id,
-        get_wal_file_id, make_schema_file, make_wal_file,
+        check_wal_file_name, get_summary_file_id, get_wal_file_id, make_wal_file,
     };
 
     #[test]
@@ -303,13 +278,6 @@ mod test {
             assert!(check_wal_file_name(wal_file_name));
             let wal_file_id = get_wal_file_id(wal_file_name).unwrap();
             assert_eq!(wal_file_id, 0);
-        }
-        {
-            let schema_file_path = make_schema_file(&path, 0);
-            let schema_file_name = schema_file_path.file_name().unwrap().to_str().unwrap();
-            assert!(check_schema_file(schema_file_name));
-            let schema_file_id = get_schema_file_id(schema_file_name).unwrap();
-            assert_eq!(schema_file_id, 0);
         }
     }
 }

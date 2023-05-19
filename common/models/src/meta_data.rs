@@ -94,7 +94,7 @@ impl BucketInfo {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct ReplicationSet {
     pub id: ReplicationSetId,
-    pub vnode_list: Vec<VnodeInfo>,
+    pub vnodes: Vec<VnodeInfo>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -118,7 +118,7 @@ impl VnodeInfo {
 pub enum VnodeStatus {
     #[default]
     Running,
-    Moving,
+    Copying,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -293,12 +293,15 @@ pub fn allocation_replication_set(
     for _ in 0..shards {
         let mut repl_set = ReplicationSet {
             id: incr_id,
-            vnode_list: vec![],
+            vnodes: vec![],
         };
         incr_id += 1;
 
         for _ in 0..replica {
-            repl_set.vnode_list.push(VnodeInfo::new(incr_id, nodes.get((index % node_count) as usize).unwrap().id));
+            repl_set.vnodes.push(VnodeInfo::new(
+                incr_id,
+                nodes.get((index % node_count) as usize).unwrap().id,
+            ));
             incr_id += 1;
             index += 1;
         }

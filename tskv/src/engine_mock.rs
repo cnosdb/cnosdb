@@ -195,7 +195,7 @@ impl Engine for MockEngine {
 
     async fn close(&self) {}
 
-    async fn prepare_move_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()> {
+    async fn prepare_copy_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()> {
         todo!()
     }
 }

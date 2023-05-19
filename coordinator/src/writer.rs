@@ -348,14 +348,14 @@ impl PointWriter {
         let now = tokio::time::Instant::now();
         for (_id, points) in mapping.points.iter_mut() {
             points.finish()?;
-            if points.repl_set.vnode_list.is_empty() {
+            if points.repl_set.vnodes.is_empty() {
                 return Err(CoordinatorError::CommonError {
                     msg: "no available vnode in replication set".to_string(),
                 });
             }
-            for vnode in points.repl_set.vnode_list.iter() {
+            for vnode in points.repl_set.vnodes.iter() {
                 debug!("write points on vnode {:?},  now: {:?}", vnode, now);
-                if vnode.status == VnodeStatus::Moving {
+                if vnode.status == VnodeStatus::Copying {
                     return Err(CoordinatorError::CommonError {
                         msg: "vnode is moving write forbidden ".to_string(),
                     });

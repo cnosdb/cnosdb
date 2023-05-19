@@ -304,11 +304,8 @@ mod test {
             db_name,
             bucket_id: 8,
             repl_id: 9,
-            del_info: vec![VnodeInfo::new(11,0)],
-            add_info: vec![
-                VnodeInfo::new(333, 1333),
-                VnodeInfo::new(444, 1444),
-            ],
+            del_info: vec![VnodeInfo::new(11, 0)],
+            add_info: vec![VnodeInfo::new(333, 1333), VnodeInfo::new(444, 1444)],
         };
 
         let req = command::WriteCommand::UpdateVnodeReplSet(args);

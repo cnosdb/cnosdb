@@ -15,14 +15,14 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Sender as OneShotSender;
 use tokio::sync::RwLock;
-use trace::error;
+use trace::{error, info};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::{GlobalContext, GlobalSequenceTask};
 use crate::error::{Error, Result};
 use crate::file_system::file_manager::try_exists;
-use crate::kv_option::{Options, StorageOptions};
+use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
@@ -34,7 +34,7 @@ const MAX_BATCH_SIZE: usize = 64;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct CompactMeta {
-    pub file_id: u64,
+    pub file_id: ColumnFileId,
     pub file_size: u64,
     pub tsf_id: TseriesFamilyId,
     pub level: LevelId,
@@ -93,6 +93,36 @@ impl CompactMeta {
             let base_dir = storage_opt.tsm_dir(database, ts_family_id);
             file_utils::make_tsm_file_name(base_dir, self.file_id)
         }
+    }
+
+    pub async fn rename_file(
+        &mut self,
+        storage_opt: &StorageOptions,
+        database: &str,
+        ts_family_id: TseriesFamilyId,
+        file_id: ColumnFileId,
+    ) -> Result<PathBuf> {
+        let old_name = if self.is_delta {
+            let base_dir = storage_opt
+                .move_dir(database, ts_family_id)
+                .join(DELTA_PATH);
+            file_utils::make_delta_file_name(base_dir, self.file_id)
+        } else {
+            let base_dir = storage_opt.move_dir(database, ts_family_id).join(TSM_PATH);
+            file_utils::make_tsm_file_name(base_dir, self.file_id)
+        };
+
+        let new_name = if self.is_delta {
+            let base_dir = storage_opt.delta_dir(database, ts_family_id);
+            file_utils::make_delta_file_name(base_dir, file_id)
+        } else {
+            let base_dir = storage_opt.tsm_dir(database, ts_family_id);
+            file_utils::make_tsm_file_name(base_dir, file_id)
+        };
+        info!("rename file from {:?} to {:?}", &old_name, &new_name);
+        file_utils::rename(old_name, &new_name).await?;
+        self.file_id = file_id;
+        Ok(new_name)
     }
 }
 
@@ -791,7 +821,7 @@ mod test {
     use utils::BloomFilter;
 
     use crate::compaction::{CompactTask, FlushReq};
-    use crate::context::GlobalSequenceTask;
+    use crate::context::{GlobalContext, GlobalSequenceTask};
     use crate::file_system::file_manager;
     use crate::kv_option::Options;
     use crate::kvcore::{
@@ -1087,6 +1117,7 @@ mod test {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let global = Arc::new(GlobalContext::new());
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
@@ -1119,8 +1150,10 @@ mod test {
                     summary_task_sender.clone(),
                     flush_task_sender.clone(),
                     compact_task_sender.clone(),
+                    global.clone(),
                 )
-                .await;
+                .await
+                .expect("add tsfamily successfully");
             let edit = VersionEdit::new_add_vnode(i, make_owner("cnosdb", &database), 0);
             edits.push(edit.clone());
         }
@@ -1204,6 +1237,7 @@ mod test {
             )
             .await
             .unwrap();
+        let cxt = Arc::new(GlobalContext::new());
         db.write()
             .await
             .add_tsfamily(
@@ -1213,8 +1247,10 @@ mod test {
                 summary_task_sender.clone(),
                 flush_task_sender.clone(),
                 compact_task_sender.clone(),
+                cxt.clone(),
             )
-            .await;
+            .await
+            .expect("add tsfamily failed");
 
         let mut edits = vec![];
         let edit = VersionEdit::new_add_vnode(10, "cnosdb.hello".to_string(), 0);

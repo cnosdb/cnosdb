@@ -20,16 +20,17 @@ use trace::{debug, error, info};
 use utils::BloomFilter;
 
 use crate::compaction::{check, CompactTask, FlushReq};
+use crate::context::GlobalContext;
 use crate::error::{self, Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
-use crate::kv_option::Options;
+use crate::kv_option::{Options, INDEX_PATH};
 use crate::memcache::{MemCache, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
 use crate::version_set::VersionSet;
 use crate::Error::{self, InvalidPoint};
-use crate::{ColumnFileId, TseriesFamilyId};
+use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
 pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>;
 pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>;
@@ -100,19 +101,6 @@ impl Database {
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
 
-    pub async fn switch_memcache(&self, tf_id: u32, seq: u64) {
-        if let Some(tf) = self.ts_families.get(&tf_id) {
-            let mem = Arc::new(parking_lot::RwLock::new(MemCache::new(
-                tf_id,
-                self.opt.cache.max_buffer_size,
-                seq,
-                &self.memory_pool,
-            )));
-            let mut tf = tf.write().await;
-            tf.switch_memcache(mem);
-        }
-    }
-
     // todo: Maybe TseriesFamily::new() should be refactored.
     #[allow(clippy::too_many_arguments)]
     pub async fn add_tsfamily(
@@ -123,7 +111,8 @@ impl Database {
         summary_task_sender: Sender<SummaryTask>,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
-    ) -> Arc<RwLock<TseriesFamily>> {
+        global_ctx: Arc<GlobalContext>,
+    ) -> Result<Arc<RwLock<TseriesFamily>>> {
         let (seq_no, version_edits, file_metas) = match version_edit {
             Some(mut ve) => {
                 ve.tsf_id = tsf_id;
@@ -131,13 +120,30 @@ impl Database {
                 ve.seq_no = seq_no;
                 let mut file_metas = HashMap::with_capacity(ve.add_files.len());
                 for f in ve.add_files.iter_mut() {
+                    let new_file_id = global_ctx.file_id_next();
                     f.tsf_id = tsf_id;
-                    let file_path = f.file_path(&self.opt.storage, &self.owner, f.tsf_id);
-                    // TODO: Receive file_metas from the source node.
-                    let file_reader = crate::tsm::TsmReader::open(file_path).await.unwrap();
-                    file_metas.insert(f.file_id, file_reader.bloom_filter());
+                    let file_path = f
+                        .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
+                        .await?;
+                    let file_reader = crate::tsm::TsmReader::open(file_path).await?;
+                    file_metas.insert(new_file_id, file_reader.bloom_filter());
                 }
-                ve.del_files.iter_mut().for_each(|f| f.tsf_id = tsf_id);
+                for f in ve.del_files.iter_mut() {
+                    let new_file_id = global_ctx.file_id_next();
+                    f.tsf_id = tsf_id;
+                    f.rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
+                        .await?;
+                }
+                //move index
+                let origin_index = self
+                    .opt
+                    .storage
+                    .move_dir(&self.owner, tsf_id)
+                    .join(INDEX_PATH);
+                let new_index = self.opt.storage.index_dir(&self.owner, tsf_id);
+                info!("move index from {:?} to {:?}", &origin_index, &new_index);
+                file_utils::rename(origin_index, new_index).await?;
+                tokio::fs::remove_dir_all(self.opt.storage.move_dir(&self.owner, tsf_id)).await?;
                 (ve.seq_no, vec![ve], Some(file_metas))
             }
             None => (
@@ -160,7 +166,6 @@ impl Database {
             i64::MIN,
             Arc::new(ShardedCache::default()),
         ));
-
         let tf = TseriesFamily::new(
             tsf_id,
             self.owner.clone(),
@@ -188,7 +193,7 @@ impl Database {
             error!("failed to send Summary task, {:?}", e);
         }
 
-        tf
+        Ok(tf)
     }
 
     pub async fn del_tsfamily(&mut self, tf_id: u32, summary_task_sender: Sender<SummaryTask>) {

@@ -78,7 +78,7 @@ pub trait Engine: Send + Sync + Debug {
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
 
-    async fn prepare_move_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()>;
+    async fn prepare_copy_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()>;
     async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
 
     async fn add_table_column(
