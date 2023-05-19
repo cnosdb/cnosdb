@@ -1,0 +1,35 @@
+statement ok
+alter database public set ttl '3650d';
+
+statement ok
+DROP TABLE IF EXISTS readings_ext;
+
+# create external table for data import
+statement ok
+CREATE EXTERNAL TABLE readings_ext
+STORED AS PARQUET
+LOCATION 'query_server/test/resource/parquet/part-0.parquet';
+
+statement ok
+drop table IF EXISTS readings_kv;
+
+# create tskv table as stream source
+statement ok
+create table readings_kv(
+  latitude double,
+  longitude double,
+  elevation double,
+  velocity double,
+  heading double,
+  grade double,
+  fuel_consumption double,
+  load_capacity double,
+  fuel_capacity double,
+  nominal_fuel_consumption double,
+  tags(name, fleet, driver, model, device_version)
+);
+
+query 
+insert into readings_kv select * from readings_ext;
+----
+8192
