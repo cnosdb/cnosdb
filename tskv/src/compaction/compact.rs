@@ -534,7 +534,11 @@ pub async fn run_compaction_job(
     let mut iter = CompactIterator::new(tsm_readers, max_data_block_size, false);
     let tsm_dir = storage_opt.tsm_dir(&request.database, tsf_id);
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
-    info!("Compaction: File {} been created.", tsm_writer.sequence());
+    info!(
+        "Compaction: File: {} been created (level: {}).",
+        tsm_writer.sequence(),
+        request.out_level
+    );
     let mut version_edit = VersionEdit::new(tsf_id);
     let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
 
@@ -578,10 +582,17 @@ pub async fn run_compaction_job(
                     version_edit.add_file(cm, version.max_level_ts);
                     tsm_writer =
                         tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
-                    info!("Compaction: File {} been created.", tsm_writer.sequence());
+                    info!(
+                        "Compaction: File: {} been created (level: {}).",
+                        tsm_writer.sequence(),
+                        request.out_level
+                    );
                 }
                 tsm::WriteTsmError::Finished { path } => {
-                    error!("Tsm writer finished: {}", path.display());
+                    error!(
+                        "Trying to write by a finished tsm writer: {}",
+                        path.display()
+                    );
                 }
             }
         }

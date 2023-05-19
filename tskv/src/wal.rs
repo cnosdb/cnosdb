@@ -337,10 +337,6 @@ impl WalManager {
                 self.current_file.max_sequence,
             )
             .await?;
-            info!(
-                "WAL '{}' starts write at seq {}",
-                self.current_file.id, self.current_file.max_sequence
-            );
             // Total WALs size add WAL header size.
             self.total_file_size += new_file.size;
 
@@ -354,6 +350,11 @@ impl WalManager {
                 .insert(old_file.id, old_file.max_sequence);
             // Total WALs size add WAL footer size.
             self.total_file_size += old_file.close().await? as u64;
+
+            info!(
+                "WAL '{}' starts write at seq {}",
+                self.current_file.id, self.current_file.max_sequence
+            );
 
             self.check_to_delete().await;
         }
@@ -385,7 +386,7 @@ impl WalManager {
                     }
                 };
                 if let Err(e) = tokio::fs::remove_file(&file_path).await {
-                    error!("failed to remove file '{}': {:?}", file_path.display(), e);
+                    error!("Failed to remove file '{}': {:?}", file_path.display(), e);
                 }
                 // Remove max_sequence record for deleted file.
                 self.old_file_max_sequence.remove(&file_id);
