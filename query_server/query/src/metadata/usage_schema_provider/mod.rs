@@ -104,9 +104,7 @@ pub fn create_usage_schema_view_table(
         builder.filter(binary_expr(col("tenant"), Operator::Eq, lit(tenant_name)))?
     };
 
-    let cols = builder.schema().fields().iter().map(|f| col(f.name()));
-
-    let logical_plan = builder.clone().project(cols)?.build()?;
+    let logical_plan = builder.build()?;
 
     Ok(Arc::new(ViewTable::try_new(logical_plan, None)?))
 }

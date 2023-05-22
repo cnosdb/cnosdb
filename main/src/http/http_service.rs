@@ -142,7 +142,7 @@ impl HttpService {
     }
 
     fn with_hostaddr(&self) -> impl Filter<Extract = (String,), Error = Infallible> + Clone {
-        let hostaddr = self.host.clone().to_string();
+        let hostaddr = self.host.clone();
         warp::any().map(move || hostaddr.clone())
     }
 
