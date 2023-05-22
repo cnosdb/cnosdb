@@ -27,19 +27,25 @@ impl HttpMetrics {
         tenant: &'a str,
         user: &'a str,
         db: &'a str,
+        host: &'a str,
     ) -> impl Into<Labels> + 'a {
-        [("tenant", tenant), ("user", user), ("database", db)]
+        [
+            ("tenant", tenant),
+            ("user", user),
+            ("database", db),
+            ("host", host),
+        ]
     }
 
-    pub fn queries_inc(&self, tenant: &str, user: &str, db: &str) {
+    pub fn queries_inc(&self, tenant: &str, user: &str, db: &str, host: &str) {
         self.queries
-            .recorder(Self::tenant_user_db_labels(tenant, user, db))
+            .recorder(Self::tenant_user_db_labels(tenant, user, db, host))
             .inc_one()
     }
 
-    pub fn writes_inc(&self, tenant: &str, user: &str, db: &str) {
+    pub fn writes_inc(&self, tenant: &str, user: &str, db: &str, host: &str) {
         self.writes
-            .recorder(Self::tenant_user_db_labels(tenant, user, db))
+            .recorder(Self::tenant_user_db_labels(tenant, user, db, host))
             .inc_one()
     }
 }
