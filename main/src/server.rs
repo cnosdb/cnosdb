@@ -287,6 +287,7 @@ impl ServiceBuilder {
             dbms,
             coord,
             addr,
+            self.config.host.clone(),
             self.config.security.tls_config.clone(),
             self.config.query.query_sql_limit,
             self.config.query.write_sql_limit,

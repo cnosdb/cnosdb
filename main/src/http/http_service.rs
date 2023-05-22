@@ -79,6 +79,7 @@ impl Display for ServerMode {
 pub struct HttpService {
     tls_config: Option<TLSConfig>,
     addr: SocketAddr,
+    host: String,
     dbms: DBMSRef,
     coord: CoordinatorRef,
     prs: PromRemoteServerRef,
@@ -95,6 +96,7 @@ impl HttpService {
         dbms: DBMSRef,
         coord: CoordinatorRef,
         addr: SocketAddr,
+        host: String,
         tls_config: Option<TLSConfig>,
         query_body_limit: u64,
         write_body_limit: u64,
@@ -105,6 +107,7 @@ impl HttpService {
 
         Self {
             tls_config,
+            host,
             addr,
             dbms,
             coord,
@@ -139,7 +142,7 @@ impl HttpService {
     }
 
     fn with_hostaddr(&self) -> impl Filter<Extract = (String,), Error = Infallible> + Clone {
-        let hostaddr = self.addr.clone().to_string();
+        let hostaddr = self.host.clone().to_string();
         warp::any().map(move || hostaddr.clone())
     }
 
@@ -253,7 +256,7 @@ impl HttpService {
                  param: SqlParam,
                  dbms: DBMSRef,
                  metrics: Arc<HttpMetrics>,
-                 addr: String| async move {
+                 host: String| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive http sql request, header: {:?}, param: {:?}",
@@ -276,7 +279,7 @@ impl HttpService {
                     let db = query.context().database();
                     let user = query.context().user_info().desc().name();
 
-                    metrics.queries_inc(tenant, user, db, addr.as_str());
+                    metrics.queries_inc(tenant, user, db, host.as_str());
 
                     sample_query_read_duration(
                         tenant,
@@ -309,7 +312,7 @@ impl HttpService {
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
-                 addr: String| async move {
+                 host: String| async move {
                     let start = Instant::now();
                     let ctx = construct_write_context(header, param, dbms, coord.clone())
                         .await
@@ -333,7 +336,7 @@ impl HttpService {
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    metrics.writes_inc(tenant, user, db, addr.as_str());
+                    metrics.writes_inc(tenant, user, db, host.as_str());
 
                     sample_point_write_duration(
                         tenant,
@@ -366,7 +369,7 @@ impl HttpService {
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
-                 addr: String| async move {
+                 host: String| async move {
                     let start = Instant::now();
                     let ctx = construct_write_context(header, param, dbms, coord.clone())
                         .await
@@ -389,7 +392,7 @@ impl HttpService {
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    metrics.writes_inc(tenant, user, db, addr.as_str());
+                    metrics.writes_inc(tenant, user, db, host.as_str());
 
                     sample_point_write_duration(
                         tenant,
@@ -422,7 +425,7 @@ impl HttpService {
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
-                 addr: String| async move {
+                 host: String| async move {
                     let start = Instant::now();
                     let ctx = construct_write_context(header, param, dbms, coord.clone())
                         .await
@@ -445,7 +448,7 @@ impl HttpService {
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    metrics.writes_inc(tenant, user, db, addr.as_str());
+                    metrics.writes_inc(tenant, user, db, host.as_str());
 
                     sample_point_write_duration(
                         tenant,
@@ -554,7 +557,7 @@ impl HttpService {
                  dbms: DBMSRef,
                  metrics: Arc<HttpMetrics>,
                  prs: PromRemoteServerRef,
-                 addr: String| async move {
+                 host: String| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive rest prom remote read request, header: {:?}, param: {:?}",
@@ -587,7 +590,7 @@ impl HttpService {
                     let username = context.user_info().desc().name();
                     let database_name = context.database();
 
-                    metrics.queries_inc(tenant_name, username, database_name, addr.as_str());
+                    metrics.queries_inc(tenant_name, username, database_name, host.as_str());
 
                     sample_query_read_duration(
                         context.tenant(),
@@ -622,7 +625,7 @@ impl HttpService {
                  dbms: DBMSRef,
                  prs: PromRemoteServerRef,
                  metrics: Arc<HttpMetrics>,
-                 addr: String| async move {
+                 host: String| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive rest prom remote write request, header: {:?}, param: {:?}",
@@ -644,7 +647,7 @@ impl HttpService {
                     let (tenant, user, db) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
 
-                    metrics.writes_inc(tenant, user, db, addr.as_str());
+                    metrics.writes_inc(tenant, user, db, host.as_str());
 
                     sample_point_write_duration(
                         ctx.tenant(),
