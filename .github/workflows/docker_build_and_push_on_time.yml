@@ -2,7 +2,8 @@ name: docker build and push on time
 
 on:
   schedule:
-    - cron: "00 01 * * 1"  
+    - cron: "00 22 * * 0"
+  workflow_dispatch:
 
 jobs:
   docker:
