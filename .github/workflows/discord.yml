@@ -22,4 +22,4 @@ jobs:
         uses: Ilshidur/action-discord@master
         
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          DISCORD_WEBHOOK: https://discord.com/api/webhooks/1109065431534272543/8WyKAo5tFA6VUWFk8z_J2AozCczwVP9DkXrV_5yX5iAF7zYkWEuYmqcIPjrejocpgF6v
