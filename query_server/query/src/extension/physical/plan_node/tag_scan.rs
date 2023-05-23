@@ -228,7 +228,7 @@ impl TagScanStream {
             proj_fileds,
         );
 
-        let split = Split::new(0, table_schema, TimeRange::all(), predicate);
+        let split = Split::new(0, table_schema, vec![TimeRange::all()], predicate);
 
         let option = QueryOption::new(
             batch_size,

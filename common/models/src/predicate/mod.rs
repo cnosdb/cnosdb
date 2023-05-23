@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
-use self::domain::{ColumnDomains, PredicateRef, TimeRange};
+use self::domain::{ColumnDomains, PredicateRef, TimeRange, TimeRanges};
 use crate::schema::{ColumnType, TskvTableSchemaRef};
 
 pub mod domain;
@@ -11,7 +13,7 @@ pub mod utils;
 pub struct Split {
     // partition id
     id: usize,
-    time_range: TimeRange,
+    time_ranges: Arc<TimeRanges>,
     tags_filter: ColumnDomains<String>,
     fields_filter: ColumnDomains<String>,
     limit: Option<usize>,
@@ -21,7 +23,7 @@ impl Split {
     pub fn new(
         id: usize,
         table: TskvTableSchemaRef,
-        time_range: TimeRange,
+        time_ranges: Vec<TimeRange>,
         predicate: PredicateRef,
     ) -> Self {
         let domains_filter = predicate
@@ -42,7 +44,7 @@ impl Split {
 
         Self {
             id,
-            time_range,
+            time_ranges: Arc::new(TimeRanges::new(time_ranges)),
             tags_filter,
             fields_filter,
             limit,
@@ -53,8 +55,8 @@ impl Split {
         self.id
     }
 
-    pub fn time_range(&self) -> &TimeRange {
-        &self.time_range
+    pub fn time_ranges(&self) -> Arc<TimeRanges> {
+        self.time_ranges.clone()
     }
 
     pub fn tags_filter(&self) -> &ColumnDomains<String> {

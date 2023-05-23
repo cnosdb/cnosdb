@@ -482,11 +482,11 @@ impl QueryExecutor {
             })?;
 
         let mut vnode_mapping: HashMap<u64, Vec<VnodeInfo>> = HashMap::new();
-        let time_range = self.option.split.time_range();
+        let time_ranges = self.option.split.time_ranges();
         let buckets = meta.mapping_bucket(
             &self.option.table_schema.db,
-            time_range.min_ts,
-            time_range.max_ts,
+            time_ranges.min_ts(),
+            time_ranges.max_ts(),
         )?;
         for bucket in buckets.iter() {
             for repl in bucket.shard_group.iter() {

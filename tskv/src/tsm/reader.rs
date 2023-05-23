@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
 
-use models::predicate::domain::TimeRange;
+use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{FieldId, ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
@@ -329,6 +329,7 @@ pub struct BlockMetaIterator {
     block_offset: usize,
     /// Number of `BlockMeta` in current `IndexMeta`
     block_count: u16,
+    time_ranges: Option<Arc<TimeRanges>>,
 
     /// The current iteration number.
     block_meta_idx: usize,
@@ -351,21 +352,29 @@ impl BlockMetaIterator {
             field_type,
             block_offset: index_offset + INDEX_META_SIZE,
             block_count,
+            time_ranges: None,
             block_meta_idx_end: block_count as usize,
             block_meta_idx: 0,
         }
     }
 
     /// Set iterator start & end position by time range
-    pub(crate) fn filter_time_range(&mut self, time_range: &TimeRange) {
-        let TimeRange { min_ts, max_ts } = *time_range;
+    pub(crate) fn filter_time_range(&mut self, time_ranges: Arc<TimeRanges>) {
+        if time_ranges.is_boundless() {
+            self.time_ranges = Some(time_ranges);
+            return;
+        }
+        let min_ts = time_ranges.min_ts();
+        let max_ts = time_ranges.max_ts();
         if min_ts > max_ts {
             // This condition will match no results.
 
             // TODO: Drop this iterator and return a new type of
             // iterator that always returns none.
+            self.time_ranges = Some(time_ranges);
             return;
         }
+        self.time_ranges = Some(time_ranges);
         let base = self.index_offset + INDEX_META_SIZE;
         let sli = &self.index_ref.data()[base..base + self.block_count as usize * BLOCK_META_SIZE];
         let mut pos = 0_usize;
@@ -414,15 +423,36 @@ impl Iterator for BlockMetaIterator {
         if self.block_meta_idx >= self.block_meta_idx_end {
             return None;
         }
-        let ret = Some(get_data_block_meta_unchecked(
-            self.index_ref.clone(),
-            self.index_offset,
-            self.block_meta_idx,
-            self.field_id,
-            self.field_type,
-        ));
-        self.block_meta_idx += 1;
-        self.block_offset += BLOCK_META_SIZE;
+        let mut ret = None;
+        if let Some(time_ranges) = self.time_ranges.as_ref() {
+            for _ in self.block_meta_idx..self.block_meta_idx_end {
+                let block_meta = get_data_block_meta_unchecked(
+                    self.index_ref.clone(),
+                    self.index_offset,
+                    self.block_meta_idx,
+                    self.field_id,
+                    self.field_type,
+                );
+                self.block_meta_idx += 1;
+                self.block_offset += BLOCK_META_SIZE;
+                if time_ranges.overlaps(&(block_meta.min_ts(), block_meta.max_ts()).into()) {
+                    ret = Some(block_meta);
+                    break;
+                }
+            }
+        } else {
+            let block_meta = get_data_block_meta_unchecked(
+                self.index_ref.clone(),
+                self.index_offset,
+                self.block_meta_idx,
+                self.field_id,
+                self.field_type,
+            );
+            self.block_meta_idx += 1;
+            self.block_offset += BLOCK_META_SIZE;
+            ret = Some(block_meta);
+        }
+
         ret
     }
 }
@@ -688,7 +718,7 @@ pub mod tsm_reader_tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
-    use models::predicate::domain::TimeRange;
+    use models::predicate::domain::{TimeRange, TimeRanges};
     use models::{FieldId, Timestamp};
     use snafu::ResultExt;
 
@@ -800,9 +830,13 @@ pub mod tsm_reader_tests {
         time_range: (Timestamp, Timestamp),
         expected_data: &HashMap<FieldId, Vec<DataBlock>>,
     ) {
+        let time_ranges = Arc::new(TimeRanges::with_inclusive_bounds(
+            time_range.0,
+            time_range.1,
+        ));
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator_opt(field_id) {
-            for blk in idx.block_iterator_opt(&TimeRange::from(time_range)) {
+            for blk in idx.block_iterator_opt(time_ranges.clone()) {
                 let data_blk = reader.get_data_block(&blk).await.unwrap();
                 read_data.entry(idx.field_id()).or_default().push(data_blk);
             }

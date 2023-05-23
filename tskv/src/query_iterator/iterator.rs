@@ -18,7 +18,7 @@ use datafusion::physical_plan::metrics::{
 };
 use minivec::MiniVec;
 use models::meta_data::VnodeId;
-use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRange};
+use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
 use models::predicate::Split;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema};
 use models::utils::{min_num, unite_id};
@@ -440,56 +440,112 @@ impl QueryOption {
 
 pub struct FieldFileLocation {
     reader: Arc<TsmReader>,
-    block_it: BlockMetaIterator,
-    time_range: TimeRange,
-    read_index: usize,
-    end_index: usize,
+    block_meta_iter: BlockMetaIterator,
+    time_ranges: Arc<TimeRanges>,
+
     data_block: DataBlock,
+    /// The first index of a DataType in a DataBlock
+    data_block_i: usize,
+    /// The last index of a DataType in a DataBlock
+    data_block_i_end: usize,
+    intersected_time_ranges: TimeRanges,
+    intersected_time_ranges_i: usize,
 }
 
 impl FieldFileLocation {
     pub fn new(
         reader: Arc<TsmReader>,
-        time_range: TimeRange,
-        block_it: BlockMetaIterator,
+        time_ranges: Arc<TimeRanges>,
+        block_meta_iter: BlockMetaIterator,
         vtype: ValueType,
     ) -> Self {
         Self {
             reader,
-            block_it,
-            time_range,
-            // make read_index > end_index,  when init
-            read_index: 1,
-            end_index: 0,
+            block_meta_iter,
+            time_ranges,
+            // TODO: can here use unsafe api MaybeUninit<DataBLock> ?
             data_block: DataBlock::new(0, vtype),
+            // Let data block index > end index when init to make it load from reader
+            // for the first time to `peek()`.
+            data_block_i: 1,
+            data_block_i_end: 0,
+            intersected_time_ranges: TimeRanges::empty(),
+            intersected_time_ranges_i: 0,
         }
     }
 
     pub async fn peek(&mut self) -> Result<Option<DataType>> {
-        while self.read_index > self.end_index {
-            // let data = self.data_block.get(self.read_index);
-            if let Some(meta) = self.block_it.next() {
-                self.data_block = self.reader.get_data_block(&meta).await?;
-                if let Some(time_range) = self.data_block.time_range() {
-                    let tr = TimeRange::from(time_range);
-                    if let Some(ts) = self.time_range.intersect(&tr) {
-                        if let Some((min, max)) = self.data_block.index_range(&ts) {
-                            self.read_index = min;
-                            self.end_index = max;
-                            break;
-                        }
-                    }
-                }
-            } else {
-                return Ok(None);
-            }
+        // Check if we need to init.
+        if self.data_block_i > self.data_block_i_end
+            && !self.next_intersected_index_range()
+            && !self.next_data_block().await?
+        {
+            return Ok(None);
         }
 
-        Ok(self.data_block.get(self.read_index))
+        Ok(self.data_block.get(self.data_block_i))
     }
 
     pub fn next(&mut self) {
-        self.read_index += 1;
+        self.data_block_i += 1;
+    }
+
+    /// Iterates the ramaining BlockMeta in `block_meta_iter`, if there are no remaining BlockMeta's,
+    /// then return Ok(false).
+    ///
+    /// Iteration will continue until there are intersected time range between DataBlock and `time_ranges`.
+    async fn next_data_block(&mut self) -> Result<bool> {
+        let mut has_next_block = false;
+
+        while let Some(meta) = self.block_meta_iter.next() {
+            if meta.count() == 0 {
+                continue;
+            }
+            let time_range = meta.time_range();
+            // Check if the time range of the BlockMeta intersected with the given time ranges.
+            if let Some(intersected_tr) = self.time_ranges.intersect(&time_range) {
+                // Load a DataBlock from reader by BlockMeta.
+                self.data_block = self.reader.get_data_block(&meta).await?;
+                self.intersected_time_ranges = intersected_tr;
+                if self.next_intersected_index_range() {
+                    // Found next DataBlock and range to iterate.
+                    has_next_block = true;
+                    break;
+                }
+            }
+        }
+
+        Ok(has_next_block)
+    }
+
+    /// Iterates the ramaining TimeRange in `intersected_time_ranges`, if there are no remaning TimeRange's.
+    /// then return false.
+    ///
+    /// If there are overlaped time range of DataBlock and TimeRanges, set iteration range of `data_block`
+    /// and return true, otherwise set the iteration range a zero-length range `[1, 0]` and return false.
+    ///
+    /// **Note**: Call of this method should be arranged after the call of method `next_data_block`.
+    fn next_intersected_index_range(&mut self) -> bool {
+        self.data_block_i = 1;
+        self.data_block_i_end = 0;
+        if self.intersected_time_ranges.is_empty()
+            || self.intersected_time_ranges_i >= self.intersected_time_ranges.len()
+        {
+            false
+        } else {
+            let tr_idx_start = self.intersected_time_ranges_i;
+            for tr in self.intersected_time_ranges.time_ranges()[tr_idx_start..].iter() {
+                self.intersected_time_ranges_i += 1;
+                // Check if the DataBlock matches one of the intersected time ranges.
+                // TODO: sometimes the comparison in loop can stop earily.
+                if let Some((min, max)) = self.data_block.index_range(tr) {
+                    self.data_block_i = min;
+                    self.data_block_i_end = max;
+                    return true;
+                }
+            }
+            false
+        }
     }
 }
 
@@ -1067,9 +1123,9 @@ impl SeriesGroupRowIterator {
             None => return Ok(FieldCursor::empty(field_type, field_name)),
         };
 
-        let time_range = *self.query_option.split.time_range();
-        let time_predicate = |ts| time_range.is_boundless() || time_range.contains(ts);
-        debug!("Pushed time range filter: {:?}", time_range);
+        let time_ranges_ref = self.query_option.split.time_ranges();
+        let time_predicate = |ts| time_ranges_ref.is_boundless() || time_ranges_ref.contains(ts);
+        debug!("Pushed time range filter: {:?}", time_ranges_ref);
 
         // get data from im_memcache and memcache
         let mut cache_data: Vec<DataType> = Vec::new();
@@ -1091,11 +1147,11 @@ impl SeriesGroupRowIterator {
         // TODO: Init locations in parallel with other fields.
         let mut locations = vec![];
         for lv in super_version.version.levels_info.iter().rev() {
-            if !lv.time_range.overlaps(&time_range) {
+            if !time_ranges_ref.overlaps(&lv.time_range) {
                 continue;
             }
             for cf in lv.files.iter() {
-                if !cf.overlap(&time_range) || !cf.contains_field_id(field_id) {
+                if !time_ranges_ref.overlaps(cf.time_range()) || !cf.contains_field_id(field_id) {
                     continue;
                 }
                 let path = cf.file_path();
@@ -1117,8 +1173,8 @@ impl SeriesGroupRowIterator {
                 for idx in tsm_reader.index_iterator_opt(field_id) {
                     let location = FieldFileLocation::new(
                         tsm_reader.clone(),
-                        time_range,
-                        idx.block_iterator_opt(&time_range),
+                        time_ranges_ref.clone(),
+                        idx.block_iterator_opt(time_ranges_ref.clone()),
                         field_type,
                     );
                     locations.push(location);
@@ -1219,7 +1275,7 @@ impl SeriesGroupRowIterator {
                                 version.clone(),
                                 self.series_ids.clone(),
                                 None,
-                                *self.query_option.split.time_range(),
+                                self.query_option.split.time_ranges(),
                             )
                             .await?;
                             builder[i].append_primitive::<Int64Type>(agg_ret as i64);
@@ -1236,7 +1292,7 @@ impl SeriesGroupRowIterator {
                                     version.clone(),
                                     self.series_ids.clone(),
                                     Some(item.id),
-                                    *self.query_option.split.time_range(),
+                                    self.query_option.split.time_ranges(),
                                 )
                                 .await?;
                                 builder[i].append_primitive::<Int64Type>(agg_ret as i64);
@@ -1249,5 +1305,13 @@ impl SeriesGroupRowIterator {
             }
             _ => Ok(None),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_field_cursor() {
+        // TODO: Test multi-level contains the same timestamp with different values.
     }
 }

@@ -58,7 +58,9 @@ impl SplitManager {
         splited_time_ranges
             .into_iter()
             .enumerate()
-            .map(|(id, time_range)| Split::new(id, table.clone(), time_range, predicate.clone()))
+            .map(|(id, time_range)| {
+                Split::new(id, table.clone(), vec![time_range], predicate.clone())
+            })
             .collect()
     }
 }

@@ -9,7 +9,7 @@ use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeStatus;
-use models::predicate::domain::TimeRange;
+use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{split_owner, TableColumn};
 use models::{FieldId, SchemaId, SeriesId, Timestamp};
 use parking_lot::RwLock;
@@ -286,6 +286,10 @@ impl LevelInfo {
         field_id: FieldId,
         time_range: &TimeRange,
     ) -> Vec<DataBlock> {
+        let time_ranges = Arc::new(TimeRanges::with_inclusive_bounds(
+            time_range.min_ts,
+            time_range.max_ts,
+        ));
         let mut data = vec![];
         for file in self.files.iter() {
             if file.is_deleted() || !file.overlap(time_range) {
@@ -300,7 +304,7 @@ impl LevelInfo {
                 }
             };
             for idx in tsm_reader.index_iterator_opt(field_id) {
-                for blk in idx.block_iterator_opt(time_range) {
+                for blk in idx.block_iterator_opt(time_ranges.clone()) {
                     if let Ok(blk) = tsm_reader.get_data_block(&blk).await {
                         data.push(blk);
                     }
@@ -562,26 +566,16 @@ impl SuperVersion {
         }
     }
 
-    pub fn column_files(&self, time_ranges: &[TimeRange]) -> Vec<Arc<ColumnFile>> {
+    pub fn column_files(&self, time_ranges: &TimeRanges) -> Vec<Arc<ColumnFile>> {
         let mut files = Vec::new();
 
         for lv in self.version.levels_info.iter() {
-            let mut overlapped = false;
-            for tr in time_ranges {
-                if lv.time_range.overlaps(tr) {
-                    overlapped = true;
-                    break;
-                }
-            }
-            if !overlapped {
+            if !time_ranges.overlaps(&lv.time_range) {
                 continue;
             }
             for cf in lv.files.iter() {
-                for tr in time_ranges {
-                    if cf.overlap(tr) {
-                        files.push(cf.clone());
-                        break;
-                    }
+                if time_ranges.overlaps(&cf.time_range) {
+                    files.push(cf.clone());
                 }
             }
         }

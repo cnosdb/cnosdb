@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use models::predicate::domain::TimeRange;
+use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
 use tokio::runtime::Runtime;
 use trace::trace;
@@ -33,9 +33,9 @@ pub async fn count_column_non_null_values(
     super_version: Arc<SuperVersion>,
     series_ids: Arc<Vec<SeriesId>>,
     column_id: Option<ColumnId>,
-    time_range: TimeRange,
+    time_ranges: Arc<TimeRanges>,
 ) -> Result<u64> {
-    let column_files = Arc::new(super_version.column_files(&[time_range]));
+    let column_files = Arc::new(super_version.column_files(&time_ranges));
     let mut jh_vec = Vec::with_capacity(series_ids.len());
 
     for series_id in series_ids.iter() {
@@ -52,7 +52,7 @@ pub async fn count_column_non_null_values(
             sv_inner,
             count_object,
             cfs_inner,
-            time_range,
+            time_ranges.clone(),
         )));
     }
 
@@ -70,18 +70,22 @@ async fn count_non_null_values_inner(
     super_version: Arc<SuperVersion>,
     counting_object: CountingObject,
     column_files: Arc<Vec<Arc<ColumnFile>>>,
-    time_range: TimeRange,
+    time_ranges: Arc<TimeRanges>,
 ) -> Result<u64> {
-    let read_tasks =
-        create_file_read_tasks(&super_version, &column_files, &counting_object, &time_range)
-            .await?;
+    let read_tasks = create_file_read_tasks(
+        &super_version,
+        &column_files,
+        &counting_object,
+        &time_ranges,
+    )
+    .await?;
     // TODO(zipper): Very big HashSet maybe slow insert.
     let (cached_timestamps, cached_time_range) = match counting_object {
         CountingObject::Field(field_id) => {
-            get_field_timestamps_in_caches(&super_version, field_id, &time_range)
+            get_field_timestamps_in_caches(&super_version, field_id, &time_ranges)
         }
         CountingObject::Series(series_id) => {
-            get_series_timestamps_in_caches(&super_version, series_id, &time_range)
+            get_series_timestamps_in_caches(&super_version, series_id, &time_ranges)
         }
     };
 
@@ -107,7 +111,7 @@ async fn count_non_null_values_inner(
                     // Block overlaps with cached data or conditions, need to decode it to remove duplicates.
                     count += count_non_null_values_in_files(
                         reader_blk_metas,
-                        &time_range,
+                        &time_ranges,
                         &cached_timestamps,
                         &cached_time_range,
                     )
@@ -125,7 +129,7 @@ async fn count_non_null_values_inner(
                 let reader_blk_metas = std::mem::take(&mut grouped_reader_blk_metas);
                 count += count_non_null_values_in_files(
                     reader_blk_metas,
-                    &time_range,
+                    &time_ranges,
                     &cached_timestamps,
                     &cached_time_range,
                 )
@@ -138,7 +142,7 @@ async fn count_non_null_values_inner(
         trace!("Calculate the last {}", grouped_reader_blk_metas.len());
         count += count_non_null_values_in_files(
             grouped_reader_blk_metas,
-            &time_range,
+            &time_ranges,
             &cached_timestamps,
             &cached_time_range,
         )
@@ -152,9 +156,9 @@ async fn count_non_null_values_inner(
 fn get_field_timestamps_in_caches(
     super_version: &SuperVersion,
     field_id: FieldId,
-    time_range: &TimeRange,
+    time_ranges: &TimeRanges,
 ) -> (HashSet<Timestamp>, TimeRange) {
-    let time_predicate = |ts| time_range.is_boundless() || time_range.contains(ts);
+    let time_predicate = |ts| time_ranges.is_boundless() || time_ranges.contains(ts);
     let mut cached_timestamps: HashSet<i64> = HashSet::new();
     let mut cached_time_range = TimeRange::new(i64::MAX, i64::MIN);
     super_version.caches.read_field_data(
@@ -176,9 +180,9 @@ fn get_field_timestamps_in_caches(
 fn get_series_timestamps_in_caches(
     super_version: &SuperVersion,
     series_id: SeriesId,
-    time_range: &TimeRange,
+    time_ranges: &TimeRanges,
 ) -> (HashSet<Timestamp>, TimeRange) {
-    let time_predicate = |ts| time_range.is_boundless() || time_range.contains(ts);
+    let time_predicate = |ts| time_ranges.is_boundless() || time_ranges.contains(ts);
     let mut cached_timestamps: HashSet<i64> = HashSet::new();
     let mut cached_time_range = TimeRange::new(i64::MAX, i64::MIN);
     super_version
@@ -208,7 +212,7 @@ async fn create_file_read_tasks<'a>(
     super_version: &SuperVersion,
     files: &[Arc<ColumnFile>],
     counting_object: &CountingObject,
-    time_range: &TimeRange,
+    time_ranges: &TimeRanges,
 ) -> Result<Vec<ReadTask>> {
     let mut read_tasks: Vec<ReadTask> = Vec::new();
 
@@ -233,10 +237,10 @@ async fn create_file_read_tasks<'a>(
             }
             for blk_meta in idx.block_iterator() {
                 let blk_tr = blk_meta.time_range();
-                let tr_cmp = if time_range.includes(&blk_tr) {
+                let tr_cmp = if time_ranges.includes(&blk_tr) {
                     // Block is included by conditions, needn't to decode.
                     TimeRangeCmp::Include
-                } else if time_range.overlaps(&blk_tr) {
+                } else if time_ranges.overlaps(&blk_tr) {
                     TimeRangeCmp::Intersect
                 } else {
                     TimeRangeCmp::Exclude
@@ -260,7 +264,7 @@ async fn create_file_read_tasks<'a>(
 /// Get count of non-null values in time ranges from grouped read tasks.
 async fn count_non_null_values_in_files(
     reader_blk_metas: Vec<ReadTask>,
-    time_range: &TimeRange,
+    time_ranges: &TimeRanges,
     cached_timestamps: &HashSet<Timestamp>,
     cached_time_range: &TimeRange,
 ) -> Result<u64> {
@@ -288,43 +292,45 @@ async fn count_non_null_values_in_files(
             }
         } else {
             // Cached timestmaps not contains this DataBlock.
-            let low = match timestamps.binary_search(&time_range.min_ts) {
-                Ok(l) => l,
-                Err(l) => {
-                    if l == 0 {
-                        // Lowest timestamp is smaller than the first timestamp.
-                        0
-                    } else if l < timestamps.len() {
-                        if timestamps[l] >= time_range.min_ts {
-                            l
+            for tr in time_ranges.time_ranges() {
+                let low = match timestamps.binary_search(&tr.min_ts) {
+                    Ok(l) => l,
+                    Err(l) => {
+                        if l == 0 {
+                            // Lowest timestamp is smaller than the first timestamp.
+                            0
+                        } else if l < timestamps.len() {
+                            if timestamps[l] >= tr.min_ts {
+                                l
+                            } else {
+                                l + 1
+                            }
                         } else {
-                            l + 1
+                            // Lowest timestamp is greater than the last timestamp.
+                            break;
                         }
-                    } else {
-                        // Lowest timestamp is greater than the last timestamp.
-                        break;
                     }
-                }
-            };
-            let high = match timestamps.binary_search(&time_range.max_ts) {
-                Ok(h) => h,
-                Err(h) => {
-                    if h == 0 {
-                        // Highest timestamp is smaller than the first timestamp.
-                        continue;
-                    } else if h < timestamps.len() {
-                        if timestamps[h] <= time_range.max_ts {
-                            h
+                };
+                let high = match timestamps.binary_search(&tr.max_ts) {
+                    Ok(h) => h,
+                    Err(h) => {
+                        if h == 0 {
+                            // Highest timestamp is smaller than the first timestamp.
+                            continue;
+                        } else if h < timestamps.len() {
+                            if timestamps[h] <= tr.max_ts {
+                                h
+                            } else {
+                                h - 1
+                            }
                         } else {
-                            h - 1
+                            // Highest timestamp is greater than the last timestamp.
+                            timestamps.len() - 1
                         }
-                    } else {
-                        // Highest timestamp is greater than the last timestamp.
-                        timestamps.len() - 1
                     }
-                }
-            };
-            ts_set.extend(timestamps[low..=high].iter());
+                };
+                ts_set.extend(timestamps[low..=high].iter());
+            }
         }
     }
     count += ts_set.len() as u64;
@@ -338,7 +344,7 @@ mod test {
     use std::sync::Arc;
 
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use models::predicate::domain::TimeRange;
+    use models::predicate::domain::TimeRanges;
     use models::{utils as model_utils, ColumnId, SeriesId};
     use parking_lot::RwLock;
     use tokio::runtime::Runtime;
@@ -364,15 +370,15 @@ mod test {
             &self,
             series_ids: &[SeriesId],
             column_id: Option<ColumnId>,
-            time_range: impl Into<TimeRange>,
+            time_ranges: impl Into<TimeRanges>,
         ) -> Result<u64> {
-            let time_range = time_range.into();
+            let time_ranges = Arc::new(time_ranges.into());
             self.runtime.block_on(count_column_non_null_values(
                 self.runtime.clone(),
                 self.super_version.clone(),
                 Arc::new(series_ids.to_vec()),
                 column_id,
-                time_range,
+                time_ranges,
             ))
         }
     }
