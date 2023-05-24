@@ -725,7 +725,7 @@ impl MetaClient for RemoteMetaClient {
                             return Some(VnodeAllInfo {
                                 vnode_id: vnode_info.id,
                                 node_id: vnode_info.node_id,
-                                status: vnode_info.status.clone(),
+                                status: vnode_info.status,
                                 repl_set_id: repl_set.id,
                                 bucket_id: bucket.id,
                                 db_name: db_name.clone(),

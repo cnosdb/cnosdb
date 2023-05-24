@@ -38,7 +38,7 @@ mod record_file;
 mod schema;
 mod summary;
 mod tseries_family;
-mod tsm;
+pub mod tsm;
 mod version_set;
 mod wal;
 
