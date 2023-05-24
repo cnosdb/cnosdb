@@ -7,15 +7,23 @@ use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
+pub const DATABASES_TENANT_NAME: &str = "tenant_name";
+pub const DATABASES_DATABASE_NAME: &str = "database_name";
+pub const DATABASES_TTL: &str = "ttl";
+pub const DATABASES_SHARD: &str = "shard";
+pub const DATABASES_VNODE_DURATION: &str = "vnode_duration";
+pub const DATABASES_REPLICA: &str = "replica";
+pub const DATABASES_PERCISION: &str = "percision";
+
 lazy_static! {
     static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
-        Field::new("tenant_name", DataType::Utf8, false),
-        Field::new("database_name", DataType::Utf8, false),
-        Field::new("ttl", DataType::Utf8, false),
-        Field::new("shard", DataType::UInt64, false),
-        Field::new("vnode_duration", DataType::Utf8, false),
-        Field::new("replica", DataType::UInt64, false),
-        Field::new("percision", DataType::Utf8, false),
+        Field::new(DATABASES_TENANT_NAME, DataType::Utf8, false),
+        Field::new(DATABASES_DATABASE_NAME, DataType::Utf8, false),
+        Field::new(DATABASES_TTL, DataType::Utf8, false),
+        Field::new(DATABASES_SHARD, DataType::UInt64, false),
+        Field::new(DATABASES_VNODE_DURATION, DataType::Utf8, false),
+        Field::new(DATABASES_REPLICA, DataType::UInt64, false),
+        Field::new(DATABASES_PERCISION, DataType::Utf8, false),
     ]));
 }
 
