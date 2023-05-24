@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::iter::FromIterator;
 use std::mem::size_of_val;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -578,13 +577,40 @@ impl DataType {
         }
     }
 
+    #[cfg(test)]
     pub fn to_bytes(&self) -> MiniVec<u8> {
         match self {
-            DataType::U64(_, val) => MiniVec::from_iter(val.to_be_bytes()),
-            DataType::I64(_, val) => MiniVec::from_iter(val.to_be_bytes()),
-            DataType::F64(_, val) => MiniVec::from_iter(val.to_be_bytes()),
-            DataType::Str(_, val) => val.clone(),
-            DataType::Bool(_, val) => MiniVec::from_iter(if *val { [1_u8] } else { [0_u8] }),
+            DataType::U64(t, val) => {
+                let mut buf = mini_vec![0; 16];
+                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
+                buf[8..16].copy_from_slice(val.to_be_bytes().as_slice());
+                buf
+            }
+            DataType::I64(t, val) => {
+                let mut buf = mini_vec![0; 16];
+                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
+                buf[8..16].copy_from_slice(val.to_be_bytes().as_slice());
+                buf
+            }
+            DataType::F64(t, val) => {
+                let mut buf = mini_vec![0; 16];
+                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
+                buf[8..16].copy_from_slice(val.to_be_bytes().as_slice());
+                buf
+            }
+            DataType::Str(t, val) => {
+                let buf_len = 8 + val.len();
+                let mut buf = mini_vec![0; buf_len];
+                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
+                buf[8..buf_len].copy_from_slice(val);
+                buf
+            }
+            DataType::Bool(t, val) => {
+                let mut buf = mini_vec![0; 9];
+                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
+                buf[8] = if *val { 1_u8 } else { 0_u8 };
+                buf
+            }
         }
     }
 }

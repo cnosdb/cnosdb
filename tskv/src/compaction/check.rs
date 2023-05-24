@@ -305,35 +305,50 @@ fn hash_partial_datablock(
     match data_block {
         DataBlock::U64 { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
-                hasher.update(v.to_be_bytes().as_slice());
+            let ts_iter = ts[min_idx..limit].iter().map(|v| v.to_be_bytes());
+            let val_iter = val[min_idx..limit].iter().map(|v| v.to_be_bytes());
+            for (t, v) in ts_iter.zip(val_iter) {
+                hasher.update(&t);
+                hasher.update(&v);
             }
             limit
         }
         DataBlock::I64 { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
-                hasher.update(v.to_be_bytes().as_slice());
+            let ts_iter = ts[min_idx..limit].iter().map(|v| v.to_be_bytes());
+            let val_iter = val[min_idx..limit].iter().map(|v| v.to_be_bytes());
+            for (t, v) in ts_iter.zip(val_iter) {
+                hasher.update(&t);
+                hasher.update(&v);
             }
             limit
         }
         DataBlock::F64 { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
-                hasher.update(v.to_be_bytes().as_slice());
+            let ts_iter = ts[min_idx..limit].iter().map(|v| v.to_be_bytes());
+            let val_iter = val[min_idx..limit].iter().map(|v| v.to_be_bytes());
+            for (t, v) in ts_iter.zip(val_iter) {
+                hasher.update(&t);
+                hasher.update(&v);
             }
             limit
         }
         DataBlock::Str { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
-                hasher.update(v.as_slice());
+            let ts_iter = ts[min_idx..limit].iter().map(|v| v.to_be_bytes());
+            let val_iter = val[min_idx..limit].iter();
+            for (t, v) in ts_iter.zip(val_iter) {
+                hasher.update(&t);
+                hasher.update(v);
             }
             limit
         }
         DataBlock::Bool { ts, val, .. } => {
             let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
-            for (_i, v) in val.iter().enumerate().skip(min_idx).take(limit) {
+            let ts_iter = ts[min_idx..limit].iter().map(|v| v.to_be_bytes());
+            let val_iter = val[min_idx..limit].iter();
+            for (t, v) in ts_iter.zip(val_iter) {
+                hasher.update(&t);
                 hasher.update(if *v { &[1_u8] } else { &[0_u8] });
             }
             limit
@@ -532,7 +547,7 @@ mod test {
             let v = data_block
                 .get(i)
                 .unwrap_or_else(|| panic!("data block has at least {} items", i));
-            ret.append(v.to_bytes().to_vec().as_mut());
+            ret.extend_from_slice(&v.to_bytes());
         }
         ret
     }
@@ -548,7 +563,7 @@ mod test {
             parse_nanos("2023-01-01 00:06:00"),
         ];
         #[rustfmt::skip]
-            let data_blocks = vec![
+        let data_blocks = vec![
             DataBlock::U64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::I64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::Str {
@@ -576,7 +591,9 @@ mod test {
                 hasher_cmp
                     .update(data_block_partial_to_bytes(&data_block, 0, 3).as_slice())
                     .finalize(),
-                hasher_blk.finalize()
+                hasher_blk.finalize(),
+                "checking {}",
+                data_block
             );
 
             let mut hasher_blk = Hasher::new();
