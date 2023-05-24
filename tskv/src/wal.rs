@@ -655,7 +655,7 @@ mod test {
     use std::path::Path;
     use std::sync::Arc;
 
-    use datafusion::execution::memory_pool::GreedyMemoryPool;
+    use memory_pool::GreedyMemoryPool;
     use meta::model::meta_manager::RemoteMetaManager;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
