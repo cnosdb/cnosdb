@@ -428,7 +428,7 @@ mod test {
     use blake3::Hasher;
     use chrono::{Duration, NaiveDateTime};
     use datafusion::arrow::datatypes::TimeUnit;
-    use datafusion::execution::memory_pool::GreedyMemoryPool;
+    use memory_pool::GreedyMemoryPool;
     use meta::model::meta_manager::RemoteMetaManager;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;

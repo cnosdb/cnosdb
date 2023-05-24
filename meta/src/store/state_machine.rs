@@ -269,9 +269,9 @@ impl StateMachine {
             unsafe { ver_str = String::from_utf8_unchecked((*val).to_owned()) };
         }
         let ver = from_str::<u64>(&ver_str).unwrap_or(0) + 1;
-
-        self.db.insert(&key, &*(ver.to_string())).map_err(l_r_err)?;
-
+        let val = &*(ver.to_string());
+        self.db.insert(&key, val).map_err(l_r_err)?;
+        info!("METADATA WRITE: {} :{}", &key, val);
         Ok(ver)
     }
 
@@ -284,9 +284,9 @@ impl StateMachine {
         }
         let id_num = from_str::<u32>(&id_str).unwrap_or(1);
 
-        self.db
-            .insert(&id_key, &*(id_num + count).to_string())
-            .unwrap();
+        let val = &*(id_num + count).to_string();
+        self.db.insert(&id_key, val).unwrap();
+        info!("METADATA WRITE: {} :{}", &id_key, val);
 
         id_num
     }
@@ -305,7 +305,7 @@ impl StateMachine {
     fn insert(&self, key: &str, val: &str) -> StorageIOResult<()> {
         let version = self.update_version()?;
         self.db.insert(key, val).map_err(l_r_err)?;
-
+        info!("METADATA WRITE: {} :{}", key, val);
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_SET,
             ver: version,
@@ -321,7 +321,7 @@ impl StateMachine {
     fn remove(&self, key: &str) -> StorageIOResult<()> {
         let version = self.update_version()?;
         self.db.remove(key).map_err(l_r_err)?;
-
+        info!("METADATA REMOVE: {}", key);
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_DEL,
             ver: version,
@@ -642,7 +642,6 @@ impl StateMachine {
         }
         let val = serde_json::to_string(&bucket).unwrap();
         self.insert(&key, &val).unwrap();
-        info!("WRITE: {} :{}", key, val);
 
         status.code = META_REQUEST_SUCCESS;
         serde_json::to_string(&status).unwrap()
