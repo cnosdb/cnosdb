@@ -19,7 +19,7 @@ use datafusion::physical_plan::metrics::{
 use minivec::MiniVec;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
-use models::predicate::Split;
+use models::predicate::PlacedSplit;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema};
 use models::utils::{min_num, unite_id};
 use models::{FieldId, SeriesId, Timestamp, ValueType};
@@ -27,7 +27,6 @@ use parking_lot::RwLock;
 use protos::kv_service::QueryRecordBatchRequest;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use trace::{debug, error};
 
@@ -333,6 +332,7 @@ pub struct TskvSourceMetrics {
     elapsed_point_to_record_batch: metrics::Time,
     elapsed_field_scan: metrics::Time,
     elapsed_series_scan: metrics::Time,
+    elapsed_build_resp_stream: metrics::Time,
 }
 
 impl TskvSourceMetrics {
@@ -347,10 +347,14 @@ impl TskvSourceMetrics {
         let elapsed_series_scan =
             MetricBuilder::new(metrics).subset_time("elapsed_series_scan", partition);
 
+        let elapsed_build_resp_stream =
+            MetricBuilder::new(metrics).subset_time("elapsed_build_resp_stream", partition);
+
         Self {
             elapsed_point_to_record_batch,
             elapsed_field_scan,
             elapsed_series_scan,
+            elapsed_build_resp_stream,
         }
     }
 
@@ -364,6 +368,10 @@ impl TskvSourceMetrics {
 
     pub fn elapsed_series_scan(&self) -> &metrics::Time {
         &self.elapsed_series_scan
+    }
+
+    pub fn elapsed_build_resp_stream(&self) -> &metrics::Time {
+        &self.elapsed_build_resp_stream
     }
 }
 
@@ -380,14 +388,12 @@ impl TskvSourceMetrics {
 //  调用Next接口返回一行数据，并且屏蔽查询是本机节点数据还是其他节点数据
 // 5. 行数据到DataFusion的RecordBatch转换器
 //  调用Iterator.Next得到行数据，然后转换行数据为RecordBatch结构
-
 #[derive(Debug, Clone)]
 pub struct QueryOption {
     pub batch_size: usize,
-    pub split: Split,
+    pub split: PlacedSplit,
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchema,
-    pub metrics: TskvSourceMetrics,
     pub aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
 }
 
@@ -395,11 +401,10 @@ impl QueryOption {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         batch_size: usize,
-        split: Split,
+        split: PlacedSplit,
         aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
         df_schema: SchemaRef,
         table_schema: TskvTableSchema,
-        metrics: TskvSourceMetrics,
     ) -> Self {
         Self {
             batch_size,
@@ -407,7 +412,6 @@ impl QueryOption {
             aggregates,
             df_schema,
             table_schema,
-            metrics,
         }
     }
 
@@ -708,7 +712,6 @@ pub struct RowIterator {
     engine: EngineRef,
     query_option: Arc<QueryOption>,
     vnode_id: VnodeId,
-    metrics: TskvSourceMetrics,
 
     /// Super version of vnode_id, maybe None.
     super_version: Option<Arc<SuperVersion>>,
@@ -751,7 +754,6 @@ impl RowIterator {
             series_ids.len()
         );
         let query_option = Arc::new(query_option);
-        let metrics = query_option.metrics.clone();
         let series_len = series_ids.len();
         let (tx, rx) = channel(1);
         if query_option.aggregates.is_some() {
@@ -761,7 +763,6 @@ impl RowIterator {
                 engine,
                 query_option,
                 vnode_id,
-                metrics,
                 super_version,
                 series_ids: Arc::new(series_ids),
                 series_iter_receiver: rx,
@@ -787,7 +788,6 @@ impl RowIterator {
                 engine,
                 query_option,
                 vnode_id,
-                metrics,
                 super_version,
                 series_ids: Arc::new(series_ids),
                 series_iter_receiver: rx,
@@ -819,7 +819,6 @@ impl RowIterator {
             engine: self.engine.clone(),
             query_option: self.query_option.clone(),
             vnode_id: self.vnode_id,
-            metrics: self.metrics.clone(),
             super_version: self.super_version.clone(),
             series_ids: self.series_ids.clone(),
             start,
@@ -923,7 +922,8 @@ impl RowIterator {
         if self.series_ids.is_empty() {
             self.is_finished = true;
             // Build an empty result.
-            let timer = self.metrics.elapsed_point_to_record_batch().timer();
+            // TODO record elapsed_point_to_record_batch
+            // let timer = self.metrics.elapsed_point_to_record_batch().timer();
             let mut empty_builders = match Self::build_record_builders(self.query_option.as_ref()) {
                 Ok(builders) => builders,
                 Err(e) => return Some(Err(e)),
@@ -938,7 +938,7 @@ impl RowIterator {
                         reason: format!("iterator fail, {}", err),
                     },
                 );
-            timer.done();
+            // timer.done();
 
             return Some(empty_result);
         }
@@ -968,7 +968,6 @@ struct SeriesGroupRowIterator {
     engine: EngineRef,
     query_option: Arc<QueryOption>,
     vnode_id: u32,
-    metrics: TskvSourceMetrics,
     super_version: Option<Arc<SuperVersion>>,
     series_ids: Arc<Vec<u32>>,
     start: usize,
@@ -988,13 +987,13 @@ impl SeriesGroupRowIterator {
         if self.is_finished {
             return None;
         }
-
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        // TODO record elapsed_point_to_record_batch
+        // let timer = self.metrics.elapsed_point_to_record_batch().timer();
         let mut builders = match RowIterator::build_record_builders(self.query_option.as_ref()) {
             Ok(builders) => builders,
             Err(e) => return Some(Err(e)),
         };
-        timer.done();
+        // timer.done();
 
         for _ in 0..self.batch_size {
             match self.next_row(&mut builders).await {
@@ -1006,9 +1005,9 @@ impl SeriesGroupRowIterator {
                 Err(err) => return Some(Err(err)),
             };
         }
-
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
-        let result = {
+        // TODO record elapsed_point_to_record_batch
+        // let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        {
             let mut cols = Vec::with_capacity(builders.len());
             for builder in builders.iter_mut() {
                 cols.push(builder.ptr.finish())
@@ -1020,10 +1019,8 @@ impl SeriesGroupRowIterator {
                     reason: format!("iterator fail, {}", err),
                 })),
             }
-        };
-        timer.done();
-
-        result
+        }
+        // timer.done();
     }
 }
 
@@ -1055,7 +1052,7 @@ impl SeriesGroupRowIterator {
     }
 
     async fn build_series_columns(&mut self, series_id: SeriesId) -> Result<()> {
-        let start = Instant::now();
+        // let start = Instant::now();
 
         if let Some(key) = self
             .engine
@@ -1105,9 +1102,10 @@ impl SeriesGroupRowIterator {
             }
         }
 
-        self.metrics
-            .elapsed_series_scan()
-            .add_duration(start.elapsed());
+        // TODO record elapsed_series_scan
+        // self.metrics
+        //     .elapsed_series_scan()
+        //     .add_duration(start.elapsed());
 
         Ok(())
     }
@@ -1193,7 +1191,8 @@ impl SeriesGroupRowIterator {
 
     async fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
         trace::trace!("======collect_row_data=========");
-        let timer = self.metrics.elapsed_field_scan().timer();
+        // TODO record elapsed_field_scan
+        // let timer = self.metrics.elapsed_field_scan().timer();
 
         let mut min_time = i64::MAX;
         let mut values = Vec::with_capacity(self.columns.len());
@@ -1223,7 +1222,7 @@ impl SeriesGroupRowIterator {
             }
         }
 
-        timer.done();
+        // timer.done();
 
         trace::trace!("min time: {}", min_time);
         if min_time == i64::MAX {
@@ -1231,7 +1230,8 @@ impl SeriesGroupRowIterator {
             return Ok(None);
         }
 
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        // TODO record elapsed_point_to_record_batch
+        // let timer = self.metrics.elapsed_point_to_record_batch().timer();
 
         for (i, value) in values.into_iter().enumerate() {
             match self.columns[i].column_type() {
@@ -1247,7 +1247,7 @@ impl SeriesGroupRowIterator {
             }
         }
 
-        timer.done();
+        // timer.done();
 
         Ok(Some(()))
     }

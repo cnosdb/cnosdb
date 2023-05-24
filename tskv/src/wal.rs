@@ -628,7 +628,6 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                 let ety_data = entry.data();
                 let mut data_buf = Vec::new();
                 decoder.decode(ety_data, &mut data_buf).unwrap();
-                println!("Points size: {}", data_buf[0].len());
                 match flatbuffers::root::<fb_models::Points>(&data_buf[0]) {
                     Ok(points) => {
                         print_points(points);
