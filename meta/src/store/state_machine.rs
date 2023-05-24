@@ -635,7 +635,7 @@ impl StateMachine {
             }
             for vnode in set.vnodes.iter_mut() {
                 if vnode.id == args.vnode_info.vnode_id {
-                    vnode.status = args.vnode_info.status.clone();
+                    vnode.status = args.vnode_info.status;
                     break;
                 }
             }

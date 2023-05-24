@@ -114,11 +114,12 @@ impl VnodeInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq)]
 pub enum VnodeStatus {
     #[default]
     Running,
     Copying,
+    Broken,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

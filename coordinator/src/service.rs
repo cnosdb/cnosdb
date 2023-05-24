@@ -53,6 +53,23 @@ pub struct CoordServiceMetrics {
     data_out: Metric<U64Counter>,
 }
 
+pub async fn get_vnode_all_info(
+    meta: MetaRef,
+    tenant: &str,
+    vnode_id: u32,
+) -> CoordinatorResult<VnodeAllInfo> {
+    match meta.tenant_manager().tenant_meta(tenant).await {
+        Some(meta_client) => match meta_client.get_vnode_all_info(vnode_id) {
+            Some(all_info) => Ok(all_info),
+            None => Err(CoordinatorError::VnodeNotFound { id: vnode_id }),
+        },
+
+        None => Err(CoordinatorError::TenantNotFound {
+            name: tenant.to_string(),
+        }),
+    }
+}
+
 impl CoordServiceMetrics {
     pub fn new(register: &MetricsRegister) -> Self {
         let data_in = register.metric("coord_data_in", "tenant data in");

@@ -223,13 +223,13 @@ mod test {
     use std::collections::HashSet;
     use std::{thread, time};
 
-    use models::meta_data::{NodeAttribute, NodeInfo, VnodeInfo};
+    use models::meta_data::{NodeAttribute, NodeInfo, VnodeAllInfo, VnodeInfo, VnodeStatus};
     use models::schema::DatabaseSchema;
     use tokio::sync::mpsc::channel;
     use tokio::time::timeout;
 
     use crate::client::MetaHttpClient;
-    use crate::store::command::{self, UpdateVnodeReplSetArgs};
+    use crate::store::command::{self, UpdateVnodeArgs, UpdateVnodeReplSetArgs};
 
     #[tokio::test]
     #[ignore]
@@ -309,6 +309,25 @@ mod test {
         };
 
         let req = command::WriteCommand::UpdateVnodeReplSet(args);
+
+        let client = MetaHttpClient::new("127.0.0.1:8901".to_string());
+        let rsp = client.write::<command::StatusResponse>(&req).await;
+        println!("=========: {:?}", rsp);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_update_vnode() {
+        let cluster = "cluster_xxx".to_string();
+
+        let mut args = UpdateVnodeArgs {
+            cluster,
+            vnode_info: VnodeAllInfo::default(),
+        };
+
+        args.vnode_info.status = VnodeStatus::Broken;
+
+        let req = command::WriteCommand::UpdateVnode(args);
 
         let client = MetaHttpClient::new("127.0.0.1:8901".to_string());
         let rsp = client.write::<command::StatusResponse>(&req).await;

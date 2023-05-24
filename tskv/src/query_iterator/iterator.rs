@@ -751,6 +751,28 @@ impl RowIterator {
         }
     }
 
+    pub async fn verify_file_integrity(&self) -> Result<()> {
+        let super_version = match self.super_version {
+            Some(ref v) => v.clone(),
+            None => return Ok(()),
+        };
+
+        for lv in super_version.version.levels_info.iter().rev() {
+            for cf in lv.files.iter() {
+                let path = cf.file_path();
+                if !path.is_file() {
+                    return Err(Error::ReadTsm {
+                        source: crate::tsm::ReadTsmError::FileNotFound {
+                            reason: format!("File Not Found: {}", path.display()),
+                        },
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn new_series_group_iteration(
         &mut self,
         start: usize,
