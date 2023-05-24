@@ -935,6 +935,14 @@ impl Duration {
             DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_MILLS),
         }
     }
+
+    pub fn to_precision(&self, pre: Precision) -> i64 {
+        match pre {
+            Precision::MS => self.to_millisecond(),
+            Precision::US => self.to_microseconds(),
+            Precision::NS => self.to_nanoseconds(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
