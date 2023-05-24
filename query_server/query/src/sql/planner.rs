@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use std::iter;
 use std::option::Option;
 use std::sync::Arc;
+use std::{iter, vec};
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -90,7 +90,11 @@ use crate::data_source::source_downcast_adapter;
 use crate::data_source::stream::{get_event_time_column, get_watermark_delay};
 use crate::data_source::table_source::{TableHandle, TableSourceAdapter, TEMP_LOCATION_TABLE_NAME};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
-use crate::metadata::{ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
+use crate::metadata::{
+    ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, DATABASES_DATABASE_NAME,
+    INFORMATION_SCHEMA, INFORMATION_SCHEMA_DATABASES, INFORMATION_SCHEMA_TABLES,
+    TABLES_TABLE_DATABASE, TABLES_TABLE_NAME,
+};
 
 /// CnosDB SQL query planner
 pub struct SqlPlanner<'a, S: ContextProviderExtension> {
@@ -141,8 +145,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::DropGlobalObject(s) => self.drop_global_object_to_plan(s),
             ExtStatement::DescribeTable(stmt) => self.table_to_describe(stmt, session),
             ExtStatement::DescribeDatabase(stmt) => self.database_to_describe(stmt, session),
-            ExtStatement::ShowDatabases() => self.database_to_show(session),
-            ExtStatement::ShowTables(stmt) => self.table_to_show(stmt, session),
+            ExtStatement::ShowDatabases() => self.show_databases_to_plan(session),
+            ExtStatement::ShowTables(stmt) => self.show_tables_to_plan(stmt, session),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
             ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(*stmt, session),
             ExtStatement::Explain(stmt) => {
@@ -788,8 +792,21 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn database_to_show(&self, session: &SessionCtx) -> Result<PlanWithPrivileges> {
-        let plan = Plan::DDL(DDLPlan::ShowDatabases());
+    fn show_databases_to_plan(&self, session: &SessionCtx) -> Result<PlanWithPrivileges> {
+        let projections = vec![col(DATABASES_DATABASE_NAME)];
+        let sorts = vec![col(DATABASES_DATABASE_NAME).sort(true, true)];
+
+        let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_DATABASES);
+
+        let table_source = self.get_table_source(table_ref.clone())?;
+
+        let df_plan = LogicalPlanBuilder::scan(table_ref, table_source, None)?
+            .project(projections)?
+            .sort(sorts)?
+            .build()?;
+
+        let plan = Plan::Query(QueryPlan { df_plan });
+
         // privileges
         let tenant_id = *session.tenant_id();
         let privilege = Privilege::TenantObject(
@@ -802,13 +819,32 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn table_to_show(
+    fn show_tables_to_plan(
         &self,
         database: Option<Ident>,
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
+        let database_name = session.default_database();
         let db_name = database.map(normalize_ident);
-        let plan = Plan::DDL(DDLPlan::ShowTables(db_name.clone()));
+
+        let projections = vec![col(TABLES_TABLE_NAME)];
+        let sorts = vec![col(TABLES_TABLE_NAME).sort(true, true)];
+
+        let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_TABLES);
+        let table_source = self.get_table_source(table_ref.clone())?;
+
+        let builder = LogicalPlanBuilder::scan(table_ref, table_source, None)?;
+
+        let builder = if let Some(db) = &db_name {
+            builder.filter(col(TABLES_TABLE_DATABASE).eq(lit(db)))?
+        } else {
+            builder.filter(col(TABLES_TABLE_DATABASE).eq(lit(database_name)))?
+        };
+
+        let df_plan = builder.project(projections)?.sort(sorts)?.build()?;
+
+        let plan = Plan::Query(QueryPlan { df_plan });
+
         // privileges
         Ok(PlanWithPrivileges {
             plan,

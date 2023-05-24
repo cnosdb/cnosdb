@@ -5,7 +5,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+pub use builder::databases::{
+    DATABASES_DATABASE_NAME, DATABASES_PERCISION, DATABASES_REPLICA, DATABASES_SHARD,
+    DATABASES_TENANT_NAME, DATABASES_TTL, DATABASES_VNODE_DURATION,
+};
+pub use builder::tables::{
+    TABLES_TABLE_DATABASE, TABLES_TABLE_ENGINE, TABLES_TABLE_NAME, TABLES_TABLE_OPTIONS,
+    TABLES_TABLE_TENANT, TABLES_TABLE_TYPE,
+};
 use datafusion::datasource::MemTable;
+pub use factory::databases::INFORMATION_SCHEMA_DATABASES;
+pub use factory::tables::INFORMATION_SCHEMA_TABLES;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::auth::user::User;
