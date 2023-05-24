@@ -1,15 +1,20 @@
+#![feature(stmt_expr_attributes)]
 use std::fmt::Debug;
+use std::pin::Pin;
 
 use datafusion::arrow::record_batch::RecordBatch;
+use futures::Stream;
 use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
+use models::meta_data::VnodeInfo;
+use models::object_reference::ResolvedTable;
+use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::Precision;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
-use tskv::query_iterator::QueryOption;
+use tskv::query_iterator::{QueryOption, TskvSourceMetrics};
 use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
-use crate::reader::ReaderIterator;
 
 pub mod errors;
 pub mod file_info;
@@ -24,6 +29,10 @@ pub mod writer;
 pub const FAILED_RESPONSE_CODE: i32 = -1;
 pub const FINISH_RESPONSE_CODE: i32 = 0;
 pub const SUCCESS_RESPONSE_CODE: i32 = 1;
+
+pub type SendableCoordinatorRecordBatchStream = Pin<Box<dyn CoordinatorRecordBatchStream + Send>>;
+
+pub trait CoordinatorRecordBatchStream: Stream<Item = CoordinatorResult<RecordBatch>> {}
 
 #[derive(Debug)]
 pub struct WriteRequest {
@@ -64,11 +73,18 @@ pub fn status_response_to_result(
 }
 
 #[async_trait::async_trait]
-pub trait Coordinator: Send + Sync + Debug {
+pub trait Coordinator: Send + Sync {
     fn node_id(&self) -> u64;
     fn meta_manager(&self) -> MetaRef;
     fn store_engine(&self) -> Option<EngineRef>;
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
+
+    /// get all vnodes of a table to quering
+    async fn table_vnodes(
+        &self,
+        table: &ResolvedTable,
+        predicate: ResolvedPredicateRef,
+    ) -> CoordinatorResult<Vec<VnodeInfo>>;
 
     async fn write_points(
         &self,
@@ -78,9 +94,17 @@ pub trait Coordinator: Send + Sync + Debug {
         request: WritePointsRequest,
     ) -> CoordinatorResult<()>;
 
-    fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
+    fn table_scan(
+        &self,
+        option: QueryOption,
+        metrics: TskvSourceMetrics,
+    ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream>;
 
-    fn tag_scan(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
+    fn tag_scan(
+        &self,
+        option: QueryOption,
+        metrics: TskvSourceMetrics,
+    ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream>;
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()>;
 

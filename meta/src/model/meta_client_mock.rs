@@ -267,33 +267,7 @@ impl MetaClient for MockMetaClient {
     }
 
     fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
-        #[allow(clippy::inconsistent_digit_grouping)]
-        let db_info = if name.eq("with_nonempty_database") {
-            DatabaseInfo {
-                buckets: vec![
-                    BucketInfo {
-                        id: 1,
-                        // 2023-01-01 00:00:00.000000000
-                        start_time: 1672502400_000_000_000_i64,
-                        // 2023-07-01 00:00:00.000000000
-                        end_time: 1688140800_000_000_000_i64,
-                        ..Default::default()
-                    },
-                    BucketInfo {
-                        id: 2,
-                        // 2023-07-01 00:00:00.000000000
-                        start_time: 1688140800_000_000_000_i64,
-                        // 2024-01-01 00:00:00.000000000
-                        end_time: 1704038400_000_000_000_i64,
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }
-        } else {
-            DatabaseInfo::default()
-        };
-        Ok(Some(db_info))
+        Ok(Some(DatabaseInfo::default()))
     }
 }
 

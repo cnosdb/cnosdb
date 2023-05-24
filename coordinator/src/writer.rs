@@ -517,10 +517,7 @@ impl PointWriter {
             let _ = kv_inst.write(vnode_id, precision, req).await?;
             Ok(())
         } else {
-            Err(CoordinatorError::KvInstanceNotFound {
-                vnode_id,
-                node_id: 0,
-            })
+            Err(CoordinatorError::KvInstanceNotFound { node_id: 0 })
         }
     }
 }

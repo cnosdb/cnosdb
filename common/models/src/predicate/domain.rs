@@ -18,11 +18,15 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 
 use super::transformation::RowExpressionToDomainsVisitor;
-use super::Split;
-use crate::schema::{ScalarValueForkDF, TableColumn, TskvTableSchema};
+use super::utils::filter_to_time_ranges;
+use super::PlacedSplit;
+use crate::schema::{
+    ColumnType, ScalarValueForkDF, TableColumn, TskvTableSchema, TskvTableSchemaRef,
+};
 use crate::{Error, Result, Timestamp};
 
 pub type PredicateRef = Arc<Predicate>;
+pub type ResolvedPredicateRef = Arc<ResolvedPredicate>;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TimeRange {
@@ -1312,6 +1316,39 @@ impl<T: Eq + Hash + Clone> ColumnDomains<T> {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedPredicate {
+    time_ranges: Arc<TimeRanges>,
+    tags_filter: ColumnDomains<String>,
+    fields_filter: ColumnDomains<String>,
+}
+
+impl ResolvedPredicate {
+    pub fn new(
+        time_ranges: Arc<TimeRanges>,
+        tags_filter: ColumnDomains<String>,
+        fields_filter: ColumnDomains<String>,
+    ) -> Self {
+        Self {
+            time_ranges,
+            tags_filter,
+            fields_filter,
+        }
+    }
+
+    pub fn time_ranges(&self) -> Arc<TimeRanges> {
+        self.time_ranges.clone()
+    }
+
+    pub fn tags_filter(&self) -> &ColumnDomains<String> {
+        &self.tags_filter
+    }
+
+    pub fn fields_filter(&self) -> &ColumnDomains<String> {
+        &self.fields_filter
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Predicate {
     pushed_down_domains: ColumnDomains<Column>,
@@ -1346,6 +1383,33 @@ impl Predicate {
         }
         self
     }
+
+    pub fn resolve(&self, table: &TskvTableSchemaRef) -> Result<ResolvedPredicateRef, String> {
+        let domains_filter = self
+            .filter()
+            .translate_column(|c| table.column(&c.name).cloned());
+
+        let tags_filter = domains_filter.translate_column(|e| match e.column_type {
+            ColumnType::Tag => Some(e.name.clone()),
+            _ => None,
+        });
+
+        let fields_filter = domains_filter.translate_column(|e| match e.column_type {
+            ColumnType::Field(_) => Some(e.name.clone()),
+            _ => None,
+        });
+        let time_filter = domains_filter.translate_column(|e| match e.column_type {
+            ColumnType::Time(_) => Some(e.name.clone()),
+            _ => None,
+        });
+        let time_ranges = filter_to_time_ranges(&time_filter);
+
+        Ok(Arc::new(ResolvedPredicate::new(
+            Arc::new(TimeRanges::new(time_ranges)),
+            tags_filter,
+            fields_filter,
+        )))
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1377,7 +1441,7 @@ impl QueryArgs {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryExpr {
-    pub split: Split,
+    pub split: PlacedSplit,
     pub df_schema: Schema,
     pub table_schema: TskvTableSchema,
 }

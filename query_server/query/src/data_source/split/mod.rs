@@ -1,11 +1,11 @@
-use std::cmp;
 use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
 use datafusion::execution::context::SessionState;
-use models::predicate::domain::TimeRange;
-use models::predicate::utils::filter_to_time_ranges;
-use models::predicate::Split;
+use datafusion::sql::TableReference;
+use models::object_reference::Resolve;
+use models::predicate::PlacedSplit;
+use spi::{QueryError, Result};
 use trace::debug;
 
 use self::tskv::TableLayoutHandle;
@@ -21,96 +21,55 @@ pub fn default_split_manager_ref_only_for_test() -> SplitManagerRef {
 }
 
 #[non_exhaustive]
-pub struct SplitManager {}
+pub struct SplitManager {
+    coord: CoordinatorRef,
+}
 
 impl SplitManager {
-    pub fn new(_coord: CoordinatorRef) -> Self {
-        // TODO: use coordinator to get splits
-        Self {}
+    pub fn new(coord: CoordinatorRef) -> Self {
+        Self { coord }
     }
 
-    pub fn splits(&self, ctx: &SessionState, table_layout: TableLayoutHandle) -> Vec<Split> {
+    pub async fn splits(
+        &self,
+        _ctx: &SessionState,
+        table_layout: TableLayoutHandle,
+    ) -> Result<Vec<PlacedSplit>> {
         let TableLayoutHandle {
-            db,
-            table,
-            predicate,
+            table, predicate, ..
         } = table_layout;
 
-        let time_filter = predicate
-            .filter()
-            .translate_column(|e| Some(e.name.clone()));
+        let table_name =
+            TableReference::bare(&table.name).resolve_object(&table.tenant, &table.db)?;
+        debug!(
+            "Get table {}'s splits, predicate: {:?}",
+            table.name, predicate
+        );
 
-        let time_ranges = filter_to_time_ranges(&time_filter);
-        let db_time_range = db.time_range();
-        let target_partitions = ctx.config().target_partitions();
+        let limit = predicate.limit();
 
-        debug!("Get table {}'s splits, filter time ranges: {:?}, db time range: {}, target_partitions: {}", table.name, time_ranges, db_time_range, target_partitions);
+        let resolved_predicate = predicate
+            .resolve(&table)
+            .map_err(|reason| QueryError::AnalyzePushedFilter { reason })?;
 
-        let splited_time_ranges = split_time_range(&time_ranges, &db_time_range, target_partitions);
+        let shards = self
+            .coord
+            .table_vnodes(&table_name, resolved_predicate.clone())
+            .await?;
+
+        let splits = shards
+            .into_iter()
+            .enumerate()
+            .map(|(idx, e)| PlacedSplit::new(idx, resolved_predicate.clone(), limit, e))
+            .collect::<Vec<_>>();
 
         debug!(
             "Table {}'s {} splits: {:?}",
             table.name,
-            splited_time_ranges.len(),
-            splited_time_ranges
+            splits.len(),
+            splits
         );
 
-        splited_time_ranges
-            .into_iter()
-            .enumerate()
-            .map(|(id, time_range)| {
-                Split::new(id, table.clone(), vec![time_range], predicate.clone())
-            })
-            .collect()
+        Ok(splits)
     }
-}
-
-pub fn split_time_range(
-    ori_time_range: &[TimeRange],
-    db_time_range: &TimeRange,
-    target_partitions: usize,
-) -> Vec<TimeRange> {
-    let time_ranges = ori_time_range
-        .iter()
-        .flat_map(|e| e.intersect(db_time_range))
-        .collect::<Vec<_>>();
-
-    let total_time = time_ranges
-        .iter()
-        .map(|e| e.total_time())
-        .reduce(|l, r| l + r)
-        .unwrap_or(0);
-
-    debug!(
-        "time_ranges: {:?}\ntotal_time: {:?}",
-        time_ranges, total_time
-    );
-
-    if total_time == 0 {
-        return vec![];
-    }
-
-    let actual_partitions = cmp::min(total_time, target_partitions as u64);
-    let range_per_partition = (total_time / actual_partitions) as i64;
-
-    debug!("range_per_partition: {}", range_per_partition);
-
-    let final_time_ranges = time_ranges
-        .iter()
-        .flat_map(|tr| {
-            let mut time_ranges = vec![];
-            let mut current_ts = tr.min_ts;
-            while current_ts < tr.max_ts - range_per_partition {
-                let time_range = TimeRange::new(current_ts, current_ts + (range_per_partition - 1));
-                time_ranges.push(time_range);
-                current_ts += range_per_partition;
-            }
-
-            let time_range = TimeRange::new(current_ts, tr.max_ts);
-            time_ranges.push(time_range);
-            time_ranges
-        })
-        .collect::<Vec<_>>();
-
-    final_time_ranges
 }

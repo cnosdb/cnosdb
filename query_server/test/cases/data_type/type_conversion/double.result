@@ -20,7 +20,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: CAST(fa@1 AS Utf8) = 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa <> '12345678865'; --
@@ -32,7 +33,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: CAST(fa@1 AS Utf8) != 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa != '12345678865'; --
@@ -44,7 +46,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: CAST(fa@1 AS Utf8) != 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa < '12345678865'; --
@@ -56,7 +59,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: CAST(fa@1 AS Utf8) < 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa <= '12345678865'; --
@@ -68,7 +72,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: CAST(fa@1 AS Utf8) <= 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa > '12345678865'; --
@@ -80,7 +85,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: CAST(fa@1 AS Utf8) > 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= '12345678865'; --
@@ -92,7 +98,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: CAST(fa@1 AS Utf8) >= 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= '12345678865'; --
@@ -104,7 +111,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: CAST(fa@1 AS Utf8) >= 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= '1997-01-31'; --
@@ -116,7 +124,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: CAST(fa@1 AS Utf8) >= 1997-01-31
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= 'xxx'; --
@@ -128,7 +137,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: CAST(fa@1 AS Utf8) >= xxx
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa between '12345678865' and 12345678869; --
@@ -142,7 +152,8 @@ physical_plan,"ProjectionExec: expr=[time@1 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: CAST(test_double_conv.fa AS Utf8)test_double_conv.fa@0 >= 12345678865 AND CAST(test_double_conv.fa AS Utf8)test_double_conv.fa@0 <= 12345678869
       ProjectionExec: expr=[CAST(fa@1 AS Utf8) as CAST(test_double_conv.fa AS Utf8)test_double_conv.fa, time@0 as time]
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+        RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa between 12345678865 and 12345678869; --
@@ -154,7 +165,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: fa@1 >= 12345678865 AND fa@1 <= 12345678869
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa between 12345678865 and 'xxx'; --
@@ -170,7 +182,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: Use CAST(fa@1 AS Utf8) IN (SET) ([Literal { value: Utf8(""12345678865"") }, Literal { value: Utf8(""12345678869"") }])
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa in (12345678865, 'xx'); --
@@ -182,7 +195,8 @@ logical_plan,"Projection: test_double_conv.time
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: Use CAST(fa@1 AS Utf8) IN (SET) ([Literal { value: Utf8(""12345678865"") }, Literal { value: Utf8(""xx"") }])
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select sum(case when fa < 50 then fa else 0 end) over (partition by ta) from test_double_conv; --
@@ -196,5 +210,6 @@ physical_plan,"ProjectionExec: expr=[SUM(CASE WHEN test_double_conv.fa < Int64(5
     SortExec: expr=[ta@1 ASC NULLS LAST]
       CoalesceBatchesExec: target_batch_size=8192
         RepartitionExec: partitioning=Hash([Column { name: ""ta"", index: 1 }], 8), input_partitions=8
-          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,ta,tb,fa,fb]
+          RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+            TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=1, projection=[time,ta,tb,fa,fb]
 "

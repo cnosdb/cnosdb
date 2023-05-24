@@ -5,7 +5,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::common::DFSchemaRef;
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
@@ -20,10 +19,8 @@ use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use datafusion::prelude::Column;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
-use models::meta_data::DatabaseInfo;
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
-use spi::QueryError;
 use trace::debug;
 
 use crate::data_source::sink::tskv::TskvRecordBatchSinkProvider;
@@ -40,29 +37,29 @@ use crate::extension::physical::plan_node::tskv_exec::TskvExec;
 pub struct ClusterTable {
     coord: CoordinatorRef,
     split_manager: SplitManagerRef,
-    meta: MetaClientRef,
+    _meta: MetaClientRef,
     schema: TskvTableSchemaRef,
 }
 
 impl ClusterTable {
-    fn create_table_scan_physical_plan(
+    async fn create_table_scan_physical_plan(
         &self,
         ctx: &SessionState,
         projection: Option<&Vec<usize>>,
         predicate: PredicateRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        let database_info = self
-            .database_info()
-            .map_err(|err| DataFusionError::External(Box::new(err)))?;
-
         let proj_schema = self.project_schema(projection)?;
 
         let table_layout = TableLayoutHandle {
-            db: database_info,
             table: self.schema.clone(),
             predicate: predicate.clone(),
         };
-        let splits = self.split_manager.splits(ctx, table_layout);
+        // TODO Record the time it takes to get the shards
+        let splits = self
+            .split_manager
+            .splits(ctx, table_layout)
+            .await
+            .map_err(|err| DataFusionError::External(Box::new(err)))?;
         if splits.is_empty() {
             return Ok(Arc::new(EmptyExec::new(false, proj_schema)));
         }
@@ -76,16 +73,12 @@ impl ClusterTable {
         )))
     }
 
-    fn create_agg_filter_scan(
+    async fn create_agg_filter_scan(
         &self,
         ctx: &SessionState,
         filter: Arc<Predicate>,
         agg_with_grouping: &AggWithGrouping,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        let database_info = self
-            .database_info()
-            .map_err(|err| DataFusionError::External(Box::new(err)))?;
-
         let AggWithGrouping {
             group_expr: _,
             agg_expr,
@@ -94,11 +87,15 @@ impl ClusterTable {
         let proj_schema = SchemaRef::from(schema.deref());
 
         let table_layout = TableLayoutHandle {
-            db: database_info,
             table: self.schema.clone(),
             predicate: filter.clone(),
         };
-        let splits = self.split_manager.splits(ctx, table_layout);
+        // TODO Record the time it takes to get the shards
+        let splits = self
+            .split_manager
+            .splits(ctx, table_layout)
+            .await
+            .map_err(|err| DataFusionError::External(Box::new(err)))?;
         if splits.is_empty() {
             return Ok(Arc::new(EmptyExec::new(false, proj_schema)));
         }
@@ -170,9 +167,10 @@ impl ClusterTable {
         )))
     }
 
-    pub fn create_tag_scan_physical_plan(
+    pub async fn create_tag_scan_physical_plan(
         &self,
-        projected_schema: &DFSchemaRef,
+        ctx: &SessionState,
+        projected_schema: SchemaRef,
         filters: &[Expr],
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
@@ -182,11 +180,26 @@ impl ClusterTable {
                 .push_down_filter(filters, &self.schema),
         );
 
+        let table_layout = TableLayoutHandle {
+            table: self.schema.clone(),
+            predicate: predicate.clone(),
+        };
+        // TODO Record the time it takes to get the shards
+        let splits = self
+            .split_manager
+            .splits(ctx, table_layout)
+            .await
+            .map_err(|err| DataFusionError::External(Box::new(err)))?;
+        if splits.is_empty() {
+            return Ok(Arc::new(EmptyExec::new(false, projected_schema)));
+        }
+
         Ok(Arc::new(TagScanExec::new(
             self.schema.clone(),
-            projected_schema.as_ref().into(),
+            projected_schema,
             predicate,
             self.coord.clone(),
+            splits,
         )))
     }
 
@@ -199,7 +212,7 @@ impl ClusterTable {
         ClusterTable {
             coord,
             split_manager,
-            meta,
+            _meta: meta,
             schema,
         }
     }
@@ -213,14 +226,6 @@ impl ClusterTable {
         valid_project(&self.schema, projection)
             .map_err(|err| DataFusionError::External(Box::new(err)))?;
         project_schema(&self.schema.to_arrow_schema(), projection)
-    }
-
-    fn database_info(&self) -> Result<DatabaseInfo, QueryError> {
-        self.meta
-            .get_db_info(&self.schema.db)?
-            .ok_or_else(|| QueryError::DatabaseNotFound {
-                name: self.schema.db.clone(),
-            })
     }
 }
 
@@ -258,10 +263,14 @@ impl TableProvider for ClusterTable {
 
         if let Some(agg_with_grouping) = agg_with_grouping {
             debug!("Create aggregate filter tskv scan.");
-            return self.create_agg_filter_scan(ctx, filter, agg_with_grouping);
+            return self
+                .create_agg_filter_scan(ctx, filter, agg_with_grouping)
+                .await;
         }
 
-        return self.create_table_scan_physical_plan(ctx, projection, filter);
+        return self
+            .create_table_scan_physical_plan(ctx, projection, filter)
+            .await;
     }
 
     fn supports_filter_pushdown(&self, expr: &Expr) -> Result<TableProviderFilterPushDown> {

@@ -1,5 +1,6 @@
 use core::fmt;
 use std::any::Any;
+use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -8,26 +9,27 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_expr::PhysicalSortExpr;
-use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
+use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
     DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics,
 };
 use models::predicate::domain::{PredicateRef, PushedAggregateFunction};
-use models::predicate::Split;
+use models::predicate::PlacedSplit;
 use models::schema::TskvTableSchemaRef;
 use trace::debug;
 use tskv::query_iterator::{QueryOption, TableScanMetrics};
 
 use super::tskv_exec::TableScanStream;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AggregateFilterTskvExec {
     coord: CoordinatorRef,
     schema: SchemaRef,
     table_schema: TskvTableSchemaRef,
     pushed_aggs: Vec<PushedAggregateFunction>,
     filter: PredicateRef,
-    splits: Vec<Split>,
+    splits: Vec<PlacedSplit>,
+    metrics: ExecutionPlanMetricsSet,
 }
 
 impl AggregateFilterTskvExec {
@@ -37,7 +39,7 @@ impl AggregateFilterTskvExec {
         table_schema: TskvTableSchemaRef,
         pushed_aggs: Vec<PushedAggregateFunction>,
         filter: PredicateRef,
-        splits: Vec<Split>,
+        splits: Vec<PlacedSplit>,
     ) -> Self {
         Self {
             coord,
@@ -46,6 +48,7 @@ impl AggregateFilterTskvExec {
             pushed_aggs,
             filter,
             splits,
+            metrics: ExecutionPlanMetricsSet::new(),
         }
     }
 }
@@ -100,20 +103,19 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         };
         debug!("Split of partition: {:?}", split);
 
-        let metrics = ExecutionPlanMetricsSet::new();
-        let metrics = TableScanMetrics::new(&metrics, partition, Some(context.memory_pool()));
+        let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
+        let kv_metrics = metrics.tskv_metrics();
         let query_opt = QueryOption::new(
             100_usize,
             split,
             Some(agg_columns),
             self.schema.clone(),
             (*self.table_schema).clone(),
-            metrics.tskv_metrics(),
         );
 
         let iterator = self
             .coord
-            .read_record(query_opt)
+            .table_scan(query_opt, kv_metrics)
             .map_err(|e| DataFusionError::Internal(e.to_string()))?;
         let table_stream = TableScanStream::with_iterator(
             self.schema.clone(),
@@ -127,6 +129,10 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         Ok(Box::pin(table_stream))
     }
 
+    fn metrics(&self) -> Option<MetricsSet> {
+        Some(self.metrics.clone_inner())
+    }
+
     fn statistics(&self) -> Statistics {
         Statistics::default()
     }
@@ -137,5 +143,17 @@ impl ExecutionPlan for AggregateFilterTskvExec {
             "AggregateFilterTskvExec: agg=[{:?}], filter=[{:?}]",
             self.pushed_aggs, self.filter
         )
+    }
+}
+
+impl Debug for AggregateFilterTskvExec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AggregateFilterTskvExec")
+            .field("schema", &self.schema)
+            .field("table_schema", &self.table_schema)
+            .field("pushed_aggs", &self.pushed_aggs)
+            .field("filter", &self.filter)
+            .field("splits", &self.splits)
+            .finish()
     }
 }

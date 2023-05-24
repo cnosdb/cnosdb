@@ -208,7 +208,7 @@ logical_plan,"Filter: m0.t0 = Utf8(NULL)
   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]"
 physical_plan,"CoalesceBatchesExec: target_batch_size=8192
   FilterExec: t0@1 = NULL
-    TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,t0,t1,f0,f1,f2,f3,f4]
+    TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=9, projection=[time,t0,t1,f0,f1,f2,f3,f4]
 "
 
 -- EXECUTE SQL: explain select * from m0 where t0 > null; --
@@ -218,5 +218,5 @@ logical_plan,"Filter: m0.t0 > Utf8(NULL)
   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]"
 physical_plan,"CoalesceBatchesExec: target_batch_size=8192
   FilterExec: t0@1 > NULL
-    TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,t0,t1,f0,f1,f2,f3,f4]
+    TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=9, projection=[time,t0,t1,f0,f1,f2,f3,f4]
 "
