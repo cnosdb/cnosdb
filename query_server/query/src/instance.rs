@@ -266,7 +266,7 @@ mod tests {
     use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::record_batch::RecordBatch;
     use datafusion::arrow::util::pretty::pretty_format_batches;
-    use datafusion::execution::memory_pool::GreedyMemoryPool;
+    use memory_pool::GreedyMemoryPool;
     use models::auth::user::UserInfo;
     use models::schema::DEFAULT_CATALOG;
     use spi::service::protocol::ContextBuilder;

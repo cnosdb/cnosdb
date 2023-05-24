@@ -10,7 +10,7 @@ use crate::dispatcher::query_tracker::QueryTracker;
 use crate::metadata::information_schema_provider::builder::databases::InformationSchemaDatabasesBuilder;
 use crate::metadata::information_schema_provider::InformationSchemaTableFactory;
 
-const INFORMATION_SCHEMA_DATABASES: &str = "DATABASES";
+pub const INFORMATION_SCHEMA_DATABASES: &str = "DATABASES";
 
 /// This view only displays database information for which the current user has Read permission or higher.
 pub struct DatabasesFactory {}

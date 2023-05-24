@@ -11,7 +11,7 @@ use crate::dispatcher::query_tracker::QueryTracker;
 use crate::metadata::information_schema_provider::builder::tables::InformationSchemaTablesBuilder;
 use crate::metadata::information_schema_provider::InformationSchemaTableFactory;
 
-const INFORMATION_SCHEMA_TABLES: &str = "TABLES";
+pub const INFORMATION_SCHEMA_TABLES: &str = "TABLES";
 
 /// This view only displays table information under the database for which the current user has Read permission or higher.
 pub struct TablesFactory {}

@@ -8,14 +8,21 @@ use datafusion::error::DataFusionError;
 use datafusion::logical_expr::TableType;
 use lazy_static::lazy_static;
 
+pub const TABLES_TABLE_TENANT: &str = "table_tenant";
+pub const TABLES_TABLE_DATABASE: &str = "table_database";
+pub const TABLES_TABLE_NAME: &str = "table_name";
+pub const TABLES_TABLE_TYPE: &str = "table_type";
+pub const TABLES_TABLE_ENGINE: &str = "table_engine";
+pub const TABLES_TABLE_OPTIONS: &str = "table_options";
+
 lazy_static! {
     static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
-        Field::new("table_tenant", DataType::Utf8, false),
-        Field::new("table_database", DataType::Utf8, false),
-        Field::new("table_name", DataType::Utf8, false),
-        Field::new("table_type", DataType::Utf8, false),
-        Field::new("table_engine", DataType::Utf8, false),
-        Field::new("table_options", DataType::Utf8, false),
+        Field::new(TABLES_TABLE_TENANT, DataType::Utf8, false),
+        Field::new(TABLES_TABLE_DATABASE, DataType::Utf8, false),
+        Field::new(TABLES_TABLE_NAME, DataType::Utf8, false),
+        Field::new(TABLES_TABLE_TYPE, DataType::Utf8, false),
+        Field::new(TABLES_TABLE_ENGINE, DataType::Utf8, false),
+        Field::new(TABLES_TABLE_OPTIONS, DataType::Utf8, false),
     ]));
 }
 
