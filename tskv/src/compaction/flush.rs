@@ -61,11 +61,6 @@ impl FlushTask {
         version_edits: &mut Vec<VersionEdit>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     ) -> Result<()> {
-        info!(
-            "Flush: Running flush job on ts_family: {} with {} MemCaches, collecting informations.",
-            version.ts_family_id,
-            self.mem_caches.len(),
-        );
         let (mut high_seq, mut low_seq) = (0, u64::MAX);
         let mut total_memcache_size = 0_u64;
 
@@ -196,7 +191,7 @@ pub async fn run_flush_memtable_job(
     compact_task_sender: Option<Sender<CompactTask>>,
 ) -> Result<()> {
     info!(
-        "Flush: Running flush job for {} of {} MemCaches",
+        "Flush: Running flush job for ts_family {} with {} MemCaches",
         req.ts_family_id,
         req.mems.len()
     );
@@ -253,7 +248,7 @@ pub async fn run_flush_memtable_job(
     }
 
     info!(
-        "Flush: Flush for {} finished, version edits: {:?}",
+        "Flush: Run flush job for ts_family {} finished, version edits: {:?}",
         req.ts_family_id, version_edits
     );
 
@@ -397,7 +392,7 @@ impl WriterWrapper {
             None => {
                 let writer = flush_task.new_tsm_writer(level == 0).await?;
                 info!(
-                    "Flush: File {}(level={}) been created.",
+                    "Flush: File: {} been created (level={}).",
                     writer.sequence(),
                     level
                 );
@@ -420,7 +415,7 @@ impl WriterWrapper {
                 w.write_index().await.context(error::WriteTsmSnafu)?;
                 w.finish().await.context(error::WriteTsmSnafu)?;
                 info!(
-                    "Flush: File: {}(level={}) write finished ({} B).",
+                    "Flush: File: {} write finished (level: {}, {} B).",
                     w.sequence(),
                     level,
                     w.size()

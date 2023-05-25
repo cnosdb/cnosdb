@@ -8,7 +8,7 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
-use datafusion::physical_plan::SendableRecordBatchStream;
+use datafusion::physical_plan::{RecordBatchStream, SendableRecordBatchStream};
 use futures::{pin_mut, TryStreamExt};
 use object_store::path::Path;
 use object_store::DynObjectStore;
@@ -18,6 +18,7 @@ use trace::debug;
 
 use super::DynRecordBatchSerializer;
 use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata};
+use crate::extension::DropEmptyRecordBatchStream;
 
 pub struct ObjectStoreSink {
     ctx: WriteContext,
@@ -38,6 +39,8 @@ impl RecordBatchSink for ObjectStoreSink {
 
     async fn stream_write(&self, stream: SendableRecordBatchStream) -> Result<SinkMetadata> {
         debug!("Process ObjectStoreRecordBatchSink::stream_write");
+
+        let stream = DropEmptyRecordBatchStream::new(stream);
 
         pin_mut!(stream);
 

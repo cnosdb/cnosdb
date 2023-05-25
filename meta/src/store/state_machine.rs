@@ -1032,7 +1032,7 @@ impl StateMachine {
             db_schema
                 .config
                 .vnode_duration_or_default()
-                .to_nanoseconds(),
+                .to_precision(*db_schema.config.precision_or_default()),
         );
         let (group, used) = allocation_replication_set(
             node_list,
