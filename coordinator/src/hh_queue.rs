@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::RwLock;
 use tokio::time::{self, Duration};
-use trace::{debug, info};
+use trace::{debug, warn};
 use tskv::byte_utils;
 use tskv::file_system::file_manager::list_dir_names;
 use tskv::file_system::queue::{Queue, QueueConfig};
@@ -207,7 +207,7 @@ impl HintedOffManager {
 
     async fn write_until_success(writer: Arc<PointWriter>, block: &HintedOffBlock, node_id: u64) {
         loop {
-            if writer
+            match writer
                 .write_to_remote_node(
                     block.vnode_id,
                     node_id,
@@ -216,12 +216,12 @@ impl HintedOffManager {
                     block.data.clone(),
                 )
                 .await
-                .is_ok()
             {
-                break;
-            } else {
-                info!("hinted_off write data to node {} failed", node_id);
-                time::sleep(Duration::from_secs(3)).await;
+                Ok(_) => break,
+                Err(e) => {
+                    warn!("hinted_off write data to node {} failed: {}", node_id, e);
+                    time::sleep(Duration::from_secs(3)).await;
+                }
             }
         }
     }
@@ -240,7 +240,7 @@ mod test {
     use tokio::io::AsyncSeekExt;
     use tokio::sync::RwLock;
     use tokio::time::{self, Duration};
-    use trace::init_default_global_tracing;
+    use trace::{info, init_default_global_tracing};
 
     use super::*;
 
