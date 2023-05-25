@@ -236,7 +236,8 @@ impl QueryExecutor {
             .meta_manager
             .admin_meta()
             .get_node_conn(node_id)
-            .await?;
+            .await
+            .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?;
         let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
         let mut resp_stream = client

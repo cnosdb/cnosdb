@@ -400,15 +400,13 @@ impl PointWriter {
             return result;
         }
 
-        if let Err(err) = self
+        let result = self
             .write_to_remote_node(vnode_id, node_id, tenant, precision, data.clone())
-            .await
-        {
+            .await;
+        if let Err(CoordinatorError::FailoverNode { id: _ }) = result {
             debug!(
-                "write data to remote {}({}) failed; {}!",
-                node_id,
-                vnode_id,
-                err.to_string()
+                "write data to remote {}({}) failed; write to hinted handoff!",
+                node_id, vnode_id
             );
 
             return self
@@ -417,12 +415,14 @@ impl PointWriter {
         }
 
         debug!(
-            "write data to remote {}({}) , inst exist: {}, success!",
+            "write data to remote {}({}) , inst exist: {}, {:?}!",
             node_id,
             vnode_id,
-            self.kv_inst.is_some()
+            self.kv_inst.is_some(),
+            result
         );
-        Ok(())
+
+        result
     }
 
     async fn write_to_handoff(
@@ -464,7 +464,8 @@ impl PointWriter {
             .meta_manager
             .admin_meta()
             .get_node_conn(node_id)
-            .await?;
+            .await
+            .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?;
         let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
 
@@ -475,7 +476,11 @@ impl PointWriter {
             data,
         });
 
-        let response = client.write_vnode_points(cmd).await?.into_inner();
+        let response = client
+            .write_vnode_points(cmd)
+            .await
+            .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?
+            .into_inner();
         status_response_to_result(&response)
     }
 

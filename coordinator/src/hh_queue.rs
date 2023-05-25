@@ -10,6 +10,7 @@ use tokio::sync::oneshot::Sender;
 use tokio::sync::RwLock;
 use tokio::time::{self, Duration};
 use trace::{debug, warn};
+use tracing::info;
 use tskv::byte_utils;
 use tskv::file_system::file_manager::list_dir_names;
 use tskv::file_system::queue::{Queue, QueueConfig};
@@ -207,7 +208,7 @@ impl HintedOffManager {
 
     async fn write_until_success(writer: Arc<PointWriter>, block: &HintedOffBlock, node_id: u64) {
         loop {
-            match writer
+            let result = writer
                 .write_to_remote_node(
                     block.vnode_id,
                     node_id,
@@ -215,14 +216,20 @@ impl HintedOffManager {
                     block.precision,
                     block.data.clone(),
                 )
-                .await
-            {
-                Ok(_) => break,
-                Err(e) => {
-                    warn!("hinted_off write data to node {} failed: {}", node_id, e);
-                    time::sleep(Duration::from_secs(3)).await;
-                }
+                .await;
+
+            if let Err(CoordinatorError::FailoverNode { id: _ }) = result {
+                warn!("hinted_off write data {} failed, try later...", node_id);
+
+                time::sleep(Duration::from_secs(3)).await;
+                continue;
             }
+
+            if result.is_err() {
+                info!("hinted_off write data {} failed, {:?}", node_id, result);
+            }
+
+            break;
         }
     }
 }
