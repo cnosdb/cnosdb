@@ -19,7 +19,7 @@ use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::debug;
-use tracing::{error, info};
+use tracing::error;
 use tskv::query_iterator::{QueryOption, RowIterator};
 use tskv::EngineRef;
 
@@ -371,17 +371,6 @@ impl QueryExecutor {
 
         let mut iterator =
             RowIterator::new(self.runtime.clone(), kv_inst, self.option.clone(), vnode.id).await?;
-
-        if let Err(err) = iterator.verify_file_integrity().await {
-            error!("vnode {} lost file: {}", vnode.id, err);
-            let meta_err = self
-                .change_vnode_to_broken(&self.option.table_schema.tenant, vnode)
-                .await;
-            info!("change vnode to broken, beacuse file lost: {:?}", meta_err);
-
-            return Err(CoordinatorError::from(err));
-        }
-
         while let Some(data) = iterator.next().await {
             match data {
                 Ok(val) => {
@@ -389,18 +378,19 @@ impl QueryExecutor {
                     self.sender.send(Ok(val)).await?;
                 }
                 Err(err) => {
-                    if let tskv::Error::ReadTsm {
-                        source: tskv::tsm::ReadTsmError::CrcCheck,
-                    } = &err
-                    {
-                        error!("vnode {} data block crc check failed", vnode.id);
-                        let meta_err = self
-                            .change_vnode_to_broken(&self.option.table_schema.tenant, vnode)
-                            .await;
-                        info!(
-                            "change vnode to broken, beacuse crc check not pass: {:?}",
-                            meta_err
-                        );
+                    if let tskv::Error::ReadTsm { source } = &err {
+                        match source {
+                            tskv::tsm::ReadTsmError::CrcCheck
+                            | tskv::tsm::ReadTsmError::FileNotFound { .. }
+                            | tskv::tsm::ReadTsmError::Invalid { .. } => {
+                                error!("vnode {} data broken: {:?}", vnode.id, source);
+                                let _ = self
+                                    .change_vnode_to_broken(&self.option.table_schema.tenant, vnode)
+                                    .await;
+                            }
+
+                            _ => {}
+                        }
                     }
                     return Err(CoordinatorError::from(err));
                 }

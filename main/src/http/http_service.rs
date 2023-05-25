@@ -905,9 +905,20 @@ async fn sql_handle(
     debug!("prepare to execute: {:?}", query.content());
     let handle = dbms.execute(query).await?;
     let out = handle.result();
-    let resp = HttpResponse::new(out, fmt);
+    let resp = HttpResponse::new(out, fmt.clone());
     if !query.context().chunked() {
-        resp.wrap_batches_to_response().await
+        let result = resp.wrap_batches_to_response().await;
+        if let Err(err) = &result {
+            if err.to_string().contains("read tsm block file error") {
+                info!("tsm file broken {:?}, try read....", err);
+                let handle = dbms.execute(query).await?;
+                let out = handle.result();
+                let resp = HttpResponse::new(out, fmt);
+                return resp.wrap_batches_to_response().await;
+            }
+        }
+
+        result
     } else {
         resp.wrap_stream_to_response()
     }
