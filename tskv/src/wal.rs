@@ -151,6 +151,8 @@ struct WalWriter {
 }
 
 impl WalWriter {
+    /// Opens a wal file at path, returns a WalWriter with id and config.
+    /// If wal file doesn't exist, create new wal file and set it's min_log_sequence(default 0).
     pub async fn open(
         config: Arc<WalOptions>,
         id: u64,
@@ -318,10 +320,6 @@ impl WalManager {
         })
     }
 
-    pub fn current_seq_no(&self) -> u64 {
-        self.current_file.max_sequence
-    }
-
     async fn roll_wal_file(&mut self, max_file_size: u64) -> Result<()> {
         if self.current_file.size > max_file_size {
             info!(
@@ -339,10 +337,6 @@ impl WalManager {
                 self.current_file.max_sequence,
             )
             .await?;
-            info!(
-                "WAL '{}' starts write at seq {}",
-                self.current_file.id, self.current_file.max_sequence
-            );
             // Total WALs size add WAL header size.
             self.total_file_size += new_file.size;
 
@@ -356,6 +350,11 @@ impl WalManager {
                 .insert(old_file.id, old_file.max_sequence);
             // Total WALs size add WAL footer size.
             self.total_file_size += old_file.close().await? as u64;
+
+            info!(
+                "WAL '{}' starts write at seq {}",
+                self.current_file.id, self.current_file.max_sequence
+            );
 
             self.check_to_delete().await;
         }
@@ -387,7 +386,7 @@ impl WalManager {
                     }
                 };
                 if let Err(e) = tokio::fs::remove_file(&file_path).await {
-                    error!("failed to remove file '{}': {:?}", file_path.display(), e);
+                    error!("Failed to remove file '{}': {:?}", file_path.display(), e);
                 }
                 // Remove max_sequence record for deleted file.
                 self.old_file_max_sequence.remove(&file_id);
@@ -522,6 +521,10 @@ impl WalManager {
     /// Close current record file, return count of bytes appended as footer.
     pub async fn close(self) -> Result<usize> {
         self.current_file.close().await
+    }
+
+    pub fn current_seq_no(&self) -> u64 {
+        self.current_file.max_sequence
     }
 
     pub fn sync_interval(&self) -> std::time::Duration {

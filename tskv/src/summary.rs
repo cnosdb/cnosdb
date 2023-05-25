@@ -15,7 +15,6 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Sender as OneShotSender;
 use tokio::sync::RwLock;
-use trace::{error, info};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
@@ -119,7 +118,7 @@ impl CompactMeta {
             let base_dir = storage_opt.tsm_dir(database, ts_family_id);
             file_utils::make_tsm_file_name(base_dir, file_id)
         };
-        info!("rename file from {:?} to {:?}", &old_name, &new_name);
+        trace::info!("rename file from {:?} to {:?}", &old_name, &new_name);
         file_utils::rename(old_name, &new_name).await?;
         self.file_id = file_id;
         Ok(new_name)
@@ -567,6 +566,7 @@ impl Summary {
         for (tsf_id, edits) in tsf_version_edits {
             let min_seq = tsf_min_seq.get(&tsf_id);
             if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
+                trace::info!("Applying new version for ts_family {}.", tsf_id);
                 let new_version = tsf.read().await.version().copy_apply_version_edits(
                     edits,
                     &mut file_metas,
@@ -576,6 +576,7 @@ impl Summary {
                 tsf.write()
                     .await
                     .new_version(new_version, flushed_mem_cahces);
+                trace::info!("Applied new version for ts_family {}.", tsf_id);
             }
         }
         drop(version_set);
@@ -589,7 +590,7 @@ impl Summary {
             })
             .await
         {
-            error!("Failed to send AfterSummaryTask");
+            trace::error!("Failed to send AfterSummaryTask");
         }
 
         Ok(())
@@ -608,7 +609,7 @@ impl Summary {
                 match remove_file(new_path) {
                     Ok(_) => (),
                     Err(e) => {
-                        error!("failed remove file {:?}, in case {:?}", new_path, e);
+                        trace::error!("Failed to remove file '{}': {:?}", new_path.display(), e);
                     }
                 };
             }
@@ -620,9 +621,11 @@ impl Summary {
             match rename(new_path, old_path) {
                 Ok(_) => (),
                 Err(e) => {
-                    error!(
-                        "failed remove old file {:?}, and create new file {:?},in case {:?}",
-                        old_path, new_path, e
+                    trace::error!(
+                        "Failed to remove old file '{}' and create new file '{}': {:?}",
+                        old_path.display(),
+                        new_path.display(),
+                        e
                     );
                 }
             };

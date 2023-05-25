@@ -317,7 +317,7 @@ impl ServiceBuilder {
             kv,
             coord,
             addr,
-            self.config.security.tls_config.clone(),
+            None,
             self.metrics_register.clone(),
         )
     }

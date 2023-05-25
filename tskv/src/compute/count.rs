@@ -75,6 +75,7 @@ async fn count_non_null_values_inner(
     let read_tasks =
         create_file_read_tasks(&super_version, &column_files, &counting_object, &time_range)
             .await?;
+    // TODO(zipper): Very big HashSet maybe slow insert.
     let (cached_timestamps, cached_time_range) = match counting_object {
         CountingObject::Field(field_id) => {
             get_field_timestamps_in_caches(&super_version, field_id, &time_range)
