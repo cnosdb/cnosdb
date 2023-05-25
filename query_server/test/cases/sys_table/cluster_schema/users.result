@@ -29,7 +29,7 @@
 -- EXECUTE SQL: select * from cluster_schema.users where user_name = 'test_us_u1'; --
 200 OK
 user_name,is_admin,user_options
-test_us_u1,false,"{""password"":""*****"",""must_change_password"":null,""rsa_public_key"":null,""comment"":""test comment""}"
+test_us_u1,false,"{""password"":""*****"",""must_change_password"":false,""comment"":""test comment"",""granted_admin"":false}"
 
 -- EXECUTE SQL: alter tenant cnosdb add user test_us_u1 as owner; --
 200 OK
@@ -51,9 +51,9 @@ test_us_u1,false,"{""password"":""*****"",""must_change_password"":null,""rsa_pu
 -- AFTER_SORT --
 200 OK
 user_name,is_admin,user_options
-root,true,"{""password"":""*****"",""must_change_password"":true,""rsa_public_key"":null,""comment"":""system admin""}"
-test_us_u1,false,"{""password"":""*****"",""must_change_password"":null,""rsa_public_key"":null,""comment"":""test comment""}"
-test_us_u2,false,"{""password"":""*****"",""must_change_password"":null,""rsa_public_key"":null,""comment"":null}"
+root,true,"{""password"":""*****"",""must_change_password"":true,""comment"":""system admin"",""granted_admin"":false}"
+test_us_u1,false,"{""password"":""*****"",""must_change_password"":false,""comment"":""test comment"",""granted_admin"":false}"
+test_us_u2,false,"{""password"":""*****"",""must_change_password"":false,""granted_admin"":false}"
 
 -- EXECUTE SQL: select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2'); --
 -- AFTER_SORT --

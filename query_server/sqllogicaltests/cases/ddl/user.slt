@@ -8,7 +8,7 @@ alter user test_alter_options_u set comment = 'xxx ccc';
 query I
 select * from cluster_schema.users where user_name = 'test_alter_options_u';
 ----
-test_alter_options_u false {"password":"*****","must_change_password":null,"rsa_public_key":null,"comment":"xxx ccc"}
+test_alter_options_u false {"password":"*****","must_change_password":false,"comment":"xxx ccc","granted_admin":false}
 
 statement ok
 alter user test_alter_options_u set comment = 'ooo ooo';
@@ -17,7 +17,7 @@ alter user test_alter_options_u set comment = 'ooo ooo';
 query I
 select * from cluster_schema.users where user_name = 'test_alter_options_u';
 ----
-test_alter_options_u false {"password":"*****","must_change_password":null,"rsa_public_key":null,"comment":"ooo ooo"}
+test_alter_options_u false {"password":"*****","must_change_password":false,"comment":"ooo ooo","granted_admin":false}
 
 statement ok
 alter user test_alter_options_u set must_change_password = false;
@@ -26,7 +26,7 @@ alter user test_alter_options_u set must_change_password = false;
 query I
 select * from cluster_schema.users where user_name = 'test_alter_options_u';
 ----
-test_alter_options_u false {"password":"*****","must_change_password":false,"rsa_public_key":null,"comment":"ooo ooo"}
+test_alter_options_u false {"password":"*****","must_change_password":false,"comment":"ooo ooo","granted_admin":false}
 
 statement ok
 alter user test_alter_options_u set must_change_password = true;
@@ -35,4 +35,4 @@ alter user test_alter_options_u set must_change_password = true;
 query I
 select * from cluster_schema.users where user_name = 'test_alter_options_u';
 ----
-test_alter_options_u false {"password":"*****","must_change_password":true,"rsa_public_key":null,"comment":"ooo ooo"}
+test_alter_options_u false {"password":"*****","must_change_password":true,"comment":"ooo ooo","granted_admin":false}

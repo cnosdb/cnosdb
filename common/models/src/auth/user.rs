@@ -4,7 +4,9 @@ use std::fmt::Display;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-use super::privilege::{DatabasePrivilege, Privilege, PrivilegeChecker, TenantObjectPrivilege};
+use super::privilege::{
+    DatabasePrivilege, GlobalPrivilege, Privilege, PrivilegeChecker, TenantObjectPrivilege,
+};
 use super::role::UserRole;
 use super::{rsa_utils, AuthError, Result};
 use crate::oid::{Identifier, Oid};
@@ -19,7 +21,10 @@ pub struct User {
 }
 
 impl User {
-    pub fn new(desc: UserDesc, privileges: HashSet<Privilege<Oid>>) -> Self {
+    pub fn new(desc: UserDesc, mut privileges: HashSet<Privilege<Oid>>) -> Self {
+        // 添加修改自身信息的权限
+        privileges.insert(Privilege::Global(GlobalPrivilege::User(Some(*desc.id()))));
+
         Self { desc, privileges }
     }
 
@@ -76,8 +81,18 @@ impl UserDesc {
         &self.options
     }
 
-    pub fn is_admin(&self) -> bool {
+    /// 初始的系统管理员
+    pub fn is_root_admin(&self) -> bool {
         self.is_admin
+    }
+
+    /// 被授予的管理员权限
+    pub fn is_granted_admin(&self) -> bool {
+        self.options.granted_admin().unwrap_or_default()
+    }
+
+    pub fn is_admin(&self) -> bool {
+        self.is_root_admin() || self.is_granted_admin()
     }
 
     pub fn rename(mut self, new_name: String) -> Self {
@@ -108,9 +123,14 @@ impl Identifier<Oid> for UserDesc {
 #[builder(setter(into, strip_option), default)]
 pub struct UserOptions {
     password: Option<String>,
+    #[builder(default = "Some(false)")]
     must_change_password: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     rsa_public_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
+    #[builder(default = "Some(false)")]
+    granted_admin: Option<bool>,
 }
 
 impl UserOptions {
@@ -126,6 +146,9 @@ impl UserOptions {
     pub fn comment(&self) -> Option<&str> {
         self.comment.as_deref()
     }
+    pub fn granted_admin(&self) -> Option<bool> {
+        self.granted_admin
+    }
 
     pub fn merge(self, other: Self) -> Self {
         Self {
@@ -133,6 +156,7 @@ impl UserOptions {
             must_change_password: self.must_change_password.or(other.must_change_password),
             rsa_public_key: self.rsa_public_key.or(other.rsa_public_key),
             comment: self.comment.or(other.comment),
+            granted_admin: self.granted_admin.or(other.granted_admin),
         }
     }
     pub fn hidden_password(&mut self) {
@@ -148,6 +172,10 @@ impl Display for UserOptions {
 
         if let Some(ref e) = self.comment {
             write!(f, "comment={},", e)?;
+        }
+
+        if let Some(ref e) = self.granted_admin {
+            write!(f, "granted_admin={},", e)?;
         }
 
         Ok(())
