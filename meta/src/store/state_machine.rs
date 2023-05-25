@@ -1112,7 +1112,7 @@ impl StateMachine {
                         *old_user_desc.id(),
                         user_name.to_string(),
                         new_options,
-                        old_user_desc.is_admin(),
+                        old_user_desc.is_root_admin(),
                     );
                     let value = serde_json::to_string(&new_user_desc).unwrap();
                     let _ = self.insert(&key, &value);
