@@ -101,6 +101,7 @@ pub struct ReplicationSet {
 pub struct VnodeInfo {
     pub id: VnodeId,
     pub node_id: NodeId,
+    #[serde(default = "Default::default")]
     pub status: VnodeStatus,
 }
 
