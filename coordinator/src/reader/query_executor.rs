@@ -10,7 +10,7 @@ use meta::model::MetaRef;
 use metrics::count::U64Counter;
 use models::arrow_array::build_arrow_array_builders;
 use models::meta_data::{VnodeInfo, VnodeStatus};
-use models::utils::now_timestamp_nanos;
+use models::utils::{now_timestamp_millis, now_timestamp_nanos};
 use models::{record_batch_decode, SeriesKey};
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use tokio::runtime::Runtime;
@@ -29,6 +29,7 @@ use crate::SUCCESS_RESPONSE_CODE;
 
 pub struct QueryExecutor {
     option: QueryOption,
+    timeout_ms: u64,
 
     runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
@@ -41,6 +42,7 @@ pub struct QueryExecutor {
 impl QueryExecutor {
     pub fn new(
         option: QueryOption,
+        timeout_ms: u64,
         runtime: Arc<Runtime>,
         kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
@@ -55,6 +57,7 @@ impl QueryExecutor {
             option,
             runtime,
             kv_inst,
+            timeout_ms,
             meta_manager,
             sender,
             data_out,
@@ -237,14 +240,23 @@ impl QueryExecutor {
             .meta_manager
             .admin_meta()
             .get_node_conn(node_id)
-            .await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
+            .await
+            .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?;
+        let timeout_channel = Timeout::new(channel, Duration::from_millis(self.timeout_ms));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let begin_time = now_timestamp_millis();
         let mut resp_stream = client
             .query_record_batch(cmd)
             .await
             .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?
             .into_inner();
+        let use_time = now_timestamp_millis() - begin_time;
+        if use_time > 200 {
+            debug!(
+                "query data to node:{}, use time too long {}",
+                node_id, use_time
+            )
+        }
         while let Some(received) = resp_stream.next().await {
             let received = received?;
             if received.code != SUCCESS_RESPONSE_CODE {
@@ -286,7 +298,7 @@ impl QueryExecutor {
             .admin_meta()
             .get_node_conn(node_id)
             .await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
+        let timeout_channel = Timeout::new(channel, Duration::from_millis(self.timeout_ms));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
         let mut resp_stream = client
             .tag_scan(cmd)

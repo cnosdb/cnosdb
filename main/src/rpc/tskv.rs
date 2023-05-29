@@ -228,6 +228,7 @@ impl TskvServiceImpl {
 
         let executor = QueryExecutor::new(
             option,
+            0,
             self.runtime.clone(),
             Some(self.kv_inst.clone()),
             meta,
@@ -274,6 +275,7 @@ impl TskvServiceImpl {
 
         let executor = QueryExecutor::new(
             option,
+            0,
             run_time,
             Some(kv_inst),
             meta,

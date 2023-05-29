@@ -6,7 +6,7 @@ use meta::error::MetaError;
 use meta::model::{MetaClientRef, MetaRef};
 use models::meta_data::*;
 use models::schema::{timestamp_convert, Precision};
-use models::utils::now_timestamp_nanos;
+use models::utils::{now_timestamp_millis, now_timestamp_nanos};
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{Meta, WritePointsRequest, WriteVnodeRequest};
 use protos::models::{
@@ -285,6 +285,7 @@ impl<'a> Default for VnodeMapping<'a> {
 #[derive(Debug)]
 pub struct PointWriter {
     node_id: u64,
+    timeout_ms: u64,
     kv_inst: Option<EngineRef>,
     meta_manager: MetaRef,
     hh_sender: Sender<HintedOffWriteReq>,
@@ -293,6 +294,7 @@ pub struct PointWriter {
 impl PointWriter {
     pub fn new(
         node_id: u64,
+        timeout_ms: u64,
         kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
         hh_sender: Sender<HintedOffWriteReq>,
@@ -300,6 +302,7 @@ impl PointWriter {
         Self {
             node_id,
             kv_inst,
+            timeout_ms,
             meta_manager,
             hh_sender,
         }
@@ -400,15 +403,13 @@ impl PointWriter {
             return result;
         }
 
-        if let Err(err) = self
+        let result = self
             .write_to_remote_node(vnode_id, node_id, tenant, precision, data.clone())
-            .await
-        {
+            .await;
+        if let Err(CoordinatorError::FailoverNode { id: _ }) = result {
             debug!(
-                "write data to remote {}({}) failed; {}!",
-                node_id,
-                vnode_id,
-                err.to_string()
+                "write data to remote {}({}) failed; write to hinted handoff!",
+                node_id, vnode_id
             );
 
             return self
@@ -417,12 +418,14 @@ impl PointWriter {
         }
 
         debug!(
-            "write data to remote {}({}) , inst exist: {}, success!",
+            "write data to remote {}({}) , inst exist: {}, {:?}!",
             node_id,
             vnode_id,
-            self.kv_inst.is_some()
+            self.kv_inst.is_some(),
+            result
         );
-        Ok(())
+
+        result
     }
 
     async fn write_to_handoff(
@@ -464,8 +467,9 @@ impl PointWriter {
             .meta_manager
             .admin_meta()
             .get_node_conn(node_id)
-            .await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
+            .await
+            .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?;
+        let timeout_channel = Timeout::new(channel, Duration::from_millis(self.timeout_ms));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
 
         let cmd = tonic::Request::new(WriteVnodeRequest {
@@ -475,7 +479,20 @@ impl PointWriter {
             data,
         });
 
-        let response = client.write_vnode_points(cmd).await?.into_inner();
+        let begin_time = now_timestamp_millis();
+        let response = client
+            .write_vnode_points(cmd)
+            .await
+            .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?
+            .into_inner();
+
+        let use_time = now_timestamp_millis() - begin_time;
+        if use_time > 200 {
+            debug!(
+                "write points to node:{}, use time too long {}",
+                node_id, use_time
+            )
+        }
         status_response_to_result(&response)
     }
 

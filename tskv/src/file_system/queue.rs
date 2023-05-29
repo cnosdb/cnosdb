@@ -28,6 +28,7 @@ pub struct Queue {
 
     read_file: File,
     read_file_id: u64,
+    read_file_pos: u64,
 }
 
 impl Queue {
@@ -56,6 +57,7 @@ impl Queue {
         Ok(Self {
             config,
             read_file,
+            read_file_pos,
             write_file,
             write_file_size,
             read_file_id: min_file_id,
@@ -98,6 +100,7 @@ impl Queue {
         let seek_cur = self.read_file.seek(SeekFrom::Current(0)).await?;
         Queue::write_offset(&mut self.read_file, seek_cur).await?;
         debug!("queue commit offset id:{}@{}", self.read_file_id, seek_cur);
+        self.read_file_pos = seek_cur;
 
         Ok(())
     }
@@ -106,6 +109,34 @@ impl Queue {
         self.write_file.flush().await?;
 
         Ok(())
+    }
+
+    pub async fn size(&mut self) -> Result<u64> {
+        let mut size = 0;
+        let mut index = self.read_file_id;
+        loop {
+            let file_name = file_utils::make_file_name(
+                PathBuf::from(self.config.data_path.clone()),
+                index,
+                &self.config.file_suffix,
+            );
+
+            let mut file = tokio::fs::OpenOptions::new()
+                .read(true)
+                .open(file_name)
+                .await?;
+
+            let offset = Queue::read_offset(&mut file).await?;
+            let file_size = file.metadata().await?.len();
+            size += file_size - offset;
+
+            index += 1;
+            if index > self.write_file_id {
+                break;
+            }
+        }
+
+        Ok(size)
     }
 
     async fn open_write_file(file_name: impl AsRef<Path>) -> Result<(File, u64)> {
@@ -179,6 +210,7 @@ impl Queue {
 
         let (file, read_pos) = Queue::open_read_file(new_file_name.clone()).await?;
         self.read_file = file;
+        self.read_file_pos = read_pos;
         self.read_file_id = new_file_id;
         info!("queue starts read: {:?}@{}", new_file_name, read_pos);
 

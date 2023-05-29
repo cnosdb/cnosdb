@@ -10,6 +10,7 @@ use tokio::sync::oneshot::Sender;
 use tokio::sync::RwLock;
 use tokio::time::{self, Duration};
 use trace::{debug, warn};
+use tracing::info;
 use tskv::byte_utils;
 use tskv::file_system::file_manager::list_dir_names;
 use tskv::file_system::queue::{Queue, QueueConfig};
@@ -188,12 +189,19 @@ impl HintedOffManager {
     async fn hinted_off_service(node_id: u64, writer: Arc<PointWriter>, queue: Arc<RwLock<Queue>>) {
         debug!("hinted_off_service started for node: {}", node_id);
 
+        let mut count = 0;
         let mut block = HintedOffBlock::new(0, 0, "".to_string(), Precision::NS, vec![]);
         loop {
             let read_result = queue.write().await.read(&mut block).await;
             match read_result {
                 Ok(_) => {
-                    HintedOffManager::write_until_success(writer.clone(), &block, node_id).await;
+                    HintedOffManager::write_until_success(
+                        queue.clone(),
+                        writer.clone(),
+                        &block,
+                        node_id,
+                    )
+                    .await;
                     let _ = queue.write().await.commit().await;
                 }
 
@@ -202,12 +210,23 @@ impl HintedOffManager {
                     time::sleep(Duration::from_secs(3)).await;
                 }
             }
+
+            if count % 10000 == 0 {
+                let size = queue.write().await.size().await;
+                info!("hinted handoff remain size: {:?}, node: {}", size, node_id)
+            }
+            count += 1
         }
     }
 
-    async fn write_until_success(writer: Arc<PointWriter>, block: &HintedOffBlock, node_id: u64) {
+    async fn write_until_success(
+        queue: Arc<RwLock<Queue>>,
+        writer: Arc<PointWriter>,
+        block: &HintedOffBlock,
+        node_id: u64,
+    ) {
         loop {
-            match writer
+            let result = writer
                 .write_to_remote_node(
                     block.vnode_id,
                     node_id,
@@ -215,14 +234,24 @@ impl HintedOffManager {
                     block.precision,
                     block.data.clone(),
                 )
-                .await
-            {
-                Ok(_) => break,
-                Err(e) => {
-                    warn!("hinted_off write data to node {} failed: {}", node_id, e);
-                    time::sleep(Duration::from_secs(3)).await;
-                }
+                .await;
+
+            if let Err(CoordinatorError::FailoverNode { id: _ }) = result {
+                let size = queue.write().await.size().await;
+                warn!(
+                    "hinted_off write data to {} failed, try later...; remain size: {:?}",
+                    node_id, size
+                );
+
+                time::sleep(Duration::from_secs(3)).await;
+                continue;
             }
+
+            if result.is_err() {
+                info!("hinted_off write data {} failed, {:?}", node_id, result);
+            }
+
+            break;
         }
     }
 }
