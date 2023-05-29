@@ -41,6 +41,7 @@ pub type CoordinatorRef = Arc<dyn Coordinator>;
 pub struct CoordService {
     node_id: u64,
     meta: MetaRef,
+    config: Config,
     runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
     writer: Arc<PointWriter>,
@@ -85,6 +86,7 @@ impl CoordService {
         let (hh_sender, hh_receiver) = mpsc::channel(1024);
         let point_writer = Arc::new(PointWriter::new(
             config.node_basic.node_id,
+            config.query.write_timeout_ms,
             kv_inst.clone(),
             meta_manager.clone(),
             hh_sender,
@@ -96,6 +98,7 @@ impl CoordService {
         let coord = Arc::new(Self {
             runtime,
             kv_inst,
+            config: config.clone(),
             node_id: config.node_basic.node_id,
             meta: meta_manager,
             writer: point_writer,
@@ -221,6 +224,7 @@ impl CoordService {
         }
         let executor = QueryExecutor::new(
             option,
+            self.config.query.read_timeout_ms,
             self.runtime.clone(),
             self.kv_inst.clone(),
             self.meta.clone(),
@@ -284,6 +288,7 @@ impl CoordService {
         }
         let executor = QueryExecutor::new(
             option,
+            self.config.query.read_timeout_ms,
             self.runtime.clone(),
             self.kv_inst.clone(),
             self.meta.clone(),

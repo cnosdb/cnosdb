@@ -189,12 +189,19 @@ impl HintedOffManager {
     async fn hinted_off_service(node_id: u64, writer: Arc<PointWriter>, queue: Arc<RwLock<Queue>>) {
         debug!("hinted_off_service started for node: {}", node_id);
 
+        let mut count = 0;
         let mut block = HintedOffBlock::new(0, 0, "".to_string(), Precision::NS, vec![]);
         loop {
             let read_result = queue.write().await.read(&mut block).await;
             match read_result {
                 Ok(_) => {
-                    HintedOffManager::write_until_success(writer.clone(), &block, node_id).await;
+                    HintedOffManager::write_until_success(
+                        queue.clone(),
+                        writer.clone(),
+                        &block,
+                        node_id,
+                    )
+                    .await;
                     let _ = queue.write().await.commit().await;
                 }
 
@@ -203,10 +210,21 @@ impl HintedOffManager {
                     time::sleep(Duration::from_secs(3)).await;
                 }
             }
+
+            if count % 10000 == 0 {
+                let size = queue.write().await.size().await;
+                info!("hinted handoff remain size: {:?}, node: {}", size, node_id)
+            }
+            count += 1
         }
     }
 
-    async fn write_until_success(writer: Arc<PointWriter>, block: &HintedOffBlock, node_id: u64) {
+    async fn write_until_success(
+        queue: Arc<RwLock<Queue>>,
+        writer: Arc<PointWriter>,
+        block: &HintedOffBlock,
+        node_id: u64,
+    ) {
         loop {
             let result = writer
                 .write_to_remote_node(
@@ -219,7 +237,11 @@ impl HintedOffManager {
                 .await;
 
             if let Err(CoordinatorError::FailoverNode { id: _ }) = result {
-                warn!("hinted_off write data {} failed, try later...", node_id);
+                let size = queue.write().await.size().await;
+                warn!(
+                    "hinted_off write data to {} failed, try later...; remain size: {:?}",
+                    node_id, size
+                );
 
                 time::sleep(Duration::from_secs(3)).await;
                 continue;
