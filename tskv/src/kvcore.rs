@@ -3,11 +3,12 @@ use std::panic;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use datafusion::arrow::record_batch::RecordBatch;
 use memory_pool::{MemoryPool, MemoryPoolRef};
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::codec::Encoding;
-use models::meta_data::VnodeStatus;
+use models::meta_data::{VnodeId, VnodeStatus};
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{make_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
@@ -22,7 +23,7 @@ use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn};
 
 use crate::compaction::{
-    self, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
+    self, check, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
 };
 use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
 use crate::database::Database;
@@ -317,6 +318,7 @@ impl TsKv {
         let f = async move {
             while let Some(x) = receiver.recv().await {
                 // TODO(zipper): this make config `flush_req_channel_cap` wasted
+                // Run flush job and trigger compaction.
                 runtime.spawn(run_flush_memtable_job(
                     x,
                     ctx.clone(),
@@ -640,6 +642,7 @@ impl Engine for TsKv {
                 };
 
                 if let Some(req) = request {
+                    // Run flush job and trigger compaction.
                     run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
@@ -648,8 +651,7 @@ impl Engine for TsKv {
                         self.summary_task_sender.clone(),
                         Some(self.compact_task_sender.clone()),
                     )
-                    .await
-                    .unwrap()
+                    .await?;
                 }
             }
 
@@ -947,6 +949,7 @@ impl Engine for TsKv {
                 let flush_req = tsf_wlock.build_flush_req(true);
                 drop(tsf_wlock);
                 if let Some(req) = flush_req {
+                    // Run flush job but do not trigger compaction.
                     if let Err(e) = run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
@@ -993,6 +996,36 @@ impl Engine for TsKv {
         Ok(())
     }
 
+    async fn get_vnode_hash_tree(&self, vnode_id: VnodeId) -> Result<RecordBatch> {
+        for database in self.version_set.read().await.get_all_db().values() {
+            let db = database.read().await;
+            if let Some(vnode) = db.ts_families().get(&vnode_id).cloned() {
+                drop(db);
+                let request = {
+                    let mut tsfamily = vnode.write().await;
+                    tsfamily.switch_to_immutable();
+                    tsfamily.build_flush_req(true)
+                };
+
+                if let Some(req) = request {
+                    // Run flush job but do not trigger compaction.
+                    run_flush_memtable_job(
+                        req,
+                        self.global_ctx.clone(),
+                        self.global_seq_ctx.clone(),
+                        self.version_set.clone(),
+                        self.summary_task_sender.clone(),
+                        None,
+                    )
+                    .await?
+                }
+                return check::vnode_checksum(vnode).await;
+            }
+        }
+
+        Ok(RecordBatch::new_empty(check::vnode_table_checksum_schema()))
+    }
+
     async fn close(&self) {
         let (tx, mut rx) = mpsc::channel(1);
         if let Err(e) = self.close_sender.send(tx) {
@@ -1007,6 +1040,18 @@ impl Engine for TsKv {
 
 #[cfg(test)]
 impl TsKv {
+    pub(crate) fn global_ctx(&self) -> Arc<GlobalContext> {
+        self.global_ctx.clone()
+    }
+
+    pub(crate) fn global_sql_ctx(&self) -> Arc<GlobalSequenceContext> {
+        self.global_seq_ctx.clone()
+    }
+
+    pub(crate) fn version_set(&self) -> Arc<RwLock<VersionSet>> {
+        self.version_set.clone()
+    }
+
     pub(crate) fn summary_task_sender(&self) -> Sender<SummaryTask> {
         self.summary_task_sender.clone()
     }

@@ -8,7 +8,7 @@ use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
 use utils::BloomFilter;
 
-use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u64};
+use crate::byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u64};
 use crate::error::{self, Error, Result};
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
@@ -37,6 +37,12 @@ pub enum ReadTsmError {
     Decode {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
+
+    #[snafu(display("Datablock crc32 check failed"))]
+    CrcCheck,
+
+    #[snafu(display("TSM file is lost: {}", reason))]
+    FileNotFound { reason: String },
 
     #[snafu(display("TSM file is invalid: {}", reason))]
     Invalid { reason: String },
@@ -589,7 +595,9 @@ pub fn decode_data_block(
         });
     }
 
-    // let crc_ts = &self.buf[..4];
+    if byte_utils::decode_be_u32(&buf[..4]) != crc32fast::hash(&buf[4..val_off as usize]) {
+        return Err(ReadTsmError::CrcCheck);
+    }
     let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES as usize);
     let ts_encoding = get_encoding(&buf[4..val_off as usize]);
     let ts_codec = get_ts_codec(ts_encoding);
@@ -597,7 +605,11 @@ pub fn decode_data_block(
         .decode(&buf[4..val_off as usize], &mut ts)
         .context(DecodeSnafu)?;
 
-    // let crc_data = &self.buf[(val_offset - offset) as usize..4];
+    if byte_utils::decode_be_u32(&buf[val_off as usize..])
+        != crc32fast::hash(&buf[(val_off + 4) as usize..])
+    {
+        return Err(ReadTsmError::CrcCheck);
+    }
     let data = &buf[(val_off + 4) as usize..];
     match field_type {
         ValueType::Float => {

@@ -1104,6 +1104,14 @@ impl SeriesGroupRowIterator {
                     path.display()
                 );
 
+                if !path.is_file() {
+                    return Err(Error::ReadTsm {
+                        source: crate::tsm::ReadTsmError::FileNotFound {
+                            reason: format!("File Not Found: {}", path.display()),
+                        },
+                    });
+                }
+
                 let tsm_reader = super_version.version.get_tsm_reader(path).await?;
                 for idx in tsm_reader.index_iterator_opt(field_id) {
                     let location = FieldFileLocation::new(

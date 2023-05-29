@@ -71,8 +71,11 @@ pub trait MetaClient: Send + Sync + Debug {
     ) -> MetaResult<()>;
     async fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>>;
     async fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>>;
-    async fn reasign_member_role(&self, user_id: Oid, role: TenantRoleIdentifier)
-        -> MetaResult<()>;
+    async fn reassign_member_role(
+        &self,
+        user_id: Oid,
+        role: TenantRoleIdentifier,
+    ) -> MetaResult<()>;
     async fn remove_member(&self, user_id: Oid) -> MetaResult<()>;
 
     // tenant role
@@ -80,7 +83,7 @@ pub trait MetaClient: Send + Sync + Debug {
         &self,
         role_name: String,
         system_role: SystemTenantRole,
-        additiona_privileges: HashMap<String, DatabasePrivilege>,
+        additional_privileges: HashMap<String, DatabasePrivilege>,
     ) -> MetaResult<()>;
     async fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>>;
     async fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>>;
@@ -125,8 +128,8 @@ pub trait MetaClient: Send + Sync + Debug {
     fn database_min_ts(&self, db: &str) -> Option<i64>;
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
 
-    fn get_vnode_all_info(&self, id: u32) -> Option<VnodeAllInfo>;
-    fn get_vnode_repl_set(&self, id: u32) -> Option<ReplicationSet>;
+    fn get_vnode_all_info(&self, vnode_id: u32) -> Option<VnodeAllInfo>;
+    fn get_vnode_repl_set(&self, vnode_id: u32) -> Option<ReplicationSet>;
 
     fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>>;
 
@@ -136,6 +139,8 @@ pub trait MetaClient: Send + Sync + Debug {
         hash_id: u64,
         ts: i64,
     ) -> MetaResult<ReplicationSet>;
+
+    fn get_replication_set(&self, repl_id: u32) -> Option<ReplicationSet>;
 
     async fn update_replication_set(
         &self,

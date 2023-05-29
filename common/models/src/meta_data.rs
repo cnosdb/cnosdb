@@ -101,6 +101,7 @@ pub struct ReplicationSet {
 pub struct VnodeInfo {
     pub id: VnodeId,
     pub node_id: NodeId,
+    #[serde(default = "Default::default")]
     pub status: VnodeStatus,
 }
 
@@ -114,11 +115,12 @@ impl VnodeInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq)]
 pub enum VnodeStatus {
     #[default]
     Running,
     Copying,
+    Broken,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

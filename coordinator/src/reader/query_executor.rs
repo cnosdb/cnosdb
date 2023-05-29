@@ -9,7 +9,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::MetaRef;
 use metrics::count::U64Counter;
 use models::arrow_array::build_arrow_array_builders;
-use models::meta_data::VnodeInfo;
+use models::meta_data::{VnodeInfo, VnodeStatus};
 use models::utils::{now_timestamp_millis, now_timestamp_nanos};
 use models::{record_batch_decode, SeriesKey};
 use protos::kv_service::tskv_service_client::TskvServiceClient;
@@ -19,6 +19,7 @@ use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::debug;
+use tracing::error;
 use tskv::query_iterator::{QueryOption, RowIterator};
 use tskv::EngineRef;
 
@@ -382,7 +383,6 @@ impl QueryExecutor {
 
         let mut iterator =
             RowIterator::new(self.runtime.clone(), kv_inst, self.option.clone(), vnode.id).await?;
-
         while let Some(data) = iterator.next().await {
             match data {
                 Ok(val) => {
@@ -390,10 +390,47 @@ impl QueryExecutor {
                     self.sender.send(Ok(val)).await?;
                 }
                 Err(err) => {
+                    if let tskv::Error::ReadTsm { source } = &err {
+                        match source {
+                            tskv::tsm::ReadTsmError::CrcCheck
+                            | tskv::tsm::ReadTsmError::FileNotFound { .. }
+                            | tskv::tsm::ReadTsmError::Invalid { .. } => {
+                                error!("vnode {} data broken: {:?}", vnode.id, source);
+                                let _ = self
+                                    .change_vnode_to_broken(&self.option.table_schema.tenant, vnode)
+                                    .await;
+                            }
+
+                            _ => {}
+                        }
+                    }
                     return Err(CoordinatorError::from(err));
                 }
             };
         }
+
+        Ok(())
+    }
+
+    pub async fn change_vnode_to_broken(
+        &self,
+        tenant: &str,
+        vnode: VnodeInfo,
+    ) -> CoordinatorResult<()> {
+        let mut all_info =
+            crate::service::get_vnode_all_info(self.meta_manager.clone(), tenant, vnode.id).await?;
+
+        let meta_client = self
+            .meta_manager
+            .tenant_manager()
+            .tenant_meta(tenant)
+            .await
+            .ok_or(CoordinatorError::TenantNotFound {
+                name: tenant.to_string(),
+            })?;
+
+        all_info.set_status(VnodeStatus::Broken);
+        meta_client.update_vnode(&all_info).await?;
 
         Ok(())
     }
@@ -458,7 +495,17 @@ impl QueryExecutor {
                 }
 
                 let random = now_timestamp_nanos() as usize % repl.vnodes.len();
-                let vnode = repl.vnodes[random].clone();
+                let vnode = {
+                    let mut tmp = repl.vnodes[random].clone();
+                    for index in random..(random + repl.vnodes.len()) {
+                        let status = repl.vnodes[index % repl.vnodes.len()].status;
+                        if status == VnodeStatus::Running || status == VnodeStatus::Copying {
+                            tmp = repl.vnodes[index % repl.vnodes.len()].clone();
+                            break;
+                        }
+                    }
+                    tmp
+                };
 
                 let list = vnode_mapping.entry(vnode.node_id).or_default();
                 list.push(vnode);

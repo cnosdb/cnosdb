@@ -449,6 +449,26 @@ impl TableColumn {
         f.set_metadata(map);
         f
     }
+
+    pub fn encoding_valid(&self) -> bool {
+        if let ColumnType::Field(ValueType::Float) = self.column_type {
+            return self.encoding.is_double_encoding();
+        } else if let ColumnType::Field(ValueType::Boolean) = self.column_type {
+            return self.encoding.is_bool_encoding();
+        } else if let ColumnType::Field(ValueType::Integer) = self.column_type {
+            return self.encoding.is_bigint_encoding();
+        } else if let ColumnType::Field(ValueType::Unsigned) = self.column_type {
+            return self.encoding.is_unsigned_encoding();
+        } else if let ColumnType::Field(ValueType::String) = self.column_type {
+            return self.encoding.is_string_encoding();
+        } else if let ColumnType::Time(_) = self.column_type {
+            return self.encoding.is_timestamp_encoding();
+        } else if let ColumnType::Tag = self.column_type {
+            return self.encoding.is_string_encoding();
+        }
+
+        true
+    }
 }
 
 impl From<ColumnType> for ArrowDataType {

@@ -1,0 +1,69 @@
+-- EXECUTE SQL: drop user if exists test_au_u1; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_au_u2; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_au_u1; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_au_u2; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant cnosdb add user test_au_u1 as member; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant cnosdb add user test_au_u2 as member; --
+200 OK
+
+
+-- EXECUTE SQL: select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2'); --
+-- AFTER_SORT --
+200 OK
+user_name,is_admin,user_options
+root,true,"{""password"":""*****"",""must_change_password"":true,""comment"":""system admin"",""granted_admin"":false}"
+test_au_u1,false,"{""password"":""*****"",""must_change_password"":false,""granted_admin"":false}"
+test_au_u2,false,"{""password"":""*****"",""must_change_password"":false,""granted_admin"":false}"
+
+-- EXECUTE SQL: alter user test_au_u1 set granted_admin = true; --
+422 Unprocessable Entity
+{"error_code":"010004","error_message":"Insufficient privileges, expected [maintainer for system]"}
+-- ERROR:  --
+
+-- EXECUTE SQL: alter user test_au_u1 set granted_admin = true; --
+200 OK
+
+
+-- EXECUTE SQL: select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2'); --
+-- AFTER_SORT --
+200 OK
+user_name,is_admin,user_options
+root,true,"{""password"":""*****"",""must_change_password"":true,""comment"":""system admin"",""granted_admin"":false}"
+test_au_u1,true,"{""password"":""*****"",""must_change_password"":false,""granted_admin"":true}"
+test_au_u2,false,"{""password"":""*****"",""must_change_password"":false,""granted_admin"":false}"
+
+-- EXECUTE SQL: alter user test_au_u2 set granted_admin = true; --
+200 OK
+
+
+-- EXECUTE SQL: select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2'); --
+-- AFTER_SORT --
+200 OK
+user_name,is_admin,user_options
+root,true,"{""password"":""*****"",""must_change_password"":true,""comment"":""system admin"",""granted_admin"":false}"
+test_au_u1,true,"{""password"":""*****"",""must_change_password"":false,""granted_admin"":true}"
+test_au_u2,true,"{""password"":""*****"",""must_change_password"":false,""granted_admin"":true}"
+
+-- EXECUTE SQL: alter user test_au_u1 set granted_admin = false; --
+200 OK
+
+
+-- EXECUTE SQL: alter user test_au_u2 set granted_admin = false; --
+422 Unprocessable Entity
+{"error_code":"010004","error_message":"Insufficient privileges, expected [maintainer for system]"}
+-- ERROR:  --

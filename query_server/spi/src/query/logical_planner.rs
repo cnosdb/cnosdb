@@ -387,11 +387,14 @@ pub fn sql_options_to_user_options(
             "comment" => {
                 builder.comment(parse_string_value(value)?);
             }
+            "granted_admin" => {
+                builder.granted_admin(parse_bool_value(value)?);
+            }
             _ => {
                 return Err(ParserError::ParserError(format!(
-                    "Expected option [comment], found [{}]",
-                    name
-                )))
+                "Expected option [password | rsa_public_key | comment | granted_admin], found [{}]",
+                name
+            )))
             }
         }
     }

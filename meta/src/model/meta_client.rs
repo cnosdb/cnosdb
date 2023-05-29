@@ -246,7 +246,7 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    async fn reasign_member_role(
+    async fn reassign_member_role(
         &self,
         user_id: Oid,
         role: TenantRoleIdentifier,
@@ -725,7 +725,7 @@ impl MetaClient for RemoteMetaClient {
                             return Some(VnodeAllInfo {
                                 vnode_id: vnode_info.id,
                                 node_id: vnode_info.node_id,
-                                status: vnode_info.status.clone(),
+                                status: vnode_info.status,
                                 repl_set_id: repl_set.id,
                                 bucket_id: bucket.id,
                                 db_name: db_name.clone(),
@@ -743,13 +743,13 @@ impl MetaClient for RemoteMetaClient {
         None
     }
 
-    fn get_vnode_repl_set(&self, id: u32) -> Option<ReplicationSet> {
+    fn get_vnode_repl_set(&self, vnode_id: u32) -> Option<ReplicationSet> {
         let data = self.data.read();
         for (_db_name, db_info) in data.dbs.iter() {
             for bucket in db_info.buckets.iter() {
                 for repl_set in bucket.shard_group.iter() {
                     for vnode_info in repl_set.vnodes.iter() {
-                        if vnode_info.id == id {
+                        if vnode_info.id == vnode_id {
                             return Some(repl_set.clone());
                         }
                     }
@@ -779,6 +779,21 @@ impl MetaClient for RemoteMetaClient {
         let bucket = self.create_bucket(db, ts).await?;
 
         Ok(bucket.vnode_for(hash_id))
+    }
+
+    fn get_replication_set(&self, repl_id: u32) -> Option<ReplicationSet> {
+        let data = self.data.read();
+        for (_db_name, db_info) in data.dbs.iter() {
+            for bucket in db_info.buckets.iter() {
+                for repl_set in bucket.shard_group.iter() {
+                    if repl_set.id == repl_id {
+                        return Some(repl_set.clone());
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     async fn update_vnode(&self, info: &VnodeAllInfo) -> MetaResult<()> {

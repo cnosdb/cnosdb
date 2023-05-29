@@ -1409,18 +1409,21 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let user_desc = self.schema_provider.get_user(&user_name).await?;
         let user_id = *user_desc.id();
 
+        let mut privileges = vec![Privilege::Global(GlobalPrivilege::User(Some(user_id)))];
+
         let alter_user_action = match operation {
             AlterUserOperation::RenameTo(new_name) => {
                 AlterUserAction::RenameTo(normalize_ident(new_name))
             }
             AlterUserOperation::Set(sql_option) => {
                 let user_options = sql_options_to_user_options(vec![sql_option])?;
-
+                if user_options.granted_admin().is_some() {
+                    // 修改admin参数需要系统管理权限
+                    privileges = vec![Privilege::Global(GlobalPrivilege::System)];
+                }
                 AlterUserAction::Set(user_options)
             }
         };
-
-        let privileges = vec![Privilege::Global(GlobalPrivilege::User(Some(user_id)))];
 
         let plan = Plan::DDL(DDLPlan::AlterUser(AlterUser {
             user_name,

@@ -203,6 +203,29 @@ pub mod admin_command_request {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FetchVnodeChecksumRequest {
+    #[prost(uint32, tag = "1")]
+    pub vnode_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AdminFetchCommandRequest {
+    #[prost(string, tag = "1")]
+    pub tenant: ::prost::alloc::string::String,
+    #[prost(oneof = "admin_fetch_command_request::Command", tags = "8")]
+    pub command: ::core::option::Option<admin_fetch_command_request::Command>,
+}
+/// Nested message and enum types in `AdminFetchCommandRequest`.
+pub mod admin_fetch_command_request {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Command {
+        #[prost(message, tag = "8")]
+        FetchVnodeChecksum(super::FetchVnodeChecksumRequest),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BatchBytesResponse {
     #[prost(int32, tag = "1")]
     pub code: i32,
@@ -414,6 +437,25 @@ pub mod tskv_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn exec_admin_fetch_command(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AdminFetchCommandRequest>,
+        ) -> Result<tonic::Response<super::BatchBytesResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/kv_service.TSKVService/ExecAdminFetchCommand",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
         pub async fn download_file(
             &mut self,
             request: impl tonic::IntoRequest<super::DownloadFileRequest>,
@@ -537,6 +579,10 @@ pub mod tskv_service_server {
             &self,
             request: tonic::Request<super::AdminCommandRequest>,
         ) -> Result<tonic::Response<super::StatusResponse>, tonic::Status>;
+        async fn exec_admin_fetch_command(
+            &self,
+            request: tonic::Request<super::AdminFetchCommandRequest>,
+        ) -> Result<tonic::Response<super::BatchBytesResponse>, tonic::Status>;
         /// Server streaming response type for the DownloadFile method.
         type DownloadFileStream: futures_core::Stream<
                 Item = Result<super::BatchBytesResponse, tonic::Status>,
@@ -816,6 +862,46 @@ pub mod tskv_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = ExecAdminCommandSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/kv_service.TSKVService/ExecAdminFetchCommand" => {
+                    #[allow(non_camel_case_types)]
+                    struct ExecAdminFetchCommandSvc<T: TskvService>(pub Arc<T>);
+                    impl<
+                        T: TskvService,
+                    > tonic::server::UnaryService<super::AdminFetchCommandRequest>
+                    for ExecAdminFetchCommandSvc<T> {
+                        type Response = super::BatchBytesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AdminFetchCommandRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).exec_admin_fetch_command(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ExecAdminFetchCommandSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
