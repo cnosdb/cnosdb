@@ -289,7 +289,7 @@ pub fn allocation_replication_set(
     }
 
     let mut incr_id = begin_seq;
-    let mut index = begin_seq;
+    let mut index = 0;
     let mut group = vec![];
 
     for _ in 0..shards {
