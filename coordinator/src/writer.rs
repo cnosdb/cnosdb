@@ -489,7 +489,7 @@ impl PointWriter {
         let use_time = now_timestamp_millis() - begin_time;
         if use_time > 200 {
             debug!(
-                "write points to node:{}, use time too big {}",
+                "write points to node:{}, use time too long {}",
                 node_id, use_time
             )
         }

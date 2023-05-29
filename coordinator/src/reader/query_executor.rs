@@ -253,7 +253,7 @@ impl QueryExecutor {
         let use_time = now_timestamp_millis() - begin_time;
         if use_time > 200 {
             debug!(
-                "query data to node:{}, use time too big {}",
+                "query data to node:{}, use time too long {}",
                 node_id, use_time
             )
         }
