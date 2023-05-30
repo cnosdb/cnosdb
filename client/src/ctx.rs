@@ -9,12 +9,14 @@ use http_protocol::status_code::OK;
 
 use crate::config::ConfigOptions;
 use crate::print_format::PrintFormat;
-use crate::Result;
+use crate::{ExitCode, Result};
 
 pub const DEFAULT_USER: &str = "cnosdb";
 pub const DEFAULT_PASSWORD: &str = "";
 pub const DEFAULT_DATABASE: &str = "public";
 pub const DEFAULT_PRECISION: &str = "NS";
+pub const DEFAULT_USE_SSL: bool = false;
+pub const DEFAULT_USE_UNSAFE_SSL: bool = false;
 
 pub const API_V1_SQL_PATH: &str = "/api/v1/sql";
 pub const API_V1_WRITE_PATH: &str = "/api/v1/write";
@@ -29,6 +31,8 @@ pub struct SessionConfig {
     pub stream_trigger_interval: Option<String>,
     pub fmt: PrintFormat,
     pub config_options: ConfigOptions,
+    pub use_ssl: bool,
+    pub use_unsafe_ssl: bool,
 }
 
 impl SessionConfig {
@@ -46,6 +50,8 @@ impl SessionConfig {
             stream_trigger_interval: None,
             config_options,
             fmt: PrintFormat::Csv,
+            use_ssl: DEFAULT_USE_SSL,
+            use_unsafe_ssl: DEFAULT_USE_UNSAFE_SSL,
         }
     }
 
@@ -100,8 +106,8 @@ impl SessionConfig {
         self
     }
 
-    pub fn with_tls(mut self, tls: TLSConfig) -> Self {
-        self.connection_info.tls_config = Some(tls);
+    pub fn with_ca_certs(mut self, ca_cert_files: Vec<String>) -> Self {
+        self.connection_info.ca_cert_files = ca_cert_files;
 
         self
     }
@@ -116,6 +122,18 @@ impl SessionConfig {
         if let Some(precision) = precision {
             self.precision = precision;
         }
+
+        self
+    }
+
+    pub fn with_ssl(mut self, use_ssl: bool) -> Self {
+        self.use_ssl = use_ssl;
+
+        self
+    }
+
+    pub fn with_unsafe_ssl(mut self, use_unsafe_ssl: bool) -> Self {
+        self.use_unsafe_ssl = use_unsafe_ssl;
 
         self
     }
@@ -142,12 +160,7 @@ pub struct ConnectionInfo {
     pub host: String,
     pub port: u16,
 
-    pub tls_config: Option<TLSConfig>,
-}
-
-pub struct TLSConfig {
-    pub client_cert_file: String,
-    pub client_key_file: String,
+    pub ca_cert_files: Vec<String>,
 }
 
 pub struct SessionContext {
@@ -159,7 +172,17 @@ pub struct SessionContext {
 impl SessionContext {
     pub fn new(session_config: SessionConfig) -> Self {
         let c = &session_config.connection_info;
-        let http_client = HttpClient::from_addr(c.host.clone(), c.port);
+        let http_client = HttpClient::new(
+            &c.host,
+            c.port,
+            session_config.use_ssl,
+            session_config.use_unsafe_ssl,
+            &c.ca_cert_files,
+        )
+        .unwrap_or_else(|e| {
+            eprintln!("ERROR: Failed to build http client: {}", e);
+            std::process::exit(ExitCode::HttpClientInitFailed as i32);
+        });
 
         Self {
             session_config,

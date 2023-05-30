@@ -8,9 +8,10 @@ edition.workspace = true
 [dependencies]
 models = { path = "../models" }
 
+async-backtrace = { workspace = true, optional = true }
 reqwest = { workspace = true, features = ["native-tls", "__rustls"] }
 serde = { workspace = true }
-async-backtrace = { workspace = true, optional = true }
+snafu = { workspace = true }
 
 [features]
 default = []
