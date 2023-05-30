@@ -76,8 +76,8 @@ default = []
 backtrace = ["async-backtrace"]
 
 [dev-dependencies]
-prost-types = { version = "0.11.2" }
-reqwest = "0.11"
+prost-types = { workspace = true }
+reqwest = { workspace = true }
 
 
 [[example]]
