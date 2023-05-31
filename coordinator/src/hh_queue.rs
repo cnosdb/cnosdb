@@ -177,11 +177,13 @@ impl HintedOffManager {
         let queue = Arc::new(RwLock::new(queue));
         nodes.insert(id, queue.clone());
 
-        tokio::spawn(HintedOffManager::hinted_off_service(
-            id,
-            self.writer.clone(),
-            queue.clone(),
-        ));
+        for _ in 0..self.config.threads {
+            tokio::spawn(HintedOffManager::hinted_off_service(
+                id,
+                self.writer.clone(),
+                queue.clone(),
+            ));
+        }
 
         Ok(queue)
     }
@@ -207,11 +209,11 @@ impl HintedOffManager {
 
                 Err(err) => {
                     debug!("read hindoff data: {}", err.to_string());
-                    time::sleep(Duration::from_secs(3)).await;
+                    time::sleep(Duration::from_secs(10)).await;
                 }
             }
 
-            if count % 10000 == 0 {
+            if count % 1000 == 0 {
                 let size = queue.write().await.size().await;
                 info!("hinted handoff remain size: {:?}, node: {}", size, node_id)
             }
@@ -243,7 +245,7 @@ impl HintedOffManager {
                     node_id, size
                 );
 
-                time::sleep(Duration::from_secs(3)).await;
+                time::sleep(Duration::from_secs(10)).await;
                 continue;
             }
 
