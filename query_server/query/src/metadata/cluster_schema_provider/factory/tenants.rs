@@ -1,43 +1,96 @@
+use std::any::Any;
 use std::sync::Arc;
 
-use datafusion::datasource::MemTable;
-use meta::error::MetaError;
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::common::{DataFusionError, Result as DFResult};
+use datafusion::datasource::{TableProvider, TableType};
+use datafusion::execution::context::SessionState;
+use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::Expr;
+use datafusion::physical_plan::memory::MemoryExec;
+use datafusion::physical_plan::ExecutionPlan;
 use meta::model::MetaRef;
 use models::auth::user::User;
 use models::oid::Identifier;
 
-use crate::metadata::cluster_schema_provider::builder::tenants::ClusterSchemaTenantsBuilder;
+use crate::metadata::cluster_schema_provider::builder::tenants::{
+    ClusterSchemaTenantsBuilder, TENANT_SCHEMA,
+};
 use crate::metadata::cluster_schema_provider::ClusterSchemaTableFactory;
 
 const INFORMATION_SCHEMA_TENANTS: &str = "TENANTS";
 
 pub struct ClusterSchemaTenantsFactory {}
 
-#[async_trait::async_trait]
 impl ClusterSchemaTableFactory for ClusterSchemaTenantsFactory {
     fn table_name(&self) -> &str {
         INFORMATION_SCHEMA_TENANTS
     }
 
-    async fn create(
+    fn create(&self, user: &User, metadata: MetaRef) -> Arc<dyn TableProvider> {
+        Arc::new(ClusterSchemaTenantsTable::new(metadata, user.clone()))
+    }
+}
+
+pub struct ClusterSchemaTenantsTable {
+    user: User,
+    metadata: MetaRef,
+}
+
+impl ClusterSchemaTenantsTable {
+    pub fn new(metadata: MetaRef, user: User) -> Self {
+        Self { user, metadata }
+    }
+}
+
+#[async_trait::async_trait]
+impl TableProvider for ClusterSchemaTenantsTable {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn schema(&self) -> SchemaRef {
+        TENANT_SCHEMA.clone()
+    }
+
+    fn table_type(&self) -> TableType {
+        TableType::Base
+    }
+
+    async fn scan(
         &self,
-        user: &User,
-        metadata: MetaRef,
-    ) -> std::result::Result<Arc<MemTable>, MetaError> {
+        _state: &SessionState,
+        projection: Option<&Vec<usize>>,
+        _filters: &[Expr],
+        _agg_with_grouping: Option<&AggWithGrouping>,
+        _limit: Option<usize>,
+    ) -> DFResult<Arc<dyn ExecutionPlan>> {
         let mut builder = ClusterSchemaTenantsBuilder::default();
 
         // Only visible to admin
-        if user.desc().is_admin() {
-            for tenant in metadata.tenant_manager().tenants().await? {
-                let options_str = serde_json::to_string(tenant.options())
-                    .map_err(|e| MetaError::CommonError { msg: e.to_string() })?;
+        if self.user.desc().is_admin() {
+            let tenants = self
+                .metadata
+                .tenant_manager()
+                .tenants()
+                .await
+                .map_err(|e| DataFusionError::Internal(format!("failed to list tenant {}", e)))?;
+            for tenant in tenants.iter() {
+                let options_str = serde_json::to_string(tenant.options()).map_err(|e| {
+                    DataFusionError::Internal(format!("failed to serialize options: {}", e))
+                })?;
 
                 builder.append_row(tenant.name(), options_str);
             }
         }
 
-        let mem_table = MemTable::try_from(builder)
-            .map_err(|e| MetaError::CommonError { msg: e.to_string() })?;
-        Ok(Arc::new(mem_table))
+        let rb: RecordBatch = builder.try_into()?;
+
+        Ok(Arc::new(MemoryExec::try_new(
+            &[vec![rb]],
+            self.schema(),
+            projection.cloned(),
+        )?))
     }
 }

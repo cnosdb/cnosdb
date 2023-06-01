@@ -18,7 +18,7 @@ pub type WriteError =
 
 #[derive(Debug, Clone)]
 pub struct MetaHttpClient {
-    inner: Arc<surf::Client>,
+    inner: Arc<reqwest::Client>,
     addrs: Vec<String>,
     pub leader: Arc<Mutex<String>>,
 }
@@ -34,7 +34,7 @@ impl MetaHttpClient {
         let leader_addr = addrs[0].clone();
 
         Self {
-            inner: Arc::new(surf::Client::new()),
+            inner: Arc::new(reqwest::Client::new()),
             addrs,
             leader: Arc::new(Mutex::new(leader_addr)),
         }
@@ -167,40 +167,21 @@ impl MetaHttpClient {
     {
         let url = format!("http://{}/{}", self.leader.lock().unwrap(), uri);
 
-        /*-------------------surf client--------------------------- */
-        let mut resp = if let Some(r) = req {
-            self.inner
-                .post(url.clone())
-                .body(surf::Body::from_json(r).unwrap())
+        let resp = if let Some(r) = req {
+            self.inner.post(url.clone()).json(r)
         } else {
             self.inner.get(url.clone())
         }
+        .send()
         .await
-        .map_err(|e| RPCError::Network(NetworkError::new(&AnyError::error(e.to_string()))))?;
+        .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
 
         let res: Result<Resp, Err> = resp
-            .body_json()
+            .json()
             .await
-            .map_err(|e| RPCError::Network(NetworkError::new(&AnyError::error(e.to_string()))))?;
+            .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
 
         res.map_err(|e| RPCError::RemoteError(RemoteError::new(0, e)))
-
-        /*-------------------reqwest client--------------------------- */
-        // let resp = if let Some(r) = req {
-        //     self.inner.post(url.clone()).json(r)
-        // } else {
-        //     self.inner.get(url.clone())
-        // }
-        // .send()
-        // .await
-        // .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
-
-        // let res: Result<Resp, Err> = resp
-        //     .json()
-        //     .await
-        //     .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
-
-        // res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
     }
 
     pub async fn limiter_request(

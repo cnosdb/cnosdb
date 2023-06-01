@@ -3,30 +3,21 @@ use std::sync::Arc;
 use datafusion::arrow::array::StringBuilder;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
+    pub static ref TENANT_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
         Field::new("tenant_name", DataType::Utf8, false),
         Field::new("tenant_options", DataType::Utf8, false),
     ]));
 }
 
 /// Builds the `information_schema.TENANTS` table row by row
+#[derive(Default)]
 pub struct ClusterSchemaTenantsBuilder {
     tenant_names: StringBuilder,
     tenant_options: StringBuilder,
-}
-
-impl Default for ClusterSchemaTenantsBuilder {
-    fn default() -> Self {
-        Self {
-            tenant_names: StringBuilder::new(),
-            tenant_options: StringBuilder::new(),
-        }
-    }
 }
 
 impl ClusterSchemaTenantsBuilder {
@@ -37,7 +28,7 @@ impl ClusterSchemaTenantsBuilder {
     }
 }
 
-impl TryFrom<ClusterSchemaTenantsBuilder> for MemTable {
+impl TryFrom<ClusterSchemaTenantsBuilder> for RecordBatch {
     type Error = DataFusionError;
 
     fn try_from(value: ClusterSchemaTenantsBuilder) -> Result<Self, Self::Error> {
@@ -47,13 +38,13 @@ impl TryFrom<ClusterSchemaTenantsBuilder> for MemTable {
         } = value;
 
         let batch = RecordBatch::try_new(
-            SCHEMA.clone(),
+            TENANT_SCHEMA.clone(),
             vec![
                 Arc::new(tenant_names.finish()),
                 Arc::new(tenant_options.finish()),
             ],
         )?;
 
-        MemTable::try_new(SCHEMA.clone(), vec![vec![batch]])
+        Ok(batch)
     }
 }

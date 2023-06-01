@@ -11,6 +11,12 @@ use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::TableReference;
+pub use information_schema_provider::{
+    DATABASES_DATABASE_NAME, DATABASES_PERCISION, DATABASES_REPLICA, DATABASES_SHARD,
+    DATABASES_TENANT_NAME, DATABASES_TTL, DATABASES_VNODE_DURATION, INFORMATION_SCHEMA_DATABASES,
+    INFORMATION_SCHEMA_TABLES, TABLES_TABLE_DATABASE, TABLES_TABLE_ENGINE, TABLES_TABLE_NAME,
+    TABLES_TABLE_OPTIONS, TABLES_TABLE_TENANT, TABLES_TABLE_TYPE,
+};
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::auth::user::UserDesc;
@@ -35,12 +41,6 @@ mod usage_schema_provider;
 
 pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
 pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
-pub use information_schema_provider::{
-    DATABASES_DATABASE_NAME, DATABASES_PERCISION, DATABASES_REPLICA, DATABASES_SHARD,
-    DATABASES_TENANT_NAME, DATABASES_TTL, DATABASES_VNODE_DURATION, INFORMATION_SCHEMA_DATABASES,
-    INFORMATION_SCHEMA_TABLES, TABLES_TABLE_DATABASE, TABLES_TABLE_ENGINE, TABLES_TABLE_NAME,
-    TABLES_TABLE_OPTIONS, TABLES_TABLE_TENANT, TABLES_TABLE_TYPE,
-};
 
 /// remote meta
 pub struct RemoteCatalogMeta {}
@@ -112,12 +112,10 @@ impl MetadataProvider {
     ) -> datafusion::common::Result<Option<Arc<dyn TableProvider>>> {
         // process INFORMATION_SCHEMA
         if database_name.eq_ignore_ascii_case(self.information_schema_provider.name()) {
-            let mem_table = futures::executor::block_on(self.information_schema_provider.table(
-                self.session.user(),
-                table_name,
-                self.meta_client.clone(),
-            ))
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+            let mem_table = self
+                .information_schema_provider
+                .table(self.session.user(), table_name, self.meta_client.clone())
+                .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
             return Ok(Some(mem_table));
         }
@@ -135,12 +133,10 @@ impl MetadataProvider {
         if tenant_name.eq_ignore_ascii_case(DEFAULT_CATALOG)
             && database_name.eq_ignore_ascii_case(self.cluster_schema_provider.name())
         {
-            let mem_table = futures::executor::block_on(self.cluster_schema_provider.table(
-                self.session.user(),
-                table_name,
-                self.coord.meta_manager(),
-            ))
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+            let mem_table = self
+                .cluster_schema_provider
+                .table(self.session.user(), table_name, self.coord.meta_manager())
+                .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
             return Ok(Some(mem_table));
         }

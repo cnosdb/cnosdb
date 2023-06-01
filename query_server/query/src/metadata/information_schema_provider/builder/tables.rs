@@ -3,7 +3,6 @@ use std::sync::Arc;
 use datafusion::arrow::array::StringBuilder;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::TableType;
 use lazy_static::lazy_static;
@@ -16,7 +15,7 @@ pub const TABLES_TABLE_ENGINE: &str = "table_engine";
 pub const TABLES_TABLE_OPTIONS: &str = "table_options";
 
 lazy_static! {
-    static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
+    pub static ref TABLES_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
         Field::new(TABLES_TABLE_TENANT, DataType::Utf8, false),
         Field::new(TABLES_TABLE_DATABASE, DataType::Utf8, false),
         Field::new(TABLES_TABLE_NAME, DataType::Utf8, false),
@@ -27,6 +26,7 @@ lazy_static! {
 }
 
 /// Builds the `information_schema.TABLES` table row by row
+#[derive(Default)]
 pub struct InformationSchemaTablesBuilder {
     tenant_names: StringBuilder,
     database_names: StringBuilder,
@@ -34,19 +34,6 @@ pub struct InformationSchemaTablesBuilder {
     table_types: StringBuilder,
     table_engines: StringBuilder,
     table_options: StringBuilder,
-}
-
-impl Default for InformationSchemaTablesBuilder {
-    fn default() -> Self {
-        Self {
-            tenant_names: StringBuilder::new(),
-            database_names: StringBuilder::new(),
-            table_names: StringBuilder::new(),
-            table_types: StringBuilder::new(),
-            table_engines: StringBuilder::new(),
-            table_options: StringBuilder::new(),
-        }
-    }
 }
 
 impl InformationSchemaTablesBuilder {
@@ -74,7 +61,7 @@ impl InformationSchemaTablesBuilder {
     }
 }
 
-impl TryFrom<InformationSchemaTablesBuilder> for MemTable {
+impl TryFrom<InformationSchemaTablesBuilder> for RecordBatch {
     type Error = DataFusionError;
 
     fn try_from(value: InformationSchemaTablesBuilder) -> Result<Self, Self::Error> {
@@ -88,7 +75,7 @@ impl TryFrom<InformationSchemaTablesBuilder> for MemTable {
         } = value;
 
         let batch = RecordBatch::try_new(
-            SCHEMA.clone(),
+            TABLES_SCHEMA.clone(),
             vec![
                 Arc::new(tenant_names.finish()),
                 Arc::new(database_names.finish()),
@@ -98,7 +85,6 @@ impl TryFrom<InformationSchemaTablesBuilder> for MemTable {
                 Arc::new(table_options.finish()),
             ],
         )?;
-
-        MemTable::try_new(SCHEMA.clone(), vec![vec![batch]])
+        Ok(batch)
     }
 }
