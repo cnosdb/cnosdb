@@ -1,0 +1,54 @@
+##########
+## DDL
+##########
+
+statement ok
+DROP TABLE IF EXISTS readings_ext;
+
+# create external table for data import
+statement ok
+CREATE EXTERNAL TABLE readings_ext
+STORED AS PARQUET
+LOCATION 'query_server/test/resource/parquet/part-0.parquet';
+
+##########
+## Query
+##########
+
+# (1, 2000]
+statement error
+select sample(time, 0) from readings_ext;
+
+# (1, 2000]
+statement error
+select sample(time, -1) from readings_ext;
+
+# (1, 2000]
+statement error
+select sample(time, 2001) from readings_ext;
+
+statement error
+select sample(time, name, 2001) from readings_ext;
+
+statement error
+select sample(time) from readings_ext;
+
+# timestamp
+statement ok
+select sample(time, 2) from readings_ext;
+
+# string
+statement ok
+select sample(name, 2) from readings_ext;
+
+# double
+statement ok
+select sample(latitude, 2) from readings_ext;
+
+# timestamp
+statement ok
+select sample(time, 2), sample(name, 2), sample(latitude, 2) from readings_ext;
+
+# with group
+statement ok
+select sample(time, 2), sample(name, 2), sample(latitude, 2), model from readings_ext group by model;
