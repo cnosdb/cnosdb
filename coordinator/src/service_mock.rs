@@ -38,6 +38,10 @@ impl Coordinator for MockCoordinator {
         Some(Arc::new(MockMetaClient::default()))
     }
 
+    async fn node_hh_size(&self, node_id: u64) -> CoordinatorResult<u64> {
+        Ok(0)
+    }
+
     async fn write_points(
         &self,
         tenant: String,

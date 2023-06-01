@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use meta::model::MetaRef;
-use models::meta_data::{VnodeAllInfo, VnodeInfo, VnodeStatus};
+use models::meta_data::{NodeInfo, VnodeAllInfo, VnodeInfo, VnodeStatus};
 use protos::kv_service::admin_command_request::Command::DelVnode;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{
@@ -58,6 +58,10 @@ impl VnodeManager {
         );
         all_info.set_status(VnodeStatus::Copying);
         meta_client.update_vnode(&all_info).await?;
+
+        let nodes = admin_meta.query_nodes().await?;
+        self.all_hh_deliveryed(all_info.node_id, nodes).await?;
+
         let owner = models::schema::make_owner(&all_info.tenant, &all_info.db_name);
         let path = self.kv_inst.get_storage_options().move_dir(&owner, new_id);
 
@@ -289,5 +293,48 @@ impl VnodeManager {
                 name: tenant.to_string(),
             }),
         }
+    }
+
+    async fn all_hh_deliveryed(&self, node_id: u64, nodes: Vec<NodeInfo>) -> CoordinatorResult<()> {
+        for node in nodes.iter() {
+            if node.id == node_id {
+                continue;
+            }
+
+            let hh_size = self
+                .get_hh_size(&format!("{}/api/v1/hh_size?id={}", node.http_addr, node_id))
+                .await?;
+
+            if hh_size != 0 {
+                return Err(CoordinatorError::CommonError {
+                    msg: format!(
+                        "Hinted Handoff incomplete on node {} to  {}, Try later...",
+                        node.id, node_id
+                    ),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    async fn get_hh_size(&self, url: &str) -> CoordinatorResult<u64> {
+        let data = reqwest::get(url)
+            .await
+            .map_err(|err| CoordinatorError::CommonError {
+                msg: err.to_string(),
+            })?
+            .text()
+            .await
+            .map_err(|err| CoordinatorError::CommonError {
+                msg: err.to_string(),
+            })?;
+
+        let size = data
+            .parse::<u64>()
+            .map_err(|err| CoordinatorError::CommonError {
+                msg: err.to_string(),
+            })?;
+
+        Ok(size)
     }
 }

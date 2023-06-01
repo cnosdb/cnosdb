@@ -160,6 +160,7 @@ impl ServiceBuilder {
 
     pub async fn build_query_server(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
+        meta.admin_meta().add_query_node().await.unwrap();
         let coord = self.create_coord(meta, None).await;
         let dbms = self
             .create_dbms(coord.clone(), self.memory_pool.clone())
@@ -178,6 +179,7 @@ impl ServiceBuilder {
         let meta = self.create_meta().await;
 
         meta.admin_meta().add_data_node().await.unwrap();
+        meta.admin_meta().add_query_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
             self.config.heartbeat.report_time_interval_secs,

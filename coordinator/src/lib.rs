@@ -69,6 +69,7 @@ pub trait Coordinator: Send + Sync + Debug {
     fn meta_manager(&self) -> MetaRef;
     fn store_engine(&self) -> Option<EngineRef>;
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
+    async fn node_hh_size(&self, node_id: u64) -> CoordinatorResult<u64>;
 
     async fn write_points(
         &self,

@@ -49,12 +49,20 @@ impl KeyPath {
         format!("/{}/data_nodes", cluster)
     }
 
+    pub fn query_nodes(cluster: &str) -> String {
+        format!("/{}/query_nodes", cluster)
+    }
+
     pub fn data_node_id(cluster: &str, id: u64) -> String {
         format!("/{}/data_nodes/{}", cluster, id)
     }
 
     pub fn data_nodes_metrics(cluster: &str) -> String {
         format!("/{}/data_nodes_metrics", cluster)
+    }
+
+    pub fn query_node_id(cluster: &str, id: u64) -> String {
+        format!("/{}/query_nodes/{}", cluster, id)
     }
 
     pub fn data_node_metrics(cluster: &str, id: u64) -> String {

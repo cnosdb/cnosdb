@@ -406,6 +406,15 @@ impl StateMachine {
                 serde_json::to_string(&(response, self.version())).unwrap()
             }
 
+            ReadCommand::QueryNodes(cluster) => {
+                let response: Vec<NodeInfo> =
+                    children_data::<NodeInfo>(&KeyPath::query_nodes(cluster), self.db.clone())
+                        .into_values()
+                        .collect();
+
+                serde_json::to_string(&(response, self.version())).unwrap()
+            }
+
             ReadCommand::NodeMetrics(cluster) => {
                 let response: Vec<NodeMetrics> =
                     children_data::<NodeMetrics>(&KeyPath::data_nodes(cluster), self.db.clone())
@@ -521,6 +530,8 @@ impl StateMachine {
             }
 
             WriteCommand::AddDataNode(cluster, node) => self.process_add_date_node(cluster, node),
+
+            WriteCommand::AddQueryNode(cluster, node) => self.process_add_query_node(cluster, node),
 
             WriteCommand::ReportNodeMetrics(cluster, node_metrics) => {
                 self.process_add_node_metrics(cluster, node_metrics)
@@ -722,6 +733,13 @@ impl StateMachine {
             return StatusResponse::new(META_REQUEST_FAILED, "".to_string()).to_string();
         }
         let key = KeyPath::data_node_id(cluster, node.id);
+        let value = serde_json::to_string(node).unwrap();
+
+        self.insert_kv_to_db(key, value)
+    }
+
+    fn process_add_query_node(&self, cluster: &str, node: &NodeInfo) -> CommandResp {
+        let key = KeyPath::query_node_id(cluster, node.id);
         let value = serde_json::to_string(node).unwrap();
 
         self.insert_kv_to_db(key, value)

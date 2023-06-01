@@ -12,7 +12,7 @@ use tokio::time::{self, Duration};
 use trace::{debug, warn};
 use tracing::info;
 use tskv::byte_utils;
-use tskv::file_system::file_manager::list_dir_names;
+use tskv::file_system::file_manager::{self, list_dir_names};
 use tskv::file_system::queue::{Queue, QueueConfig};
 use tskv::file_system::DataBlock;
 
@@ -158,6 +158,33 @@ impl HintedOffManager {
 
             request.sender.send(result).expect("successful");
         }
+    }
+
+    pub async fn remain_size(&self, node_id: u64) -> CoordinatorResult<u64> {
+        if !self.config.enable {
+            return Ok(0);
+        }
+
+        let nodes = self.nodes.write().await;
+        if let Some(val) = nodes.get(&node_id) {
+            let size = val.write().await.size().await?;
+            return Ok(size);
+        }
+
+        let dir = PathBuf::from(self.config.path.clone()).join(node_id.to_string());
+        if !file_manager::try_exists(&dir) {
+            return Ok(0);
+        }
+
+        let config = QueueConfig {
+            data_path: dir.to_string_lossy().to_string(),
+            file_suffix: SEGMENT_FILE_SUFFIX.to_string(),
+            max_file_size: SEGMENT_FILE_MAX_SIZE,
+        };
+
+        let mut queue = Queue::new(config).await?;
+        let size = queue.size().await?;
+        Ok(size)
     }
 
     async fn get_or_create_queue(&self, id: u64) -> CoordinatorResult<Arc<RwLock<Queue>>> {

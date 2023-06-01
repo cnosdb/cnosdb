@@ -12,7 +12,7 @@ use chrono::Local;
 use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION, PRIVATE_KEY};
-use http_protocol::parameter::{SqlParam, WriteParam};
+use http_protocol::parameter::{HHSizeParam, SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
 use metrics::metric_register::MetricsRegister;
@@ -183,6 +183,7 @@ impl HttpService {
             .or(self.backtrace())
             .or(self.write_open_tsdb())
             .or(self.put_open_tsdb())
+            .or(self.node_hh_size())
     }
 
     fn routes_query(
@@ -196,6 +197,7 @@ impl HttpService {
             .or(self.debug_jeprof())
             .or(self.prom_remote_read())
             .or(self.backtrace())
+            .or(self.node_hh_size())
     }
 
     fn routes_store(
@@ -456,6 +458,24 @@ impl HttpService {
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
+    }
+
+    fn node_hh_size(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "hh_size")
+            .and(warp::query::<HHSizeParam>())
+            .and(self.with_coord())
+            .and_then(|param: HHSizeParam, coord: CoordinatorRef| async move {
+                match coord.node_hh_size(param.id).await {
+                    Ok(size) => Ok(size.to_string()),
+                    Err(err) => Err(reject::custom(HttpError::Coordinator {
+                        source: coordinator::errors::CoordinatorError::IOErrors {
+                            msg: err.to_string(),
+                        },
+                    })),
+                }
+            })
     }
 
     fn print_meta(

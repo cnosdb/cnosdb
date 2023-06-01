@@ -35,8 +35,16 @@ impl AdminMeta for MockAdminMeta {
         Ok(())
     }
 
+    async fn add_query_node(&self) -> MetaResult<()> {
+        Ok(())
+    }
+
     async fn data_nodes(&self) -> Vec<NodeInfo> {
         vec![]
+    }
+
+    async fn query_nodes(&self) -> MetaResult<Vec<NodeInfo>> {
+        Ok(vec![])
     }
 
     async fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {

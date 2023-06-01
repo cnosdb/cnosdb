@@ -39,6 +39,8 @@ pub trait AdminMeta: Send + Sync + Debug {
     async fn sync_all(&self) -> MetaResult<u64>;
     async fn data_nodes(&self) -> Vec<NodeInfo>;
     async fn add_data_node(&self) -> MetaResult<()>;
+    async fn add_query_node(&self) -> MetaResult<()>;
+    async fn query_nodes(&self) -> MetaResult<Vec<NodeInfo>>;
     async fn report_node_metrics(&self) -> MetaResult<()>;
     // fn del_data_node(&self, id: u64) -> MetaResult<()>;
 

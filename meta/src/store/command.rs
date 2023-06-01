@@ -44,6 +44,9 @@ pub enum WriteCommand {
     // cluster, node info
     AddDataNode(String, NodeInfo),
 
+    // cluster, node info
+    AddQueryNode(String, NodeInfo),
+
     //cluster, node metrics
     ReportNodeMetrics(String, NodeMetrics),
 
@@ -124,6 +127,7 @@ pub enum WriteCommand {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ReadCommand {
     DataNodes(String),              //cluster
+    QueryNodes(String),             //cluster
     TenaneMetaData(String, String), // cluster tenant
 
     NodeMetrics(String), //cluster

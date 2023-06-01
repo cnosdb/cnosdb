@@ -14,6 +14,7 @@ meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }
 protocol_parser = { path = "../common/protocol_parser" }
 
+reqwest = { workspace = true }
 walkdir = { workspace = true }
 datafusion = { workspace = true }
 snafu = { workspace = true }

@@ -47,6 +47,7 @@ pub struct CoordService {
     runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
     writer: Arc<PointWriter>,
+    hh_manager: Arc<HintedOffManager>,
     metrics: Arc<CoordServiceMetrics>,
 }
 
@@ -112,11 +113,15 @@ impl CoordService {
         ));
 
         let hh_manager = Arc::new(HintedOffManager::new(handoff_cfg, point_writer.clone()).await);
-        tokio::spawn(HintedOffManager::write_handoff_job(hh_manager, hh_receiver));
+        tokio::spawn(HintedOffManager::write_handoff_job(
+            hh_manager.clone(),
+            hh_receiver,
+        ));
 
         let coord = Arc::new(Self {
             runtime,
             kv_inst,
+            hh_manager,
             config: config.clone(),
             node_id: config.node_basic.node_id,
             meta: meta_manager,
@@ -402,6 +407,10 @@ impl Coordinator for CoordService {
 
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
         self.meta.tenant_manager().tenant_meta(tenant).await
+    }
+
+    async fn node_hh_size(&self, node_id: u64) -> CoordinatorResult<u64> {
+        self.hh_manager.remain_size(node_id).await
     }
 
     async fn write_points(

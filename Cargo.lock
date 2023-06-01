@@ -1544,6 +1544,7 @@ dependencies = [
  "models",
  "protocol_parser",
  "protos",
+ "reqwest",
  "serde",
  "serde_json",
  "snafu",

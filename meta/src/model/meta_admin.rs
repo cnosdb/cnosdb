@@ -110,6 +110,42 @@ impl AdminMeta for RemoteAdminMeta {
         Ok(())
     }
 
+    async fn add_query_node(&self) -> MetaResult<()> {
+        let mut protocol = "http".to_string();
+        if self.config.security.tls_config.is_some() {
+            protocol = "https".to_string();
+        }
+        let node = NodeInfo {
+            attribute: NodeAttribute::default(),
+            id: self.config.node_basic.node_id,
+            grpc_addr: format!(
+                "{}:{}",
+                self.config.host, self.config.cluster.grpc_listen_port
+            ),
+            http_addr: format!(
+                "{}://{}:{}",
+                protocol, self.config.host, self.config.cluster.http_listen_port
+            ),
+        };
+
+        let req =
+            command::WriteCommand::AddQueryNode(self.config.cluster.name.clone(), node.clone());
+        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
+        if rsp.code != command::META_REQUEST_SUCCESS {
+            return Err(MetaError::CommonError {
+                msg: format!("add data node err: {} {}", rsp.code, rsp.msg),
+            });
+        }
+        Ok(())
+    }
+
+    async fn query_nodes(&self) -> MetaResult<Vec<NodeInfo>> {
+        let req = command::ReadCommand::QueryNodes(self.config.cluster.name.clone());
+        let (nodes, _) = self.client.read::<(Vec<NodeInfo>, u64)>(&req).await?;
+
+        Ok(nodes)
+    }
+
     async fn data_nodes(&self) -> Vec<NodeInfo> {
         let mut nodes = vec![];
         for (_, val) in self.data_nodes.read().await.iter() {
