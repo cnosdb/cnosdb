@@ -472,11 +472,12 @@ impl FieldFileLocation {
                 self.data_block = self.reader.get_data_block(&meta).await?;
                 if let Some(time_range) = self.data_block.time_range() {
                     let tr = TimeRange::from(time_range);
-                    let ts = self.time_range.intersect(&tr).unwrap();
-                    if let Some((min, max)) = self.data_block.index_range(&ts) {
-                        self.read_index = min;
-                        self.end_index = max;
-                        break;
+                    if let Some(ts) = self.time_range.intersect(&tr) {
+                        if let Some((min, max)) = self.data_block.index_range(&ts) {
+                            self.read_index = min;
+                            self.end_index = max;
+                            break;
+                        }
                     }
                 }
             } else {
