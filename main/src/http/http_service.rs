@@ -693,7 +693,7 @@ impl Service for HttpService {
                     tokio::spawn(server)
                 }
                 ServerMode::Bundle => {
-                    let routes = self.routes_query().recover(handle_rejection);
+                    let routes = self.routes_bundle().recover(handle_rejection);
                     let (addr, server) = warp::serve(routes)
                         .tls()
                         .cert_path(certificate)
