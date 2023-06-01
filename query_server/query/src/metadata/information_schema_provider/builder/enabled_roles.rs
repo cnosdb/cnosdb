@@ -3,12 +3,11 @@ use std::sync::Arc;
 use datafusion::arrow::array::StringBuilder;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![Field::new(
+    pub static ref ENABLED_ROLE_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![Field::new(
         "role_name",
         DataType::Utf8,
         false
@@ -16,16 +15,9 @@ lazy_static! {
 }
 
 /// Builds the `information_schema.EnabledRoles` table row by row
+#[derive(Default)]
 pub struct InformationSchemaEnabledRolesBuilder {
     role_names: StringBuilder,
-}
-
-impl Default for InformationSchemaEnabledRolesBuilder {
-    fn default() -> Self {
-        Self {
-            role_names: StringBuilder::new(),
-        }
-    }
 }
 
 impl InformationSchemaEnabledRolesBuilder {
@@ -35,14 +27,17 @@ impl InformationSchemaEnabledRolesBuilder {
     }
 }
 
-impl TryFrom<InformationSchemaEnabledRolesBuilder> for MemTable {
+impl TryFrom<InformationSchemaEnabledRolesBuilder> for RecordBatch {
     type Error = DataFusionError;
 
     fn try_from(value: InformationSchemaEnabledRolesBuilder) -> Result<Self, Self::Error> {
         let InformationSchemaEnabledRolesBuilder { mut role_names } = value;
 
-        let batch = RecordBatch::try_new(SCHEMA.clone(), vec![Arc::new(role_names.finish())])?;
+        let batch = RecordBatch::try_new(
+            ENABLED_ROLE_SCHEMA.clone(),
+            vec![Arc::new(role_names.finish())],
+        )?;
 
-        MemTable::try_new(SCHEMA.clone(), vec![vec![batch]])
+        Ok(batch)
     }
 }

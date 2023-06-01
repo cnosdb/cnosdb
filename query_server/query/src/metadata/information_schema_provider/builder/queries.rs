@@ -3,12 +3,11 @@ use std::sync::Arc;
 use datafusion::arrow::array::{Float64Builder, StringBuilder, UInt64Builder};
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
+    pub static ref QUERY_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
         Field::new("query_id", DataType::Utf8, false),
         Field::new("query_type", DataType::Utf8, false),
         Field::new("query_text", DataType::Utf8, false),
@@ -24,6 +23,7 @@ lazy_static! {
 }
 
 /// Builds the `information_schema.Queries` table row by row
+#[derive(Default)]
 pub struct InformationSchemaQueriesBuilder {
     query_ids: StringBuilder,
     query_types: StringBuilder,
@@ -36,24 +36,6 @@ pub struct InformationSchemaQueriesBuilder {
     durations: Float64Builder,
     processed_counts: UInt64Builder,
     error_counts: UInt64Builder,
-}
-
-impl Default for InformationSchemaQueriesBuilder {
-    fn default() -> Self {
-        Self {
-            query_ids: StringBuilder::new(),
-            query_types: StringBuilder::new(),
-            query_texts: StringBuilder::new(),
-            user_ids: StringBuilder::new(),
-            user_names: StringBuilder::new(),
-            tenant_ids: StringBuilder::new(),
-            tenant_names: StringBuilder::new(),
-            states: StringBuilder::new(),
-            durations: Float64Builder::new(),
-            processed_counts: UInt64Builder::new(),
-            error_counts: UInt64Builder::new(),
-        }
-    }
 }
 
 impl InformationSchemaQueriesBuilder {
@@ -87,7 +69,7 @@ impl InformationSchemaQueriesBuilder {
     }
 }
 
-impl TryFrom<InformationSchemaQueriesBuilder> for MemTable {
+impl TryFrom<InformationSchemaQueriesBuilder> for RecordBatch {
     type Error = DataFusionError;
 
     fn try_from(value: InformationSchemaQueriesBuilder) -> Result<Self, Self::Error> {
@@ -106,7 +88,7 @@ impl TryFrom<InformationSchemaQueriesBuilder> for MemTable {
         } = value;
 
         let batch = RecordBatch::try_new(
-            SCHEMA.clone(),
+            QUERY_SCHEMA.clone(),
             vec![
                 Arc::new(query_ids.finish()),
                 Arc::new(query_types.finish()),
@@ -122,6 +104,6 @@ impl TryFrom<InformationSchemaQueriesBuilder> for MemTable {
             ],
         )?;
 
-        MemTable::try_new(SCHEMA.clone(), vec![vec![batch]])
+        Ok(batch)
     }
 }

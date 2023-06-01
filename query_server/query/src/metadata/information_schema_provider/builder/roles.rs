@@ -3,12 +3,11 @@ use std::sync::Arc;
 use datafusion::arrow::array::StringBuilder;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
+    pub static ref ROLE_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
         Field::new("role_name", DataType::Utf8, false),
         Field::new("role_type", DataType::Utf8, false),
         Field::new("inherit_role", DataType::Utf8, true),
@@ -16,20 +15,11 @@ lazy_static! {
 }
 
 /// Builds the `information_schema.Roles` table row by row
+#[derive(Default)]
 pub struct InformationSchemaRolesBuilder {
     role_names: StringBuilder,
     role_types: StringBuilder,
     inherit_roles: StringBuilder,
-}
-
-impl Default for InformationSchemaRolesBuilder {
-    fn default() -> Self {
-        Self {
-            role_names: StringBuilder::new(),
-            role_types: StringBuilder::new(),
-            inherit_roles: StringBuilder::new(),
-        }
-    }
 }
 
 impl InformationSchemaRolesBuilder {
@@ -46,7 +36,7 @@ impl InformationSchemaRolesBuilder {
     }
 }
 
-impl TryFrom<InformationSchemaRolesBuilder> for MemTable {
+impl TryFrom<InformationSchemaRolesBuilder> for RecordBatch {
     type Error = DataFusionError;
 
     fn try_from(value: InformationSchemaRolesBuilder) -> Result<Self, Self::Error> {
@@ -57,7 +47,7 @@ impl TryFrom<InformationSchemaRolesBuilder> for MemTable {
         } = value;
 
         let batch = RecordBatch::try_new(
-            SCHEMA.clone(),
+            ROLE_SCHEMA.clone(),
             vec![
                 Arc::new(role_names.finish()),
                 Arc::new(role_types.finish()),
@@ -65,6 +55,6 @@ impl TryFrom<InformationSchemaRolesBuilder> for MemTable {
             ],
         )?;
 
-        MemTable::try_new(SCHEMA.clone(), vec![vec![batch]])
+        Ok(batch)
     }
 }

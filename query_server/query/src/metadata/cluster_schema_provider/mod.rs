@@ -1,11 +1,8 @@
-mod builder;
-mod factory;
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::datasource::MemTable;
+use datafusion::datasource::TableProvider;
 use meta::error::MetaError;
 use meta::model::MetaRef;
 use models::auth::user::User;
@@ -13,6 +10,9 @@ use models::auth::user::User;
 use self::factory::tenants::ClusterSchemaTenantsFactory;
 use self::factory::users::ClusterSchemaUsersFactory;
 use super::CLUSTER_SCHEMA;
+
+mod builder;
+mod factory;
 
 pub struct ClusterSchemaProvider {
     table_factories: HashMap<String, BoxSystemTableFactory>,
@@ -44,19 +44,18 @@ impl ClusterSchemaProvider {
         self.table_factories.keys().cloned().collect()
     }
 
-    pub async fn table(
+    pub fn table(
         &self,
         user: &User,
         name: &str,
         metadata: MetaRef,
-    ) -> std::result::Result<Arc<MemTable>, MetaError> {
-        if let Some(f) = self.table_factories.get(name.to_ascii_lowercase().as_str()) {
-            return f.create(user, metadata.clone()).await;
+    ) -> Result<Arc<dyn TableProvider>, MetaError> {
+        match self.table_factories.get(name.to_ascii_lowercase().as_str()) {
+            Some(f) => Ok(f.create(user, metadata.clone())),
+            None => Err(MetaError::TableNotFound {
+                table: name.to_string(),
+            }),
         }
-
-        Err(MetaError::TableNotFound {
-            table: name.to_string(),
-        })
     }
 }
 
@@ -65,9 +64,5 @@ type BoxSystemTableFactory = Box<dyn ClusterSchemaTableFactory + Send + Sync>;
 #[async_trait]
 pub trait ClusterSchemaTableFactory {
     fn table_name(&self) -> &str;
-    async fn create(
-        &self,
-        user: &User,
-        metadata: MetaRef,
-    ) -> std::result::Result<Arc<MemTable>, MetaError>;
+    fn create(&self, user: &User, metadata: MetaRef) -> Arc<dyn TableProvider>;
 }
