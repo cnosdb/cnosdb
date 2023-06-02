@@ -21,8 +21,16 @@ pub type DBMSRef = Arc<dyn DatabaseManagerSystem + Send + Sync>;
 pub trait DatabaseManagerSystem {
     async fn start(&self) -> Result<()>;
     async fn authenticate(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User>;
-    async fn execute(&self, query: &Query) -> Result<QueryHandle>;
-    async fn build_query_state_machine(&self, query: Query) -> Result<QueryStateMachineRef>;
+    async fn execute(
+        &self,
+        query: &Query,
+        span_context: Option<&SpanContext>,
+    ) -> Result<QueryHandle>;
+    async fn build_query_state_machine(
+        &self,
+        query: Query,
+        span_context: Option<&SpanContext>,
+    ) -> Result<QueryStateMachineRef>;
     async fn build_logical_plan(
         &self,
         query_state_machine: QueryStateMachineRef,
@@ -58,7 +66,7 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
     async fn execute(
         &self,
         query: &Query,
-        _span_context: Option<SpanContext>,
+        _span_context: Option<&SpanContext>,
     ) -> Result<QueryHandle> {
         println!("DatabaseManagerSystemMock::execute({:?})", query.content());
 
@@ -90,8 +98,15 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         ))
     }
 
-    async fn build_query_state_machine(&self, query: Query) -> Result<QueryStateMachineRef> {
-        Ok(Arc::new(QueryStateMachine::test(query)))
+    async fn build_query_state_machine(
+        &self,
+        query: Query,
+        span_context: Option<&SpanContext>,
+    ) -> Result<QueryStateMachineRef> {
+        Ok(Arc::new(QueryStateMachine::test(
+            query,
+            span_context.cloned(),
+        )))
     }
 
     async fn build_logical_plan(
@@ -106,7 +121,11 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         _logical_plan: Plan,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<QueryHandle> {
-        self.execute(&query_state_machine.query).await
+        self.execute(
+            &query_state_machine.query,
+            query_state_machine.session.get_span_ctx(),
+        )
+        .await
     }
 
     fn metrics(&self) -> String {

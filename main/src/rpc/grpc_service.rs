@@ -8,6 +8,9 @@ use protos::kv_service::tskv_service_server::TskvServiceServer;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
+use trace::TraceExporter;
+use trace_http::ctx::TraceHeaderParser;
+use trace_http::tower::TraceLayer;
 use tskv::EngineRef;
 
 use crate::rpc::tskv::TskvServiceImpl;
@@ -22,6 +25,7 @@ pub struct GrpcService {
     coord: CoordinatorRef,
     tls_config: Option<TLSConfig>,
     metrics_register: Arc<MetricsRegister>,
+    trace_collector: Option<Arc<dyn TraceExporter>>,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
 }
 
@@ -33,6 +37,7 @@ impl GrpcService {
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
         metrics_register: Arc<MetricsRegister>,
+        trace_collector: Option<Arc<dyn TraceExporter>>,
     ) -> Self {
         Self {
             addr,
@@ -41,27 +46,30 @@ impl GrpcService {
             coord,
             tls_config,
             metrics_register,
+            trace_collector,
             handle: None,
         }
     }
 }
 
-fn build_grpc_server(tls_config: &Option<TLSConfig>) -> server::Result<Server> {
-    let server = Server::builder();
-    if tls_config.is_none() {
-        return Ok(server);
-    }
+macro_rules! build_grpc_server {
+    ($tls_config:expr, $trace_collector:expr) => {{
+        let trace_layer = TraceLayer::new(TraceHeaderParser::new(), $trace_collector, "grpc");
+        let mut server = Server::builder().layer(trace_layer);
 
-    let TLSConfig {
-        certificate,
-        private_key,
-    } = tls_config.as_ref().unwrap();
-    let cert = std::fs::read(certificate)?;
-    let key = std::fs::read(private_key)?;
-    let identity = Identity::from_pem(cert, key);
-    let server = server.tls_config(ServerTlsConfig::new().identity(identity))?;
+        if let Some(TLSConfig {
+            certificate,
+            private_key,
+        }) = $tls_config
+        {
+            let cert = std::fs::read(certificate)?;
+            let key = std::fs::read(private_key)?;
+            let identity = Identity::from_pem(cert, key);
+            server = server.tls_config(ServerTlsConfig::new().identity(identity))?;
+        }
 
-    Ok(server)
+        server
+    }};
 }
 
 #[async_trait::async_trait]
@@ -74,7 +82,7 @@ impl Service for GrpcService {
             coord: self.coord.clone(),
             metrics_register: self.metrics_register.clone(),
         });
-        let mut grpc_builder = build_grpc_server(&self.tls_config)?;
+        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.trace_collector.clone());
         let grpc_router = grpc_builder.add_service(tskv_grpc_service);
         let server = grpc_router.serve_with_shutdown(self.addr, async {
             rx.await.ok();

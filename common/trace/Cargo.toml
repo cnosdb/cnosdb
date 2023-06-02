@@ -8,9 +8,15 @@ edition.workspace = true
 [dependencies]
 config = { path = "../../config" }
 parking_lot = { workspace = true }
-time = { workspace = true , features = ["macros"]}
+time = { workspace = true, features = ["macros"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["parking_lot", "registry", "env-filter", "time", "local-time",] }
+tracing-subscriber = { workspace = true, features = [
+    "parking_lot",
+    "registry",
+    "env-filter",
+    "time",
+    "local-time",
+] }
 tracing-appender = { workspace = true }
 tracing-error = { workspace = true }
 color-eyre = { workspace = true }
@@ -19,6 +25,16 @@ console-subscriber = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 rand = { workspace = true }
 chrono = { workspace = true }
+
+opentelemetry-jaeger = { workspace = true, features = [
+    "hyper_collector_client",
+    "rt-tokio",
+] }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio"] }
+opentelemetry_api = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 [features]
 default = []

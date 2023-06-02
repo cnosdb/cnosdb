@@ -36,7 +36,7 @@ use spi::server::prom::PromRemoteServerRef;
 use spi::service::protocol::{Context, ContextBuilder, Query};
 use spi::QueryError;
 use tokio::sync::oneshot;
-use trace::{debug, error, info, Span, SpanContext, SpanExt, SpanRecorder, TraceCollector};
+use trace::{debug, error, info, Span, SpanContext, SpanExt, SpanRecorder, TraceExporter};
 use utils::backtrace;
 use warp::hyper::body::Bytes;
 use warp::hyper::Body;
@@ -88,7 +88,7 @@ pub struct HttpService {
     mode: ServerMode,
     metrics_register: Arc<MetricsRegister>,
     http_metrics: Arc<HttpMetrics>,
-    tracer_collector: Option<Arc<dyn TraceCollector>>,
+    tracer_collector: Option<Arc<dyn TraceExporter>>,
 }
 
 impl HttpService {
@@ -101,7 +101,7 @@ impl HttpService {
         write_body_limit: u64,
         mode: ServerMode,
         metrics_register: Arc<MetricsRegister>,
-        tracer_collector: Option<Arc<dyn TraceCollector>>,
+        tracer_collector: Option<Arc<dyn TraceExporter>>,
     ) -> Self {
         let prs = Arc::new(PromRemoteSqlServer::new(dbms.clone(), coord.clone()));
 
@@ -267,46 +267,54 @@ impl HttpService {
             .and(self.with_dbms())
             .and(self.with_http_metrics())
             .and(self.with_hostaddr())
+            .and(self.with_new_span_recorder("rest sql request"))
+            // construct_query
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: SqlParam,
                  dbms: DBMSRef,
                  metrics: Arc<HttpMetrics>,
-                 addr: String| async move {
-                    let start = Instant::now();
+                 addr: String,
+                 span_recorder: SpanRecorder| async move {
                     debug!(
                         "Receive http sql request, header: {:?}, param: {:?}",
                         header, param
                     );
 
-                    // Parse req、header and param to construct query request
-                    let query = construct_query(req, &header, param, dbms.clone())
-                        .await
-                        .map_err(|e| {
-                            sample_query_read_duration("", "", false, 0.0);
-                            reject::custom(e)
-                        })?;
+                    let span_context = span_recorder.span_ctx();
+
+                    let query = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("authenticate"));
+
+                        // Parse req、header and param to construct query request
+                        let query = construct_query(req, &header, param, dbms.clone())
+                            .await
+                            .map_err(reject::custom)?;
+
+                        span_recorder.record(query)
+                    };
+
                     let result_fmt = get_result_format_from_header(&header)?;
-                    let span_context = span_recorder.span().map(|s| s.ctx.clone());
-                    let result = sql_handle(&query, &dbms, result_fmt, span_context)
-                        .await
-                        .map_err(|e| {
-                            trace::error!("Failed to handle http sql request, err: {}", e);
-                            reject::custom(e)
-                        });
+
+                    let result = {
+                        let span_recorder =
+                            SpanRecorder::new(span_context.child_span("sql handle"));
+                        sql_handle(&query, &dbms, result_fmt, span_recorder.span_ctx())
+                            .await
+                            .map_err(|e| {
+                                trace::error!("Failed to handle http sql request, err: {}", e);
+                                reject::custom(e)
+                            })
+                    };
+
                     let tenant = query.context().tenant();
                     let db = query.context().database();
                     let user = query.context().user_info().desc().name();
 
                     metrics.queries_inc(tenant, user, db, addr.as_str());
 
-                    sample_query_read_duration(
-                        tenant,
-                        db,
-                        result.is_ok(),
-                        start.elapsed().as_millis() as f64,
-                    );
                     result
                 },
             )
@@ -325,6 +333,7 @@ impl HttpService {
             .and(self.with_coord())
             .and(self.with_http_metrics())
             .and(self.with_hostaddr())
+            .and(self.with_new_span_recorder("rest line protocol write"))
             .and_then(
                 |req: Bytes,
                  header: Header,
@@ -332,26 +341,52 @@ impl HttpService {
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
-                 addr: String| async move {
+                 addr: String,
+                 span_recorder: SpanRecorder| async move {
                     let start = Instant::now();
-                    let ctx = construct_write_context(header, param, dbms, coord.clone())
+                    let span_context = span_recorder.span_ctx();
+
+                    let ctx = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("construct write context"));
+                        let ctx = construct_write_context_and_check_privilege(
+                            header,
+                            param,
+                            dbms,
+                            coord.clone(),
+                        )
                         .await
                         .map_err(reject::custom)?;
+                        span_recorder.record(ctx)
+                    };
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
-                    let req = construct_write_lines_points_request(req, ctx.database())
-                        .map_err(reject::custom)?;
+                    let req = {
+                        let mut span_recorder = SpanRecorder::new(
+                            span_context.child_span("construct write lines points request"),
+                        );
+                        span_recorder.set_metadata("bytes", req.len());
+                        construct_write_lines_points_request(req, ctx.database())
+                            .map_err(reject::custom)?
+                    };
 
-                    let resp: Result<(), HttpError> = coord
-                        .write_points(
-                            ctx.tenant().to_string(),
-                            ConsistencyLevel::Any,
-                            precision,
-                            req,
-                        )
-                        .await
-                        .map_err(|e| e.into());
+                    let resp: Result<(), HttpError> = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("write points"));
+                        coord
+                            .write_points(
+                                ctx.tenant().to_string(),
+                                ConsistencyLevel::Any,
+                                precision,
+                                req,
+                            )
+                            .await
+                            .map_err(|e| {
+                                span_recorder.error(e.to_string());
+                                e.into()
+                            })
+                    };
 
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
@@ -382,6 +417,7 @@ impl HttpService {
             .and(self.with_coord())
             .and(self.with_http_metrics())
             .and(self.with_hostaddr())
+            .and(self.with_new_span_recorder("rest open tsdb write"))
             .and_then(
                 |req: Bytes,
                  header: Header,
@@ -389,25 +425,51 @@ impl HttpService {
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
-                 addr: String| async move {
+                 addr: String,
+                 span_recorder: SpanRecorder| async move {
                     let start = Instant::now();
-                    let ctx = construct_write_context(header, param, dbms, coord.clone())
-                        .await
-                        .map_err(reject::custom)?;
-                    let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
+                    let span_context = span_recorder.span_ctx();
 
-                    let req =
-                        construct_write_tsdb_points_request(req, &ctx).map_err(reject::custom)?;
-
-                    let resp: Result<(), HttpError> = coord
-                        .write_points(
-                            ctx.tenant().to_string(),
-                            ConsistencyLevel::Any,
-                            precision,
-                            req,
+                    let ctx = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("construct write context"));
+                        let ctx = construct_write_context_and_check_privilege(
+                            header,
+                            param,
+                            dbms,
+                            coord.clone(),
                         )
                         .await
-                        .map_err(|e| e.into());
+                        .map_err(reject::custom)?;
+                        span_recorder.record(ctx)
+                    };
+
+                    let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
+
+                    let req = {
+                        let mut span_recorder = SpanRecorder::new(
+                            span_context.child_span("construct write tsdb points request"),
+                        );
+                        span_recorder.set_metadata("bytes", req.len());
+                        construct_write_tsdb_points_request(req, &ctx).map_err(reject::custom)?
+                    };
+
+                    let resp: Result<(), HttpError> = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("write points"));
+                        coord
+                            .write_points(
+                                ctx.tenant().to_string(),
+                                ConsistencyLevel::Any,
+                                precision,
+                                req,
+                            )
+                            .await
+                            .map_err(|e| {
+                                span_recorder.error(e.to_string());
+                                e.into()
+                            })
+                    };
 
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
@@ -438,6 +500,7 @@ impl HttpService {
             .and(self.with_coord())
             .and(self.with_http_metrics())
             .and(self.with_hostaddr())
+            .and(self.with_new_span_recorder("rest open tsdb put"))
             .and_then(
                 |req: Bytes,
                  header: Header,
@@ -445,25 +508,52 @@ impl HttpService {
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
-                 addr: String| async move {
+                 addr: String,
+                 span_recorder: SpanRecorder| async move {
                     let start = Instant::now();
-                    let ctx = construct_write_context(header, param, dbms, coord.clone())
-                        .await
-                        .map_err(reject::custom)?;
-                    let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
+                    let span_context = span_recorder.span_ctx();
 
-                    let req = construct_write_tsdb_points_json_request(req, &ctx)
-                        .map_err(reject::custom)?;
-
-                    let resp: Result<(), HttpError> = coord
-                        .write_points(
-                            ctx.tenant().to_string(),
-                            ConsistencyLevel::Any,
-                            precision,
-                            req,
+                    let ctx = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("construct write context"));
+                        let ctx = construct_write_context_and_check_privilege(
+                            header,
+                            param,
+                            dbms,
+                            coord.clone(),
                         )
                         .await
-                        .map_err(|e| e.into());
+                        .map_err(reject::custom)?;
+                        span_recorder.record(ctx)
+                    };
+
+                    let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
+
+                    let req = {
+                        let mut span_recorder = SpanRecorder::new(
+                            span_context.child_span("construct write tsdb points json request"),
+                        );
+                        span_recorder.set_metadata("bytes", req.len());
+                        construct_write_tsdb_points_json_request(req, &ctx)
+                            .map_err(reject::custom)?
+                    };
+
+                    let resp: Result<(), HttpError> = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("write points"));
+                        coord
+                            .write_points(
+                                ctx.tenant().to_string(),
+                                ConsistencyLevel::Any,
+                                precision,
+                                req,
+                            )
+                            .await
+                            .map_err(|e| {
+                                span_recorder.error(e.to_string());
+                                e.into()
+                            })
+                    };
 
                     let (tenant, db, user) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
@@ -570,6 +660,7 @@ impl HttpService {
             .and(self.with_http_metrics())
             .and(self.with_prom_remote_server())
             .and(self.with_hostaddr())
+            .and(self.with_new_span_recorder("rest prom remote read"))
             .and_then(
                 |req: Bytes,
                  header: Header,
@@ -577,34 +668,41 @@ impl HttpService {
                  dbms: DBMSRef,
                  metrics: Arc<HttpMetrics>,
                  prs: PromRemoteServerRef,
-                 addr: String| async move {
+                 addr: String,
+                 span_recorder: SpanRecorder| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive rest prom remote read request, header: {:?}, param: {:?}",
                         header, param
                     );
+                    let span_context = span_recorder.span_ctx();
 
                     // Parse req、header and param to construct query request
-                    let user_info = header.try_get_basic_auth().map_err(reject::custom)?;
-                    let tenant = param.tenant;
-                    let user = dbms
-                        .authenticate(&user_info, tenant.as_deref())
-                        .await
-                        .map_err(|e| reject::custom(HttpError::from(e)))?;
-                    let context = ContextBuilder::new(user)
-                        .with_tenant(tenant)
-                        .with_database(param.db)
-                        .with_target_partitions(param.target_partitions)
-                        .build();
+                    let context = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("construct context"));
+                        span_recorder.set_metadata("bytes", req.len());
+                        let ctx = construct_read_context(&header, param, dbms)
+                            .await
+                            .map_err(reject::custom)?;
+                        span_recorder.record(ctx)
+                    };
 
-                    let result = prs
-                        .remote_read(&context, req)
-                        .await
-                        .map(|_| ResponseBuilder::ok())
-                        .map_err(|e| {
-                            trace::error!("Failed to handle prom remote read request, err: {}", e);
-                            reject::custom(HttpError::from(e))
-                        });
+                    let result = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("remote read"));
+                        prs.remote_read(&context, req)
+                            .await
+                            .map(|_| ResponseBuilder::ok())
+                            .map_err(|e| {
+                                span_recorder.error(e.to_string());
+                                trace::error!(
+                                    "Failed to handle prom remote read request, err: {}",
+                                    e
+                                );
+                                reject::custom(HttpError::from(e))
+                            })
+                    };
 
                     let tenant_name = context.tenant();
                     let username = context.user_info().desc().name();
@@ -637,6 +735,7 @@ impl HttpService {
             .and(self.with_prom_remote_server())
             .and(self.with_http_metrics())
             .and(self.with_hostaddr())
+            .and(self.with_new_span_recorder("rest prom remote write"))
             .and_then(
                 |req: Bytes,
                  header: Header,
@@ -645,24 +744,46 @@ impl HttpService {
                  dbms: DBMSRef,
                  prs: PromRemoteServerRef,
                  metrics: Arc<HttpMetrics>,
-                 addr: String| async move {
+                 addr: String,
+                 span_recorder: SpanRecorder| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive rest prom remote write request, header: {:?}, param: {:?}",
                         header, param
                     );
-                    let ctx = construct_write_context(header, param, dbms, coord.clone())
+                    let span_context = span_recorder.span_ctx();
+
+                    // Parse req、header and param to construct query request
+                    let ctx = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("construct context"));
+                        span_recorder.set_metadata("bytes", req.len());
+                        let ctx = construct_write_context_and_check_privilege(
+                            header,
+                            param,
+                            dbms,
+                            coord.clone(),
+                        )
                         .await
                         .map_err(reject::custom)?;
+                        span_recorder.record(ctx)
+                    };
 
-                    let result = prs
-                        .remote_write(&ctx, req)
-                        .await
-                        .map(|_| ResponseBuilder::ok())
-                        .map_err(|e| {
-                            trace::error!("Failed to handle prom remote write request, err: {}", e);
-                            reject::custom(HttpError::from(e))
-                        });
+                    let result = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("remote write"));
+                        prs.remote_write(&ctx, req)
+                            .await
+                            .map(|_| ResponseBuilder::ok())
+                            .map_err(|e| {
+                                span_recorder.error(e.to_string());
+                                trace::error!(
+                                    "Failed to handle prom remote write request, err: {}",
+                                    e
+                                );
+                                reject::custom(HttpError::from(e))
+                            })
+                    };
 
                     let (tenant, user, db) =
                         (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
@@ -772,6 +893,19 @@ async fn construct_query(
     param: SqlParam,
     dbms: DBMSRef,
 ) -> Result<Query, HttpError> {
+    let context = construct_read_context(header, param, dbms).await?;
+
+    Ok(Query::new(
+        context,
+        String::from_utf8_lossy(req.as_ref()).to_string(),
+    ))
+}
+
+async fn construct_read_context(
+    header: &Header,
+    param: SqlParam,
+    dbms: DBMSRef,
+) -> Result<Context, HttpError> {
     let user_info = header.try_get_basic_auth()?;
 
     let tenant = param.tenant;
@@ -796,25 +930,13 @@ async fn construct_query(
         )
         .build();
 
-    Ok(Query::new(
-        context,
-        String::from_utf8_lossy(req.as_ref()).to_string(),
-    ))
+    Ok(context)
 }
 
-fn _construct_write_db_privilege(tenant_id: Oid, database: &str) -> Privilege<Oid> {
-    Privilege::TenantObject(
-        TenantObjectPrivilege::Database(DatabasePrivilege::Write, Some(database.to_string())),
-        Some(tenant_id),
-    )
-}
-
-// construct context and check privilege
 async fn construct_write_context(
-    header: Header,
+    header: &Header,
     param: WriteParam,
     dbms: DBMSRef,
-    coord: CoordinatorRef,
 ) -> Result<Context, HttpError> {
     let user_info = header.try_get_basic_auth()?;
     let tenant = param.tenant;
@@ -828,6 +950,25 @@ async fn construct_write_context(
         .with_database(db)
         .with_precision(precision)
         .build();
+
+    Ok(context)
+}
+
+fn _construct_write_db_privilege(tenant_id: Oid, database: &str) -> Privilege<Oid> {
+    Privilege::TenantObject(
+        TenantObjectPrivilege::Database(DatabasePrivilege::Write, Some(database.to_string())),
+        Some(tenant_id),
+    )
+}
+
+// construct context and check privilege
+async fn construct_write_context_and_check_privilege(
+    header: Header,
+    param: WriteParam,
+    dbms: DBMSRef,
+    coord: CoordinatorRef,
+) -> Result<Context, HttpError> {
+    let context = construct_write_context(&header, param, dbms).await?;
 
     let tenant_id = *coord
         .tenant_meta(context.tenant())
@@ -924,18 +1065,30 @@ async fn sql_handle(
     query: &Query,
     dbms: &DBMSRef,
     fmt: ResultFormat,
-    span_context: Option<SpanContext>,
+    span_ctx: Option<&SpanContext>,
 ) -> Result<Response, HttpError> {
     debug!("prepare to execute: {:?}", query.content());
-    let handle = dbms.execute(query).await?;
+    let handle = {
+        let execute_span_recorder = SpanRecorder::new(span_ctx.child_span("execute"));
+        dbms.execute(query, execute_span_recorder.span_ctx())
+            .await?
+    };
+
     let out = handle.result();
     let resp = HttpResponse::new(out, fmt.clone());
+
+    let _response_span_recorder = SpanRecorder::new(span_ctx.child_span("build response"));
     if !query.context().chunked() {
         let result = resp.wrap_batches_to_response().await;
         if let Err(err) = &result {
             if err.to_string().contains("read tsm block file error") {
                 info!("tsm file broken {:?}, try read....", err);
-                let handle = dbms.execute(query).await?;
+                let handle = {
+                    let execute_span_recorder =
+                        SpanRecorder::new(span_ctx.child_span("retry execute"));
+                    dbms.execute(query, execute_span_recorder.span_ctx())
+                        .await?
+                };
                 let out = handle.result();
                 let resp = HttpResponse::new(out, fmt);
                 return resp.wrap_batches_to_response().await;

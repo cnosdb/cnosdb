@@ -5,7 +5,7 @@ use std::sync::Arc;
 use rand::Rng;
 
 use crate::span::Span;
-use crate::{SpanId, TraceCollector, TraceId};
+use crate::{SpanId, TraceExporter, TraceId};
 
 #[derive(Debug, Clone)]
 pub struct SpanContext {
@@ -15,7 +15,12 @@ pub struct SpanContext {
 
     pub span_id: SpanId,
 
-    pub collector: Option<Arc<dyn TraceCollector>>,
+    /// Link to other spans, can be cross-trace if this span aggregates multiple spans.
+    ///
+    /// See <https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/overview.md#links-between-spans>.
+    pub links: Vec<(TraceId, SpanId)>,
+
+    pub collector: Option<Arc<dyn TraceExporter>>,
 
     /// If we should also sample based on this context (i.e. emit child spans).
     pub sampled: bool,
@@ -25,12 +30,12 @@ impl SpanContext {
     /// Create a new root span context, sent to `collector`. The
     /// new span context has a random trace_id and span_id, and thus
     /// is not connected to any existing span or trace.
-    pub fn new(collector: Arc<dyn TraceCollector>) -> Self {
+    pub fn new(collector: Arc<dyn TraceExporter>) -> Self {
         Self::new_with_optional_collector(Some(collector))
     }
 
     /// Same as [`new`](Self::new), but with an optional collector.
-    pub fn new_with_optional_collector(collector: Option<Arc<dyn TraceCollector>>) -> Self {
+    pub fn new_with_optional_collector(collector: Option<Arc<dyn TraceExporter>>) -> Self {
         let mut rng = rand::thread_rng();
         let trace_id: u128 = rng.gen_range(1..u128::MAX);
         let span_id: u64 = rng.gen_range(1..u64::MAX);
@@ -39,6 +44,7 @@ impl SpanContext {
             trace_id: TraceId(NonZeroU128::new(trace_id).unwrap()),
             parent_span_id: None,
             span_id: SpanId(NonZeroU64::new(span_id).unwrap()),
+            links: vec![],
             collector,
             sampled: true,
         }
@@ -50,6 +56,7 @@ impl SpanContext {
             trace_id: self.trace_id,
             span_id: SpanId::gen(),
             collector: self.collector.clone(),
+            links: Vec::with_capacity(0),
             parent_span_id: Some(self.span_id),
             sampled: self.sampled,
         };

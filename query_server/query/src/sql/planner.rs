@@ -83,7 +83,7 @@ use spi::query::logical_planner::{
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
-use trace::{debug, warn, SpanExt, SpanRecorder};
+use trace::{debug, warn};
 use url::Url;
 
 use crate::data_source::source_downcast_adapter;
@@ -109,8 +109,17 @@ impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlanne
         statement: ExtStatement,
         session: &SessionCtx,
     ) -> Result<Plan> {
-        let PlanWithPrivileges { plan, privileges } =
-            self.statement_to_plan(statement, session).await?;
+        let PlanWithPrivileges { plan, privileges } = {
+            let mut span_recorder = session.get_child_span_recorder("statement to logical plan");
+            self.statement_to_plan(statement, session)
+                .await
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
+
+        let _ = session.get_child_span_recorder("check privilege");
         check_privilege(session.user(), privileges)?;
         Ok(plan)
     }
@@ -132,11 +141,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         statement: ExtStatement,
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
-        let _ = SpanRecorder::new(
-            session
-                .get_span_ctx()
-                .child_span("statement to logical plan"),
-        );
         match statement {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt, session).await,
             ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt, session),

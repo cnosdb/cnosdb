@@ -33,9 +33,10 @@ mod node_config;
 mod query_config;
 mod security_config;
 mod storage_config;
+mod trace;
 mod wal_config;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     ///
     #[serde(default = "Config::default_reporting_disabled")]
@@ -88,6 +89,9 @@ pub struct Config {
     ///
     #[serde(default = "Default::default")]
     pub node_basic: NodeBasicConfig,
+
+    #[serde(default = "Default::default")]
+    pub trace: TraceConfig,
 }
 
 impl Default for Config {
@@ -106,6 +110,7 @@ impl Default for Config {
             hinted_off: Default::default(),
             heartbeat: Default::default(),
             node_basic: Default::default(),
+            trace: Default::default(),
         }
     }
 }
@@ -257,7 +262,7 @@ mod test {
         let _ = cfg_file.write(cfg.to_string_pretty().as_bytes()).unwrap();
         let cfg_2 = crate::get_config(cfg_path).unwrap();
 
-        assert_eq!(cfg, cfg_2);
+        assert_eq!(cfg.to_string_pretty(), cfg_2.to_string_pretty());
     }
 
     #[test]
