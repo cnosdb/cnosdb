@@ -11,3 +11,9 @@ pub mod print_format;
 pub mod print_options;
 
 pub type Result<T> = std::result::Result<T, anyhow::Error>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(i32)]
+pub enum ExitCode {
+    HttpClientInitFailed = 10,
+}

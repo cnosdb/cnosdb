@@ -1,26 +1,82 @@
-use reqwest::RequestBuilder;
+use std::path::PathBuf;
+
+use reqwest::{Certificate, RequestBuilder};
+use snafu::{ResultExt, Snafu};
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("Failed to read certificate from path '{}': {source}", path.display()))]
+    LoadCertificate {
+        source: std::io::Error,
+        path: PathBuf,
+    },
+
+    #[snafu(display("Failed to parse certificate '{}': {source}", path.display()))]
+    ParseCertificate {
+        source: reqwest::Error,
+        path: PathBuf,
+    },
+
+    #[snafu(display("Failed to build http client: {source}"))]
+    BuildHttpClient { source: reqwest::Error },
+}
 
 pub struct HttpClient {
     client: reqwest::Client,
-    host: String,
-    port: u16,
+    addr: String,
 }
 
 impl HttpClient {
-    pub fn from_addr(host: String, port: u16) -> HttpClient {
-        HttpClient {
-            host,
-            port,
-            client: reqwest::Client::new(),
+    pub fn new(
+        host: &str,
+        port: u16,
+        use_ssl: bool,
+        use_unsafe_ssl: bool,
+        cert_files: &[String],
+    ) -> Result<HttpClient, Error> {
+        let addr = if use_ssl || use_unsafe_ssl {
+            format!("https://{}:{}", host, port)
+        } else {
+            format!("http://{}:{}", host, port)
+        };
+
+        let mut client_builder = reqwest::Client::builder();
+        if use_unsafe_ssl {
+            client_builder = client_builder.danger_accept_invalid_certs(true);
         }
+        for p in cert_files {
+            let crt_path = PathBuf::from(p);
+            let cert_bytes = match std::fs::read(&crt_path) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Err(Error::LoadCertificate {
+                        source: e,
+                        path: crt_path,
+                    })
+                }
+            };
+            let cert = match Certificate::from_pem(&cert_bytes) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Err(Error::ParseCertificate {
+                        source: e,
+                        path: crt_path,
+                    })
+                }
+            };
+            client_builder = client_builder.add_root_certificate(cert);
+        }
+
+        let client = client_builder.build().context(BuildHttpClientSnafu)?;
+        Ok(HttpClient { client, addr })
     }
 
     /// Construct test server url
     pub fn url(&self, uri: &str) -> String {
         if uri.starts_with('/') {
-            format!("http://{}:{}{}", self.host, self.port, uri)
+            format!("{}{}", self.addr, uri)
         } else {
-            format!("http://{}:{}/{}", self.host, self.port, uri)
+            format!("{}/{}", self.addr, uri)
         }
     }
 

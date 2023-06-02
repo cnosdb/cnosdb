@@ -25,6 +25,23 @@ pub static INTERVALS: &[DataType] = &[
     DataType::Interval(IntervalUnit::DayTime),
 ];
 
+pub static BINARYS: &[DataType] = &[
+    DataType::Binary,
+    DataType::LargeBinary,
+    DataType::FixedSizeBinary(i32::MAX),
+];
+
+pub static INTEGERS: &[DataType] = &[
+    DataType::Int8,
+    DataType::Int16,
+    DataType::Int32,
+    DataType::Int64,
+    DataType::UInt8,
+    DataType::UInt16,
+    DataType::UInt32,
+    DataType::UInt64,
+];
+
 /// load all cnosdb's built-in function
 pub fn load_all_functions(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     scalar_function::register_udfs(func_manager)?;

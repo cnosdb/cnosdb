@@ -2921,6 +2921,7 @@ dependencies = [
  "models",
  "reqwest",
  "serde",
+ "snafu",
 ]
 
 [[package]]
