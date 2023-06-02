@@ -12,7 +12,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
-use trace::{Span, SpanExt};
+use trace::{Span, SpanContext, SpanExt};
 
 use super::dispatcher::{QueryInfo, QueryStatus};
 use super::logical_planner::Plan;
@@ -196,7 +196,7 @@ pub struct QueryStateMachine {
 
 impl QueryStateMachine {
     /// only for test
-    pub fn test(query: Query) -> Self {
+    pub fn test(query: Query, span_context: Option<SpanContext>) -> Self {
         use coordinator::service_mock::MockCoordinator;
         use datafusion::execution::memory_pool::UnboundedMemoryPool;
 
@@ -213,6 +213,7 @@ impl QueryStateMachine {
                     ctx,
                     0,
                     Arc::new(UnboundedMemoryPool::default()),
+                    span_context,
                 )
                 .expect("create test session ctx"),
             Arc::new(MockCoordinator {}),

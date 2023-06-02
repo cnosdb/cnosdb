@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::physical_plan::RecordBatchStream;
 use futures::stream::AbortHandle;
 use parking_lot::Mutex;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
@@ -65,7 +64,8 @@ impl SqlQueryExecution {
 
         debug!("Success build result stream.");
         self.query_state_machine.end_schedule();
-        Ok(Output::StreamData(stream))
+
+        Ok(Output::StreamData(Box::pin(stream)))
     }
 }
 

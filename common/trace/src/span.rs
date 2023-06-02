@@ -5,7 +5,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use crate::span_ctx::SpanContext;
-use crate::TraceCollector;
+use crate::TraceExporter;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum SpanStatus {
@@ -18,8 +18,6 @@ pub enum SpanStatus {
 ///
 /// A `Span` has a name, metadata, a start and end time and a unique ID. Additionally they
 /// have relationships with other Spans that together comprise a Trace
-///
-
 #[derive(Debug, Clone)]
 pub struct Span {
     pub name: Cow<'static, str>,
@@ -54,7 +52,7 @@ impl Span {
     }
 
     /// Create new root span.
-    pub fn root(name: impl Into<Cow<'static, str>>, collector: Arc<dyn TraceCollector>) -> Self {
+    pub fn root(name: impl Into<Cow<'static, str>>, collector: Arc<dyn TraceExporter>) -> Self {
         let ctx = SpanContext::new(collector);
         Self::new(name, ctx)
     }
@@ -95,6 +93,11 @@ impl Span {
     pub fn child(&self, name: impl Into<Cow<'static, str>>) -> Self {
         self.ctx.child(name)
     }
+
+    /// Link this span to another context.
+    pub fn link(&mut self, other: &SpanContext) {
+        self.ctx.links.push((other.trace_id, other.span_id));
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -106,7 +109,7 @@ pub struct SpanEvent {
 /// Values that can be stored in a Span's metadata and events
 #[derive(Debug, Clone, PartialEq)]
 pub enum MetaValue {
-    String(Cow<'static, str>),
+    String(String),
     Float(f64),
     Int(i64),
     Bool(bool),
@@ -122,15 +125,15 @@ impl MetaValue {
     }
 }
 
-impl From<&'static str> for MetaValue {
-    fn from(v: &'static str) -> Self {
-        Self::String(Cow::Borrowed(v))
+impl From<&str> for MetaValue {
+    fn from(v: &str) -> Self {
+        Self::String(v.to_string())
     }
 }
 
 impl From<String> for MetaValue {
     fn from(v: String) -> Self {
-        Self::String(Cow::Owned(v))
+        Self::String(v)
     }
 }
 
@@ -145,9 +148,22 @@ impl From<i64> for MetaValue {
         Self::Int(v)
     }
 }
+
 impl From<u64> for MetaValue {
     fn from(v: u64) -> Self {
         Self::U64(v)
+    }
+}
+
+impl From<usize> for MetaValue {
+    fn from(v: usize) -> Self {
+        Self::U64(v as u64)
+    }
+}
+
+impl From<bool> for MetaValue {
+    fn from(v: bool) -> Self {
+        Self::Bool(v)
     }
 }
 
@@ -228,6 +244,22 @@ impl SpanRecorder {
     pub fn span_ctx(&self) -> Option<&SpanContext> {
         self.span().map(|s| &s.ctx)
     }
+
+    /// Link this span to another context.
+    pub fn link(&mut self, other: &SpanContext) {
+        if let Some(span) = self.span.as_mut() {
+            span.link(other);
+        }
+    }
+
+    pub fn record<T: SpanRecorderExt>(&mut self, any: T) -> T {
+        any.record(self);
+        any
+    }
+}
+
+pub trait SpanRecorderExt {
+    fn record(&self, span_recorder: &mut SpanRecorder);
 }
 
 /// Helper trait to make spans easier to work with
@@ -241,6 +273,7 @@ impl SpanExt for Option<SpanContext> {
         self.as_ref().child_span(name)
     }
 }
+
 impl SpanExt for Option<&SpanContext> {
     fn child_span(&self, name: &'static str) -> Option<Span> {
         self.map(|span| span.child(name))

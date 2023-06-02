@@ -28,7 +28,7 @@ pub trait QueryDispatcher: Send + Sync {
         tenant_id: Oid,
         id: QueryId,
         query: &Query,
-        span: Option<SpanContext>,
+        span: Option<&SpanContext>,
     ) -> Result<Output>;
 
     async fn build_logical_plan(
@@ -47,6 +47,7 @@ pub trait QueryDispatcher: Send + Sync {
         tenant_id: Oid,
         id: QueryId,
         query: Query,
+        span: Option<&SpanContext>,
     ) -> Result<Arc<QueryStateMachine>>;
 
     fn running_query_infos(&self) -> Vec<QueryInfo>;

@@ -27,6 +27,7 @@ pub struct SessionCtx {
     query_dedicated_hidden_dir: PathBuf,
 
     inner: SessionContext,
+    span_ctx: Option<SpanContext>,
 }
 
 impl SessionCtx {
@@ -53,16 +54,10 @@ impl SessionCtx {
     pub fn dedicated_hidden_dir(&self) -> &Path {
         self.query_dedicated_hidden_dir.as_path()
     }
-    pub fn df_session_ctx(&self) -> &SessionContext {
-        &self.inner
-    }
 
-    pub fn get_span_ctx(&self) -> Option<SpanContext> {
-        self.inner
-            .state()
-            .config()
-            .get_extension::<Option<SpanContext>>()
-            .and_then(|opt_span_ctx| opt_span_ctx.as_ref().clone())
+    pub fn get_span_ctx(&self) -> Option<&SpanContext> {
+        self.span_ctx.as_ref()
+        // self.inner().config().get_extension::<SpanContext>();
     }
 
     pub fn get_child_span_recorder(&self, name: &'static str) -> SpanRecorder {
@@ -91,7 +86,10 @@ impl SessionCtxFactory {
         span_ctx: Option<SpanContext>,
     ) -> Result<SessionCtx> {
         let mut ctx = context.session_config().to_owned();
-        ctx.inner = ctx.inner.with_extension(Arc::new(span_ctx));
+        if let Some(span_ctx) = &span_ctx {
+            // inject span context into datafusion session config, so that it can be used in execution
+            ctx.inner = ctx.inner.with_extension(Arc::new(span_ctx.clone()));
+        }
 
         let mut rt_config = RuntimeConfig::new();
         rt_config.memory_pool = Some(memory_pool);
@@ -107,6 +105,7 @@ impl SessionCtxFactory {
             default_database: context.database().to_owned(),
             query_dedicated_hidden_dir: self.query_dedicated_hidden_dir.clone(),
             inner: df_session_ctx,
+            span_ctx,
         })
     }
 }

@@ -67,37 +67,47 @@ where
     async fn execute(
         &self,
         query: &Query,
-        span_context: Option<SpanContext>,
+        span_context: Option<&SpanContext>,
     ) -> Result<QueryHandle> {
-        let mut span_recorder = SpanRecorder::new(span_context.child_span("query execute"));
+        let tenant_id = {
+            let mut span_recorder = SpanRecorder::new(span_context.child_span("get tenant id"));
+            self.get_tenant_id(query.context().tenant())
+                .await
+                .map(|id| {
+                    span_recorder.set_metadata("tenant id", id.to_string());
+                    id
+                })?
+        };
+
         let query_id = self.query_dispatcher.create_query_id();
-        span_recorder.set_metadata("query id", query_id.get());
 
-        let tenant_id = self
-            .get_tenant_id(query.context().tenant(), span_context)
-            .await?;
-
-        let result = self
-            .query_dispatcher
-            .execute_query(
-                tenant_id,
-                query_id,
-                query,
-                span_recorder.span_ctx().cloned(),
-            )
-            .await?;
+        let result = {
+            let mut span_recorder = SpanRecorder::new(span_context.child_span("execute query"));
+            span_recorder.set_metadata("query id", query_id.get());
+            self.query_dispatcher
+                .execute_query(tenant_id, query_id, query, span_recorder.span_ctx())
+                .await
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
 
         Ok(QueryHandle::new(query_id, query.clone(), result))
     }
 
-    async fn build_query_state_machine(&self, query: Query) -> Result<QueryStateMachineRef> {
+    async fn build_query_state_machine(
+        &self,
+        query: Query,
+        span_context: Option<&SpanContext>,
+    ) -> Result<QueryStateMachineRef> {
         let query_id = self.query_dispatcher.create_query_id();
 
         let tenant_id = self.get_tenant_id(query.context().tenant()).await?;
 
         let query_state_machine = self
             .query_dispatcher
-            .build_query_state_machine(tenant_id, query_id, query)
+            .build_query_state_machine(tenant_id, query_id, query, span_context)
             .await?;
 
         Ok(query_state_machine)
@@ -158,16 +168,8 @@ impl<D: QueryDispatcher> Cnosdbms<D> {
     pub(crate) async fn get_tenant_id(
         &self,
         tenant_name: &str,
-        span_ctx: Option<SpanContext>,
     ) -> std::result::Result<Oid, AuthError> {
-        let mut span_recorder = SpanRecorder::new(span_ctx.child_span("get tenant id"));
-        self.access_control
-            .tenant_id(tenant_name)
-            .await
-            .map_err(|e| {
-                span_recorder.error(e.to_string());
-                e
-            })
+        self.access_control.tenant_id(tenant_name).await
     }
 }
 pub async fn make_cnosdbms(

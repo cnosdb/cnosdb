@@ -167,9 +167,10 @@ where
         ctx: Context,
     ) -> Result<QueryStateMachineRef, Status> {
         let query = Query::new(ctx, sql.into());
+        // TODO
         let query_state_machine = self
             .instance
-            .build_query_state_machine(query)
+            .build_query_state_machine(query, None)
             .await
             .map_err(|e| {
                 // TODO convert error message

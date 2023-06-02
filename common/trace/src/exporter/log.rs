@@ -10,15 +10,7 @@ use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::fmt::format::{DefaultFields, Format};
 use tracing_subscriber::fmt::{format, Subscriber};
 
-use crate::{info, Span};
-
-pub trait TraceCollector: std::fmt::Debug + Send + Sync {
-    /// Exports the specified `Span` for collection by the sink
-    fn export(&self, span: Span);
-
-    /// Cast client to [`Any`], useful for downcasting.
-    fn as_any(&self) -> &dyn Any;
-}
+use crate::{info, Span, TraceExporter};
 
 /// A basic trace collector that prints to stdout
 #[allow(dead_code)]
@@ -43,7 +35,7 @@ impl LogTraceCollector {
     }
 }
 
-impl TraceCollector for LogTraceCollector {
+impl TraceExporter for LogTraceCollector {
     fn export(&self, span: Span) {
         tracing::subscriber::with_default(
             self.subscriber.clone(),
@@ -74,7 +66,7 @@ impl RingBufferTraceCollector {
     }
 }
 
-impl TraceCollector for RingBufferTraceCollector {
+impl TraceExporter for RingBufferTraceCollector {
     fn export(&self, span: Span) {
         let mut buffer = self.buffer.lock();
         if buffer.len() == buffer.capacity() {
@@ -90,16 +82,16 @@ impl TraceCollector for RingBufferTraceCollector {
 
 #[derive(Debug)]
 pub struct CombinationTraceCollector {
-    trace_collectors: Vec<Arc<dyn TraceCollector>>,
+    trace_collectors: Vec<Arc<dyn TraceExporter>>,
 }
 
 impl CombinationTraceCollector {
-    pub fn new(trace_collectors: Vec<Arc<dyn TraceCollector>>) -> Self {
+    pub fn new(trace_collectors: Vec<Arc<dyn TraceExporter>>) -> Self {
         Self { trace_collectors }
     }
 }
 
-impl TraceCollector for CombinationTraceCollector {
+impl TraceExporter for CombinationTraceCollector {
     fn export(&self, span: Span) {
         self.trace_collectors
             .iter()

@@ -72,6 +72,10 @@ report_time_interval_secs = 30
 enable = true
 path = '/tmp/cnosdb/2001/hh'
 
-[trace]
-[trace.log]
-path = '/tmp/cnosdb'
+# [trace]
+# [trace.log]
+# path = '/tmp/cnosdb'
+# [trace.jaeger]
+# jaeger_agent_endpoint = 'http://localhost:14268/api/traces'
+# max_concurrent_exports = 2
+# max_queue_size = 4096

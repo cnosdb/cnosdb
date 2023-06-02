@@ -1,0 +1,12 @@
+[package]
+name = "trace_http"
+description = "Distributed tracing support for HTTP services"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+trace = { path = "../trace" }
+http = { workspace = true }
+itertools = { workspace = true }
+snafu = { workspace = true }
+tower = { workspace = true }

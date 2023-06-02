@@ -26,37 +26,59 @@ impl Optimizer for CascadeOptimizer {
         plan: &LogicalPlan,
         session: &SessionCtx,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        let mut span_recorder = session.get_child_span_recorder("optimize logical plan");
-        span_recorder.set_metadata(
-            "original logical plan",
-            plan.display_indent_schema().to_string(),
-        );
         debug!("Original logical plan:\n{}\n", plan.display_indent_schema(),);
 
         let optimized_logical_plan = self.logical_optimizer.optimize(plan, session)?;
-        span_recorder.set_metadata(
-            "final logical plan",
-            optimized_logical_plan.display_indent_schema().to_string(),
-        );
+
         debug!(
             "Final logical plan:\n{}\n",
             optimized_logical_plan.display_indent_schema(),
         );
-        drop(span_recorder);
 
-        let span_recorder = session.get_child_span_recorder("create physical plan");
-        let physical_plan = self
-            .physical_planner
-            .create_physical_plan(&optimized_logical_plan, session)
-            .await?;
-        drop(span_recorder);
+        let physical_plan = {
+            let mut span_recorder =
+                session.get_child_span_recorder("logical plan to physical plan");
 
-        let mut span_recorder = session.get_child_span_recorder("optimize physical plan");
-        span_recorder.set_metadata(
-            "original physical plan",
-            displayable(physical_plan.as_ref()).indent().to_string(),
+            self.physical_planner
+                .create_physical_plan(&optimized_logical_plan, session)
+                .await
+                .map(|p| {
+                    span_recorder.ok("complete physical plan creation");
+                    span_recorder.set_metadata(
+                        "original physical plan",
+                        displayable(p.as_ref()).indent().to_string(),
+                    );
+                    p
+                })
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
+
+        debug!(
+            "Original physical plan:\n{}\n",
+            displayable(physical_plan.as_ref()).indent()
         );
-        let optimized_physical_plan = self.physical_optimizer.optimize(physical_plan, session)?;
+
+        let optimized_physical_plan = {
+            let mut span_recorder = session.get_child_span_recorder("optimize physical plan");
+
+            self.physical_optimizer
+                .optimize(physical_plan, session)
+                .map(|p| {
+                    span_recorder.ok("complete physical plan optimization");
+                    span_recorder.set_metadata(
+                        "final physical plan",
+                        displayable(p.as_ref()).indent().to_string(),
+                    );
+                    p
+                })
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
 
         debug!(
             "Final physical plan:\n{}\n",
