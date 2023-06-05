@@ -112,13 +112,10 @@ make build
 
 #### Run CnosDB
 
-The following is a single node startup. If you need to start a cluster, see [Cluster startup process](https://docs.cnosdb.com/zh/guide/cluster/cluster.html#%E9%9B%86%E7%BE%A4%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B)
+The following is a single node startup. If you need to start a cluster, see [Start a CnosDB Cluster](https://docs.cnosdb.com/en/latest/deploy/install.html#start-a-cnosdb-cluster)
 
 ```bash
-./target/debug/cnosdb-meta --id 1 --http-addr 127.0.0.1:8901
-curl http://127.0.0.1:8901/init -d '{}'
-curl http://127.0.0.1:8901/metrics
-./target/debug/cnosdb run --config ./config/config_8902.toml
+./target/debug/cnosdb run -M singleton ./config/config.toml
 ```
 
 #### **Run CLI**
@@ -132,11 +129,11 @@ cargo run --package client --bin cnosdb-cli
 
 2. Start container
 ```shell
-docker run --name cnosdb -d  --env cpu=2 --env memory=4 -p 31007:31007 cnosdb/cnosdb:v2.0.1
+docker run --name cnosdb -d cnosdb/cnosdb:community-latest cnosdb run -M singleton --config /etc/cnosdb/cnosdb.conf
 ```
 3. Run a command in the running container
 ```shell
-docker exec -it cnosdb sh
+docker exec -it cnosdb bash
 ```
 4. Run `cnosdb-cli`
 ```shell
@@ -145,14 +142,14 @@ cnosdb-cli
 
 > Quit `\q`
 > Help `\?`
-> For more details, check [basic operation](https://docs.cnosdb.com/zh/guide/tools/cli.html)
+> For more details, check [quick start](https://docs.cnosdb.com/en/latest/start/quick_start.html)
 
 ## Write data
 
-- [SQL](https://docs.cnosdb.com/zh/guide/query/insert.html#insert)
+- [SQL](https://docs.cnosdb.com/en/latest/reference/sql.html#insert)
 - [influxdb line-protocol](https://docs.influxdata.com/influxdb/v2.6/reference/syntax/line-protocol/)
-- [bulk loading](https://docs.cnosdb.com/zh/guide/query/bulk_load.html)
-- [telegraf](https://docs.cnosdb.com/zh/guide/ecology/telegraf.html)
+- [bulk loading](https://docs.cnosdb.com/en/latest/develop/write.html#load-data)
+- [telegraf](https://docs.cnosdb.com/en/latest/versatility/collect/telegraf.html)
 
 The following will show an example of using cli to write data by SQL
 
@@ -217,8 +214,8 @@ Query took 0.038 seconds.
 
 ## Query data
 
-- [SQL](https://docs.cnosdb.com/zh/guide/query/sql.html), compatible with SQL standard.
-- Prometheus remote read.
+- [SQL](https://docs.cnosdb.com/en/latest/reference/sql.html), compatible with SQL standard.
+- [Prometheus remote read](https://docs.cnosdb.com/en/latest/versatility/collect/prometheus.html#remote-read).
 
 The following will show an example of SQL query using cli
 
@@ -242,11 +239,18 @@ Query took 0.036 seconds.
 
 # Connector
 
-- Java: Support [JDBC](https://docs.cnosdb.com/zh/guide/application/JDBC.html) and [Java Arrow Flight](https://docs.cnosdb.com/zh/guide/application/java.html)
-- C++: Support [ODBC](https://docs.cnosdb.com/zh/guide/application/c++.html) and [C++ Arrow Flight](https://docs.cnosdb.com/zh/guide/application/c++.html)
-- [Go](https://docs.cnosdb.com/zh/guide/application/go.html)
-- [Python](https://docs.cnosdb.com/zh/guide/application/python.html): Conforms to the [Python Data Access Specification (PEP 249)](https://peps.python.org/pep-0249/)
-- [Rust](https://docs.cnosdb.com/zh/guide/application/rust.html)
+CnosDB supports connections from various clients:
+
+- C/C++
+- Go
+- Java
+- Rust
+- Python
+- JDBC
+- ODBC
+- Arrow Filght SQL
+
+Please refer to the "Connector" section in the documentation for the above examples. You can access it [here](https://docs.cnosdb.com/en/latest/reference/connector/).
 
 # Roadmap
 
