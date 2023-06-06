@@ -96,14 +96,9 @@ impl AdminMeta for RemoteAdminMeta {
             ),
         };
 
-        let req =
-            command::WriteCommand::AddDataNode(self.config.cluster.name.clone(), node.clone());
-        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
-        if rsp.code != command::META_REQUEST_SUCCESS {
-            return Err(MetaError::CommonError {
-                msg: format!("add data node err: {} {}", rsp.code, rsp.msg),
-            });
-        }
+        let cluster_name = self.config.cluster.name.clone();
+        let req = command::WriteCommand::AddDataNode(cluster_name, node.clone());
+        self.client.write::<()>(&req).await?;
 
         self.data_nodes.write().await.insert(node.id, node);
 
@@ -154,19 +149,7 @@ impl AdminMeta for RemoteAdminMeta {
 
     async fn retain_id(&self, count: u32) -> MetaResult<u32> {
         let req = command::WriteCommand::RetainID(self.config.cluster.name.clone(), count);
-        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
-        if rsp.code != command::META_REQUEST_SUCCESS {
-            return Err(MetaError::CommonError {
-                msg: format!("retain id err: {} {}", rsp.code, rsp.msg),
-            });
-        }
-
-        let id = serde_json::from_str::<u32>(&rsp.msg).unwrap_or(0);
-        if id == 0 {
-            return Err(MetaError::CommonError {
-                msg: format!("retain id err: {} ", rsp.msg),
-            });
-        }
+        let id = self.client.write::<u32>(&req).await?;
 
         Ok(id)
     }
@@ -217,13 +200,7 @@ impl AdminMeta for RemoteAdminMeta {
             self.config.cluster.name.clone(),
             node_metrics.clone(),
         );
-        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
-        if rsp.code != command::META_REQUEST_SUCCESS {
-            return Err(MetaError::CommonError {
-                msg: format!("report node metrics err: {} {}", rsp.code, rsp.msg),
-            });
-        }
 
-        Ok(())
+        self.client.write::<()>(&req).await
     }
 }

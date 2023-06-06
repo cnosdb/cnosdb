@@ -46,11 +46,9 @@ impl MetaHttpClient {
     {
         let rsp: CommandResp = self.send_rpc_to_leader("read", Some(req)).await?;
 
-        let rsp = serde_json::from_str::<T>(&rsp).map_err(|err| MetaError::MetaClientErr {
-            msg: err.to_string(),
-        })?;
-
-        Ok(rsp)
+        serde_json::from_str::<MetaResult<T>>(&rsp).map_err(|err| MetaError::SerdeMsgDecode {
+            err: err.to_string(),
+        })?
     }
 
     pub async fn write<T>(&self, req: &WriteCommand) -> MetaResult<T>
@@ -60,11 +58,11 @@ impl MetaHttpClient {
         let rsp: ClientWriteResponse<TypeConfig> =
             self.send_rpc_to_leader("write", Some(req)).await?;
 
-        let rsp = serde_json::from_str::<T>(&rsp.data).map_err(|err| MetaError::MetaClientErr {
-            msg: err.to_string(),
-        })?;
-
-        Ok(rsp)
+        serde_json::from_str::<MetaResult<T>>(&rsp.data).map_err(|err| {
+            MetaError::SerdeMsgDecode {
+                err: err.to_string(),
+            }
+        })?
     }
 
     pub async fn watch<T>(&self, req: &(String, String, HashSet<String>, u64)) -> MetaResult<T>
@@ -73,11 +71,9 @@ impl MetaHttpClient {
     {
         let rsp: CommandResp = self.send_rpc_to_leader("watch", Some(req)).await?;
 
-        let rsp = serde_json::from_str::<T>(&rsp).map_err(|err| MetaError::MetaClientErr {
-            msg: err.to_string(),
-        })?;
-
-        Ok(rsp)
+        serde_json::from_str::<MetaResult<T>>(&rsp).map_err(|err| MetaError::SerdeMsgDecode {
+            err: err.to_string(),
+        })?
     }
 
     //////////////////////////////////////////////////
@@ -204,7 +200,9 @@ mod test {
     use std::collections::HashSet;
     use std::{thread, time};
 
-    use models::meta_data::{NodeAttribute, NodeInfo, VnodeAllInfo, VnodeInfo, VnodeStatus};
+    use models::meta_data::{
+        NodeAttribute, NodeInfo, TenantMetaData, VnodeAllInfo, VnodeInfo, VnodeStatus,
+    };
     use models::schema::DatabaseSchema;
     use tokio::sync::mpsc::channel;
     use tokio::time::timeout;
@@ -223,10 +221,7 @@ mod test {
         let client = MetaHttpClient::new("127.0.0.1:8901".to_string());
 
         let req = command::ReadCommand::TenaneMetaData(cluster.clone(), "cnosdb".to_string());
-        let rsp = client
-            .read::<command::TenaneMetaDataResp>(&req)
-            .await
-            .unwrap();
+        let rsp = client.read::<TenantMetaData>(&req).await.unwrap();
         println!("read tenant data: {}", serde_json::to_string(&rsp).unwrap());
 
         let node = NodeInfo {
@@ -237,7 +232,7 @@ mod test {
         };
 
         let req = command::WriteCommand::AddDataNode(cluster.clone(), node);
-        let rsp = client.write::<command::StatusResponse>(&req).await;
+        let rsp = client.write::<()>(&req).await;
         println!("=== add data: {:?}", rsp);
         thread::sleep(time::Duration::from_secs(3));
 
@@ -246,7 +241,7 @@ mod test {
             tenant.clone(),
             DatabaseSchema::new(&tenant, "test_db"),
         );
-        let rsp = client.write::<command::TenaneMetaDataResp>(&req).await;
+        let rsp = client.write::<()>(&req).await;
         println!("=== create db: {:?}", rsp);
         thread::sleep(time::Duration::from_secs(3));
 
@@ -256,7 +251,7 @@ mod test {
             "test_db".to_string(),
             1667456711000000000,
         );
-        let rsp = client.write::<command::TenaneMetaDataResp>(&req).await;
+        let rsp = client.write::<TenantMetaData>(&req).await;
         println!("=== create bucket: {:?}", rsp);
         thread::sleep(time::Duration::from_secs(3));
 
@@ -265,7 +260,7 @@ mod test {
             tenant.clone(),
             DatabaseSchema::new(&tenant, "test_db2"),
         );
-        let rsp = client.write::<command::TenaneMetaDataResp>(&req).await;
+        let rsp = client.write::<()>(&req).await;
         println!("=== create db2: {:?}", rsp);
         thread::sleep(time::Duration::from_secs(3));
 
@@ -292,7 +287,7 @@ mod test {
         let req = command::WriteCommand::UpdateVnodeReplSet(args);
 
         let client = MetaHttpClient::new("127.0.0.1:8901".to_string());
-        let rsp = client.write::<command::StatusResponse>(&req).await;
+        let rsp = client.write::<()>(&req).await;
         println!("=========: {:?}", rsp);
     }
 
@@ -311,7 +306,7 @@ mod test {
         let req = command::WriteCommand::UpdateVnode(args);
 
         let client = MetaHttpClient::new("127.0.0.1:8901".to_string());
-        let rsp = client.write::<command::StatusResponse>(&req).await;
+        let rsp = client.write::<()>(&req).await;
         println!("=========: {:?}", rsp);
     }
 

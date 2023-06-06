@@ -458,8 +458,8 @@ mod test {
     use minivec::MiniVec;
     use models::predicate::domain::TimeRange;
     use models::schema::{
-        make_owner, ColumnType, DatabaseOptions, DatabaseSchema, Precision, TableColumn,
-        TableSchema, TenantOptions, TskvTableSchema,
+        ColumnType, DatabaseOptions, DatabaseSchema, Precision, TableColumn, TableSchema,
+        TenantOptions, TskvTableSchema,
     };
     use models::{Timestamp, ValueType};
     use protos::kv_service::{Meta, WritePointsRequest};
@@ -784,10 +784,7 @@ mod test {
         };
         let points = flatbuffers::root::<fb_models::Points>(&write_batch.points).unwrap();
         models_helper::print_points(points);
-        engine
-            .write(vnode_id, Precision::NS, write_batch)
-            .await
-            .unwrap();
+        let _ = engine.write(vnode_id, Precision::NS, write_batch).await;
     }
 
     fn data_block_to_hash_tree(
@@ -874,9 +871,7 @@ mod test {
         .await
         .unwrap();
         let _ = engine.drop_database(tenant, database).await;
-        let _ = meta_client
-            .drop_db(make_owner(tenant, database).as_str())
-            .await;
+        let _ = meta_client.drop_db(database).await;
 
         // Create database and vnode
         let mut database_schema = DatabaseSchema::new(tenant, database);

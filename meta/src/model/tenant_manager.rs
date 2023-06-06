@@ -10,11 +10,11 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 
 use crate::client::MetaHttpClient;
-use crate::error::{MetaError, MetaResult};
+use crate::error::MetaResult;
 use crate::limiter::{LocalRequestLimiter, NoneLimiter, RequestLimiter};
 use crate::model::meta_client::RemoteMetaClient;
 use crate::model::{MetaClient, MetaClientRef, TenantManager};
-use crate::store::command::{self, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND};
+use crate::store::command;
 
 pub const USE_TENANT_ACTION_ADD: i32 = 1;
 pub const USE_TENANT_ACTION_DEL: i32 = 2;
@@ -122,21 +122,8 @@ impl TenantManager for RemoteTenantManager {
         let req =
             command::WriteCommand::CreateTenant(self.cluster_name.clone(), name.clone(), options);
 
-        let meta_client = match self
-            .client
-            .write::<command::CommonResp<Tenant>>(&req)
-            .await?
-        {
-            command::CommonResp::Ok(tenant) => self.create_tenant_meta(tenant).await,
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                if status.code == META_REQUEST_TENANT_EXIST {
-                    Err(MetaError::TenantAlreadyExists { tenant: status.msg })
-                } else {
-                    Err(MetaError::CommonError { msg: status.msg })
-                }
-            }
-        };
+        let tenant = self.client.write::<Tenant>(&req).await?;
+        let meta_client = self.create_tenant_meta(tenant).await;
         self.limiters
             .write()
             .await
@@ -150,30 +137,12 @@ impl TenantManager for RemoteTenantManager {
         }
 
         let req = command::ReadCommand::Tenant(self.cluster_name.clone(), name.to_string());
-
-        match self
-            .client
-            .read::<command::CommonResp<Option<Tenant>>>(&req)
-            .await?
-        {
-            command::CommonResp::Ok(data) => Ok(data),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                Err(MetaError::CommonError { msg: status.msg })
-            }
-        }
+        self.client.read::<Option<Tenant>>(&req).await
     }
 
     async fn tenants(&self) -> MetaResult<Vec<Tenant>> {
         let req = command::ReadCommand::Tenants(self.cluster_name.clone());
-        match self
-            .client
-            .read::<command::CommonResp<Vec<Tenant>>>(&req)
-            .await?
-        {
-            command::CommonResp::Ok(data) => Ok(data),
-            command::CommonResp::Err(status) => Err(MetaError::CommonError { msg: status.msg }),
-        }
+        self.client.read::<Vec<Tenant>>(&req).await
     }
 
     async fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
@@ -185,21 +154,9 @@ impl TenantManager for RemoteTenantManager {
             options,
         );
 
-        let tenant_meta = match self
-            .client
-            .write::<command::CommonResp<Tenant>>(&req)
-            .await?
-        {
-            command::CommonResp::Ok(data) => self.create_tenant_meta(data).await?,
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                return if status.code == META_REQUEST_TENANT_NOT_FOUND {
-                    Err(MetaError::TenantNotFound { tenant: status.msg })
-                } else {
-                    Err(MetaError::CommonError { msg: status.msg })
-                };
-            }
-        };
+        let tenant = self.client.write::<Tenant>(&req).await?;
+
+        let tenant_meta = self.create_tenant_meta(tenant).await?;
         self.limiters
             .write()
             .await
@@ -216,19 +173,13 @@ impl TenantManager for RemoteTenantManager {
             let req =
                 command::WriteCommand::DropTenant(self.cluster_name.clone(), name.to_string());
 
-            return match self.client.write::<command::CommonResp<bool>>(&req).await? {
-                command::CommonResp::Ok(e) => {
-                    self.limiters.write().await.remove(name);
-                    Ok(e)
-                }
-                command::CommonResp::Err(status) => {
-                    // TODO improve response
-                    Err(MetaError::CommonError { msg: status.msg })
-                }
-            };
-        }
+            let exist = self.client.write::<bool>(&req).await?;
+            self.limiters.write().await.remove(name);
 
-        Ok(false)
+            Ok(exist)
+        } else {
+            Ok(false)
+        }
     }
 
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {

@@ -11,7 +11,6 @@ use meta::service::connection::Connections;
 use meta::service::{api, raft_api};
 use meta::store::command::WriteCommand;
 use meta::store::config::{HeartBeatConfig, Opt};
-use meta::store::state_machine::children_data;
 use meta::store::Store;
 use meta::{store, MetaApp, RaftStore};
 use models::meta_data::NodeMetrics;
@@ -127,34 +126,33 @@ async fn detect_node_heartbeat(heartbeat_config: HeartBeatConfig, app: Data<Meta
         heartbeat_config.heartbeat_recheck_interval,
     ));
 
+    let metrics_path = KeyPath::data_nodes_metrics(&app.meta_init.cluster_name);
     loop {
         interval.tick().await;
 
         if let Ok(_leader) = app.raft.is_leader().await {
             let sm = app.store.state_machine.write().await;
 
-            let node_metrics_list: Vec<NodeMetrics> = children_data::<NodeMetrics>(
-                &KeyPath::data_nodes_metrics(&app.meta_init.cluster_name),
-                sm.db.clone(),
-            )
-            .into_values()
-            .collect();
+            if let Ok(list) = sm.children_data::<NodeMetrics>(&metrics_path) {
+                let node_metrics_list: Vec<NodeMetrics> = list.into_values().collect();
 
-            let time = now_timestamp_secs();
-            for node_metrics in node_metrics_list.iter() {
-                if time - heartbeat_config.heartbeat_expired_interval as i64 > node_metrics.time {
-                    let mut now_node_metrics = node_metrics.clone();
-                    now_node_metrics.status = NodeStatus::Unreachable;
-                    warn!(
-                        "Data node '{}' report heartbeat late, maybe unreachable.",
-                        node_metrics.id
-                    );
-                    let req = WriteCommand::ReportNodeMetrics(
-                        app.meta_init.cluster_name.clone(),
-                        now_node_metrics,
-                    );
+                let time = now_timestamp_secs();
+                for node_metrics in node_metrics_list.iter() {
+                    if time - heartbeat_config.heartbeat_expired_interval as i64 > node_metrics.time
+                    {
+                        let mut now_node_metrics = node_metrics.clone();
+                        now_node_metrics.status = NodeStatus::Unreachable;
+                        warn!(
+                            "Data node '{}' report heartbeat late, maybe unreachable.",
+                            node_metrics.id
+                        );
+                        let req = WriteCommand::ReportNodeMetrics(
+                            app.meta_init.cluster_name.clone(),
+                            now_node_metrics,
+                        );
 
-                    sm.process_write_command(&req);
+                        sm.process_write_command(&req);
+                    }
                 }
             }
         }

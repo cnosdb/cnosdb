@@ -13,15 +13,11 @@ use models::oid::{Identifier, Oid};
 use models::schema::{DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TskvTableSchema};
 use parking_lot::RwLock;
 use store::command;
-use trace::{debug, info, warn};
+use trace::info;
 
 use crate::error::{MetaError, MetaResult};
 use crate::model::MetaClient;
-use crate::store::command::{
-    EntryLog, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
-    META_REQUEST_ROLE_EXIST, META_REQUEST_ROLE_NOT_FOUND, META_REQUEST_USER_EXIST,
-    META_REQUEST_USER_NOT_FOUND,
-};
+use crate::store::command::EntryLog;
 use crate::store::key_path;
 use crate::{client, store};
 
@@ -57,19 +53,11 @@ impl RemoteMetaClient {
 
     async fn sync_all_tenant_metadata(&self) -> MetaResult<()> {
         let req = command::ReadCommand::TenaneMetaData(self.cluster.clone(), self.tenant_name());
-        let resp = self
-            .client
-            .read::<command::TenaneMetaDataResp>(&req)
-            .await?;
-        if resp.status.code < 0 {
-            return Err(MetaError::CommonError {
-                msg: format!("open meta err: {} {}", resp.status.code, resp.status.msg),
-            });
-        }
+        let resp = self.client.read::<TenantMetaData>(&req).await?;
 
         let mut data = self.data.write();
-        if resp.data.version > data.version {
-            *data = resp.data;
+        if resp.version > data.version {
+            *data = resp;
         }
 
         Ok(())
@@ -186,17 +174,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant().name().to_string(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req).await? {
-            command::CommonResp::Ok(_) => Ok(()),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                if status.code == META_REQUEST_USER_EXIST {
-                    Err(MetaError::UserAlreadyExists { user: status.msg })
-                } else {
-                    Err(MetaError::CommonError { msg: status.msg })
-                }
-            }
-        }
+        self.client.write::<()>(&req).await
     }
 
     // tenant member start
@@ -208,42 +186,15 @@ impl MetaClient for RemoteMetaClient {
             *user_id,
         );
 
-        match self
-            .client
-            .read::<command::CommonResp<Option<TenantRoleIdentifier>>>(&req)
-            .await?
-        {
-            command::CommonResp::Ok(e) => Ok(e),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                if status.code == META_REQUEST_USER_NOT_FOUND {
-                    Err(MetaError::UserNotFound { user: status.msg })
-                } else {
-                    Err(MetaError::CommonError { msg: status.msg })
-                }
-            }
-        }
+        self.client.read::<Option<TenantRoleIdentifier>>(&req).await
     }
 
     async fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>> {
         let req = command::ReadCommand::Members(self.cluster.clone(), self.tenant_name());
 
-        match self
-            .client
-            .read::<command::CommonResp<HashMap<String, TenantRoleIdentifier>>>(&req)
-            .await?
-        {
-            command::CommonResp::Ok(e) => Ok(e),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                warn!(
-                    "members of tenant {}, error: {}",
-                    self.tenant().name(),
-                    status.msg
-                );
-                Err(MetaError::CommonError { msg: status.msg })
-            }
-        }
+        self.client
+            .read::<HashMap<String, TenantRoleIdentifier>>(&req)
+            .await
     }
 
     async fn reassign_member_role(
@@ -258,17 +209,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req).await? {
-            command::CommonResp::Ok(_) => Ok(()),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                if status.code == META_REQUEST_USER_NOT_FOUND {
-                    Err(MetaError::UserNotFound { user: status.msg })
-                } else {
-                    Err(MetaError::CommonError { msg: status.msg })
-                }
-            }
-        }
+        self.client.write::<()>(&req).await
     }
 
     async fn remove_member(&self, user_id: Oid) -> MetaResult<()> {
@@ -278,17 +219,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req).await? {
-            command::CommonResp::Ok(_) => Ok(()),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                if status.code == META_REQUEST_USER_NOT_FOUND {
-                    Err(MetaError::UserNotFound { user: status.msg })
-                } else {
-                    Err(MetaError::CommonError { msg: status.msg })
-                }
-            }
-        }
+        self.client.write::<()>(&req).await
     }
 
     async fn create_custom_role(
@@ -305,17 +236,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req).await? {
-            command::CommonResp::Ok(_) => Ok(()),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                if status.code == META_REQUEST_ROLE_EXIST {
-                    Err(MetaError::RoleAlreadyExists { role: status.msg })
-                } else {
-                    Err(MetaError::CommonError { msg: status.msg })
-                }
-            }
-        }
+        self.client.write::<()>(&req).await
     }
 
     // tenant member end
@@ -329,34 +250,15 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        match self
-            .client
-            .read::<command::CommonResp<Option<CustomTenantRole<Oid>>>>(&req)
-            .await?
-        {
-            command::CommonResp::Ok(e) => Ok(e),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                Err(MetaError::CommonError { msg: status.msg })
-            }
-        }
+        self.client
+            .read::<Option<CustomTenantRole<Oid>>>(&req)
+            .await
     }
 
     async fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>> {
         let req = command::ReadCommand::CustomRoles(self.cluster.clone(), self.tenant_name());
 
-        match self
-            .client
-            .read::<command::CommonResp<Vec<CustomTenantRole<Oid>>>>(&req)
-            .await?
-        {
-            command::CommonResp::Ok(e) => Ok(e),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                warn!("custom roles not found, {}", status.msg);
-                Err(MetaError::CommonError { msg: status.msg })
-            }
-        }
+        self.client.read::<Vec<CustomTenantRole<Oid>>>(&req).await
     }
 
     async fn grant_privilege_to_custom_role(
@@ -371,19 +273,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req).await? {
-            command::CommonResp::Ok(_) => Ok(()),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                if status.code == META_REQUEST_ROLE_NOT_FOUND {
-                    Err(MetaError::RoleNotFound { role: status.msg })
-                } else if status.code == META_REQUEST_PRIVILEGE_EXIST {
-                    Err(MetaError::PrivilegeAlreadyExists { name: status.msg })
-                } else {
-                    Err(MetaError::CommonError { msg: status.msg })
-                }
-            }
-        }
+        self.client.write::<()>(&req).await
     }
 
     async fn revoke_privilege_from_custom_role(
@@ -398,19 +288,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<()>>(&req).await? {
-            command::CommonResp::Ok(_) => Ok(()),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                if status.code == META_REQUEST_ROLE_NOT_FOUND {
-                    Err(MetaError::RoleNotFound { role: status.msg })
-                } else if status.code == META_REQUEST_PRIVILEGE_NOT_FOUND {
-                    Err(MetaError::PrivilegeNotFound { name: status.msg })
-                } else {
-                    Err(MetaError::CommonError { msg: status.msg })
-                }
-            }
-        }
+        self.client.write::<()>(&req).await
     }
 
     async fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool> {
@@ -420,13 +298,7 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        match self.client.write::<command::CommonResp<bool>>(&req).await? {
-            command::CommonResp::Ok(e) => Ok(e),
-            command::CommonResp::Err(status) => {
-                // TODO improve response
-                Err(MetaError::CommonError { msg: status.msg })
-            }
-        }
+        self.client.write::<bool>(&req).await
     }
 
     async fn create_db(&self, mut schema: DatabaseSchema) -> MetaResult<()> {
@@ -438,26 +310,7 @@ impl MetaClient for RemoteMetaClient {
             schema.clone(),
         );
 
-        let rsp = self
-            .client
-            .write::<command::TenaneMetaDataResp>(&req)
-            .await?;
-        let mut data = self.data.write();
-        if rsp.data.version > data.version {
-            *data = rsp.data;
-        }
-
-        if rsp.status.code == command::META_REQUEST_SUCCESS {
-            Ok(())
-        } else if rsp.status.code == command::META_REQUEST_DB_EXIST {
-            Err(MetaError::DatabaseAlreadyExists {
-                database: schema.database_name().to_string(),
-            })
-        } else {
-            Err(MetaError::CommonError {
-                msg: rsp.status.to_string(),
-            })
-        }
+        self.client.write::<()>(&req).await
     }
 
     // tenant role end
@@ -466,16 +319,7 @@ impl MetaClient for RemoteMetaClient {
         let req =
             command::WriteCommand::AlterDB(self.cluster.clone(), self.tenant_name(), info.clone());
 
-        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
-        info!("alter db: {:?}; {:?}", req, rsp);
-
-        if rsp.code == command::META_REQUEST_SUCCESS {
-            Ok(())
-        } else {
-            Err(MetaError::CommonError {
-                msg: rsp.to_string(),
-            })
-        }
+        self.client.write::<()>(&req).await
     }
 
     fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
@@ -511,16 +355,8 @@ impl MetaClient for RemoteMetaClient {
             name.to_string(),
         );
 
-        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
-        info!("drop db: {:?}; {:?}", req, rsp);
-
-        if rsp.code == command::META_REQUEST_SUCCESS {
-            Ok(exist)
-        } else {
-            Err(MetaError::CommonError {
-                msg: rsp.to_string(),
-            })
-        }
+        self.client.write::<()>(&req).await?;
+        Ok(exist)
     }
 
     async fn create_table(&self, schema: &TableSchema) -> MetaResult<()> {
@@ -530,32 +366,7 @@ impl MetaClient for RemoteMetaClient {
             schema.clone(),
         );
 
-        debug!("create_table: {:?}", req);
-
-        let rsp = self
-            .client
-            .write::<command::TenaneMetaDataResp>(&req)
-            .await?;
-        let mut data = self.data.write();
-        if rsp.data.version > data.version {
-            *data = rsp.data;
-        }
-
-        if rsp.status.code == command::META_REQUEST_SUCCESS {
-            Ok(())
-        } else if rsp.status.code == command::META_REQUEST_DB_NOT_FOUND {
-            Err(MetaError::DatabaseNotFound {
-                database: schema.db(),
-            })
-        } else if rsp.status.code == command::META_REQUEST_TABLE_EXIST {
-            Err(MetaError::TableAlreadyExists {
-                table_name: schema.name(),
-            })
-        } else {
-            Err(MetaError::CommonError {
-                msg: rsp.status.to_string(),
-            })
-        }
+        self.client.write::<()>(&req).await
     }
 
     async fn update_table(&self, schema: &TableSchema) -> MetaResult<()> {
@@ -565,18 +376,7 @@ impl MetaClient for RemoteMetaClient {
             schema.clone(),
         );
 
-        let rsp = self
-            .client
-            .write::<command::TenaneMetaDataResp>(&req)
-            .await?;
-        let mut data = self.data.write();
-        if rsp.data.version > data.version {
-            *data = rsp.data;
-        }
-
-        // TODO table not exist
-
-        Ok(())
+        self.client.write::<()>(&req).await
     }
 
     fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>> {
@@ -627,15 +427,7 @@ impl MetaClient for RemoteMetaClient {
             table.to_string(),
         );
 
-        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
-
-        if rsp.code == command::META_REQUEST_SUCCESS {
-            Ok(())
-        } else {
-            Err(MetaError::CommonError {
-                msg: rsp.to_string(),
-            })
-        }
+        self.client.write::<()>(&req).await
     }
 
     async fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo> {
@@ -646,21 +438,12 @@ impl MetaClient for RemoteMetaClient {
             ts,
         );
 
-        let rsp = self
-            .client
-            .write::<command::TenaneMetaDataResp>(&req)
-            .await?;
+        let rsp = self.client.write::<TenantMetaData>(&req).await?;
         {
             let mut data = self.data.write();
-            if rsp.data.version > data.version {
-                *data = rsp.data;
+            if rsp.version > data.version {
+                *data = rsp;
             }
-        }
-
-        if rsp.status.code < 0 {
-            return Err(MetaError::MetaClientErr {
-                msg: format!("create bucket err: {} {}", rsp.status.code, rsp.status.msg),
-            });
         }
 
         if let Some(bucket) = self.data.read().bucket_by_timestamp(db, ts) {
@@ -680,16 +463,7 @@ impl MetaClient for RemoteMetaClient {
             id,
         );
 
-        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
-        info!("delete bucket: {:?}; {:?}", req, rsp);
-
-        if rsp.code == command::META_REQUEST_SUCCESS {
-            Ok(())
-        } else {
-            Err(MetaError::CommonError {
-                msg: rsp.to_string(),
-            })
-        }
+        self.client.write::<()>(&req).await
     }
 
     fn database_min_ts(&self, name: &str) -> Option<i64> {
@@ -801,18 +575,9 @@ impl MetaClient for RemoteMetaClient {
             cluster: self.cluster.clone(),
             vnode_info: info.clone(),
         };
+
         let req = command::WriteCommand::UpdateVnode(args);
-
-        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
-        info!("update replication set: {:?}; {:?}", req, rsp);
-
-        if rsp.code == command::META_REQUEST_SUCCESS {
-            Ok(())
-        } else {
-            Err(MetaError::CommonError {
-                msg: rsp.to_string(),
-            })
-        }
+        self.client.write::<()>(&req).await
     }
 
     async fn update_replication_set(
@@ -832,18 +597,9 @@ impl MetaClient for RemoteMetaClient {
             del_info: del_info.to_vec(),
             add_info: add_info.to_vec(),
         };
+
         let req = command::WriteCommand::UpdateVnodeReplSet(args);
-
-        let rsp = self.client.write::<command::StatusResponse>(&req).await?;
-        info!("update replication set: {:?}; {:?}", req, rsp);
-
-        if rsp.code == command::META_REQUEST_SUCCESS {
-            Ok(())
-        } else {
-            Err(MetaError::CommonError {
-                msg: rsp.to_string(),
-            })
-        }
+        self.client.write::<()>(&req).await
     }
 
     async fn version(&self) -> u64 {

@@ -6,6 +6,7 @@ use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{get, middleware, post, web, App, HttpServer, Responder};
 use config::Config;
+use meta::error::MetaResult;
 use meta::store::command::*;
 use meta::store::state_machine::{CommandResp, StateMachine};
 use meta::{ClusterNode, ClusterNodeId, TypeConfig};
@@ -196,15 +197,11 @@ pub async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
 
     // init role
     let req = ReadCommand::User(opt.cluster.name.clone(), ROOT.to_string());
-    let user_resp =
-        serde_json::from_str::<CommonResp<Option<UserDesc>>>(&app.store.process_read_command(&req));
-    let user = if user_resp.is_err() {
-        error!("failed get admin user {}, exit init meta", ROOT);
-        return;
-    } else {
-        user_resp.unwrap()
-    };
-    if let CommonResp::Ok(Some(user_desc)) = user {
+    let user =
+        serde_json::from_str::<MetaResult<Option<UserDesc>>>(&app.store.process_read_command(&req))
+            .unwrap()
+            .unwrap();
+    if let Some(user_desc) = user {
         let role = TenantRoleIdentifier::System(SystemTenantRole::Owner);
         let req = WriteCommand::AddMemberToTenant(
             opt.cluster.name.clone(),
