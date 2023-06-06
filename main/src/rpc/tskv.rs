@@ -3,13 +3,14 @@ use std::sync::Arc;
 
 use coordinator::errors::CoordinatorResult;
 use coordinator::file_info::get_files_meta;
-use coordinator::reader::{QueryExecutor, ReaderIterator};
+use coordinator::reader::table_scan::remote::TonicRecordBatchEncoder;
+use coordinator::reader::QueryExecutor;
 use coordinator::service::{CoordServiceMetrics, CoordinatorRef};
 use coordinator::vnode_mgr::VnodeManager;
-use coordinator::{FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE};
-use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
-use futures::Stream;
+use coordinator::{
+    SendableCoordinatorRecordBatchStream, FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE,
+};
+use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
@@ -21,12 +22,11 @@ use protos::kv_service::*;
 use protos::models::{PingBody, PingBodyBuilder};
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
 use trace::{debug, error, info};
-use tskv::query_iterator::{QueryOption, TableScanMetrics};
+use tskv::query_iterator::QueryOption;
 use tskv::EngineRef;
 
 type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, tonic::Status>> + Send>>;
@@ -201,22 +201,18 @@ impl TskvServiceImpl {
         }
     }
 
-    async fn query_record_batch_exec(
+    fn query_record_batch_exec(
         self,
         args: QueryArgs,
         expr: QueryExpr,
         aggs: Option<Vec<TableColumn>>,
-        sender: Sender<CoordinatorResult<RecordBatch>>,
-    ) {
-        let plan_metrics = ExecutionPlanMetricsSet::new();
-        let scan_metrics = TableScanMetrics::new(&plan_metrics, 0, None);
+    ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let option = QueryOption::new(
             args.batch_size,
             expr.split,
             aggs,
             Arc::new(expr.df_schema),
             expr.table_schema,
-            scan_metrics.tskv_metrics(),
         );
 
         let meta = self.coord.meta_manager();
@@ -228,42 +224,28 @@ impl TskvServiceImpl {
 
         let executor = QueryExecutor::new(
             option,
-            0,
             self.runtime.clone(),
-            Some(self.kv_inst.clone()),
             meta,
-            sender.clone(),
+            Some(self.kv_inst.clone()),
             Arc::new(CoordServiceMetrics::new(&self.metrics_register)),
         );
-        if let Err(err) = executor.local_node_executor(vnodes).await {
-            if sender.is_closed() {
-                return;
-            }
-            debug!("select statement execute failed: {}", err.to_string());
-            let _ = sender.send(Err(err)).await;
-        } else {
-            debug!("select statement execute success");
-        }
+        executor.local_node_executor(node_id, vnodes)
     }
 
-    async fn tag_scan_exec(
+    fn tag_scan_exec(
         args: QueryArgs,
         expr: QueryExpr,
         meta: MetaRef,
         run_time: Arc<Runtime>,
         kv_inst: EngineRef,
-        sender: Sender<CoordinatorResult<RecordBatch>>,
         metrics_register: Arc<MetricsRegister>,
-    ) {
-        let plan_metrics = ExecutionPlanMetricsSet::new();
-        let scan_metrics = TableScanMetrics::new(&plan_metrics, 0, None);
+    ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let option = QueryOption::new(
             args.batch_size,
             expr.split,
             None,
             Arc::new(expr.df_schema),
             expr.table_schema,
-            scan_metrics.tskv_metrics(),
         );
 
         let node_id = meta.node_id();
@@ -275,22 +257,12 @@ impl TskvServiceImpl {
 
         let executor = QueryExecutor::new(
             option,
-            0,
             run_time,
-            Some(kv_inst),
             meta,
-            sender.clone(),
+            Some(kv_inst),
             Arc::new(CoordServiceMetrics::new(&metrics_register)),
         );
-        if let Err(err) = executor.local_node_tag_scan(vnodes).await {
-            if sender.is_closed() {
-                return;
-            }
-            debug!("select statement execute failed: {}", err.to_string());
-            let _ = sender.send(Err(err)).await;
-        } else {
-            debug!("select statement execute success");
-        }
+        executor.local_node_tag_scan(node_id, vnodes)
     }
 }
 
@@ -560,46 +532,11 @@ impl TskvService for TskvServiceImpl {
         };
 
         let service = self.clone();
-        let (mut iterator, record_batch_sender) = ReaderIterator::new();
-        tokio::spawn(TskvServiceImpl::query_record_batch_exec(
-            service,
-            args,
-            expr,
-            aggs,
-            record_batch_sender,
-        ));
+        let stream = TskvServiceImpl::query_record_batch_exec(service, args, expr, aggs)?;
 
-        let (send, recv) = mpsc::channel(1024);
-        tokio::spawn(async move {
-            while let Some(item) = iterator.next_and_encdoe().await {
-                match item {
-                    Ok(data) => {
-                        let _ = send
-                            .send(Ok(BatchBytesResponse {
-                                code: SUCCESS_RESPONSE_CODE,
-                                data,
-                            }))
-                            .await;
-                    }
+        let encoded_stream = TonicRecordBatchEncoder::new(stream).map_err(Into::into);
 
-                    Err(err) => {
-                        info!("query record batch failed: {}", err);
-                        let _ = send
-                            .send(Ok(BatchBytesResponse {
-                                code: FAILED_RESPONSE_CODE,
-                                data: err.to_string().into(),
-                            }))
-                            .await;
-
-                        break;
-                    }
-                }
-            }
-        });
-
-        let out_stream = ReceiverStream::new(recv);
-
-        Ok(tonic::Response::new(Box::pin(out_stream)))
+        Ok(tonic::Response::new(Box::pin(encoded_stream)))
     }
 
     type TagScanStream = ResponseStream<BatchBytesResponse>;
@@ -618,47 +555,17 @@ impl TskvService for TskvServiceImpl {
             Ok(expr) => expr,
             Err(err) => return Err(self.tonic_status(err.to_string())),
         };
-        let (mut iterator, record_batch_sender) = ReaderIterator::new();
-        tokio::spawn(TskvServiceImpl::tag_scan_exec(
+        let stream = TskvServiceImpl::tag_scan_exec(
             args,
             expr,
             self.coord.meta_manager(),
             self.runtime.clone(),
             self.kv_inst.clone(),
-            record_batch_sender,
             self.metrics_register.clone(),
-        ));
+        )?;
 
-        let (send, recv) = mpsc::channel(1024);
-        tokio::spawn(async move {
-            while let Some(item) = iterator.next_and_encdoe().await {
-                match item {
-                    Ok(data) => {
-                        let _ = send
-                            .send(Ok(BatchBytesResponse {
-                                code: SUCCESS_RESPONSE_CODE,
-                                data,
-                            }))
-                            .await;
-                    }
+        let stream = TonicRecordBatchEncoder::new(stream).map_err(Into::into);
 
-                    Err(err) => {
-                        info!("query record batch failed: {}", err);
-                        let _ = send
-                            .send(Ok(BatchBytesResponse {
-                                code: FAILED_RESPONSE_CODE,
-                                data: err.to_string().into(),
-                            }))
-                            .await;
-
-                        break;
-                    }
-                }
-            }
-        });
-
-        let out_stream = ReceiverStream::new(recv);
-
-        Ok(tonic::Response::new(Box::pin(out_stream)))
+        Ok(tonic::Response::new(Box::pin(stream)))
     }
 }

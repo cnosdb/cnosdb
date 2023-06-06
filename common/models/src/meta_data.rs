@@ -97,7 +97,7 @@ pub struct ReplicationSet {
     pub vnodes: Vec<VnodeInfo>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct VnodeInfo {
     pub id: VnodeId,
     pub node_id: NodeId,

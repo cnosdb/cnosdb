@@ -135,6 +135,14 @@ where
     T::decode(bytes)
 }
 
+pub fn bincode<T>(bytes: &[u8]) -> Result<T, prost::DecodeError>
+where
+    T: prost::Message,
+    T: Default,
+{
+    T::decode(bytes)
+}
+
 #[cfg(feature = "test")]
 mod test {
     use crate::{build_fb_schema_offset, init_fields, init_tags, FbSchema};

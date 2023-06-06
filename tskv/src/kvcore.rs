@@ -826,7 +826,7 @@ impl Engine for TsKv {
         {
             Ok(Some(tsf.read().await.super_version()))
         } else {
-            info!(
+            debug!(
                 "ts_family {} with db name '{}' not found.",
                 vnode_id, database
             );

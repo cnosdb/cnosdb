@@ -489,6 +489,12 @@ pub enum QueryError {
     PersistQuery {
         reason: String,
     },
+
+    #[snafu(display("Analyze pushed down predicates, error: {}", reason))]
+    #[error_code(code = 72)]
+    AnalyzePushedFilter {
+        reason: String,
+    },
 }
 
 impl From<ParserError> for QueryError {

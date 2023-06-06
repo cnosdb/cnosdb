@@ -2,7 +2,7 @@ use std::cmp;
 use std::fmt::Display;
 use std::sync::Arc;
 
-use models::predicate::domain::TimeRange;
+use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{FieldId, Timestamp, ValueType};
 use utils::BloomFilter;
 
@@ -82,7 +82,7 @@ impl IndexMeta {
         )
     }
 
-    pub fn block_iterator_opt(&self, time_range: &TimeRange) -> BlockMetaIterator {
+    pub fn block_iterator_opt(&self, time_ranges: Arc<TimeRanges>) -> BlockMetaIterator {
         let mut iter = BlockMetaIterator::new(
             self.index_ref.clone(),
             self.offset,
@@ -90,7 +90,7 @@ impl IndexMeta {
             self.field_type,
             self.block_count,
         );
-        iter.filter_time_range(time_range);
+        iter.filter_time_range(time_ranges);
         iter
     }
 

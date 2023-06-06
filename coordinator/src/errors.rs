@@ -118,10 +118,9 @@ pub enum CoordinatorError {
         elapsed: String,
     },
 
-    #[snafu(display("kv instance not found: node_id:{}, vnode_id:{}", node_id, vnode_id))]
+    #[snafu(display("kv instance not found: node_id:{}", node_id))]
     #[error_code(code = 18)]
     KvInstanceNotFound {
-        vnode_id: u32,
         node_id: u64,
     },
 
@@ -146,6 +145,12 @@ pub enum CoordinatorError {
     #[snafu(display("ReplicationSet not found: {}", id))]
     #[error_code(code = 22)]
     ReplicationSetNotFound {
+        id: u32,
+    },
+
+    #[snafu(display("Not enough valid replica of ReplicationSet({})", id))]
+    #[error_code(code = 23)]
+    NoValidReplica {
         id: u32,
     },
 }
@@ -255,6 +260,59 @@ impl From<flatbuffers::InvalidFlatbuffer> for CoordinatorError {
 }
 
 pub type CoordinatorResult<T> = Result<T, CoordinatorError>;
+
+// default conversion from CoordinatorError to tonic treats everything
+// other than `Status` as an internal error
+impl From<CoordinatorError> for tonic::Status {
+    fn from(value: CoordinatorError) -> Self {
+        #[rustfmt::skip]
+        match value {
+            CoordinatorError::TskvError { source } => tonic::Status::internal(source.to_string()),
+            CoordinatorError::Meta { source } => tonic::Status::internal(source.to_string()),
+            CoordinatorError::ArrowError { source } => tonic::Status::internal(source.to_string()),
+            CoordinatorError::ModelsError { source } => tonic::Status::internal(source.to_string()),
+            CoordinatorError::InvalidFlatbuffer { source } => tonic::Status::internal(source.to_string()),
+            CoordinatorError::FBPoints { source } => tonic::Status::internal(source.to_string()),
+            err @ CoordinatorError::MetaRequest { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::IOErrors { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::InvalidSerdeMsg { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::ChannelSend { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::ChannelRecv { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::WriteVnode { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::TenantNotFound { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::UnKnownCoordCmd { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::CoordCommandParseErr => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::UnExpectResponse => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::CommonError { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::VnodeNotFound { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::FailoverNode { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::RequestTimeout { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::KvInstanceNotFound { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::GRPCRequest { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::Points { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::ReplicationSetNotFound { .. } => tonic::Status::internal(err.to_string()),
+            err @ CoordinatorError::NoValidReplica { .. } => tonic::Status::internal(err.to_string()),
+        }
+    }
+}
+
+impl CoordinatorError {
+    pub fn invalid_vnode(&self) -> bool {
+        match self {
+            CoordinatorError::TskvError {
+                source: tskv::Error::ReadTsm { source },
+            } => {
+                matches!(
+                    source,
+                    tskv::tsm::ReadTsmError::CrcCheck
+                        | tskv::tsm::ReadTsmError::FileNotFound { .. }
+                        | tskv::tsm::ReadTsmError::Invalid { .. }
+                )
+            }
+            _ => false,
+        }
+    }
+}
 
 #[test]
 fn test_mod_code() {

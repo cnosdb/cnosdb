@@ -18,8 +18,8 @@ use datafusion::physical_plan::metrics::{
 };
 use minivec::MiniVec;
 use models::meta_data::VnodeId;
-use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRange};
-use models::predicate::Split;
+use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
+use models::predicate::PlacedSplit;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema};
 use models::utils::{min_num, unite_id};
 use models::{FieldId, SeriesId, Timestamp, ValueType};
@@ -27,7 +27,6 @@ use parking_lot::RwLock;
 use protos::kv_service::QueryRecordBatchRequest;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use trace::{debug, error};
 
@@ -333,6 +332,7 @@ pub struct TskvSourceMetrics {
     elapsed_point_to_record_batch: metrics::Time,
     elapsed_field_scan: metrics::Time,
     elapsed_series_scan: metrics::Time,
+    elapsed_build_resp_stream: metrics::Time,
 }
 
 impl TskvSourceMetrics {
@@ -347,10 +347,14 @@ impl TskvSourceMetrics {
         let elapsed_series_scan =
             MetricBuilder::new(metrics).subset_time("elapsed_series_scan", partition);
 
+        let elapsed_build_resp_stream =
+            MetricBuilder::new(metrics).subset_time("elapsed_build_resp_stream", partition);
+
         Self {
             elapsed_point_to_record_batch,
             elapsed_field_scan,
             elapsed_series_scan,
+            elapsed_build_resp_stream,
         }
     }
 
@@ -364,6 +368,10 @@ impl TskvSourceMetrics {
 
     pub fn elapsed_series_scan(&self) -> &metrics::Time {
         &self.elapsed_series_scan
+    }
+
+    pub fn elapsed_build_resp_stream(&self) -> &metrics::Time {
+        &self.elapsed_build_resp_stream
     }
 }
 
@@ -380,14 +388,12 @@ impl TskvSourceMetrics {
 //  调用Next接口返回一行数据，并且屏蔽查询是本机节点数据还是其他节点数据
 // 5. 行数据到DataFusion的RecordBatch转换器
 //  调用Iterator.Next得到行数据，然后转换行数据为RecordBatch结构
-
 #[derive(Debug, Clone)]
 pub struct QueryOption {
     pub batch_size: usize,
-    pub split: Split,
+    pub split: PlacedSplit,
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchema,
-    pub metrics: TskvSourceMetrics,
     pub aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
 }
 
@@ -395,11 +401,10 @@ impl QueryOption {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         batch_size: usize,
-        split: Split,
+        split: PlacedSplit,
         aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
         df_schema: SchemaRef,
         table_schema: TskvTableSchema,
-        metrics: TskvSourceMetrics,
     ) -> Self {
         Self {
             batch_size,
@@ -407,7 +412,6 @@ impl QueryOption {
             aggregates,
             df_schema,
             table_schema,
-            metrics,
         }
     }
 
@@ -440,56 +444,112 @@ impl QueryOption {
 
 pub struct FieldFileLocation {
     reader: Arc<TsmReader>,
-    block_it: BlockMetaIterator,
-    time_range: TimeRange,
-    read_index: usize,
-    end_index: usize,
+    block_meta_iter: BlockMetaIterator,
+    time_ranges: Arc<TimeRanges>,
+
     data_block: DataBlock,
+    /// The first index of a DataType in a DataBlock
+    data_block_i: usize,
+    /// The last index of a DataType in a DataBlock
+    data_block_i_end: usize,
+    intersected_time_ranges: TimeRanges,
+    intersected_time_ranges_i: usize,
 }
 
 impl FieldFileLocation {
     pub fn new(
         reader: Arc<TsmReader>,
-        time_range: TimeRange,
-        block_it: BlockMetaIterator,
+        time_ranges: Arc<TimeRanges>,
+        block_meta_iter: BlockMetaIterator,
         vtype: ValueType,
     ) -> Self {
         Self {
             reader,
-            block_it,
-            time_range,
-            // make read_index > end_index,  when init
-            read_index: 1,
-            end_index: 0,
+            block_meta_iter,
+            time_ranges,
+            // TODO: can here use unsafe api MaybeUninit<DataBLock> ?
             data_block: DataBlock::new(0, vtype),
+            // Let data block index > end index when init to make it load from reader
+            // for the first time to `peek()`.
+            data_block_i: 1,
+            data_block_i_end: 0,
+            intersected_time_ranges: TimeRanges::empty(),
+            intersected_time_ranges_i: 0,
         }
     }
 
     pub async fn peek(&mut self) -> Result<Option<DataType>> {
-        while self.read_index > self.end_index {
-            // let data = self.data_block.get(self.read_index);
-            if let Some(meta) = self.block_it.next() {
-                self.data_block = self.reader.get_data_block(&meta).await?;
-                if let Some(time_range) = self.data_block.time_range() {
-                    let tr = TimeRange::from(time_range);
-                    if let Some(ts) = self.time_range.intersect(&tr) {
-                        if let Some((min, max)) = self.data_block.index_range(&ts) {
-                            self.read_index = min;
-                            self.end_index = max;
-                            break;
-                        }
-                    }
-                }
-            } else {
-                return Ok(None);
-            }
+        // Check if we need to init.
+        if self.data_block_i > self.data_block_i_end
+            && !self.next_intersected_index_range()
+            && !self.next_data_block().await?
+        {
+            return Ok(None);
         }
 
-        Ok(self.data_block.get(self.read_index))
+        Ok(self.data_block.get(self.data_block_i))
     }
 
     pub fn next(&mut self) {
-        self.read_index += 1;
+        self.data_block_i += 1;
+    }
+
+    /// Iterates the ramaining BlockMeta in `block_meta_iter`, if there are no remaining BlockMeta's,
+    /// then return Ok(false).
+    ///
+    /// Iteration will continue until there are intersected time range between DataBlock and `time_ranges`.
+    async fn next_data_block(&mut self) -> Result<bool> {
+        let mut has_next_block = false;
+
+        while let Some(meta) = self.block_meta_iter.next() {
+            if meta.count() == 0 {
+                continue;
+            }
+            let time_range = meta.time_range();
+            // Check if the time range of the BlockMeta intersected with the given time ranges.
+            if let Some(intersected_tr) = self.time_ranges.intersect(&time_range) {
+                // Load a DataBlock from reader by BlockMeta.
+                self.data_block = self.reader.get_data_block(&meta).await?;
+                self.intersected_time_ranges = intersected_tr;
+                if self.next_intersected_index_range() {
+                    // Found next DataBlock and range to iterate.
+                    has_next_block = true;
+                    break;
+                }
+            }
+        }
+
+        Ok(has_next_block)
+    }
+
+    /// Iterates the ramaining TimeRange in `intersected_time_ranges`, if there are no remaning TimeRange's.
+    /// then return false.
+    ///
+    /// If there are overlaped time range of DataBlock and TimeRanges, set iteration range of `data_block`
+    /// and return true, otherwise set the iteration range a zero-length range `[1, 0]` and return false.
+    ///
+    /// **Note**: Call of this method should be arranged after the call of method `next_data_block`.
+    fn next_intersected_index_range(&mut self) -> bool {
+        self.data_block_i = 1;
+        self.data_block_i_end = 0;
+        if self.intersected_time_ranges.is_empty()
+            || self.intersected_time_ranges_i >= self.intersected_time_ranges.len()
+        {
+            false
+        } else {
+            let tr_idx_start = self.intersected_time_ranges_i;
+            for tr in self.intersected_time_ranges.time_ranges()[tr_idx_start..].iter() {
+                self.intersected_time_ranges_i += 1;
+                // Check if the DataBlock matches one of the intersected time ranges.
+                // TODO: sometimes the comparison in loop can stop earily.
+                if let Some((min, max)) = self.data_block.index_range(tr) {
+                    self.data_block_i = min;
+                    self.data_block_i_end = max;
+                    return true;
+                }
+            }
+            false
+        }
     }
 }
 
@@ -652,7 +712,6 @@ pub struct RowIterator {
     engine: EngineRef,
     query_option: Arc<QueryOption>,
     vnode_id: VnodeId,
-    metrics: TskvSourceMetrics,
 
     /// Super version of vnode_id, maybe None.
     super_version: Option<Arc<SuperVersion>>,
@@ -695,7 +754,6 @@ impl RowIterator {
             series_ids.len()
         );
         let query_option = Arc::new(query_option);
-        let metrics = query_option.metrics.clone();
         let series_len = series_ids.len();
         let (tx, rx) = channel(1);
         if query_option.aggregates.is_some() {
@@ -705,7 +763,6 @@ impl RowIterator {
                 engine,
                 query_option,
                 vnode_id,
-                metrics,
                 super_version,
                 series_ids: Arc::new(series_ids),
                 series_iter_receiver: rx,
@@ -731,7 +788,6 @@ impl RowIterator {
                 engine,
                 query_option,
                 vnode_id,
-                metrics,
                 super_version,
                 series_ids: Arc::new(series_ids),
                 series_iter_receiver: rx,
@@ -763,7 +819,6 @@ impl RowIterator {
             engine: self.engine.clone(),
             query_option: self.query_option.clone(),
             vnode_id: self.vnode_id,
-            metrics: self.metrics.clone(),
             super_version: self.super_version.clone(),
             series_ids: self.series_ids.clone(),
             start,
@@ -867,7 +922,8 @@ impl RowIterator {
         if self.series_ids.is_empty() {
             self.is_finished = true;
             // Build an empty result.
-            let timer = self.metrics.elapsed_point_to_record_batch().timer();
+            // TODO record elapsed_point_to_record_batch
+            // let timer = self.metrics.elapsed_point_to_record_batch().timer();
             let mut empty_builders = match Self::build_record_builders(self.query_option.as_ref()) {
                 Ok(builders) => builders,
                 Err(e) => return Some(Err(e)),
@@ -882,7 +938,7 @@ impl RowIterator {
                         reason: format!("iterator fail, {}", err),
                     },
                 );
-            timer.done();
+            // timer.done();
 
             return Some(empty_result);
         }
@@ -912,7 +968,6 @@ struct SeriesGroupRowIterator {
     engine: EngineRef,
     query_option: Arc<QueryOption>,
     vnode_id: u32,
-    metrics: TskvSourceMetrics,
     super_version: Option<Arc<SuperVersion>>,
     series_ids: Arc<Vec<u32>>,
     start: usize,
@@ -932,13 +987,13 @@ impl SeriesGroupRowIterator {
         if self.is_finished {
             return None;
         }
-
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        // TODO record elapsed_point_to_record_batch
+        // let timer = self.metrics.elapsed_point_to_record_batch().timer();
         let mut builders = match RowIterator::build_record_builders(self.query_option.as_ref()) {
             Ok(builders) => builders,
             Err(e) => return Some(Err(e)),
         };
-        timer.done();
+        // timer.done();
 
         for _ in 0..self.batch_size {
             match self.next_row(&mut builders).await {
@@ -950,9 +1005,9 @@ impl SeriesGroupRowIterator {
                 Err(err) => return Some(Err(err)),
             };
         }
-
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
-        let result = {
+        // TODO record elapsed_point_to_record_batch
+        // let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        {
             let mut cols = Vec::with_capacity(builders.len());
             for builder in builders.iter_mut() {
                 cols.push(builder.ptr.finish())
@@ -964,10 +1019,8 @@ impl SeriesGroupRowIterator {
                     reason: format!("iterator fail, {}", err),
                 })),
             }
-        };
-        timer.done();
-
-        result
+        }
+        // timer.done();
     }
 }
 
@@ -999,7 +1052,7 @@ impl SeriesGroupRowIterator {
     }
 
     async fn build_series_columns(&mut self, series_id: SeriesId) -> Result<()> {
-        let start = Instant::now();
+        // let start = Instant::now();
 
         if let Some(key) = self
             .engine
@@ -1049,9 +1102,10 @@ impl SeriesGroupRowIterator {
             }
         }
 
-        self.metrics
-            .elapsed_series_scan()
-            .add_duration(start.elapsed());
+        // TODO record elapsed_series_scan
+        // self.metrics
+        //     .elapsed_series_scan()
+        //     .add_duration(start.elapsed());
 
         Ok(())
     }
@@ -1067,9 +1121,9 @@ impl SeriesGroupRowIterator {
             None => return Ok(FieldCursor::empty(field_type, field_name)),
         };
 
-        let time_range = *self.query_option.split.time_range();
-        let time_predicate = |ts| time_range.is_boundless() || time_range.contains(ts);
-        debug!("Pushed time range filter: {:?}", time_range);
+        let time_ranges_ref = self.query_option.split.time_ranges();
+        let time_predicate = |ts| time_ranges_ref.is_boundless() || time_ranges_ref.contains(ts);
+        debug!("Pushed time range filter: {:?}", time_ranges_ref);
 
         // get data from im_memcache and memcache
         let mut cache_data: Vec<DataType> = Vec::new();
@@ -1091,11 +1145,11 @@ impl SeriesGroupRowIterator {
         // TODO: Init locations in parallel with other fields.
         let mut locations = vec![];
         for lv in super_version.version.levels_info.iter().rev() {
-            if !lv.time_range.overlaps(&time_range) {
+            if !time_ranges_ref.overlaps(&lv.time_range) {
                 continue;
             }
             for cf in lv.files.iter() {
-                if !cf.overlap(&time_range) || !cf.contains_field_id(field_id) {
+                if !time_ranges_ref.overlaps(cf.time_range()) || !cf.contains_field_id(field_id) {
                     continue;
                 }
                 let path = cf.file_path();
@@ -1117,8 +1171,8 @@ impl SeriesGroupRowIterator {
                 for idx in tsm_reader.index_iterator_opt(field_id) {
                     let location = FieldFileLocation::new(
                         tsm_reader.clone(),
-                        time_range,
-                        idx.block_iterator_opt(&time_range),
+                        time_ranges_ref.clone(),
+                        idx.block_iterator_opt(time_ranges_ref.clone()),
                         field_type,
                     );
                     locations.push(location);
@@ -1137,7 +1191,8 @@ impl SeriesGroupRowIterator {
 
     async fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
         trace::trace!("======collect_row_data=========");
-        let timer = self.metrics.elapsed_field_scan().timer();
+        // TODO record elapsed_field_scan
+        // let timer = self.metrics.elapsed_field_scan().timer();
 
         let mut min_time = i64::MAX;
         let mut values = Vec::with_capacity(self.columns.len());
@@ -1167,7 +1222,7 @@ impl SeriesGroupRowIterator {
             }
         }
 
-        timer.done();
+        // timer.done();
 
         trace::trace!("min time: {}", min_time);
         if min_time == i64::MAX {
@@ -1175,7 +1230,8 @@ impl SeriesGroupRowIterator {
             return Ok(None);
         }
 
-        let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        // TODO record elapsed_point_to_record_batch
+        // let timer = self.metrics.elapsed_point_to_record_batch().timer();
 
         for (i, value) in values.into_iter().enumerate() {
             match self.columns[i].column_type() {
@@ -1191,7 +1247,7 @@ impl SeriesGroupRowIterator {
             }
         }
 
-        timer.done();
+        // timer.done();
 
         Ok(Some(()))
     }
@@ -1219,7 +1275,7 @@ impl SeriesGroupRowIterator {
                                 version.clone(),
                                 self.series_ids.clone(),
                                 None,
-                                *self.query_option.split.time_range(),
+                                self.query_option.split.time_ranges(),
                             )
                             .await?;
                             builder[i].append_primitive::<Int64Type>(agg_ret as i64);
@@ -1236,7 +1292,7 @@ impl SeriesGroupRowIterator {
                                     version.clone(),
                                     self.series_ids.clone(),
                                     Some(item.id),
-                                    *self.query_option.split.time_range(),
+                                    self.query_option.split.time_ranges(),
                                 )
                                 .await?;
                                 builder[i].append_primitive::<Int64Type>(agg_ret as i64);
@@ -1249,5 +1305,13 @@ impl SeriesGroupRowIterator {
             }
             _ => Ok(None),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_field_cursor() {
+        // TODO: Test multi-level contains the same timestamp with different values.
     }
 }

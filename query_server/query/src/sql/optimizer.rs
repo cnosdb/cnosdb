@@ -105,7 +105,7 @@ impl CascadeOptimizerBuilder {
 mod test {
     use std::sync::Arc;
 
-    use coordinator::service_mock::MockCoordinator;
+    use coordinator::service_mock::{MockCoordinator, WITH_NONEMPTY_DATABASE_FOR_TEST};
     use datafusion::datasource::provider_as_source;
     use datafusion::error::Result;
     use datafusion::execution::context::default_session_builder;
@@ -133,7 +133,7 @@ mod test {
 
     fn test_table_scan(with_nonempty_database: bool) -> Result<LogicalPlan> {
         let dn_name = if with_nonempty_database {
-            "with_nonempty_database"
+            WITH_NONEMPTY_DATABASE_FOR_TEST
         } else {
             "default"
         };
@@ -218,7 +218,7 @@ mod test {
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([Column { name: \"flag\", index: 0 }], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[flag@0 as flag], aggr=[COUNT(?table?.value)]\
-            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[flag,value]\
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[flag,value]\
             \n",
         ).await
     }
@@ -303,7 +303,7 @@ mod test {
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([Column { name: \"value\", index: 0 }], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[value@0 as value], aggr=[MAX(?table?.value)]\
-            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
             \n",
         ).await
     }
@@ -342,7 +342,7 @@ mod test {
             AggregateExec: mode=Final, gby=[], aggr=[MAX(?table?.value)]\
             \n  CoalescePartitionsExec\
             \n    AggregateExec: mode=Partial, gby=[], aggr=[MAX(?table?.value)]\
-            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
+            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
             \n",
         ).await
     }
@@ -384,7 +384,7 @@ mod test {
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([Column { name: \"value\", index: 0 }], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[value@0 as value], aggr=[MIN(?table?.value)]\
-            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
             \n",
         ).await
     }
@@ -423,7 +423,7 @@ mod test {
             AggregateExec: mode=Final, gby=[], aggr=[MIN(?table?.value)]\
             \n  CoalescePartitionsExec\
             \n    AggregateExec: mode=Partial, gby=[], aggr=[MIN(?table?.value)]\
-            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
+            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
             \n",
         ).await
     }
@@ -465,7 +465,8 @@ mod test {
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([Column { name: \"value\", index: 0 }], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[value@0 as value], aggr=[SUM(?table?.value)]\
-            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\n",
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
+            \n",
         ).await
     }
 
@@ -503,7 +504,7 @@ mod test {
             AggregateExec: mode=Final, gby=[], aggr=[SUM(?table?.value)]\
             \n  CoalescePartitionsExec\
             \n    AggregateExec: mode=Partial, gby=[], aggr=[SUM(?table?.value)]\
-            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[value]\
+            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
             \n",
         ).await
     }

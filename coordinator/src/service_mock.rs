@@ -2,20 +2,27 @@
 
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::todo;
 
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::meta_client_mock::{MockMetaClient, MockMetaManager};
 use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
+use models::meta_data::{VnodeInfo, VnodeStatus};
+use models::object_reference::ResolvedTable;
+use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::Precision;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
 use tskv::engine_mock::MockEngine;
-use tskv::query_iterator::QueryOption;
+use tskv::query_iterator::{QueryOption, TskvSourceMetrics};
 use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
-use crate::reader::ReaderIterator;
-use crate::{Coordinator, VnodeManagerCmdType, VnodeSummarizerCmdType};
+use crate::{
+    Coordinator, SendableCoordinatorRecordBatchStream, VnodeManagerCmdType, VnodeSummarizerCmdType,
+};
+
+pub const WITH_NONEMPTY_DATABASE_FOR_TEST: &str = "with_nonempty_database";
 
 #[derive(Debug, Default)]
 pub struct MockCoordinator {}
@@ -38,6 +45,58 @@ impl Coordinator for MockCoordinator {
         Some(Arc::new(MockMetaClient::default()))
     }
 
+    async fn table_vnodes(
+        &self,
+        table: &ResolvedTable,
+        _predicate: ResolvedPredicateRef,
+    ) -> CoordinatorResult<Vec<VnodeInfo>> {
+        if table.database() == WITH_NONEMPTY_DATABASE_FOR_TEST {
+            return Ok(vec![
+                VnodeInfo {
+                    id: 0,
+                    node_id: 0,
+                    status: VnodeStatus::Running,
+                },
+                VnodeInfo {
+                    id: 1,
+                    node_id: 0,
+                    status: VnodeStatus::Running,
+                },
+                VnodeInfo {
+                    id: 2,
+                    node_id: 0,
+                    status: VnodeStatus::Running,
+                },
+                VnodeInfo {
+                    id: 3,
+                    node_id: 0,
+                    status: VnodeStatus::Running,
+                },
+                VnodeInfo {
+                    id: 4,
+                    node_id: 0,
+                    status: VnodeStatus::Running,
+                },
+                VnodeInfo {
+                    id: 5,
+                    node_id: 0,
+                    status: VnodeStatus::Running,
+                },
+                VnodeInfo {
+                    id: 6,
+                    node_id: 0,
+                    status: VnodeStatus::Running,
+                },
+                VnodeInfo {
+                    id: 7,
+                    node_id: 0,
+                    status: VnodeStatus::Running,
+                },
+            ]);
+        }
+        Ok(vec![])
+    }
+
     async fn write_points(
         &self,
         tenant: String,
@@ -48,14 +107,21 @@ impl Coordinator for MockCoordinator {
         Ok(())
     }
 
-    fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
-        let (it, _) = ReaderIterator::new();
-        Ok(it)
+    fn table_scan(
+        &self,
+        option: QueryOption,
+        metrics: TskvSourceMetrics,
+    ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
+        // TODO
+        todo!()
     }
 
-    fn tag_scan(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
-        let (it, _) = ReaderIterator::new();
-        Ok(it)
+    fn tag_scan(
+        &self,
+        option: QueryOption,
+        metrics: TskvSourceMetrics,
+    ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
+        todo!("tag_scan")
     }
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()> {
