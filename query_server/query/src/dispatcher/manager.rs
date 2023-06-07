@@ -100,12 +100,11 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         query: &Query,
         span_ctx: Option<&SpanContext>,
     ) -> Result<Output> {
-        let span_recorder = SpanRecorder::new(span_ctx.child_span("init session ctx"));
-
-        let query_state_machine = self
-            .build_query_state_machine(tenant_id, query_id, query.clone(), span_ctx)
-            .await?;
-        drop(span_recorder);
+        let query_state_machine = {
+            let _span_recorder = SpanRecorder::new(span_ctx.child_span("init session ctx"));
+            self.build_query_state_machine(tenant_id, query_id, query.clone(), span_ctx)
+                .await?
+        };
 
         let logical_plan = self.build_logical_plan(query_state_machine.clone()).await?;
         let logical_plan = match logical_plan {
@@ -129,7 +128,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 
         let logical_planner = DefaultLogicalPlanner::new(&scheme_provider);
 
-        let mut span_recorder = SpanRecorder::new(session.get_span_ctx().child_span("parse sql"));
+        let mut span_recorder = session.get_child_span_recorder("parse sql");
         let statements = self.parser.parse(query.content())?;
 
         // not allow multi statement

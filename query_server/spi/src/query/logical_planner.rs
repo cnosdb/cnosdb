@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use config::TenantLimiterConfig;
 use datafusion::arrow::array::ArrayRef;
-use datafusion::arrow::datatypes::{DataType, Schema};
+use datafusion::arrow::datatypes::{DataType, Schema, SchemaRef};
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
 use datafusion::logical_expr::expr::AggregateFunction as AggregateFunctionExpr;
 use datafusion::logical_expr::type_coercion::aggregates::{
@@ -79,6 +79,16 @@ pub enum Plan {
     SYSTEM(SYSPlan),
 }
 
+impl Plan {
+    pub fn schema(&self) -> SchemaRef {
+        match self {
+            Self::Query(p) => SchemaRef::from(p.df_plan.schema().as_ref()),
+            Self::DDL(p) => p.schema(),
+            Self::SYSTEM(p) => p.schema(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct QueryPlan {
     pub df_plan: DFPlan,
@@ -139,6 +149,12 @@ pub enum DDLPlan {
     ChecksumGroup(ChecksumGroup),
 }
 
+impl DDLPlan {
+    pub fn schema(&self) -> SchemaRef {
+        Arc::new(Schema::empty())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ChecksumGroup {
     pub replication_set_id: ReplicationSetId,
@@ -170,6 +186,12 @@ pub struct DropVnode {
 pub enum SYSPlan {
     ShowQueries,
     KillQuery(QueryId),
+}
+
+impl SYSPlan {
+    pub fn schema(&self) -> SchemaRef {
+        Arc::new(Schema::empty())
+    }
 }
 
 #[derive(Debug, Clone)]

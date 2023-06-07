@@ -350,6 +350,6 @@ impl ServiceBuilder {
             .copied()
             .expect("Config flight_rpc_listen_addr cannot be empty.");
 
-        FlightSqlServiceAdapter::new(dbms, addr, tls_config)
+        FlightSqlServiceAdapter::new(dbms, addr, tls_config, self.trace_collector.clone())
     }
 }

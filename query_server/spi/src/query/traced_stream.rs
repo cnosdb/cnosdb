@@ -26,12 +26,12 @@ impl TracedStream {
     /// `physical_plan` into `span` when dropped.
     pub fn new(
         inner: SendableRecordBatchStream,
-        span: Option<Span>,
+        span_recorder: SpanRecorder,
         physical_plan: Arc<dyn ExecutionPlan>,
     ) -> Self {
         Self {
             inner,
-            span_recorder: SpanRecorder::new(span),
+            span_recorder,
             physical_plan,
         }
     }

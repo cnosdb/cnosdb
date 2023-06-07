@@ -16,16 +16,7 @@ use crate::Result;
 
 #[derive(Clone)]
 pub struct SessionCtx {
-    // todo
-    // ...
-    user: User,
-
-    tenant_id: Oid,
-    tenant: String,
-    default_database: String,
-
-    query_dedicated_hidden_dir: PathBuf,
-
+    desc: Arc<SessionCtxDesc>,
     inner: SessionContext,
     span_ctx: Option<SpanContext>,
 }
@@ -36,26 +27,34 @@ impl SessionCtx {
     }
 
     pub fn tenant_id(&self) -> &Oid {
-        &self.tenant_id
+        &self.desc.tenant_id
     }
 
     pub fn tenant(&self) -> &str {
-        &self.tenant
+        &self.desc.tenant
     }
 
     pub fn default_database(&self) -> &str {
-        &self.default_database
+        &self.desc.default_database
     }
 
     pub fn user(&self) -> &User {
-        &self.user
+        &self.desc.user
     }
 
     pub fn dedicated_hidden_dir(&self) -> &Path {
-        self.query_dedicated_hidden_dir.as_path()
+        self.desc.query_dedicated_hidden_dir.as_path()
     }
 
-    pub fn get_span_ctx(&self) -> Option<&SpanContext> {
+    pub fn with_span_ctx(&self, span_ctx: Option<SpanContext>) -> Self {
+        Self {
+            desc: self.desc.clone(),
+            inner: self.inner.clone(),
+            span_ctx,
+        }
+    }
+
+    fn get_span_ctx(&self) -> Option<&SpanContext> {
         self.span_ctx.as_ref()
         // self.inner().config().get_extension::<SpanContext>();
     }
@@ -63,6 +62,19 @@ impl SessionCtx {
     pub fn get_child_span_recorder(&self, name: &'static str) -> SpanRecorder {
         SpanRecorder::new(self.get_span_ctx().child_span(name))
     }
+}
+
+#[derive(Clone)]
+pub struct SessionCtxDesc {
+    // todo
+    // ...
+    user: User,
+
+    tenant_id: Oid,
+    tenant: String,
+    default_database: String,
+
+    query_dedicated_hidden_dir: PathBuf,
 }
 
 #[derive(Default)]
@@ -99,11 +111,13 @@ impl SessionCtxFactory {
         let df_session_ctx = SessionContext::with_state(df_session_state);
 
         Ok(SessionCtx {
-            user: context.user_info().to_owned(),
-            tenant_id,
-            tenant: context.tenant().to_owned(),
-            default_database: context.database().to_owned(),
-            query_dedicated_hidden_dir: self.query_dedicated_hidden_dir.clone(),
+            desc: Arc::new(SessionCtxDesc {
+                user: context.user_info().to_owned(),
+                tenant_id,
+                tenant: context.tenant().to_owned(),
+                default_database: context.database().to_owned(),
+                query_dedicated_hidden_dir: self.query_dedicated_hidden_dir.clone(),
+            }),
             inner: df_session_ctx,
             span_ctx,
         })
