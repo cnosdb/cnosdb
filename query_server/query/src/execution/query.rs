@@ -56,9 +56,12 @@ impl SqlQueryExecution {
             )
             .await?
             .stream();
+
         let stream = TracedStream::new(
             stream,
-            self.query_state_machine.get_child_span("traced stream"),
+            self.query_state_machine
+                .session
+                .get_child_span_recorder("traced stream"),
             physical_plan,
         );
 
@@ -112,7 +115,7 @@ impl QueryExecution for SqlQueryExecution {
             qsm.query.content().to_string(),
             *qsm.session.tenant_id(),
             qsm.session.tenant().to_string(),
-            qsm.query.context().user_info().desc().clone(),
+            qsm.session.user().desc().clone(),
         )
     }
 

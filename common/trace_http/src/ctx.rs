@@ -29,8 +29,8 @@ pub enum DecodeError {
     #[snafu(display("value decode error: {}", source))]
     ValueDecodeError { source: ParseIntError },
 
-    #[snafu(display("Expected \"trace-id:span-id:parent-span-id:flags\""))]
-    InvalidJaegerTrace,
+    #[snafu(display("Expected \"trace-id:span-id:parent-span-id:flags\", found: {}", value))]
+    InvalidJaegerTrace { value: String },
 
     #[snafu(display("value cannot be 0"))]
     ZeroError,
@@ -111,10 +111,12 @@ impl FromStr for JaegerCtx {
     type Err = DecodeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (trace_id, span_id, parent_span_id, flags) = s
-            .split(':')
-            .collect_tuple()
-            .ok_or(DecodeError::InvalidJaegerTrace)?;
+        let (trace_id, span_id, parent_span_id, flags) =
+            s.split(':')
+                .collect_tuple()
+                .ok_or(DecodeError::InvalidJaegerTrace {
+                    value: s.to_string(),
+                })?;
 
         let trace_id = parse_trace(trace_id)?;
         let span_id = parse_span(span_id)?;
