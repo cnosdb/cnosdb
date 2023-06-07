@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
-use models::Timestamp;
 use trace::{debug, info};
 
 use crate::compaction::CompactReq;
@@ -113,17 +112,17 @@ impl Picker for LevelCompactionPicker {
             if file.is_compacting() || !file.time_range().overlaps(&picking_time_range) {
                 continue;
             }
+            if !file.mark_compacting() {
+                // If file already compacting, continue to next file.
+                continue;
+            }
+            picking_files.push(file.clone());
             picking_files_size += file.size();
+
             if picking_files_size > storage_opt.max_compact_size {
                 // Picked file size >= max_compact_size, try break picking files.
                 break;
             }
-            if !file.mark_compacting() {
-                // If file already compacting, continue to next file.
-                picking_files_size -= file.size();
-                continue;
-            }
-            picking_files.push(file.clone());
         }
 
         // Even if picked only 1 file, send it to the next level.
@@ -171,7 +170,7 @@ impl LevelCompactionPicker {
             1 => 0.8,
             2 => 0.4,
             3 => 0.2,
-            4 => 0.0,
+            4 => 0.1,
             _ => 0.0,
         }
     }
@@ -228,20 +227,17 @@ impl LevelCompactionPicker {
                 }
             }
 
-            let level_file_num_weight = (lvl.files.len() - compacting_files) as f64
-                * Self::level_weight_file_num(lvl.level);
-            let level_remaining_size_weight = lvl.max_size.checked_sub(lvl.cur_size).unwrap_or(1)
-                as f64
-                * Self::level_weight_remaining_size(lvl.level);
-            let level_score = 10e6 * level_file_num_weight / level_remaining_size_weight;
+            // let level_file_num_weight = (lvl.files.len() - compacting_files) as f64
+            //     * Self::level_weight_file_num(lvl.level);
+            // let level_remaining_size_weight = lvl.max_size.checked_sub(lvl.cur_size).unwrap_or(1)
+            //     as f64
+            //     * Self::level_weight_remaining_size(lvl.level);
+            // let level_score = 10e6 * (level_file_num_weight / level_remaining_size_weight);
 
-            level_scores.push((
-                lvl.level,
-                lvl.cur_size,
-                compacting_files,
-                level_file_num_weight,
-                level_score,
-            ));
+            let level_score: f64 = (lvl.files.len() - compacting_files) as f64
+                * Self::level_weight_file_num(lvl.level);
+
+            level_scores.push((lvl.level, lvl.cur_size, compacting_files, 0.0, level_score));
         }
 
         if level_scores.is_empty() {
@@ -275,31 +271,21 @@ impl LevelCompactionPicker {
         dst_files: &mut Vec<Arc<ColumnFile>>,
     ) -> (u64, TimeRange) {
         let mut picking_file_size = 0_u64;
-        let mut picking_time_range = TimeRange::from((Timestamp::MAX, Timestamp::MIN));
-        let mut prev_non_overlapped_idx = 0_usize;
-        for (i, file) in src_files.iter().enumerate() {
-            if file.is_compacting() {
+        let mut picking_time_range = TimeRange::none();
+        for file in src_files.iter() {
+            if file.is_compacting() || !file.mark_compacting() {
+                // If file already compacting, continue to next file.
                 continue;
             }
             picking_file_size += file.size();
-            // Picked file size >= max_compact_size, try break picking files.
-            // If timeranges of picked files are all overlaped (prev_non_overlapped_idx == 0),
-            // then need to peek more files to keep timeranges among levels not overlap.
-            if picking_file_size >= max_compact_size && (prev_non_overlapped_idx > 0) {
+            picking_time_range.merge(file.time_range());
+            dst_files.push(file.clone());
+
+            if picking_file_size >= max_compact_size {
+                // Picked file size >= max_compact_size, try break picking files.
                 picking_file_size -= file.size();
                 break;
             }
-            // If file already compacting, continue to next file.
-            if !file.mark_compacting() {
-                picking_file_size -= file.size();
-                continue;
-            }
-            if !file.time_range().overlaps(&picking_time_range) {
-                // A new file that does not overlaped with the other files picked.
-                prev_non_overlapped_idx = i;
-            }
-            picking_time_range.merge(file.time_range());
-            dst_files.push(file.clone());
         }
 
         (picking_file_size, picking_time_range)
