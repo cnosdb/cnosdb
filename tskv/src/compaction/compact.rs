@@ -417,9 +417,12 @@ pub(crate) struct CompactIterator {
     tsm_readers: Vec<Arc<TsmReader>>,
     compacting_files: BinaryHeap<Pin<Box<CompactingFile>>>,
     /// Maximum values in generated CompactingBlock
-    max_datablock_values: usize,
+    max_data_block_size: usize,
+    // /// The time range of data to be merged of level-0 data blocks.
+    // /// The level-0 data that out of the thime range will write back to level-0.
+    // level_time_range: TimeRange,
     /// Decode a data block even though it doesn't need to merge with others,
-    /// return CompactingBlock::DataBlock rather than CompactingBlock::Raw
+    /// return CompactingBlock::DataBlock rather than CompactingBlock::Raw .
     decode_non_overlap_blocks: bool,
 
     tmp_tsm_blk_meta_iters: Vec<BlockMetaIterator>,
@@ -428,7 +431,7 @@ pub(crate) struct CompactIterator {
     tmp_tsm_blk_tsm_reader_idx: Vec<usize>,
     /// When a TSM file at index i is ended, finished_idxes[i] is set to true.
     finished_readers: Vec<bool>,
-    /// How many finished_idxes is set to true
+    /// How many finished_idxes is set to true.
     finished_reader_cnt: usize,
     curr_fid: Option<FieldId>,
 
@@ -441,7 +444,7 @@ impl Default for CompactIterator {
         Self {
             tsm_readers: Default::default(),
             compacting_files: Default::default(),
-            max_datablock_values: 0,
+            max_data_block_size: 0,
             decode_non_overlap_blocks: false,
             tmp_tsm_blk_meta_iters: Default::default(),
             tmp_tsm_blk_tsm_reader_idx: Default::default(),
@@ -469,7 +472,7 @@ impl CompactIterator {
         Self {
             tsm_readers,
             compacting_files,
-            max_datablock_values: max_data_block_size,
+            max_data_block_size,
             decode_non_overlap_blocks,
             finished_readers: vec![false; compacting_files_cnt],
             ..Default::default()

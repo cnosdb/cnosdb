@@ -1,11 +1,10 @@
-use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
 use models::Timestamp;
-use trace::{debug, error, info};
+use trace::{debug, info};
 
 use crate::compaction::CompactReq;
 use crate::kv_option::StorageOptions;
@@ -89,14 +88,14 @@ impl Picker for LevelCompactionPicker {
                 return None;
             }
         } else {
-            info!("Picker: picked level: None");
+            info!("Picker: picked no level");
             return None;
         }
 
         // Pick selected level files.
         let mut picking_files: Vec<Arc<ColumnFile>> = Vec::new();
         let (mut picking_files_size, picking_time_range) = if level_start.files.is_empty() {
-            info!("Picker: picked files: None");
+            info!("Picker: picked no files from level {}", level_start.level);
             return None;
         } else {
             let mut files = level_start.files.clone();
@@ -114,22 +113,20 @@ impl Picker for LevelCompactionPicker {
             if file.is_compacting() || !file.time_range().overlaps(&picking_time_range) {
                 continue;
             }
-            if !file.mark_compacting() {
-                continue;
-            }
             picking_files_size += file.size();
             if picking_files_size > storage_opt.max_compact_size {
+                // Picked file size >= max_compact_size, try break picking files.
                 break;
+            }
+            if !file.mark_compacting() {
+                // If file already compacting, continue to next file.
+                picking_files_size -= file.size();
+                continue;
             }
             picking_files.push(file.clone());
         }
-        if picking_files.len() <= 1 {
-            info!("Picker: picked files: None");
-            if let Some(f) = picking_files.first() {
-                f.unmark_compacting();
-            }
-            return None;
-        }
+
+        // Even if picked only 1 file, send it to the next level.
 
         info!(
             "Picker: Picked files: [ {} ]",
@@ -168,7 +165,6 @@ impl LevelCompactionPicker {
     }
 
     /// Weight of file number of a level to be picked.
-    #[inline(always)]
     fn level_weight_file_num(level: LevelId) -> f64 {
         match level {
             0 => 1.0,
@@ -181,14 +177,13 @@ impl LevelCompactionPicker {
     }
 
     /// Weight of the ramaining size of a level to be picked.
-    #[inline(always)]
     fn level_weight_remaining_size(level: LevelId) -> f64 {
         match level {
             0 => 1.0,
             1 => 1.0,
-            2 => 0.1,
-            3 => 0.01,
-            4 => 0.0001,
+            2 => 1.0,
+            3 => 1.0,
+            4 => 1.0,
             _ => 0.0,
         }
     }
@@ -198,16 +193,6 @@ impl LevelCompactionPicker {
             std::cmp::Ordering::Equal => a.size().cmp(&b.size()),
             ord => ord,
         }
-    }
-
-    fn pick_level_legacy(
-        &self,
-        storage_opt: &StorageOptions,
-        levels: &[LevelInfo],
-    ) -> Option<(LevelId, LevelId)> {
-        let mut ctx = LevelCompatContext::default();
-        ctx.cal_score(levels, storage_opt);
-        ctx.pick_level()
     }
 
     fn pick_level(&self, levels: &[LevelInfo]) -> Option<(LevelId, LevelId)> {
@@ -242,11 +227,13 @@ impl LevelCompactionPicker {
                     compacting_files += 1;
                 }
             }
-            let level_file_num_weight = Self::level_weight_file_num(lvl.level);
 
-            // let level_score = (lvl.files.len() as f64) * level_weight * lvl.cur_size as f64
-            //     / (lvl.max_size as f64 + 10000.0 * level_weight * compacting_files as f64);
-            let level_score = (lvl.files.len() - compacting_files) as f64 * level_file_num_weight;
+            let level_file_num_weight = (lvl.files.len() - compacting_files) as f64
+                * Self::level_weight_file_num(lvl.level);
+            let level_remaining_size_weight = lvl.max_size.checked_sub(lvl.cur_size).unwrap_or(1)
+                as f64
+                * Self::level_weight_remaining_size(lvl.level);
+            let level_score = 10e6 * level_file_num_weight / level_remaining_size_weight;
 
             level_scores.push((
                 lvl.level,
@@ -260,7 +247,9 @@ impl LevelCompactionPicker {
         if level_scores.is_empty() {
             return None;
         }
-        level_scores.sort_by(|a, b| a.4.partial_cmp(&b.4).expect("a NaN score").reverse());
+        level_scores.sort_by(|(_, _, _, _, score_a), (_, _, _, _, score_b)| {
+            score_a.partial_cmp(score_b).expect("a NaN score").reverse()
+        });
 
         info!(
             "Picker: Calculate level scores: [ {} ]",
@@ -271,11 +260,11 @@ impl LevelCompactionPicker {
                 .join(", ")
         );
 
-        level_scores.first().map(|lvl_score| {
-            if lvl_score.0 == 4 {
-                (lvl_score.0, lvl_score.0)
+        level_scores.first().cloned().map(|(level, _, _, _, _)| {
+            if level == 4 {
+                (level, level)
             } else {
-                (lvl_score.0, lvl_score.0 + 1)
+                (level, level + 1)
             }
         })
     }
@@ -289,135 +278,31 @@ impl LevelCompactionPicker {
         let mut picking_time_range = TimeRange::from((Timestamp::MAX, Timestamp::MIN));
         let mut prev_non_overlapped_idx = 0_usize;
         for (i, file) in src_files.iter().enumerate() {
-            // The first serial files may be in compaction
             if file.is_compacting() {
                 continue;
             }
-            if file.time_range().overlaps(&picking_time_range) {
-                picking_time_range.merge(file.time_range());
-            } else {
-                picking_time_range = *file.time_range();
+            picking_file_size += file.size();
+            // Picked file size >= max_compact_size, try break picking files.
+            // If timeranges of picked files are all overlaped (prev_non_overlapped_idx == 0),
+            // then need to peek more files to keep timeranges among levels not overlap.
+            if picking_file_size >= max_compact_size && (prev_non_overlapped_idx > 0) {
+                picking_file_size -= file.size();
+                break;
+            }
+            // If file already compacting, continue to next file.
+            if !file.mark_compacting() {
+                picking_file_size -= file.size();
+                continue;
+            }
+            if !file.time_range().overlaps(&picking_time_range) {
+                // A new file that does not overlaped with the other files picked.
                 prev_non_overlapped_idx = i;
             }
-            picking_file_size += file.size();
-            if picking_file_size > max_compact_size && prev_non_overlapped_idx > 0 {
-                break;
-            }
+            picking_time_range.merge(file.time_range());
             dst_files.push(file.clone());
-            file.mark_compacting();
         }
 
-        let mut picked_time_range = *src_files[0].time_range();
-        picked_time_range.merge(src_files[prev_non_overlapped_idx].time_range());
-        (picking_file_size, picked_time_range)
-    }
-}
-
-#[derive(Default)]
-struct LevelCompatContext {
-    level_scores: Vec<(u32, f64)>,
-    base_level: u32,
-    max_level: u32,
-}
-
-impl LevelCompatContext {
-    fn cal_score(&mut self, level_infos: &[LevelInfo], storage_opt: &StorageOptions) {
-        let mut level0_being_compact = false;
-        for t in &level_infos[0].files {
-            if t.is_compacting() {
-                level0_being_compact = true;
-                break;
-            }
-        }
-        let base_level = 0;
-
-        if !level0_being_compact {
-            let score =
-                level_infos[0].files.len() as f64 / storage_opt.compact_trigger_file_num as f64;
-            self.level_scores.push((
-                0,
-                f64::max(
-                    score,
-                    level_infos[0].cur_size as f64 / level_infos[base_level].max_size as f64,
-                ),
-            ));
-        }
-        for (l, item) in level_infos.iter().enumerate() {
-            let score = match item.cur_size.checked_div(item.max_size) {
-                None => {
-                    error!("failed to get score by max size");
-                    continue;
-                }
-                Some(v) => v,
-            };
-            self.level_scores.push((l as u32, score as f64));
-        }
-        self.base_level = 0;
-        self.max_level = level_infos.len() as u32 - 1;
-    }
-
-    fn pick_level(&mut self) -> Option<(u32, u32)> {
-        self.level_scores.sort_by(|a, b| {
-            if a.1 > b.1 {
-                Ordering::Less
-            } else {
-                Ordering::Greater
-            }
-        });
-
-        println!("==========Debug(pick_level)1==========");
-        println!("Calculate level scores:");
-        for lvl_score in self.level_scores.iter() {
-            println!("Level-{} | {}", lvl_score.0, lvl_score.1);
-        }
-        println!("==========Debug(pick_level)2==========");
-
-        let base_level = self.base_level;
-        if let Some((level, score)) = self.level_scores.first() {
-            return if *score < 1.0 {
-                None
-            } else if *level == 0 {
-                Some((*level, base_level))
-            } else if *level + 1 == self.max_level {
-                Some((*level, *level))
-            } else {
-                Some((*level, *level + 1))
-            };
-        }
-        None
-    }
-
-    fn pick_files(
-        &self,
-        level_infos: &[LevelInfo; 5],
-        storage_opt: &StorageOptions,
-        level: u32,
-        output_level: u32,
-    ) -> Option<(u32, Vec<Arc<ColumnFile>>)> {
-        if level > (level_infos.len() - 1) as u32 {
-            return None;
-        }
-        let mut inputs = vec![];
-        let mut ts_min = i64::MAX;
-        let mut ts_max = i64::MIN;
-        let mut file_size = 0;
-        let max_size = storage_opt.level_max_file_size(output_level);
-        let lvl_info = &level_infos[level as usize];
-        for file in &lvl_info.files {
-            file_size += file.size();
-            if ts_min > file.time_range().min_ts {
-                ts_min = file.time_range().min_ts;
-            }
-
-            if ts_max < file.time_range().max_ts {
-                ts_max = file.time_range().max_ts;
-            }
-            inputs.push(file.clone());
-            if file_size >= max_size {
-                break;
-            }
-        }
-        Some((level, inputs))
+        (picking_file_size, picking_time_range)
     }
 }
 
@@ -465,34 +350,34 @@ mod test {
             LevelInfo::init_levels(database.clone(), ts_family_id, opt.storage.clone());
         let mut max_level_ts = 0_i64;
         let tsm_dir = &opt.storage.tsm_dir(&database, ts_family_id);
-        for lvl_desc in levels_sketch.iter() {
-            max_level_ts = max_level_ts.max(lvl_desc.2);
+        for (level, lts_min, lts_max, column_files_sketch) in levels_sketch {
+            max_level_ts = max_level_ts.max(lts_max);
             let mut col_files = Vec::new();
             let mut cur_size = 0_u64;
-            for file_desc in lvl_desc.3.iter() {
-                cur_size += file_desc.3;
+            for (file_id, fts_min, fts_max, file_size, compacting) in column_files_sketch {
+                cur_size += file_size;
                 let col = ColumnFile::new(
-                    file_desc.0,
-                    lvl_desc.0,
-                    TimeRange::new(file_desc.1, file_desc.2),
-                    file_desc.3,
-                    lvl_desc.0 == 0,
-                    make_tsm_file_name(tsm_dir, file_desc.0),
+                    file_id,
+                    level,
+                    TimeRange::new(fts_min, fts_max),
+                    file_size,
+                    level == 0,
+                    make_tsm_file_name(tsm_dir, file_id),
                 );
-                if file_desc.4 {
+                if compacting {
                     col.mark_compacting();
                 }
                 col_files.push(Arc::new(col));
             }
-            level_infos[lvl_desc.0 as usize] = LevelInfo {
+            level_infos[level as usize] = LevelInfo {
                 files: col_files,
                 database: database.clone(),
                 tsf_id: 0,
                 storage_opt: opt.storage.clone(),
-                level: lvl_desc.0,
+                level,
                 cur_size,
-                max_size: opt.storage.level_max_file_size(lvl_desc.0),
-                time_range: TimeRange::new(lvl_desc.1, lvl_desc.2),
+                max_size: opt.storage.level_max_file_size(level),
+                time_range: TimeRange::new(lts_min, lts_max),
             };
         }
         let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
@@ -530,7 +415,7 @@ mod test {
         let opt = create_options(dir.to_string());
 
         #[rustfmt::skip]
-            let levels_sketch: LevelsSketch = vec![
+        let levels_sketch: LevelsSketch = vec![
             // vec![( level, Timestamp_Begin, Timestamp_end, vec![(file_id, Timestamp_Begin, Timestamp_end, size, being_compact)] )]
             (0_u32, 1_i64, 1000_i64, vec![
                 (11_u64, 1_i64, 1000_i64, 1000_u64, false),
