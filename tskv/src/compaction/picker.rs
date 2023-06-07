@@ -167,15 +167,28 @@ impl LevelCompactionPicker {
         }
     }
 
+    /// Weight of file number of a level to be picked.
     #[inline(always)]
-    fn level_weight(level: LevelId) -> f64 {
-        // TODO level_weight is a temporary method
+    fn level_weight_file_num(level: LevelId) -> f64 {
         match level {
-            0 => 0.9,
+            0 => 1.0,
             1 => 0.8,
-            2 => 0.5,
+            2 => 0.4,
             3 => 0.2,
-            4 => 0.1,
+            4 => 0.0,
+            _ => 0.0,
+        }
+    }
+
+    /// Weight of the ramaining size of a level to be picked.
+    #[inline(always)]
+    fn level_weight_remaining_size(level: LevelId) -> f64 {
+        match level {
+            0 => 1.0,
+            1 => 1.0,
+            2 => 0.1,
+            3 => 0.01,
+            4 => 0.0001,
             _ => 0.0,
         }
     }
@@ -200,12 +213,16 @@ impl LevelCompactionPicker {
     fn pick_level(&self, levels: &[LevelInfo]) -> Option<(LevelId, LevelId)> {
         //! - Level max_size (level closer to max_size
         //!     has more possibility to run compact)
+        //!   - (level.max_size - level.cur_size) as numerator
         //! - Level running compactions (level running compaction
         //!     has less possibility to run compact)
+        //!   - compacting_files as deniminator
         //! - Level weight (higher level that file is too large
         //!     has less possibility to run compact)
+        //!   - level_weight as numerator
         //! - Level file_count (after all, level has more files
         //!     has more possibility to run compact)
+        //!   - level.files.len() as numerator
 
         if levels.is_empty() {
             return None;
@@ -225,16 +242,17 @@ impl LevelCompactionPicker {
                     compacting_files += 1;
                 }
             }
-            let level_weight = Self::level_weight(lvl.level);
+            let level_file_num_weight = Self::level_weight_file_num(lvl.level);
 
-            let level_score = (lvl.files.len() as f64) * level_weight * lvl.cur_size as f64
-                / (lvl.max_size as f64 + 10000.0 * level_weight * compacting_files as f64);
+            // let level_score = (lvl.files.len() as f64) * level_weight * lvl.cur_size as f64
+            //     / (lvl.max_size as f64 + 10000.0 * level_weight * compacting_files as f64);
+            let level_score = (lvl.files.len() - compacting_files) as f64 * level_file_num_weight;
 
             level_scores.push((
                 lvl.level,
                 lvl.cur_size,
                 compacting_files,
-                level_weight,
+                level_file_num_weight,
                 level_score,
             ));
         }
@@ -383,7 +401,7 @@ impl LevelCompatContext {
         let mut ts_min = i64::MAX;
         let mut ts_max = i64::MIN;
         let mut file_size = 0;
-        let max_size = storage_opt.level_file_size(output_level);
+        let max_size = storage_opt.level_max_file_size(output_level);
         let lvl_info = &level_infos[level as usize];
         for file in &lvl_info.files {
             file_size += file.size();
@@ -473,7 +491,7 @@ mod test {
                 storage_opt: opt.storage.clone(),
                 level: lvl_desc.0,
                 cur_size,
-                max_size: opt.storage.level_file_size(lvl_desc.0),
+                max_size: opt.storage.level_max_file_size(lvl_desc.0),
                 time_range: TimeRange::new(lvl_desc.1, lvl_desc.2),
             };
         }

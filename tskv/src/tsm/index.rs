@@ -8,7 +8,7 @@ use utils::BloomFilter;
 
 use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64};
 use crate::tsm::{
-    BlockMetaIterator, WriteTsmError, WriteTsmResult, BLOCK_META_SIZE, INDEX_META_SIZE,
+    BlockMetaIterator, DataBlock, WriteTsmError, WriteTsmResult, BLOCK_META_SIZE, INDEX_META_SIZE,
 };
 
 #[derive(Debug, Clone)]
@@ -158,9 +158,9 @@ impl Ord for BlockMeta {
         match self.field_id.cmp(&other.field_id) {
             cmp::Ordering::Equal => match self.min_ts.cmp(&other.min_ts) {
                 cmp::Ordering::Equal => self.max_ts.cmp(&other.max_ts),
-                other => other.reverse(),
+                other => other,
             },
-            other => other.reverse(),
+            other => other,
         }
     }
 }
@@ -213,7 +213,10 @@ impl BlockMeta {
 
     #[inline(always)]
     pub fn time_range(&self) -> TimeRange {
-        (self.min_ts, self.max_ts).into()
+        TimeRange {
+            min_ts: self.min_ts,
+            max_ts: self.max_ts,
+        }
     }
 
     #[inline(always)]
@@ -323,7 +326,40 @@ pub(crate) struct BlockEntry {
 }
 
 impl BlockEntry {
-    pub(crate) fn encode(&self, buf: &mut [u8]) {
+    pub fn with_block_meta(block_meta: &BlockMeta, offset: u64, size: u64) -> Self {
+        let ts_len = block_meta.val_off() - block_meta.offset();
+        Self {
+            min_ts: block_meta.min_ts,
+            max_ts: block_meta.max_ts,
+            count: block_meta.count,
+            offset,
+            size,
+            val_offset: offset + ts_len,
+        }
+    }
+
+    pub fn with_block(
+        data_block: &DataBlock,
+        offset: u64,
+        size: u64,
+        encoded_ts_size: u64,
+    ) -> Option<Self> {
+        if data_block.is_empty() {
+            return None;
+        }
+        let ts_sli = data_block.ts();
+        Some(Self {
+            min_ts: ts_sli[0],
+            max_ts: ts_sli[ts_sli.len() - 1],
+            count: ts_sli.len() as u32,
+            offset,
+            size,
+            // Encoded timestamps block need a 4-bytes crc checksum together.
+            val_offset: offset + encoded_ts_size + 4,
+        })
+    }
+
+    pub fn encode(&self, buf: &mut [u8]) {
         assert!(buf.len() >= BLOCK_META_SIZE);
         buf[0..8].copy_from_slice(&self.min_ts.to_be_bytes()[..]);
         buf[8..16].copy_from_slice(&self.max_ts.to_be_bytes()[..]);
@@ -333,7 +369,7 @@ impl BlockEntry {
         buf[36..44].copy_from_slice(&self.val_offset.to_be_bytes()[..]);
     }
 
-    pub(crate) fn decode(data: &[u8]) -> Self {
+    pub fn decode(data: &[u8]) -> Self {
         assert!(data.len() >= BLOCK_META_SIZE);
         Self {
             min_ts: decode_be_i64(&data[0..8]),

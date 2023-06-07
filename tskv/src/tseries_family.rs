@@ -204,7 +204,7 @@ impl LevelInfo {
         tsf_id: u32,
         storage_opt: Arc<StorageOptions>,
     ) -> Self {
-        let max_size = storage_opt.level_file_size(level);
+        let max_size = storage_opt.level_max_file_size(level);
         Self {
             files: Vec::new(),
             database,
