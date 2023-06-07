@@ -3,10 +3,11 @@ use std::fmt::Debug;
 use std::pin::Pin;
 
 use datafusion::arrow::record_batch::RecordBatch;
+use errors::CoordinatorError;
 use futures::Stream;
 use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
-use models::meta_data::VnodeInfo;
+use models::meta_data::{VnodeAllInfo, VnodeInfo};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::Precision;
@@ -121,4 +122,21 @@ pub trait Coordinator: Send + Sync {
         tenant: &str,
         cmd_type: VnodeSummarizerCmdType,
     ) -> CoordinatorResult<Vec<RecordBatch>>;
+}
+
+async fn get_vnode_all_info(
+    meta: MetaRef,
+    tenant: &str,
+    vnode_id: u32,
+) -> CoordinatorResult<VnodeAllInfo> {
+    match meta.tenant_manager().tenant_meta(tenant).await {
+        Some(meta_client) => match meta_client.get_vnode_all_info(vnode_id) {
+            Some(all_info) => Ok(all_info),
+            None => Err(CoordinatorError::VnodeNotFound { id: vnode_id }),
+        },
+
+        None => Err(CoordinatorError::TenantNotFound {
+            name: tenant.to_string(),
+        }),
+    }
 }
