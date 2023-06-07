@@ -56,8 +56,7 @@ impl QueryExecutor {
             .ok_or(CoordinatorError::KvInstanceNotFound { node_id })?
             .clone();
 
-        let mut parallel_merge_stream =
-            ParallelMergeStream::new(vnodes.len(), Some(self.runtime.clone()));
+        let mut streams = Vec::with_capacity(vnodes.len());
 
         vnodes.into_iter().for_each(|vnode| {
             let input = Box::pin(LocalTskvTableScanStream::new(
@@ -73,8 +72,10 @@ impl QueryExecutor {
                 vnode.id,
                 input,
             );
-            parallel_merge_stream.push(Box::pin(stream));
+            streams.push(Box::pin(stream) as SendableCoordinatorRecordBatchStream);
         });
+
+        let parallel_merge_stream = ParallelMergeStream::new(Some(self.runtime.clone()), streams);
 
         Ok(Box::pin(parallel_merge_stream))
     }
@@ -90,9 +91,7 @@ impl QueryExecutor {
             .ok_or(CoordinatorError::KvInstanceNotFound { node_id })?
             .clone();
 
-        let mut parallel_merge_stream =
-            ParallelMergeStream::new(vnodes.len(), Some(self.runtime.clone()));
-
+        let mut streams = Vec::with_capacity(vnodes.len());
         vnodes.into_iter().for_each(|vnode| {
             let stream = LocalTskvTagScanStream::new(
                 vnode.id,
@@ -100,8 +99,10 @@ impl QueryExecutor {
                 kv.clone(),
                 self.data_out.clone(),
             );
-            parallel_merge_stream.push(Box::pin(stream));
+            streams.push(Box::pin(stream) as SendableCoordinatorRecordBatchStream);
         });
+
+        let parallel_merge_stream = ParallelMergeStream::new(Some(self.runtime.clone()), streams);
 
         Ok(Box::pin(parallel_merge_stream))
     }
