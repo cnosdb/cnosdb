@@ -67,7 +67,7 @@ pub async fn change_vnode_to_broken(
     vnode_id: VnodeId,
     meta: MetaRef,
 ) -> CoordinatorResult<()> {
-    let mut all_info = crate::service::get_vnode_all_info(meta.clone(), &tenant, vnode_id).await?;
+    let mut all_info = crate::get_vnode_all_info(meta.clone(), &tenant, vnode_id).await?;
 
     let meta_client = meta
         .tenant_manager()

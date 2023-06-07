@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use config::HintedOffConfig;
+use meta::model::MetaRef;
 use models::schema::Precision;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::Receiver;
@@ -112,14 +113,16 @@ impl DataBlock for HintedOffBlock {
 }
 
 pub struct HintedOffManager {
+    meta: MetaRef,
     config: HintedOffConfig,
     writer: Arc<PointWriter>,
     nodes: RwLock<HashMap<u64, Arc<RwLock<Queue>>>>,
 }
 
 impl HintedOffManager {
-    pub async fn new(config: HintedOffConfig, writer: Arc<PointWriter>) -> Self {
+    pub async fn new(config: HintedOffConfig, meta: MetaRef, writer: Arc<PointWriter>) -> Self {
         let manager = Self {
+            meta,
             config,
             writer,
             nodes: RwLock::new(HashMap::new()),
@@ -180,6 +183,7 @@ impl HintedOffManager {
         for _ in 0..self.config.threads {
             tokio::spawn(HintedOffManager::hinted_off_service(
                 id,
+                self.meta.clone(),
                 self.writer.clone(),
                 queue.clone(),
             ));
@@ -188,7 +192,12 @@ impl HintedOffManager {
         Ok(queue)
     }
 
-    async fn hinted_off_service(node_id: u64, writer: Arc<PointWriter>, queue: Arc<RwLock<Queue>>) {
+    async fn hinted_off_service(
+        node_id: u64,
+        meta: MetaRef,
+        writer: Arc<PointWriter>,
+        queue: Arc<RwLock<Queue>>,
+    ) {
         debug!("hinted_off_service started for node: {}", node_id);
 
         let mut count = 0;
@@ -198,10 +207,10 @@ impl HintedOffManager {
             match read_result {
                 Ok(_) => {
                     HintedOffManager::write_until_success(
+                        meta.clone(),
                         queue.clone(),
                         writer.clone(),
                         &block,
-                        node_id,
                     )
                     .await;
                     let _ = queue.write().await.commit().await;
@@ -222,16 +231,18 @@ impl HintedOffManager {
     }
 
     async fn write_until_success(
+        meta: MetaRef,
         queue: Arc<RwLock<Queue>>,
         writer: Arc<PointWriter>,
         block: &HintedOffBlock,
-        node_id: u64,
     ) {
-        loop {
+        while let Ok(all_info) =
+            crate::get_vnode_all_info(meta.clone(), &block.tenant, block.vnode_id).await
+        {
             let result = writer
                 .write_to_remote_node(
                     block.vnode_id,
-                    node_id,
+                    all_info.node_id,
                     &block.tenant,
                     block.precision,
                     block.data.clone(),
@@ -241,8 +252,8 @@ impl HintedOffManager {
             if let Err(CoordinatorError::FailoverNode { id: _ }) = result {
                 let size = queue.write().await.size().await;
                 warn!(
-                    "hinted_off write data to {} failed, try later...; remain size: {:?}",
-                    node_id, size
+                    "hinted_off write data to {}({}) failed, try later...; remain size: {:?}",
+                    all_info.node_id, block.vnode_id, size
                 );
 
                 time::sleep(Duration::from_secs(10)).await;
@@ -250,7 +261,10 @@ impl HintedOffManager {
             }
 
             if result.is_err() {
-                info!("hinted_off write data {} failed, {:?}", node_id, result);
+                info!(
+                    "hinted_off write data {}({}) failed, {:?}",
+                    all_info.node_id, block.vnode_id, result
+                );
             }
 
             break;
