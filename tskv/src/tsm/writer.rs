@@ -6,6 +6,7 @@ use models::{FieldId, Timestamp};
 use snafu::{ResultExt, Snafu};
 use utils::BloomFilter;
 
+use super::EncodedDataBlock;
 use crate::error::{self, Error, Result};
 use crate::file_system::file::cursor::FileCursor;
 use crate::file_system::file::IFile;
@@ -59,39 +60,27 @@ const VERSION: [u8; 1] = [1];
 
 pub type WriteTsmResult<T, E = WriteTsmError> = std::result::Result<T, E>;
 
-#[derive(Debug)]
-pub struct MaxFileSizeExceedError {
-    max_file_size: u64,
-    block_index: usize,
-}
-
-impl std::fmt::Display for MaxFileSizeExceedError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "max_file_size: {}, block_index: {}",
-            self.max_file_size, self.block_index
-        )
-    }
-}
-
-impl std::error::Error for MaxFileSizeExceedError {}
-
 #[derive(Snafu, Debug)]
 #[snafu(visibility(pub))]
 pub enum WriteTsmError {
-    #[snafu(display("IO error: {}", source))]
+    #[snafu(display("IO error: {source}"))]
     IO { source: std::io::Error },
 
-    #[snafu(display("Encode error: {}", source))]
+    #[snafu(display("Encode error: {source}"))]
     Encode {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
 
-    #[snafu(display("Max file size exceed: {}", source))]
-    MaxFileSizeExceed { source: MaxFileSizeExceedError },
+    #[snafu(display(
+        "File size ({cur_size} B) exceed max_file_size ({max_size} B) after write {write_size} B"
+    ))]
+    MaxFileSizeExceed {
+        cur_size: u64,
+        max_size: u64,
+        write_size: usize,
+    },
 
-    #[snafu(display("Tsm writer has been finished: {}", path.display()))]
+    #[snafu(display("Writing to finished tsm writer '{}'", path.display()))]
     Finished { path: PathBuf },
 }
 
@@ -248,6 +237,8 @@ impl TsmWriter {
         self.size
     }
 
+    /// Write a DataBlock to tsm file. If the max_size is greater than 0,
+    /// then check if the current size exceeded, if so return Err(MaxFileSizeExceed).
     pub async fn write_block(
         &mut self,
         field_id: FieldId,
@@ -258,25 +249,57 @@ impl TsmWriter {
                 path: self.final_path.clone(),
             });
         }
-        let mut write_pos = self.writer.pos();
-        if let Some(rg) = block.time_range() {
-            self.min_ts = self.min_ts.min(rg.0);
-            self.max_ts = self.max_ts.max(rg.1);
+        if let Some((min_ts, max_ts)) = block.time_range() {
+            self.min_ts = self.min_ts.min(min_ts);
+            self.max_ts = self.max_ts.max(max_ts);
         }
-        let ret = write_block_to(
-            &mut self.writer,
-            &mut write_pos,
-            &mut self.index_buf,
-            field_id,
-            block,
-        )
-        .await;
-        if let Ok(s) = ret {
-            self.size += s as u64
+
+        let size = write_block_to(&mut self.writer, &mut self.index_buf, field_id, block).await?;
+        self.size += size as u64;
+        if self.max_size > 0 && self.size >= self.max_size {
+            Err(WriteTsmError::MaxFileSizeExceed {
+                max_size: self.max_size,
+                cur_size: self.size,
+                write_size: size,
+            })
+        } else {
+            Ok(size)
         }
-        ret
     }
 
+    /// Write a EncodedDataBlock to tsm file. If the max_size is greater than 0,
+    /// then check if the current size exceeded, if so return Err(MaxFileSizeExceed).
+    pub async fn write_encoded_block(
+        &mut self,
+        field_id: FieldId,
+        block: &EncodedDataBlock,
+    ) -> WriteTsmResult<usize> {
+        if self.finished {
+            return Err(WriteTsmError::Finished {
+                path: self.final_path.clone(),
+            });
+        }
+        if let Some(time_range) = block.time_range {
+            self.min_ts = self.min_ts.min(time_range.min_ts);
+            self.max_ts = self.max_ts.max(time_range.max_ts);
+        }
+
+        let size =
+            write_encoded_block_to(&mut self.writer, &mut self.index_buf, field_id, block).await?;
+        self.size += size as u64;
+        if self.max_size > 0 && self.size >= self.max_size {
+            Err(WriteTsmError::MaxFileSizeExceed {
+                max_size: self.max_size,
+                cur_size: self.size,
+                write_size: size,
+            })
+        } else {
+            Ok(size)
+        }
+    }
+
+    /// Write a u8 slice to tsm file. If the max_size is greater than 0,
+    /// then check if the current size exceeded, if so return Err(MaxFileSizeExceed).
     pub async fn write_raw(
         &mut self,
         block_meta: &BlockMeta,
@@ -287,21 +310,21 @@ impl TsmWriter {
                 path: self.final_path.clone(),
             });
         }
-        let mut write_pos = self.writer.pos();
         self.min_ts = self.min_ts.min(block_meta.min_ts());
         self.max_ts = self.max_ts.max(block_meta.max_ts());
-        let ret = write_raw_data_to(
-            &mut self.writer,
-            &mut write_pos,
-            &mut self.index_buf,
-            block_meta,
-            block,
-        )
-        .await;
-        if let Ok(s) = ret {
-            self.size += s as u64
+
+        let size =
+            write_raw_data_to(&mut self.writer, &mut self.index_buf, block_meta, block).await?;
+        self.size += size as u64;
+        if self.max_size > 0 && self.size >= self.max_size {
+            Err(WriteTsmError::MaxFileSizeExceed {
+                max_size: self.max_size,
+                cur_size: self.size,
+                write_size: size,
+            })
+        } else {
+            Ok(size)
         }
-        ret
     }
 
     pub async fn write_index(&mut self) -> WriteTsmResult<usize> {
@@ -372,7 +395,6 @@ pub async fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
 
 async fn write_raw_data_to(
     writer: &mut FileCursor,
-    _write_pos: &mut u64,
     index_buf: &mut IndexBuf,
     block_meta: &BlockMeta,
     block: &[u8],
@@ -386,7 +408,6 @@ async fn write_raw_data_to(
             size += s;
         })
         .context(IOSnafu)?;
-    let ts_block_len = block_meta.val_off() - block_meta.offset();
 
     index_buf.insert_block_meta(
         IndexEntry {
@@ -394,14 +415,7 @@ async fn write_raw_data_to(
             field_type: block_meta.field_type(),
             blocks: vec![],
         },
-        BlockEntry {
-            min_ts: block_meta.min_ts(),
-            max_ts: block_meta.max_ts(),
-            count: block_meta.count(),
-            offset,
-            size: block.len() as u64,
-            val_offset: offset + ts_block_len,
-        },
+        BlockEntry::with_block_meta(block_meta, offset, block.len() as u64),
     );
 
     Ok(size)
@@ -409,7 +423,6 @@ async fn write_raw_data_to(
 
 async fn write_block_to(
     writer: &mut FileCursor,
-    _write_pos: &mut u64,
     index_buf: &mut IndexBuf,
     field_id: FieldId,
     block: &DataBlock,
@@ -444,13 +457,53 @@ async fn write_block_to(
             field_type: block.field_type(),
             blocks: vec![],
         },
+        BlockEntry::with_block(block, offset, size as u64, ts_buf.len() as u64)
+            .expect("data_block is not empty"),
+    );
+
+    Ok(size)
+}
+
+async fn write_encoded_block_to(
+    writer: &mut FileCursor,
+    index_buf: &mut IndexBuf,
+    field_id: FieldId,
+    block: &EncodedDataBlock,
+) -> WriteTsmResult<usize> {
+    if block.count == 0 || block.ts.is_empty() {
+        return Ok(0);
+    }
+
+    let offset = writer.pos();
+    let size = writer
+        .write_vec(
+            [
+                IoSlice::new(crc32fast::hash(&block.ts).to_be_bytes().as_slice()),
+                IoSlice::new(&block.ts),
+                IoSlice::new(crc32fast::hash(&block.val).to_be_bytes().as_slice()),
+                IoSlice::new(&block.val),
+            ]
+            .as_mut_slice(),
+        )
+        .await
+        .context(IOSnafu)?;
+
+    let time_range = block.time_range.expect("EncodedDataBlock is not empty");
+
+    index_buf.insert_block_meta(
+        IndexEntry {
+            field_id,
+            field_type: block.field_type,
+            blocks: vec![],
+        },
         BlockEntry {
-            min_ts: block.ts()[0],
-            max_ts: block.ts()[block.len() - 1],
-            count: block.len() as u32,
+            min_ts: time_range.min_ts,
+            max_ts: time_range.max_ts,
+            count: block.count,
             offset,
             size: size as u64,
-            val_offset: offset + ts_buf.len() as u64 + 4, // CRC32 is 4 bytes
+            // Encoded timestamps block need a 4-byte crc checksum together.
+            val_offset: offset + block.ts.len() as u64 + 4,
         },
     );
 
