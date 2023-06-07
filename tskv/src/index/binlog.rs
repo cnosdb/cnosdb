@@ -1,4 +1,4 @@
-use std::io::SeekFrom;
+use std::io::{Read, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use trace::{debug, error};
@@ -267,51 +267,114 @@ impl BinlogReader {
         BinlogWriter::write_header(self.cursor.file_ref(), offset).await
     }
 
-    pub async fn next_block(&mut self) -> Option<SeriesKeyBlock> {
+    pub fn read_pos(&self) -> u32 {
+        self.cursor.pos() as u32
+    }
+
+    pub fn file_len(&self) -> u32 {
+        self.cursor.len() as u32
+    }
+
+    pub async fn next_block(&mut self) -> IndexResult<Option<SeriesKeyBlock>> {
+        if self.read_over() {
+            return Ok(None);
+        }
+
         debug!("Read index binlog: cursor.pos={}", self.cursor.pos());
 
-        let read_bytes = match self.cursor.read(&mut self.header_buf[..]).await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("failed read block header buf : {:?}", e);
-                return None;
-            }
-        };
+        let read_bytes = self.cursor.read(&mut self.header_buf[..]).await?;
         if read_bytes < BLOCK_HEADER_SIZE {
-            return None;
+            return Err(IndexError::FileErrors {
+                msg: format!("read header length {} < {}", read_bytes, BLOCK_HEADER_SIZE),
+            });
         }
 
         let ts = byte_utils::decode_be_i64(self.header_buf[0..8].into());
         let id = byte_utils::decode_be_u32(self.header_buf[8..12].into());
         let data_len = byte_utils::decode_be_u32(self.header_buf[12..16].into());
         if data_len == 0 {
-            return Some(SeriesKeyBlock {
+            return Ok(Some(SeriesKeyBlock {
                 ts,
                 series_id: id,
                 data_len,
                 data: vec![],
-            });
+            }));
         }
         debug!("Read Binlog Reader: data_len={}", data_len);
+
+        if data_len > (self.file_len() - self.read_pos()) {
+            error!(
+                "binlog read block error {}, {} {} ",
+                data_len,
+                self.file_len(),
+                self.read_pos()
+            );
+
+            return Err(IndexError::FileErrors {
+                msg: format!(
+                    "{} block data length {} > {}-{}",
+                    ts,
+                    data_len,
+                    self.file_len(),
+                    self.read_pos()
+                ),
+            });
+        }
 
         if data_len as usize > self.body_buf.len() {
             self.body_buf.resize(data_len as usize, 0);
         }
 
         let buf = &mut self.body_buf.as_mut_slice()[0..data_len as usize];
-        let _read_bytes = match self.cursor.read(buf).await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("failed read body buf : {:?}", e);
-                return None;
-            }
-        };
+        let read_bytes = self.cursor.read(buf).await?;
+        if read_bytes != data_len as usize {
+            return Err(IndexError::FileErrors {
+                msg: format!(
+                    "{} read block data error {} != {}",
+                    ts, read_bytes, data_len
+                ),
+            });
+        }
 
-        Some(SeriesKeyBlock {
+        Ok(Some(SeriesKeyBlock {
             ts,
             series_id: id,
             data_len,
             data: buf.to_vec(),
-        })
+        }))
     }
+}
+
+pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
+    let tmp_file = BinlogWriter::open(0, PathBuf::from(file_name)).await?;
+    let mut reader_file = BinlogReader::new(0, tmp_file.file.into()).await?;
+
+    let file_read_offset = reader_file.read_pos();
+    let mut max_can_repair = 0;
+
+    while let Ok(Some(_)) = reader_file.next_block().await {
+        max_can_repair = reader_file.read_pos();
+    }
+
+    println!(
+        "file length: {}, persistence offset: {},  can repair offset: {}",
+        reader_file.file_len(),
+        file_read_offset,
+        max_can_repair
+    );
+
+    if file_read_offset >= max_can_repair {
+        println!("don't need generate repaire file");
+        return Ok(());
+    }
+
+    let mut buffer = Vec::new();
+    std::fs::File::open(file_name)?.read_to_end(&mut buffer)?;
+
+    let mut file = std::fs::File::create(format!("{}.repair", file_name))?;
+
+    file.write_all(&buffer)?;
+    file.set_len(max_can_repair as u64)?;
+
+    Ok(())
 }
