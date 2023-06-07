@@ -53,6 +53,7 @@ pub struct StorageOptions {
 // database/data/ts_family_id/index
 impl StorageOptions {
     pub fn level_max_file_size(&self, lvl: u32) -> u64 {
+        // TODO(zipper): size of lvl-0 is zero?
         self.base_file_size * lvl as u64 * self.compact_trigger_file_num as u64
     }
 
