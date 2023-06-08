@@ -3,6 +3,7 @@ use std::sync::Arc;
 use lru_cache::ShardedCache;
 use models::{SeriesId, SeriesKey};
 
+#[derive(Debug)]
 pub struct SeriesKeyInfo {
     pub key: SeriesKey,
     pub hash: u64,

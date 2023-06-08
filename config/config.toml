@@ -13,72 +13,74 @@ query_sql_limit = 16777216   # 16 * 1024 * 1024
 write_sql_limit = 167772160  # 160 * 1024 * 1024
 auth_enabled = false
 
-
 [storage]
 
-# The directory where database files stored.
+## The directory where database files stored.
 # Directory for summary:    $path/summary
 # Directory for index:      $path/$database/data/id/index
 # Directory for tsm:        $path/$database/data/id/tsm
 # Directory for delta:      $path/$database/data/id/delta
 path = 'data/db'
 
-# The maximum file size of summary file.
+## The maximum file size of summary file.
 #max_summary_size = "128M" # 134,217,728 bytes
 
-# The maximum file size of a level is as follows:
-# $base_file_size * level * $compact_trigger_file_num
+## The maximum file size of a level is as follows:
+## $base_file_size * level * $compact_trigger_file_num
 #base_file_size = "16M" # 16,777,216 bytes
 
-# The maxmimum amount of flush requests in memory
+## The maxmimum amount of flush requests in memory
 #flush_req_channel_cap = 16
 
-# The maxmimum level of a data file (from 0 to 4).
+## The maximum count of opened file handles (for query) in each vnode.
+#max_cached_readers = 32
+
+## The maxmimum level of a data file (from 0 to 4).
 #max_level = 4
 
 # Trigger of compaction using the number of level 0 files.
 #compact_trigger_file_num = 4
 
-# Duration since last write to trigger compaction.
+## Duration since last write to trigger compaction.
 #compact_trigger_cold_duration = "1h"
 
-# The maximum size of all files in a compaction.
+## The maximum size of all files in a compaction.
 #max_compact_size = "2G" # 2,147,483,648 bytes
 
-# The maximum concurrent compactions.
+## The maximum concurrent compactions.
 #max_concurrent_compaction = 4
 
-# If true, write request will not be checked in detail.
+## If true, write request will not be checked in detail.
 strict_write = false
 
 [wal]
 
-# If true, write requets on disk before writing to memory.
+## If true, write requets on disk before writing to memory.
 enabled = true
 
-# The directory where write ahead logs stored.
+## The directory where write ahead logs stored.
 path = 'data/wal'
 
-# The maxmimum amount of write request in memory.
+## The maxmimum amount of write request in memory.
 #wal_req_channel_cap = 64
 
-# The maximum size of a WAL.
+## The maximum size of a WAL.
 #max_file_size = "1G" # 1,073,741,824 bytes
 
-# Trigger all vnode flushing if size of WALs exceeds this value.
+## Trigger all vnode flushing if size of WALs exceeds this value.
 #flush_trigger_total_file_size = "2G" # 2,147,483,648 bytes
 
-# If true, fsync will be called after every WAL writes.
+## If true, fsync will be called after every WAL writes.
 #sync = false
 
-# Interval for automatic WAL fsync.
+## Interval for automatic WAL fsync.
 #sync_interval = "0" # h, m, s
 
 [cache]
-# The maximum size of a mutable cache.
+## The maximum size of a mutable cache.
 #max_buffer_size = "128M" # 134,217,728 bytes
 
-# The maximum amount of immutable caches.
+## The maximum amount of immutable caches.
 #max_immutable_number = 4
 
 [log]
@@ -99,11 +101,11 @@ grpc_listen_port = 8903
 flight_rpc_listen_port = 8904
 tcp_listen_port = 8905
 
-# Whether to store metrics to the CnosDB
+## Whether to store metrics to the CnosDB
 [node_basic]
-node_id = 1001 
+node_id = 1001
 cold_data_server = false
-store_metrics = true 
+store_metrics = true
 
 [heartbeat]
 report_time_interval_secs = 30

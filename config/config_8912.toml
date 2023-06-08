@@ -23,6 +23,7 @@ path = '/tmp/cnosdb/2001/db'
 max_summary_size = "128M" # 134217728
 base_file_size = "16M" # 16777216
 flush_req_channel_cap = 16
+max_cached_readers = 32
 compact_trigger_file_num = 4
 compact_trigger_cold_duration = "1h"
 max_compact_size = "2G" # 2147483648

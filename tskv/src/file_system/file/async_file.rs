@@ -179,4 +179,8 @@ impl AsyncFile {
             Ok(AsyncFile { inner, ctx, size })
         }
     }
+
+    pub fn fd(&self) -> usize {
+        os::fd(&self.inner.0)
+    }
 }
