@@ -489,7 +489,7 @@ impl Summary {
                 max_seq_no,
                 levels,
                 max_level_ts,
-                Arc::new(ShardedCache::default()),
+                Arc::new(ShardedCache::with_capacity(opt.storage.max_cached_readers)),
             );
             versions.insert(tsf_id, Arc::new(ver));
         }

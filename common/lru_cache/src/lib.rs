@@ -3,4 +3,4 @@ mod sharded;
 
 pub use sharded::*;
 
-pub type AfterRemovedFnMut<K, V> = Box<dyn FnMut(&K, &V) + Send + Sync>;
+pub type AfterRemovedFnMut<K, V> = Box<dyn FnMut(&K, &mut V) + Send + Sync>;

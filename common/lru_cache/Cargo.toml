@@ -10,10 +10,11 @@ name = "main"
 harness = false
 
 [dependencies]
+async-backtrace = { workspace = true, optional = true }
 parking_lot = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
 utils = { path = "../utils" }
-async-backtrace = { workspace = true, optional = true }
 
 [features]
 default = []
