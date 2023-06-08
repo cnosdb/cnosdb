@@ -104,48 +104,46 @@ enum StreamState {
 }
 
 pub struct ParallelMergeStream {
-    runtime: Option<Arc<Runtime>>,
     /// Stream entries
     receiver: mpsc::Receiver<CoordinatorResult<RecordBatch>>,
-    sender: mpsc::Sender<CoordinatorResult<RecordBatch>>,
     #[allow(unused)]
     drop_helper: AbortOnDropMany<()>,
 }
 
 impl ParallelMergeStream {
-    pub fn new(size: usize, runtime: Option<Arc<Runtime>>) -> Self {
-        let (sender, receiver) = mpsc::channel::<CoordinatorResult<RecordBatch>>(size);
+    pub fn new(
+        runtime: Option<Arc<Runtime>>,
+        streams: Vec<SendableCoordinatorRecordBatchStream>,
+    ) -> Self {
+        let mut join_handles = Vec::with_capacity(streams.len());
+        let (sender, receiver) = mpsc::channel::<CoordinatorResult<RecordBatch>>(streams.len());
+
+        for mut stream in streams {
+            let sender = sender.clone();
+            let task = async move {
+                while let Some(item) = stream.next().await {
+                    // If send fails, stream being torn down,
+                    // there is no place to send the error.
+                    if sender.send(item).await.is_err() {
+                        warn!("Stopping execution: output is gone, ParallelMergeStream cancelling");
+                        return;
+                    }
+                }
+            };
+
+            let join_handle = if let Some(rt) = &runtime {
+                rt.spawn(task)
+            } else {
+                tokio::spawn(task)
+            };
+
+            join_handles.push(join_handle);
+        }
 
         Self {
-            runtime,
             receiver,
-            sender,
-            drop_helper: AbortOnDropMany(Vec::with_capacity(size)),
+            drop_helper: AbortOnDropMany(join_handles),
         }
-    }
-
-    pub fn push(&mut self, mut stream: SendableCoordinatorRecordBatchStream) {
-        let sender = self.sender.clone();
-
-        let task = async move {
-            let output = sender.clone();
-            while let Some(item) = stream.next().await {
-                // If send fails, stream being torn down,
-                // there is no place to send the error.
-                if output.send(item).await.is_err() {
-                    warn!("Stopping execution: output is gone, ParallelMergeStream cancelling");
-                    return;
-                }
-            }
-        };
-
-        let join_handle = if let Some(rt) = &self.runtime {
-            rt.spawn(task)
-        } else {
-            tokio::spawn(task)
-        };
-
-        self.drop_helper.0.push(join_handle);
     }
 }
 
@@ -193,3 +191,34 @@ impl Stream for MemoryRecordBatchStream {
 }
 
 impl CoordinatorRecordBatchStream for MemoryRecordBatchStream {}
+
+#[cfg(test)]
+mod tests {
+    use datafusion::arrow::datatypes::Schema;
+    use futures::TryStreamExt;
+
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_parallel_merge_stream() {
+        let schema = Arc::new(Schema::empty());
+
+        let batches = vec![
+            RecordBatch::new_empty(schema.clone()),
+            RecordBatch::new_empty(schema.clone()),
+            RecordBatch::new_empty(schema),
+        ];
+
+        let streams: Vec<SendableCoordinatorRecordBatchStream> = vec![
+            Box::pin(MemoryRecordBatchStream::new(batches.clone())),
+            Box::pin(MemoryRecordBatchStream::new(batches.clone())),
+            Box::pin(MemoryRecordBatchStream::new(batches)),
+        ];
+
+        let parallel_merge_stream = ParallelMergeStream::new(None, streams);
+
+        let result_batches = parallel_merge_stream.try_collect::<Vec<_>>().await.unwrap();
+
+        assert_eq!(result_batches.len(), 9);
+    }
+}
