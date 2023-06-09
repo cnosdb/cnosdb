@@ -35,12 +35,50 @@ impl Optimizer for CascadeOptimizer {
             optimized_logical_plan.display_indent_schema(),
         );
 
-        let physical_plan = self
-            .physical_planner
-            .create_physical_plan(&optimized_logical_plan, session)
-            .await?;
+        let physical_plan = {
+            let mut span_recorder =
+                session.get_child_span_recorder("logical plan to physical plan");
 
-        let optimized_physical_plan = self.physical_optimizer.optimize(physical_plan, session)?;
+            self.physical_planner
+                .create_physical_plan(&optimized_logical_plan, session)
+                .await
+                .map(|p| {
+                    span_recorder.ok("complete physical plan creation");
+                    span_recorder.set_metadata(
+                        "original physical plan",
+                        displayable(p.as_ref()).indent().to_string(),
+                    );
+                    p
+                })
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
+
+        debug!(
+            "Original physical plan:\n{}\n",
+            displayable(physical_plan.as_ref()).indent()
+        );
+
+        let optimized_physical_plan = {
+            let mut span_recorder = session.get_child_span_recorder("optimize physical plan");
+
+            self.physical_optimizer
+                .optimize(physical_plan, session)
+                .map(|p| {
+                    span_recorder.ok("complete physical plan optimization");
+                    span_recorder.set_metadata(
+                        "final physical plan",
+                        displayable(p.as_ref()).indent().to_string(),
+                    );
+                    p
+                })
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
 
         debug!(
             "Final physical plan:\n{}\n",

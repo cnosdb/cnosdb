@@ -1,5 +1,6 @@
 use std::cmp::min;
-use std::fmt::Display;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 
 use minivec::MiniVec;
 use models::predicate::domain::TimeRange;
@@ -8,8 +9,8 @@ use trace::error;
 
 use crate::memcache::DataType;
 use crate::tsm::codec::{
-    get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
-    DataBlockEncoding,
+    get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
+    get_u64_codec, DataBlockEncoding,
 };
 
 pub trait ByTimeRange {
@@ -380,6 +381,53 @@ impl DataBlock {
         }
     }
 
+    pub fn merge(&self, other: Self) -> Self {
+        let (mut i, mut j) = (0_usize, 0_usize);
+        let len_1 = self.len();
+        let len_2 = other.len();
+        let ts_1 = self.ts();
+        let ts_2 = other.ts();
+        let mut blk = Self::new(self.len() + other.len(), self.field_type());
+        while i < len_1 && j < len_2 {
+            match ts_1[i].cmp(&ts_2[j]) {
+                std::cmp::Ordering::Less => {
+                    if let Some(t) = self.get(i) {
+                        blk.insert(t);
+                    }
+                    i += 1;
+                }
+                std::cmp::Ordering::Equal => {
+                    if let Some(t) = self.get(i) {
+                        blk.insert(t);
+                    }
+                    i += 1;
+                    j += 1;
+                }
+                std::cmp::Ordering::Greater => {
+                    if let Some(t) = other.get(j) {
+                        blk.insert(t);
+                    }
+                    j += 1;
+                }
+            }
+        }
+        if i < len_1 {
+            for i1 in i..len_1 {
+                if let Some(t) = self.get(i1) {
+                    blk.insert(t);
+                }
+            }
+        } else if j < len_2 {
+            for j1 in j..len_2 {
+                if let Some(t) = other.get(j1) {
+                    blk.insert(t);
+                }
+            }
+        }
+
+        blk
+    }
+
     /// Merges one or many `DataBlock`s into some `DataBlock` with fixed length,
     /// sorted by timestamp, if many (timestamp, value) conflict with the same
     /// timestamp, use the last value.
@@ -431,6 +479,29 @@ impl DataBlock {
                 }
             }
         }
+    }
+
+    /// Extract `DataBlock`s to `DataType`s,
+    /// returns the minimum timestamp in a series of `DataBlock`s
+    fn next_min(
+        blocks: &mut [Self],
+        dst: &mut [Option<DataType>],
+        offsets: &mut [usize],
+    ) -> Option<Timestamp> {
+        let mut min_ts = None;
+        for (i, (block, dst)) in blocks.iter_mut().zip(dst).enumerate() {
+            if dst.is_none() {
+                *dst = block.get(offsets[i]);
+                offsets[i] += 1;
+            }
+
+            if let Some(pair) = dst {
+                min_ts = min_ts
+                    .map(|ts| min(pair.timestamp(), ts))
+                    .or_else(|| Some(pair.timestamp()));
+            };
+        }
+        min_ts
     }
 
     /// Remove (ts, val) in this `DatBlock` where index is greater equal than `min`
@@ -507,30 +578,33 @@ impl DataBlock {
         Some((min_idx, max_idx))
     }
 
-    /// Extract `DataBlock`s to `DataType`s,
-    /// returns the minimum timestamp in a series of `DataBlock`s
-    fn next_min(
-        blocks: &mut [Self],
-        dst: &mut [Option<DataType>],
-        offsets: &mut [usize],
-    ) -> Option<Timestamp> {
-        let mut min_ts = None;
-        for (i, (block, dst)) in blocks.iter_mut().zip(dst).enumerate() {
-            if dst.is_none() {
-                *dst = block.get(offsets[i]);
-                offsets[i] += 1;
+    #[rustfmt::skip]
+    pub fn extend(&mut self, mut data_block: DataBlock) {
+        match (self, &mut data_block) {
+            (DataBlock::U64 { ts: ta, val: va, .. }, DataBlock::U64 { ts: tb, val: vb, .. }) => {
+                ta.append(tb);
+                va.append(vb);
             }
-
-            if let Some(pair) = dst {
-                min_ts = min_ts
-                    .map(|ts| min(pair.timestamp(), ts))
-                    .or_else(|| Some(pair.timestamp()));
-            };
+            (DataBlock::I64 { ts: ta, val: va, .. }, DataBlock::I64 { ts: tb, val: vb, .. }) => {
+                ta.append(tb);
+                va.append(vb);
+            }
+            (DataBlock::Str { ts: ta, val: va, .. }, DataBlock::Str { ts: tb, val: vb, .. }) => {
+                ta.append(tb);
+                va.append(vb);
+            }
+            (DataBlock::F64 { ts: ta, val: va, .. }, DataBlock::F64 { ts: tb, val: vb, .. }) => {
+                ta.append(tb);
+                va.append(vb);
+            }
+            (DataBlock::Bool { ts: ta, val: va, .. }, DataBlock::Bool { ts: tb, val: vb, .. }) => {
+                ta.append(tb);
+                va.append(vb);
+            }
+            _ => {}
         }
-        min_ts
     }
 
-    // todo:
     /// Encodes timestamps and values of this `DataBlock` to bytes.
     pub fn encode(
         &self,
@@ -574,7 +648,85 @@ impl DataBlock {
         Ok((ts_buf, data_buf))
     }
 
-    pub fn decode() {}
+    pub fn decode(
+        ts: &[u8],
+        val: &[u8],
+        count: u32,
+        field_type: ValueType,
+    ) -> Result<DataBlock, Box<dyn Error + Send + Sync>> {
+        let mut decoded_ts = Vec::with_capacity(count as usize);
+        let ts_encoding = get_encoding(ts);
+        let ts_codec = get_ts_codec(ts_encoding);
+        ts_codec.decode(ts, &mut decoded_ts)?;
+
+        match field_type {
+            ValueType::Float => {
+                // values will be same length as time-stamps.
+                let mut decoded_val = Vec::with_capacity(count as usize);
+                let val_encoding = get_encoding(val);
+                let val_codec = get_f64_codec(val_encoding);
+                val_codec.decode(val, &mut decoded_val)?;
+                Ok(DataBlock::F64 {
+                    ts: decoded_ts,
+                    val: decoded_val,
+                    enc: DataBlockEncoding::new(ts_encoding, val_encoding),
+                })
+            }
+            ValueType::Integer => {
+                // values will be same length as time-stamps.
+                let mut decoded_val = Vec::with_capacity(count as usize);
+                let val_encoding = get_encoding(val);
+                let val_codec = get_i64_codec(val_encoding);
+                val_codec.decode(val, &mut decoded_val)?;
+                Ok(DataBlock::I64 {
+                    ts: decoded_ts,
+                    val: decoded_val,
+                    enc: DataBlockEncoding::new(ts_encoding, val_encoding),
+                })
+            }
+            ValueType::Boolean => {
+                // values will be same length as time-stamps.
+                let mut decoded_val = Vec::with_capacity(count as usize);
+                let val_encoding = get_encoding(val);
+                let val_codec = get_bool_codec(val_encoding);
+                val_codec.decode(val, &mut decoded_val)?;
+                Ok(DataBlock::Bool {
+                    ts: decoded_ts,
+                    val: decoded_val,
+                    enc: DataBlockEncoding::new(ts_encoding, val_encoding),
+                })
+            }
+            ValueType::String => {
+                // values will be same length as time-stamps.
+                let mut decoded_val = Vec::with_capacity(count as usize);
+                let val_encoding = get_encoding(val);
+                let val_codec = get_str_codec(val_encoding);
+                val_codec.decode(val, &mut decoded_val)?;
+                Ok(DataBlock::Str {
+                    ts: decoded_ts,
+                    val: decoded_val,
+                    enc: DataBlockEncoding::new(ts_encoding, val_encoding),
+                })
+            }
+            ValueType::Unsigned => {
+                // values will be same length as time-stamps.
+                let mut decoded_val = Vec::with_capacity(count as usize);
+                let val_encoding = get_encoding(val);
+                let val_codec = get_u64_codec(val_encoding);
+                val_codec.decode(val, &mut decoded_val)?;
+                Ok(DataBlock::U64 {
+                    ts: decoded_ts,
+                    val: decoded_val,
+                    enc: DataBlockEncoding::new(ts_encoding, val_encoding),
+                })
+            }
+            _ => Err(format!(
+                "cannot decode block {:?} with no unknown value type",
+                field_type
+            )
+            .into()),
+        }
+    }
 }
 
 impl Display for DataBlock {
@@ -682,6 +834,52 @@ fn exclude_slow(v: &mut Vec<MiniVec<u8>>, min_idx: usize, max_idx: usize) {
         v[i] = v[max_idx - min_idx + i].clone();
     }
     v.truncate(len);
+}
+
+#[derive(Debug, Clone)]
+pub struct EncodedDataBlock {
+    pub ts: Vec<u8>,
+    pub val: Vec<u8>,
+    pub enc: DataBlockEncoding,
+    pub count: u32,
+    pub field_type: ValueType,
+    pub time_range: Option<TimeRange>,
+}
+
+impl Display for EncodedDataBlock {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let time_range = self.time_range.unwrap_or(TimeRange::none());
+        write!(
+            f,
+            "{} {{ len: {}, min_ts: {}, max_ts: {} }}",
+            self.field_type, self.count, time_range.min_ts, time_range.max_ts
+        )
+    }
+}
+
+impl EncodedDataBlock {
+    pub fn encode(
+        data_block: &DataBlock,
+        start: usize,
+        end: usize,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let ts_sli = data_block.ts();
+        let min_ts = ts_sli[start];
+        let max_ts = ts_sli[end - 1];
+        let (ts, val) = data_block.encode(start, end, data_block.encodings())?;
+        Ok(Self {
+            ts,
+            val,
+            enc: data_block.encodings(),
+            count: (end - start) as u32,
+            field_type: data_block.field_type(),
+            time_range: Some(TimeRange::new(min_ts, max_ts)),
+        })
+    }
+
+    pub fn decode(&self) -> Result<DataBlock, Box<dyn std::error::Error + Send + Sync>> {
+        DataBlock::decode(&self.ts, &self.val, self.count, self.field_type)
+    }
 }
 
 #[cfg(test)]

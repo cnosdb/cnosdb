@@ -1,16 +1,18 @@
 use std::env;
 
 const ARG_PRINT: &str = "print"; // To print something
+const ARG_REPAIR: &str = "repair"; // To repair something
 const ARG_TSM: &str = "--tsm"; // To print a .tsm file
 const ARG_TOMBSTONE: &str = "--tombstone"; // To print a .tsm file with tombsotne
 const ARG_SUMMARY: &str = "--summary"; // To print a summary file
 const ARG_WAL: &str = "--wal"; // To print a wal file
+const ARG_INDEX: &str = "--index"; // To print a wal file
 
 /// # Example
 /// tskv print [--tsm <tsm_path>] [--tombstone]
 /// tskv print [--summary <summary_path>]
 /// tskv print [--wal <wal_path>]
-///
+/// tskv repair [--index <file_name>]
 /// - --tsm <tsm_path> print statistics for .tsm file at <tsm_path> .
 /// - --tombstone also print tombstone for every field_id in .tsm file.
 #[tokio::main]
@@ -26,6 +28,9 @@ async fn main() {
 
     let mut show_wal = false;
     let mut wal_path: Option<String> = None;
+
+    let mut repair_index = false;
+    let mut index_file: Option<String> = None;
 
     while let Some(arg) = args.peek() {
         // --print [--tsm <path>]
@@ -59,6 +64,16 @@ async fn main() {
                     _ => {}
                 }
             }
+        } else if arg.as_str() == ARG_REPAIR {
+            while let Some(repair_arg) = args.next() {
+                if repair_arg.as_str() == ARG_INDEX {
+                    repair_index = true;
+                    index_file = args.next();
+                    if index_file.is_none() {
+                        println!("Invalid arguments: --index <index file>");
+                    }
+                }
+            }
         }
         args.next();
     }
@@ -81,6 +96,14 @@ async fn main() {
         if let Some(p) = wal_path {
             println!("Wal Path: {}", p);
             tskv::print_wal_statistics(p).await;
+        }
+    }
+
+    if repair_index {
+        if let Some(name) = index_file {
+            println!("repair index: {}", name);
+            let result = tskv::index::binlog::repair_index_file(&name).await;
+            println!("repair index result: {:?}", result);
         }
     }
 }

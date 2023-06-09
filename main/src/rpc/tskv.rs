@@ -153,7 +153,7 @@ impl TskvServiceImpl {
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
         let meta = self.coord.meta_manager();
         let manager = VnodeManager::new(meta, self.kv_inst.clone(), self.coord.node_id());
-        if let Err(err) = manager.copy_vnode(tenant, request.vnode_id).await {
+        if let Err(err) = manager.copy_vnode(tenant, request.vnode_id, true).await {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
         } else {
             self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())

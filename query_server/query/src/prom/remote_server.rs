@@ -202,7 +202,7 @@ impl PromRemoteSqlServer {
         })?;
 
         let inner_query = Query::new(ctx.clone(), sql.sql);
-        let result = self.db.execute(&inner_query).await?;
+        let result = self.db.execute(&inner_query, None).await?;
 
         transform_time_series(result, tag_name_indices, sample_value_idx, sample_time_idx).await
     }

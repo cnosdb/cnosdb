@@ -3,7 +3,7 @@
 pub mod asynchronous;
 
 use std::borrow::Borrow;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 use std::mem::MaybeUninit;
 use std::ptr;
@@ -19,22 +19,24 @@ const NUM_SHARD_BITS: usize = 4;
 const NUM_SHARDS: usize = 1 << NUM_SHARD_BITS;
 
 #[derive(Debug)]
-pub struct ShardedCache<K, V> {
+pub struct ShardedCache<K: Display, V: Debug> {
     shard: [Arc<Mutex<Cache<K, V>>>; NUM_SHARDS],
 }
 
 impl<K, V> Default for ShardedCache<K, V>
 where
-    K: Eq + Hash,
+    K: Eq + Hash + Display,
+    V: Debug,
 {
     fn default() -> Self {
-        Self::with_capacity(1000)
+        Self::with_capacity(128)
     }
 }
 
 impl<K, V> ShardedCache<K, V>
 where
-    K: Eq + Hash,
+    K: Eq + Hash + Display,
+    V: Debug,
 {
     pub fn with_capacity(capacity: usize) -> ShardedCache<K, V> {
         // FIXME: Cannot set a precise capacity freely (such as 1000, will be 63 * 16)
@@ -190,7 +192,7 @@ mod test {
     fn fn_deleter(
         keys: Arc<RwLock<Vec<i32>>>,
         values: Arc<RwLock<Vec<i32>>>,
-    ) -> impl FnMut(&i32, &i32) {
+    ) -> impl FnMut(&i32, &mut i32) {
         move |k, v| {
             keys.write().push(*k);
             values.write().push(*v);

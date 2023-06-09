@@ -559,7 +559,10 @@ impl TsmReader {
 
 impl Debug for TsmReader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TsmReader").finish()
+        f.debug_struct("TsmReader")
+            .field("id", &self.file_id)
+            .field("fd", &self.reader.fd())
+            .finish()
     }
 }
 

@@ -416,12 +416,7 @@ mod test {
                 .unwrap(),
         );
 
-        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(
-            &dir,
-            data,
-            ts_family_id,
-            opt.clone(),
-        ));
+        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(&dir, data));
         let version =
             build_version_by_column_files(opt.storage.clone(), database, ts_family_id, files);
         let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
@@ -593,12 +588,7 @@ mod test {
                 .unwrap(),
         );
 
-        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(
-            &dir,
-            data,
-            ts_family_id,
-            opt.clone(),
-        ));
+        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(&dir, data));
         let version =
             build_version_by_column_files(opt.storage.clone(), database, ts_family_id, files);
         let test_helper = TestHelper {

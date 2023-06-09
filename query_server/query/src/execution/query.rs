@@ -8,6 +8,7 @@ use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::QueryPlan;
 use spi::query::optimizer::Optimizer;
 use spi::query::scheduler::SchedulerRef;
+use spi::query::traced_stream::TracedStream;
 use spi::{QueryError, Result};
 use trace::debug;
 
@@ -39,7 +40,7 @@ impl SqlQueryExecution {
     async fn start(&self) -> Result<Output> {
         // begin optimize
         self.query_state_machine.begin_optimize();
-        let optimized_physical_plan = self
+        let physical_plan = self
             .optimizer
             .optimize(&self.plan.df_plan, &self.query_state_machine.session)
             .await?;
@@ -50,14 +51,21 @@ impl SqlQueryExecution {
         let stream = self
             .scheduler
             .schedule(
-                optimized_physical_plan,
+                physical_plan.clone(),
                 self.query_state_machine.session.inner().task_ctx(),
             )
             .await?
             .stream();
+        let stream = TracedStream::new(
+            stream,
+            self.query_state_machine.get_child_span("traced stream"),
+            physical_plan,
+        );
+
         debug!("Success build result stream.");
         self.query_state_machine.end_schedule();
-        Ok(Output::StreamData(stream))
+
+        Ok(Output::StreamData(Box::pin(stream)))
     }
 }
 

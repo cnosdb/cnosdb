@@ -217,17 +217,18 @@ impl VersionEdit {
     }
 
     pub fn encode(&self) -> Result<Vec<u8>> {
-        bincode::serialize(self).map_err(|e| Error::Encode { source: (e) })
+        bincode::serialize(self).map_err(|e| Error::RecordFileEncode { source: (e) })
     }
 
     pub fn decode(buf: &[u8]) -> Result<Self> {
-        bincode::deserialize(buf).map_err(|e| Error::Decode { source: (e) })
+        bincode::deserialize(buf).map_err(|e| Error::RecordFileDecode { source: (e) })
     }
 
     pub fn encode_vec(data: &[Self]) -> Result<Vec<u8>> {
         let mut buf: Vec<u8> = Vec::with_capacity(data.len() * 32);
         for ve in data {
-            let ve_buf = bincode::serialize(ve).map_err(|e| Error::Encode { source: (e) })?;
+            let ve_buf =
+                bincode::serialize(ve).map_err(|e| Error::RecordFileEncode { source: (e) })?;
             let pos = buf.len();
             buf.resize(pos + 4 + ve_buf.len(), 0_u8);
             buf[pos..pos + 4].copy_from_slice((ve_buf.len() as u32).to_be_bytes().as_slice());
@@ -488,7 +489,7 @@ impl Summary {
                 max_seq_no,
                 levels,
                 max_level_ts,
-                Arc::new(ShardedCache::default()),
+                Arc::new(ShardedCache::with_capacity(opt.storage.max_cached_readers)),
             );
             versions.insert(tsf_id, Arc::new(ver));
         }

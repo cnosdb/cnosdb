@@ -164,7 +164,9 @@ impl Database {
             seq_no,
             LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone()),
             i64::MIN,
-            Arc::new(ShardedCache::default()),
+            Arc::new(ShardedCache::with_capacity(
+                self.opt.storage.max_cached_readers,
+            )),
         ));
         let tf = TseriesFamily::new(
             tsf_id,

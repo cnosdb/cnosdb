@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use models::auth::user::UserDesc;
 use models::oid::{Identifier, Oid};
 use serde::{Deserialize, Serialize};
+use trace::SpanContext;
 
 use super::execution::QueryState;
 use crate::query::execution::{Output, QueryStateMachine};
@@ -22,7 +23,13 @@ pub trait QueryDispatcher: Send + Sync {
 
     fn query_info(&self, id: &QueryId);
 
-    async fn execute_query(&self, tenant_id: Oid, id: QueryId, query: &Query) -> Result<Output>;
+    async fn execute_query(
+        &self,
+        tenant_id: Oid,
+        id: QueryId,
+        query: &Query,
+        span: Option<&SpanContext>,
+    ) -> Result<Output>;
 
     async fn build_logical_plan(
         &self,
@@ -40,6 +47,7 @@ pub trait QueryDispatcher: Send + Sync {
         tenant_id: Oid,
         id: QueryId,
         query: Query,
+        span: Option<&SpanContext>,
     ) -> Result<Arc<QueryStateMachine>>;
 
     fn running_query_infos(&self) -> Vec<QueryInfo>;

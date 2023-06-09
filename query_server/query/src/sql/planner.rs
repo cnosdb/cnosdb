@@ -109,8 +109,17 @@ impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlanne
         statement: ExtStatement,
         session: &SessionCtx,
     ) -> Result<Plan> {
-        let PlanWithPrivileges { plan, privileges } =
-            self.statement_to_plan(statement, session).await?;
+        let PlanWithPrivileges { plan, privileges } = {
+            let mut span_recorder = session.get_child_span_recorder("statement to logical plan");
+            self.statement_to_plan(statement, session)
+                .await
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
+
+        let _ = session.get_child_span_recorder("check privilege");
         check_privilege(session.user(), privileges)?;
         Ok(plan)
     }
@@ -2446,7 +2455,7 @@ mod tests {
         let context = ContextBuilder::new(user).build();
         let pool = UnboundedMemoryPool::default();
         SessionCtxFactory::default()
-            .create_session_ctx("", context, 0_u128, Arc::new(pool))
+            .create_session_ctx("", context, 0_u128, Arc::new(pool), None)
             .unwrap()
     }
 

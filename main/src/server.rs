@@ -15,7 +15,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
 use tokio::time;
-use trace::error;
+use trace::{error, TraceExporter};
 use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
@@ -111,6 +111,7 @@ pub(crate) struct ServiceBuilder {
     pub runtime: Arc<Runtime>,
     pub memory_pool: MemoryPoolRef,
     pub metrics_register: Arc<MetricsRegister>,
+    pub trace_collector: Option<Arc<dyn TraceExporter>>,
 }
 
 async fn regular_report_node_metrics(meta: Arc<dyn MetaManager>, heartbeat_interval: u64) {
@@ -292,6 +293,7 @@ impl ServiceBuilder {
             self.config.query.write_sql_limit,
             mode,
             self.metrics_register.clone(),
+            self.trace_collector.clone(),
         )
     }
 
@@ -319,6 +321,7 @@ impl ServiceBuilder {
             addr,
             None,
             self.metrics_register.clone(),
+            self.trace_collector.clone(),
         )
     }
 

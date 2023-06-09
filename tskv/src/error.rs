@@ -105,14 +105,24 @@ pub enum Error {
     #[snafu(display("Unexpected eof"))]
     Eof,
 
-    #[snafu(display("read record file block: {}", source))]
-    Encode {
+    #[snafu(display("Failed to encode record file block: {}", source))]
+    RecordFileEncode {
         source: bincode::Error,
     },
 
-    #[snafu(display("read record file block: {}", source))]
-    Decode {
+    #[snafu(display("Faield to decode record file block: {}", source))]
+    RecordFileDecode {
         source: bincode::Error,
+    },
+
+    #[snafu(display("Failed to do encode: {}", source))]
+    Encode {
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    #[snafu(display("Faield to do decode: {}", source))]
+    Decode {
+        source: Box<dyn std::error::Error + Send + Sync>,
     },
 
     #[snafu(display("Index: : {}", source))]

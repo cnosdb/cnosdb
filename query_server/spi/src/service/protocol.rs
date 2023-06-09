@@ -1,9 +1,10 @@
 use std::fmt::Display;
 
 use models::auth::user::User;
-use models::oid::uuid_u64;
+use models::oid::{uuid_u64, Identifier};
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE, DEFAULT_PRECISION};
 use serde::{Deserialize, Serialize};
+use trace::{SpanContext, SpanRecorder, SpanRecorderExt};
 
 use crate::query::config::StreamTriggerInterval;
 use crate::query::execution::Output;
@@ -72,6 +73,7 @@ pub struct Context {
     precision: String,
     chunked: bool,
     session_config: CnosSessionConfig,
+    span_ctx: SpanContext,
 }
 
 impl Context {
@@ -97,6 +99,21 @@ impl Context {
     pub fn chunked(&self) -> bool {
         self.chunked
     }
+
+    pub fn span_ctx(&self) -> SpanContext {
+        self.span_ctx.clone()
+    }
+}
+
+impl SpanRecorderExt for Context {
+    fn record(&self, span_recorder: &mut SpanRecorder) {
+        if span_recorder.span().is_some() {
+            span_recorder.set_metadata("user", self.user_info().desc().name());
+            span_recorder.set_metadata("tenant", self.tenant());
+            span_recorder.set_metadata("database", self.database());
+            span_recorder.set_metadata("chunked", self.chunked());
+        }
+    }
 }
 
 pub struct ContextBuilder {
@@ -106,6 +123,7 @@ pub struct ContextBuilder {
     precision: String,
     chunked: bool,
     session_config: CnosSessionConfig,
+    span_ctx: SpanContext,
 }
 
 impl ContextBuilder {
@@ -117,6 +135,7 @@ impl ContextBuilder {
             database: DEFAULT_DATABASE.to_string(),
             chunked: Default::default(),
             session_config: Default::default(),
+            span_ctx: SpanContext::new_with_optional_collector(None),
         }
     }
 
@@ -162,6 +181,11 @@ impl ContextBuilder {
         }
         self
     }
+    pub fn with_span(mut self, span_ctx: SpanContext) -> Self {
+        self.span_ctx = span_ctx;
+        self
+    }
+
     pub fn build(self) -> Context {
         Context {
             user_info: self.user_info,
@@ -170,6 +194,7 @@ impl ContextBuilder {
             precision: self.precision,
             chunked: self.chunked,
             session_config: self.session_config,
+            span_ctx: self.span_ctx,
         }
     }
 }
@@ -192,6 +217,14 @@ impl Query {
 
     pub fn content(&self) -> &str {
         self.content.as_str()
+    }
+}
+
+impl SpanRecorderExt for Query {
+    fn record(&self, span_recorder: &mut SpanRecorder) {
+        if span_recorder.span().is_some() {
+            self.context().record(span_recorder);
+        }
     }
 }
 

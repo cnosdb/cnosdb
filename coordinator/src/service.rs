@@ -12,7 +12,7 @@ use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::consistency_level::ConsistencyLevel;
-use models::meta_data::{ExpiredBucketInfo, ReplicationSet, VnodeAllInfo, VnodeInfo};
+use models::meta_data::{ExpiredBucketInfo, ReplicationSet, VnodeInfo};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicateRef, TimeRanges};
 use models::record_batch_decode;
@@ -64,23 +64,6 @@ pub struct CoordServiceMetrics {
     data_out: Metric<U64Counter>,
 }
 
-pub async fn get_vnode_all_info(
-    meta: MetaRef,
-    tenant: &str,
-    vnode_id: u32,
-) -> CoordinatorResult<VnodeAllInfo> {
-    match meta.tenant_manager().tenant_meta(tenant).await {
-        Some(meta_client) => match meta_client.get_vnode_all_info(vnode_id) {
-            Some(all_info) => Ok(all_info),
-            None => Err(CoordinatorError::VnodeNotFound { id: vnode_id }),
-        },
-
-        None => Err(CoordinatorError::TenantNotFound {
-            name: tenant.to_string(),
-        }),
-    }
-}
-
 impl CoordServiceMetrics {
     pub fn new(register: &MetricsRegister) -> Self {
         let data_in = register.metric("coord_data_in", "tenant data in");
@@ -119,7 +102,9 @@ impl CoordService {
             hh_sender,
         ));
 
-        let hh_manager = Arc::new(HintedOffManager::new(handoff_cfg, point_writer.clone()).await);
+        let hh_manager = Arc::new(
+            HintedOffManager::new(handoff_cfg, meta_manager.clone(), point_writer.clone()).await,
+        );
         tokio::spawn(HintedOffManager::write_handoff_job(hh_manager, hh_receiver));
 
         let replica_selectioner = Arc::new(DynamicReplicaSelectioner::new(meta_manager.clone()));
@@ -220,23 +205,6 @@ impl CoordService {
         meta.delete_bucket(&info.database, info.bucket.id).await?;
 
         Ok(())
-    }
-
-    async fn get_vnode_all_info(
-        &self,
-        tenant: &str,
-        vnode_id: u32,
-    ) -> CoordinatorResult<VnodeAllInfo> {
-        match self.tenant_meta(tenant).await {
-            Some(meta_client) => match meta_client.get_vnode_all_info(vnode_id) {
-                Some(all_info) => Ok(all_info),
-                None => Err(CoordinatorError::VnodeNotFound { id: vnode_id }),
-            },
-
-            None => Err(CoordinatorError::TenantNotFound {
-                name: tenant.to_string(),
-            }),
-        }
     }
 
     async fn get_replication_set(
@@ -486,7 +454,8 @@ impl Coordinator for CoordService {
     ) -> CoordinatorResult<()> {
         let (grpc_req, req_node_id) = match cmd_type {
             VnodeManagerCmdType::Copy(vnode_id, node_id) => {
-                let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
+                let all_info =
+                    crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
                 if all_info.node_id == node_id {
                     return Err(CoordinatorError::CommonError {
                         msg: format!("Vnode: {} Already in {}", all_info.vnode_id, node_id),
@@ -503,7 +472,8 @@ impl Coordinator for CoordService {
             }
 
             VnodeManagerCmdType::Move(vnode_id, node_id) => {
-                let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
+                let all_info =
+                    crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
                 if all_info.node_id == node_id {
                     return Err(CoordinatorError::CommonError {
                         msg: format!("move vnode: {} already in {}", all_info.vnode_id, node_id),
@@ -520,7 +490,8 @@ impl Coordinator for CoordService {
             }
 
             VnodeManagerCmdType::Drop(vnode_id) => {
-                let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
+                let all_info =
+                    crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
                 let db = all_info.db_name;
                 (
                     AdminCommandRequest {
@@ -537,7 +508,8 @@ impl Coordinator for CoordService {
                 // Group vnode ids by node id.
                 let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
                 for vnode_id in vnode_ids.iter() {
-                    let vnode = self.get_vnode_all_info(tenant, *vnode_id).await?;
+                    let vnode =
+                        crate::get_vnode_all_info(self.meta.clone(), tenant, *vnode_id).await?;
                     node_vnode_ids_map
                         .entry(vnode.node_id)
                         .or_default()

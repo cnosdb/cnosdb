@@ -709,7 +709,8 @@ impl StateMachine {
             }
 
             for info in args.del_info.iter() {
-                set.vnodes.retain(|item| item.id != info.id);
+                set.vnodes
+                    .retain(|item| !((item.id == info.id) && (item.node_id == info.node_id)));
             }
 
             for info in args.add_info.iter() {

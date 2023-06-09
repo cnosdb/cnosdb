@@ -81,39 +81,32 @@ impl TSIndex {
 
     async fn recover_from_file(&mut self, reader_file: &mut BinlogReader) -> IndexResult<()> {
         let mut max_id = 0;
-        loop {
-            if reader_file.read_over() {
-                break;
-            }
+        while let Some(block) = reader_file.next_block().await? {
+            if block.data_len > 0 {
+                // add series
+                let series_key = SeriesKey::decode(&block.data)
+                    .map_err(|e| IndexError::DecodeSeriesKey { msg: e.to_string() })?;
 
-            if let Some(block) = reader_file.next_block().await {
-                if block.data_len > 0 {
-                    // add series
-                    let series_key = SeriesKey::decode(&block.data)
-                        .map_err(|e| IndexError::DecodeSeriesKey { msg: e.to_string() })?;
-
-                    let mut storage_w = self.storage.write().await;
-                    let id = block.series_id;
-                    let key_buf = encode_series_key(series_key.table(), series_key.tags());
-                    storage_w.set(&key_buf, &id.to_be_bytes())?;
-                    storage_w.set(&encode_series_id_key(id), &block.data)?;
-                    for tag in series_key.tags() {
-                        let key =
-                            encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
-                        storage_w.modify(&key, id, true)?;
-                    }
-                    if series_key.tags().is_empty() {
-                        let key = encode_inverted_index_key(series_key.table(), &[], &[]);
-                        storage_w.modify(&key, id, true)?;
-                    }
-
-                    if max_id < block.series_id {
-                        max_id = block.series_id
-                    }
-                } else {
-                    // delete series
-                    self.del_series_id_from_engine(block.series_id).await?;
+                let mut storage_w = self.storage.write().await;
+                let id = block.series_id;
+                let key_buf = encode_series_key(series_key.table(), series_key.tags());
+                storage_w.set(&key_buf, &id.to_be_bytes())?;
+                storage_w.set(&encode_series_id_key(id), &block.data)?;
+                for tag in series_key.tags() {
+                    let key = encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
+                    storage_w.modify(&key, id, true)?;
                 }
+                if series_key.tags().is_empty() {
+                    let key = encode_inverted_index_key(series_key.table(), &[], &[]);
+                    storage_w.modify(&key, id, true)?;
+                }
+
+                if max_id < block.series_id {
+                    max_id = block.series_id
+                }
+            } else {
+                // delete series
+                self.del_series_id_from_engine(block.series_id).await?;
             }
         }
         self.incr_id.store(max_id, Ordering::Relaxed);

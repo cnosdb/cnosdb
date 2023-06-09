@@ -65,6 +65,13 @@ impl TimeRange {
         }
     }
 
+    pub fn none() -> Self {
+        Self {
+            min_ts: Timestamp::MAX,
+            max_ts: Timestamp::MIN,
+        }
+    }
+
     #[inline(always)]
     pub fn is_boundless(&self) -> bool {
         self.min_ts == Timestamp::MIN && self.max_ts == Timestamp::MAX

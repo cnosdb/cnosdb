@@ -1,10 +1,20 @@
+pub mod exporter;
+/// Part of the code fork influxdb_iox
+pub mod id;
+pub mod span;
+pub mod span_ctx;
+
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use config::TokioTrace;
+pub use exporter::*;
+pub use id::*;
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, Once};
+pub use span::*;
+pub use span_ctx::*;
 use time::UtcOffset;
 use tracing::metadata::LevelFilter;
 pub use tracing::{debug, error, info, instrument, trace, warn};

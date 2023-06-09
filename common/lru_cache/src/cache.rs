@@ -10,7 +10,7 @@ use std::ptr::{self, NonNull};
 use crate::AfterRemovedFnMut;
 
 #[derive(Debug)]
-pub struct Cache<K, V> {
+pub struct Cache<K: Display, V: Debug> {
     /// Cache capacity
     capacity: usize,
     /// Used of cache capacity
@@ -23,12 +23,13 @@ pub struct Cache<K, V> {
     table: HashMap<KeyPtr<K>, NonNull<Entry<K, V>>>,
 }
 
-unsafe impl<K: Send, V: Send> Send for Cache<K, V> {}
-unsafe impl<K: Sync, V: Sync> Sync for Cache<K, V> {}
+unsafe impl<K: Send + Display, V: Send + Debug> Send for Cache<K, V> {}
+unsafe impl<K: Sync + Display, V: Sync + Debug> Sync for Cache<K, V> {}
 
 impl<K, V> Cache<K, V>
 where
-    K: Eq + Hash,
+    K: Eq + Hash + Display,
+    V: Debug,
 {
     pub fn with_capacity(capacity: usize) -> Cache<K, V> {
         let head = Box::into_raw(Box::new(Entry::<K, V>::null()));
@@ -102,7 +103,15 @@ where
             let ptr = ent.as_ptr();
             self.unset_entry(ptr);
             self.usage = self.usage.saturating_sub(unsafe { (*ptr).charge });
-            self.after_removed(ptr);
+            unsafe {
+                tracing::trace!(
+                    "Removing LRU cache entry '{}' at{:x} by key, value: {:?}",
+                    (*ptr).k.assume_init_ref(),
+                    ptr as usize,
+                    (*ptr).v.assume_init_ref().v,
+                )
+            }
+            Self::on_remove_entry(ptr);
         }
     }
 
@@ -127,12 +136,29 @@ where
         let mut entry = Entry::new(k, v, charge, after_remove);
         match self.table.get_mut(&entry.as_key_ptr()) {
             Some(curr_ent) => {
-                let current_ent_ptr = curr_ent.as_ptr();
-                let curr_v_ptr = unsafe { &mut curr_ent.as_mut().v };
+                let (curr_v_ptr, curr_charge) = unsafe {
+                    let ptr = curr_ent.as_mut();
+                    let curr_charge = ptr.charge;
+                    ptr.charge = charge;
+                    (&mut ptr.v, curr_charge)
+                };
                 mem::swap(&mut entry.v, curr_v_ptr);
+
+                let current_ent_ptr = curr_ent.as_ptr();
                 self.unset_entry(current_ent_ptr);
+                self.usage = self.usage.saturating_sub(curr_charge);
                 self.set_entry(current_ent_ptr);
-                self.after_removed(&mut entry as *mut Entry<K, V>);
+                self.usage += charge;
+                unsafe {
+                    tracing::trace!(
+                        "Insert to 'some' entry '{}' at {:x}, value: {:?}, removed value: {:?}",
+                        (*current_ent_ptr).k.assume_init_ref(),
+                        current_ent_ptr as usize,
+                        (*current_ent_ptr).v.assume_init_ref().v,
+                        entry.v.assume_init_ref().v,
+                    );
+                }
+                Self::on_remove_entry(&mut entry as *mut Entry<K, V>);
 
                 Some(unsafe { curr_v_ptr.assume_init_ref() })
             }
@@ -147,7 +173,13 @@ where
                                 let old_ent_ptr = old_ent.as_ptr();
                                 self.unset_entry(old_ent_ptr);
                                 self.usage = self.usage.saturating_sub((*old_ent_ptr).charge);
-                                self.after_removed(old_ent_ptr);
+                                tracing::trace!(
+                                    "Insert to 'none' entry exceed, remove old entry '{}' at {:x}, value: {:?}",
+                                    (*old_ent_ptr).k.assume_init_ref(),
+                                    old_ent_ptr as usize,
+                                    (*old_ent_ptr).v.assume_init_ref().v,
+                                );
+                                Self::on_remove_entry(old_ent_ptr);
                             }
                         }
                     }
@@ -159,6 +191,16 @@ where
                 let key_ptr = unsafe { (*entry_ptr).k.as_ptr() };
                 let entry_v = unsafe { NonNull::new_unchecked(entry_ptr) };
                 let entry_ptr = entry_v.as_ptr();
+
+                unsafe {
+                    tracing::trace!(
+                        "Insert to 'none' entry: '{}' at {:x}, value: {:?}",
+                        (*entry_ptr).k.assume_init_ref(),
+                        entry_ptr as usize,
+                        (*entry_ptr).v.assume_init_ref().v,
+                    );
+                }
+
                 self.table.insert(KeyPtr { p: key_ptr }, entry_v);
                 Some(unsafe { (*entry_ptr).v.assume_init_ref() })
             }
@@ -221,35 +263,42 @@ where
                 self.table.remove(&(*ptr).as_key_ptr());
                 self.unset_entry(ptr);
                 self.usage = self.usage.saturating_sub((*ptr).charge);
-                self.after_removed(ptr);
-            }
-        }
-    }
-
-    fn after_removed(&mut self, ent: *mut Entry<K, V>) {
-        unsafe {
-            let k = (*ent).k.assume_init_ref();
-            let v = (*ent).v.assume_init_mut();
-            if let Some(f) = v.after_removed.as_mut() {
-                f(k, &v.v);
+                Self::on_remove_entry(ptr);
             }
         }
     }
 }
 
-impl<K, V> Drop for Cache<K, V> {
+impl<K: Display, V: Debug> Cache<K, V> {
+    fn on_remove_entry(ent: *mut Entry<K, V>) {
+        unsafe {
+            let k = (*ent).k.assume_init_ref();
+            let v = (*ent).v.assume_init_mut();
+            if let Some(f) = v.after_removed.as_mut() {
+                tracing::trace!(
+                    "Running after removed callback for LRU cache entry '{}' and value: {:?}",
+                    k,
+                    v.v,
+                );
+                f(k, &mut v.v);
+            } else {
+                (*ent).free()
+            }
+        }
+    }
+}
+
+impl<K: Display, V: Debug> Drop for Cache<K, V> {
     fn drop(&mut self) {
-        self.table.drain().for_each(|(_, ent)| unsafe {
-            let mut ent = *Box::from_raw(ent.as_ptr());
-            ptr::drop_in_place(ent.k.as_mut_ptr());
-            ptr::drop_in_place(ent.v.as_mut_ptr());
-        });
+        self.table
+            .drain()
+            .for_each(|(_, ent)| Self::on_remove_entry(ent.as_ptr()));
         let _head = unsafe { *Box::from_raw(self.head) };
         let _tail = unsafe { *Box::from_raw(self.tail) };
     }
 }
 
-pub struct Entry<K, V> {
+pub struct Entry<K: Display, V: Debug> {
     k: MaybeUninit<K>,
     v: MaybeUninit<Value<K, V>>,
     charge: usize,
@@ -258,7 +307,7 @@ pub struct Entry<K, V> {
     prev: *mut Entry<K, V>,
 }
 
-impl<K, V> Entry<K, V> {
+impl<K: Display, V: Debug> Entry<K, V> {
     pub fn null() -> Entry<K, V> {
         Entry {
             k: MaybeUninit::uninit(),
@@ -268,38 +317,47 @@ impl<K, V> Entry<K, V> {
             prev: ptr::null_mut(),
         }
     }
-}
 
-impl<K, V> Entry<K, V> {
     pub fn new(
         k: K,
         v: V,
         charge: usize,
         after_removed: Option<AfterRemovedFnMut<K, V>>,
     ) -> Entry<K, V> {
-        Entry {
+        let entry = Entry {
             k: MaybeUninit::new(k),
             v: MaybeUninit::new(Value { v, after_removed }),
             charge,
             next: ptr::null_mut(),
             prev: ptr::null_mut(),
-        }
+        };
+        tracing::trace!(
+            "New LRU cache entry at {:x}",
+            &entry as *const Entry<K, V> as usize
+        );
+        entry
     }
 
     fn as_key_ptr(&self) -> KeyPtr<K> {
         KeyPtr { p: self.k.as_ptr() }
     }
-}
 
-impl<K: Debug, V: Debug> Debug for Entry<K, V> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Entry")
-            .field("k", &self.k)
-            .field("v", &self.v)
-            .field("charge", &self.charge)
-            .field("next", &self.next)
-            .field("prev", &self.prev)
-            .finish()
+    fn free(&mut self) {
+        unsafe {
+            tracing::trace!(
+                "Dropping LRU cacne entry (1) at {:x}",
+                self as *const Entry<K, V> as usize
+            );
+            tracing::trace!(
+                "Dropping LRU cache entry (2) '{}' at {:x}, value: {:?}",
+                self.k.assume_init_ref(),
+                self as *const Entry<K, V> as usize,
+                self.v.assume_init_ref().v,
+            );
+
+            ptr::drop_in_place(self.k.as_mut_ptr());
+            ptr::drop_in_place(self.v.as_mut_ptr());
+        }
     }
 }
 
@@ -361,7 +419,7 @@ impl<T: ?Sized> Borrow<T> for KeyPtr<Box<T>> {
     }
 }
 
-pub struct Value<K, V> {
+pub struct Value<K: Display, V: Debug> {
     pub v: V,
     pub after_removed: Option<AfterRemovedFnMut<K, V>>,
 }
@@ -372,28 +430,52 @@ mod test {
 
     #[test]
     fn test_cache_basic() {
+        // Create lru cache with capacity 2, no elements in it.
         let mut lru: Cache<&str, u32> = Cache::with_capacity(2);
+        assert_eq!(lru.capacity, 2);
+        assert_eq!(lru.usage, 0);
+
+        // Insert "One"->3 using default charge=1
+        assert_eq!(lru.insert("One", 3), Some(&3));
+        assert_eq!(lru.usage, 1);
+        assert_eq!(lru.len(), 1);
+        assert_eq!(lru.get(&"One"), Some(&3));
+
+        // Insert "One"->2, old val should be replaced with 2
         assert_eq!(lru.insert("One", 2), Some(&2));
+        assert_eq!(lru.usage, 1);
         assert_eq!(lru.len(), 1);
         assert_eq!(lru.get(&"One"), Some(&2));
 
-        assert_eq!(lru.insert("One", 1,), Some(&1));
-        assert_eq!(lru.get(&"One"), Some(&1));
+        // Insert "One"->1 with charge=2, old val should be replace with 1,
+        // and the new usage should be 2
+        assert_eq!(lru.insert_opt("One", 1, 2, None), Some(&1));
+        assert_eq!(lru.usage, 2);
         assert_eq!(lru.len(), 1);
-
-        assert_eq!(lru.insert("Two", 2), Some(&2));
-        assert_eq!(lru.len(), 2);
-
         assert_eq!(lru.get(&"One"), Some(&1));
-        assert_eq!(lru.get(&"Two"), Some(&2));
 
-        assert_eq!(lru.insert("Three", 3), Some(&3));
-        assert_eq!(lru.get(&"Three"), Some(&3));
-        assert_eq!(lru.len(), 2);
+        // Insert "Two"->2 using default charge=1, charge will be exceed
+        // so "One"->1 should be removed, the new usage should be 1
+        assert_eq!(lru.insert("Two", 2), Some(&2));
+        assert_eq!(lru.usage, 1);
+        assert_eq!(lru.len(), 1);
+        assert_eq!(lru.get(&"Two"), Some(&2));
         assert_eq!(lru.get(&"One"), None);
 
+        // Insert "Three"->3 using default charge=1
+        assert_eq!(lru.insert("Three", 3), Some(&3));
+        assert_eq!(lru.usage, 2);
+        assert_eq!(lru.len(), 2);
+        assert_eq!(lru.get(&"Three"), Some(&3));
+        assert_eq!(lru.get(&"Two"), Some(&2));
+        assert_eq!(lru.get(&"One"), None);
+
+        // Remove "Three"->3
         lru.remove(&"Three");
+        assert_eq!(lru.usage, 1);
         assert_eq!(lru.len(), 1);
         assert_eq!(lru.get(&"Three"), None);
+        assert_eq!(lru.get(&"Two"), Some(&2));
+        assert_eq!(lru.get(&"One"), None);
     }
 }

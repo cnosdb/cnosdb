@@ -13,7 +13,9 @@ use metrics::metric_register::MetricsRegister;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use tokio::runtime::Runtime;
-use trace::{info, init_process_global_tracing, WorkerGuard};
+use trace::jaeger::jaeger_exporter;
+use trace::log::{CombinationTraceCollector, LogTraceCollector};
+use trace::{info, init_process_global_tracing, TraceExporter, WorkerGuard};
 
 use crate::report::ReportService;
 
@@ -200,6 +202,7 @@ fn main() -> Result<(), std::io::Error> {
                 "node_id",
                 config.node_basic.node_id.to_string(),
             )])),
+            trace_collector: build_trace_collector(&config),
         };
 
         let mut server = server::Server::default();
@@ -286,5 +289,36 @@ fn set_cli_args_to_config(args: &RunArgs, config: &mut Config) {
 
     if let Some(c) = args.cpu {
         config.deployment.cpu = c;
+    }
+}
+
+fn build_trace_collector(config: &Config) -> Option<Arc<dyn TraceExporter>> {
+    let mut res: Vec<Arc<dyn TraceExporter>> = Vec::new();
+    let mode = &config.deployment.mode;
+    let node_id = config.node_basic.node_id;
+    let service_name = format!("cnosdb_{mode}_{node_id}");
+
+    if let Some(trace_log_collector_config) = &config.trace.log {
+        info!(
+            "Log trace collector created, path: {}",
+            trace_log_collector_config.path.display()
+        );
+        res.push(Arc::new(LogTraceCollector::new(trace_log_collector_config)))
+    }
+
+    if let Some(trace_config) = &config.trace.jaeger {
+        let exporter =
+            jaeger_exporter(trace_config, service_name).expect("build jaeger trace exporter");
+        info!("Jaeger trace exporter created");
+        res.push(exporter);
+    }
+
+    // TODO HttpCollector
+    if res.is_empty() {
+        None
+    } else if res.len() == 1 {
+        res.pop()
+    } else {
+        Some(Arc::new(CombinationTraceCollector::new(res)))
     }
 }
