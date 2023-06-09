@@ -155,6 +155,12 @@ impl From<u64> for MetaValue {
     }
 }
 
+impl From<u32> for MetaValue {
+    fn from(v: u32) -> Self {
+        Self::U64(v as u64)
+    }
+}
+
 impl From<usize> for MetaValue {
     fn from(v: usize) -> Self {
         Self::U64(v as u64)
@@ -239,6 +245,10 @@ impl SpanRecorder {
     /// has an active span, `None` otherwise.
     pub fn child_span(&self, name: impl Into<Cow<'static, str>>) -> Option<Span> {
         self.span.as_ref().map(|span| span.child(name))
+    }
+
+    pub fn child_span_ctx(&self, name: impl Into<Cow<'static, str>>) -> Option<SpanContext> {
+        self.span.as_ref().map(|span| span.child(name).ctx)
     }
 
     pub fn span_ctx(&self) -> Option<&SpanContext> {

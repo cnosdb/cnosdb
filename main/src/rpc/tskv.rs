@@ -206,6 +206,7 @@ impl TskvServiceImpl {
         args: QueryArgs,
         expr: QueryExpr,
         aggs: Option<Vec<TableColumn>>,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let option = QueryOption::new(
             args.batch_size,
@@ -229,7 +230,7 @@ impl TskvServiceImpl {
             Some(self.kv_inst.clone()),
             Arc::new(CoordServiceMetrics::new(&self.metrics_register)),
         );
-        executor.local_node_executor(node_id, vnodes)
+        executor.local_node_executor(node_id, vnodes, span_ctx)
     }
 
     fn tag_scan_exec(
@@ -239,6 +240,7 @@ impl TskvServiceImpl {
         run_time: Arc<Runtime>,
         kv_inst: EngineRef,
         metrics_register: Arc<MetricsRegister>,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let option = QueryOption::new(
             args.batch_size,
@@ -262,7 +264,7 @@ impl TskvServiceImpl {
             Some(kv_inst),
             Arc::new(CoordServiceMetrics::new(&metrics_register)),
         );
-        executor.local_node_tag_scan(node_id, vnodes)
+        executor.local_node_tag_scan(node_id, vnodes, span_ctx)
     }
 }
 
@@ -533,11 +535,19 @@ impl TskvService for TskvServiceImpl {
         };
 
         let service = self.clone();
-        let stream = TskvServiceImpl::query_record_batch_exec(service, args, expr, aggs)?;
 
-        let encoded_stream =
-            TonicRecordBatchEncoder::new(stream, span_recorder.child("encode record batch"))
-                .map_err(Into::into);
+        let encoded_stream = {
+            let span_recorder = span_recorder.child("RecordBatch encorder stream");
+
+            let stream = TskvServiceImpl::query_record_batch_exec(
+                service,
+                args,
+                expr,
+                aggs,
+                span_recorder.span_ctx(),
+            )?;
+            TonicRecordBatchEncoder::new(stream, span_recorder).map_err(Into::into)
+        };
 
         Ok(tonic::Response::new(Box::pin(encoded_stream)))
     }
@@ -559,18 +569,21 @@ impl TskvService for TskvServiceImpl {
             Ok(expr) => expr,
             Err(err) => return Err(self.tonic_status(err.to_string())),
         };
-        let stream = TskvServiceImpl::tag_scan_exec(
-            args,
-            expr,
-            self.coord.meta_manager(),
-            self.runtime.clone(),
-            self.kv_inst.clone(),
-            self.metrics_register.clone(),
-        )?;
 
-        let stream =
-            TonicRecordBatchEncoder::new(stream, span_recorder.child("encode record batch"))
-                .map_err(Into::into);
+        let stream = {
+            let span_recorder = span_recorder.child("RecordBatch encorder stream");
+            let stream = TskvServiceImpl::tag_scan_exec(
+                args,
+                expr,
+                self.coord.meta_manager(),
+                self.runtime.clone(),
+                self.kv_inst.clone(),
+                self.metrics_register.clone(),
+                span_recorder.span_ctx(),
+            )?;
+
+            TonicRecordBatchEncoder::new(stream, span_recorder).map_err(Into::into)
+        };
 
         Ok(tonic::Response::new(Box::pin(stream)))
     }

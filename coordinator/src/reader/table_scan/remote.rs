@@ -14,7 +14,6 @@ use tonic::transport::Channel;
 use tonic::{Request, Streaming};
 use tower::timeout::Timeout;
 use trace::SpanRecorder;
-use tskv::query_iterator::TskvSourceMetrics;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::{
@@ -31,10 +30,8 @@ impl TonicTskvTableScanStream {
         node_id: u64,
         request: Request<QueryRecordBatchRequest>,
         admin_meta: AdminMetaRef,
-        metrics: TskvSourceMetrics,
     ) -> Self {
         let fetch_result_stream = async move {
-            let _timer = metrics.elapsed_build_resp_stream().timer();
             let channel = admin_meta.get_node_conn(node_id).await?;
             let timeout_channel =
                 Timeout::new(channel, Duration::from_millis(config.read_timeout_ms));
