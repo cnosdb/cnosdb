@@ -71,7 +71,7 @@ where
     fn call(&mut self, mut request: Request<R>) -> Self::Future {
         match self
             .trace_header_parser
-            .parse(self.collector.as_ref(), request.headers())
+            .parse(self.collector.clone(), request.headers())
         {
             Ok(Some(ctx)) => {
                 if ctx.sampled && self.collector.is_some() {

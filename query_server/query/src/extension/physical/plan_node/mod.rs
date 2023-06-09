@@ -6,5 +6,6 @@ pub mod state_save;
 pub mod table_writer;
 pub mod table_writer_merge;
 pub mod tag_scan;
+pub mod traced_proxy;
 pub mod tskv_exec;
 pub mod watermark;

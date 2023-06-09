@@ -24,8 +24,8 @@ use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Response, Status};
-use trace::{debug, error, info};
+use tonic::{Extensions, Request, Response, Status};
+use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
 use tskv::query_iterator::QueryOption;
 use tskv::EngineRef;
 
@@ -514,6 +514,7 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: tonic::Request<QueryRecordBatchRequest>,
     ) -> Result<tonic::Response<Self::QueryRecordBatchStream>, tonic::Status> {
+        let span_recorder = get_span_recorder(request.extensions(), "grpc query_record_batch");
         let inner = request.into_inner();
 
         let args = match QueryArgs::decode(&inner.args) {
@@ -534,7 +535,9 @@ impl TskvService for TskvServiceImpl {
         let service = self.clone();
         let stream = TskvServiceImpl::query_record_batch_exec(service, args, expr, aggs)?;
 
-        let encoded_stream = TonicRecordBatchEncoder::new(stream).map_err(Into::into);
+        let encoded_stream =
+            TonicRecordBatchEncoder::new(stream, span_recorder.child("encode record batch"))
+                .map_err(Into::into);
 
         Ok(tonic::Response::new(Box::pin(encoded_stream)))
     }
@@ -544,6 +547,7 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: Request<QueryRecordBatchRequest>,
     ) -> Result<Response<Self::TagScanStream>, Status> {
+        let span_recorder = get_span_recorder(request.extensions(), "grpc query_record_batch");
         let inner = request.into_inner();
 
         let args = match QueryArgs::decode(&inner.args) {
@@ -564,8 +568,15 @@ impl TskvService for TskvServiceImpl {
             self.metrics_register.clone(),
         )?;
 
-        let stream = TonicRecordBatchEncoder::new(stream).map_err(Into::into);
+        let stream =
+            TonicRecordBatchEncoder::new(stream, span_recorder.child("encode record batch"))
+                .map_err(Into::into);
 
         Ok(tonic::Response::new(Box::pin(stream)))
     }
+}
+
+fn get_span_recorder(extensions: &Extensions, child_span_name: &'static str) -> SpanRecorder {
+    let span_context = extensions.get::<SpanContext>();
+    SpanRecorder::new(span_context.child_span(child_span_name))
 }

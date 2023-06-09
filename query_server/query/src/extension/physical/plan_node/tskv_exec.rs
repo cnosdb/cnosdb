@@ -21,7 +21,7 @@ use models::predicate::domain::PredicateRef;
 use models::predicate::PlacedSplit;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD};
 use spi::{QueryError, Result};
-use trace::debug;
+use trace::{debug, SpanContext, SpanExt, SpanRecorder};
 use tskv::query_iterator::{QueryOption, TableScanMetrics};
 
 #[derive(Clone)]
@@ -120,6 +120,8 @@ impl ExecutionPlan for TskvExec {
 
         let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
 
+        let span_ctx = context.session_config().get_extension::<SpanContext>();
+
         let table_stream = TableScanStream::new(
             self.table_schema.clone(),
             self.schema(),
@@ -127,6 +129,7 @@ impl ExecutionPlan for TskvExec {
             split,
             batch_size,
             metrics,
+            SpanRecorder::new(span_ctx.child_span(format!("TableScanStream ({partition})"))),
         )
         .map_err(|err| DataFusionError::External(Box::new(err)))?;
 
@@ -200,6 +203,8 @@ pub struct TableScanStream {
 
     remain: Option<usize>,
     metrics: TableScanMetrics,
+    #[allow(unused)]
+    span_recorder: SpanRecorder,
 }
 
 impl TableScanStream {
@@ -210,6 +215,7 @@ impl TableScanStream {
         split: PlacedSplit,
         batch_size: usize,
         metrics: TableScanMetrics,
+        span_recorder: SpanRecorder,
     ) -> Result<Self> {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for item in proj_schema.fields().iter() {
@@ -259,7 +265,8 @@ impl TableScanStream {
             proj_table_schema,
         );
 
-        let iterator = coord.table_scan(option, kv_metrics)?;
+        let span_ctx = span_recorder.span_ctx();
+        let iterator = coord.table_scan(option, kv_metrics, span_ctx)?;
 
         Ok(Self {
             proj_schema,
@@ -268,6 +275,7 @@ impl TableScanStream {
             remain,
             iterator,
             metrics,
+            span_recorder,
         })
     }
 
@@ -278,6 +286,7 @@ impl TableScanStream {
         iterator: SendableCoordinatorRecordBatchStream,
         remain: Option<usize>,
         metrics: TableScanMetrics,
+        span_recorder: SpanRecorder,
     ) -> Self {
         Self {
             proj_schema,
@@ -286,6 +295,7 @@ impl TableScanStream {
             iterator,
             remain,
             metrics,
+            span_recorder,
         }
     }
 }

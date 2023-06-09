@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use datafusion::config::ConfigOptions;
 use datafusion::logical_expr::LogicalPlan;
+use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::{displayable, ExecutionPlan};
 use spi::query::optimizer::Optimizer;
 use spi::query::physical_planner::PhysicalPlanner;
@@ -12,6 +14,7 @@ use trace::debug;
 use super::logical::optimizer::{DefaultLogicalOptimizer, LogicalOptimizer};
 use super::physical::optimizer::PhysicalOptimizer;
 use super::physical::planner::DefaultPhysicalPlanner;
+use crate::extension::physical::optimizer_rule::add_traced_proxy::AddTracedProxy;
 
 pub struct CascadeOptimizer {
     logical_optimizer: Arc<dyn LogicalOptimizer + Send + Sync>,
@@ -80,12 +83,18 @@ impl Optimizer for CascadeOptimizer {
                 })?
         };
 
+        let traced_plan = {
+            let span_recorder = session.get_child_span_recorder("add traced proxy");
+            AddTracedProxy::new(span_recorder.span_ctx().cloned())
+                .optimize(optimized_physical_plan, &ConfigOptions::default())?
+        };
+
         debug!(
             "Final physical plan:\n{}\n",
-            displayable(optimized_physical_plan.as_ref()).indent()
+            displayable(traced_plan.as_ref()).indent()
         );
 
-        Ok(optimized_physical_plan)
+        Ok(traced_plan)
     }
 }
 

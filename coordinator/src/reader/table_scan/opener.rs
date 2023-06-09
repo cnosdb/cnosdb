@@ -4,6 +4,9 @@ use config::QueryConfig;
 use meta::model::MetaRef;
 use models::meta_data::VnodeInfo;
 use tokio::runtime::Runtime;
+use tonic::metadata::{Ascii, MetadataValue};
+use trace::SpanContext;
+use trace_http::ctx::{RequestLogContextExt, DEFAULT_TRACE_HEADER_NAME};
 use tskv::query_iterator::{QueryOption, TskvSourceMetrics};
 use tskv::EngineRef;
 
@@ -23,6 +26,7 @@ pub struct TemporaryTableScanOpener {
     meta: MetaRef,
     metrics: TskvSourceMetrics,
     coord_metrics: Arc<CoordServiceMetrics>,
+    trace_id: String,
 }
 
 impl TemporaryTableScanOpener {
@@ -33,7 +37,10 @@ impl TemporaryTableScanOpener {
         meta: MetaRef,
         metrics: TskvSourceMetrics,
         coord_metrics: Arc<CoordServiceMetrics>,
+        span_ctx: Option<&SpanContext>,
     ) -> Self {
+        let trace_id = span_ctx.format_jaeger();
+
         Self {
             config,
             kv_inst,
@@ -41,6 +48,7 @@ impl TemporaryTableScanOpener {
             meta,
             metrics,
             coord_metrics,
+            trace_id,
         }
     }
 }
@@ -57,6 +65,7 @@ impl VnodeOpener for TemporaryTableScanOpener {
         let option = option.clone();
         let meta = self.meta.clone();
         let config = self.config.clone();
+        let trace_id = self.trace_id.clone();
 
         let future = async move {
             // TODO 请求路由的过程应该由通信框架决定，客户端只关心业务逻辑（请求目标和请求内容）
@@ -77,13 +86,23 @@ impl VnodeOpener for TemporaryTableScanOpener {
                 Ok(Box::pin(stream) as SendableCoordinatorRecordBatchStream)
             } else {
                 // 路由到远程的引擎
-                let request = {
+                let mut request = {
                     let vnode_ids = vec![vnode_id];
                     let req = option
                         .to_query_record_batch_request(vnode_ids)
                         .map_err(CoordinatorError::from)?;
                     tonic::Request::new(req)
                 };
+
+                let value: MetadataValue<Ascii> =
+                    trace_id
+                        .try_into()
+                        .map_err(|_| CoordinatorError::CommonError {
+                            msg: "Parse trace_id, this maybe a bug".to_string(),
+                        })?;
+                request
+                    .metadata_mut()
+                    .insert(DEFAULT_TRACE_HEADER_NAME, value);
 
                 Ok(Box::pin(TonicTskvTableScanStream::new(
                     config,

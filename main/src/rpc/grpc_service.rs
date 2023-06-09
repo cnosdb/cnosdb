@@ -10,7 +10,7 @@ use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use trace::TraceExporter;
 use trace_http::ctx::TraceHeaderParser;
-use trace_http::tower::TraceLayer;
+use trace_http::tower_layer::TraceLayer;
 use tskv::EngineRef;
 
 use crate::rpc::tskv::TskvServiceImpl;

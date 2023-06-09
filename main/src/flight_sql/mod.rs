@@ -8,7 +8,7 @@ use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use trace::{info, TraceExporter};
 use trace_http::ctx::TraceHeaderParser;
-use trace_http::tower::TraceLayer;
+use trace_http::tower_layer::TraceLayer;
 
 use self::flight_sql_server::FlightSqlServiceImpl;
 use crate::flight_sql::auth_middleware::basic_call_header_authenticator::BasicCallHeaderAuthenticator;

@@ -54,7 +54,7 @@ impl SessionCtx {
         }
     }
 
-    fn get_span_ctx(&self) -> Option<&SpanContext> {
+    pub fn get_span_ctx(&self) -> Option<&SpanContext> {
         self.span_ctx.as_ref()
         // self.inner().config().get_extension::<SpanContext>();
     }

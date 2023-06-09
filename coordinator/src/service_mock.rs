@@ -13,6 +13,7 @@ use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::Precision;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
+use trace::SpanContext;
 use tskv::engine_mock::MockEngine;
 use tskv::query_iterator::{QueryOption, TskvSourceMetrics};
 use tskv::EngineRef;
@@ -112,6 +113,7 @@ impl Coordinator for MockCoordinator {
         &self,
         option: QueryOption,
         metrics: TskvSourceMetrics,
+        _span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         // TODO
         todo!()
