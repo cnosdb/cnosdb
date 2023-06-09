@@ -8,6 +8,7 @@ use futures::{ready, FutureExt, Stream, TryFutureExt};
 use metrics::count::U64Counter;
 use models::meta_data::VnodeId;
 use tokio::runtime::Runtime;
+use trace::SpanRecorder;
 use tskv::query_iterator::{QueryOption, RowIterator};
 use tskv::{EngineRef, Error};
 
@@ -19,6 +20,8 @@ type Result<T, E = CoordinatorError> = std::result::Result<T, E>;
 pub struct LocalTskvTableScanStream {
     state: StreamState,
     data_out: U64Counter,
+    #[allow(unused)]
+    span_recorder: SpanRecorder,
 }
 
 impl LocalTskvTableScanStream {
@@ -28,11 +31,22 @@ impl LocalTskvTableScanStream {
         kv_inst: EngineRef,
         runtime: Arc<Runtime>,
         data_out: U64Counter,
+        span_recorder: SpanRecorder,
     ) -> Self {
-        let iter_future = Box::pin(RowIterator::new(runtime, kv_inst, option, vnode_id));
+        let iter_future = Box::pin(RowIterator::new(
+            runtime,
+            kv_inst,
+            option,
+            vnode_id,
+            span_recorder.child("RowIterator"),
+        ));
         let state = StreamState::Open { iter_future };
 
-        Self { state, data_out }
+        Self {
+            state,
+            data_out,
+            span_recorder,
+        }
     }
 
     fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {

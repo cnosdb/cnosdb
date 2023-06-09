@@ -5,9 +5,9 @@ use meta::model::MetaRef;
 use models::meta_data::VnodeInfo;
 use tokio::runtime::Runtime;
 use tonic::metadata::{Ascii, MetadataValue};
-use trace::SpanContext;
+use trace::{SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::{RequestLogContextExt, DEFAULT_TRACE_HEADER_NAME};
-use tskv::query_iterator::{QueryOption, TskvSourceMetrics};
+use tskv::query_iterator::QueryOption;
 use tskv::EngineRef;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
@@ -24,9 +24,8 @@ pub struct TemporaryTableScanOpener {
     kv_inst: Option<EngineRef>,
     runtime: Arc<Runtime>,
     meta: MetaRef,
-    metrics: TskvSourceMetrics,
     coord_metrics: Arc<CoordServiceMetrics>,
-    trace_id: String,
+    span_ctx: Option<SpanContext>,
 }
 
 impl TemporaryTableScanOpener {
@@ -35,20 +34,16 @@ impl TemporaryTableScanOpener {
         kv_inst: Option<EngineRef>,
         runtime: Arc<Runtime>,
         meta: MetaRef,
-        metrics: TskvSourceMetrics,
         coord_metrics: Arc<CoordServiceMetrics>,
         span_ctx: Option<&SpanContext>,
     ) -> Self {
-        let trace_id = span_ctx.format_jaeger();
-
         Self {
             config,
             kv_inst,
             runtime,
             meta,
-            metrics,
             coord_metrics,
-            trace_id,
+            span_ctx: span_ctx.cloned(),
         }
     }
 }
@@ -60,12 +55,11 @@ impl VnodeOpener for TemporaryTableScanOpener {
         let curren_nodet_id = self.meta.node_id();
         let kv_inst = self.kv_inst.clone();
         let runtime = self.runtime.clone();
-        let metrics = self.metrics.clone();
         let coord_metrics = self.coord_metrics.clone();
         let option = option.clone();
         let meta = self.meta.clone();
         let config = self.config.clone();
-        let trace_id = self.trace_id.clone();
+        let span_ctx = self.span_ctx.clone();
 
         let future = async move {
             // TODO 请求路由的过程应该由通信框架决定，客户端只关心业务逻辑（请求目标和请求内容）
@@ -78,7 +72,14 @@ impl VnodeOpener for TemporaryTableScanOpener {
                 );
                 let kv_inst = kv_inst.ok_or(CoordinatorError::KvInstanceNotFound { node_id })?;
                 let input = Box::pin(LocalTskvTableScanStream::new(
-                    vnode_id, option, kv_inst, runtime, data_out,
+                    vnode_id,
+                    option,
+                    kv_inst,
+                    runtime,
+                    data_out,
+                    SpanRecorder::new(
+                        span_ctx.child_span(format!("LocalTskvTableScanStream ({vnode_id})")),
+                    ),
                 ));
 
                 let stream = VnodeStatusListener::new(tenant, meta, vnode_id, input);
@@ -95,11 +96,11 @@ impl VnodeOpener for TemporaryTableScanOpener {
                 };
 
                 let value: MetadataValue<Ascii> =
-                    trace_id
-                        .try_into()
-                        .map_err(|_| CoordinatorError::CommonError {
+                    span_ctx.format_jaeger().try_into().map_err(|_| {
+                        CoordinatorError::CommonError {
                             msg: "Parse trace_id, this maybe a bug".to_string(),
-                        })?;
+                        }
+                    })?;
                 request
                     .metadata_mut()
                     .insert(DEFAULT_TRACE_HEADER_NAME, value);
@@ -109,7 +110,6 @@ impl VnodeOpener for TemporaryTableScanOpener {
                     node_id,
                     request,
                     meta.admin_meta(),
-                    metrics,
                 )) as SendableCoordinatorRecordBatchStream)
             }
         };

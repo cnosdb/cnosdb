@@ -15,7 +15,7 @@ use models::schema::Precision;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
 use trace::SpanContext;
 use tskv::engine_mock::MockEngine;
-use tskv::query_iterator::{QueryOption, TskvSourceMetrics};
+use tskv::query_iterator::QueryOption;
 use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
@@ -112,7 +112,6 @@ impl Coordinator for MockCoordinator {
     fn table_scan(
         &self,
         option: QueryOption,
-        metrics: TskvSourceMetrics,
         _span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         // TODO
@@ -122,7 +121,7 @@ impl Coordinator for MockCoordinator {
     fn tag_scan(
         &self,
         option: QueryOption,
-        metrics: TskvSourceMetrics,
+        _span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         todo!("tag_scan")
     }

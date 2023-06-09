@@ -22,7 +22,9 @@ use models::predicate::PlacedSplit;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD};
 use spi::{QueryError, Result};
 use trace::{debug, SpanContext, SpanExt, SpanRecorder};
-use tskv::query_iterator::{QueryOption, TableScanMetrics};
+use tskv::query_iterator::QueryOption;
+
+use crate::extension::physical::plan_node::TableScanMetrics;
 
 #[derive(Clone)]
 pub struct TskvExec {
@@ -255,8 +257,6 @@ impl TableScanStream {
 
         let remain = split.limit();
 
-        let kv_metrics = metrics.tskv_metrics();
-
         let option = QueryOption::new(
             batch_size,
             split,
@@ -266,7 +266,7 @@ impl TableScanStream {
         );
 
         let span_ctx = span_recorder.span_ctx();
-        let iterator = coord.table_scan(option, kv_metrics, span_ctx)?;
+        let iterator = coord.table_scan(option, span_ctx)?;
 
         Ok(Self {
             proj_schema,

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::task::Poll;
 
 use datafusion::arrow::array::{
     ArrayBuilder, ArrayRef, BooleanArray, BooleanBuilder, Float64Builder, Int64Builder,
@@ -11,11 +10,7 @@ use datafusion::arrow::datatypes::{
     TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt64Type,
 };
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::error::DataFusionError;
-use datafusion::execution::memory_pool::{MemoryConsumer, MemoryPool, MemoryReservation};
-use datafusion::physical_plan::metrics::{
-    self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
-};
+use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use minivec::MiniVec;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
@@ -23,12 +18,12 @@ use models::predicate::PlacedSplit;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema};
 use models::utils::{min_num, unite_id};
 use models::{FieldId, SeriesId, Timestamp, ValueType};
-use parking_lot::RwLock;
 use protos::kv_service::QueryRecordBatchRequest;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-use trace::{debug, error};
+use trace::{debug, error, SpanRecorder};
 
 use crate::compute::count::count_column_non_null_values;
 use crate::error::Result;
@@ -259,83 +254,17 @@ impl ArrayBuilderPtr {
 }
 
 /// Stores metrics about the table writer execution.
-#[derive(Debug)]
-pub struct TableScanMetrics {
-    baseline_metrics: BaselineMetrics,
-    partition: usize,
-    metrics: ExecutionPlanMetricsSet,
-    reservation: Option<RwLock<MemoryReservation>>,
-}
-
-impl TableScanMetrics {
-    /// Create new metrics
-    pub fn new(
-        metrics: &ExecutionPlanMetricsSet,
-        partition: usize,
-        pool: Option<&Arc<dyn MemoryPool>>,
-    ) -> Self {
-        let baseline_metrics = BaselineMetrics::new(metrics, partition);
-        let reservation = match pool {
-            None => None,
-            Some(pool) => {
-                let reservation = RwLock::new(
-                    MemoryConsumer::new(format!("TableScanMetrics[{partition}]")).register(pool),
-                );
-                Some(reservation)
-            }
-        };
-
-        Self {
-            baseline_metrics,
-            partition,
-            metrics: metrics.clone(),
-            reservation,
-        }
-    }
-
-    pub fn tskv_metrics(&self) -> TskvSourceMetrics {
-        TskvSourceMetrics::new(&self.metrics.clone(), self.partition)
-    }
-
-    /// return the metric for cpu time spend in this operator
-    pub fn elapsed_compute(&self) -> &metrics::Time {
-        self.baseline_metrics.elapsed_compute()
-    }
-
-    /// Process a poll result of a stream producing output for an
-    /// operator, recording the output rows and stream done time and
-    /// returning the same poll result
-    pub fn record_poll(
-        &self,
-        poll: Poll<Option<std::result::Result<RecordBatch, DataFusionError>>>,
-    ) -> Poll<Option<std::result::Result<RecordBatch, DataFusionError>>> {
-        self.baseline_metrics.record_poll(poll)
-    }
-
-    pub fn record_memory(&self, rb: &RecordBatch) -> Result<(), DataFusionError> {
-        if let Some(res) = &self.reservation {
-            res.write().try_grow(rb.get_array_memory_size())?
-        }
-        Ok(())
-    }
-
-    /// Records the fact that this operator's execution is complete
-    /// (recording the `end_time` metric).
-    pub fn done(&self) {
-        self.baseline_metrics.done()
-    }
-}
-
-/// Stores metrics about the table writer execution.
 #[derive(Debug, Clone)]
-pub struct TskvSourceMetrics {
+pub struct SeriesGroupRowIteratorMetrics {
     elapsed_point_to_record_batch: metrics::Time,
     elapsed_field_scan: metrics::Time,
     elapsed_series_scan: metrics::Time,
     elapsed_build_resp_stream: metrics::Time,
+    elapsed_get_data_from_memcache: metrics::Time,
+    elapsed_get_field_location: metrics::Time,
 }
 
-impl TskvSourceMetrics {
+impl SeriesGroupRowIteratorMetrics {
     /// Create new metrics
     pub fn new(metrics: &ExecutionPlanMetricsSet, partition: usize) -> Self {
         let elapsed_point_to_record_batch =
@@ -350,11 +279,19 @@ impl TskvSourceMetrics {
         let elapsed_build_resp_stream =
             MetricBuilder::new(metrics).subset_time("elapsed_build_resp_stream", partition);
 
+        let elapsed_get_data_from_memcache =
+            MetricBuilder::new(metrics).subset_time("elapsed_get_data_from_memcache", partition);
+
+        let elapsed_get_field_location =
+            MetricBuilder::new(metrics).subset_time("elapsed_get_field_location", partition);
+
         Self {
             elapsed_point_to_record_batch,
             elapsed_field_scan,
             elapsed_series_scan,
             elapsed_build_resp_stream,
+            elapsed_get_data_from_memcache,
+            elapsed_get_field_location,
         }
     }
 
@@ -372,6 +309,14 @@ impl TskvSourceMetrics {
 
     pub fn elapsed_build_resp_stream(&self) -> &metrics::Time {
         &self.elapsed_build_resp_stream
+    }
+
+    pub fn elapsed_get_data_from_memcache(&self) -> &metrics::Time {
+        &self.elapsed_get_data_from_memcache
+    }
+
+    pub fn elapsed_get_field_location(&self) -> &metrics::Time {
+        &self.elapsed_get_field_location
     }
 }
 
@@ -721,6 +666,9 @@ pub struct RowIterator {
     series_iter_closer: CancellationToken,
     /// Whether this iterator was finsihed.
     is_finished: bool,
+    #[allow(unused)]
+    span_recorder: SpanRecorder,
+    metrics_set: ExecutionPlanMetricsSet,
 }
 
 impl RowIterator {
@@ -729,30 +677,47 @@ impl RowIterator {
         engine: EngineRef,
         query_option: QueryOption,
         vnode_id: VnodeId,
+        span_recorder: SpanRecorder,
     ) -> Result<Self> {
-        let super_version = engine
-            .get_db_version(
-                &query_option.table_schema.tenant,
-                &query_option.table_schema.db,
-                vnode_id,
-            )
-            .await?;
+        // TODO refac: None 代表没有数据，后续不需要执行
+        let super_version = {
+            let mut span_recorder = span_recorder.child("get super version");
+            engine
+                .get_db_version(
+                    &query_option.table_schema.tenant,
+                    &query_option.table_schema.db,
+                    vnode_id,
+                )
+                .await
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
 
-        let series_ids = engine
-            .get_series_id_by_filter(
-                &query_option.table_schema.tenant,
-                &query_option.table_schema.db,
-                &query_option.table_schema.name,
-                vnode_id,
-                query_option.split.tags_filter(),
-            )
-            .await?;
+        let series_ids = {
+            let mut span_recorder = span_recorder.child("get series ids by filter");
+            engine
+                .get_series_id_by_filter(
+                    &query_option.table_schema.tenant,
+                    &query_option.table_schema.db,
+                    &query_option.table_schema.name,
+                    vnode_id,
+                    query_option.split.tags_filter(),
+                )
+                .await
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
 
         debug!(
             "Iterating rows: vnode_id={}, serie_ids_count={}",
             vnode_id,
             series_ids.len()
         );
+        let metrics_set = ExecutionPlanMetricsSet::new();
         let query_option = Arc::new(query_option);
         let series_len = series_ids.len();
         let (tx, rx) = channel(1);
@@ -768,6 +733,8 @@ impl RowIterator {
                 series_iter_receiver: rx,
                 series_iter_closer: CancellationToken::new(),
                 is_finished: false,
+                span_recorder,
+                metrics_set,
             };
             row_iterator.new_series_group_iteration(0, series_len, tx);
 
@@ -793,6 +760,8 @@ impl RowIterator {
                 series_iter_receiver: rx,
                 series_iter_closer: CancellationToken::new(),
                 is_finished: false,
+                span_recorder,
+                metrics_set,
             };
 
             for i in 0..series_group_num {
@@ -801,6 +770,7 @@ impl RowIterator {
                 if end > series_len {
                     end = series_len
                 }
+
                 row_iterator.new_series_group_iteration(start, end, tx.clone());
             }
 
@@ -827,6 +797,10 @@ impl RowIterator {
             i: start,
             columns: Vec::with_capacity(self.query_option.table_schema.columns().len()),
             is_finished: false,
+            span_recorder: self
+                .span_recorder
+                .child(format!("SeriesGroupRowIterator [{}, {})", start, end)),
+            metrics: SeriesGroupRowIteratorMetrics::new(&self.metrics_set, start),
         };
         let can_tok = self.series_iter_closer.clone();
         self.runtime.spawn(async move {
@@ -963,6 +937,35 @@ impl RowIterator {
     }
 }
 
+impl Drop for RowIterator {
+    fn drop(&mut self) {
+        if self.span_recorder.span_ctx().is_some() {
+            let version_number = self.super_version.as_ref().map(|v| v.version_number);
+            let ts_family_id = self.super_version.as_ref().map(|v| v.ts_family_id);
+
+            self.span_recorder
+                .set_metadata("version_number", format!("{version_number:?}"));
+            self.span_recorder
+                .set_metadata("ts_family_id", format!("{ts_family_id:?}"));
+            self.span_recorder.set_metadata("vnode_id", self.vnode_id);
+            self.span_recorder
+                .set_metadata("series_ids_num", self.series_ids.len());
+
+            let metrics = self
+                .metrics_set
+                .clone_inner()
+                .aggregate_by_name()
+                .sorted_for_display()
+                .timestamps_removed();
+
+            metrics.iter().for_each(|e| {
+                self.span_recorder
+                    .set_metadata(e.value().name().to_string(), e.value().to_string());
+            });
+        }
+    }
+}
+
 struct SeriesGroupRowIterator {
     runtime: Arc<Runtime>,
     engine: EngineRef,
@@ -980,6 +983,10 @@ struct SeriesGroupRowIterator {
     columns: Vec<CursorPtr>,
     /// Whether this iterator was finsihed.
     is_finished: bool,
+
+    #[allow(unused)]
+    span_recorder: SpanRecorder,
+    metrics: SeriesGroupRowIteratorMetrics,
 }
 
 impl SeriesGroupRowIterator {
@@ -987,13 +994,13 @@ impl SeriesGroupRowIterator {
         if self.is_finished {
             return None;
         }
-        // TODO record elapsed_point_to_record_batch
-        // let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        // record elapsed_point_to_record_batch
+        let timer = self.metrics.elapsed_point_to_record_batch().timer();
         let mut builders = match RowIterator::build_record_builders(self.query_option.as_ref()) {
             Ok(builders) => builders,
             Err(e) => return Some(Err(e)),
         };
-        // timer.done();
+        timer.done();
 
         for _ in 0..self.batch_size {
             match self.next_row(&mut builders).await {
@@ -1005,9 +1012,9 @@ impl SeriesGroupRowIterator {
                 Err(err) => return Some(Err(err)),
             };
         }
-        // TODO record elapsed_point_to_record_batch
-        // let timer = self.metrics.elapsed_point_to_record_batch().timer();
-        {
+        // record elapsed_point_to_record_batch
+        let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        let result = {
             let mut cols = Vec::with_capacity(builders.len());
             for builder in builders.iter_mut() {
                 cols.push(builder.ptr.finish())
@@ -1019,8 +1026,10 @@ impl SeriesGroupRowIterator {
                     reason: format!("iterator fail, {}", err),
                 })),
             }
-        }
-        // timer.done();
+        };
+        timer.done();
+
+        result
     }
 }
 
@@ -1052,7 +1061,7 @@ impl SeriesGroupRowIterator {
     }
 
     async fn build_series_columns(&mut self, series_id: SeriesId) -> Result<()> {
-        // let start = Instant::now();
+        let start = Instant::now();
 
         if let Some(key) = self
             .engine
@@ -1102,10 +1111,10 @@ impl SeriesGroupRowIterator {
             }
         }
 
-        // TODO record elapsed_series_scan
-        // self.metrics
-        //     .elapsed_series_scan()
-        //     .add_duration(start.elapsed());
+        // record elapsed_series_scan
+        self.metrics
+            .elapsed_series_scan()
+            .add_duration(start.elapsed());
 
         Ok(())
     }
@@ -1126,6 +1135,8 @@ impl SeriesGroupRowIterator {
         debug!("Pushed time range filter: {:?}", time_ranges_ref);
 
         // get data from im_memcache and memcache
+        let timer = self.metrics.elapsed_get_data_from_memcache().timer();
+
         let mut cache_data: Vec<DataType> = Vec::new();
         super_version.caches.read_field_data(
             field_id,
@@ -1135,6 +1146,8 @@ impl SeriesGroupRowIterator {
         );
         cache_data.sort_by_key(|data| data.timestamp());
 
+        timer.done();
+
         debug!(
             "build memcache data id: {:02X}, len: {}",
             field_id,
@@ -1143,6 +1156,8 @@ impl SeriesGroupRowIterator {
 
         // get data from levelinfo
         // TODO: Init locations in parallel with other fields.
+        let timer = self.metrics.elapsed_get_field_location().timer();
+
         let mut locations = vec![];
         for lv in super_version.version.levels_info.iter().rev() {
             if !time_ranges_ref.overlaps(&lv.time_range) {
@@ -1180,6 +1195,8 @@ impl SeriesGroupRowIterator {
             }
         }
 
+        timer.done();
+
         Ok(FieldCursor {
             name: field_name,
             value_type: field_type,
@@ -1191,8 +1208,8 @@ impl SeriesGroupRowIterator {
 
     async fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
         trace::trace!("======collect_row_data=========");
-        // TODO record elapsed_field_scan
-        // let timer = self.metrics.elapsed_field_scan().timer();
+        // record elapsed_field_scan
+        let timer = self.metrics.elapsed_field_scan().timer();
 
         let mut min_time = i64::MAX;
         let mut values = Vec::with_capacity(self.columns.len());
@@ -1222,7 +1239,7 @@ impl SeriesGroupRowIterator {
             }
         }
 
-        // timer.done();
+        timer.done();
 
         trace::trace!("min time: {}", min_time);
         if min_time == i64::MAX {
@@ -1230,8 +1247,8 @@ impl SeriesGroupRowIterator {
             return Ok(None);
         }
 
-        // TODO record elapsed_point_to_record_batch
-        // let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        // record elapsed_point_to_record_batch
+        let timer = self.metrics.elapsed_point_to_record_batch().timer();
 
         for (i, value) in values.into_iter().enumerate() {
             match self.columns[i].column_type() {
@@ -1247,7 +1264,7 @@ impl SeriesGroupRowIterator {
             }
         }
 
-        // timer.done();
+        timer.done();
 
         Ok(Some(()))
     }

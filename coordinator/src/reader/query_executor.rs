@@ -4,6 +4,7 @@ use meta::model::MetaRef;
 use metrics::count::U64Counter;
 use models::meta_data::{NodeId, VnodeInfo};
 use tokio::runtime::Runtime;
+use trace::{SpanContext, SpanExt, SpanRecorder};
 use tskv::query_iterator::QueryOption;
 use tskv::EngineRef;
 
@@ -49,6 +50,7 @@ impl QueryExecutor {
         &self,
         node_id: NodeId,
         vnodes: Vec<VnodeInfo>,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let kv = self
             .kv_inst
@@ -65,6 +67,9 @@ impl QueryExecutor {
                 kv.clone(),
                 self.runtime.clone(),
                 self.data_out.clone(),
+                SpanRecorder::new(
+                    span_ctx.child_span(format!("LocalTskvTableScanStream ({})", vnode.id)),
+                ),
             ));
             let stream = VnodeStatusListener::new(
                 &self.option.table_schema.tenant,
@@ -84,6 +89,7 @@ impl QueryExecutor {
         &self,
         node_id: NodeId,
         vnodes: Vec<VnodeInfo>,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let kv = self
             .kv_inst
@@ -98,6 +104,9 @@ impl QueryExecutor {
                 self.option.clone(),
                 kv.clone(),
                 self.data_out.clone(),
+                SpanRecorder::new(
+                    span_ctx.child_span(format!("LocalTskvTagScanStream ({})", vnode.id)),
+                ),
             );
             streams.push(Box::pin(stream) as SendableCoordinatorRecordBatchStream);
         });

@@ -27,7 +27,6 @@ use tokio::sync::mpsc;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::{debug, error, info, SpanContext};
-use tskv::query_iterator::TskvSourceMetrics;
 use tskv::EngineRef;
 
 use crate::errors::*;
@@ -402,7 +401,6 @@ impl Coordinator for CoordService {
     fn table_scan(
         &self,
         option: QueryOption,
-        metrics: TskvSourceMetrics,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let checker = self.build_query_checker(&option.table_schema.tenant);
@@ -412,7 +410,6 @@ impl Coordinator for CoordService {
             self.kv_inst.clone(),
             self.runtime.clone(),
             self.meta.clone(),
-            metrics,
             self.metrics.clone(),
             span_ctx,
         );
@@ -428,7 +425,7 @@ impl Coordinator for CoordService {
     fn tag_scan(
         &self,
         option: QueryOption,
-        metrics: TskvSourceMetrics,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let checker = self.build_query_checker(&option.table_schema.tenant);
 
@@ -436,8 +433,8 @@ impl Coordinator for CoordService {
             self.config.query.clone(),
             self.kv_inst.clone(),
             self.meta.clone(),
-            metrics,
             self.metrics.clone(),
+            span_ctx,
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
