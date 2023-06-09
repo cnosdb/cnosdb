@@ -376,7 +376,7 @@ async fn write_data_to_meta() {
     };
     let req = command::WriteCommand::AddDataNode("cluster_xxx".to_string(), node);
     let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
-    let rsp = cli.write::<command::StatusResponse>(&req).await.unwrap();
+    let rsp = cli.write::<()>(&req).await.unwrap();
     println!("=== add nodeinfo : {:?}", rsp);
     // let req = command::WriteCommand::CreateTenant(“cluster_xxx”.to_string(), (), ())
     let req = command::WriteCommand::CreateTenant(

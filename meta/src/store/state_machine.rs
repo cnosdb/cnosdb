@@ -800,7 +800,7 @@ impl StateMachine {
         cluster: &str,
         tenant: &str,
         schema: &DatabaseSchema,
-    ) -> MetaResult<()> {
+    ) -> MetaResult<TenantMetaData> {
         let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
         if self.contains_key(&key)? {
             return Err(MetaError::DatabaseAlreadyExists {
@@ -810,7 +810,8 @@ impl StateMachine {
 
         self.check_db_schema_valid(cluster, schema)?;
         self.insert(&key, &value_encode(schema)?)?;
-        Ok(())
+
+        self.to_tenant_meta_data(cluster, tenant)
     }
 
     fn process_alter_db(
@@ -852,7 +853,7 @@ impl StateMachine {
         cluster: &str,
         tenant: &str,
         schema: &TableSchema,
-    ) -> MetaResult<()> {
+    ) -> MetaResult<TenantMetaData> {
         let key = KeyPath::tenant_db_name(cluster, tenant, &schema.db());
         if !self.contains_key(&key)? {
             return Err(MetaError::DatabaseNotFound {
@@ -867,7 +868,8 @@ impl StateMachine {
         }
 
         self.insert(&key, &value_encode(schema)?)?;
-        Ok(())
+
+        self.to_tenant_meta_data(cluster, tenant)
     }
 
     fn process_update_table(

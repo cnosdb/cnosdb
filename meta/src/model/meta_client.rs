@@ -298,7 +298,12 @@ impl MetaClient for RemoteMetaClient {
             self.tenant_name(),
         );
 
-        self.client.write::<bool>(&req).await
+        let rsp = self.client.write::<bool>(&req).await;
+        if let Err(MetaError::RoleNotFound { role: _ }) = rsp {
+            Ok(false)
+        } else {
+            rsp
+        }
     }
 
     async fn create_db(&self, mut schema: DatabaseSchema) -> MetaResult<()> {
@@ -310,7 +315,15 @@ impl MetaClient for RemoteMetaClient {
             schema.clone(),
         );
 
-        self.client.write::<()>(&req).await
+        let rsp = self.client.write::<TenantMetaData>(&req).await?;
+        {
+            let mut data = self.data.write();
+            if rsp.version > data.version {
+                *data = rsp;
+            }
+        }
+
+        Ok(())
     }
 
     // tenant role end
@@ -366,7 +379,15 @@ impl MetaClient for RemoteMetaClient {
             schema.clone(),
         );
 
-        self.client.write::<()>(&req).await
+        let rsp = self.client.write::<TenantMetaData>(&req).await?;
+        {
+            let mut data = self.data.write();
+            if rsp.version > data.version {
+                *data = rsp;
+            }
+        }
+
+        Ok(())
     }
 
     async fn update_table(&self, schema: &TableSchema) -> MetaResult<()> {
