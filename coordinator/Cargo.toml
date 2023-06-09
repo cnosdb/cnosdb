@@ -8,6 +8,7 @@ config = { path = "../config" }
 models = { path = "../common/models" }
 protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
+trace_http = { path = "../common/trace_http" }
 utils = { path = "../common/utils" }
 tskv = { path = "../tskv" }
 meta = { path = "../meta" }

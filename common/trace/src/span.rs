@@ -225,7 +225,7 @@ impl SpanRecorder {
 
     /// If this `SpanRecorder` has a `Span`, creates a new child of that `Span` and
     /// returns a `SpanRecorder` for it. Otherwise returns an empty `SpanRecorder`
-    pub fn child(&self, name: &'static str) -> Self {
+    pub fn child(&self, name: impl Into<Cow<'static, str>>) -> Self {
         Self::new(self.child_span(name))
     }
 
@@ -237,7 +237,7 @@ impl SpanRecorder {
 
     /// Return a child span of the specified name, if this SpanRecorder
     /// has an active span, `None` otherwise.
-    pub fn child_span(&self, name: &'static str) -> Option<Span> {
+    pub fn child_span(&self, name: impl Into<Cow<'static, str>>) -> Option<Span> {
         self.span.as_ref().map(|span| span.child(name))
     }
 
@@ -265,18 +265,24 @@ pub trait SpanRecorderExt {
 /// Helper trait to make spans easier to work with
 pub trait SpanExt {
     /// Return a child_span, if that makes sense
-    fn child_span(&self, name: &'static str) -> Option<Span>;
+    fn child_span(&self, name: impl Into<Cow<'static, str>>) -> Option<Span>;
 }
 
 impl SpanExt for Option<SpanContext> {
-    fn child_span(&self, name: &'static str) -> Option<Span> {
+    fn child_span(&self, name: impl Into<Cow<'static, str>>) -> Option<Span> {
         self.as_ref().child_span(name)
     }
 }
 
 impl SpanExt for Option<&SpanContext> {
-    fn child_span(&self, name: &'static str) -> Option<Span> {
+    fn child_span(&self, name: impl Into<Cow<'static, str>>) -> Option<Span> {
         self.map(|span| span.child(name))
+    }
+}
+
+impl SpanExt for Option<Arc<SpanContext>> {
+    fn child_span(&self, name: impl Into<Cow<'static, str>>) -> Option<Span> {
+        self.as_ref().map(|span| span.child(name))
     }
 }
 

@@ -148,9 +148,9 @@ version = "2.3.0"
 # you can use patch,
 # which will use your local third-party library code
 
-# [patch."https://github.com/cnosdb/arrow-datafusion"]
-# datafusion = { path = "../arrow-datafusion/datafusion/core" }
-# datafusion-proto = { path = "../arrow-datafusion/datafusion/proto" }
+[patch."https://github.com/cnosdb/arrow-datafusion"]
+datafusion = { path = "../arrow-datafusion/datafusion/core" }
+datafusion-proto = { path = "../arrow-datafusion/datafusion/proto" }
 
 [profile.dev]
 codegen-units = 16

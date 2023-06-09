@@ -13,6 +13,7 @@ use protos::kv_service::{BatchBytesResponse, QueryRecordBatchRequest};
 use tonic::transport::Channel;
 use tonic::{Request, Streaming};
 use tower::timeout::Timeout;
+use trace::SpanRecorder;
 use tskv::query_iterator::TskvSourceMetrics;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
@@ -113,11 +114,16 @@ enum StreamState {
 
 pub struct TonicRecordBatchEncoder {
     input: SendableCoordinatorRecordBatchStream,
+    #[allow(unused)]
+    span_recorder: SpanRecorder,
 }
 
 impl TonicRecordBatchEncoder {
-    pub fn new(input: SendableCoordinatorRecordBatchStream) -> Self {
-        Self { input }
+    pub fn new(input: SendableCoordinatorRecordBatchStream, span_recorder: SpanRecorder) -> Self {
+        Self {
+            input,
+            span_recorder,
+        }
     }
 }
 

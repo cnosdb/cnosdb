@@ -8,7 +8,6 @@ use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::QueryPlan;
 use spi::query::optimizer::Optimizer;
 use spi::query::scheduler::SchedulerRef;
-use spi::query::traced_stream::TracedStream;
 use spi::{QueryError, Result};
 use trace::debug;
 
@@ -57,18 +56,18 @@ impl SqlQueryExecution {
             .await?
             .stream();
 
-        let stream = TracedStream::new(
-            stream,
-            self.query_state_machine
-                .session
-                .get_child_span_recorder("traced stream"),
-            physical_plan,
-        );
+        // let stream = TracedStream::new(
+        //     stream,
+        //     self.query_state_machine
+        //         .session
+        //         .get_child_span_recorder("traced stream"),
+        //     physical_plan,
+        // );
 
         debug!("Success build result stream.");
         self.query_state_machine.end_schedule();
 
-        Ok(Output::StreamData(Box::pin(stream)))
+        Ok(Output::StreamData(stream))
     }
 }
 

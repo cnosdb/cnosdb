@@ -13,6 +13,7 @@ use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::Precision;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
+use trace::SpanContext;
 use tskv::query_iterator::{QueryOption, TskvSourceMetrics};
 use tskv::EngineRef;
 
@@ -101,6 +102,7 @@ pub trait Coordinator: Send + Sync {
         &self,
         option: QueryOption,
         metrics: TskvSourceMetrics,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream>;
 
     fn tag_scan(

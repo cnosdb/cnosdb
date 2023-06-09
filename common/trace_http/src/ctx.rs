@@ -7,6 +7,8 @@ use itertools::Itertools;
 use snafu::Snafu;
 use trace::{SpanContext, SpanId, TraceExporter, TraceId};
 
+pub const DEFAULT_TRACE_HEADER_NAME: &str = "uber-trace-id";
+
 /// Error decoding SpanContext from transport representation
 #[derive(Debug, Snafu)]
 pub enum ContextError {
@@ -68,7 +70,7 @@ impl TraceHeaderParser {
     /// header name
     pub fn new() -> Self {
         Self {
-            jaeger_trace_context_header_name: Some("uber-trace-id".into()),
+            jaeger_trace_context_header_name: Some(DEFAULT_TRACE_HEADER_NAME.into()),
         }
     }
 
@@ -87,16 +89,32 @@ impl TraceHeaderParser {
     /// * <https://www.jaegertracing.io/docs/1.21/client-libraries/#propagation-format>
     pub fn parse(
         &self,
-        collector: Option<&Arc<dyn TraceExporter>>,
+        collector: Option<Arc<dyn TraceExporter>>,
         headers: &HeaderMap,
     ) -> Result<Option<SpanContext>, ContextError> {
         if let Some(trace_header) = self.jaeger_trace_context_header_name.as_ref() {
             if headers.contains_key(trace_header.as_ref()) {
-                return decode_jaeger(collector, headers, trace_header.as_ref()).map(Some);
+                let decoded: JaegerCtx =
+                    required_header(headers, trace_header.as_ref(), FromStr::from_str)?;
+                return decode_jaeger(collector, decoded).map(Some);
             }
         }
 
         Ok(None)
+    }
+
+    pub fn parse_str(
+        &self,
+        collector: Option<Arc<dyn TraceExporter>>,
+        trace_header: &str,
+        value: &str,
+    ) -> Result<Option<SpanContext>, ContextError> {
+        let decoded =
+            JaegerCtx::from_str(value).map_err(|err| ContextError::HeaderDecodeError {
+                header: trace_header.to_string(),
+                source: err,
+            })?;
+        decode_jaeger(collector, decoded).map(Some)
     }
 }
 
@@ -138,11 +156,9 @@ impl FromStr for JaegerCtx {
 
 /// Decodes headers in the Jaeger format
 fn decode_jaeger(
-    collector: Option<&Arc<dyn TraceExporter>>,
-    headers: &HeaderMap,
-    jaeger_header: &str,
+    collector: Option<Arc<dyn TraceExporter>>,
+    decoded: JaegerCtx,
 ) -> Result<SpanContext, ContextError> {
-    let decoded: JaegerCtx = required_header(headers, jaeger_header, FromStr::from_str)?;
     let sampled = decoded.flags & 0x01 == 1;
 
     // Links cannot be specified via the HTTP header
@@ -153,7 +169,7 @@ fn decode_jaeger(
         parent_span_id: decoded.parent_span_id,
         span_id: decoded.span_id,
         links,
-        collector: collector.cloned(),
+        collector,
         sampled,
     })
 }
@@ -242,8 +258,12 @@ pub trait RequestLogContextExt {
 
 impl RequestLogContextExt for Option<SpanContext> {
     fn format_jaeger(&self) -> String {
-        self.as_ref()
-            .map(format_jaeger_trace_context)
-            .unwrap_or_default()
+        self.as_ref().format_jaeger()
+    }
+}
+
+impl RequestLogContextExt for Option<&SpanContext> {
+    fn format_jaeger(&self) -> String {
+        self.map(format_jaeger_trace_context).unwrap_or_default()
     }
 }
