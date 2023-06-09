@@ -131,7 +131,8 @@ impl RemoteMetaManager {
         let cluster_meta = mgr.config.cluster.meta_service_addr.clone().join(";");
         let client = MetaHttpClient::new(cluster_meta);
         loop {
-            if let Ok(watch_data) = client.watch::<command::WatchData>(&request).await {
+            let watch_rsp = client.watch::<command::WatchData>(&request).await;
+            if let Ok(watch_data) = watch_rsp {
                 if watch_data.full_sync {
                     let base_ver = mgr.process_full_sync().await;
                     mgr.watch_version.store(base_ver, Ordering::Relaxed);
@@ -145,6 +146,7 @@ impl RemoteMetaManager {
 
                 request.3 = watch_data.max_ver;
             } else {
+                info!("watch response wrong {:?}", watch_rsp);
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         }

@@ -8,7 +8,7 @@ use actix_web::{get, middleware, post, web, App, HttpServer, Responder};
 use config::Config;
 use meta::error::MetaResult;
 use meta::store::command::*;
-use meta::store::state_machine::{CommandResp, StateMachine};
+use meta::store::state_machine::{response_encode, CommandResp, StateMachine};
 use meta::{ClusterNode, ClusterNodeId, TypeConfig};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder, ROOT};
@@ -86,7 +86,7 @@ pub async fn watch(
             client, base_ver, follow_ver, watch_data
         );
         if watch_data.need_return(base_ver) {
-            let data = serde_json::to_string(&watch_data).unwrap();
+            let data = response_encode(Ok(watch_data));
             let response: Result<CommandResp, Infallible> = Ok(data);
             return Ok(Json(response));
         }
@@ -104,7 +104,7 @@ pub async fn watch(
             client, base_ver, follow_ver, watch_data
         );
         if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
-            let data = serde_json::to_string(&watch_data).unwrap();
+            let data = response_encode(Ok(watch_data));
             let response: Result<CommandResp, Infallible> = Ok(data);
             return Ok(Json(response));
         }
