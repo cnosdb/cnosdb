@@ -471,6 +471,9 @@ impl Summary {
             }
 
             // Recover levels_info according to `CompactMeta`s;
+            let tsm_reader_cache =
+                Arc::new(ShardedCache::with_capacity(opt.storage.max_cached_readers));
+            let weak_tsm_reader_cache = Arc::downgrade(&tsm_reader_cache);
             let mut levels = LevelInfo::init_levels(database.clone(), tsf_id, opt.storage.clone());
             for meta in files.into_values() {
                 let field_filter = if load_field_filter {
@@ -480,7 +483,11 @@ impl Summary {
                 } else {
                     Arc::new(BloomFilter::default())
                 };
-                levels[meta.level as usize].push_compact_meta(&meta, field_filter);
+                levels[meta.level as usize].push_compact_meta(
+                    &meta,
+                    field_filter,
+                    weak_tsm_reader_cache.clone(),
+                );
             }
             let ver = Version::new(
                 tsf_id,
@@ -489,7 +496,7 @@ impl Summary {
                 max_seq_no,
                 levels,
                 max_level_ts,
-                Arc::new(ShardedCache::with_capacity(opt.storage.max_cached_readers)),
+                tsm_reader_cache,
             );
             versions.insert(tsf_id, Arc::new(ver));
         }
@@ -1277,6 +1284,7 @@ mod test {
                 &mut HashMap::new(),
                 None,
             );
+            let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache);
 
             summary.ctx.set_last_seq(1);
             let mut edit = VersionEdit::new(10);
@@ -1291,7 +1299,11 @@ mod test {
                 high_seq: 1,
                 ..Default::default()
             };
-            version.levels_info[1].push_compact_meta(&meta, Arc::new(BloomFilter::default()));
+            version.levels_info[1].push_compact_meta(
+                &meta,
+                Arc::new(BloomFilter::default()),
+                tsm_reader_cache,
+            );
             tsf.write().await.new_version(version, None);
             edit.add_file(meta, 1);
             edits.push(edit);
