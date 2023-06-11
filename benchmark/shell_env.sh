@@ -12,7 +12,7 @@ export BENCHMARK_DATASET=${BENCHMARK_DATASET:-hits}
 export BENCHMARK_TYPE=${BENCHMARK_TYPE:-"pr"}
 
 # hits
-export HITS_DATA_URL=${HITS_DATA_URL:-"http://127.0.0.1:8902/data.gz"}
+#export HITS_DATA_URL=${HITS_DATA_URL:-"/data/hits.parquet"}
 
 # tsbs
 export TSBS_LOAD_CMD=${TSBS_LOAD_CMD:-"load_cnosdb"}
@@ -35,4 +35,4 @@ export SQL_CLI="${CLI_CMD} --host ${QUERY_HOST}  --port ${QUERY_PORT}"
 
 # benchmark.sh 脚本的输出结果目录
 export RESULT_DIR=${RESULT_DIR:-"./results"}
-export TMP_DIR="/tmp/cnosdb"
+#export TMP_DIR="/tmp/cnosdb"

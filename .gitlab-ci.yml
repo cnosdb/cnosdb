@@ -8,38 +8,47 @@ bench-job:
     # - source /root/.bashrc
     - echo "clean env"
     # - rm -rf /tmp/cnosdb
-    - rm -rf /data1/cnosdb
-    # - pkill -9 cnosdb
+    - pkill -9 cnosdb
     # - pkill -9 cnosdb-meta
+    - rm -rf /data1/cnosdb
+    - make build_release
     - sleep 10
     - echo "modify default config"
     - sed -i "s/tmp/data1/g" config/config_8902.toml
-    - sed -i "s/tmp/data1/g" config/config_8912.toml
-    - sed -i "s/tmp/data1/g" meta/config/config_8921.toml
-    - sed -i "s/tmp/data1/g" meta/config/config_8901.toml
-    - sed -i "s/tmp/data1/g" meta/config/config_8911.toml
-    - sed -i "s/tmp/data1/g" run_cluster.sh
-    - sed -i "s/1000000000/10/g" run_cluster.sh
-    - sed -i "s/tmp/data1/g" meta/cluster.sh
-    - sed -i "s/debug/release/g" meta/cluster.sh
-    - sed -i "s/build/& --release/g" meta/cluster.sh
-    - sed -i "s/build/& --release/g" run_cluster.sh
-    - sed -i "s/debug/release/g" run_cluster.sh
-    - sed -i "s/run/& -c 64 -m 256 /" run_cluster.sh
-    - echo "starting cluster"
-    - bash ./run_cluster.sh
-    - echo "cluster is running"
+    #- sed -i "s/tmp/data1/g" config/config_8912.toml
+    #- sed -i "s/tmp/data1/g" meta/config/config_8921.toml
+    #- sed -i "s/tmp/data1/g" meta/config/config_8901.toml
+    #- sed -i "s/tmp/data1/g" meta/config/config_8911.toml
+    #- sed -i "s/tmp/data1/g" run_cluster.sh
+    #- sed -i "s/1000000000/10/g" run_cluster.sh
+    #- sed -i "s/tmp/data1/g" meta/cluster.sh
+    #- sed -i "s/debug/release/g" meta/cluster.sh
+    #- sed -i "s/build/& --release/g" meta/cluster.sh
+    #- sed -i "s/build/& --release/g" run_cluster.sh
+    #- sed -i "s/debug/release/g" run_cluster.sh
+    #- sed -i "s/run/& -c 64 -m 256 /" run_cluster.sh
+    - echo "starting cnosdb"
+    - nohup ./target/release/cnosdb run --config ./config/config_8902.toml -M singleton &
+    - echo "cnosdb is running"
+    - echo "hits test"
+    - commit_id=${commit_id:-$(git log -1 --pretty=%h)}
+    - cd benchmark
+    - ./benchmark
+    - ./update-results.sh hits
+    - scp -i /home/gitlab-runner/.ssh/id_rsa ./results/hits.html root@192.168.0.20:/usr/src/benchmark-hit/hits_${commit_id}.html
+    - cd ..
+    - echo "tsbs test"
     - echo "create database"
     - cnosdb-cli -P 8902 -h 127.0.0.1 -f /home/gitlab-runner/benchmark.sh 
     # - echo "generate data"
     # - generate_data --use-case="iot" --seed=123 --scale=100 --timestamp-start="2023-01-01T00:00:00Z"  --timestamp-end="2023-01-01T01:00:00Z" --log-interval='6.3s' --format="cnosdb" | gzip >/cnosdb_1h_data.gz
     # - echo "data is ready"
     - echo "loading data"
-    - cat /data/cnosdb_iot_123_2022.gz| gunzip | load_cnosdb --urls http://127.0.0.1:8902 --workers 50
+    - cat /data/cnosdb_iot_123_2022.gz| gunzip | load_cnosdb --urls http://127.0.0.1:8902 --workers 24
     - echo "query low-fuel"
-    - run_queries_cnosdb --workers 8 --urls http://172.17.0.1:8902 --file /data/queries/low-fuel.txt 
+    - run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/low-fuel.txt 
     - echo "query last-loc"
-    - run_queries_cnosdb --workers 8 --urls http://172.17.0.1:8902 --file /data/queries/last-loc.txt 
+    - run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/last-loc.txt 
     - echo "query high-load"
     - run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/high-load.txt
     - echo "query stationary-trucks"
@@ -48,4 +57,5 @@ bench-job:
     - run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/long-driving-sessions.txt
     - echo "query avg-daily-driving-duration"
     - run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/avg-daily-driving-duration.txt
+    - pkill -9 cnosdb
     - echo "bench job Done"
