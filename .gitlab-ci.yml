@@ -29,13 +29,17 @@ bench-job:
     - echo "starting cluster"
     - bash ./run_cluster.sh
     - echo "cluster is running"
+    - cd benchmark
+    - ./benchmark
+    - ./update-results.sh hits
+    #- scp ./results/hits.html root@192.168.0.20:/usr/src/benchmark-hit/
     - echo "create database"
     - cnosdb-cli -P 8902 -h 127.0.0.1 -f /home/gitlab-runner/benchmark.sh 
     # - echo "generate data"
     # - generate_data --use-case="iot" --seed=123 --scale=100 --timestamp-start="2023-01-01T00:00:00Z"  --timestamp-end="2023-01-01T01:00:00Z" --log-interval='6.3s' --format="cnosdb" | gzip >/cnosdb_1h_data.gz
     # - echo "data is ready"
     - echo "loading data"
-    - cat /data/cnosdb_iot_123_2022.gz| gunzip | load_cnosdb --urls http://127.0.0.1:8902 --workers 50
+    - cat /data/cnosdb_iot_123_2022.gz| gunzip | load_cnosdb --urls http://127.0.0.1:8902 --workers 24
     - echo "query low-fuel"
     - run_queries_cnosdb --workers 8 --urls http://172.17.0.1:8902 --file /data/queries/low-fuel.txt 
     - echo "query last-loc"
