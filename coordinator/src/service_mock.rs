@@ -18,6 +18,7 @@ use tskv::query_iterator::{QueryOption, TskvSourceMetrics};
 use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
+use crate::service::CoordServiceMetrics;
 use crate::{
     Coordinator, SendableCoordinatorRecordBatchStream, VnodeManagerCmdType, VnodeSummarizerCmdType,
 };
@@ -142,5 +143,9 @@ impl Coordinator for MockCoordinator {
         cmd_type: VnodeSummarizerCmdType,
     ) -> CoordinatorResult<Vec<RecordBatch>> {
         Ok(vec![])
+    }
+
+    fn metrics(&self) -> &Arc<CoordServiceMetrics> {
+        todo!()
     }
 }

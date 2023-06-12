@@ -9,6 +9,7 @@ use models::consistency_level::ConsistencyLevel;
 use models::schema::TskvTableSchemaRef;
 use protos::kv_service::WritePointsRequest;
 use spi::Result;
+use trace::debug;
 
 use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata};
 use crate::utils::point_util::record_batch_to_points_flat_buffer;
@@ -48,6 +49,12 @@ impl RecordBatchSink for TskvRecordBatchSink {
             meta: None,
             points,
         };
+        let record_batch_size = record_batch.get_array_memory_size() as u64;
+
+        debug!(
+            "record_batch_sink, rows_written: {}, record_batch_written: {}, points_written: {}",
+            rows_writed, record_batch_size, bytes_writed
+        );
 
         self.coord
             .write_points(
@@ -57,6 +64,10 @@ impl RecordBatchSink for TskvRecordBatchSink {
                 req,
             )
             .await?;
+        self.coord
+            .metrics()
+            .sql_data_in(self.schema.tenant.as_str(), self.schema.db.as_str())
+            .inc(record_batch_size);
 
         timer.done();
 

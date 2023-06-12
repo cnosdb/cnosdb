@@ -7,8 +7,7 @@ use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
-use models::consistency_level::ConsistencyLevel;
-use models::schema::{Precision, TskvTableSchema, TIME_FIELD_NAME};
+use models::schema::{TskvTableSchema, TIME_FIELD_NAME};
 use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::Line;
 use protos::kv_service::WritePointsRequest;
@@ -62,23 +61,12 @@ impl PromRemoteServer for PromRemoteSqlServer {
         self.serialize_read_response(read_response).await
     }
 
-    async fn remote_write(&self, ctx: &Context, req: Bytes) -> Result<()> {
-        let prom_write_request = self.deserialize_write_request(req).await?;
-        let write_points_request = self
-            .prom_write_request_to_write_points_request(ctx, prom_write_request)
-            .await?;
+    fn remote_write(&self, ctx: &Context, req: Bytes) -> Result<WritePointsRequest> {
+        let prom_write_request = self.deserialize_write_request(req)?;
+        let write_points_request =
+            self.prom_write_request_to_write_points_request(ctx, prom_write_request)?;
         debug!("Received remote write request: {:?}", write_points_request);
-
-        self.coord
-            .write_points(
-                ctx.tenant().to_string(),
-                ConsistencyLevel::Any,
-                Precision::NS,
-                write_points_request,
-            )
-            .await?;
-
-        Ok(())
+        Ok(write_points_request)
     }
 }
 
@@ -104,7 +92,7 @@ impl PromRemoteSqlServer {
         })
     }
 
-    async fn deserialize_write_request(&self, req: Bytes) -> Result<WriteRequest> {
+    fn deserialize_write_request(&self, req: Bytes) -> Result<WriteRequest> {
         let mut decompressed = Vec::new();
         let compressed = req.to_byte_slice();
         self.codec.decompress(compressed, &mut decompressed, None)?;
@@ -115,7 +103,7 @@ impl PromRemoteSqlServer {
         })
     }
 
-    async fn prom_write_request_to_write_points_request(
+    fn prom_write_request_to_write_points_request(
         &self,
         ctx: &Context,
         req: WriteRequest,
