@@ -317,11 +317,11 @@ pub fn allocation_replication_set(
 pub fn get_disk_info(path: &str) -> std::io::Result<u64> {
     use std::mem::MaybeUninit;
 
-    use crate::errors::check_err;
-
     #[cfg(unix)]
     {
         use std::ffi::CString;
+
+        use crate::errors::check_err;
 
         let mut statfs = MaybeUninit::<libc::statfs>::zeroed();
         let c_storage_path = CString::new(path).unwrap();
@@ -340,50 +340,20 @@ pub fn get_disk_info(path: &str) -> std::io::Result<u64> {
     #[cfg(windows)]
     {
         use std::ffi::OsStr;
-        use std::os::windows::prelude::OsStrExt;
 
-        use winapi::um::winnt::{LPCWSTR, PULARGE_INTEGER, ULARGE_INTEGER, WCHAR};
+        use windows::core::HSTRING;
+        use windows::Win32::Storage::FileSystem::{
+            GetDiskSpaceInformationW, DISK_SPACE_INFORMATION,
+        };
 
-        // A directory on the disk.
-        // If this parameter is NULL, the function uses the root of the current disk.
-        // If this parameter is a UNC name, it must include a trailing backslash, for example, "\\MyServer\MyShare\".
-        // This parameter does not have to specify the root directory on a disk. The function accepts any directory on a disk.
-        // The calling application must have FILE_LIST_DIRECTORY access rights for this directory.
-        let dirctory_name: Vec<WCHAR> = OsStr::new(path).encode_wide().collect();
-
-        // A pointer to a variable that receives the total number of free bytes on a disk that are available to the user who is associated with the calling thread.
-        let mut free_bytes_available_to_caller = MaybeUninit::<ULARGE_INTEGER>::zeroed();
-
-        // A pointer to a variable that receives the total number of bytes on a disk that are available to the user who is associated with the calling thread.
-        let mut _total_number_of_bytes = MaybeUninit::<ULARGE_INTEGER>::zeroed();
-        // A pointer to a variable that receives the total number of bytes on a disk that are available to the user who is associated with the calling thread.
-        let mut _total_number_of_free_bytes = MaybeUninit::<ULARGE_INTEGER>::zeroed();
-        unsafe {
-            // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getdiskfreespaceexw
-            // If the function succeeds, the return value is nonzero.
-            // If the function fails, the return value is zero (0). To get extended error information, call GetLastError.
-            check_err(winapi::um::fileapi::GetDiskFreeSpaceExW(
-                dirctory_name.as_ptr() as LPCWSTR,
-                free_bytes_available_to_caller.as_mut_ptr() as PULARGE_INTEGER,
-                _total_number_of_bytes.as_mut_ptr() as PULARGE_INTEGER,
-                _total_number_of_free_bytes.as_mut_ptr() as PULARGE_INTEGER,
-            ))?;
-        }
-
-        #[cfg(target_pointer_width = "64")]
-        {
-            Ok(unsafe { *free_bytes_available_to_caller.assume_init().QuadPart() })
-        }
-
-        #[cfg(target_pointer_width = "32")]
-        {
-            let u = unsafe {
-                let free_bytes_available_to_caller = free_bytes_available_to_caller.assume_init();
-                free_bytes_available_to_caller.u()
-            };
-            let mut free_bytes = u.LowPart as u64;
-            free_bytes |= (u.HighPart as u64) << 32;
-            Ok(free_bytes)
-        }
+        let hdir = HSTRING::from(OsStr::new(path));
+        let mut disk_space_info = MaybeUninit::<DISK_SPACE_INFORMATION>::zeroed();
+        let disk_space_info = unsafe {
+            GetDiskSpaceInformationW(&hdir, disk_space_info.as_mut_ptr())
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            disk_space_info.assume_init()
+        };
+        Ok(disk_space_info.ActualAvailableAllocationUnits
+            * (disk_space_info.SectorsPerAllocationUnit * disk_space_info.BytesPerSector) as u64)
     }
 }

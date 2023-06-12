@@ -195,7 +195,7 @@ impl AdminMeta for RemoteAdminMeta {
         let disk_free = match get_disk_info(&self.path) {
             Ok(size) => size,
             Err(e) => {
-                error!("Failed to get disk info:{}", e);
+                error!("Failed to get disk info '{}': {}", self.path, e);
                 0
             }
         };

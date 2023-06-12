@@ -3771,7 +3771,7 @@ dependencies = [
  "trace",
  "utils",
  "uuid",
- "winapi",
+ "windows",
 ]
 
 [[package]]
