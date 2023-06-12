@@ -631,6 +631,10 @@ impl MetaClient for RemoteMetaClient {
 
         if rsp.code == command::META_REQUEST_SUCCESS {
             Ok(())
+        } else if rsp.code == command::META_REQUEST_TABLE_NOT_FOUND {
+            Err(MetaError::TableNotFound {
+                table: table.to_string(),
+            })
         } else {
             Err(MetaError::CommonError {
                 msg: rsp.to_string(),
