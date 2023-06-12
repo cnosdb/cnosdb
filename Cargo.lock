@@ -6582,6 +6582,7 @@ dependencies = [
  "http",
  "itertools",
  "snafu",
+ "tonic",
  "tower",
  "trace",
 ]

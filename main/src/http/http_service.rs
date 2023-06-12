@@ -688,7 +688,7 @@ impl HttpService {
                     let result = {
                         let mut span_recorder =
                             SpanRecorder::new(span_context.child_span("remote read"));
-                        prs.remote_read(&context, req)
+                        prs.remote_read(&context, req, span_recorder.span_ctx())
                             .await
                             .map(|_| ResponseBuilder::ok())
                             .map_err(|e| {
@@ -1077,7 +1077,13 @@ async fn coord_write_points_with_span_recorder(
 ) -> Result<(), HttpError> {
     let mut span_recorder = SpanRecorder::new(span_context.child_span("write points"));
     coord
-        .write_points(tenant, consistency_level, precision, write_points_req)
+        .write_points(
+            tenant,
+            consistency_level,
+            precision,
+            write_points_req,
+            span_recorder.span_ctx(),
+        )
         .await
         .map_err(|e| {
             span_recorder.error(e.to_string());
@@ -1093,9 +1099,13 @@ async fn sql_handle(
 ) -> Result<Response, HttpError> {
     debug!("prepare to execute: {:?}", query.content());
     let handle = {
-        let execute_span_recorder = SpanRecorder::new(span_ctx.child_span("execute"));
+        let mut execute_span_recorder = SpanRecorder::new(span_ctx.child_span("execute"));
         dbms.execute(query, execute_span_recorder.span_ctx())
-            .await?
+            .await
+            .map_err(|err| {
+                execute_span_recorder.error(err.to_string());
+                err
+            })?
     };
 
     let out = handle.result();
@@ -1108,10 +1118,14 @@ async fn sql_handle(
             if err.to_string().contains("read tsm block file error") {
                 info!("tsm file broken {:?}, try read....", err);
                 let handle = {
-                    let execute_span_recorder =
+                    let mut execute_span_recorder =
                         SpanRecorder::new(span_ctx.child_span("retry execute"));
                     dbms.execute(query, execute_span_recorder.span_ctx())
-                        .await?
+                        .await
+                        .map_err(|err| {
+                            execute_span_recorder.error(err.to_string());
+                            err
+                        })?
                 };
                 let out = handle.result();
                 let resp = HttpResponse::new(out, fmt);

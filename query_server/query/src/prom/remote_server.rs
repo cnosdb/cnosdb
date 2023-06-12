@@ -25,7 +25,7 @@ use spi::server::dbms::DBMSRef;
 use spi::server::prom::PromRemoteServer;
 use spi::service::protocol::{Context, Query, QueryHandle};
 use spi::{QueryError, Result};
-use trace::{debug, warn};
+use trace::{debug, warn, SpanContext, SpanExt, SpanRecorder};
 
 use super::time_series::writer::WriterBuilder;
 use super::{METRIC_NAME_LABEL, METRIC_SAMPLE_COLUMN_NAME};
@@ -39,7 +39,12 @@ pub struct PromRemoteSqlServer {
 
 #[async_trait]
 impl PromRemoteServer for PromRemoteSqlServer {
-    async fn remote_read(&self, ctx: &Context, req: Bytes) -> Result<Vec<u8>> {
+    async fn remote_read(
+        &self,
+        ctx: &Context,
+        req: Bytes,
+        span_ctx: Option<&SpanContext>,
+    ) -> Result<Vec<u8>> {
         let meta = self
             .coord
             .meta_manager()
@@ -54,7 +59,10 @@ impl PromRemoteServer for PromRemoteSqlServer {
 
         debug!("Received remote read request: {:?}", read_request);
 
-        let read_response = self.process_read_request(ctx, meta, read_request).await?;
+        let span_recorder = SpanRecorder::new(span_ctx.child_span("process read request"));
+        let read_response = self
+            .process_read_request(ctx, meta, read_request, span_recorder)
+            .await?;
 
         debug!("Return remote read response: {:?}", read_response);
 
@@ -145,6 +153,7 @@ impl PromRemoteSqlServer {
         ctx: &Context,
         meta: MetaClientRef,
         read_request: ReadRequest,
+        span_recorder: SpanRecorder,
     ) -> Result<ReadResponse> {
         let mut results = Vec::with_capacity(read_request.queries.len());
         for q in read_request.queries {
@@ -153,8 +162,12 @@ impl PromRemoteSqlServer {
 
             debug!("Prepare to execute: {:?}", sqls);
 
-            for sql in sqls {
-                timeseries.append(&mut self.process_single_sql(ctx, sql).await?);
+            for (idx, sql) in sqls.into_iter().enumerate() {
+                timeseries.append(
+                    &mut self
+                        .process_single_sql(ctx, sql, span_recorder.child(idx.to_string()))
+                        .await?,
+                );
             }
 
             results.push(QueryResult {
@@ -173,6 +186,7 @@ impl PromRemoteSqlServer {
         &self,
         ctx: &Context,
         sql: SqlWithTable,
+        span_recorder: SpanRecorder,
     ) -> Result<Vec<TimeSeries>> {
         let table_schema = sql.table;
         let tag_name_indices = table_schema.tag_indices();
@@ -190,7 +204,10 @@ impl PromRemoteSqlServer {
         })?;
 
         let inner_query = Query::new(ctx.clone(), sql.sql);
-        let result = self.db.execute(&inner_query, None).await?;
+        let result = self
+            .db
+            .execute(&inner_query, span_recorder.span_ctx())
+            .await?;
 
         transform_time_series(result, tag_name_indices, sample_value_idx, sample_time_idx).await
     }

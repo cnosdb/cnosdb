@@ -246,6 +246,8 @@ impl HintedOffManager {
                     &block.tenant,
                     block.precision,
                     block.data.clone(),
+                    // not record trace
+                    None,
                 )
                 .await;
 
