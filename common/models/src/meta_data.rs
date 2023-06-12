@@ -326,12 +326,15 @@ pub fn get_disk_info(path: &str) -> std::io::Result<u64> {
         let mut statfs = MaybeUninit::<libc::statfs>::zeroed();
         let c_storage_path = CString::new(path).unwrap();
         check_err(unsafe {
-            libc::statfs(c_storage_path.as_ptr() as *const i8, statfs.as_mut_ptr())
+            libc::statfs(
+                c_storage_path.as_ptr() as *const libc::c_char,
+                statfs.as_mut_ptr(),
+            )
         })?;
 
         let statfs = unsafe { statfs.assume_init() };
 
-        Ok(statfs.f_bsize as u64 * statfs.f_bfree)
+        Ok(statfs.f_bsize as u64 * statfs.f_bavail)
     }
 
     #[cfg(windows)]
