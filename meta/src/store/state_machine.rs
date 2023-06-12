@@ -760,6 +760,13 @@ impl StateMachine {
         table_name: &str,
     ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, db_name, table_name);
+        if !self.db.contains_key(&key).unwrap() {
+            return StatusResponse::new(
+                META_REQUEST_TABLE_NOT_FOUND,
+                "table not found".to_string(),
+            )
+            .to_string();
+        }
         let _ = self.remove(&key);
 
         StatusResponse::new(META_REQUEST_SUCCESS, "".to_string()).to_string()
