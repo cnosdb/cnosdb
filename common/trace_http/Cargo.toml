@@ -10,3 +10,4 @@ http = { workspace = true }
 itertools = { workspace = true }
 snafu = { workspace = true }
 tower = { workspace = true }
+tonic = { workspace = true }

@@ -4,12 +4,12 @@ use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
+use datafusion::physical_plan::metrics::{self, Count, ExecutionPlanMetricsSet, MetricBuilder};
 use models::consistency_level::ConsistencyLevel;
 use models::schema::TskvTableSchemaRef;
 use protos::kv_service::WritePointsRequest;
 use spi::Result;
-use trace::debug;
+use trace::{debug, SpanContext, SpanExt, SpanRecorder};
 
 use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata};
 use crate::utils::point_util::record_batch_to_points_flat_buffer;
@@ -20,6 +20,7 @@ pub struct TskvRecordBatchSink {
     schema: TskvTableSchemaRef,
 
     metrics: TskvSinkMetrics,
+    span_recorder: SpanRecorder,
 }
 
 #[async_trait]
@@ -31,6 +32,10 @@ impl RecordBatchSink for TskvRecordBatchSink {
             self.schema,
             record_batch,
         );
+
+        let mut span_recorder = self
+            .span_recorder
+            .child(format!("Batch ({})", self.metrics.output_batches()));
 
         let rows_writed = record_batch.num_rows();
 
@@ -62,14 +67,25 @@ impl RecordBatchSink for TskvRecordBatchSink {
                 ConsistencyLevel::Any,
                 time_unit.into(),
                 req,
+                span_recorder.span_ctx(),
             )
-            .await?;
+            .await
+            .map(|_| {
+                span_recorder.set_metadata("output_rows", rows_writed);
+            })
+            .map_err(|err| {
+                span_recorder.error(err.to_string());
+                err
+            })?;
         self.coord
             .metrics()
             .sql_data_in(self.schema.tenant.as_str(), self.schema.db.as_str())
             .inc(record_batch_size);
 
         timer.done();
+
+        // Record the number of `RecordBatch` that has been written
+        self.metrics.record_output_batches(1);
 
         Ok(SinkMetadata::new(rows_writed, bytes_writed))
     }
@@ -89,15 +105,21 @@ impl TskvRecordBatchSinkProvider {
 impl RecordBatchSinkProvider for TskvRecordBatchSinkProvider {
     fn create_batch_sink(
         &self,
-        _context: Arc<TaskContext>,
+        context: Arc<TaskContext>,
         metrics: &ExecutionPlanMetricsSet,
         partition: usize,
     ) -> Box<dyn RecordBatchSink> {
+        let parent_span_ctx = context.session_config().get_extension::<SpanContext>();
+        let span_recorder = SpanRecorder::new(
+            parent_span_ctx.child_span(format!("TskvRecordBatchSink ({partition})")),
+        );
+
         Box::new(TskvRecordBatchSink {
             coord: self.coord.clone(),
             partition,
             schema: self.schema.clone(),
             metrics: TskvSinkMetrics::new(metrics, partition),
+            span_recorder,
         })
     }
 }
@@ -107,6 +129,7 @@ impl RecordBatchSinkProvider for TskvRecordBatchSinkProvider {
 pub struct TskvSinkMetrics {
     elapsed_record_batch_to_point: metrics::Time,
     elapsed_point_write: metrics::Time,
+    output_batches: Count,
 }
 
 impl TskvSinkMetrics {
@@ -118,9 +141,12 @@ impl TskvSinkMetrics {
         let elapsed_point_write =
             MetricBuilder::new(metrics).subset_time("elapsed_point_write", partition);
 
+        let output_batches = MetricBuilder::new(metrics).counter("output_batches", partition);
+
         Self {
             elapsed_record_batch_to_point,
             elapsed_point_write,
+            output_batches,
         }
     }
 
@@ -130,5 +156,13 @@ impl TskvSinkMetrics {
 
     pub fn elapsed_point_write(&self) -> &metrics::Time {
         &self.elapsed_point_write
+    }
+
+    pub fn record_output_batches(&self, num: usize) {
+        self.output_batches.add(num);
+    }
+
+    pub fn output_batches(&self) -> usize {
+        self.output_batches.value()
     }
 }

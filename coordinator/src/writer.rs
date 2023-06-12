@@ -19,7 +19,8 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use trace::debug;
+use trace::{debug, SpanContext, SpanExt, SpanRecorder};
+use trace_http::ctx::append_trace_context;
 use tskv::EngineRef;
 use utils::bitset::BitSet;
 use utils::BkdrHasher;
@@ -308,7 +309,11 @@ impl PointWriter {
         }
     }
 
-    pub async fn write_points(&self, req: &WriteRequest) -> CoordinatorResult<()> {
+    pub async fn write_points(
+        &self,
+        req: &WriteRequest,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<()> {
         let meta_client = self
             .meta_manager
             .tenant_manager()
@@ -319,58 +324,68 @@ impl PointWriter {
             })?;
 
         let mut mapping = VnodeMapping::new();
-        let fb_points = flatbuffers::root::<fb_models::Points>(&req.request.points)
-            .context(InvalidFlatbufferSnafu)?;
-        let database_name = get_db_from_fb_points(&fb_points)?;
-        for table in fb_points.tables().ok_or(CoordinatorError::Points {
-            msg: "point missing tables".to_string(),
-        })? {
-            let table_name = fb_table_name(&table)?;
-
-            let schema = table.schema().ok_or(CoordinatorError::Points {
-                msg: "points missing table schema".to_string(),
-            })?;
-
-            for item in table.points().ok_or(CoordinatorError::Points {
-                msg: "table missing table points".to_string(),
+        {
+            let _span_recorder = SpanRecorder::new(span_ctx.child_span("map point"));
+            let fb_points = flatbuffers::root::<fb_models::Points>(&req.request.points)
+                .context(InvalidFlatbufferSnafu)?;
+            let database_name = get_db_from_fb_points(&fb_points)?;
+            for table in fb_points.tables().ok_or(CoordinatorError::Points {
+                msg: "point missing tables".to_string(),
             })? {
-                mapping
-                    .map_point(
-                        meta_client.clone(),
-                        &database_name,
-                        &table_name,
-                        req.precision,
-                        schema,
-                        item,
-                    )
-                    .await?;
+                let table_name = fb_table_name(&table)?;
+
+                let schema = table.schema().ok_or(CoordinatorError::Points {
+                    msg: "points missing table schema".to_string(),
+                })?;
+
+                for item in table.points().ok_or(CoordinatorError::Points {
+                    msg: "table missing table points".to_string(),
+                })? {
+                    mapping
+                        .map_point(
+                            meta_client.clone(),
+                            &database_name,
+                            &table_name,
+                            req.precision,
+                            schema,
+                            item,
+                        )
+                        .await?;
+                }
             }
         }
 
-        let mut requests = vec![];
         let now = tokio::time::Instant::now();
-        for (_id, points) in mapping.points.iter_mut() {
-            points.finish()?;
-            if points.repl_set.vnodes.is_empty() {
-                return Err(CoordinatorError::CommonError {
-                    msg: "no available vnode in replication set".to_string(),
-                });
-            }
-            for vnode in points.repl_set.vnodes.iter() {
-                debug!("write points on vnode {:?},  now: {:?}", vnode, now);
-                if vnode.status == VnodeStatus::Copying {
+        let mut requests = vec![];
+        {
+            let _span_recorder = SpanRecorder::new(span_ctx.child_span("build requests"));
+            for (_id, points) in mapping.points.iter_mut() {
+                points.finish()?;
+                if points.repl_set.vnodes.is_empty() {
                     return Err(CoordinatorError::CommonError {
-                        msg: "vnode is moving write forbidden ".to_string(),
+                        msg: "no available vnode in replication set".to_string(),
                     });
                 }
-                let request = self.write_to_node(
-                    vnode.id,
-                    &req.tenant,
-                    vnode.node_id,
-                    req.precision,
-                    points.data.clone(),
-                );
-                requests.push(request);
+                for vnode in points.repl_set.vnodes.iter() {
+                    debug!("write points on vnode {:?},  now: {:?}", vnode, now);
+                    if vnode.status == VnodeStatus::Copying {
+                        return Err(CoordinatorError::CommonError {
+                            msg: "vnode is moving write forbidden ".to_string(),
+                        });
+                    }
+                    let request = self.write_to_node(
+                        vnode.id,
+                        &req.tenant,
+                        vnode.node_id,
+                        req.precision,
+                        points.data.clone(),
+                        SpanRecorder::new(span_ctx.child_span(format!(
+                            "write to vnode {} on node {}",
+                            vnode.id, vnode.node_id
+                        ))),
+                    );
+                    requests.push(request);
+                }
             }
         }
 
@@ -393,8 +408,11 @@ impl PointWriter {
         node_id: u64,
         precision: Precision,
         data: Vec<u8>,
+        span_recorder: SpanRecorder,
     ) -> CoordinatorResult<()> {
         if node_id == self.node_id && self.kv_inst.is_some() {
+            let _span_recorder = span_recorder.child("write to local node");
+
             let result = self
                 .write_to_local_node(vnode_id, tenant, precision, data)
                 .await;
@@ -403,14 +421,25 @@ impl PointWriter {
             return result;
         }
 
+        let mut span_recorder = span_recorder.child("write to remote node");
+
         let result = self
-            .write_to_remote_node(vnode_id, node_id, tenant, precision, data.clone())
+            .write_to_remote_node(
+                vnode_id,
+                node_id,
+                tenant,
+                precision,
+                data.clone(),
+                span_recorder.span_ctx(),
+            )
             .await;
-        if let Err(CoordinatorError::FailoverNode { id: _ }) = result {
+        if let Err(err @ CoordinatorError::FailoverNode { id: _ }) = result {
             debug!(
                 "write data to remote {}({}) failed; write to hinted handoff!",
                 node_id, vnode_id
             );
+
+            span_recorder.error(err.to_string());
 
             return self
                 .write_to_handoff(vnode_id, node_id, tenant, precision, data)
@@ -462,6 +491,7 @@ impl PointWriter {
         tenant: &str,
         precision: Precision,
         data: Vec<u8>,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         let channel = self
             .meta_manager
@@ -472,12 +502,19 @@ impl PointWriter {
         let timeout_channel = Timeout::new(channel, Duration::from_millis(self.timeout_ms));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
 
-        let cmd = tonic::Request::new(WriteVnodeRequest {
+        let mut cmd = tonic::Request::new(WriteVnodeRequest {
             vnode_id,
             precision: precision as u32,
             tenant: tenant.to_string(),
             data,
         });
+
+        // 将当前的trace span信息写入到请求的metadata中
+        append_trace_context(span_ctx, cmd.metadata_mut()).map_err(|_| {
+            CoordinatorError::CommonError {
+                msg: "Parse trace_id, this maybe a bug".to_string(),
+            }
+        })?;
 
         let begin_time = now_timestamp_millis();
         let response = client

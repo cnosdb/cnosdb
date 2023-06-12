@@ -94,29 +94,24 @@ impl ExecutionPlan for TracedProxyExec {
             partition
         )));
 
-        let new_context = self
-            .inner
-            .children()
-            .is_empty()
-            .then(|| {
-                span_recorder.span_ctx().map(|span_ctx| {
-                    let session_config = context
-                        .session_config()
-                        .clone()
-                        .with_extension(Arc::new(span_ctx.clone()));
-                    // 仅为了把 span_ctx 传到 TableScan 节点
-                    // 丢弃了原有的 context 中的udf 和 udaf
-                    Arc::new(TaskContext::new(
-                        context.task_id(),
-                        context.session_id(),
-                        session_config,
-                        Default::default(),
-                        Default::default(),
-                        context.runtime_env(),
-                    ))
-                })
+        let new_context = span_recorder
+            .span_ctx()
+            .map(|span_ctx| {
+                let session_config = context
+                    .session_config()
+                    .clone()
+                    .with_extension(Arc::new(span_ctx.clone()));
+                // 仅为了把 span_ctx 传到 TableScan 节点
+                // 丢弃了原有的 context 中的udf 和 udaf
+                Arc::new(TaskContext::new(
+                    context.task_id(),
+                    context.session_id(),
+                    session_config,
+                    Default::default(),
+                    Default::default(),
+                    context.runtime_env(),
+                ))
             })
-            .flatten()
             .unwrap_or(context);
 
         let stream = self.inner.execute(partition, new_context)?;

@@ -96,6 +96,7 @@ pub trait Coordinator: Send + Sync {
         level: ConsistencyLevel,
         precision: Precision,
         request: WritePointsRequest,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()>;
 
     fn table_scan(

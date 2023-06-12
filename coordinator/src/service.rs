@@ -194,6 +194,8 @@ impl CoordService {
                         ConsistencyLevel::Any,
                         Precision::NS,
                         req,
+                        // metrics service 不采集trace
+                        None,
                     )
                     .await
                 {
@@ -362,6 +364,7 @@ impl Coordinator for CoordService {
         level: ConsistencyLevel,
         precision: Precision,
         request: WritePointsRequest,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         let limiter = self.meta.tenant_manager().limiter(&tenant).await;
         let points = request.points.as_slice();
@@ -387,7 +390,7 @@ impl Coordinator for CoordService {
 
         let now = tokio::time::Instant::now();
         debug!("write points, now: {:?}", now);
-        let res = self.writer.write_points(&req).await;
+        let res = self.writer.write_points(&req, span_ctx).await;
         debug!(
             "write points result: {:?}, start at: {:?} elapsed: {:?}",
             res,

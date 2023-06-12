@@ -161,7 +161,7 @@ async fn do_write(
     record_batch_sink: Box<dyn RecordBatchSink>,
     metrics: TableWriterMetrics,
 ) -> Result<SendableRecordBatchStream> {
-    let timer = metrics.elapsed_compute().timer();
+    let timer = metrics.elapsed_write().timer();
     let sink_metadata = record_batch_sink
         .stream_write(input)
         .await
@@ -192,7 +192,7 @@ fn aggregate_statistiction(
 #[derive(Debug, Clone)]
 pub struct TableWriterMetrics {
     /// amount of time the operator was actively trying to use the CPU
-    elapsed_compute: metrics::Time,
+    elapsed_write: metrics::Time,
     /// end_time is set when `ExecutionMetrics::done()` is called
     end_time: metrics::Timestamp,
     /// Total number of rows writed
@@ -207,7 +207,8 @@ impl TableWriterMetrics {
         let start_time = MetricBuilder::new(metrics).start_timestamp(partition);
         start_time.record();
 
-        let elapsed_compute = MetricBuilder::new(metrics).elapsed_compute(partition);
+        let elapsed_write = MetricBuilder::new(metrics).subset_time("elapsed_write", partition);
+
         let end_time = MetricBuilder::new(metrics).end_timestamp(partition);
 
         let rows_writed = MetricBuilder::new(metrics).counter("rows_writed", partition);
@@ -215,7 +216,7 @@ impl TableWriterMetrics {
         let bytes_writed = MetricBuilder::new(metrics).counter("bytes_writed", partition);
 
         Self {
-            elapsed_compute,
+            elapsed_write,
             end_time,
             rows_writed,
             bytes_writed,
@@ -223,8 +224,8 @@ impl TableWriterMetrics {
     }
 
     /// return the metric for cpu time spend in this operator
-    pub fn elapsed_compute(&self) -> &metrics::Time {
-        &self.elapsed_compute
+    pub fn elapsed_write(&self) -> &metrics::Time {
+        &self.elapsed_write
     }
 
     pub fn rows_writed(&self) -> &metrics::Count {

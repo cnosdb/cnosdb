@@ -5,6 +5,8 @@ use std::sync::Arc;
 use http::HeaderMap;
 use itertools::Itertools;
 use snafu::Snafu;
+use tonic::metadata::errors::InvalidMetadataValue;
+use tonic::metadata::MetadataMap;
 use trace::{SpanContext, SpanId, TraceExporter, TraceId};
 
 pub const DEFAULT_TRACE_HEADER_NAME: &str = "uber-trace-id";
@@ -266,4 +268,14 @@ impl RequestLogContextExt for Option<&SpanContext> {
     fn format_jaeger(&self) -> String {
         self.map(format_jaeger_trace_context).unwrap_or_default()
     }
+}
+
+pub fn append_trace_context(
+    span_ctx: impl RequestLogContextExt,
+    headers: &mut MetadataMap,
+) -> Result<(), InvalidMetadataValue> {
+    let value = span_ctx.format_jaeger().try_into()?;
+    headers.insert(DEFAULT_TRACE_HEADER_NAME, value);
+
+    Ok(())
 }

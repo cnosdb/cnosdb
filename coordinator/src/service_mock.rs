@@ -105,6 +105,7 @@ impl Coordinator for MockCoordinator {
         level: ConsistencyLevel,
         precision: Precision,
         req: WritePointsRequest,
+        _span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         Ok(())
     }
