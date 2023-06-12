@@ -1,6 +1,7 @@
 #![feature(stmt_expr_attributes)]
 use std::fmt::Debug;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use datafusion::arrow::record_batch::RecordBatch;
 use errors::CoordinatorError;
@@ -16,6 +17,7 @@ use tskv::query_iterator::{QueryOption, TskvSourceMetrics};
 use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
+use crate::service::CoordServiceMetrics;
 
 pub mod errors;
 pub mod file_info;
@@ -122,6 +124,8 @@ pub trait Coordinator: Send + Sync {
         tenant: &str,
         cmd_type: VnodeSummarizerCmdType,
     ) -> CoordinatorResult<Vec<RecordBatch>>;
+
+    fn metrics(&self) -> &Arc<CoordServiceMetrics>;
 }
 
 async fn get_vnode_all_info(

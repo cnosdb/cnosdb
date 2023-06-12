@@ -39,7 +39,7 @@ rows
 
 -- EXECUTE SQL: COPY INTO inner_csv_v2 FROM 'query_server/test/resource/data_type/csv/full_data_type.csv' file_format = (type = 'csv'); --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Parser error: Error while parsing value hello word for column 4 at line 1"}
+{"error_code":"010001","error_message":"Datafusion: External error: Arrow error: Parser error: Error while parsing value hello word for column 4 at line 1"}
 -- ERROR:  --
 
 -- EXECUTE SQL: drop table if EXISTS inner_parquet; --

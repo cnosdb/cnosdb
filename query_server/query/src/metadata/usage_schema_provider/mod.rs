@@ -12,15 +12,17 @@ pub use vnode_disk_storage::USAGE_SCHEMA_VNODE_DISK_STORAGE;
 
 use super::TableHandleProviderRef;
 use crate::data_source::table_source::TableHandle;
-use crate::metadata::usage_schema_provider::coord_data_in::CoordDataIn;
 use crate::metadata::usage_schema_provider::coord_data_out::CoordDataOut;
+use crate::metadata::usage_schema_provider::data_in::{
+    CoordDataIn, SQLDataIn, SQLPointsDataIn, SQLWriteRow, WriteDataIn,
+};
 use crate::metadata::usage_schema_provider::user_queries::UserQueries;
 use crate::metadata::usage_schema_provider::user_writes::UserWrites;
 use crate::metadata::usage_schema_provider::vnode_cache_size::VnodeCacheSize;
 use crate::metadata::usage_schema_provider::vnode_disk_storage::VnodeDiskStorage;
 
-mod coord_data_in;
 mod coord_data_out;
+mod data_in;
 mod user_queries;
 mod user_writes;
 mod vnode_cache_size;
@@ -45,6 +47,10 @@ impl UsageSchemaProvider {
         provider.register_table_factory(Box::new(CoordDataOut {}));
         provider.register_table_factory(Box::new(UserQueries {}));
         provider.register_table_factory(Box::new(UserWrites {}));
+        provider.register_table_factory(Box::new(SQLDataIn {}));
+        provider.register_table_factory(Box::new(WriteDataIn {}));
+        provider.register_table_factory(Box::new(SQLWriteRow {}));
+        provider.register_table_factory(Box::new(SQLPointsDataIn {}));
         provider
     }
 

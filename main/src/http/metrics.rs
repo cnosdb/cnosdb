@@ -8,6 +8,7 @@ use metrics::metric_register::MetricsRegister;
 pub struct HttpMetrics {
     queries: Metric<U64Counter>,
     writes: Metric<U64Counter>,
+    write_data_in: Metric<U64Counter>,
 }
 
 impl HttpMetrics {
@@ -21,9 +22,19 @@ impl HttpMetrics {
             "the number of write requests received by the user",
         );
 
-        Self { queries, writes }
+        let write_data_in = register.metric(
+            "write_data_in",
+            "Traffic statistics written by tenants through the http write",
+        );
+
+        Self {
+            queries,
+            writes,
+            write_data_in,
+        }
     }
-    fn tenant_user_db_labels<'a>(
+
+    fn tenant_user_db_host_labels<'a>(
         tenant: &'a str,
         user: &'a str,
         db: &'a str,
@@ -39,13 +50,19 @@ impl HttpMetrics {
 
     pub fn queries_inc(&self, tenant: &str, user: &str, db: &str, host: &str) {
         self.queries
-            .recorder(Self::tenant_user_db_labels(tenant, user, db, host))
+            .recorder(Self::tenant_user_db_host_labels(tenant, user, db, host))
             .inc_one()
     }
 
     pub fn writes_inc(&self, tenant: &str, user: &str, db: &str, host: &str) {
         self.writes
-            .recorder(Self::tenant_user_db_labels(tenant, user, db, host))
+            .recorder(Self::tenant_user_db_host_labels(tenant, user, db, host))
             .inc_one()
+    }
+
+    pub fn write_data_in_inc(&self, tenant: &str, user: &str, db: &str, host: &str, data_in: u64) {
+        self.write_data_in
+            .recorder(Self::tenant_user_db_host_labels(tenant, user, db, host))
+            .inc(data_in)
     }
 }
