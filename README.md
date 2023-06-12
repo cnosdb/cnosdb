@@ -115,7 +115,7 @@ make build
 The following is a single node startup. If you need to start a cluster, see [Start a CnosDB Cluster](https://docs.cnosdb.com/en/latest/deploy/install.html#start-a-cnosdb-cluster)
 
 ```bash
-./target/debug/cnosdb run -M singleton ./config/config.toml
+./target/debug/cnosdb run -M singleton --config ./config/config.toml
 ```
 
 #### **Run CLI**
