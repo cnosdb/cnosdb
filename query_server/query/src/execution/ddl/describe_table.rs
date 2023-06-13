@@ -38,7 +38,6 @@ async fn describe_table(
     let tenant = table_name.tenant();
     let client = machine
         .meta
-        .tenant_manager()
         .tenant_meta(tenant)
         .await
         .ok_or(MetaError::TenantNotFound {

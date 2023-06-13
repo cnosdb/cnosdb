@@ -21,13 +21,12 @@ pub struct DBschemas {
 
 impl DBschemas {
     pub async fn new(db_schema: DatabaseSchema, meta: MetaRef) -> Result<Self> {
-        let client = meta
-            .tenant_manager()
-            .tenant_meta(db_schema.tenant_name())
-            .await
-            .ok_or(SchemaError::TenantNotFound {
-                tenant: db_schema.tenant_name().to_string(),
-            })?;
+        let client =
+            meta.tenant_meta(db_schema.tenant_name())
+                .await
+                .ok_or(SchemaError::TenantNotFound {
+                    tenant: db_schema.tenant_name().to_string(),
+                })?;
         if client.get_db_schema(db_schema.database_name())?.is_none() {
             client.create_db(db_schema.clone()).await?;
         }

@@ -6,7 +6,7 @@ use config::QueryConfig;
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
 use futures::{ready, FutureExt, Stream, StreamExt};
-use meta::model::AdminMetaRef;
+use meta::model::MetaRef;
 use models::record_batch_decode;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{BatchBytesResponse, QueryRecordBatchRequest};
@@ -27,7 +27,7 @@ impl TonicTskvTagScanStream {
         config: QueryConfig,
         node_id: u64,
         request: Request<QueryRecordBatchRequest>,
-        admin_meta: AdminMetaRef,
+        admin_meta: MetaRef,
         metrics: TskvSourceMetrics,
     ) -> Self {
         let fetch_result_stream = async move {

@@ -43,7 +43,7 @@ impl ReplicaSelectionPolicy for TopologyAwareReplicaSelectionPolicy {
 mod tests {
     use std::sync::Arc;
 
-    use meta::model::meta_client_mock::MockMetaManager;
+    use meta::model::meta_admin::AdminMeta;
     use models::meta_data::VnodeInfo;
 
     use super::TopologyAwareReplicaSelectionPolicy;
@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn test_topology_aware_replica_selection_policy() {
-        let meta = Arc::new(MockMetaManager::default());
+        let meta = Arc::new(AdminMeta::mock());
         let policy = TopologyAwareReplicaSelectionPolicy::new(meta);
 
         #[rustfmt::skip]

@@ -86,11 +86,7 @@ impl VnodeOpener for TemporaryTableScanOpener {
                 };
 
                 Ok(Box::pin(TonicTskvTableScanStream::new(
-                    config,
-                    node_id,
-                    request,
-                    meta.admin_meta(),
-                    metrics,
+                    config, node_id, request, meta, metrics,
                 )) as SendableCoordinatorRecordBatchStream)
             }
         };

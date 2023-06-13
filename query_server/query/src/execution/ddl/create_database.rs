@@ -27,14 +27,11 @@ impl DDLDefinitionTask for CreateDatabaseTask {
         } = self.stmt;
 
         let tenant = query_state_machine.session.tenant();
-        let client = query_state_machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .await
-            .ok_or(MetaError::TenantNotFound {
+        let client = query_state_machine.meta.tenant_meta(tenant).await.ok_or(
+            MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            })?;
+            },
+        )?;
         // .context(MetaSnafu)?;
         let db = client
             .list_databases()?
@@ -62,7 +59,6 @@ async fn create_database(stmt: &CreateDatabase, machine: QueryStateMachineRef) -
     let tenant = machine.session.tenant();
     let client = machine
         .meta
-        .tenant_manager()
         .tenant_meta(tenant)
         .await
         .ok_or(MetaError::TenantNotFound {

@@ -48,7 +48,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
         let metrics = self.metrics.clone();
         let coord_metrics = self.coord_metrics.clone();
         let option = option.clone();
-        let admin_meta = self.meta.admin_meta();
+        let admin_meta = self.meta.clone();
         let config = self.config.clone();
 
         let future = async move {

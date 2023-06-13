@@ -28,14 +28,11 @@ impl DDLDefinitionTask for AlterTableTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let table_name = &self.stmt.table_name;
         let tenant = table_name.tenant();
-        let client = query_state_machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .await
-            .ok_or(MetaError::TenantNotFound {
+        let client = query_state_machine.meta.tenant_meta(tenant).await.ok_or(
+            MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            })?;
+            },
+        )?;
 
         let mut schema = client
             .get_tskv_table_schema(table_name.database(), table_name.table())?

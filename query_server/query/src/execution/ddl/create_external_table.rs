@@ -48,7 +48,6 @@ impl DDLDefinitionTask for CreateExternalTableTask {
         );
         let client = query_state_machine
             .meta
-            .tenant_manager()
             .tenant_meta(&table_name.catalog)
             .await
             .ok_or(MetaError::TenantNotFound {
@@ -92,14 +91,14 @@ async fn create_exernal_table(
     .await?;
 
     let tenant = query_state_machine.session.tenant();
-    let client = query_state_machine
-        .meta
-        .tenant_manager()
-        .tenant_meta(tenant)
-        .await
-        .ok_or(MetaError::TenantNotFound {
-            tenant: tenant.to_string(),
-        })?;
+    let client =
+        query_state_machine
+            .meta
+            .tenant_meta(tenant)
+            .await
+            .ok_or(MetaError::TenantNotFound {
+                tenant: tenant.to_string(),
+            })?;
     // .context(MetaSnafu)?;
 
     Ok(client

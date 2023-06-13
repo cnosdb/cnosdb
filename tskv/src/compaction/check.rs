@@ -454,8 +454,8 @@ mod test {
     use config::Config;
     use datafusion::arrow::datatypes::TimeUnit;
     use memory_pool::GreedyMemoryPool;
-    use meta::model::meta_manager::RemoteMetaManager;
-    use meta::model::{MetaClient, MetaManager};
+    use meta::model::meta_admin::AdminMeta;
+    use meta::model::{MetaClientRef, MetaRef};
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::predicate::domain::TimeRange;
@@ -834,19 +834,14 @@ mod test {
         }
     }
 
-    async fn init_meta(
-        config: &Config,
-        tenant: &str,
-    ) -> (Arc<dyn MetaManager>, Arc<dyn MetaClient>) {
-        let meta: Arc<dyn MetaManager> =
-            RemoteMetaManager::new(config.clone(), config.storage.path.clone()).await;
+    async fn init_meta(config: &Config, tenant: &str) -> (MetaRef, MetaClientRef) {
+        let meta = AdminMeta::new(config.clone()).await;
 
-        meta.admin_meta().add_data_node().await.unwrap();
+        meta.add_data_node().await.unwrap();
         let _ = meta
-            .tenant_manager()
             .create_tenant(tenant.to_string(), TenantOptions::default())
             .await;
-        let meta_client = meta.tenant_manager().tenant_meta(tenant).await.unwrap();
+        let meta_client = meta.tenant_meta(tenant).await.unwrap();
 
         (meta, meta_client)
     }
@@ -855,8 +850,8 @@ mod test {
     async fn init_tskv(
         options: &Options,
         runtime: Arc<Runtime>,
-        meta_manager: Arc<dyn MetaManager>,
-        meta_client: Arc<dyn MetaClient>,
+        meta_manager: MetaRef,
+        meta_client: MetaClientRef,
         vnode_id: TseriesFamilyId,
         tenant: &str,
         database: &str,
@@ -1031,8 +1026,8 @@ mod test {
         let engine = rt.block_on(init_tskv(
             &options,
             rt.clone(),
-            meta_manager.clone(),
-            meta_client.clone(),
+            meta_manager,
+            meta_client,
             vnode_id,
             &tenant_name,
             &database_name,

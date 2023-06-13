@@ -51,7 +51,7 @@ impl ClusterSchemaProvider {
         metadata: MetaRef,
     ) -> Result<Arc<dyn TableProvider>, MetaError> {
         match self.table_factories.get(name.to_ascii_lowercase().as_str()) {
-            Some(f) => Ok(f.create(user, metadata.clone())),
+            Some(f) => Ok(f.create(user, metadata)),
             None => Err(MetaError::TableNotFound {
                 table: name.to_string(),
             }),

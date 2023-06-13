@@ -44,7 +44,6 @@ impl PromRemoteServer for PromRemoteSqlServer {
         let meta = self
             .coord
             .meta_manager()
-            .tenant_manager()
             .tenant_meta(ctx.tenant())
             .await
             .ok_or_else(|| MetaError::TenantNotFound {

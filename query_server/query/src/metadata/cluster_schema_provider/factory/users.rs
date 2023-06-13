@@ -71,7 +71,7 @@ impl TableProvider for ClusterSchemaUsersTable {
         // Only visible to admin
         if self.user.desc().is_admin() {
             let users =
-                self.metadata.user_manager().users().await.map_err(|e| {
+                self.metadata.users().await.map_err(|e| {
                     DataFusionError::Internal(format!("Failed to get users: {:?}", e))
                 })?;
             for user in users {

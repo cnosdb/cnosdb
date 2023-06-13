@@ -32,8 +32,7 @@ impl DDLDefinitionTask for CreateUserTask {
         //     &self,
         //     name: &str
         // ) -> Result<Option<UserDesc>>;
-        let meta = query_state_machine.meta.user_manager();
-        let user = meta.user(name).await?;
+        let user = query_state_machine.meta.user(name).await?;
 
         match (if_not_exists, user) {
             // do not create if exists
@@ -54,7 +53,9 @@ impl DDLDefinitionTask for CreateUserTask {
                 // ) -> Result<&UserDesc>;
 
                 debug!("Create user {} with options [{}]", name, options);
-                meta.create_user(name.clone(), options.clone(), false)
+                query_state_machine
+                    .meta
+                    .create_user(name.clone(), options.clone(), false)
                     .await?;
 
                 Ok(Output::Nil(()))

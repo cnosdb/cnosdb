@@ -30,14 +30,11 @@ impl DDLDefinitionTask for CreateTableTask {
         } = self.stmt;
 
         let tenant = query_state_machine.session.tenant();
-        let client = query_state_machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .await
-            .ok_or(MetaError::TenantNotFound {
+        let client = query_state_machine.meta.tenant_meta(tenant).await.ok_or(
+            MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            })?;
+            },
+        )?;
         let table = client.get_tskv_table_schema(name.database(), name.table())?;
 
         match (if_not_exists, table) {
@@ -59,14 +56,14 @@ impl DDLDefinitionTask for CreateTableTask {
 async fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Result<()> {
     let CreateTable { name, .. } = stmt;
 
-    let client = machine
-        .meta
-        .tenant_manager()
-        .tenant_meta(name.tenant())
-        .await
-        .ok_or(MetaError::TenantNotFound {
-            tenant: name.tenant().to_string(),
-        })?;
+    let client =
+        machine
+            .meta
+            .tenant_meta(name.tenant())
+            .await
+            .ok_or(MetaError::TenantNotFound {
+                tenant: name.tenant().to_string(),
+            })?;
 
     let table_schema = build_schema(stmt);
     client

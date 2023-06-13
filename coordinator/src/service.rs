@@ -231,7 +231,7 @@ impl CoordService {
         node_id: u64,
         req: AdminCommandRequest,
     ) -> CoordinatorResult<()> {
-        let channel = self.meta.admin_meta().get_node_conn(node_id).await?;
+        let channel = self.meta.get_node_conn(node_id).await?;
 
         let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
 
@@ -249,14 +249,11 @@ impl CoordService {
     ) -> Result<Vec<ReplicationSet>, CoordinatorError> {
         let tenant = table.tenant();
         let database = table.database();
-        let meta = self
-            .meta_manager()
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .await
-            .ok_or(CoordinatorError::TenantNotFound {
+        let meta = self.meta_manager().tenant_meta(tenant).await.ok_or(
+            CoordinatorError::TenantNotFound {
                 name: tenant.to_string(),
-            })?;
+            },
+        )?;
         let buckets = meta.mapping_bucket(database, time_ranges.min_ts(), time_ranges.max_ts())?;
         let shards = buckets.into_iter().flat_map(|b| b.shard_group).collect();
 
@@ -264,12 +261,11 @@ impl CoordService {
     }
 
     fn build_query_checker(&self, tenant: &str) -> CheckFuture {
-        let tenant_manager = self.meta.tenant_manager();
         let tenant = tenant.to_string();
+        let meta = self.meta.clone();
 
         let checker = async move {
-            tenant_manager
-                .limiter(&tenant)
+            meta.limiter(&tenant)
                 .await
                 .check_query()
                 .await
@@ -284,7 +280,7 @@ impl CoordService {
         node_id: u64,
         req: AdminFetchCommandRequest,
     ) -> CoordinatorResult<RecordBatch> {
-        let channel = self.meta.admin_meta().get_node_conn(node_id).await?;
+        let channel = self.meta.get_node_conn(node_id).await?;
 
         let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
 
@@ -315,7 +311,7 @@ impl Coordinator for CoordService {
     }
 
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
-        self.meta.tenant_manager().tenant_meta(tenant).await
+        self.meta.tenant_meta(tenant).await
     }
 
     async fn table_vnodes(
@@ -340,7 +336,7 @@ impl Coordinator for CoordService {
         precision: Precision,
         request: WritePointsRequest,
     ) -> CoordinatorResult<()> {
-        let limiter = self.meta.tenant_manager().limiter(&tenant).await;
+        let limiter = self.meta.limiter(&tenant).await;
         let points = request.points.as_slice();
 
         let fb_points = flatbuffers::root::<Points>(points)?;
@@ -423,7 +419,7 @@ impl Coordinator for CoordService {
     }
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()> {
-        let nodes = self.meta.admin_meta().data_nodes().await;
+        let nodes = self.meta.data_nodes().await;
 
         let now = tokio::time::Instant::now();
         let mut requests = vec![];
@@ -503,8 +499,6 @@ impl Coordinator for CoordService {
             }
 
             VnodeManagerCmdType::Compact(vnode_ids) => {
-                let meta = self.meta.admin_meta();
-
                 // Group vnode ids by node id.
                 let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
                 for vnode_id in vnode_ids.iter() {
@@ -515,7 +509,7 @@ impl Coordinator for CoordService {
                         .or_default()
                         .push(*vnode_id);
                 }
-                let nodes = meta.data_nodes().await;
+                let nodes = self.meta.data_nodes().await;
 
                 // Send grouped vnode ids to nodes.
                 let mut req_futures = vec![];
@@ -558,8 +552,7 @@ impl Coordinator for CoordService {
                         .push(vnode.id);
                 }
 
-                let meta = self.meta.admin_meta();
-                let nodes = meta.data_nodes().await;
+                let nodes = self.meta.data_nodes().await;
 
                 // Send grouped vnode ids to nodes.
                 let mut req_futures = vec![];

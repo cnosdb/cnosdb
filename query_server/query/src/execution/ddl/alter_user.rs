@@ -28,8 +28,6 @@ impl DDLDefinitionTask for AlterUserTask {
             ref alter_user_action,
         } = self.stmt;
 
-        let meta = query_state_machine.meta.user_manager();
-
         match alter_user_action {
             AlterUserAction::RenameTo(new_name) => {
                 // 修改用户名称
@@ -41,7 +39,10 @@ impl DDLDefinitionTask for AlterUserTask {
                 //     new_name: String
                 // ) -> Result<()>;
                 debug!("Rename user {} to {}", user_name, new_name);
-                meta.rename_user(user_name, new_name.to_string()).await?;
+                query_state_machine
+                    .meta
+                    .rename_user(user_name, new_name.to_string())
+                    .await?;
             }
             AlterUserAction::Set(options) => {
                 // TODO 修改用户的信息
@@ -53,7 +54,10 @@ impl DDLDefinitionTask for AlterUserTask {
                 //     options: UserOptions
                 // ) -> Result<()>;
                 debug!("Alter user {} with options [{}]", user_name, options);
-                meta.alter_user(user_name, options.clone()).await?;
+                query_state_machine
+                    .meta
+                    .alter_user(user_name, options.clone())
+                    .await?;
                 // .context(MetaSnafu)?;
             }
         }

@@ -5,7 +5,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use memory_pool::GreedyMemoryPool;
-    use meta::model::meta_manager::RemoteMetaManager;
+    use meta::model::meta_admin::AdminMeta;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{Precision, TenantOptions};
@@ -27,18 +27,11 @@ mod tests {
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let meta_manager: MetaRef = rt.block_on(RemoteMetaManager::new(
-            global_config.clone(),
-            global_config.storage.path,
-        ));
+        let meta_manager: MetaRef = rt.block_on(AdminMeta::new(global_config));
 
-        rt.block_on(meta_manager.admin_meta().add_data_node())
-            .unwrap();
-        let _ = rt.block_on(
-            meta_manager
-                .tenant_manager()
-                .create_tenant("cnosdb".to_string(), TenantOptions::default()),
-        );
+        rt.block_on(meta_manager.add_data_node()).unwrap();
+        let _ =
+            rt.block_on(meta_manager.create_tenant("cnosdb".to_string(), TenantOptions::default()));
         rt.block_on(async {
             (
                 rt.clone(),

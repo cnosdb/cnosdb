@@ -165,7 +165,6 @@ impl ContextProviderExtension for MetadataProvider {
     async fn get_user(&self, name: &str) -> Result<UserDesc, MetaError> {
         self.coord
             .meta_manager()
-            .user_manager()
             .user(name)
             .await?
             .ok_or_else(|| MetaError::UserNotFound {
@@ -176,7 +175,6 @@ impl ContextProviderExtension for MetadataProvider {
     async fn get_tenant(&self, name: &str) -> Result<Tenant, MetaError> {
         self.coord
             .meta_manager()
-            .tenant_manager()
             .tenant(name)
             .await?
             .ok_or_else(|| MetaError::TenantNotFound {
