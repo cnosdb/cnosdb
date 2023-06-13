@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use lru_cache::asynchronous::ShardedCache;
@@ -42,6 +42,7 @@ pub struct ColumnFile {
     compacting: AtomicBool,
 
     path: PathBuf,
+    tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
 }
 
 impl ColumnFile {
@@ -49,6 +50,7 @@ impl ColumnFile {
         meta: &CompactMeta,
         path: impl AsRef<Path>,
         field_id_filter: Arc<BloomFilter>,
+        tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
     ) -> Self {
         Self {
             file_id: meta.file_id,
@@ -60,6 +62,7 @@ impl ColumnFile {
             deleted: AtomicBool::new(false),
             compacting: AtomicBool::new(false),
             path: path.as_ref().into(),
+            tsm_reader_cache,
         }
     }
 
@@ -143,6 +146,13 @@ impl Drop for ColumnFile {
         debug!("Removing file {}", self.file_id);
         if self.is_deleted() {
             let path = self.file_path();
+            if let Some(cache) = self.tsm_reader_cache.upgrade() {
+                let k = format!("{}", path.display());
+                tokio::spawn(async move {
+                    cache.remove(&k).await;
+                });
+            }
+
             if let Err(e) = std::fs::remove_file(&path) {
                 error!(
                     "Error when removing file {} at '{}': {}",
@@ -177,6 +187,7 @@ impl ColumnFile {
             deleted: AtomicBool::new(false),
             compacting: AtomicBool::new(false),
             path: path.as_ref().into(),
+            tsm_reader_cache: Weak::new(),
         }
     }
 
@@ -238,6 +249,7 @@ impl LevelInfo {
         &mut self,
         compact_meta: &CompactMeta,
         field_filter: Arc<BloomFilter>,
+        tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
     ) {
         let file_path = if compact_meta.is_delta {
             let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
@@ -250,6 +262,7 @@ impl LevelInfo {
             compact_meta,
             file_path,
             field_filter,
+            tsm_reader_cache,
         )));
         self.tsf_id = compact_meta.tsf_id;
         self.cur_size += compact_meta.file_size;
@@ -390,6 +403,7 @@ impl Version {
             self.ts_family_id,
             self.storage_opt.clone(),
         );
+        let weak_tsm_reader_cache = Arc::downgrade(&self.tsm_reader_cache);
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
                 if deleted_files[file.level as usize].contains(&file.file_id) {
@@ -400,7 +414,11 @@ impl Version {
             }
             for file in added_files[level.level as usize].iter() {
                 let field_filter = file_metas.remove(&file.file_id).unwrap_or_default();
-                new_levels[level.level as usize].push_compact_meta(file, field_filter);
+                new_levels[level.level as usize].push_compact_meta(
+                    file,
+                    field_filter,
+                    weak_tsm_reader_cache.clone(),
+                );
             }
             new_levels[level.level as usize].update_time_range();
         }

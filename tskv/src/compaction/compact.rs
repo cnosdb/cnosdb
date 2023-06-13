@@ -676,9 +676,7 @@ pub async fn run_compaction_job(
     let tsf_id = request.ts_family_id;
     let mut tsm_readers = Vec::new();
     for col_file in request.files.iter() {
-        let tsm_file = col_file.file_path();
-        // TODO Get tsm reader from lru cache.
-        let tsm_reader = request.version.get_tsm_reader(&tsm_file).await?;
+        let tsm_reader = request.version.get_tsm_reader(col_file.file_path()).await?;
         tsm_readers.push(tsm_reader);
     }
 

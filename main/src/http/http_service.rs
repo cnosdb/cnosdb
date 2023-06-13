@@ -103,6 +103,8 @@ impl HttpService {
         metrics_register: Arc<MetricsRegister>,
         tracer_collector: Option<Arc<dyn TraceExporter>>,
     ) -> Self {
+        let http_metrics = Arc::new(HttpMetrics::new(&metrics_register));
+
         let prs = Arc::new(PromRemoteSqlServer::new(dbms.clone(), coord.clone()));
 
         Self {
@@ -115,9 +117,9 @@ impl HttpService {
             query_body_limit,
             write_body_limit,
             mode,
-            metrics_register: metrics_register.clone(),
-            http_metrics: Arc::new(HttpMetrics::new(&metrics_register)),
             tracer_collector,
+            metrics_register,
+            http_metrics,
         }
     }
 
@@ -362,7 +364,8 @@ impl HttpService {
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
-                    let req = {
+                    let req_len = req.len() as u64;
+                    let write_points_req = {
                         let mut span_recorder = SpanRecorder::new(
                             span_context.child_span("construct write lines points request"),
                         );
@@ -371,27 +374,25 @@ impl HttpService {
                             .map_err(reject::custom)?
                     };
 
-                    let resp: Result<(), HttpError> = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("write points"));
-                        coord
-                            .write_points(
-                                ctx.tenant().to_string(),
-                                ConsistencyLevel::Any,
-                                precision,
-                                req,
-                            )
-                            .await
-                            .map_err(|e| {
-                                span_recorder.error(e.to_string());
-                                e.into()
-                            })
-                    };
+                    let resp = coord_write_points_with_span_recorder(
+                        &coord,
+                        ctx.tenant().to_string(),
+                        ConsistencyLevel::Any,
+                        precision,
+                        write_points_req,
+                        span_context,
+                    )
+                    .await;
 
-                    let (tenant, db, user) =
-                        (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
+                    let (tenant, db, user, addr) = (
+                        ctx.tenant(),
+                        ctx.database(),
+                        ctx.user_info().desc().name(),
+                        addr.as_str(),
+                    );
 
-                    metrics.writes_inc(tenant, user, db, addr.as_str());
+                    metrics.writes_inc(tenant, user, db, addr);
+                    metrics.write_data_in_inc(tenant, user, db, addr, req_len);
 
                     sample_point_write_duration(
                         tenant,
@@ -446,35 +447,33 @@ impl HttpService {
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
-                    let req = {
+                    let req_len = req.len() as u64;
+                    let write_points_req = {
                         let mut span_recorder = SpanRecorder::new(
                             span_context.child_span("construct write tsdb points request"),
                         );
                         span_recorder.set_metadata("bytes", req.len());
                         construct_write_tsdb_points_request(req, &ctx).map_err(reject::custom)?
                     };
+                    let resp = coord_write_points_with_span_recorder(
+                        &coord,
+                        ctx.tenant().to_string(),
+                        ConsistencyLevel::Any,
+                        precision,
+                        write_points_req,
+                        span_context,
+                    )
+                    .await;
 
-                    let resp: Result<(), HttpError> = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("write points"));
-                        coord
-                            .write_points(
-                                ctx.tenant().to_string(),
-                                ConsistencyLevel::Any,
-                                precision,
-                                req,
-                            )
-                            .await
-                            .map_err(|e| {
-                                span_recorder.error(e.to_string());
-                                e.into()
-                            })
-                    };
+                    let (tenant, db, user, addr) = (
+                        ctx.tenant(),
+                        ctx.database(),
+                        ctx.user_info().desc().name(),
+                        addr.as_str(),
+                    );
 
-                    let (tenant, db, user) =
-                        (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
-
-                    metrics.writes_inc(tenant, user, db, addr.as_str());
+                    metrics.writes_inc(tenant, user, db, addr);
+                    metrics.write_data_in_inc(tenant, user, db, addr, req_len);
 
                     sample_point_write_duration(
                         tenant,
@@ -529,7 +528,8 @@ impl HttpService {
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
-                    let req = {
+                    let req_len = req.len() as u64;
+                    let write_points_req = {
                         let mut span_recorder = SpanRecorder::new(
                             span_context.child_span("construct write tsdb points json request"),
                         );
@@ -537,28 +537,25 @@ impl HttpService {
                         construct_write_tsdb_points_json_request(req, &ctx)
                             .map_err(reject::custom)?
                     };
+                    let resp = coord_write_points_with_span_recorder(
+                        &coord,
+                        ctx.tenant().to_string(),
+                        ConsistencyLevel::Any,
+                        precision,
+                        write_points_req,
+                        span_context,
+                    )
+                    .await;
 
-                    let resp: Result<(), HttpError> = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("write points"));
-                        coord
-                            .write_points(
-                                ctx.tenant().to_string(),
-                                ConsistencyLevel::Any,
-                                precision,
-                                req,
-                            )
-                            .await
-                            .map_err(|e| {
-                                span_recorder.error(e.to_string());
-                                e.into()
-                            })
-                    };
+                    let (tenant, db, user, addr) = (
+                        ctx.tenant(),
+                        ctx.database(),
+                        ctx.user_info().desc().name(),
+                        addr.as_str(),
+                    );
 
-                    let (tenant, db, user) =
-                        (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
-
-                    metrics.writes_inc(tenant, user, db, addr.as_str());
+                    metrics.writes_inc(tenant, user, db, addr);
+                    metrics.write_data_in_inc(tenant, user, db, addr, req_len);
 
                     sample_point_write_duration(
                         tenant,
@@ -769,34 +766,43 @@ impl HttpService {
                         span_recorder.record(ctx)
                     };
 
-                    let result = {
+                    let req_len = req.len() as u64;
+                    let write_points_req = {
                         let mut span_recorder =
                             SpanRecorder::new(span_context.child_span("remote write"));
-                        prs.remote_write(&ctx, req)
-                            .await
-                            .map(|_| ResponseBuilder::ok())
-                            .map_err(|e| {
-                                span_recorder.error(e.to_string());
-                                trace::error!(
-                                    "Failed to handle prom remote write request, err: {}",
-                                    e
-                                );
-                                reject::custom(HttpError::from(e))
-                            })
+                        prs.remote_write(&ctx, req).map_err(|e| {
+                            span_recorder.error(e.to_string());
+                            trace::error!("Failed to handle prom remote write request, err: {}", e);
+                            reject::custom(HttpError::from(e))
+                        })?
                     };
+                    let resp = coord_write_points_with_span_recorder(
+                        &coord,
+                        ctx.tenant().to_string(),
+                        ConsistencyLevel::Any,
+                        Precision::NS,
+                        write_points_req,
+                        span_context,
+                    )
+                    .await;
 
-                    let (tenant, user, db) =
-                        (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
+                    let (tenant, user, db, addr) = (
+                        ctx.tenant(),
+                        ctx.database(),
+                        ctx.user_info().desc().name(),
+                        addr.as_str(),
+                    );
 
-                    metrics.writes_inc(tenant, user, db, addr.as_str());
+                    metrics.writes_inc(tenant, user, db, addr);
+                    metrics.write_data_in_inc(tenant, user, db, addr, req_len);
 
                     sample_point_write_duration(
                         ctx.tenant(),
                         ctx.database(),
-                        result.is_ok(),
+                        resp.is_ok(),
                         start.elapsed().as_millis() as f64,
                     );
-                    result
+                    resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
     }
@@ -1059,6 +1065,24 @@ fn construct_write_tsdb_points_json_request(
         points,
     };
     Ok(req)
+}
+
+async fn coord_write_points_with_span_recorder(
+    coord: &CoordinatorRef,
+    tenant: String,
+    consistency_level: ConsistencyLevel,
+    precision: Precision,
+    write_points_req: WritePointsRequest,
+    span_context: Option<&SpanContext>,
+) -> Result<(), HttpError> {
+    let mut span_recorder = SpanRecorder::new(span_context.child_span("write points"));
+    coord
+        .write_points(tenant, consistency_level, precision, write_points_req)
+        .await
+        .map_err(|e| {
+            span_recorder.error(e.to_string());
+            e.into()
+        })
 }
 
 async fn sql_handle(

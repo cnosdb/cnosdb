@@ -113,7 +113,7 @@ make build
 以下为单节点启动，如需启动集群，见 [启动一个集群](https://docs.cnosdb.com/zh/guide/cluster/cluster.html#%E9%9B%86%E7%BE%A4%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B)
 
 ```bash
-./target/debug/cnosdb run -M singleton ./config/config.toml
+./target/debug/cnosdb run -M singleton --config ./config/config.toml
 ```
 
 #### **运行CLI**

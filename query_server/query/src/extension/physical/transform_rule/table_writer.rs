@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
+use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
 use datafusion::physical_plan::planner::{create_aggregate_expr, ExtensionPlanner};
 use datafusion::physical_plan::{displayable, ExecutionPlan, PhysicalPlanner};
 use trace::{debug, trace};
@@ -43,7 +44,13 @@ impl ExtensionPlanner for TableWriterPlanner {
                     physical_inputs.len(),
                     "TableWriterPlanNode has multiple inputs."
                 );
-                let physical_input = physical_inputs[0].clone();
+
+                let batch_size = session_state.config().batch_size();
+                // CoalesceBatchesExec combines small batches into larger batches for more efficient writing
+                let physical_input = Arc::new(CoalesceBatchesExec::new(
+                    physical_inputs[0].clone(),
+                    batch_size,
+                ));
 
                 let table_provider = source_downcast_adapter(target_table)
                     .map_err(|e| DataFusionError::External(Box::new(e)))?;

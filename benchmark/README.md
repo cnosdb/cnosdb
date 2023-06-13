@@ -50,7 +50,7 @@ TSBS_RUN_QUERIES_CMD=/Users/yukkit/Downloads/mac-arm64-cnosdb/run_queries_cnosdb
 
 #### hits 数据集
 
-- HITS_DATA_URL: hits 数据的路径
+目前数据集名称为hits.parquet，默认路径为/data
 
 #### tsbs 数据集
 
