@@ -1,7 +1,9 @@
 name: docker build and push manual (experimental)
 
 on:
-  workflow_dispatch
+  workflow_dispatch:
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   docker:
