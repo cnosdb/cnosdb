@@ -83,6 +83,12 @@ pub enum Error {
     ParseOpentsdbJsonProtocol {
         source: serde_json::Error,
     },
+
+    #[snafu(display("Parse trace context, error: {}", source))]
+    #[error_code(code = 12)]
+    TraceHttp {
+        source: trace_http::ctx::ContextError,
+    },
 }
 
 impl From<tskv::Error> for Error {
@@ -106,6 +112,12 @@ impl From<MetaError> for Error {
 impl From<QueryError> for Error {
     fn from(value: QueryError) -> Self {
         Error::Query { source: value }
+    }
+}
+
+impl From<trace_http::ctx::ContextError> for Error {
+    fn from(source: trace_http::ctx::ContextError) -> Self {
+        Error::TraceHttp { source }
     }
 }
 
@@ -136,7 +148,7 @@ impl From<&Error> for Response {
             | Error::Coordinator { .. } => {
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }
-            Error::InvalidHeader { .. } | Error::ParseAuth { .. } => {
+            Error::InvalidHeader { .. } | Error::ParseAuth { .. } | Error::TraceHttp { .. } => {
                 ResponseBuilder::bad_request(&error_resp)
             }
             _ => ResponseBuilder::internal_server_error(),

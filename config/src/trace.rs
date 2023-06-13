@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct TraceConfig {
+    pub auto_generate_span: bool,
     pub http: Option<HttpCollectorConfig>,
     pub log: Option<LogCollectorConfig>,
     pub jaeger: Option<JaegerCollectorConfig>,

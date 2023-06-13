@@ -15,7 +15,8 @@ use tokio::runtime::Runtime;
 use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
 use tokio::time;
-use trace::{error, TraceExporter};
+use trace::error;
+use trace_http::ctx::SpanContextExtractor;
 use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
@@ -111,7 +112,7 @@ pub(crate) struct ServiceBuilder {
     pub runtime: Arc<Runtime>,
     pub memory_pool: MemoryPoolRef,
     pub metrics_register: Arc<MetricsRegister>,
-    pub trace_collector: Option<Arc<dyn TraceExporter>>,
+    pub span_context_extractor: Arc<SpanContextExtractor>,
 }
 
 async fn regular_report_node_metrics(meta: Arc<dyn MetaManager>, heartbeat_interval: u64) {
@@ -293,7 +294,7 @@ impl ServiceBuilder {
             self.config.query.write_sql_limit,
             mode,
             self.metrics_register.clone(),
-            self.trace_collector.clone(),
+            self.span_context_extractor.clone(),
         )
     }
 
@@ -321,7 +322,7 @@ impl ServiceBuilder {
             addr,
             None,
             self.metrics_register.clone(),
-            self.trace_collector.clone(),
+            self.span_context_extractor.clone(),
         )
     }
 
@@ -350,6 +351,6 @@ impl ServiceBuilder {
             .copied()
             .expect("Config flight_rpc_listen_addr cannot be empty.");
 
-        FlightSqlServiceAdapter::new(dbms, addr, tls_config, self.trace_collector.clone())
+        FlightSqlServiceAdapter::new(dbms, addr, tls_config, self.span_context_extractor.clone())
     }
 }

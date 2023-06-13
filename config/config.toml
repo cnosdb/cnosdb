@@ -115,6 +115,7 @@ enable = true
 path = '/tmp/cnosdb/hh'
 
 # [trace]
+# auto_generate_span = false
 # [trace.log]
 # path = '/tmp/cnosdb'
 # [trace.jaeger]
