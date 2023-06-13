@@ -34,4 +34,4 @@ jobs:
           push: true
           tags: cnosdb/cnosdb:community-experimental
           build-args: |
-            git_hash=${{ github.head_ref }}
+            git_hash=${{ github.sha }}
