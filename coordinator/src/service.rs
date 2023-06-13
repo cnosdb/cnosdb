@@ -26,7 +26,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use trace::{debug, error, info, SpanContext};
+use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
 use tskv::EngineRef;
 
 use crate::errors::*;
@@ -366,20 +366,24 @@ impl Coordinator for CoordService {
         request: WritePointsRequest,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
-        let limiter = self.meta.tenant_manager().limiter(&tenant).await;
-        let points = request.points.as_slice();
+        {
+            let _span_recorder = SpanRecorder::new(span_ctx.child_span("limit check"));
 
-        let fb_points = flatbuffers::root::<Points>(points)?;
-        let db = get_db_from_fb_points(&fb_points)?;
+            let limiter = self.meta.tenant_manager().limiter(&tenant).await;
+            let points = request.points.as_slice();
 
-        let write_size = points.len();
+            let fb_points = flatbuffers::root::<Points>(points)?;
+            let db = get_db_from_fb_points(&fb_points)?;
 
-        limiter.check_write().await?;
-        limiter.check_data_in(write_size).await?;
+            let write_size = points.len();
 
-        self.metrics
-            .data_in(tenant.as_str(), db.as_str())
-            .inc(write_size as u64);
+            limiter.check_write().await?;
+            limiter.check_data_in(write_size).await?;
+
+            self.metrics
+                .data_in(tenant.as_str(), db.as_str())
+                .inc(write_size as u64);
+        }
 
         let req = WriteRequest {
             tenant: tenant.clone(),

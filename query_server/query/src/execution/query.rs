@@ -56,14 +56,6 @@ impl SqlQueryExecution {
             .await?
             .stream();
 
-        // let stream = TracedStream::new(
-        //     stream,
-        //     self.query_state_machine
-        //         .session
-        //         .get_child_span_recorder("traced stream"),
-        //     physical_plan,
-        // );
-
         debug!("Success build result stream.");
         self.query_state_machine.end_schedule();
 

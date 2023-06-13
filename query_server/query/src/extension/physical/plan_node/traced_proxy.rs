@@ -24,20 +24,14 @@ pub struct TracedProxyExec {
     inner: Arc<dyn ExecutionPlan>,
     desc: String,
     name: String,
-    parent_span_ctx: Option<SpanContext>,
 }
 
 impl TracedProxyExec {
-    pub fn new(inner: Arc<dyn ExecutionPlan>, parent_span_ctx: Option<SpanContext>) -> Self {
+    pub fn new(inner: Arc<dyn ExecutionPlan>) -> Self {
         let desc = one_line(inner.as_ref()).to_string();
         let name = desc.chars().take_while(|x| *x != ':').collect();
 
-        Self {
-            inner,
-            desc,
-            name,
-            parent_span_ctx,
-        }
+        Self { inner, desc, name }
     }
 
     pub fn desc(&self) -> &str {
@@ -79,7 +73,6 @@ impl ExecutionPlan for TracedProxyExec {
             inner,
             desc: self.desc.clone(),
             name: self.name.clone(),
-            parent_span_ctx: self.parent_span_ctx.clone(),
         }))
     }
 
@@ -88,11 +81,9 @@ impl ExecutionPlan for TracedProxyExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        let span_recorder = SpanRecorder::new(self.parent_span_ctx.child_span(format!(
-            "{} ({})",
-            self.name(),
-            partition
-        )));
+        let span_ctx = context.session_config().get_extension::<SpanContext>();
+        let span_recorder =
+            SpanRecorder::new(span_ctx.child_span(format!("{} ({})", self.name(), partition)));
 
         let new_context = span_recorder
             .span_ctx()

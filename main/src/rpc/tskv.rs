@@ -301,6 +301,7 @@ impl TskvService for TskvServiceImpl {
     }
 
     type WritePointsStream = ResponseStream<WritePointsResponse>;
+    // TODO remove, use `write_vnode_point` instead
     async fn write_points(
         &self,
         request: tonic::Request<tonic::Streaming<WritePointsRequest>>,
@@ -312,7 +313,7 @@ impl TskvService for TskvServiceImpl {
                 Ok(req) => {
                     let ret = self
                         .kv_inst
-                        .write(0, Precision::NS, req)
+                        .write(None, 0, Precision::NS, req)
                         .await
                         .map_err(|err| tonic::Status::internal(err.to_string()));
                     resp_sender.send(ret).await.expect("successful");
@@ -335,6 +336,7 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: tonic::Request<WriteVnodeRequest>,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let span_recorder = get_span_recorder(request.extensions(), "grpc write_vnode_points");
         let inner = request.into_inner();
         let request = WritePointsRequest {
             version: 1,
@@ -349,6 +351,7 @@ impl TskvService for TskvServiceImpl {
         if let Err(err) = self
             .kv_inst
             .write(
+                span_recorder.span_ctx(),
                 inner.vnode_id,
                 Precision::from(inner.precision as u8),
                 request,

@@ -43,7 +43,7 @@ async fn get_tskv() -> TsKv {
 
 fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRequest) {
     let rt = Runtime::new().unwrap();
-    rt.block_on(tskv.lock().write(0, Precision::NS, request))
+    rt.block_on(tskv.lock().write(None, 0, Precision::NS, request))
         .unwrap();
 }
 
@@ -79,7 +79,8 @@ fn big_write(c: &mut Criterion) {
                     meta: None,
                     points,
                 };
-                rt.block_on(tskv.write(0, Precision::NS, request)).unwrap();
+                rt.block_on(tskv.write(None, 0, Precision::NS, request))
+                    .unwrap();
             }
         })
     });

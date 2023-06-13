@@ -411,10 +411,10 @@ impl PointWriter {
         span_recorder: SpanRecorder,
     ) -> CoordinatorResult<()> {
         if node_id == self.node_id && self.kv_inst.is_some() {
-            let _span_recorder = span_recorder.child("write to local node");
+            let span_recorder = span_recorder.child("write to local node");
 
             let result = self
-                .write_to_local_node(vnode_id, tenant, precision, data)
+                .write_to_local_node(span_recorder.span_ctx(), vnode_id, tenant, precision, data)
                 .await;
             debug!("write data to local {}({}) {:?}", node_id, vnode_id, result);
 
@@ -535,6 +535,7 @@ impl PointWriter {
 
     async fn write_to_local_node(
         &self,
+        span_ctx: Option<&SpanContext>,
         vnode_id: u32,
         tenant: &str,
         precision: Precision,
@@ -551,7 +552,7 @@ impl PointWriter {
         };
 
         if let Some(kv_inst) = self.kv_inst.clone() {
-            let _ = kv_inst.write(vnode_id, precision, req).await?;
+            let _ = kv_inst.write(span_ctx, vnode_id, precision, req).await?;
             Ok(())
         } else {
             Err(CoordinatorError::KvInstanceNotFound { node_id: 0 })

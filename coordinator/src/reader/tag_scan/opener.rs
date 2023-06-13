@@ -3,9 +3,8 @@ use std::sync::Arc;
 use config::QueryConfig;
 use meta::model::MetaRef;
 use models::meta_data::VnodeInfo;
-use tonic::metadata::{Ascii, MetadataValue};
 use trace::{SpanContext, SpanExt, SpanRecorder};
-use trace_http::ctx::{RequestLogContextExt, DEFAULT_TRACE_HEADER_NAME};
+use trace_http::ctx::append_trace_context;
 use tskv::query_iterator::QueryOption;
 use tskv::EngineRef;
 
@@ -84,15 +83,12 @@ impl VnodeOpener for TemporaryTagScanOpener {
                         .map_err(CoordinatorError::from)?;
                     tonic::Request::new(req)
                 };
-                let value: MetadataValue<Ascii> =
-                    span_ctx.format_jaeger().try_into().map_err(|_| {
-                        CoordinatorError::CommonError {
-                            msg: "Parse trace_id, this maybe a bug".to_string(),
-                        }
-                    })?;
-                request
-                    .metadata_mut()
-                    .insert(DEFAULT_TRACE_HEADER_NAME, value);
+
+                append_trace_context(span_ctx, request.metadata_mut()).map_err(|_| {
+                    CoordinatorError::CommonError {
+                        msg: "Parse trace_id, this maybe a bug".to_string(),
+                    }
+                })?;
 
                 Ok(Box::pin(TonicTskvTagScanStream::new(
                     config, node_id, request, admin_meta,

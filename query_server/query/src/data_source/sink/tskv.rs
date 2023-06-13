@@ -41,9 +41,10 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         // record batchs to points
         let timer = self.metrics.elapsed_record_batch_to_point().timer();
+        let _span_recorder = span_recorder.child("record batch to points");
         let (points, time_unit) =
             record_batch_to_points_flat_buffer(&record_batch, self.schema.clone())?;
-        // .context(PointUtilSnafu)?;
+        drop(_span_recorder);
         timer.done();
         let bytes_writed = points.len();
 
