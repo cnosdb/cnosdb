@@ -787,7 +787,7 @@ mod test {
         let points = flatbuffers::root::<fb_models::Points>(&write_batch.points).unwrap();
         models_helper::print_points(points);
         engine
-            .write(vnode_id, Precision::NS, write_batch)
+            .write(None, vnode_id, Precision::NS, write_batch)
             .await
             .unwrap();
     }

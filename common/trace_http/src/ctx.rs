@@ -255,18 +255,18 @@ pub fn format_jaeger_trace_context(span_context: &SpanContext) -> String {
 /// A simple way to format an external span context in a jaeger-like fashion, e.g. for logging.
 pub trait RequestLogContextExt {
     /// Format context.
-    fn format_jaeger(&self) -> String;
+    fn format_jaeger(&self) -> Option<String>;
 }
 
 impl RequestLogContextExt for Option<SpanContext> {
-    fn format_jaeger(&self) -> String {
+    fn format_jaeger(&self) -> Option<String> {
         self.as_ref().format_jaeger()
     }
 }
 
 impl RequestLogContextExt for Option<&SpanContext> {
-    fn format_jaeger(&self) -> String {
-        self.map(format_jaeger_trace_context).unwrap_or_default()
+    fn format_jaeger(&self) -> Option<String> {
+        self.map(format_jaeger_trace_context)
     }
 }
 
@@ -274,8 +274,9 @@ pub fn append_trace_context(
     span_ctx: impl RequestLogContextExt,
     headers: &mut MetadataMap,
 ) -> Result<(), InvalidMetadataValue> {
-    let value = span_ctx.format_jaeger().try_into()?;
-    headers.insert(DEFAULT_TRACE_HEADER_NAME, value);
+    if let Some(value) = span_ctx.format_jaeger() {
+        headers.insert(DEFAULT_TRACE_HEADER_NAME, value.try_into()?);
+    }
 
     Ok(())
 }

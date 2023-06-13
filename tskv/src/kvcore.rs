@@ -20,7 +20,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::broadcast::{self, Sender as BroadcastSender};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, RwLock};
-use trace::{debug, error, info, warn};
+use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
 
 use crate::compaction::{
     self, check, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
@@ -490,10 +490,13 @@ impl TsKv {
 impl Engine for TsKv {
     async fn write(
         &self,
+        span_ctx: Option<&SpanContext>,
         id: TseriesFamilyId,
         precision: Precision,
         write_batch: WritePointsRequest,
     ) -> Result<WritePointsResponse> {
+        let span_recorder = SpanRecorder::new(span_ctx.child_span("tskv engine write"));
+
         let tenant = tenant_name_from_request(&write_batch);
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
@@ -507,21 +510,41 @@ impl Engine for TsKv {
             reason: "points missing table".to_string(),
         })?;
 
-        let write_group = db
-            .read()
-            .await
-            .build_write_group(&db_name, precision, tables, ts_index)
-            .await?;
+        let write_group = {
+            let mut span_recorder = span_recorder.child("build write group");
+            db.read()
+                .await
+                .build_write_group(&db_name, precision, tables, ts_index)
+                .await
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
 
-        let seq = self.write_wal(id, &tenant, precision, &points).await?;
+        let seq = {
+            let mut span_recorder = span_recorder.child("write wal");
+            self.write_wal(id, &tenant, precision, &points)
+                .await
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
 
         let tsf = self
             .get_tsfamily_or_else_create(seq, id, None, db.clone())
             .await?;
 
-        let res = match tsf.read().await.put_points(seq, write_group) {
-            Ok(points_number) => Ok(WritePointsResponse { points_number }),
-            Err(err) => Err(err),
+        let res = {
+            let mut span_recorder = span_recorder.child("put points");
+            match tsf.read().await.put_points(seq, write_group) {
+                Ok(points_number) => Ok(WritePointsResponse { points_number }),
+                Err(err) => {
+                    span_recorder.error(err.to_string());
+                    Err(err)
+                }
+            }
         };
         tsf.write().await.check_to_flush().await;
         res
