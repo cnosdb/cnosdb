@@ -29,3 +29,5 @@ jobs:
         with:
           push: true
           tags: cnosdb/cnosdb:community-latest
+          build-args: |
+            git_hash=${{ github.sha }}
