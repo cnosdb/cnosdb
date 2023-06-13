@@ -30,33 +30,27 @@ jobs:
           make fmt_check
 
   unit-test:
-
+    name: "Unit Test"
     runs-on: ubuntu-latest
     strategy:
       matrix:
         rust: [ stable ]
-
     steps:
-    - uses: actions/checkout@v3
-
-    - name: Prepare Rust Builder
-      uses: ./.github/actions/setup-builder
-      with:
+      - uses: actions/checkout@v3
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+        with:
           rust-version: ${{ matrix.rust }}
-
-    - name: start meta
-      shell: bash
-      run: |
-        bash ./meta/singleton.sh
-
-    - name: test
-      run: make test
-
-    - name: clean
-      run: make clean
-
-    - name: trace
-      run: make build_trace
+      - name: start meta
+        shell: bash
+        run: |
+          bash ./meta/singleton.sh
+      - name: test
+        run: make test
+      - name: clean
+        run: make clean
+      - name: trace
+        run: make build_trace
 
   integration-test:
     name: "Integration Test"
@@ -76,7 +70,6 @@ jobs:
         uses: ./.github/actions/setup-builder
         with:
           rust-version: ${{ matrix.rust }}
-
       - name: start meta
         shell: bash
         run: |
@@ -85,7 +78,6 @@ jobs:
         shell: bash
         run: |
           bash ./query_server/test/script/start_and_test.sh
-          
 
   integration-test-singleton:
     name: "Integration Test Singleton"
@@ -105,11 +97,11 @@ jobs:
         uses: ./.github/actions/setup-builder
         with:
           rust-version: ${{ matrix.rust }}
-
       - name: Test
         shell: bash
         run: |
           bash ./query_server/test/script/start_and_test.sh --singleton
+
   integration-test-3meta:
     name: "Integration Test 3meta"
     runs-on: ubuntu-latest
@@ -128,9 +120,7 @@ jobs:
         uses: ./.github/actions/setup-builder
         with:
           rust-version: ${{ matrix.rust }}
-
       - name: Test
         shell: bash
         run: |
           cd meta && cargo test --features=meta_e2e_test tests -- --test-threads  1
-
