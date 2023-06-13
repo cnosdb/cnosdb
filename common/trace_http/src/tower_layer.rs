@@ -3,9 +3,9 @@ use std::task::{Context, Poll};
 
 use http::Request;
 use tower::{Layer, Service};
-use trace::{warn, TraceExporter};
+use trace::warn;
 
-use crate::ctx::TraceHeaderParser;
+use crate::ctx::SpanContextExtractor;
 
 /// `TraceLayer` implements `tower::Layer` and can be used to decorate a
 /// `tower::Service` to collect information about requests flowing through it
@@ -15,21 +15,15 @@ use crate::ctx::TraceHeaderParser;
 /// - Extracting distributed trace context and attaching span context
 #[derive(Debug, Clone)]
 pub struct TraceLayer {
-    trace_header_parser: TraceHeaderParser,
-    collector: Option<Arc<dyn TraceExporter>>,
+    extractor: Arc<SpanContextExtractor>,
     name: Arc<str>,
 }
 
 impl TraceLayer {
     /// Create a new tower [`Layer`] for tracing
-    pub fn new(
-        trace_header_parser: TraceHeaderParser,
-        collector: Option<Arc<dyn TraceExporter>>,
-        name: &str,
-    ) -> Self {
+    pub fn new(extractor: Arc<SpanContextExtractor>, name: &str) -> Self {
         Self {
-            trace_header_parser,
-            collector,
+            extractor,
             name: name.into(),
         }
     }
@@ -41,8 +35,7 @@ impl<S> Layer<S> for TraceLayer {
     fn layer(&self, service: S) -> Self::Service {
         TraceService {
             service,
-            collector: self.collector.clone(),
-            trace_header_parser: self.trace_header_parser.clone(),
+            extractor: self.extractor.clone(),
             name: Arc::clone(&self.name),
         }
     }
@@ -51,8 +44,7 @@ impl<S> Layer<S> for TraceLayer {
 #[derive(Debug, Clone)]
 pub struct TraceService<S> {
     service: S,
-    trace_header_parser: TraceHeaderParser,
-    collector: Option<Arc<dyn TraceExporter>>,
+    extractor: Arc<SpanContextExtractor>,
     name: Arc<str>,
 }
 
@@ -69,22 +61,17 @@ where
     }
 
     fn call(&mut self, mut request: Request<R>) -> Self::Future {
-        match self
-            .trace_header_parser
-            .parse(self.collector.clone(), request.headers())
-        {
-            Ok(Some(ctx)) => {
-                if ctx.sampled && self.collector.is_some() {
-                    request.extensions_mut().insert(ctx);
-                }
+        match self.extractor.extract_from_headers(request.headers()) {
+            Ok(Some(ctx)) if ctx.sampled => {
+                request.extensions_mut().insert(ctx);
             }
-            Ok(None) => {}
             Err(e) => {
                 warn!(
                     "parse trace context from request {}, error: {}",
                     self.name, e
                 );
             }
+            _ => {}
         };
 
         self.service.call(request)

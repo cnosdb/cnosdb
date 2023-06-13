@@ -6,8 +6,8 @@ use config::TLSConfig;
 use spi::server::dbms::DBMSRef;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
-use trace::{info, TraceExporter};
-use trace_http::ctx::TraceHeaderParser;
+use trace::info;
+use trace_http::ctx::SpanContextExtractor;
 use trace_http::tower_layer::TraceLayer;
 
 use self::flight_sql_server::FlightSqlServiceImpl;
@@ -25,7 +25,7 @@ pub struct FlightSqlServiceAdapter {
 
     addr: SocketAddr,
     tls_config: Option<TLSConfig>,
-    trace_collector: Option<Arc<dyn TraceExporter>>,
+    span_context_extractor: Arc<SpanContextExtractor>,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
 }
 
@@ -34,13 +34,13 @@ impl FlightSqlServiceAdapter {
         dbms: DBMSRef,
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
-        trace_collector: Option<Arc<dyn TraceExporter>>,
+        span_context_extractor: Arc<SpanContextExtractor>,
     ) -> Self {
         Self {
             dbms,
             addr,
             tls_config,
-            trace_collector,
+            span_context_extractor,
             handle: None,
         }
     }
@@ -66,11 +66,7 @@ impl Service for FlightSqlServiceAdapter {
             server
         };
 
-        let trace_layer = TraceLayer::new(
-            TraceHeaderParser::new(),
-            self.trace_collector.clone(),
-            "flight sql",
-        );
+        let trace_layer = TraceLayer::new(self.span_context_extractor.clone(), "flight sql");
 
         let authenticator = GeneratedBearerTokenAuthenticator::new(
             BasicCallHeaderAuthenticator::new(self.dbms.clone()),

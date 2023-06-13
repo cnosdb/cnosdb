@@ -23,7 +23,7 @@ pub enum ContextError {
         source: http::header::ToStrError,
     },
 
-    #[snafu(display("error decoding header '{}': {}", header, source))]
+    #[snafu(display("decoding header '{}': {}", header, source))]
     HeaderDecodeError { header: String, source: DecodeError },
 }
 
@@ -59,20 +59,65 @@ fn parse_span(s: &str) -> Result<SpanId, DecodeError> {
     ))
 }
 
+#[derive(Debug, Clone)]
+pub struct SpanContextExtractor {
+    trace_header_parser: TraceHeaderParser,
+    collector: Option<Arc<dyn TraceExporter>>,
+}
+
+impl SpanContextExtractor {
+    pub fn new(
+        trace_header_parser: TraceHeaderParser,
+        collector: Option<Arc<dyn TraceExporter>>,
+    ) -> Self {
+        Self {
+            trace_header_parser,
+            collector,
+        }
+    }
+
+    pub fn extract_from_headers(
+        &self,
+        headers: &HeaderMap,
+    ) -> Result<Option<SpanContext>, ContextError> {
+        if self.collector.is_none() {
+            return Ok(None);
+        }
+
+        self.trace_header_parser
+            .parse(self.collector.clone(), headers)
+    }
+
+    pub fn extract_from_value(
+        &self,
+        trace_header: &str,
+        value: Option<String>,
+    ) -> Result<Option<SpanContext>, ContextError> {
+        if self.collector.is_none() {
+            return Ok(None);
+        }
+
+        self.trace_header_parser
+            .parse_str(self.collector.clone(), trace_header, value)
+    }
+}
+
 /// Extracts tracing information such as the `SpanContext`s , if any,
 /// from http request headers.
 #[derive(Debug, Clone, Default)]
 pub struct TraceHeaderParser {
     /// header that contains pre-existing trace context, if any
     jaeger_trace_context_header_name: Option<Arc<str>>,
+    auto_generate_span: bool,
 }
 
 impl TraceHeaderParser {
     /// Create a new span context parser with default Jaeger trace
     /// header name
-    pub fn new() -> Self {
+    pub fn new(auto_generate_span: bool) -> Self {
         Self {
             jaeger_trace_context_header_name: Some(DEFAULT_TRACE_HEADER_NAME.into()),
+            auto_generate_span,
         }
     }
 
@@ -95,10 +140,19 @@ impl TraceHeaderParser {
         headers: &HeaderMap,
     ) -> Result<Option<SpanContext>, ContextError> {
         if let Some(trace_header) = self.jaeger_trace_context_header_name.as_ref() {
-            if headers.contains_key(trace_header.as_ref()) {
-                let decoded: JaegerCtx =
-                    required_header(headers, trace_header.as_ref(), FromStr::from_str)?;
-                return decode_jaeger(collector, decoded).map(Some);
+            match (
+                headers.contains_key(&**trace_header),
+                self.auto_generate_span,
+            ) {
+                (true, _) => {
+                    let decoded =
+                        required_header(headers, trace_header.as_ref(), FromStr::from_str)?;
+                    return decode_jaeger(collector, decoded).map(Some);
+                }
+                (false, true) => {
+                    return Ok(Some(SpanContext::new_with_optional_collector(collector)));
+                }
+                _ => return Ok(None),
             }
         }
 
@@ -109,14 +163,20 @@ impl TraceHeaderParser {
         &self,
         collector: Option<Arc<dyn TraceExporter>>,
         trace_header: &str,
-        value: &str,
+        value: Option<String>,
     ) -> Result<Option<SpanContext>, ContextError> {
-        let decoded =
-            JaegerCtx::from_str(value).map_err(|err| ContextError::HeaderDecodeError {
-                header: trace_header.to_string(),
-                source: err,
-            })?;
-        decode_jaeger(collector, decoded).map(Some)
+        match (&value, self.auto_generate_span) {
+            (Some(value), _) => {
+                let decoded =
+                    JaegerCtx::from_str(value).map_err(|err| ContextError::HeaderDecodeError {
+                        header: trace_header.to_string(),
+                        source: err,
+                    })?;
+                decode_jaeger(collector, decoded).map(Some)
+            }
+            (None, true) => Ok(Some(SpanContext::new_with_optional_collector(collector))),
+            _ => Ok(None),
+        }
     }
 }
 
@@ -279,4 +339,76 @@ pub fn append_trace_context(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use http::HeaderValue;
+
+    use super::*;
+
+    #[test]
+    fn test_decode_jaeger() {
+        const TRACE_HEADER: &str = "uber-trace-id";
+
+        let parser =
+            TraceHeaderParser::new(false).with_jaeger_trace_context_header_name(TRACE_HEADER);
+
+        let mut headers = HeaderMap::new();
+
+        // Invalid format
+        headers.insert(TRACE_HEADER, HeaderValue::from_static("invalid"));
+        assert_eq!(
+            parser.parse(None, &headers)
+                .unwrap_err()
+                .to_string(),
+            "decoding header 'uber-trace-id': Expected \"trace-id:span-id:parent-span-id:flags\", found: invalid"
+        );
+
+        // Not sampled
+        headers.insert(TRACE_HEADER, HeaderValue::from_static("343:4325345:0:0"));
+        let span = parser.parse(None, &headers).unwrap().unwrap();
+
+        assert_eq!(span.trace_id.0.get(), 0x343);
+        assert_eq!(span.span_id.0.get(), 0x4325345);
+        assert!(span.parent_span_id.is_none());
+        assert!(!span.sampled);
+
+        // Sampled
+        headers.insert(TRACE_HEADER, HeaderValue::from_static("3a43:432e345:0:1"));
+        let span = parser.parse(None, &headers).unwrap().unwrap();
+
+        assert_eq!(span.trace_id.0.get(), 0x3a43);
+        assert_eq!(span.span_id.0.get(), 0x432e345);
+        assert!(span.parent_span_id.is_none());
+        assert!(span.sampled);
+
+        // Parent span
+        headers.insert(TRACE_HEADER, HeaderValue::from_static("343:4325345:3434:F"));
+        let span = parser.parse(None, &headers).unwrap().unwrap();
+
+        assert_eq!(span.trace_id.0.get(), 0x343);
+        assert_eq!(span.span_id.0.get(), 0x4325345);
+        assert_eq!(span.parent_span_id.unwrap().0.get(), 0x3434);
+        assert!(span.sampled);
+
+        // Invalid trace id
+        headers.insert(TRACE_HEADER, HeaderValue::from_static("0:4325345:3434:1"));
+        assert_eq!(
+            parser.parse(None, &headers).unwrap_err().to_string(),
+            "decoding header 'uber-trace-id': value cannot be 0"
+        );
+
+        headers.insert(
+            TRACE_HEADER,
+            HeaderValue::from_static("008e813572f53b3a:008e813572f53b3a:0000000000000000:1"),
+        );
+
+        let span = parser.parse(None, &headers).unwrap().unwrap();
+
+        assert_eq!(span.trace_id.0.get(), 0x008e813572f53b3a);
+        assert_eq!(span.span_id.0.get(), 0x008e813572f53b3a);
+        assert!(span.parent_span_id.is_none());
+        assert!(span.sampled);
+    }
 }

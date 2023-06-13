@@ -8,8 +8,7 @@ use protos::kv_service::tskv_service_server::TskvServiceServer;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
-use trace::TraceExporter;
-use trace_http::ctx::TraceHeaderParser;
+use trace_http::ctx::SpanContextExtractor;
 use trace_http::tower_layer::TraceLayer;
 use tskv::EngineRef;
 
@@ -25,7 +24,7 @@ pub struct GrpcService {
     coord: CoordinatorRef,
     tls_config: Option<TLSConfig>,
     metrics_register: Arc<MetricsRegister>,
-    trace_collector: Option<Arc<dyn TraceExporter>>,
+    span_context_extractor: Arc<SpanContextExtractor>,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
 }
 
@@ -37,7 +36,7 @@ impl GrpcService {
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
         metrics_register: Arc<MetricsRegister>,
-        trace_collector: Option<Arc<dyn TraceExporter>>,
+        span_context_extractor: Arc<SpanContextExtractor>,
     ) -> Self {
         Self {
             addr,
@@ -46,7 +45,7 @@ impl GrpcService {
             coord,
             tls_config,
             metrics_register,
-            trace_collector,
+            span_context_extractor,
             handle: None,
         }
     }
@@ -54,7 +53,7 @@ impl GrpcService {
 
 macro_rules! build_grpc_server {
     ($tls_config:expr, $trace_collector:expr) => {{
-        let trace_layer = TraceLayer::new(TraceHeaderParser::new(), $trace_collector, "grpc");
+        let trace_layer = TraceLayer::new($trace_collector, "grpc");
         let mut server = Server::builder().layer(trace_layer);
 
         if let Some(TLSConfig {
@@ -82,7 +81,8 @@ impl Service for GrpcService {
             coord: self.coord.clone(),
             metrics_register: self.metrics_register.clone(),
         });
-        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.trace_collector.clone());
+        let mut grpc_builder =
+            build_grpc_server!(&self.tls_config, self.span_context_extractor.clone());
         let grpc_router = grpc_builder.add_service(tskv_grpc_service);
         let server = grpc_router.serve_with_shutdown(self.addr, async {
             rx.await.ok();
