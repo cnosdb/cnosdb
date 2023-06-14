@@ -216,7 +216,7 @@ mod test {
     #[tokio::test]
     async fn test_write_read_1() {
         let dir = PathBuf::from("/tmp/test/tombstone/1".to_string());
-        let _ = std::fs::remove_dir(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
@@ -242,7 +242,7 @@ mod test {
     #[tokio::test]
     async fn test_write_read_2() {
         let dir = PathBuf::from("/tmp/test/tombstone/2".to_string());
-        let _ = std::fs::remove_dir(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
@@ -283,7 +283,7 @@ mod test {
     #[tokio::test]
     async fn test_write_read_3() {
         let dir = PathBuf::from("/tmp/test/tombstone/3".to_string());
-        let _ = std::fs::remove_dir(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }

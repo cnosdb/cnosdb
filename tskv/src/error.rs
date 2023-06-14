@@ -73,6 +73,12 @@ pub enum Error {
         source: std::io::Error,
     },
 
+    #[snafu(display("Unable to create file '{}': {}", path.display(), source))]
+    CreateFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
     #[snafu(display("Error with read file '{}': {}", path.display(), source))]
     ReadFile {
         path: PathBuf,

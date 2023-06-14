@@ -1055,7 +1055,7 @@ pub mod test_tseries_family {
         //! - Lv.3: [ ]
         //! - Lv.4: [ ]
         let dir = "/tmp/test/ts_family/1";
-        let _ = std::fs::remove_dir(dir);
+        let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
@@ -1150,7 +1150,7 @@ pub mod test_tseries_family {
         //! - Lv.3: [ (6, 1~2000) ]
         //! - Lv.4: [ ]
         let dir = "/tmp/test/ts_family/2";
-        let _ = std::fs::remove_dir(dir);
+        let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
@@ -1291,7 +1291,7 @@ pub mod test_tseries_family {
     #[tokio::test]
     pub async fn test_tsf_delete() {
         let dir = "/tmp/test/ts_family/tsf_delete";
-        let _ = std::fs::remove_dir(dir);
+        let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
@@ -1440,7 +1440,7 @@ pub mod test_tseries_family {
         };
 
         let dir = "/tmp/test/ts_family/read_with_tomb";
-        let _ = std::fs::remove_dir(dir);
+        let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
