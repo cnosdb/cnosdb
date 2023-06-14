@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 
 use async_recursion::async_recursion;
 use num_traits::ToPrimitive;
-use snafu::ResultExt;
 
 use super::{
     file_crc_source_len, Record, FILE_FOOTER_CRC32_NUMBER_LEN, FILE_FOOTER_LEN,
@@ -12,7 +11,7 @@ use super::{
     RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
 };
 use crate::byte_utils::decode_be_u32;
-use crate::error::{self, Error, Result};
+use crate::error::{Error, Result};
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
@@ -31,11 +30,17 @@ pub struct Reader {
 impl Reader {
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        let file = file_manager::open_create_file(path).await?;
-        let (footer_pos, footer) = match Self::read_footer(path).await {
+        let file = file_manager::open_file(path).await?;
+        let (footer_pos, footer) = match Self::read_footer(&path).await {
             Ok((p, f)) => (p, Some(f)),
             Err(Error::NoFooter) => (file.len(), None),
-            Err(e) => return Err(e),
+            Err(e) => {
+                trace::error!(
+                    "Failed to read footer of record_file '{}': {e}",
+                    path.display(),
+                );
+                return Err(e);
+            }
         };
         let records_len = if footer_pos == file.len() {
             // If there is no footer
@@ -135,7 +140,10 @@ impl Reader {
         // TODO: Check if data_size is too large.
         let data = match self.read_buf(data_size as usize).await {
             Ok((_, d)) => d.to_vec(),
-            Err(_e) => {
+            Err(e) => {
+                trace::error!(
+                    "Failed to read record data at {origin_pos} for {data_size} bytes: {e}",
+                );
                 self.set_pos(origin_pos + 1).await?;
                 return self.read_record().await;
             }
@@ -145,6 +153,7 @@ impl Reader {
         hasher.update(&data);
         // check crc32 number
         if hasher.finalize() != data_crc {
+            trace::error!("Data crc check failed at {origin_pos} for {data_size} bytes",);
             self.set_pos(origin_pos + 1).await?;
             return self.read_record().await;
         }
@@ -167,17 +176,23 @@ impl Reader {
 
         // Get file crc
         let mut buf = vec![0_u8; file_crc_source_len(file.len(), FILE_FOOTER_LEN)];
-        file.read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf)
-            .await
-            .context(error::ReadFileSnafu { path })?;
+        if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf).await {
+            return Err(Error::ReadFile {
+                path: path.to_path_buf(),
+                source: e,
+            });
+        }
         let crc = crc32fast::hash(&buf);
 
         // Read footer
         let footer_pos = file.len() - FILE_FOOTER_LEN as u64;
         let mut footer = [0_u8; FILE_FOOTER_LEN];
-        file.read_at(footer_pos, &mut footer[..])
-            .await
-            .context(error::ReadFileSnafu { path })?;
+        if let Err(e) = file.read_at(footer_pos, &mut footer[..]).await {
+            return Err(Error::ReadFile {
+                path: path.to_path_buf(),
+                source: e,
+            });
+        }
 
         // Check file crc
         let footer_crc = decode_be_u32(
@@ -203,12 +218,18 @@ impl Reader {
             self.buf
                 .truncate((self.footer_pos - self.pos as u64) as usize);
         }
+        trace::trace!(
+            "Trying load buf at {} for {} bytes",
+            self.pos,
+            self.buf.len()
+        );
         self.buf_len = self
             .file
             .read_at(self.pos as u64, &mut self.buf)
             .await
-            .context(error::ReadFileSnafu {
+            .map_err(|e| Error::ReadFile {
                 path: self.path.clone(),
+                source: e,
             })?;
         self.buf_use = 0;
         Ok(())
@@ -245,11 +266,9 @@ impl Reader {
 pub(crate) mod test {
     use std::path::Path;
 
-    use snafu::ResultExt;
-
     use super::Reader;
     use crate::byte_utils::decode_be_u32;
-    use crate::error::{self, Error, Result};
+    use crate::error::{Error, Result};
     use crate::file_system::file::IFile;
     use crate::record_file::{
         Record, RECORD_CRC32_NUMBER_LEN, RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN,
@@ -259,13 +278,15 @@ pub(crate) mod test {
     impl Reader {
         pub(crate) async fn read_at(&mut self, pos: usize) -> Result<Record> {
             let mut record_header_buf = [0_u8; RECORD_HEADER_LEN];
-            let len = self
-                .file
-                .read_at(pos as u64, &mut record_header_buf)
-                .await
-                .context(error::ReadFileSnafu {
-                    path: self.path.clone(),
-                })?;
+            let len = match self.file.read_at(pos as u64, &mut record_header_buf).await {
+                Ok(len) => len,
+                Err(e) => {
+                    return Err(Error::ReadFile {
+                        path: self.path.clone(),
+                        source: e,
+                    })
+                }
+            };
             if len != RECORD_HEADER_LEN {
                 return Err(Error::RecordFileIo {
                     reason: format!("invalid record header (pos is {})", pos),
@@ -292,13 +313,15 @@ pub(crate) mod test {
             // TODO: Reuse data vector.
             // TODO: Check if data_size is too large.
             let mut data = vec![0_u8; data_size as usize];
-            let read_data_len = self
-                .file
-                .read_at((pos + p) as u64, &mut data)
-                .await
-                .context(error::ReadFileSnafu {
-                    path: self.path.clone(),
-                })?;
+            let read_data_len = match self.file.read_at((pos + p) as u64, &mut data).await {
+                Ok(len) => len,
+                Err(e) => {
+                    return Err(Error::ReadFile {
+                        path: self.path.clone(),
+                        source: e,
+                    });
+                }
+            };
             if read_data_len != data_size as usize {
                 return Err(Error::RecordFileIo {
                     reason: format!(
@@ -320,20 +343,18 @@ pub(crate) mod test {
     pub(crate) async fn test_reader_read_one(path: impl AsRef<Path>, pos: usize, data: &[u8]) {
         let mut r = Reader::open(path).await.unwrap();
         let record = r.read_at(pos).await.unwrap();
-        println!("Read one record: {:?}", record);
         assert_eq!(record.data, data);
     }
 
     pub(crate) async fn test_reader(path: impl AsRef<Path>, data: &[Vec<u8>]) {
         let mut r = Reader::open(path).await.unwrap();
 
-        for (i, d) in data.iter().enumerate() {
+        for d in data {
             let record = match r.read_record().await {
                 Ok(r) => r,
                 Err(Error::Eof) => break,
                 Err(e) => panic!("Error reading record: {:?}", e),
             };
-            println!("Read record[{}]: {:?}", i, record);
             assert_eq!(record.data, *d);
         }
     }

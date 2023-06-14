@@ -7,7 +7,7 @@ use once_cell::sync::OnceCell;
 use snafu::{ResultExt, Snafu};
 
 use crate::file_system::file::async_file::{AsyncFile, FsRuntime};
-use crate::{error, Result};
+use crate::{error, Error, Result};
 
 #[derive(Snafu, Debug)]
 pub enum FileError {
@@ -57,35 +57,44 @@ impl FileManager {
     ) -> Result<AsyncFile> {
         AsyncFile::open(path.as_ref(), self.fs_runtime.clone(), options)
             .await
-            .context(error::OpenFileSnafu {
-                path: path.as_ref(),
+            .map_err(|e| Error::OpenFile {
+                path: path.as_ref().to_path_buf(),
+                source: e,
             })
     }
 
+    /// Open a file to read,.
     pub async fn open_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
-        let options = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .clone();
-        AsyncFile::open(path.as_ref(), self.fs_runtime.clone(), options)
-            .await
-            .context(error::OpenFileSnafu {
-                path: path.as_ref(),
-            })
+        let mut opt = OpenOptions::new();
+        opt.read(true);
+        self.open_file_with(path, opt).await
     }
 
-    pub async fn create_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
-        if let Some(p) = path.as_ref().parent() {
+    fn create_dir_if_not_exists(parent: Option<&Path>) -> Result<()> {
+        if let Some(p) = parent {
             if !try_exists(p) {
                 fs::create_dir_all(p).context(error::IOSnafu)?;
             }
         }
-        self.open_file(&path).await
+        Ok(())
     }
 
+    /// Create a file if not exists, overwrite if already existed.
+    pub async fn create_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
+        let p = path.as_ref();
+        Self::create_dir_if_not_exists(p.parent())?;
+        let mut opt = OpenOptions::new();
+        opt.read(true).write(true).create(true);
+        self.open_file_with(p, opt).await
+    }
+
+    /// Open a file to read or write(append mode), if file does not exists then create it.
     pub async fn open_create_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
-        self.create_file(path).await
+        let p = path.as_ref();
+        Self::create_dir_if_not_exists(p.parent())?;
+        let mut opt = OpenOptions::new();
+        opt.read(true).write(true).create(true).append(true);
+        self.open_file_with(path, opt).await
     }
 }
 
@@ -150,16 +159,19 @@ pub fn try_exists(path: impl AsRef<Path>) -> bool {
     fs::metadata(path).is_ok()
 }
 
+/// Open a file to read,.
 #[inline(always)]
 pub async fn open_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
     get_file_manager().open_file(path).await
 }
 
+/// Create a file if not exists, overwrite if already existed.
 #[inline(always)]
 pub async fn create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
     get_file_manager().create_file(path).await
 }
 
+/// Open a file to read or write(append mode), if file does not exists then create it.
 #[inline(always)]
 pub async fn open_create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
     get_file_manager().open_create_file(path).await
@@ -167,7 +179,7 @@ pub async fn open_create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
 
 #[cfg(test)]
 mod test {
-    use std::path::Path;
+    use std::path::PathBuf;
 
     use trace::info;
 
@@ -195,83 +207,163 @@ mod test {
         );
     }
 
-    async fn test_basic_io(dir: impl AsRef<Path>) {
-        println!("start basic io");
-        let file = file_manager::get_file_manager()
-            .open_file(dir.as_ref().join("fs.test1"))
-            .await
-            .unwrap();
-        println!("start write");
-        let _len = file.write_at(0, &[0, 1, 2, 3, 4]).await.unwrap();
-        println!("end write");
-        let mut buf = [0_u8; 2];
-        let size = file.read_at(1, &mut buf).await.unwrap();
-        assert_eq!(size, buf.len());
-        let expect = [1, 2];
-        assert_eq!(buf, expect);
-    }
+    #[tokio::test]
+    async fn test_open_file() {
+        let dir = "/tmp/test/file_manager/test_open_file";
+        let _ = std::fs::remove_dir_all(dir);
+        let path = PathBuf::from(dir).join("test.txt");
 
-    async fn test_write(dir: impl AsRef<Path>) {
-        let mut len = 0;
-        let file = file_manager::get_file_manager()
-            .open_file(dir.as_ref().join("fs.test2"))
-            .await
-            .unwrap();
-        for _i in 0..1024 {
-            len += file.write_at(len, &[0, 1, 2, 3, 4]).await.unwrap() as u64;
-        }
-        let _len = file.write_at(0, &[0, 1, 2, 3, 4]).await.unwrap();
-        let mut buf = [0_u8; 5];
-        let size = file.read_at(2, &mut buf).await.unwrap();
-        assert_eq!(size, buf.len());
-        let expect = [2_u8, 3, 4, 0, 1];
-        assert_eq!(buf, expect);
-    }
+        let open_file_ret_1 = file_manager::open_file(&path).await;
+        assert!(open_file_ret_1.is_err());
 
-    async fn test_truncate(dir: impl AsRef<Path>) {
-        let path = dir.as_ref().join("fs.test3");
-        let file = file_manager::get_file_manager()
-            .open_file(&path)
-            .await
-            .unwrap();
-        let _len = file.write_at(0, &[0, 1, 2, 3, 4, 5]).await.unwrap();
-        let mut buf = [0_u8; 2];
-        let size = file.read_at(1, &mut buf).await.unwrap();
-        assert_eq!(size, buf.len());
-        let expect = [1, 2];
-        assert_eq!(buf, expect);
-        file.truncate(3).await.unwrap();
-        let file1 = file_manager::get_file_manager()
-            .open_file(path)
-            .await
-            .unwrap();
-        assert_eq!(file1.len(), 3);
-    }
+        let _ = file_manager::create_file(&path).await.unwrap();
 
-    async fn test_cursor(dir: impl AsRef<Path>) {
-        let file = file_manager::get_file_manager()
-            .open_file(dir.as_ref().join("fs.test4"))
-            .await
-            .unwrap();
-        let mut cursor: FileCursor = file.into();
-        for _i in 0..1024 {
-            cursor.write(&[0, 1, 2, 3, 4]).await.unwrap();
-        }
-        cursor.set_pos(5);
-        let mut buf = [0_u8; 5];
-        let _read = cursor.read(&mut buf).await.unwrap();
-        assert_eq!(buf, [0, 1, 2, 3, 4]);
+        let open_file_ret_2 = file_manager::open_file(&path).await;
+        assert!(open_file_ret_2.is_ok());
     }
 
     #[tokio::test]
-    async fn test_all() {
-        let dir = "/tmp/test/file_manager";
-        let _ = std::fs::remove_dir(dir);
-        std::fs::create_dir_all(dir).unwrap();
-        test_basic_io(dir).await;
-        test_write(dir).await;
-        test_truncate(dir).await;
-        test_cursor(dir).await;
+    async fn test_io_basic() {
+        let dir = "/tmp/test/file_manager/test_io_basic";
+        let _ = std::fs::remove_dir_all(dir);
+        let path = PathBuf::from(dir).join("test.txt");
+
+        {
+            // Test creating a new file and write.
+            let file = file_manager::create_file(&path).await.unwrap();
+
+            let data = [0, 1, 2, 3];
+            // Write 4 bytes data.
+            let len = file.write_at(0, &data).await.unwrap();
+            assert_eq!(data.len(), len);
+
+            let mut buf = [0_u8; 2];
+            let size = file.read_at(1, &mut buf).await.unwrap();
+            assert_eq!(size, buf.len());
+            assert_eq!(buf, [1, 2]);
+        }
+        {
+            // Test overwriting a file.
+            let file = file_manager::create_file(&path).await.unwrap();
+
+            let data = [3, 2, 1, 0];
+            // Write 4 bytes data.
+            let len = file.write_at(0, &data).await.unwrap();
+            assert_eq!(data.len(), len);
+
+            let mut buf = [0_u8; 2];
+            let size = file.read_at(1, &mut buf).await.unwrap();
+            assert_eq!(size, 2);
+            assert_eq!(buf, [2, 1]);
+        }
+        {
+            // Test appending a file.
+            let file = file_manager::create_file(&path).await.unwrap();
+
+            let data = [0, 1, 2, 3];
+            // Append 4 bytes data.
+            let len = file.write_at(file.len(), &data).await.unwrap();
+            assert_eq!(data.len(), len);
+
+            let mut buf = [0_u8; 100];
+            let size = file.read_at(0, &mut buf).await.unwrap();
+            assert_eq!(size, 8);
+            assert_eq!(&buf[0..10], &[3, 2, 1, 0, 0, 1, 2, 3, 0, 0]);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_write() {
+        let dir = "/tmp/test/file_manager/test_write";
+        let _ = std::fs::remove_dir_all(dir);
+        let path = PathBuf::from(dir).join("test.txt");
+
+        let chunk = &[0, 1, 2, 3];
+        let mut data = Vec::<u8>::with_capacity(1024 * 1024);
+        for _ in (0..1024 * 1024 / 4).step_by(chunk.len()) {
+            data.extend_from_slice(chunk);
+        }
+
+        let file = file_manager::create_file(&path).await.unwrap();
+        let mut len = 0_usize;
+        // Write 32MB data.
+        let file_len = data.len() * 32;
+        for _ in 0..32 {
+            len += file.write_at(len as u64, &data).await.unwrap();
+        }
+        assert_eq!(len, file_len);
+
+        let mut buf = [0_u8; 8];
+
+        // Read 8 bytes at 1024.
+        len = file.read_at(1024, &mut buf).await.unwrap();
+        assert_eq!(len, buf.len());
+        assert_eq!(buf, [0, 1, 2, 3, 0, 1, 2, 3]);
+
+        // Write 4 bytes at 1024 and read 8 bytes.
+        len = file.write_at(1024, &[1, 1, 1, 1]).await.unwrap();
+        assert_eq!(len, 4);
+        let size = file.read_at(1024, &mut buf).await.unwrap();
+        assert_eq!(size, buf.len());
+        assert_eq!(buf, [1, 1, 1, 1, 0, 1, 2, 3]);
+
+        // Write 8 bytes at end -4 and read 7 bytes at end - 4.
+        let new_chunk = [11, 12, 13, 14, 15, 16, 17, 18];
+        len = file
+            .write_at((file_len - 4) as u64, &new_chunk)
+            .await
+            .unwrap();
+        assert_eq!(len, new_chunk.len());
+        len = file.read_at((file_len - 4) as u64, &mut buf).await.unwrap();
+        assert_eq!(len, buf.len());
+        assert_eq!(buf, new_chunk);
+    }
+
+    #[tokio::test]
+    async fn test_truncate() {
+        let dir = "/tmp/test/file_manager/test_truncate";
+        let _ = std::fs::remove_dir_all(dir);
+        let path = PathBuf::from(dir).join("test.txt");
+
+        let data = &[0, 1, 2, 3, 4, 5];
+        {
+            let file = file_manager::create_file(&path).await.unwrap();
+            let mut len = file.write_at(0, data).await.unwrap();
+            assert_eq!(len, data.len());
+
+            let mut buf = [0_u8; 2];
+            len = file.read_at(1, &mut buf).await.unwrap();
+            assert_eq!(len, buf.len());
+            assert_eq!(buf, [1, 2]);
+
+            file.truncate(3).await.unwrap();
+        }
+
+        let file = file_manager::open_file(path).await.unwrap();
+        assert_eq!(file.len(), 3);
+        let mut buf = vec![0; 3];
+        let len = file.read_at(0, &mut buf).await.unwrap();
+        assert_eq!(len, 3);
+        assert_eq!(buf.as_slice(), &data[0..3]);
+    }
+
+    #[tokio::test]
+    async fn test_cursor() {
+        let dir = "/tmp/test/file_manager/test_cursor";
+        let _ = std::fs::remove_dir_all(dir);
+        let path = PathBuf::from(dir).join("test.txt");
+
+        let file = file_manager::create_file(&path).await.unwrap();
+        let mut cursor: FileCursor = file.into();
+        for _ in 0..16 {
+            let len = cursor.write(&[0, 1, 2, 3, 4]).await.unwrap();
+            assert_eq!(len, 5);
+        }
+        cursor.set_pos(5);
+        let mut buf = [0_u8; 8];
+        let len = cursor.read(&mut buf[0..5]).await.unwrap();
+        assert_eq!(len, 5);
+        assert_eq!(buf, [0, 1, 2, 3, 4, 0, 0, 0]);
     }
 
     #[test]
