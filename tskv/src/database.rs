@@ -525,7 +525,7 @@ pub(crate) async fn delete_table_async(
     if let Some(db) = db_instance {
         let schemas = db.read().await.get_schemas();
         let field_infos = schemas.get_table_schema(&table)?;
-        schemas.del_table_schema(&table).await?;
+        //schemas.del_table_schema(&table).await?;
 
         let mut sids = vec![];
         for (_id, index) in db.read().await.ts_indexes().iter() {
