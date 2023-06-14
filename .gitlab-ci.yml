@@ -6,11 +6,14 @@ bench-job:
     - shell
   script:
     # - source /root/.bashrc
-    - echo "clean env"
+    #- echo "clean env"
     # - rm -rf /tmp/cnosdb
-    - pkill -9 cnosdb
+    - set +e
+    - killall cnosdb
+    - set -e
     # - pkill -9 cnosdb-meta
-    - rm -rf /data1/cnosdb
+    - sudo rm -rf /data1/cnosdb
+    - echo "compile code"
     - make build_release
     - sleep 10
     - echo "modify default config"
@@ -28,14 +31,16 @@ bench-job:
     #- sed -i "s/debug/release/g" run_cluster.sh
     #- sed -i "s/run/& -c 64 -m 256 /" run_cluster.sh
     - echo "starting cnosdb"
-    - nohup ./target/release/cnosdb run --config ./config/config_8902.toml -M singleton &
+    - nohup ./target/release/cnosdb run --config ./config/config_8902.toml -M singleton > ./target/cnosdb_output.log 2>&1 &
     - echo "cnosdb is running"
     - echo "hits test"
     - commit_id=${commit_id:-$(git log -1 --pretty=%h)}
     - cd benchmark
-    - ./benchmark
+    - ./benchmark.sh
     - ./update-results.sh hits
-    - scp -i /home/gitlab-runner/.ssh/id_rsa ./results/hits.html root@192.168.0.20:/usr/src/benchmark-hit/hits_${commit_id}.html
+    - scp -i /home/gitlab-runner/.ssh/id_rsa ./results/hits.html root@192.168.0.20:/usr/src/benchmark-hits/hits_${commit_id}.html
+    - rm -f ./results/hits.html
+    - rm -f ./results/hits/${commit_id}.json
     - cd ..
     - echo "tsbs test"
     - echo "create database"
@@ -57,5 +62,8 @@ bench-job:
     - run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/long-driving-sessions.txt
     - echo "query avg-daily-driving-duration"
     - run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/avg-daily-driving-duration.txt
-    - pkill -9 cnosdb
+    - set +e
+    - killall cnosdb
+    - set -e
+    - sudo rm -rf /data1/cnosdb
     - echo "bench job Done"

@@ -16,7 +16,7 @@ echo "Checking script dependencies..."
 # nc --version
 bc --version
 jq --version
-yq --version
+#yq --version
 
 RESULT_DIR=${RESULT_DIR}/${BENCHMARK_DATASET}
 export RESULT_PATH=${RESULT_DIR}/${BENCHMARK_ID}.json
@@ -40,11 +40,11 @@ jq ".load_time = ${load_time} | .data_size = ${data_size} | .result = []" <${RES
 echo '{}' >${RESULT_PATH}
 # ./generate-metadata.sh <result_path> <source> <source_id> <dataset>
 ${current_dir}/generate_metadata.sh ${RESULT_PATH} ${BENCHMARK_TYPE} ${BENCHMARK_ID} ${BENCHMARK_DATASET}
-yq -i ".date = \"$(date -u +%Y-%m-%d)\"" ${RESULT_PATH}
-yq -i ".machine = \"${MACHINE}\"" ${RESULT_PATH}
-yq -i '.cluster_size = 1' ${RESULT_PATH}
-yq -i '.tags = ["Rust", "time-series"]' ${RESULT_PATH}
-yq -i ".load_time = ${load_time} | .data_size = ${data_size} | .result = []" ${RESULT_PATH}
+jq ".date = \"$(date -u +%Y-%m-%d)\"" <${RESULT_PATH} >${RESULT_PATH}.tmp && mv ${RESULT_PATH}.tmp ${RESULT_PATH}
+jq ".machine = \"${MACHINE}\"" <${RESULT_PATH} >${RESULT_PATH}.tmp && mv ${RESULT_PATH}.tmp ${RESULT_PATH}
+jq '.cluster_size = 1' <${RESULT_PATH} >${RESULT_PATH}.tmp && mv ${RESULT_PATH}.tmp ${RESULT_PATH}
+jq '.tags = ["Rust", "time-series"]' <${RESULT_PATH} >${RESULT_PATH}.tmp && mv ${RESULT_PATH}.tmp ${RESULT_PATH}
+jq ".load_time = ${load_time} | .data_size = ${data_size} | .result = []" <${RESULT_PATH} >${RESULT_PATH}.tmp && mv ${RESULT_PATH}.tmp ${RESULT_PATH}
 
 ################# Generate queries #################
 echo "Generating queries..."
