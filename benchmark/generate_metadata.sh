@@ -5,7 +5,7 @@
 
 set -e
 
-yq --version
+#yq --version
 
 RESULT_PATH=$1
 source=$2
@@ -14,14 +14,14 @@ dataset=$4
 
 case ${source} in
 pr)
-    yq -i '.system = "CnosDB(PR#'${source_id}')"' ${RESULT_PATH}
+    jq '.system = "CnosDB(PR#'${source_id}')"' <${RESULT_PATH} >${RESULT_PATH}.tmp && mv ${RESULT_PATH}.tmp ${RESULT_PATH}
     ;;
 release)
-    yq -i '.system = "CnosDB(Release@'${source_id}')"' ${RESULT_PATH}
+    jq '.system = "CnosDB(Release@'${source_id}')"' <${RESULT_PATH} >${RESULT_PATH}.tmp && mv ${RESULT_PATH}.tmp ${RESULT_PATH}
     ;;
 *)
     echo "Unsupported benchmark source: ${source}"
     exit 1
     ;;
 esac
-yq -i '.comment = "TODO"' ${RESULT_PATH}
+jq '.comment = "TODO"' <${RESULT_PATH} >${RESULT_PATH}.tmp && mv ${RESULT_PATH}.tmp ${RESULT_PATH}
