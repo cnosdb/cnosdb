@@ -43,7 +43,6 @@ url = { workspace = true }
 async-recursion = { workspace = true }
 tempfile = { workspace = true }
 bytes = { workspace = true }
-snap = { workspace = true }
 regex = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 bincode = { workspace = true }

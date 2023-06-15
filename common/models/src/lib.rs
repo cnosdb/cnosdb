@@ -28,6 +28,7 @@ pub mod oid;
 pub mod predicate;
 pub mod record_batch;
 pub mod runtime;
+pub mod snappy;
 
 pub type ShardId = u64;
 pub type CatalogId = u64;

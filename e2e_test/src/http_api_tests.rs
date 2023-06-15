@@ -1,11 +1,11 @@
 #[cfg(test)]
-mod test {
+pub mod test {
     use http_protocol::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
     use http_protocol::http_client::HttpClient;
     use http_protocol::response::Response;
     use http_protocol::status_code;
 
-    fn client() -> HttpClient {
+    pub fn client() -> HttpClient {
         HttpClient::new("127.0.0.1", 8902, false, false, &[]).unwrap()
     }
 
