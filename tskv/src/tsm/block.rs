@@ -428,6 +428,106 @@ impl DataBlock {
         blk
     }
 
+    pub fn split(self, timestamp: Timestamp) -> (DataBlock, DataBlock) {
+        match &self {
+            DataBlock::U64 { ts, val, .. } => {
+                let i = ts.binary_search(&timestamp).unwrap_or_else(|i| i);
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, ValueType::Unsigned))
+                } else {
+                    (
+                        DataBlock::U64 {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::U64 {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::I64 { ts, val, .. } => {
+                let i = ts.binary_search(&timestamp).unwrap_or_else(|i| i);
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, ValueType::Integer))
+                } else {
+                    (
+                        DataBlock::I64 {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::I64 {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::Str { ts, val, .. } => {
+                let i = ts.binary_search(&timestamp).unwrap_or_else(|i| i);
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, ValueType::String))
+                } else {
+                    (
+                        DataBlock::Str {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::Str {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::F64 { ts, val, .. } => {
+                let i = ts.binary_search(&timestamp).unwrap_or_else(|i| i);
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, ValueType::Float))
+                } else {
+                    (
+                        DataBlock::F64 {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::F64 {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::Bool { ts, val, .. } => {
+                let i = ts.binary_search(&timestamp).unwrap_or_else(|i| i);
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, ValueType::Boolean))
+                } else {
+                    (
+                        DataBlock::Bool {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::Bool {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+        }
+    }
+
     /// Merges one or many `DataBlock`s into some `DataBlock` with fixed length,
     /// sorted by timestamp, if many (timestamp, value) conflict with the same
     /// timestamp, use the last value.

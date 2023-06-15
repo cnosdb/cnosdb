@@ -72,7 +72,7 @@ kill() {
   if [ "$(uname)" = "Darwin" ]; then
     SERVICE='cnosdb-meta'
     if pgrep -xq -- "${SERVICE}"; then
-      pkill -f "${SERVICE}"
+      pkill -9 -f "${SERVICE}"
     fi
   else
     set +e # killall will error if finds no process to kill
