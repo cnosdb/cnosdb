@@ -15,7 +15,6 @@ pub mod physical_planner;
 pub mod recordbatch;
 pub mod scheduler;
 pub mod session;
-pub mod traced_stream;
 
 pub const AFFECTED_ROWS: (&str, DataType) = ("rows", DataType::UInt64);
 

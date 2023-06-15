@@ -16,6 +16,7 @@ use tokio::runtime::Runtime;
 use trace::jaeger::jaeger_exporter;
 use trace::log::{CombinationTraceCollector, LogTraceCollector};
 use trace::{info, init_process_global_tracing, TraceExporter, WorkerGuard};
+use trace_http::ctx::{SpanContextExtractor, TraceHeaderParser};
 
 use crate::report::ReportService;
 
@@ -202,7 +203,7 @@ fn main() -> Result<(), std::io::Error> {
                 "node_id",
                 config.node_basic.node_id.to_string(),
             )])),
-            trace_collector: build_trace_collector(&config),
+            span_context_extractor: build_span_context_extractor(&config),
         };
 
         let mut server = server::Server::default();
@@ -292,7 +293,7 @@ fn set_cli_args_to_config(args: &RunArgs, config: &mut Config) {
     }
 }
 
-fn build_trace_collector(config: &Config) -> Option<Arc<dyn TraceExporter>> {
+fn build_span_context_extractor(config: &Config) -> Arc<SpanContextExtractor> {
     let mut res: Vec<Arc<dyn TraceExporter>> = Vec::new();
     let mode = &config.deployment.mode;
     let node_id = config.node_basic.node_id;
@@ -314,11 +315,15 @@ fn build_trace_collector(config: &Config) -> Option<Arc<dyn TraceExporter>> {
     }
 
     // TODO HttpCollector
-    if res.is_empty() {
+    let collector: Option<Arc<dyn TraceExporter>> = if res.is_empty() {
         None
     } else if res.len() == 1 {
         res.pop()
     } else {
         Some(Arc::new(CombinationTraceCollector::new(res)))
-    }
+    };
+
+    let parser = TraceHeaderParser::new(config.trace.auto_generate_span);
+
+    Arc::new(SpanContextExtractor::new(parser, collector))
 }

@@ -13,7 +13,7 @@ use protos::kv_service::{BatchBytesResponse, QueryRecordBatchRequest};
 use tonic::transport::Channel;
 use tonic::{Request, Streaming};
 use tower::timeout::Timeout;
-use tskv::query_iterator::TskvSourceMetrics;
+use trace::SpanRecorder;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::{
@@ -30,10 +30,8 @@ impl TonicTskvTableScanStream {
         node_id: u64,
         request: Request<QueryRecordBatchRequest>,
         admin_meta: AdminMetaRef,
-        metrics: TskvSourceMetrics,
     ) -> Self {
         let fetch_result_stream = async move {
-            let _timer = metrics.elapsed_build_resp_stream().timer();
             let channel = admin_meta
                 .get_node_conn(node_id)
                 .await
@@ -117,11 +115,16 @@ enum StreamState {
 
 pub struct TonicRecordBatchEncoder {
     input: SendableCoordinatorRecordBatchStream,
+    #[allow(unused)]
+    span_recorder: SpanRecorder,
 }
 
 impl TonicRecordBatchEncoder {
-    pub fn new(input: SendableCoordinatorRecordBatchStream) -> Self {
-        Self { input }
+    pub fn new(input: SendableCoordinatorRecordBatchStream, span_recorder: SpanRecorder) -> Self {
+        Self {
+            input,
+            span_recorder,
+        }
     }
 }
 

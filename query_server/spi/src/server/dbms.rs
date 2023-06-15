@@ -123,7 +123,10 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
     ) -> Result<QueryHandle> {
         self.execute(
             &query_state_machine.query,
-            query_state_machine.session.get_span_ctx(),
+            query_state_machine
+                .session
+                .get_child_span_recorder("mock execute logical plan")
+                .span_ctx(),
         )
         .await
     }

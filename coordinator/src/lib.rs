@@ -13,7 +13,8 @@ use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::Precision;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
-use tskv::query_iterator::{QueryOption, TskvSourceMetrics};
+use trace::SpanContext;
+use tskv::query_iterator::QueryOption;
 use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
@@ -95,18 +96,19 @@ pub trait Coordinator: Send + Sync {
         level: ConsistencyLevel,
         precision: Precision,
         request: WritePointsRequest,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()>;
 
     fn table_scan(
         &self,
         option: QueryOption,
-        metrics: TskvSourceMetrics,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream>;
 
     fn tag_scan(
         &self,
         option: QueryOption,
-        metrics: TskvSourceMetrics,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream>;
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()>;

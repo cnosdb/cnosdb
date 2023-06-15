@@ -22,8 +22,10 @@ use models::predicate::domain::PredicateRef;
 use models::predicate::PlacedSplit;
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 use spi::QueryError;
-use trace::debug;
-use tskv::query_iterator::{QueryOption, TableScanMetrics};
+use trace::{debug, SpanContext, SpanExt, SpanRecorder};
+use tskv::query_iterator::QueryOption;
+
+use crate::extension::physical::plan_node::TableScanMetrics;
 
 #[derive(Clone)]
 pub struct TagScanExec {
@@ -120,6 +122,7 @@ impl ExecutionPlan for TagScanExec {
         let batch_size = context.session_config().batch_size();
 
         let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
+        let span_ctx = context.session_config().get_extension::<SpanContext>();
 
         let tag_scan_stream = TagScanStream::new(
             self.table_schema.clone(),
@@ -128,6 +131,7 @@ impl ExecutionPlan for TagScanExec {
             split,
             batch_size,
             metrics,
+            SpanRecorder::new(span_ctx.child_span(format!("TagScanStream ({partition})"))),
         )
         .map_err(|err| DataFusionError::External(Box::new(err)))?;
 
@@ -217,6 +221,8 @@ pub struct TagScanStream {
     stream: SendableCoordinatorRecordBatchStream,
 
     metrics: TableScanMetrics,
+    #[allow(unused)]
+    span_recorder: SpanRecorder,
 }
 
 impl TagScanStream {
@@ -227,6 +233,7 @@ impl TagScanStream {
         split: PlacedSplit,
         batch_size: usize,
         metrics: TableScanMetrics,
+        span_recorder: SpanRecorder,
     ) -> Result<Self, QueryError> {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for field_name in proj_schema.fields().iter().map(|f| f.name()) {
@@ -256,7 +263,8 @@ impl TagScanStream {
             proj_table_schema,
         );
 
-        let stream = coord.tag_scan(option, metrics.tskv_metrics())?;
+        let span_ctx = span_recorder.span_ctx();
+        let stream = coord.tag_scan(option, span_ctx)?;
 
         Ok(Self {
             proj_schema,
@@ -264,23 +272,8 @@ impl TagScanStream {
             coord,
             stream,
             metrics,
+            span_recorder,
         })
-    }
-
-    pub fn with_iterator(
-        proj_schema: SchemaRef,
-        batch_size: usize,
-        coord: CoordinatorRef,
-        stream: SendableCoordinatorRecordBatchStream,
-        metrics: TableScanMetrics,
-    ) -> Self {
-        Self {
-            proj_schema,
-            batch_size,
-            coord,
-            stream,
-            metrics,
-        }
     }
 }
 

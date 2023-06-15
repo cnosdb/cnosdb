@@ -5,7 +5,7 @@ set -ex
 # 机器型号
 export MACHINE=${MACHINE:-$(uname -p)}
 # 此次任务的名称
-export BENCHMARK_ID=${BENCHMARK_ID:-$(date +%s)}
+export BENCHMARK_ID=${BENCHMARK_ID:-$(git log -1 --pretty=%h)}
 # 数据集
 export BENCHMARK_DATASET=${BENCHMARK_DATASET:-hits}
 # pr or release
