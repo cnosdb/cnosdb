@@ -131,8 +131,12 @@ impl PlacedSplit {
         self.split.limit
     }
 
-    pub fn vnode(&self, index: usize) -> Option<VnodeInfo> {
-        self.repl_set.vnodes.get(index).cloned()
+    pub fn pop_front(&mut self) -> Option<VnodeInfo> {
+        if self.repl_set.vnodes.is_empty() {
+            None
+        } else {
+            Some(self.repl_set.vnodes.remove(0))
+        }
     }
 
     pub fn replica_id(&self) -> ReplicationSetId {

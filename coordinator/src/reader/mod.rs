@@ -58,7 +58,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                     // TODO record time used
                     match ready!(checker.try_poll_unpin(cx)) {
                         Ok(_) => {
-                            self.vnode = self.option.split.vnode(0).ok_or(
+                            self.vnode = self.option.split.pop_front().ok_or(
                                 CoordinatorError::NoValidReplica {
                                     id: self.option.split.replica_id(),
                                 },
@@ -92,7 +92,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                     Some(Ok(batch)) => return Poll::Ready(Some(Ok(batch))),
                     Some(Err(err)) => {
                         if let CoordinatorError::FailoverNode { id: _ } = err {
-                            if let Some(vnode) = self.option.split.vnode(1) {
+                            if let Some(vnode) = self.option.split.pop_front() {
                                 info!("failover reader try to read another vnode: {:?}", vnode);
                                 self.vnode = vnode;
                                 self.state = StreamState::Idle;
