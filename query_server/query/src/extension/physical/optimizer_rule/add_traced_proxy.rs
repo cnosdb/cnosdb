@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use datafusion::common::tree_node::TreeNodeRewriter;
+use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter};
 use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
