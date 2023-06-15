@@ -11,6 +11,7 @@ protos = { path = "../common/protos", features = ["test"] }
 
 [dev-dependencies]
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
+models = { path = "../common/models" }
 
 flatbuffers = { workspace = true }
 tonic = { workspace = true, features = ["tls", "transport"] }
@@ -19,3 +20,4 @@ tokio-stream = { workspace = true }
 datafusion = { workspace = true }
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
+protobuf = { workspace = true }

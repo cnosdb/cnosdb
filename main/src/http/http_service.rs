@@ -702,7 +702,6 @@ impl HttpService {
                             SpanRecorder::new(span_context.child_span("remote read"));
                         prs.remote_read(&context, req, span_recorder.span_ctx())
                             .await
-                            .map(|_| ResponseBuilder::ok())
                             .map_err(|e| {
                                 span_recorder.error(e.to_string());
                                 trace::error!(
