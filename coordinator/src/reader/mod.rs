@@ -16,7 +16,7 @@ use models::meta_data::VnodeInfo;
 pub use query_executor::*;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
-use tracing::warn;
+use tracing::{info, warn};
 use tskv::query_iterator::QueryOption;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
@@ -35,18 +35,18 @@ pub trait VnodeOpener: Unpin {
 }
 
 pub struct CheckedCoordinatorRecordBatchStream<O: VnodeOpener> {
+    opener: O,
     vnode: VnodeInfo,
     option: QueryOption,
-    opener: O,
     state: StreamState,
 }
 
 impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
-    pub fn new(vnode: VnodeInfo, option: QueryOption, opener: O, checker: CheckFuture) -> Self {
+    pub fn new(option: QueryOption, opener: O, checker: CheckFuture) -> Self {
         Self {
-            vnode,
             option,
             opener,
+            vnode: VnodeInfo::default(),
             state: StreamState::Check(checker),
         }
     }
@@ -58,8 +58,15 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                     // TODO record time used
                     match ready!(checker.try_poll_unpin(cx)) {
                         Ok(_) => {
+                            self.vnode = self.option.split.vnode(0).ok_or(
+                                CoordinatorError::NoValidReplica {
+                                    id: self.option.split.replica_id(),
+                                },
+                            )?;
+
                             self.state = StreamState::Idle;
                         }
+
                         Err(err) => return Poll::Ready(Some(Err(err))),
                     };
                 }
@@ -80,7 +87,23 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                         Err(err) => return Poll::Ready(Some(Err(err))),
                     };
                 }
-                StreamState::Scan(stream) => return stream.poll_next_unpin(cx),
+                StreamState::Scan(stream) => match ready!(stream.poll_next_unpin(cx)) {
+                    None => return Poll::Ready(None),
+                    Some(Ok(batch)) => return Poll::Ready(Some(Ok(batch))),
+                    Some(Err(err)) => {
+                        if let CoordinatorError::FailoverNode { id: _ } = err {
+                            if let Some(vnode) = self.option.split.vnode(1) {
+                                info!("failover reader try to read another vnode: {:?}", vnode);
+                                self.vnode = vnode;
+                                self.state = StreamState::Idle;
+                            } else {
+                                return Poll::Ready(Some(Err(err)));
+                            }
+                        } else {
+                            return Poll::Ready(Some(Err(err)));
+                        }
+                    }
+                },
             }
         }
     }

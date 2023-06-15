@@ -8,6 +8,7 @@ use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifie
 use models::auth::user::{User, UserDesc, UserOptions};
 use models::meta_data::{
     BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
+    VnodeStatus,
 };
 use models::oid::{Identifier, Oid};
 use models::schema::{
@@ -158,6 +159,7 @@ pub trait MetaClient: Send + Sync + Debug {
     fn print_data(&self) -> String;
 
     async fn update_vnode(&self, info: &VnodeAllInfo) -> MetaResult<()>;
+    async fn change_vnode_status(&self, id: u32, status: VnodeStatus) -> MetaResult<()>;
 }
 
 #[async_trait]

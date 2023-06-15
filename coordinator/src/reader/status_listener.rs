@@ -75,6 +75,10 @@ pub async fn change_vnode_to_broken(
         .await
         .ok_or(CoordinatorError::TenantNotFound { name: tenant })?;
 
+    meta_client
+        .change_vnode_status(vnode_id, VnodeStatus::Broken)
+        .await?;
+
     all_info.set_status(VnodeStatus::Broken);
     meta_client.update_vnode(&all_info).await?;
 

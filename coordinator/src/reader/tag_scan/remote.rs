@@ -33,7 +33,10 @@ impl TonicTskvTagScanStream {
         let fetch_result_stream = async move {
             let _timer = metrics.elapsed_build_resp_stream().timer();
             // TODO cache channel
-            let channel = admin_meta.get_node_conn(node_id).await?;
+            let channel = admin_meta
+                .get_node_conn(node_id)
+                .await
+                .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?;
             let timeout_channel =
                 Timeout::new(channel, Duration::from_millis(config.read_timeout_ms));
             let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
