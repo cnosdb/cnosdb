@@ -121,7 +121,7 @@ impl ExecutionPlan for TagScanExec {
 
         let batch_size = context.session_config().batch_size();
 
-        let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
+        let metrics = TableScanMetrics::new(&self.metrics, partition);
         let span_ctx = context.session_config().get_extension::<SpanContext>();
 
         let tag_scan_stream = TagScanStream::new(
@@ -288,20 +288,10 @@ impl Stream for TagScanStream {
         let metrics = &this.metrics;
         let timer = metrics.elapsed_compute().timer();
 
-        let result = match this.stream.poll_next_unpin(cx) {
-            Poll::Ready(Some(Ok(record_batch))) => match metrics.record_memory(&record_batch) {
-                Ok(_) => Poll::Ready(Some(Ok(record_batch))),
-                Err(e) => Poll::Ready(Some(Err(e))),
-            },
-            Poll::Ready(Some(Err(e))) => {
-                Poll::Ready(Some(Err(DataFusionError::External(Box::new(e)))))
-            }
-            Poll::Ready(None) => {
-                metrics.done();
-                Poll::Ready(None)
-            }
-            Poll::Pending => Poll::Pending,
-        };
+        let result = this
+            .stream
+            .poll_next_unpin(cx)
+            .map_err(|err| DataFusionError::External(Box::new(err)));
 
         timer.done();
         metrics.record_poll(result)

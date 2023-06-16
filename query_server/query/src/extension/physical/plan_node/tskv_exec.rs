@@ -120,7 +120,7 @@ impl ExecutionPlan for TskvExec {
 
         let batch_size = context.session_config().batch_size();
 
-        let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
+        let metrics = TableScanMetrics::new(&self.metrics, partition);
 
         let span_ctx = context.session_config().get_extension::<SpanContext>();
 
@@ -312,23 +312,20 @@ impl Stream for TableScanStream {
         let timer = metrics.elapsed_compute().timer();
 
         let result = match this.iterator.poll_next_unpin(cx) {
-            Poll::Ready(Some(Ok(batch))) => match metrics.record_memory(&batch) {
-                Ok(_) => match this.remain.as_mut() {
-                    Some(remain) => {
-                        if *remain == 0 {
-                            Poll::Ready(None)
-                        } else if *remain > batch.num_rows() {
-                            *remain -= batch.num_rows();
-                            Poll::Ready(Some(Ok(batch)))
-                        } else {
-                            let batch = batch.slice(0, *remain);
-                            *remain = 0;
-                            Poll::Ready(Some(Ok(batch)))
-                        }
+            Poll::Ready(Some(Ok(batch))) => match this.remain.as_mut() {
+                Some(remain) => {
+                    if *remain == 0 {
+                        Poll::Ready(None)
+                    } else if *remain > batch.num_rows() {
+                        *remain -= batch.num_rows();
+                        Poll::Ready(Some(Ok(batch)))
+                    } else {
+                        let batch = batch.slice(0, *remain);
+                        *remain = 0;
+                        Poll::Ready(Some(Ok(batch)))
                     }
-                    None => Poll::Ready(Some(Ok(batch))),
-                },
-                Err(e) => Poll::Ready(Some(Err(e))),
+                }
+                None => Poll::Ready(Some(Ok(batch))),
             },
             Poll::Ready(Some(Err(e))) => {
                 Poll::Ready(Some(Err(DataFusionError::External(Box::new(e)))))
