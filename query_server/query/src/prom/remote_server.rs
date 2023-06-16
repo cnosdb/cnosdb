@@ -72,7 +72,7 @@ impl PromRemoteServer for PromRemoteSqlServer {
         let prom_write_request = self.deserialize_write_request(req)?;
         let write_points_request =
             self.prom_write_request_to_write_points_request(ctx, prom_write_request)?;
-        debug!("Received remote write request: {:?}", write_points_request);
+
         Ok(write_points_request)
     }
 }
