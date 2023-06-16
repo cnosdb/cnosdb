@@ -84,26 +84,22 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                         Ok(stream) => {
                             self.state = StreamState::Scan(stream);
                         }
-                        Err(err) => return Poll::Ready(Some(Err(err))),
-                    };
-                }
-                StreamState::Scan(stream) => match ready!(stream.poll_next_unpin(cx)) {
-                    None => return Poll::Ready(None),
-                    Some(Ok(batch)) => return Poll::Ready(Some(Ok(batch))),
-                    Some(Err(err)) => {
-                        if let CoordinatorError::FailoverNode { id: _ } = err {
-                            if let Some(vnode) = self.option.split.pop_front() {
-                                info!("failover reader try to read another vnode: {:?}", vnode);
-                                self.vnode = vnode;
-                                self.state = StreamState::Idle;
+                        Err(err) => {
+                            if let CoordinatorError::FailoverNode { id: _ } = err {
+                                if let Some(vnode) = self.option.split.pop_front() {
+                                    info!("failover reader try to read another vnode: {:?}", vnode);
+                                    self.vnode = vnode;
+                                    self.state = StreamState::Idle;
+                                } else {
+                                    return Poll::Ready(Some(Err(err)));
+                                }
                             } else {
                                 return Poll::Ready(Some(Err(err)));
                             }
-                        } else {
-                            return Poll::Ready(Some(Err(err)));
                         }
-                    }
-                },
+                    };
+                }
+                StreamState::Scan(stream) => return stream.poll_next_unpin(cx),
             }
         }
     }
