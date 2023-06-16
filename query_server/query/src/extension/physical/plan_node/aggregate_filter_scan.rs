@@ -104,7 +104,7 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         };
         debug!("Split of partition: {:?}", split);
 
-        let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
+        let metrics = TableScanMetrics::new(&self.metrics, partition);
         let query_opt = QueryOption::new(
             100_usize,
             split,
