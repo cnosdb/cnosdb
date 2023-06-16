@@ -7,6 +7,7 @@ use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::meta_data::{
     BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplicationSet, VnodeAllInfo, VnodeInfo,
+    VnodeStatus,
 };
 use models::oid::Oid;
 use models::schema::{
@@ -255,6 +256,10 @@ impl MetaClient for MockMetaClient {
     }
 
     async fn update_vnode(&self, info: &VnodeAllInfo) -> MetaResult<()> {
+        Ok(())
+    }
+
+    async fn change_vnode_status(&self, id: u32, status: VnodeStatus) -> MetaResult<()> {
         Ok(())
     }
 

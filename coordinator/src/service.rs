@@ -12,7 +12,7 @@ use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::consistency_level::ConsistencyLevel;
-use models::meta_data::{ExpiredBucketInfo, ReplicationSet, VnodeInfo};
+use models::meta_data::{ExpiredBucketInfo, ReplicationSet};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicateRef, TimeRanges};
 use models::record_batch_decode;
@@ -347,7 +347,7 @@ impl Coordinator for CoordService {
         &self,
         table: &ResolvedTable,
         predicate: ResolvedPredicateRef,
-    ) -> CoordinatorResult<Vec<VnodeInfo>> {
+    ) -> CoordinatorResult<Vec<ReplicationSet>> {
         // 1. 根据传入的过滤条件获取表的分片信息（包括副本）
         let shards = self
             .prune_shards(table, predicate.time_ranges().as_ref())
@@ -422,7 +422,6 @@ impl Coordinator for CoordService {
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
-            option.split.vnode().clone(),
             option,
             opener,
             Box::pin(checker),
@@ -445,7 +444,6 @@ impl Coordinator for CoordService {
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
-            option.split.vnode().clone(),
             option,
             opener,
             Box::pin(checker),

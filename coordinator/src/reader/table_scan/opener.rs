@@ -1,9 +1,13 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use config::QueryConfig;
 use meta::model::MetaRef;
 use models::meta_data::VnodeInfo;
+use protos::kv_service::tskv_service_client::TskvServiceClient;
 use tokio::runtime::Runtime;
+use tonic::transport::Channel;
+use tower::timeout::Timeout;
 use trace::{SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::append_trace_context;
 use tskv::query_iterator::QueryOption;
@@ -12,7 +16,7 @@ use tskv::EngineRef;
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::reader::status_listener::VnodeStatusListener;
 use crate::reader::table_scan::local::LocalTskvTableScanStream;
-use crate::reader::table_scan::remote::TonicTskvTableScanStream;
+use crate::reader::table_scan::remote::TonicRecordBatchDecoder;
 use crate::reader::{VnodeOpenFuture, VnodeOpener};
 use crate::service::CoordServiceMetrics;
 use crate::SendableCoordinatorRecordBatchStream;
@@ -100,12 +104,24 @@ impl VnodeOpener for TemporaryTableScanOpener {
                     }
                 })?;
 
-                Ok(Box::pin(TonicTskvTableScanStream::new(
-                    config,
-                    node_id,
-                    request,
-                    meta.admin_meta(),
-                )) as SendableCoordinatorRecordBatchStream)
+                let resp_stream = {
+                    let channel = meta
+                        .admin_meta()
+                        .get_node_conn(node_id)
+                        .await
+                        .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?;
+                    let timeout_channel =
+                        Timeout::new(channel, Duration::from_millis(config.read_timeout_ms));
+                    let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+                    client
+                        .query_record_batch(request)
+                        .await
+                        .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?
+                        .into_inner()
+                };
+
+                Ok(Box::pin(TonicRecordBatchDecoder::new(resp_stream))
+                    as SendableCoordinatorRecordBatchStream)
             }
         };
 

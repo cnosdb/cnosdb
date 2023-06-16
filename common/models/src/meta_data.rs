@@ -97,6 +97,12 @@ pub struct ReplicationSet {
     pub vnodes: Vec<VnodeInfo>,
 }
 
+impl ReplicationSet {
+    pub fn new(id: ReplicationSetId, vnodes: Vec<VnodeInfo>) -> Self {
+        Self { id, vnodes }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct VnodeInfo {
     pub id: VnodeId,

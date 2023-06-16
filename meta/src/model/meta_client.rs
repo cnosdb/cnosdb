@@ -819,6 +819,24 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
+    async fn change_vnode_status(&self, id: u32, status: VnodeStatus) -> MetaResult<()> {
+        let mut data = self.data.write();
+        for (_db_name, db_info) in data.dbs.iter_mut() {
+            for bucket in db_info.buckets.iter_mut() {
+                for repl_set in bucket.shard_group.iter_mut() {
+                    for vnode in repl_set.vnodes.iter_mut() {
+                        if vnode.id == id {
+                            vnode.status = status;
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     async fn update_replication_set(
         &self,
         db: &str,

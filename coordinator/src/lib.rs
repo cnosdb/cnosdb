@@ -8,7 +8,7 @@ use errors::CoordinatorError;
 use futures::Stream;
 use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
-use models::meta_data::{VnodeAllInfo, VnodeInfo};
+use models::meta_data::{ReplicationSet, VnodeAllInfo};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::Precision;
@@ -88,7 +88,7 @@ pub trait Coordinator: Send + Sync {
         &self,
         table: &ResolvedTable,
         predicate: ResolvedPredicateRef,
-    ) -> CoordinatorResult<Vec<VnodeInfo>>;
+    ) -> CoordinatorResult<Vec<ReplicationSet>>;
 
     async fn write_points(
         &self,

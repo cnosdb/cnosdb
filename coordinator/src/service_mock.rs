@@ -8,7 +8,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::meta_client_mock::{MockMetaClient, MockMetaManager};
 use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
-use models::meta_data::{VnodeInfo, VnodeStatus};
+use models::meta_data::{ReplicationSet, VnodeInfo, VnodeStatus};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::Precision;
@@ -51,49 +51,73 @@ impl Coordinator for MockCoordinator {
         &self,
         table: &ResolvedTable,
         _predicate: ResolvedPredicateRef,
-    ) -> CoordinatorResult<Vec<VnodeInfo>> {
+    ) -> CoordinatorResult<Vec<ReplicationSet>> {
         if table.database() == WITH_NONEMPTY_DATABASE_FOR_TEST {
             return Ok(vec![
-                VnodeInfo {
-                    id: 0,
-                    node_id: 0,
-                    status: VnodeStatus::Running,
-                },
-                VnodeInfo {
-                    id: 1,
-                    node_id: 0,
-                    status: VnodeStatus::Running,
-                },
-                VnodeInfo {
-                    id: 2,
-                    node_id: 0,
-                    status: VnodeStatus::Running,
-                },
-                VnodeInfo {
-                    id: 3,
-                    node_id: 0,
-                    status: VnodeStatus::Running,
-                },
-                VnodeInfo {
-                    id: 4,
-                    node_id: 0,
-                    status: VnodeStatus::Running,
-                },
-                VnodeInfo {
-                    id: 5,
-                    node_id: 0,
-                    status: VnodeStatus::Running,
-                },
-                VnodeInfo {
-                    id: 6,
-                    node_id: 0,
-                    status: VnodeStatus::Running,
-                },
-                VnodeInfo {
-                    id: 7,
-                    node_id: 0,
-                    status: VnodeStatus::Running,
-                },
+                ReplicationSet::new(
+                    0,
+                    vec![VnodeInfo {
+                        id: 0,
+                        node_id: 0,
+                        status: VnodeStatus::Running,
+                    }],
+                ),
+                ReplicationSet::new(
+                    1,
+                    vec![VnodeInfo {
+                        id: 1,
+                        node_id: 0,
+                        status: VnodeStatus::Running,
+                    }],
+                ),
+                ReplicationSet::new(
+                    2,
+                    vec![VnodeInfo {
+                        id: 2,
+                        node_id: 0,
+                        status: VnodeStatus::Running,
+                    }],
+                ),
+                ReplicationSet::new(
+                    3,
+                    vec![VnodeInfo {
+                        id: 3,
+                        node_id: 0,
+                        status: VnodeStatus::Running,
+                    }],
+                ),
+                ReplicationSet::new(
+                    4,
+                    vec![VnodeInfo {
+                        id: 4,
+                        node_id: 0,
+                        status: VnodeStatus::Running,
+                    }],
+                ),
+                ReplicationSet::new(
+                    5,
+                    vec![VnodeInfo {
+                        id: 5,
+                        node_id: 0,
+                        status: VnodeStatus::Running,
+                    }],
+                ),
+                ReplicationSet::new(
+                    6,
+                    vec![VnodeInfo {
+                        id: 6,
+                        node_id: 0,
+                        status: VnodeStatus::Running,
+                    }],
+                ),
+                ReplicationSet::new(
+                    7,
+                    vec![VnodeInfo {
+                        id: 7,
+                        node_id: 0,
+                        status: VnodeStatus::Running,
+                    }],
+                ),
             ]);
         }
         Ok(vec![])

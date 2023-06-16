@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use self::domain::{
     ColumnDomains, PredicateRef, ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges,
 };
-use crate::meta_data::VnodeInfo;
+use crate::meta_data::{ReplicationSet, ReplicationSetId, VnodeInfo};
 use crate::schema::{ColumnType, TskvTableSchemaRef};
 
 pub mod domain;
@@ -88,7 +88,7 @@ impl From<PlacedSplit> for Split {
 pub struct PlacedSplit {
     split: Split,
 
-    vnode: VnodeInfo,
+    repl_set: ReplicationSet,
 }
 
 impl PlacedSplit {
@@ -96,7 +96,7 @@ impl PlacedSplit {
         id: usize,
         predicate: ResolvedPredicateRef,
         limit: Option<usize>,
-        vnode: VnodeInfo,
+        repl_set: ReplicationSet,
     ) -> Self {
         let split = Split {
             id,
@@ -104,11 +104,11 @@ impl PlacedSplit {
             limit,
         };
 
-        Self { split, vnode }
+        Self { split, repl_set }
     }
 
-    pub fn from_split(split: Split, vnode: VnodeInfo) -> Self {
-        Self { split, vnode }
+    pub fn from_split(split: Split, repl_set: ReplicationSet) -> Self {
+        Self { split, repl_set }
     }
 
     pub fn id(&self) -> usize {
@@ -131,7 +131,15 @@ impl PlacedSplit {
         self.split.limit
     }
 
-    pub fn vnode(&self) -> &VnodeInfo {
-        &self.vnode
+    pub fn pop_front(&mut self) -> Option<VnodeInfo> {
+        if self.repl_set.vnodes.is_empty() {
+            None
+        } else {
+            Some(self.repl_set.vnodes.remove(0))
+        }
+    }
+
+    pub fn replica_id(&self) -> ReplicationSetId {
+        self.repl_set.id
     }
 }
