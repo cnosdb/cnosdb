@@ -3,8 +3,8 @@
 set -e
 
 current_dir=$(dirname "$0")
-
-source ${current_dir}/shell_env.sh
+dataset=$1
+source ${current_dir}/shell_env.sh ${dataset}
 
 set +x
 

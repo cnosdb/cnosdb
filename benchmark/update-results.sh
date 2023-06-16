@@ -17,7 +17,9 @@ fi
     sed '/^const data = \[$/q' ${dataset}/index.html.template
 
     FIRST=1
+    set +e
     cp /home/gitlab-runner/benchmark_results/${dataset}/*.json ${results_dir}/${dataset}/
+    set -e
     find "${results_dir}/${dataset}/" -name '*.json' | while read -r file; do
         [[ $file =~ ^(hardware|versions)/ ]] && continue
 

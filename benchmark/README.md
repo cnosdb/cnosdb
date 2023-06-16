@@ -56,10 +56,10 @@ TSBS_RUN_QUERIES_CMD=/Users/yukkit/Downloads/mac-arm64-cnosdb/run_queries_cnosdb
 
 - TSBS_LOAD_CMD: load 命令，默认`load_cnosdb`
 - TSBS_LOAD_URL: load 命令的目标数据库的地址， 默认`http://127.0.0.1:8902`
-- TSBS_DATA_URL: tsbs 数据的路径， 默认`http://127.0.0.1:8902/data.gz`
+- TSBS_DATA_URL: tsbs 数据的路径， 默认`/data/cnosdb_iot_123_2022.gz`
 - TSBS_LOAD_WORKERS: laod 任务的并发数， 默认`24`
 
-#### tsbs 数据集可选配置
+#### tsbs 数据集
 - TSBS_QUERY_NUM: 查询的数量，默认`24`
 - TSBS_TIMESTAMP_START: 查询的开始时间，默认`2022-01-01T00:00:00Z`
 - TSBS_TIMESTAMP_END: 查询的结束时间，默认`2022-02-01T00:00:00Z`
