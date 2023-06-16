@@ -263,7 +263,11 @@ impl CoordService {
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
         let request = tonic::Request::new(req.clone());
 
-        let response = client.exec_admin_command(request).await?.into_inner();
+        let response = client
+            .exec_admin_command(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
         status_response_to_result(&response)
     }
 
@@ -312,7 +316,11 @@ impl CoordService {
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
         let request = tonic::Request::new(req.clone());
 
-        let response = client.exec_admin_fetch_command(request).await?.into_inner();
+        let response = client
+            .exec_admin_fetch_command(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
         match record_batch_decode(&response.data) {
             Ok(r) => Ok(r),
             Err(e) => Err(CoordinatorError::ArrowError { source: e }),
@@ -413,7 +421,6 @@ impl Coordinator for CoordService {
             self.kv_inst.clone(),
             self.runtime.clone(),
             self.meta.clone(),
-            self.metrics.clone(),
             span_ctx,
         );
 
@@ -421,6 +428,7 @@ impl Coordinator for CoordService {
             option,
             opener,
             Box::pin(checker),
+            &self.metrics,
         )))
     }
 
@@ -435,7 +443,6 @@ impl Coordinator for CoordService {
             self.config.query.clone(),
             self.kv_inst.clone(),
             self.meta.clone(),
-            self.metrics.clone(),
             span_ctx,
         );
 
@@ -443,6 +450,7 @@ impl Coordinator for CoordService {
             option,
             opener,
             Box::pin(checker),
+            &self.metrics,
         )))
     }
 

@@ -17,7 +17,7 @@ use models::predicate::domain::{PredicateRef, PushedAggregateFunction};
 use models::predicate::PlacedSplit;
 use models::schema::TskvTableSchemaRef;
 use trace::{debug, SpanContext, SpanExt, SpanRecorder};
-use tskv::query_iterator::QueryOption;
+use tskv::reader::QueryOption;
 
 use super::tskv_exec::TableScanStream;
 use crate::extension::physical::plan_node::TableScanMetrics;
