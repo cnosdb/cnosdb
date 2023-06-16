@@ -23,7 +23,7 @@ use models::predicate::PlacedSplit;
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 use spi::QueryError;
 use trace::{debug, SpanContext, SpanExt, SpanRecorder};
-use tskv::query_iterator::QueryOption;
+use tskv::reader::QueryOption;
 
 use crate::extension::physical::plan_node::TableScanMetrics;
 

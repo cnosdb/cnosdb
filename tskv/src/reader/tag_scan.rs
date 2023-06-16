@@ -7,23 +7,18 @@ use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
 use futures::{ready, Stream, StreamExt, TryFutureExt};
-use metrics::count::U64Counter;
+use models::arrow::stream::MemoryRecordBatchStream;
 use models::arrow_array::build_arrow_array_builders;
 use models::meta_data::VnodeId;
 use models::SeriesKey;
 use trace::SpanRecorder;
-use tskv::query_iterator::QueryOption;
-use tskv::EngineRef;
 
-use crate::errors::{CoordinatorError, CoordinatorResult};
-use crate::reader::MemoryRecordBatchStream;
-use crate::{CoordinatorRecordBatchStream, SendableCoordinatorRecordBatchStream};
-
-type Result<T, E = CoordinatorError> = std::result::Result<T, E>;
+use crate::error::Result;
+use crate::reader::{QueryOption, SendableTskvRecordBatchStream};
+use crate::EngineRef;
 
 pub struct LocalTskvTagScanStream {
     state: StreamState,
-    data_out: U64Counter,
     #[allow(unused)]
     span_recorder: SpanRecorder,
 }
@@ -33,7 +28,6 @@ impl LocalTskvTagScanStream {
         vnode_id: VnodeId,
         option: QueryOption,
         kv: EngineRef,
-        data_out: U64Counter,
         span_recorder: SpanRecorder,
     ) -> Self {
         let futrue = async move {
@@ -47,8 +41,7 @@ impl LocalTskvTagScanStream {
 
             for series_id in kv
                 .get_series_id_by_filter(tenant, db, table, vnode_id, option.split.tags_filter())
-                .await
-                .map_err(CoordinatorError::from)?
+                .await?
                 .into_iter()
             {
                 if let Some(key) = kv.get_series_key(tenant, db, vnode_id, series_id).await? {
@@ -58,20 +51,17 @@ impl LocalTskvTagScanStream {
 
             let mut batches = vec![];
             for chunk in keys.chunks(option.batch_size) {
-                let record_batch = series_keys_to_record_batch(option.df_schema.clone(), chunk)
-                    .map_err(CoordinatorError::from)?;
+                let record_batch = series_keys_to_record_batch(option.df_schema.clone(), chunk)?;
                 batches.push(record_batch)
             }
 
-            Ok(Box::pin(MemoryRecordBatchStream::new(batches))
-                as SendableCoordinatorRecordBatchStream)
+            Ok(Box::pin(MemoryRecordBatchStream::new(batches)) as SendableTskvRecordBatchStream)
         };
 
         let state = StreamState::Open(Box::pin(futrue));
 
         Self {
             state,
-            data_out,
             span_recorder,
         }
     }
@@ -91,25 +81,19 @@ impl LocalTskvTagScanStream {
     }
 }
 
-impl CoordinatorRecordBatchStream for LocalTskvTagScanStream {}
-
 impl Stream for LocalTskvTagScanStream {
     type Item = Result<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let poll = self.poll_inner(cx);
-        if let Poll::Ready(Some(Ok(batch))) = &poll {
-            self.data_out.inc(batch.get_array_memory_size() as u64);
-        }
-        poll
+        self.poll_inner(cx)
     }
 }
 
-pub type StreamFuture = BoxFuture<'static, CoordinatorResult<SendableCoordinatorRecordBatchStream>>;
+pub type StreamFuture = BoxFuture<'static, Result<SendableTskvRecordBatchStream>>;
 
 enum StreamState {
     Open(StreamFuture),
-    Scan(SendableCoordinatorRecordBatchStream),
+    Scan(SendableTskvRecordBatchStream),
 }
 
 fn series_keys_to_record_batch(

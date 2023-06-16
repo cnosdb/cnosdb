@@ -5,15 +5,16 @@ use datafusion::arrow::record_batch::RecordBatch;
 use futures::{ready, Stream, StreamExt};
 use meta::model::MetaRef;
 use models::meta_data::{VnodeId, VnodeStatus};
+use trace::warn;
 
-use crate::errors::{CoordinatorError, CoordinatorResult};
-use crate::{CoordinatorRecordBatchStream, SendableCoordinatorRecordBatchStream};
+use crate::error::Result;
+use crate::reader::SendableTskvRecordBatchStream;
 
 pub struct VnodeStatusListener {
     tenant: String,
     meta: MetaRef,
     vnode_id: VnodeId,
-    input: SendableCoordinatorRecordBatchStream,
+    input: SendableTskvRecordBatchStream,
 }
 
 impl VnodeStatusListener {
@@ -21,7 +22,7 @@ impl VnodeStatusListener {
         tenant: impl Into<String>,
         meta: MetaRef,
         vnode_id: VnodeId,
-        input: SendableCoordinatorRecordBatchStream,
+        input: SendableTskvRecordBatchStream,
     ) -> Self {
         Self {
             tenant: tenant.into(),
@@ -33,7 +34,7 @@ impl VnodeStatusListener {
 }
 
 impl Stream for VnodeStatusListener {
-    type Item = CoordinatorResult<RecordBatch>;
+    type Item = Result<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match ready!(self.input.poll_next_unpin(cx)) {
@@ -60,26 +61,37 @@ impl Stream for VnodeStatusListener {
     }
 }
 
-impl CoordinatorRecordBatchStream for VnodeStatusListener {}
-
 pub async fn change_vnode_to_broken(
     tenant: String,
     vnode_id: VnodeId,
     meta: MetaRef,
-) -> CoordinatorResult<()> {
-    let mut all_info = crate::get_vnode_all_info(meta.clone(), &tenant, vnode_id).await?;
+) -> Result<()> {
+    let meta_client = meta.tenant_meta(&tenant).await;
 
-    let meta_client = meta
-        .tenant_meta(&tenant)
-        .await
-        .ok_or(CoordinatorError::TenantNotFound { name: tenant })?;
+    if let Some(meta_client) = meta_client {
+        meta_client
+            .change_vnode_status(vnode_id, VnodeStatus::Broken)
+            .await?;
 
-    meta_client
-        .change_vnode_status(vnode_id, VnodeStatus::Broken)
-        .await?;
+        if let Some(mut all_info) = meta_client.get_vnode_all_info(vnode_id) {
+            all_info.set_status(VnodeStatus::Broken);
+            meta_client.update_vnode(&all_info).await?;
 
-    all_info.set_status(VnodeStatus::Broken);
-    meta_client.update_vnode(&all_info).await?;
+            return Ok(());
+        }
+
+        warn!(
+            "Vnode not found: {}, when changing vnode state to broken.",
+            vnode_id
+        );
+
+        return Ok(());
+    }
+
+    warn!(
+        "Tenant not found: {}, when changing vnode state to broken.",
+        tenant
+    );
 
     Ok(())
 }

@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 
+use datafusion::arrow::error::ArrowError;
 use error_code::{ErrorCode, ErrorCoder};
+use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
 use protos::PointsError;
 use snafu::Snafu;
+use tonic::{Code, Status};
 
 use crate::index::IndexError;
 use crate::schema::error::SchemaError;
@@ -15,6 +18,14 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[snafu(visibility(pub))]
 #[error_code(mod_code = "02")]
 pub enum Error {
+    ErrorResponse {
+        error: ErrorResponse,
+    },
+
+    Network {
+        source: Status,
+    },
+
     Meta {
         source: MetaError,
     },
@@ -44,6 +55,11 @@ pub enum Error {
     #[snafu(display("Memory Exhausted Retry Later"))]
     #[error_code(code = 5)]
     MemoryExhausted,
+
+    #[error_code(code = 6)]
+    Arrow {
+        source: ArrowError,
+    },
 
     // Internal Error
     #[snafu(display("{}", source))]
@@ -192,11 +208,82 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl From<MetaError> for Error {
+    fn from(source: MetaError) -> Self {
+        Error::Meta { source }
+    }
+}
+
+impl From<ArrowError> for Error {
+    fn from(source: ArrowError) -> Self {
+        Error::Arrow { source }
+    }
+}
+
 impl Error {
     pub fn error_code(&self) -> &dyn ErrorCode {
         match self {
             Error::Meta { source } => source.error_code(),
+            Error::ErrorResponse { error } => error,
             _ => self,
+        }
+    }
+
+    pub fn invalid_vnode(&self) -> bool {
+        match self {
+            Self::ReadTsm { source } => {
+                matches!(
+                    source,
+                    ReadTsmError::CrcCheck
+                        | ReadTsmError::FileNotFound { .. }
+                        | ReadTsmError::Invalid { .. }
+                )
+            }
+            _ => false,
+        }
+    }
+}
+
+// default conversion from CoordinatorError to tonic treats everything
+// other than `Status` as an internal error
+impl From<Error> for Status {
+    fn from(value: Error) -> Self {
+        let error_resp = ErrorResponse::new(value.error_code());
+
+        match serde_json::to_string(&error_resp) {
+            Ok(err) => Status::internal(err),
+            Err(err) => {
+                let error_str = format!("Serialize TskvError, error: {}", err);
+                trace::error!(error_str);
+                Status::unknown(error_str)
+            }
+        }
+    }
+}
+
+impl From<Status> for Error {
+    fn from(source: Status) -> Self {
+        let error_message = source.message();
+        match source.code() {
+            Code::Internal => {
+                match serde_json::from_str::<ErrorResponse>(error_message) {
+                    Ok(error) => Error::ErrorResponse { error },
+                    Err(err) => {
+                        // Deserialization tskv error failed, maybe a bug
+                        Error::CommonError {
+                            reason: err.to_string(),
+                        }
+                    }
+                }
+            }
+            Code::Unknown => {
+                // The server will return this exception if serialization of tskv error fails, maybe a bug
+                trace::error!("The server will return this exception if serialization of tskv error fails, maybe a bug");
+                Error::CommonError {
+                    reason: error_message.to_string(),
+                }
+            }
+            _ => Self::Network { source },
         }
     }
 }

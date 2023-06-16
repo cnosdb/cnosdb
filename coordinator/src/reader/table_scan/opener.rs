@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use config::QueryConfig;
+use futures::TryStreamExt;
 use meta::model::MetaRef;
 use models::meta_data::VnodeInfo;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
@@ -10,15 +11,14 @@ use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::{SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::append_trace_context;
-use tskv::query_iterator::QueryOption;
+use tskv::reader::status_listener::VnodeStatusListener;
+use tskv::reader::table_scan::LocalTskvTableScanStream;
+use tskv::reader::QueryOption;
 use tskv::EngineRef;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
-use crate::reader::status_listener::VnodeStatusListener;
-use crate::reader::table_scan::local::LocalTskvTableScanStream;
-use crate::reader::table_scan::remote::TonicRecordBatchDecoder;
+use crate::reader::deserialize::TonicRecordBatchDecoder;
 use crate::reader::{VnodeOpenFuture, VnodeOpener};
-use crate::service::CoordServiceMetrics;
 use crate::SendableCoordinatorRecordBatchStream;
 
 /// for connect a vnode and reading to a stream of [`RecordBatch`]
@@ -27,7 +27,6 @@ pub struct TemporaryTableScanOpener {
     kv_inst: Option<EngineRef>,
     runtime: Arc<Runtime>,
     meta: MetaRef,
-    coord_metrics: Arc<CoordServiceMetrics>,
     span_ctx: Option<SpanContext>,
 }
 
@@ -37,7 +36,6 @@ impl TemporaryTableScanOpener {
         kv_inst: Option<EngineRef>,
         runtime: Arc<Runtime>,
         meta: MetaRef,
-        coord_metrics: Arc<CoordServiceMetrics>,
         span_ctx: Option<&SpanContext>,
     ) -> Self {
         Self {
@@ -45,7 +43,6 @@ impl TemporaryTableScanOpener {
             kv_inst,
             runtime,
             meta,
-            coord_metrics,
             span_ctx: span_ctx.cloned(),
         }
     }
@@ -58,7 +55,6 @@ impl VnodeOpener for TemporaryTableScanOpener {
         let curren_nodet_id = self.meta.node_id();
         let kv_inst = self.kv_inst.clone();
         let runtime = self.runtime.clone();
-        let coord_metrics = self.coord_metrics.clone();
         let option = option.clone();
         let meta = self.meta.clone();
         let config = self.config.clone();
@@ -69,23 +65,19 @@ impl VnodeOpener for TemporaryTableScanOpener {
             if node_id == curren_nodet_id {
                 // 路由到进程内的引擎
                 let tenant = option.table_schema.tenant.clone();
-                let data_out = coord_metrics.data_out(
-                    option.table_schema.tenant.as_str(),
-                    option.table_schema.db.as_str(),
-                );
                 let kv_inst = kv_inst.ok_or(CoordinatorError::KvInstanceNotFound { node_id })?;
                 let input = Box::pin(LocalTskvTableScanStream::new(
                     vnode_id,
                     option,
                     kv_inst,
                     runtime,
-                    data_out,
                     SpanRecorder::new(
                         span_ctx.child_span(format!("LocalTskvTableScanStream ({vnode_id})")),
                     ),
                 ));
 
-                let stream = VnodeStatusListener::new(tenant, meta, vnode_id, input);
+                let stream =
+                    VnodeStatusListener::new(tenant, meta, vnode_id, input).map_err(Into::into);
 
                 Ok(Box::pin(stream) as SendableCoordinatorRecordBatchStream)
             } else {

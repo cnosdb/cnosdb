@@ -18,6 +18,7 @@ use snafu::ResultExt;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tonic::transport::Channel;
+use tonic::Code;
 use tower::timeout::Timeout;
 use trace::{debug, SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::append_trace_context;
@@ -516,7 +517,10 @@ impl PointWriter {
         let response = client
             .write_vnode_points(cmd)
             .await
-            .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?
+            .map_err(|err| match err.code() {
+                Code::Internal => CoordinatorError::TskvError { source: err.into() },
+                _ => CoordinatorError::FailoverNode { id: node_id },
+            })?
             .into_inner();
 
         let use_time = now_timestamp_millis() - begin_time;

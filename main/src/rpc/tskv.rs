@@ -1,15 +1,10 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use coordinator::errors::CoordinatorResult;
 use coordinator::file_info::get_files_meta;
-use coordinator::reader::table_scan::remote::TonicRecordBatchEncoder;
-use coordinator::reader::QueryExecutor;
-use coordinator::service::{CoordServiceMetrics, CoordinatorRef};
+use coordinator::service::CoordinatorRef;
 use coordinator::vnode_mgr::VnodeManager;
-use coordinator::{
-    SendableCoordinatorRecordBatchStream, FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE,
-};
+use coordinator::{FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE};
 use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
@@ -26,7 +21,10 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Extensions, Request, Response, Status};
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
-use tskv::query_iterator::QueryOption;
+use tskv::error::Result as TskvResult;
+use tskv::reader::query_executor::QueryExecutor;
+use tskv::reader::serialize::TonicRecordBatchEncoder;
+use tskv::reader::{QueryOption, SendableTskvRecordBatchStream};
 use tskv::EngineRef;
 
 type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, tonic::Status>> + Send>>;
@@ -207,7 +205,7 @@ impl TskvServiceImpl {
         expr: QueryExpr,
         aggs: Option<Vec<TableColumn>>,
         span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
+    ) -> TskvResult<SendableTskvRecordBatchStream> {
         let option = QueryOption::new(
             args.batch_size,
             expr.split,
@@ -223,14 +221,8 @@ impl TskvServiceImpl {
             vnodes.push(VnodeInfo::new(*id, node_id))
         }
 
-        let executor = QueryExecutor::new(
-            option,
-            self.runtime.clone(),
-            meta,
-            Some(self.kv_inst.clone()),
-            Arc::new(CoordServiceMetrics::new(&self.metrics_register)),
-        );
-        executor.local_node_executor(node_id, vnodes, span_ctx)
+        let executor = QueryExecutor::new(option, self.runtime.clone(), meta, self.kv_inst.clone());
+        executor.local_node_executor(vnodes, span_ctx)
     }
 
     fn tag_scan_exec(
@@ -239,9 +231,8 @@ impl TskvServiceImpl {
         meta: MetaRef,
         run_time: Arc<Runtime>,
         kv_inst: EngineRef,
-        metrics_register: Arc<MetricsRegister>,
         span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
+    ) -> TskvResult<SendableTskvRecordBatchStream> {
         let option = QueryOption::new(
             args.batch_size,
             expr.split,
@@ -257,14 +248,8 @@ impl TskvServiceImpl {
             .map(|id| VnodeInfo::new(*id, node_id))
             .collect::<Vec<_>>();
 
-        let executor = QueryExecutor::new(
-            option,
-            run_time,
-            meta,
-            Some(kv_inst),
-            Arc::new(CoordServiceMetrics::new(&metrics_register)),
-        );
-        executor.local_node_tag_scan(node_id, vnodes, span_ctx)
+        let executor = QueryExecutor::new(option, run_time, meta, kv_inst);
+        executor.local_node_tag_scan(vnodes, span_ctx)
     }
 }
 
@@ -348,7 +333,7 @@ impl TskvService for TskvServiceImpl {
             points: inner.data,
         };
 
-        if let Err(err) = self
+        let _ = self
             .kv_inst
             .write(
                 span_recorder.span_ctx(),
@@ -356,13 +341,9 @@ impl TskvService for TskvServiceImpl {
                 Precision::from(inner.precision as u8),
                 request,
             )
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            info!("success write data to vnode: {}", inner.vnode_id);
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
+            .await?;
+
+        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
     }
 
     async fn exec_admin_command(
@@ -581,7 +562,6 @@ impl TskvService for TskvServiceImpl {
                 self.coord.meta_manager(),
                 self.runtime.clone(),
                 self.kv_inst.clone(),
-                self.metrics_register.clone(),
                 span_recorder.span_ctx(),
             )?;
 

@@ -28,7 +28,7 @@ use trace::{debug, error, SpanRecorder};
 use crate::compute::count::count_column_non_null_values;
 use crate::error::Result;
 use crate::memcache::DataType;
-use crate::query_iterator::Cursor;
+use crate::reader::Cursor;
 use crate::tseries_family::SuperVersion;
 use crate::tsm::{BlockMetaIterator, DataBlock, TsmReader};
 use crate::{EngineRef, Error};
