@@ -20,7 +20,7 @@ use spi::query::session::SessionCtxFactory;
 use spi::server::dbms::DatabaseManagerSystem;
 use spi::service::protocol::{Query, QueryHandle, QueryId};
 use spi::{AuthSnafu, Result};
-use trace::{debug, SpanContext, SpanExt, SpanRecorder};
+use trace::{debug, SpanContext};
 use tskv::kv_option::Options;
 
 use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
@@ -69,29 +69,13 @@ where
         query: &Query,
         span_context: Option<&SpanContext>,
     ) -> Result<QueryHandle> {
-        let tenant_id = {
-            let mut span_recorder = SpanRecorder::new(span_context.child_span("get tenant id"));
-            self.get_tenant_id(query.context().tenant())
-                .await
-                .map(|id| {
-                    span_recorder.set_metadata("tenant id", id.to_string());
-                    id
-                })?
-        };
-
+        let tenant_id = self.get_tenant_id(query.context().tenant()).await?;
         let query_id = self.query_dispatcher.create_query_id();
 
-        let result = {
-            let mut span_recorder = SpanRecorder::new(span_context.child_span("execute query"));
-            span_recorder.set_metadata("query id", query_id.get());
-            self.query_dispatcher
-                .execute_query(tenant_id, query_id, query, span_recorder.span_ctx())
-                .await
-                .map_err(|err| {
-                    span_recorder.error(err.to_string());
-                    err
-                })?
-        };
+        let result = self
+            .query_dispatcher
+            .execute_query(tenant_id, query_id, query, span_context)
+            .await?;
 
         Ok(QueryHandle::new(query_id, query.clone(), result))
     }
@@ -102,7 +86,6 @@ where
         span_context: Option<&SpanContext>,
     ) -> Result<QueryStateMachineRef> {
         let query_id = self.query_dispatcher.create_query_id();
-
         let tenant_id = self.get_tenant_id(query.context().tenant()).await?;
 
         let query_state_machine = self

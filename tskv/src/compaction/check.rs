@@ -786,7 +786,9 @@ mod test {
         };
         let points = flatbuffers::root::<fb_models::Points>(&write_batch.points).unwrap();
         models_helper::print_points(points);
-        let _ = engine.write(vnode_id, Precision::NS, write_batch).await;
+        let _ = engine
+            .write(None, vnode_id, Precision::NS, write_batch)
+            .await;
     }
 
     fn data_block_to_hash_tree(

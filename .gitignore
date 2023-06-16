@@ -15,13 +15,13 @@
 **/tskv_log/
 data
 
-# tmpfile
+# Tmporary files
 trace.log.*
 test_*.log
 *.out
 *.history
 
-#generated files
+# Generated files
 common/license/private.rsa
 common/license/public.rsa
 

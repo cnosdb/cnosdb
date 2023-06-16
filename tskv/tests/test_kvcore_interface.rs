@@ -78,7 +78,7 @@ mod tests {
         };
 
         rt.spawn(async move {
-            tskv.write(0, Precision::NS, request).await.unwrap();
+            tskv.write(None, 0, Precision::NS, request).await.unwrap();
         });
     }
 
@@ -103,19 +103,27 @@ mod tests {
             points,
         };
         rt.block_on(async {
-            tskv.write(0, Precision::NS, request.clone()).await.unwrap();
+            tskv.write(None, 0, Precision::NS, request.clone())
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(0, Precision::NS, request.clone()).await.unwrap();
+            tskv.write(None, 0, Precision::NS, request.clone())
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(0, Precision::NS, request.clone()).await.unwrap();
+            tskv.write(None, 0, Precision::NS, request.clone())
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(0, Precision::NS, request.clone()).await.unwrap();
+            tskv.write(None, 0, Precision::NS, request.clone())
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
@@ -147,7 +155,9 @@ mod tests {
             };
 
             rt.block_on(async {
-                tskv.write(0, Precision::NS, request.clone()).await.unwrap();
+                tskv.write(None, 0, Precision::NS, request.clone())
+                    .await
+                    .unwrap();
             });
         }
     }
@@ -172,19 +182,27 @@ mod tests {
         };
 
         rt.block_on(async {
-            tskv.write(0, Precision::NS, request.clone()).await.unwrap();
+            tskv.write(None, 0, Precision::NS, request.clone())
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(0, Precision::NS, request.clone()).await.unwrap();
+            tskv.write(None, 0, Precision::NS, request.clone())
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(0, Precision::NS, request.clone()).await.unwrap();
+            tskv.write(None, 0, Precision::NS, request.clone())
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(0, Precision::NS, request.clone()).await.unwrap();
+            tskv.write(None, 0, Precision::NS, request.clone())
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
@@ -226,7 +244,9 @@ mod tests {
         };
 
         rt.block_on(async {
-            tskv.write(0, Precision::NS, request.clone()).await.unwrap();
+            tskv.write(None, 0, Precision::NS, request.clone())
+                .await
+                .unwrap();
         });
         println!("{:?}", tskv)
     }

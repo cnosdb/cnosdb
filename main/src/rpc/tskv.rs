@@ -24,8 +24,8 @@ use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Response, Status};
-use trace::{debug, error, info};
+use tonic::{Extensions, Request, Response, Status};
+use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
 use tskv::query_iterator::QueryOption;
 use tskv::EngineRef;
 
@@ -206,6 +206,7 @@ impl TskvServiceImpl {
         args: QueryArgs,
         expr: QueryExpr,
         aggs: Option<Vec<TableColumn>>,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let option = QueryOption::new(
             args.batch_size,
@@ -229,7 +230,7 @@ impl TskvServiceImpl {
             Some(self.kv_inst.clone()),
             Arc::new(CoordServiceMetrics::new(&self.metrics_register)),
         );
-        executor.local_node_executor(node_id, vnodes)
+        executor.local_node_executor(node_id, vnodes, span_ctx)
     }
 
     fn tag_scan_exec(
@@ -239,6 +240,7 @@ impl TskvServiceImpl {
         run_time: Arc<Runtime>,
         kv_inst: EngineRef,
         metrics_register: Arc<MetricsRegister>,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let option = QueryOption::new(
             args.batch_size,
@@ -262,7 +264,7 @@ impl TskvServiceImpl {
             Some(kv_inst),
             Arc::new(CoordServiceMetrics::new(&metrics_register)),
         );
-        executor.local_node_tag_scan(node_id, vnodes)
+        executor.local_node_tag_scan(node_id, vnodes, span_ctx)
     }
 }
 
@@ -299,6 +301,7 @@ impl TskvService for TskvServiceImpl {
     }
 
     type WritePointsStream = ResponseStream<WritePointsResponse>;
+    // TODO remove, use `write_vnode_point` instead
     async fn write_points(
         &self,
         request: tonic::Request<tonic::Streaming<WritePointsRequest>>,
@@ -310,7 +313,7 @@ impl TskvService for TskvServiceImpl {
                 Ok(req) => {
                     let ret = self
                         .kv_inst
-                        .write(0, Precision::NS, req)
+                        .write(None, 0, Precision::NS, req)
                         .await
                         .map_err(|err| tonic::Status::internal(err.to_string()));
                     resp_sender.send(ret).await.expect("successful");
@@ -333,6 +336,7 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: tonic::Request<WriteVnodeRequest>,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let span_recorder = get_span_recorder(request.extensions(), "grpc write_vnode_points");
         let inner = request.into_inner();
         let request = WritePointsRequest {
             version: 1,
@@ -347,6 +351,7 @@ impl TskvService for TskvServiceImpl {
         if let Err(err) = self
             .kv_inst
             .write(
+                span_recorder.span_ctx(),
                 inner.vnode_id,
                 Precision::from(inner.precision as u8),
                 request,
@@ -514,6 +519,7 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: tonic::Request<QueryRecordBatchRequest>,
     ) -> Result<tonic::Response<Self::QueryRecordBatchStream>, tonic::Status> {
+        let span_recorder = get_span_recorder(request.extensions(), "grpc query_record_batch");
         let inner = request.into_inner();
 
         let args = match QueryArgs::decode(&inner.args) {
@@ -532,9 +538,19 @@ impl TskvService for TskvServiceImpl {
         };
 
         let service = self.clone();
-        let stream = TskvServiceImpl::query_record_batch_exec(service, args, expr, aggs)?;
 
-        let encoded_stream = TonicRecordBatchEncoder::new(stream).map_err(Into::into);
+        let encoded_stream = {
+            let span_recorder = span_recorder.child("RecordBatch encorder stream");
+
+            let stream = TskvServiceImpl::query_record_batch_exec(
+                service,
+                args,
+                expr,
+                aggs,
+                span_recorder.span_ctx(),
+            )?;
+            TonicRecordBatchEncoder::new(stream, span_recorder).map_err(Into::into)
+        };
 
         Ok(tonic::Response::new(Box::pin(encoded_stream)))
     }
@@ -544,6 +560,7 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: Request<QueryRecordBatchRequest>,
     ) -> Result<Response<Self::TagScanStream>, Status> {
+        let span_recorder = get_span_recorder(request.extensions(), "grpc query_record_batch");
         let inner = request.into_inner();
 
         let args = match QueryArgs::decode(&inner.args) {
@@ -555,17 +572,27 @@ impl TskvService for TskvServiceImpl {
             Ok(expr) => expr,
             Err(err) => return Err(self.tonic_status(err.to_string())),
         };
-        let stream = TskvServiceImpl::tag_scan_exec(
-            args,
-            expr,
-            self.coord.meta_manager(),
-            self.runtime.clone(),
-            self.kv_inst.clone(),
-            self.metrics_register.clone(),
-        )?;
 
-        let stream = TonicRecordBatchEncoder::new(stream).map_err(Into::into);
+        let stream = {
+            let span_recorder = span_recorder.child("RecordBatch encorder stream");
+            let stream = TskvServiceImpl::tag_scan_exec(
+                args,
+                expr,
+                self.coord.meta_manager(),
+                self.runtime.clone(),
+                self.kv_inst.clone(),
+                self.metrics_register.clone(),
+                span_recorder.span_ctx(),
+            )?;
+
+            TonicRecordBatchEncoder::new(stream, span_recorder).map_err(Into::into)
+        };
 
         Ok(tonic::Response::new(Box::pin(stream)))
     }
+}
+
+fn get_span_recorder(extensions: &Extensions, child_span_name: &'static str) -> SpanRecorder {
+    let span_context = extensions.get::<SpanContext>();
+    SpanRecorder::new(span_context.child_span(child_span_name))
 }

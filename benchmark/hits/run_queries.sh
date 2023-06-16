@@ -22,9 +22,9 @@ function run_query() {
     local seq=$2
     local query=$3
 
-    echo "$query" >/tmp/query.sql
+    echo "$query" >/home/gitlab-runner/query.sql
 
-    RES=$(${SQL_CLI} -f /tmp/query.sql 2>&1 | grep "Query took" | sed -n 1p | awk '{print $3}')
+    RES=$(${SQL_CLI} -f /home/gitlab-runner/query.sql 2>&1 | grep "Query took" | sed -n 1p | awk '{print $3}')
     [[ $RES != "" ]] &&
         append_result "$query_num" "$seq" "$RES" ||
         append_result "$query_num" "$seq" "null"

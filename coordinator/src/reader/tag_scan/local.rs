@@ -11,6 +11,7 @@ use metrics::count::U64Counter;
 use models::arrow_array::build_arrow_array_builders;
 use models::meta_data::VnodeId;
 use models::SeriesKey;
+use trace::SpanRecorder;
 use tskv::query_iterator::QueryOption;
 use tskv::EngineRef;
 
@@ -23,6 +24,8 @@ type Result<T, E = CoordinatorError> = std::result::Result<T, E>;
 pub struct LocalTskvTagScanStream {
     state: StreamState,
     data_out: U64Counter,
+    #[allow(unused)]
+    span_recorder: SpanRecorder,
 }
 
 impl LocalTskvTagScanStream {
@@ -31,6 +34,7 @@ impl LocalTskvTagScanStream {
         option: QueryOption,
         kv: EngineRef,
         data_out: U64Counter,
+        span_recorder: SpanRecorder,
     ) -> Self {
         let futrue = async move {
             let (tenant, db, table) = (
@@ -65,7 +69,11 @@ impl LocalTskvTagScanStream {
 
         let state = StreamState::Open(Box::pin(futrue));
 
-        Self { state, data_out }
+        Self {
+            state,
+            data_out,
+            span_recorder,
+        }
     }
 
     fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {

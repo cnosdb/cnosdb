@@ -11,7 +11,7 @@ use models::schema::{Precision, TableColumn};
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
-use trace::debug;
+use trace::{debug, SpanContext};
 
 use crate::error::Result;
 use crate::kv_option::StorageOptions;
@@ -26,6 +26,7 @@ pub struct MockEngine {}
 impl Engine for MockEngine {
     async fn write(
         &self,
+        _span_ctx: Option<&SpanContext>,
         id: u32,
         precision: Precision,
         write_batch: WritePointsRequest,

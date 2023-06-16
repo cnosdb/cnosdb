@@ -39,8 +39,9 @@ impl DynamicReplicaSelectioner {
     }
 
     /// Select the best replica for reading from the given vnode and its replicas
-    pub fn select(&self, shards: Vec<ReplicationSet>) -> CoordinatorResult<Vec<VnodeInfo>> {
-        let (ids, shards) = shards.into_iter().map(|e| (e.id, e.vnodes)).unzip();
+    pub fn select(&self, shards: Vec<ReplicationSet>) -> CoordinatorResult<Vec<ReplicationSet>> {
+        let (ids, shards): (Vec<ReplicationSetId>, Vec<Vec<VnodeInfo>>) =
+            shards.into_iter().map(|e| (e.id, e.vnodes)).unzip();
 
         // 1. 过滤掉不可用的副本
         let selected_shards = self.status.select(shards, 3);
@@ -48,13 +49,18 @@ impl DynamicReplicaSelectioner {
         let selected_shards = self.topology_aware.select(selected_shards, 2);
         // TODO 3. 根据资源情况获取优先级最高的副本
         // 4. 从已选择的副本中随机选择一个副本
-        let selected_shards = self.random.select(selected_shards, 1);
+        let selected_shards = self.random.select(selected_shards, 2);
 
-        filter_first_replica(ids, selected_shards)
+        let mut selected_replicas = Vec::new();
+        for (i, replicas) in selected_shards.into_iter().enumerate() {
+            selected_replicas.push(ReplicationSet::new(ids[i], replicas));
+        }
+
+        Ok(selected_replicas)
     }
 }
 
-fn filter_first_replica(
+fn _filter_first_replica(
     ids: Vec<ReplicationSetId>,
     shards: Vec<Vec<VnodeInfo>>,
 ) -> CoordinatorResult<Vec<VnodeInfo>> {

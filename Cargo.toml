@@ -131,6 +131,7 @@ uuid = "1.1"
 walkdir = "2.3.2"
 warp = "0.3.4"
 winapi = "0.3.9"
+windows = { version = "0.48.0" }
 zstd = "0.11.2"
 sqllogictest = "0.13.2"
 duration-str = "0.5.0"

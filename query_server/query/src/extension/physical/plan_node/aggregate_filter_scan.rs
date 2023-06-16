@@ -16,10 +16,11 @@ use datafusion::physical_plan::{
 use models::predicate::domain::{PredicateRef, PushedAggregateFunction};
 use models::predicate::PlacedSplit;
 use models::schema::TskvTableSchemaRef;
-use trace::debug;
-use tskv::query_iterator::{QueryOption, TableScanMetrics};
+use trace::{debug, SpanContext, SpanExt, SpanRecorder};
+use tskv::query_iterator::QueryOption;
 
 use super::tskv_exec::TableScanStream;
+use crate::extension::physical::plan_node::TableScanMetrics;
 
 #[derive(Clone)]
 pub struct AggregateFilterTskvExec {
@@ -104,7 +105,6 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         debug!("Split of partition: {:?}", split);
 
         let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
-        let kv_metrics = metrics.tskv_metrics();
         let query_opt = QueryOption::new(
             100_usize,
             split,
@@ -113,9 +113,13 @@ impl ExecutionPlan for AggregateFilterTskvExec {
             (*self.table_schema).clone(),
         );
 
+        let span_ctx = context.session_config().get_extension::<SpanContext>();
+        let span_recorder =
+            SpanRecorder::new(span_ctx.child_span("TableScanStream of AggregateFilterTskvExec"));
+
         let iterator = self
             .coord
-            .table_scan(query_opt, kv_metrics)
+            .table_scan(query_opt, span_recorder.span_ctx())
             .map_err(|e| DataFusionError::Internal(e.to_string()))?;
         let table_stream = TableScanStream::with_iterator(
             self.schema.clone(),
@@ -124,6 +128,7 @@ impl ExecutionPlan for AggregateFilterTskvExec {
             iterator,
             None,
             metrics,
+            span_recorder,
         );
 
         Ok(Box::pin(table_stream))

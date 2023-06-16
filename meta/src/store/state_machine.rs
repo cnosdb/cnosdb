@@ -792,6 +792,12 @@ impl StateMachine {
         table_name: &str,
     ) -> MetaResult<()> {
         let key = KeyPath::tenant_schema_name(cluster, tenant, db_name, table_name);
+        if !self.contains_key(&key)? {
+            return Err(MetaError::TableNotFound {
+                table: table_name.to_owned(),
+            });
+        }
+
         Ok(self.remove(&key)?)
     }
 

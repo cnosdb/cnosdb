@@ -12,7 +12,7 @@ use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::consistency_level::ConsistencyLevel;
-use models::meta_data::{ExpiredBucketInfo, ReplicationSet, VnodeInfo};
+use models::meta_data::{ExpiredBucketInfo, ReplicationSet};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicateRef, TimeRanges};
 use models::record_batch_decode;
@@ -26,8 +26,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use trace::{debug, error, info};
-use tskv::query_iterator::TskvSourceMetrics;
+use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
 use tskv::EngineRef;
 
 use crate::errors::*;
@@ -195,6 +194,8 @@ impl CoordService {
                         ConsistencyLevel::Any,
                         Precision::NS,
                         req,
+                        // metrics service 不采集trace
+                        None,
                     )
                     .await
                 {
@@ -342,7 +343,7 @@ impl Coordinator for CoordService {
         &self,
         table: &ResolvedTable,
         predicate: ResolvedPredicateRef,
-    ) -> CoordinatorResult<Vec<VnodeInfo>> {
+    ) -> CoordinatorResult<Vec<ReplicationSet>> {
         // 1. 根据传入的过滤条件获取表的分片信息（包括副本）
         let shards = self
             .prune_shards(table, predicate.time_ranges().as_ref())
@@ -359,21 +360,26 @@ impl Coordinator for CoordService {
         level: ConsistencyLevel,
         precision: Precision,
         request: WritePointsRequest,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
-        let limiter = self.meta.limiter(&tenant).await;
-        let points = request.points.as_slice();
+        {
+            let _span_recorder = SpanRecorder::new(span_ctx.child_span("limit check"));
 
-        let fb_points = flatbuffers::root::<Points>(points)?;
-        let db = get_db_from_fb_points(&fb_points)?;
+            let limiter = self.meta.limiter(&tenant).await;
+            let points = request.points.as_slice();
 
-        let write_size = points.len();
+            let fb_points = flatbuffers::root::<Points>(points)?;
+            let db = get_db_from_fb_points(&fb_points)?;
 
-        limiter.check_write().await?;
-        limiter.check_data_in(write_size).await?;
+            let write_size = points.len();
 
-        self.metrics
-            .data_in(tenant.as_str(), db.as_str())
-            .inc(write_size as u64);
+            limiter.check_write().await?;
+            limiter.check_data_in(write_size).await?;
+
+            self.metrics
+                .data_in(tenant.as_str(), db.as_str())
+                .inc(write_size as u64);
+        }
 
         let req = WriteRequest {
             tenant: tenant.clone(),
@@ -384,7 +390,7 @@ impl Coordinator for CoordService {
 
         let now = tokio::time::Instant::now();
         debug!("write points, now: {:?}", now);
-        let res = self.writer.write_points(&req).await;
+        let res = self.writer.write_points(&req, span_ctx).await;
         debug!(
             "write points result: {:?}, start at: {:?} elapsed: {:?}",
             res,
@@ -398,7 +404,7 @@ impl Coordinator for CoordService {
     fn table_scan(
         &self,
         option: QueryOption,
-        metrics: TskvSourceMetrics,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let checker = self.build_query_checker(&option.table_schema.tenant);
 
@@ -407,12 +413,11 @@ impl Coordinator for CoordService {
             self.kv_inst.clone(),
             self.runtime.clone(),
             self.meta.clone(),
-            metrics,
             self.metrics.clone(),
+            span_ctx,
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
-            option.split.vnode().clone(),
             option,
             opener,
             Box::pin(checker),
@@ -422,7 +427,7 @@ impl Coordinator for CoordService {
     fn tag_scan(
         &self,
         option: QueryOption,
-        metrics: TskvSourceMetrics,
+        span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let checker = self.build_query_checker(&option.table_schema.tenant);
 
@@ -430,12 +435,11 @@ impl Coordinator for CoordService {
             self.config.query.clone(),
             self.kv_inst.clone(),
             self.meta.clone(),
-            metrics,
             self.metrics.clone(),
+            span_ctx,
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
-            option.split.vnode().clone(),
             option,
             opener,
             Box::pin(checker),

@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use arrow_flight::flight_service_server::FlightServiceServer;
 use config::TLSConfig;
@@ -6,6 +7,8 @@ use spi::server::dbms::DBMSRef;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use trace::info;
+use trace_http::ctx::SpanContextExtractor;
+use trace_http::tower_layer::TraceLayer;
 
 use self::flight_sql_server::FlightSqlServiceImpl;
 use crate::flight_sql::auth_middleware::basic_call_header_authenticator::BasicCallHeaderAuthenticator;
@@ -22,15 +25,22 @@ pub struct FlightSqlServiceAdapter {
 
     addr: SocketAddr,
     tls_config: Option<TLSConfig>,
+    span_context_extractor: Arc<SpanContextExtractor>,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
 }
 
 impl FlightSqlServiceAdapter {
-    pub fn new(dbms: DBMSRef, addr: SocketAddr, tls_config: Option<TLSConfig>) -> Self {
+    pub fn new(
+        dbms: DBMSRef,
+        addr: SocketAddr,
+        tls_config: Option<TLSConfig>,
+        span_context_extractor: Arc<SpanContextExtractor>,
+    ) -> Self {
         Self {
             dbms,
             addr,
             tls_config,
+            span_context_extractor,
             handle: None,
         }
     }
@@ -43,7 +53,7 @@ impl Service for FlightSqlServiceAdapter {
 
         let server = Server::builder();
 
-        let mut server = if let Some(TLSConfig {
+        let server = if let Some(TLSConfig {
             certificate,
             private_key,
         }) = self.tls_config.as_ref()
@@ -56,6 +66,8 @@ impl Service for FlightSqlServiceAdapter {
             server
         };
 
+        let trace_layer = TraceLayer::new(self.span_context_extractor.clone(), "flight sql");
+
         let authenticator = GeneratedBearerTokenAuthenticator::new(
             BasicCallHeaderAuthenticator::new(self.dbms.clone()),
         );
@@ -63,6 +75,7 @@ impl Service for FlightSqlServiceAdapter {
             FlightServiceServer::new(FlightSqlServiceImpl::new(self.dbms.clone(), authenticator));
 
         let server = server
+            .layer(trace_layer)
             .add_service(svc)
             .serve_with_shutdown(self.addr, async {
                 rx.await.ok();

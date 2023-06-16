@@ -1,13 +1,11 @@
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-use sqllogictest::{default_column_validator, default_validator};
-use trace::info;
-
-use crate::instance::{CnosDBClient, SqlClientOptions};
+use crate::instance::SqlClientOptions;
 
 mod error;
 mod instance;
+mod os;
 mod utils;
 
 const TEST_DIRECTORY: &str = "query_server/sqllogicaltests/cases";
@@ -24,14 +22,6 @@ const CNOSDB_DB_DEFAULT: &str = "public";
 const CNOSDB_TARGET_PARTITIONS_DEFAULT: usize = 8;
 
 #[tokio::main]
-#[cfg(target_family = "windows")]
-pub async fn main() -> Result<(), Box<dyn Error>> {
-    println!("Skipping test on windows");
-    Ok(())
-}
-
-#[tokio::main]
-#[cfg(not(target_family = "windows"))]
 pub async fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::new();
 
@@ -50,48 +40,18 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 
     for (path, relative_path) in read_test_files(&options) {
         if options.complete_mode {
-            run_complete_file(&path, relative_path, db_options.clone()).await?;
+            os::run_complete_file(&path, relative_path, db_options.clone()).await?;
         } else {
-            run_test_file(&path, relative_path, db_options.clone()).await?;
+            os::run_test_file(&path, relative_path, db_options.clone()).await?;
         }
     }
 
     Ok(())
 }
 
-async fn run_test_file(
-    path: &Path,
-    relative_path: PathBuf,
-    options: SqlClientOptions,
-) -> Result<(), Box<dyn Error>> {
-    info!("Running with DataFusion runner: {}", path.display());
-    let client = CnosDBClient::new(relative_path, options);
-    let mut runner = sqllogictest::Runner::new(client);
-    runner.run_file_async(path).await?;
-    Ok(())
-}
-
-async fn run_complete_file(
-    path: &Path,
-    relative_path: PathBuf,
-    options: SqlClientOptions,
-) -> Result<(), Box<dyn Error>> {
-    info!("Using complete mode to complete: {}", path.display());
-
-    let client = CnosDBClient::new(relative_path, options);
-    let mut runner = sqllogictest::Runner::new(client);
-    let col_separator = " ";
-    let validator = default_validator;
-    let column_validator = default_column_validator;
-    runner
-        .update_test_file(path, col_separator, validator, column_validator)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-fn read_test_files<'a>(options: &'a Options) -> Box<dyn Iterator<Item = (PathBuf, PathBuf)> + 'a> {
+pub(crate) fn read_test_files<'a>(
+    options: &'a Options,
+) -> Box<dyn Iterator<Item = (PathBuf, PathBuf)> + 'a> {
     Box::new(
         read_dir_recursive(TEST_DIRECTORY)
             .map(|path| {
@@ -104,7 +64,7 @@ fn read_test_files<'a>(options: &'a Options) -> Box<dyn Iterator<Item = (PathBuf
     )
 }
 
-fn read_dir_recursive<P: AsRef<Path>>(path: P) -> Box<dyn Iterator<Item = PathBuf>> {
+pub(crate) fn read_dir_recursive<P: AsRef<Path>>(path: P) -> Box<dyn Iterator<Item = PathBuf>> {
     Box::new(
         std::fs::read_dir(path)
             .expect("Readable directory")

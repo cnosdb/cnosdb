@@ -404,7 +404,10 @@ impl AdminMeta {
         let disk_free = match get_disk_info(&self.config.storage.path) {
             Ok(size) => size,
             Err(e) => {
-                error!("Failed to get disk info:{}", e);
+                error!(
+                    "Failed to get disk info '{}': {}",
+                    self.config.storage.path, e
+                );
                 0
             }
         };

@@ -12,6 +12,7 @@ use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{Precision, TableColumn};
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
+use trace::SpanContext;
 
 pub use crate::error::{Error, Result};
 pub use crate::kv_option::Options;
@@ -61,6 +62,7 @@ pub type EngineRef = Arc<dyn Engine>;
 pub trait Engine: Send + Sync + Debug {
     async fn write(
         &self,
+        span_ctx: Option<&SpanContext>,
         id: u32,
         precision: Precision,
         write_batch: WritePointsRequest,
