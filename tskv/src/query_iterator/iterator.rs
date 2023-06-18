@@ -446,6 +446,7 @@ impl FieldFileLocation {
     async fn next_data_block(&mut self) -> Result<bool> {
         let mut has_next_block = false;
 
+        // Get next BlockMeta to locate the next DataBlock from file.
         while let Some(meta) = self.block_meta_iter.next() {
             if meta.count() == 0 {
                 continue;
@@ -456,6 +457,7 @@ impl FieldFileLocation {
                 // Load a DataBlock from reader by BlockMeta.
                 self.data_block = self.reader.get_data_block(&meta).await?;
                 self.intersected_time_ranges = intersected_tr;
+                self.intersected_time_ranges_i = 0;
                 if self.next_intersected_index_range() {
                     // Found next DataBlock and range to iterate.
                     has_next_block = true;
@@ -495,6 +497,20 @@ impl FieldFileLocation {
             }
             false
         }
+    }
+}
+
+impl std::fmt::Debug for FieldFileLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FieldFileLocation")
+            .field("file_id", &self.reader.file_id())
+            .field("time_ranges", &self.time_ranges)
+            .field("data_block_range", &self.data_block.time_range())
+            .field("data_block_i", &self.data_block_i)
+            .field("data_block_i_end", &self.data_block_i_end)
+            .field("intersected_time_ranges", &self.intersected_time_ranges)
+            .field("intersected_time_ranges_i", &self.intersected_time_ranges_i)
+            .finish()
     }
 }
 
@@ -713,8 +729,7 @@ impl RowIterator {
         };
 
         debug!(
-            "Iterating rows: vnode_id={}, serie_ids_count={}",
-            vnode_id,
+            "Iterating rows: vnode_id: {vnode_id}, serie_ids_count: {}",
             series_ids.len()
         );
         let metrics_set = ExecutionPlanMetricsSet::new();
@@ -740,16 +755,6 @@ impl RowIterator {
 
             Ok(row_iterator)
         } else {
-            // TODO：get series_group_size more intelligently
-            let series_group_size = num_cpus::get();
-            // `usize::div_ceil(self, Self)` is now unstable, so do it by-hand.
-            let series_group_num = series_len / series_group_size
-                + if series_len % series_group_size == 0 {
-                    0
-                } else {
-                    1
-                };
-
             let mut row_iterator = Self {
                 runtime,
                 engine,
@@ -763,6 +768,20 @@ impl RowIterator {
                 span_recorder,
                 metrics_set,
             };
+
+            if series_len == 0 {
+                return Ok(row_iterator);
+            }
+
+            // TODO：get series_group_size more intelligently
+            let series_group_num = num_cpus::get().min(series_len);
+            // `usize::div_ceil(self, Self)` is now unstable, so do it by-hand.
+            let series_group_size = series_len / series_group_num
+                + if series_len % series_group_num == 0 {
+                    0
+                } else {
+                    1
+                };
 
             for i in 0..series_group_num {
                 let start = series_group_size * i;
@@ -1003,7 +1022,7 @@ impl SeriesGroupRowIterator {
         timer.done();
 
         for _ in 0..self.batch_size {
-            match self.next_row(&mut builders).await {
+            match self.fetch_next_row(&mut builders).await {
                 Ok(Some(_)) => {}
                 Ok(None) => {
                     self.is_finished = true;
@@ -1034,7 +1053,10 @@ impl SeriesGroupRowIterator {
 }
 
 impl SeriesGroupRowIterator {
-    async fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
+    /// Try to fetch next row into array builders.
+    ///
+    /// If there is no remaning data to fetch, return Ok(None), otherwise return Ok(Some(())).
+    async fn fetch_next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
         if self.query_option.aggregates.is_some() {
             self.collect_aggregate_row_data(builder).await
         } else {
@@ -1050,6 +1072,10 @@ impl SeriesGroupRowIterator {
         }
     }
 
+    /// Try to fetch next series of this iterator.
+    ///
+    /// If series ids of this iterator are all consumed, return Ok(None),
+    /// otherwise return Ok(Some(())).
     async fn next_series(&mut self) -> Result<Option<()>> {
         if self.i >= self.end {
             return Ok(None);
@@ -1060,6 +1086,10 @@ impl SeriesGroupRowIterator {
         Ok(Some(()))
     }
 
+    /// Build cursors to read data.
+    ///
+    /// Get series key by series id, for each of columns in the given schema
+    /// (may be Time, Tag of Field) build a Cursor.
     async fn build_series_columns(&mut self, series_id: SeriesId) -> Result<()> {
         let start = Instant::now();
 
@@ -1079,7 +1109,7 @@ impl SeriesGroupRowIterator {
                     "Building series columns: sid={:02X}, column={:?}",
                     series_id, item
                 );
-                let column: CursorPtr = match item.column_type {
+                let column_cursor: CursorPtr = match item.column_type {
                     ColumnType::Time(ref unit) => {
                         Box::new(TimeCursor::new(0, item.name.clone(), unit.clone()))
                     }
@@ -1107,11 +1137,11 @@ impl SeriesGroupRowIterator {
                     },
                 };
 
-                self.columns.push(column);
+                self.columns.push(column_cursor);
             }
         }
 
-        // record elapsed_series_scan
+        // Record elapsed_series_scan
         self.metrics
             .elapsed_series_scan()
             .add_duration(start.elapsed());
@@ -1119,6 +1149,7 @@ impl SeriesGroupRowIterator {
         Ok(())
     }
 
+    /// Build a FieldCursor with cached data and file locations.
     async fn build_field_cursor(
         &self,
         field_id: FieldId,
@@ -1132,11 +1163,11 @@ impl SeriesGroupRowIterator {
 
         let time_ranges_ref = self.query_option.split.time_ranges();
         let time_predicate = |ts| time_ranges_ref.is_boundless() || time_ranges_ref.contains(ts);
-        debug!("Pushed time range filter: {:?}", time_ranges_ref);
+        debug!("Pushed down time range filter: {:?}", time_ranges_ref);
 
-        // get data from im_memcache and memcache
         let timer = self.metrics.elapsed_get_data_from_memcache().timer();
 
+        // Get data from im_memcache and memcache
         let mut cache_data: Vec<DataType> = Vec::new();
         super_version.caches.read_field_data(
             field_id,
@@ -1154,22 +1185,23 @@ impl SeriesGroupRowIterator {
             cache_data.len()
         );
 
-        // get data from levelinfo
-        // TODO: Init locations in parallel with other fields.
         let timer = self.metrics.elapsed_get_field_location().timer();
 
+        // Get data from level info, find time range overlapped files and file locations.
+        // TODO: Init locations in parallel with other fields.
         let mut locations = vec![];
-        for lv in super_version.version.levels_info.iter().rev() {
-            if !time_ranges_ref.overlaps(&lv.time_range) {
+        for level in super_version.version.levels_info.iter().rev() {
+            if !time_ranges_ref.overlaps(&level.time_range) {
                 continue;
             }
-            for cf in lv.files.iter() {
-                if !time_ranges_ref.overlaps(cf.time_range()) || !cf.contains_field_id(field_id) {
+            for file in level.files.iter() {
+                if !time_ranges_ref.overlaps(file.time_range()) || !file.contains_field_id(field_id)
+                {
                     continue;
                 }
-                let path = cf.file_path();
+                let path = file.file_path();
                 debug!(
-                    "building FieldCursor({:02X}) at '{}'",
+                    "Building FieldCursor: field: {:02X}, path: '{}'",
                     field_id,
                     path.display()
                 );
@@ -1183,18 +1215,18 @@ impl SeriesGroupRowIterator {
                 }
 
                 let tsm_reader = super_version.version.get_tsm_reader(path).await?;
-                for idx in tsm_reader.index_iterator_opt(field_id) {
+                for idx_meta in tsm_reader.index_iterator_opt(field_id) {
                     let location = FieldFileLocation::new(
                         tsm_reader.clone(),
                         time_ranges_ref.clone(),
-                        idx.block_iterator_opt(time_ranges_ref.clone()),
+                        idx_meta.block_iterator_opt(time_ranges_ref.clone()),
                         field_type,
                     );
                     locations.push(location);
                 }
             }
         }
-
+        debug!("Building FieldCursor: locations: {:?}", &locations);
         timer.done();
 
         Ok(FieldCursor {
@@ -1208,49 +1240,59 @@ impl SeriesGroupRowIterator {
 
     async fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
         trace::trace!("======collect_row_data=========");
-        // record elapsed_field_scan
+        // Record elapsed_field_scan
         let timer = self.metrics.elapsed_field_scan().timer();
 
         let mut min_time = i64::MAX;
-        let mut values = Vec::with_capacity(self.columns.len());
-        for column in self.columns.iter_mut() {
-            let val = column.peek().await?;
-            if let Some(ref data) = val {
-                if column.is_field() {
-                    min_time = min_num(min_time, data.timestamp());
+        let mut row_cols = Vec::with_capacity(self.columns.len());
+        // For each column, peek next (timestamp, value), set column_values, and
+        // specify the next min_time (if column is a `Field`).
+        for col_cursor in self.columns.iter_mut() {
+            let ts_val = col_cursor.peek().await?;
+            if let Some(ref d) = ts_val {
+                if col_cursor.is_field() {
+                    min_time = min_num(min_time, d.timestamp());
                 }
             }
-            values.push(val)
+            row_cols.push(ts_val)
         }
 
-        for (column, value) in self.columns.iter_mut().zip(values.iter_mut()) {
-            trace::trace!("field: {}, value: {:?}", column.name(), value);
-            if !column.is_field() {
+        // For the specified min_time, fill each column data.
+        // If a column data is for later time, just set it None.
+        let mut test_collected_col_num = 0_usize;
+        for (col_cursor, ts_val) in self.columns.iter_mut().zip(row_cols.iter_mut()) {
+            trace::trace!("field: {}, value: {:?}", col_cursor.name(), ts_val);
+            if !col_cursor.is_field() {
                 continue;
             }
 
-            if let Some(data) = value {
-                let ts = data.timestamp();
+            if let Some(d) = ts_val {
+                let ts = d.timestamp();
                 if ts == min_time {
-                    column.next(ts).await;
+                    test_collected_col_num += 1;
+                    col_cursor.next(ts).await;
                 } else {
-                    *value = None;
+                    *ts_val = None;
                 }
             }
         }
 
+        // Step field_scan completed.
         timer.done();
-
-        trace::trace!("min time: {}", min_time);
+        trace::trace!(
+            "Collected data, series_id: {}, column count: {test_collected_col_num}, timestamp: {min_time}",
+            self.series_ids[self.i - 1],
+        );
         if min_time == i64::MAX {
+            // If peeked no data, return.
             self.columns.clear();
             return Ok(None);
         }
 
-        // record elapsed_point_to_record_batch
+        // Record elapsed_point_to_record_batch
         let timer = self.metrics.elapsed_point_to_record_batch().timer();
 
-        for (i, value) in values.into_iter().enumerate() {
+        for (i, value) in row_cols.into_iter().enumerate() {
             match self.columns[i].column_type() {
                 ColumnType::Time(unit) => {
                     builder[i].append_timestamp(&unit, min_time);
