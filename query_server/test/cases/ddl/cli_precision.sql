@@ -39,7 +39,7 @@ select * from test1;
 
 select * from test2;
 
-select * from nice;
+select * from nice order by host;
 
 drop database cli_precision;
 
@@ -80,4 +80,4 @@ select * from test1;
 
 select * from test2;
 
-select * from nice;
+select * from nice order by host;

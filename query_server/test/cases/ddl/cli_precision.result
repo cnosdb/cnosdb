@@ -58,7 +58,7 @@ time,ta,tb,value
 2022-11-03T06:20:11.000001000,a1,b1,1.0
 
 -- WRITE OPEN TSDB JSON --
-select * from nice;
+select * from nice order by host;
 -- OPEN TSDB JSON END --
 200 OK
 time,dc,host,value
@@ -129,7 +129,7 @@ time,ta,tb,value
 2022-11-03T06:20:11.000000000,a1,b1,1.0
 
 -- WRITE OPEN TSDB JSON --
-select * from nice;
+select * from nice order by host;
 -- OPEN TSDB JSON END --
 200 OK
 time,dc,host,value
