@@ -32,14 +32,11 @@ impl DDLDefinitionTask for CreateStreamTableTask {
         } = self.stmt;
 
         let tenant = query_state_machine.session.tenant();
-        let client = query_state_machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .await
-            .ok_or(MetaError::TenantNotFound {
+        let client = query_state_machine.meta.tenant_meta(tenant).await.ok_or(
+            MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            })?;
+            },
+        )?;
         let table = client.get_table_schema(name.database(), name.table())?;
 
         match (if_not_exists, table) {
@@ -69,7 +66,6 @@ impl DDLDefinitionTask for CreateStreamTableTask {
 async fn create_table(table: StreamTable, machine: QueryStateMachineRef) -> Result<()> {
     machine
         .meta
-        .tenant_manager()
         .tenant_meta(table.tenant())
         .await
         .ok_or(MetaError::TenantNotFound {

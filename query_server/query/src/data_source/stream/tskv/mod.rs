@@ -31,16 +31,20 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use coordinator::service::CoordinatorRef;
     use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
     use datafusion::logical_expr::TableSource;
     use datafusion::sql::TableReference;
-    use meta::model::meta_client_mock::MockMetaClient;
-    use models::schema::{StreamTable, Watermark};
-    use spi::query::datasource::stream::StreamProviderManager;
+    use meta::model::meta_tenant::TenantMeta;
+    use meta::model::MetaClientRef;
+    use models::schema::{StreamTable, TskvTableSchema, Watermark};
+    use spi::query::datasource::stream::{StreamProviderManager, StreamProviderRef};
     use spi::QueryError;
 
-    use crate::data_source::split::default_split_manager_ref_only_for_test;
+    use super::provider::TskvStreamProvider;
+    use crate::data_source::batch::tskv::ClusterTable;
+    use crate::data_source::split::{default_split_manager_ref_only_for_test, SplitManagerRef};
     use crate::data_source::stream::tskv::factory::TskvStreamProviderFactory;
     use crate::data_source::stream::tskv::{STREAM_DB_KEY, STREAM_TABLE_KEY};
     use crate::data_source::table_source::TableSourceAdapter;
@@ -50,8 +54,11 @@ mod tests {
         let mut manager = StreamProviderManager::default();
         let split_m = default_split_manager_ref_only_for_test();
         let coord = Arc::new(MockCoordinator::default());
-        let meta = Arc::new(MockMetaClient::default());
-        let factory = Arc::new(TskvStreamProviderFactory::new(coord, split_m));
+        let meta = Arc::new(TenantMeta::mock());
+        let factory = Arc::new(TskvStreamProviderFactory::new(
+            coord.clone(),
+            split_m.clone(),
+        ));
         manager.register_stream_provider_factory("tskv", factory)?;
 
         let table = StreamTable::new(
@@ -94,7 +101,7 @@ mod tests {
                 (STREAM_TABLE_KEY.into(), "name".into()),
             ]),
         );
-        let provider = manager.create_provider(meta, &table)?;
+        let provider = stream_provider(coord, split_m, meta, &table)?;
 
         assert_eq!(&provider.watermark().column, "time");
         assert_eq!(provider.schema(), schema);
@@ -113,5 +120,30 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    fn stream_provider(
+        client: CoordinatorRef,
+        split_manager: SplitManagerRef,
+        meta: MetaClientRef,
+        table: &StreamTable,
+    ) -> Result<StreamProviderRef, QueryError> {
+        let watermark = table.watermark();
+
+        let table_schema = Arc::new(TskvTableSchema::new_test());
+
+        let used_schema = if table.schema().fields().is_empty() {
+            table_schema.to_arrow_schema()
+        } else {
+            table.schema()
+        };
+
+        let table = Arc::new(ClusterTable::new(client, split_manager, meta, table_schema));
+
+        Ok(Arc::new(TskvStreamProvider::new(
+            watermark.clone(),
+            table,
+            used_schema,
+        )))
     }
 }

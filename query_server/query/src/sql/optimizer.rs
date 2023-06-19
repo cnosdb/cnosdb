@@ -162,7 +162,7 @@ mod test {
     use datafusion::physical_plan::planner::DefaultPhysicalPlanner;
     use datafusion::physical_plan::{displayable, PhysicalPlanner};
     use datafusion::prelude::{col, count, max, min, sum, Expr, SessionConfig};
-    use meta::model::meta_client_mock::MockMetaClient;
+    use meta::model::meta_tenant::TenantMeta;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::ValueType;
 
@@ -198,7 +198,7 @@ mod test {
         let provider = Arc::new(ClusterTable::new(
             Arc::new(MockCoordinator::default()),
             split::default_split_manager_ref_only_for_test(),
-            Arc::new(MockMetaClient::default()),
+            Arc::new(TenantMeta::mock()),
             Arc::new(schema),
         ));
 

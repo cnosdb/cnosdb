@@ -659,7 +659,7 @@ mod test {
     use std::sync::Arc;
 
     use memory_pool::GreedyMemoryPool;
-    use meta::model::meta_manager::RemoteMetaManager;
+    use meta::model::meta_admin::AdminMeta;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
@@ -963,14 +963,11 @@ mod test {
         rt.block_on(async {
             let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
             let opt = kv_option::Options::from(&global_config);
-            let meta_manager: MetaRef =
-                RemoteMetaManager::new(global_config.clone(), global_config.storage.path.clone())
-                    .await;
+            let meta_manager: MetaRef = AdminMeta::new(global_config.clone()).await;
 
-            meta_manager.admin_meta().add_data_node().await.unwrap();
+            meta_manager.add_data_node().await.unwrap();
 
             let _ = meta_manager
-                .tenant_manager()
                 .create_tenant("cnosdb".to_string(), TenantOptions::default())
                 .await;
             let tskv = TsKv::open(

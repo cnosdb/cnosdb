@@ -32,7 +32,6 @@ impl DDLDefinitionTask for DropTenantObjectTask {
 
         let meta = query_state_machine
             .meta
-            .tenant_manager()
             .tenant_meta(tenant_name)
             .await
             .ok_or_else(|| QueryError::Meta {

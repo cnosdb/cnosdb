@@ -70,12 +70,10 @@ impl TableProvider for ClusterSchemaTenantsTable {
 
         // Only visible to admin
         if self.user.desc().is_admin() {
-            let tenants = self
-                .metadata
-                .tenant_manager()
-                .tenants()
-                .await
-                .map_err(|e| DataFusionError::Internal(format!("failed to list tenant {}", e)))?;
+            let tenants =
+                self.metadata.tenants().await.map_err(|e| {
+                    DataFusionError::Internal(format!("failed to list tenant {}", e))
+                })?;
             for tenant in tenants.iter() {
                 let options_str = serde_json::to_string(tenant.options()).map_err(|e| {
                     DataFusionError::Internal(format!("failed to serialize options: {}", e))

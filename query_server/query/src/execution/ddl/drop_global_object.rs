@@ -36,7 +36,7 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 //     name: &str
                 // ) -> Result<bool>;
                 debug!("Drop user {}", name);
-                let success = meta.user_manager().drop_user(name).await?;
+                let success = meta.drop_user(name).await?;
 
                 if let (false, false) = (if_exist, success) {
                     return Err(QueryError::Meta {
@@ -55,7 +55,7 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 //     name: &str
                 // ) -> Result<bool>;
                 debug!("Drop tenant {}", name);
-                let success = meta.tenant_manager().drop_tenant(name).await?;
+                let success = meta.drop_tenant(name).await?;
                 // .context(MetaSnafu)?;
 
                 if let (false, false) = (if_exist, success) {

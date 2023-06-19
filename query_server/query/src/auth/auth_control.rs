@@ -68,7 +68,6 @@ impl AccessControl for AccessControlNoCheck {
     async fn tenant_id(&self, tenant_name: &str) -> Result<Oid> {
         let tenant_client = self
             .meta_manager
-            .tenant_manager()
             .tenant_meta(tenant_name)
             .await
             .ok_or(AuthError::TenantNotFound)?;

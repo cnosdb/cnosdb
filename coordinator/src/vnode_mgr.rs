@@ -52,17 +52,18 @@ impl VnodeManager {
         vnode_id: u32,
         add_replication: bool,
     ) -> CoordinatorResult<()> {
-        let admin_meta = self.meta.admin_meta();
-        let meta_client = self.meta.tenant_manager().tenant_meta(tenant).await.ok_or(
-            CoordinatorError::TenantNotFound {
-                name: tenant.to_string(),
-            },
-        )?;
+        let meta_client =
+            self.meta
+                .tenant_meta(tenant)
+                .await
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant.to_string(),
+                })?;
 
         let mut all_info = crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
 
         let (new_id, del_repl) = if add_replication {
-            let id = admin_meta.retain_id(1).await?;
+            let id = self.meta.retain_id(1).await?;
             (id, vec![])
         } else {
             (vnode_id, vec![VnodeInfo::new(vnode_id, all_info.node_id)])
@@ -77,11 +78,7 @@ impl VnodeManager {
         let owner = models::schema::make_owner(&all_info.tenant, &all_info.db_name);
         let path = self.kv_inst.get_storage_options().move_dir(&owner, new_id);
 
-        let channel = self
-            .meta
-            .admin_meta()
-            .get_node_conn(all_info.node_id)
-            .await?;
+        let channel = self.meta.get_node_conn(all_info.node_id).await?;
         let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
 
@@ -128,11 +125,13 @@ impl VnodeManager {
     pub async fn drop_vnode(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
         let all_info = crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
 
-        let meta_client = self.meta.tenant_manager().tenant_meta(tenant).await.ok_or(
-            CoordinatorError::TenantNotFound {
-                name: tenant.to_string(),
-            },
-        )?;
+        let meta_client =
+            self.meta
+                .tenant_meta(tenant)
+                .await
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant.to_string(),
+                })?;
 
         self.kv_inst
             .remove_tsfamily(tenant, &all_info.db_name, vnode_id)
@@ -171,7 +170,7 @@ impl VnodeManager {
             })),
         };
 
-        let channel = self.meta.admin_meta().get_node_conn(node_id).await?;
+        let channel = self.meta.get_node_conn(node_id).await?;
         let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
         let request = tonic::Request::new(cmd);

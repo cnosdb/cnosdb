@@ -1014,7 +1014,7 @@ pub mod test_tseries_family {
 
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use meta::model::meta_manager::RemoteMetaManager;
+    use meta::model::meta_admin::AdminMeta;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{DatabaseSchema, TenantOptions};
@@ -1402,13 +1402,11 @@ pub mod test_tseries_family {
 
         let config = config::get_config_for_test();
         let meta_manager: MetaRef = runtime.block_on(async {
-            let meta_manager: MetaRef =
-                RemoteMetaManager::new(config.clone(), config.storage.path.clone()).await;
+            let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
 
-            meta_manager.admin_meta().add_data_node().await.unwrap();
+            meta_manager.add_data_node().await.unwrap();
 
             let _ = meta_manager
-                .tenant_manager()
                 .create_tenant("cnosdb".to_string(), TenantOptions::default())
                 .await;
             meta_manager

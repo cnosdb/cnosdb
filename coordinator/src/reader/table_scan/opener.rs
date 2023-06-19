@@ -106,7 +106,6 @@ impl VnodeOpener for TemporaryTableScanOpener {
 
                 let resp_stream = {
                     let channel = meta
-                        .admin_meta()
                         .get_node_conn(node_id)
                         .await
                         .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?;

@@ -53,7 +53,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
         let kv_inst = self.kv_inst.clone();
         let coord_metrics = self.coord_metrics.clone();
         let option = option.clone();
-        let admin_meta = self.meta.admin_meta();
+        let admin_meta = self.meta.clone();
         let config = self.config.clone();
         let span_ctx = self.span_ctx.clone();
 

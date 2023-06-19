@@ -5,7 +5,8 @@ use std::sync::Arc;
 use std::todo;
 
 use datafusion::arrow::record_batch::RecordBatch;
-use meta::model::meta_client_mock::{MockMetaClient, MockMetaManager};
+use meta::model::meta_admin::AdminMeta;
+use meta::model::meta_tenant::TenantMeta;
 use meta::model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{ReplicationSet, VnodeInfo, VnodeStatus};
@@ -36,7 +37,7 @@ impl Coordinator for MockCoordinator {
     }
 
     fn meta_manager(&self) -> MetaRef {
-        Arc::new(MockMetaManager::default())
+        Arc::new(AdminMeta::mock())
     }
 
     fn store_engine(&self) -> Option<EngineRef> {
@@ -44,7 +45,7 @@ impl Coordinator for MockCoordinator {
     }
 
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
-        Some(Arc::new(MockMetaClient::default()))
+        Some(Arc::new(TenantMeta::mock()))
     }
 
     async fn table_vnodes(

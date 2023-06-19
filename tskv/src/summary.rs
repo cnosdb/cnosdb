@@ -822,7 +822,7 @@ mod test {
     use std::sync::Arc;
 
     use memory_pool::GreedyMemoryPool;
-    use meta::model::meta_manager::RemoteMetaManager;
+    use meta::model::meta_admin::AdminMeta;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
@@ -985,14 +985,11 @@ mod test {
         compact_task_sender: Sender<CompactTask>,
     ) {
         let opt = Arc::new(Options::from(&config));
-        let empty_path = "";
-        let meta_manager: MetaRef =
-            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
+        let meta_manager = AdminMeta::new(config.clone()).await;
 
-        meta_manager.admin_meta().add_data_node().await.unwrap();
+        meta_manager.add_data_node().await.unwrap();
 
         let _ = meta_manager
-            .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
             .await;
         let summary_dir = opt.storage.summary_dir();
@@ -1037,14 +1034,11 @@ mod test {
         compact_task_sender: Sender<CompactTask>,
     ) {
         let opt = Arc::new(Options::from(&config));
-        let empty_path = "";
-        let meta_manager: MetaRef =
-            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
+        let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
 
-        meta_manager.admin_meta().add_data_node().await.unwrap();
+        meta_manager.add_data_node().await.unwrap();
 
         let _ = meta_manager
-            .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
             .await;
         let summary_dir = opt.storage.summary_dir();
@@ -1113,13 +1107,10 @@ mod test {
         compact_task_sender: Sender<CompactTask>,
     ) {
         let opt = Arc::new(Options::from(&config));
-        let empty_path = "";
-        let meta_manager: MetaRef =
-            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
+        let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
 
-        meta_manager.admin_meta().add_data_node().await.unwrap();
+        meta_manager.add_data_node().await.unwrap();
         let _ = meta_manager
-            .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
             .await;
         let database = "test".to_string();
@@ -1212,14 +1203,11 @@ mod test {
         let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
 
         let opt = Arc::new(Options::from(&config));
-        let empty_path = "";
-        let meta_manager: MetaRef =
-            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
+        let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
 
-        meta_manager.admin_meta().add_data_node().await.unwrap();
+        meta_manager.add_data_node().await.unwrap();
 
         let _ = meta_manager
-            .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
             .await;
         let database = "test".to_string();

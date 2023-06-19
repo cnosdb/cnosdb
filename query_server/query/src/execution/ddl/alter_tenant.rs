@@ -30,9 +30,8 @@ impl DDLDefinitionTask for AlterTenantTask {
             ref alter_tenant_action,
         } = self.stmt;
 
-        let tenant_manager = query_state_machine.meta.tenant_manager();
-
-        let meta = tenant_manager
+        let meta = query_state_machine
+            .meta
             .tenant_meta(tenant_name)
             .await
             .ok_or_else(|| QueryError::Meta {
@@ -92,7 +91,8 @@ impl DDLDefinitionTask for AlterTenantTask {
                 // .context(MetaSnafu)?;
             }
             AlterTenantAction::SetOption(tenant_option) => {
-                tenant_manager
+                query_state_machine
+                    .meta
                     .alter_tenant(tenant_name, *tenant_option.clone())
                     .await?;
             }

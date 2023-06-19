@@ -965,7 +965,7 @@ impl Duration {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Tenant {
     id: Oid,
     name: String,

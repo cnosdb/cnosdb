@@ -454,14 +454,14 @@ mod test {
     use config::Config;
     use datafusion::arrow::datatypes::TimeUnit;
     use memory_pool::GreedyMemoryPool;
-    use meta::model::meta_manager::RemoteMetaManager;
-    use meta::model::{MetaClient, MetaManager};
+    use meta::model::meta_admin::AdminMeta;
+    use meta::model::{MetaClientRef, MetaRef};
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::predicate::domain::TimeRange;
     use models::schema::{
-        make_owner, ColumnType, DatabaseOptions, DatabaseSchema, Precision, TableColumn,
-        TableSchema, TenantOptions, TskvTableSchema,
+        ColumnType, DatabaseOptions, DatabaseSchema, Precision, TableColumn, TableSchema,
+        TenantOptions, TskvTableSchema,
     };
     use models::{Timestamp, ValueType};
     use protos::kv_service::{Meta, WritePointsRequest};
@@ -786,10 +786,9 @@ mod test {
         };
         let points = flatbuffers::root::<fb_models::Points>(&write_batch.points).unwrap();
         models_helper::print_points(points);
-        engine
+        let _ = engine
             .write(None, vnode_id, Precision::NS, write_batch)
-            .await
-            .unwrap();
+            .await;
     }
 
     fn data_block_to_hash_tree(
@@ -837,19 +836,14 @@ mod test {
         }
     }
 
-    async fn init_meta(
-        config: &Config,
-        tenant: &str,
-    ) -> (Arc<dyn MetaManager>, Arc<dyn MetaClient>) {
-        let meta: Arc<dyn MetaManager> =
-            RemoteMetaManager::new(config.clone(), config.storage.path.clone()).await;
+    async fn init_meta(config: &Config, tenant: &str) -> (MetaRef, MetaClientRef) {
+        let meta = AdminMeta::new(config.clone()).await;
 
-        meta.admin_meta().add_data_node().await.unwrap();
+        meta.add_data_node().await.unwrap();
         let _ = meta
-            .tenant_manager()
             .create_tenant(tenant.to_string(), TenantOptions::default())
             .await;
-        let meta_client = meta.tenant_manager().tenant_meta(tenant).await.unwrap();
+        let meta_client = meta.tenant_meta(tenant).await.unwrap();
 
         (meta, meta_client)
     }
@@ -858,8 +852,8 @@ mod test {
     async fn init_tskv(
         options: &Options,
         runtime: Arc<Runtime>,
-        meta_manager: Arc<dyn MetaManager>,
-        meta_client: Arc<dyn MetaClient>,
+        meta_manager: MetaRef,
+        meta_client: MetaClientRef,
         vnode_id: TseriesFamilyId,
         tenant: &str,
         database: &str,
@@ -876,9 +870,7 @@ mod test {
         .await
         .unwrap();
         let _ = engine.drop_database(tenant, database).await;
-        let _ = meta_client
-            .drop_db(make_owner(tenant, database).as_str())
-            .await;
+        let _ = meta_client.drop_db(database).await;
 
         // Create database and vnode
         let mut database_schema = DatabaseSchema::new(tenant, database);
@@ -1036,8 +1028,8 @@ mod test {
         let engine = rt.block_on(init_tskv(
             &options,
             rt.clone(),
-            meta_manager.clone(),
-            meta_client.clone(),
+            meta_manager,
+            meta_client,
             vnode_id,
             &tenant_name,
             &database_name,

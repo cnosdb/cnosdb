@@ -61,7 +61,7 @@ impl VersionSet {
             let owner = ver.database().to_string();
             let (tenant, database) = split_owner(&owner);
 
-            let schema = match meta.tenant_manager().tenant_meta(tenant).await {
+            let schema = match meta.tenant_meta(tenant).await {
                 None => DatabaseSchema::new(tenant, database),
                 Some(client) => match client.get_db_schema(database).context(MetaSnafu)? {
                     None => DatabaseSchema::new(tenant, database),

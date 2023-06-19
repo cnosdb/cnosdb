@@ -135,7 +135,7 @@ async fn get_vnode_all_info(
     tenant: &str,
     vnode_id: u32,
 ) -> CoordinatorResult<VnodeAllInfo> {
-    match meta.tenant_manager().tenant_meta(tenant).await {
+    match meta.tenant_meta(tenant).await {
         Some(meta_client) => match meta_client.get_vnode_all_info(vnode_id) {
             Some(all_info) => Ok(all_info),
             None => Err(CoordinatorError::VnodeNotFound { id: vnode_id }),

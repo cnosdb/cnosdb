@@ -33,7 +33,6 @@ async fn describe_database(database_name: &str, machine: QueryStateMachineRef) -
     let tenant = machine.session.tenant();
     let client = machine
         .meta
-        .tenant_manager()
         .tenant_meta(tenant)
         .await
         .ok_or(MetaError::TenantNotFound {

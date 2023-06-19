@@ -38,9 +38,8 @@ impl DDLDefinitionTask for CreateRoleTask {
         //     role_name: &str,
         //     tenant_id: &Oid,
         // ) -> Result<Option<CustomTenantRole<Oid>>>;
-        let tenant_manager = query_state_machine.meta.tenant_manager();
-
-        let meta = tenant_manager
+        let meta = query_state_machine
+            .meta
             .tenant_meta(tenant_name)
             .await
             .ok_or_else(|| QueryError::Meta {

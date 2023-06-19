@@ -280,7 +280,7 @@ impl SimpleQueryDispatcher {
             Arc::new(BaseTableProvider::new(
                 self.coord.clone(),
                 self.split_manager.clone(),
-                meta_client.clone(),
+                meta_client,
                 self.stream_provider_manager.clone(),
             ));
 
