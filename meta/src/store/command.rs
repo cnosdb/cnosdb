@@ -271,7 +271,7 @@ impl CircleBuf {
             };
 
             if self.buf[index].ver <= ver {
-                return index.try_into().unwrap();
+                return index as i32;
             }
         }
 
@@ -286,7 +286,7 @@ impl CircleBuf {
 
         let mut index = (index + 1) % self.capacity;
         while index != self.writer {
-            let entry = self.buf.get(index).unwrap();
+            let entry = &self.buf[index];
             if filter(entry) {
                 entrys.push(entry.clone());
             }

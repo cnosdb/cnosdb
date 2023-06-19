@@ -77,7 +77,7 @@ pub struct StateMachine {
 
 impl StateMachine {
     pub fn new(db: Arc<sled::Db>) -> StateMachine {
-        let sm = Self {
+        Self {
             db: db.clone(),
             data_tree: db.open_tree("data").expect("data open failed"),
             state_machine: db
@@ -85,11 +85,7 @@ impl StateMachine {
                 .expect("state_machine open failed"),
 
             watch: Arc::new(Watch::new()),
-        };
-
-        sm.write_nop_log();
-
-        sm
+        }
     }
 
     pub(crate) fn get_last_membership(
@@ -115,18 +111,7 @@ impl StateMachine {
 
         Ok(())
     }
-    //todo:
-    // fn set_last_membership_tx(
-    //     &self,
-    //     tx_state_machine: &sled::transaction::TransactionalTree,
-    //     membership: EffectiveMembership<ClusterNodeId, ClusterNode>,
-    // ) -> MetaResult<()> {
-    //     let value = serde_json::to_vec(&membership).map_err(sm_r_err)?;
-    //     tx_state_machine
-    //         .insert(b"last_membership", value)
-    //         .map_err(ct_err)?;
-    //     Ok(())
-    // }
+
     pub(crate) fn get_last_applied_log(&self) -> StorageIOResult<Option<LogId<ClusterNodeId>>> {
         self.state_machine
             .get(b"last_applied_log")
@@ -148,18 +133,7 @@ impl StateMachine {
 
         Ok(())
     }
-    //todo:
-    // fn set_last_applied_log_tx(
-    //     &self,
-    //     tx_state_machine: &sled::transaction::TransactionalTree,
-    //     log_id: LogId<ClusterNodeId>,
-    // ) -> MetaResult<()> {
-    //     let value = serde_json::to_vec(&log_id).map_err(ct_err)?;
-    //     tx_state_machine
-    //         .insert(b"last_applied_log", value)
-    //         .map_err(ct_err)?;
-    //     Ok(())
-    // }
+
     pub(crate) async fn from_serializable(
         sm: StateMachineContent,
         db: Arc<sled::Db>,
@@ -172,7 +146,6 @@ impl StateMachine {
         data_tree.apply_batch(batch).map_err(sm_w_err)?;
 
         let r = StateMachine::new(db);
-        r.write_nop_log();
 
         if let Some(log_id) = sm.last_applied_log {
             r.set_last_applied_log(log_id).await?;
@@ -182,73 +155,7 @@ impl StateMachine {
         Ok(r)
     }
 
-    //todo:
-    // fn insert_tx(
-    //     &self,
-    //     tx_data_tree: &sled::transaction::TransactionalTree,
-    //     key: String,
-    //     value: String,
-    // ) -> MetaResult<()> {
-    //     tx_data_tree
-    //         .insert(key.as_bytes(), value.as_bytes())
-    //         .map_err(ct_err)?;
-    //     Ok(())
-    // }
-
     //********************************************************************************* */
-    //todo: temp it will be removed
-    fn version(&self) -> u64 {
-        let key = KeyPath::version();
-
-        let mut ver_str = "0".to_string();
-        if let Some(val) = self.db.get(key).unwrap() {
-            unsafe { ver_str = String::from_utf8_unchecked((*val).to_owned()) };
-        }
-
-        from_str::<u64>(&ver_str).unwrap_or(0)
-    }
-
-    fn update_version(&self) -> StorageIOResult<u64> {
-        let key = KeyPath::version();
-
-        let mut ver_str = "0".to_string();
-        if let Some(val) = self.db.get(&key).unwrap() {
-            unsafe { ver_str = String::from_utf8_unchecked((*val).to_owned()) };
-        }
-        let ver = from_str::<u64>(&ver_str).unwrap_or(0) + 1;
-        let val = &*(ver.to_string());
-        self.db.insert(&key, val).map_err(l_r_err)?;
-        info!("METADATA WRITE: {} :{}", &key, val);
-        Ok(ver)
-    }
-
-    fn fetch_and_add_incr_id(&self, cluster: &str, count: u32) -> StorageIOResult<u32> {
-        let id_key = KeyPath::incr_id(cluster);
-
-        let mut id_str = "1".to_string();
-        if let Some(val) = self.get(&id_key)? {
-            unsafe { id_str = String::from_utf8_unchecked((*val).to_owned()) };
-        }
-        let id_num = from_str::<u32>(&id_str).unwrap_or(1);
-
-        let val = &*(id_num + count).to_string();
-        self.db.insert(&id_key, val).map_err(sm_w_err)?;
-        info!("METADATA WRITE: {} :{}", &id_key, val);
-
-        Ok(id_num)
-    }
-
-    pub fn write_nop_log(&self) {
-        let log = EntryLog {
-            tye: ENTRY_LOG_TYPE_NOP,
-            ver: self.version(),
-            key: "".to_string(),
-            val: "".to_string(),
-        };
-
-        self.watch.writer_log(log);
-    }
-
     fn get(&self, key: &str) -> StorageIOResult<Option<sled::IVec>> {
         let val = self.db.get(key).map_err(sm_r_err)?;
 
@@ -292,27 +199,46 @@ impl StateMachine {
 
         Ok(())
     }
-    pub fn read_change_logs(
-        &self,
-        cluster: &str,
-        tenants: &HashSet<String>,
-        base_ver: u64,
-    ) -> WatchData {
-        let mut data = WatchData {
-            full_sync: false,
-            entry_logs: vec![],
-            min_ver: self.watch.min_version().unwrap_or(0),
-            max_ver: self.watch.max_version().unwrap_or(0),
-        };
 
-        let (logs, status) = self.watch.read_entry_logs(cluster, tenants, base_ver);
-        if status < 0 {
-            data.full_sync = true;
-        } else {
-            data.entry_logs = logs;
+    fn version(&self) -> StorageIOResult<u64> {
+        let key = KeyPath::version();
+        let mut ver_str = "0".to_string();
+        if let Some(val) = self.get(&key)? {
+            unsafe { ver_str = String::from_utf8_unchecked((*val).to_owned()) };
         }
 
-        data
+        let ver = from_str::<u64>(&ver_str).unwrap_or(0);
+
+        Ok(ver)
+    }
+
+    fn update_version(&self) -> StorageIOResult<u64> {
+        let key = KeyPath::version();
+        let mut ver_str = "0".to_string();
+        if let Some(val) = self.get(&key)? {
+            unsafe { ver_str = String::from_utf8_unchecked((*val).to_owned()) };
+        }
+        let ver = from_str::<u64>(&ver_str).unwrap_or(0) + 1;
+        let val = &*(ver.to_string());
+        self.db.insert(&key, val).map_err(l_r_err)?;
+        info!("METADATA WRITE: {} :{}", &key, val);
+        Ok(ver)
+    }
+
+    fn fetch_and_add_incr_id(&self, cluster: &str, count: u32) -> StorageIOResult<u32> {
+        let id_key = KeyPath::incr_id(cluster);
+
+        let mut id_str = "1".to_string();
+        if let Some(val) = self.get(&id_key)? {
+            unsafe { id_str = String::from_utf8_unchecked((*val).to_owned()) };
+        }
+        let id_num = from_str::<u32>(&id_str).unwrap_or(1);
+
+        let val = &*(id_num + count).to_string();
+        self.db.insert(&id_key, val).map_err(sm_w_err)?;
+        info!("METADATA WRITE: {} :{}", &id_key, val);
+
+        Ok(id_num)
     }
 
     pub fn get_struct<T>(&self, key: &str) -> MetaResult<Option<T>>
@@ -389,9 +315,36 @@ impl StateMachine {
         Ok(result)
     }
 
+    pub fn read_change_logs(
+        &self,
+        cluster: &str,
+        tenants: &HashSet<String>,
+        base_ver: u64,
+    ) -> WatchData {
+        let mut data = WatchData {
+            full_sync: false,
+            entry_logs: vec![],
+            min_ver: self.watch.min_version().unwrap_or(0),
+            max_ver: self.watch.max_version().unwrap_or(0),
+        };
+
+        if base_ver == self.version().unwrap_or(0) {
+            return data;
+        }
+
+        let (logs, status) = self.watch.read_entry_logs(cluster, tenants, base_ver);
+        if status < 0 {
+            data.full_sync = true;
+        } else {
+            data.entry_logs = logs;
+        }
+
+        data
+    }
+
     pub fn to_tenant_meta_data(&self, cluster: &str, tenant: &str) -> MetaResult<TenantMetaData> {
         let mut meta = TenantMetaData::new();
-        meta.version = self.version();
+        meta.version = self.version()?;
         meta.users = self.children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant))?;
 
         let db_schemas =
@@ -460,7 +413,8 @@ impl StateMachine {
             .into_values()
             .collect();
 
-        Ok((response, self.version()))
+        let ver = self.version()?;
+        Ok((response, ver))
     }
 
     pub fn process_read_node_metrics(&self, cluster: &str) -> MetaResult<Vec<NodeMetrics>> {
@@ -926,7 +880,16 @@ impl StateMachine {
             .map(|a| {
                 (
                     a.clone(),
-                    node_metrics_list.iter().find(|b| b.id == a.id).unwrap(),
+                    node_metrics_list
+                        .iter()
+                        .find(|b| b.id == a.id)
+                        .unwrap_or(&NodeMetrics {
+                            id: a.id,
+                            disk_free: 0,
+                            time: 0,
+                            status: NodeStatus::Unreachable,
+                        })
+                        .clone(),
                 )
             })
             .collect();
@@ -1120,7 +1083,7 @@ impl StateMachine {
     ) -> MetaResult<Tenant> {
         let key = KeyPath::tenant(cluster, name);
 
-        if self.db.contains_key(&key).unwrap() {
+        if self.contains_key(&key)? {
             return Err(MetaError::TenantAlreadyExists {
                 tenant: name.to_string(),
             });

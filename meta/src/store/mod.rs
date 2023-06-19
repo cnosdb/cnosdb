@@ -5,7 +5,7 @@ use std::io::Cursor;
 use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 
-use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use openraft::async_trait::async_trait;
 use openraft::storage::{LogState, Snapshot};
 use openraft::{
@@ -25,9 +25,7 @@ use crate::{ClusterNode, ClusterNodeId, TypeConfig};
 pub mod command;
 pub mod config;
 pub mod key_path;
-mod sled_store;
 pub mod state_machine;
-pub mod store;
 
 use self::state_machine::StateMachine;
 
@@ -70,7 +68,7 @@ impl Store {
     }
 
     async fn set_last_purged_(&self, log_id: LogId<u64>) -> StorageIOResult<()> {
-        let val = serde_json::to_vec(&log_id).unwrap();
+        let val = serde_json::to_vec(&log_id).map_err(s_w_err)?;
         self.store_tree
             .insert(b"last_purged_log_id", val.as_slice())
             .map_err(s_w_err)
@@ -89,7 +87,7 @@ impl Store {
     }
 
     async fn set_snapshot_index_(&self, snapshot_index: u64) -> StorageIOResult<()> {
-        let val = serde_json::to_vec(&snapshot_index).unwrap();
+        let val = serde_json::to_vec(&snapshot_index).map_err(s_w_err)?;
         self.store_tree
             .insert(b"snapshot_index", val.as_slice())
             .map_err(s_w_err)
@@ -97,7 +95,7 @@ impl Store {
     }
 
     async fn set_vote_(&self, vote: &Vote<ClusterNodeId>) -> StorageIOResult<()> {
-        let val = serde_json::to_vec(vote).unwrap();
+        let val = serde_json::to_vec(vote).map_err(v_w_err)?;
         self.store_tree
             .insert(b"vote", val)
             .map_err(v_w_err)
@@ -126,7 +124,7 @@ impl Store {
     }
 
     async fn set_current_snapshot_(&self, snap: SnapshotInfo) -> StorageResult<()> {
-        let val = serde_json::to_vec(&snap).unwrap();
+        let val = serde_json::to_vec(&snap).map_err(s_w_err)?;
         self.store_tree
             .insert(b"snapshot", val.as_slice())
             .map_err(|e| StorageError::IO {
@@ -198,7 +196,7 @@ fn id_to_bin(id: u64) -> [u8; 8] {
 }
 
 fn bin_to_id(buf: &[u8]) -> u64 {
-    (&buf[0..8]).read_u64::<BigEndian>().unwrap()
+    BigEndian::read_u64(buf)
 }
 
 #[async_trait]
@@ -206,15 +204,16 @@ impl RaftLogReader<TypeConfig> for Arc<Store> {
     async fn get_log_state(&mut self) -> StorageResult<LogState<TypeConfig>> {
         let last_purged_log_id = self.get_last_purged_()?;
 
-        let last_res = self.logs_tree.last();
-        if last_res.is_err() {
+        let last_res = if let Ok(res) = self.logs_tree.last() {
+            res
+        } else {
             return Ok(LogState {
                 last_purged_log_id,
                 last_log_id: last_purged_log_id,
             });
-        }
+        };
 
-        let last = last_res.unwrap().and_then(|(_, ent)| {
+        let last = last_res.and_then(|(_, ent)| {
             Some(
                 serde_json::from_slice::<Entry<TypeConfig>>(&ent)
                     .ok()?
@@ -358,7 +357,7 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
         let state_machine = self.state_machine.read().await;
         info!(
             "state_matchine info: {:?}",
-            state_machine.get_last_applied_log().unwrap()
+            state_machine.get_last_applied_log()
         );
         Ok((
             state_machine.get_last_applied_log()?,
