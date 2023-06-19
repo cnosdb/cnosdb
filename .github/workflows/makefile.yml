@@ -124,3 +124,99 @@ jobs:
         shell: bash
         run: |
           cd meta && cargo test --features=meta_e2e_test tests -- --test-threads  1
+
+  integration-test-3m2d:
+    name: "Integration Test 3meta 2data cluster"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Setup timezon
+        uses: zcong1993/setup-timezone@master
+        with:
+          timezone: Asia/Shanghai
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+        with:
+          rust-version: ${{ matrix.rust }}
+      - name: Test
+          shell: bash
+          run: |
+            bash ./query_server/test/script/start_and_test_all.sh 3meta2data
+
+
+  integration-test-1m2d:
+    name: "Integration Test 1meta 2data cluster"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Setup timezon
+        uses: zcong1993/setup-timezone@master
+        with:
+          timezone: Asia/Shanghai
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+        with:
+          rust-version: ${{ matrix.rust }}
+      - name: Test
+          shell: bash
+          run: |
+            bash ./query_server/test/script/start_and_test_all.sh 1meta2data
+  
+
+  integration-test-1m1d:
+    name: "Integration Test 1meta 1data cluster"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Setup timezon
+        uses: zcong1993/setup-timezone@master
+        with:
+          timezone: Asia/Shanghai
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+        with:
+          rust-version: ${{ matrix.rust }}
+      - name: Test
+          shell: bash
+          run: |
+            bash ./query_server/test/script/start_and_test_all.sh 1meta1data
+
+
+  integration-test-Separation-of-storage-and-computing:
+    name: "Integration Test 1meta 1data cluster"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Setup timezon
+        uses: zcong1993/setup-timezone@master
+        with:
+          timezone: Asia/Shanghai
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+        with:
+          rust-version: ${{ matrix.rust }}
+      - name: Test
+          shell: bash
+          run: |
+            bash ./query_server/test/script/start_and_test_all.sh 3meta_2data_1query_1tskv
+  
