@@ -26,7 +26,7 @@ jobs:
         echo "source repo commit id: $source_repo_commit_id"
         echo "source_repo_commit_id1=$source_repo_commit_id" >> $GITHUB_OUTPUT
          
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v3
       with:
         repository: ${{ steps.set-var.outputs.source_repo1 }}
     - name: Mirrror + trigger CI
