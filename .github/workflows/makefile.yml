@@ -144,9 +144,9 @@ jobs:
         with:
           rust-version: ${{ matrix.rust }}
       - name: Test
-          shell: bash
-          run: |
-            bash ./query_server/test/script/start_and_test_all.sh 3meta2data
+        shell: bash
+        run: |
+          bash ./query_server/test/script/start_and_test_all.sh 3meta2data
 
 
   integration-test-1m2d:
@@ -168,9 +168,9 @@ jobs:
         with:
           rust-version: ${{ matrix.rust }}
       - name: Test
-          shell: bash
-          run: |
-            bash ./query_server/test/script/start_and_test_all.sh 1meta2data
+        shell: bash
+        run: |
+          bash ./query_server/test/script/start_and_test_all.sh 1meta2data
   
 
   integration-test-1m1d:
@@ -192,13 +192,13 @@ jobs:
         with:
           rust-version: ${{ matrix.rust }}
       - name: Test
-          shell: bash
-          run: |
-            bash ./query_server/test/script/start_and_test_all.sh 1meta1data
+        shell: bash
+        run: |
+          bash ./query_server/test/script/start_and_test_all.sh 1meta1data
 
 
   integration-test-Separation-of-storage-and-computing:
-    name: "Integration Test 1meta 1data cluster"
+    name: "Integration Test Separation of storage and computing"
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -216,7 +216,7 @@ jobs:
         with:
           rust-version: ${{ matrix.rust }}
       - name: Test
-          shell: bash
-          run: |
-            bash ./query_server/test/script/start_and_test_all.sh 3meta_2data_1query_1tskv
+        shell: bash
+        run: |
+          bash ./query_server/test/script/start_and_test_all.sh 3meta_2data_1query_1tskv
   
