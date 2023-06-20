@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::auth::role::{CustomTenantRole, TenantRoleIdentifier};
 use crate::node_info::NodeStatus;
+use crate::oid::Oid;
 use crate::predicate::domain::TimeRange;
 use crate::schema::{DatabaseSchema, TableSchema};
 
@@ -199,16 +201,18 @@ impl DatabaseInfo {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct TenantMetaData {
     pub version: u64,
-    pub users: HashMap<String, UserInfo>,
     pub dbs: HashMap<String, DatabaseInfo>,
+    pub roles: HashMap<String, CustomTenantRole<Oid>>,
+    pub members: HashMap<String, TenantRoleIdentifier>,
 }
 
 impl TenantMetaData {
     pub fn new() -> Self {
         Self {
             version: 0,
-            users: HashMap::new(),
             dbs: HashMap::new(),
+            roles: HashMap::new(),
+            members: HashMap::new(),
         }
     }
 

@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use config::Config;
-use models::auth::role::TenantRoleIdentifier;
 use models::auth::user::{admin_user, User, UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
@@ -52,6 +51,7 @@ pub struct AdminMeta {
     watch_tenants: Arc<RwLock<HashSet<String>>>,
     watch_notify: Sender<UseTenantInfo>,
 
+    users: RwLock<HashMap<String, UserDesc>>,
     conn_map: RwLock<HashMap<u64, Channel>>,
     data_nodes: RwLock<HashMap<u64, NodeInfo>>,
 
@@ -67,6 +67,8 @@ impl AdminMeta {
             config: Config::default(),
             watch_notify,
             client: MetaHttpClient::new("".to_string()),
+
+            users: RwLock::new(HashMap::new()),
             conn_map: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
             tenants: RwLock::new(HashMap::new()),
@@ -86,6 +88,8 @@ impl AdminMeta {
             config,
             watch_notify,
             client: MetaHttpClient::new(meta_url),
+
+            users: RwLock::new(HashMap::new()),
             conn_map: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
             tenants: RwLock::new(HashMap::new()),
@@ -95,7 +99,7 @@ impl AdminMeta {
             watch_version: Arc::new(AtomicU64::new(0)),
         });
 
-        let base_ver = admin.sync_all_data_node().await.unwrap();
+        let base_ver = admin.sync_gobal_info().await.unwrap();
         admin.watch_version.store(base_ver, Ordering::Relaxed);
 
         tokio::spawn(AdminMeta::watch_task_manager(admin.clone(), receiver));
@@ -171,6 +175,30 @@ impl AdminMeta {
         let id = self.client.write::<u32>(&req).await?;
 
         Ok(id)
+    }
+
+    pub async fn sync_gobal_info(&self) -> MetaResult<u64> {
+        let req = command::ReadCommand::DataNodes(self.config.cluster.name.clone());
+        let (resp, version) = self.client.read::<(Vec<NodeInfo>, u64)>(&req).await?;
+        {
+            let mut nodes = self.data_nodes.write().await;
+            nodes.clear();
+            for item in resp.iter() {
+                nodes.insert(item.id, item.clone());
+            }
+        }
+
+        let req = command::ReadCommand::Users(self.cluster());
+        let resp = self.client.read::<Vec<UserDesc>>(&req).await?;
+        {
+            let mut users = self.users.write().await;
+            users.clear();
+            for item in resp.iter() {
+                users.insert(item.name().to_owned(), item.clone());
+            }
+        }
+
+        Ok(version)
     }
 
     /******************** Watch Meta Data Change Begin *********************/
@@ -268,26 +296,21 @@ impl AdminMeta {
                 request.3 = watch_data.max_ver;
             } else {
                 info!("watch response wrong {:?}", watch_rsp);
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
             }
         }
     }
 
     pub async fn process_full_sync(&self) -> u64 {
-        let base_ver;
         loop {
-            if let Ok(ver) = self.sync_all_data_node().await {
-                base_ver = ver;
-                break;
+            if let Ok(base_ver) = self.sync_gobal_info().await {
+                self.tenants.write().await.clear();
+                return base_ver;
             } else {
                 info!("sync all data node failed");
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         }
-
-        self.tenants.write().await.clear();
-
-        base_ver
     }
 
     pub async fn process_watch_data(&self, watch_data: &command::WatchData) {
@@ -311,6 +334,7 @@ impl AdminMeta {
                 let _ = self.process_watch_log(entry).await;
             } else if len == 3 && strs[2] == key_path::AUTO_INCR_ID {
             } else if len == 4 && strs[2] == key_path::USERS {
+                let _ = self.process_watch_log(entry).await;
             }
         }
     }
@@ -330,18 +354,25 @@ impl AdminMeta {
                     self.conn_map.write().await.remove(&node_id);
                 }
             }
+        } else if len == 4 && strs[2] == key_path::USERS {
+            if entry.tye == command::ENTRY_LOG_TYPE_SET {
+                if let Ok(user) = serde_json::from_str::<UserDesc>(&entry.val) {
+                    self.users.write().await.insert(strs[3].to_owned(), user);
+                }
+            } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
+                self.users.write().await.remove(strs[3]);
+            }
         }
 
         Ok(())
     }
-    // **[4]    /cluster_name/users/user ->
-    // **[3]    /cluster_name/auto_incr_id -> id
 
+    // **[3]    /cluster_name/auto_incr_id -> id
+    // **[4]    /cluster_name/users/name -> [UserDesc]
     // **[4]    /cluster_name/data_nodes/node_id -> [NodeInfo] 集群、数据节点等信息
 
-    // **[6]    /cluster_name/tenants/tenant/roles/roles ->
-    // **[6]    /cluster_name/tenants/tenant/members/user_id ->
-    // **[6]    /cluster_name/tenants/tenant/users/name -> [UserInfo] 租户下用户信息、访问权限等       -- delete
+    // **[6]    /cluster_name/tenants/tenant/roles/name -> [CustomTenantRole<Oid>]
+    // **[6]    /cluster_name/tenants/tenant/members/oid -> [TenantRoleIdentifier]
     // **[6]    /cluster_name/tenants/tenant/dbs/db_name -> [DatabaseInfo] db相关信息、保留策略等
     // **[8]    /cluster_name/tenants/tenant/dbs/db_name/buckets/id -> [BucketInfo] bucket相关信息
     // **[8]    /cluster_name/tenants/tenant/dbs/db_name/schemas/name -> [TskvTableSchema] schema相关信息
@@ -350,19 +381,6 @@ impl AdminMeta {
     /******************** Watch Meta Data Change End *********************/
 
     /******************** Data Node Operation Begin *********************/
-    pub async fn sync_all_data_node(&self) -> MetaResult<u64> {
-        let req = command::ReadCommand::DataNodes(self.config.cluster.name.clone());
-        let (resp, version) = self.client.read::<(Vec<NodeInfo>, u64)>(&req).await?;
-        {
-            let mut nodes = self.data_nodes.write().await;
-            for item in resp.iter() {
-                nodes.insert(item.id, item.clone());
-            }
-        }
-
-        Ok(version)
-    }
-
     pub async fn add_data_node(&self) -> MetaResult<()> {
         let mut attribute = NodeAttribute::default();
         if self.config.node_basic.cold_data_server {
@@ -482,14 +500,19 @@ impl AdminMeta {
         user_name: &str,
         tenant_name: Option<&str>,
     ) -> MetaResult<User> {
-        let user_desc = self
-            .user(user_name)
-            .await?
-            .ok_or_else(|| MetaError::UserNotFound {
-                user: user_name.to_string(),
-            })?;
+        let user_desc = {
+            let cache = self.users.read().await.get(user_name).cloned();
+            if let Some(user) = cache {
+                user.clone()
+            } else {
+                self.user(user_name)
+                    .await?
+                    .ok_or_else(|| MetaError::UserNotFound {
+                        user: user_name.to_string(),
+                    })?
+            }
+        };
 
-        // admin user
         if user_desc.is_admin() {
             return Ok(admin_user(user_desc));
         }
@@ -503,22 +526,7 @@ impl AdminMeta {
                         tenant: tenant_name.to_string(),
                     })?;
 
-            let tenant_id = *client.tenant().id();
-            let role = client.member_role(user_desc.id()).await?.ok_or_else(|| {
-                MetaError::MemberNotFound {
-                    member_name: user_desc.name().to_string(),
-                    tenant_name: tenant_name.to_string(),
-                }
-            })?;
-
-            let privileges = match role {
-                TenantRoleIdentifier::System(sys_role) => sys_role.to_privileges(&tenant_id),
-                TenantRoleIdentifier::Custom(ref role_name) => client
-                    .custom_role(role_name)
-                    .await?
-                    .map(|e| e.to_privileges(&tenant_id))
-                    .unwrap_or_default(),
-            };
+            let privileges = client.user_privileges(&user_desc).await?;
 
             return Ok(User::new(user_desc, privileges));
         }
@@ -628,10 +636,10 @@ impl AdminMeta {
         if self.tenants.write().await.remove(name).is_some() {
             let req = command::WriteCommand::DropTenant(self.cluster(), name.to_string());
 
-            let exist = self.client.write::<bool>(&req).await?;
+            self.client.write::<()>(&req).await?;
             self.limiters.write().await.remove(name);
 
-            Ok(exist)
+            Ok(true)
         } else {
             Ok(false)
         }
