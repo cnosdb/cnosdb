@@ -260,7 +260,7 @@ impl SeriesData {
             }
             let mut schema_t = item.schema.as_ref().clone();
             schema_t.drop_column(&name);
-            schema_t.schema_id += 1;
+            //schema_t.schema_id += 1;
             item.schema = Arc::new(schema_t)
         }
     }
