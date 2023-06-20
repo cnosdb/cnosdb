@@ -36,7 +36,8 @@ pub mod index;
 pub mod kv_option;
 mod kvcore;
 mod memcache;
-pub mod query_iterator;
+// TODO supposedly private
+pub mod reader;
 mod record_file;
 mod schema;
 mod summary;

@@ -21,6 +21,7 @@ mod value_type;
 #[macro_use]
 // pub mod error_code;
 pub mod arrow_array;
+pub mod arrow;
 pub mod auth;
 pub mod duration;
 pub mod object_reference;

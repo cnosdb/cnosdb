@@ -14,7 +14,7 @@ use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::Precision;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
 use trace::SpanContext;
-use tskv::query_iterator::QueryOption;
+use tskv::reader::QueryOption;
 use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
@@ -34,9 +34,8 @@ pub const FAILED_RESPONSE_CODE: i32 = -1;
 pub const FINISH_RESPONSE_CODE: i32 = 0;
 pub const SUCCESS_RESPONSE_CODE: i32 = 1;
 
-pub type SendableCoordinatorRecordBatchStream = Pin<Box<dyn CoordinatorRecordBatchStream + Send>>;
-
-pub trait CoordinatorRecordBatchStream: Stream<Item = CoordinatorResult<RecordBatch>> {}
+pub type SendableCoordinatorRecordBatchStream =
+    Pin<Box<dyn Stream<Item = CoordinatorResult<RecordBatch>> + Send>>;
 
 #[derive(Debug)]
 pub struct WriteRequest {
@@ -70,8 +69,8 @@ pub fn status_response_to_result(
     if status.code == SUCCESS_RESPONSE_CODE {
         Ok(())
     } else {
-        Err(errors::CoordinatorError::GRPCRequest {
-            msg: format!("server status: {}, {}", status.code, status.data),
+        Err(errors::CoordinatorError::CommonError {
+            msg: "Unreachable".to_string(),
         })
     }
 }

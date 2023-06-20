@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use config::QueryConfig;
+use futures::TryStreamExt;
 use meta::model::MetaRef;
 use models::meta_data::VnodeInfo;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
@@ -9,21 +9,19 @@ use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::{SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::append_trace_context;
-use tskv::query_iterator::QueryOption;
+use tskv::reader::tag_scan::LocalTskvTagScanStream;
+use tskv::reader::QueryOption;
 use tskv::EngineRef;
 
-use super::local::LocalTskvTagScanStream;
 use crate::errors::{CoordinatorError, CoordinatorResult};
-use crate::reader::table_scan::remote::TonicRecordBatchDecoder;
+use crate::reader::deserialize::TonicRecordBatchDecoder;
 use crate::reader::{VnodeOpenFuture, VnodeOpener};
-use crate::service::CoordServiceMetrics;
 use crate::SendableCoordinatorRecordBatchStream;
 
 pub struct TemporaryTagScanOpener {
     config: QueryConfig,
     kv_inst: Option<EngineRef>,
     meta: MetaRef,
-    coord_metrics: Arc<CoordServiceMetrics>,
     span_ctx: Option<SpanContext>,
 }
 
@@ -32,14 +30,12 @@ impl TemporaryTagScanOpener {
         config: QueryConfig,
         kv_inst: Option<EngineRef>,
         meta: MetaRef,
-        coord_metrics: Arc<CoordServiceMetrics>,
         span_ctx: Option<&SpanContext>,
     ) -> Self {
         Self {
             config,
             kv_inst,
             meta,
-            coord_metrics,
             span_ctx: span_ctx.cloned(),
         }
     }
@@ -51,7 +47,6 @@ impl VnodeOpener for TemporaryTagScanOpener {
         let vnode_id = vnode.id;
         let curren_nodet_id = self.meta.node_id();
         let kv_inst = self.kv_inst.clone();
-        let coord_metrics = self.coord_metrics.clone();
         let option = option.clone();
         let admin_meta = self.meta.clone();
         let config = self.config.clone();
@@ -60,11 +55,6 @@ impl VnodeOpener for TemporaryTagScanOpener {
         let future = async move {
             // TODO 请求路由的过程应该由通信框架决定，客户端只关心业务逻辑（请求目标和请求内容）
             if node_id == curren_nodet_id {
-                let data_out = coord_metrics.data_out(
-                    option.table_schema.tenant.as_str(),
-                    option.table_schema.db.as_str(),
-                );
-
                 // 路由到进程内的引擎
                 let kv_inst = kv_inst.ok_or(CoordinatorError::KvInstanceNotFound { node_id })?;
                 // TODO U64Counter
@@ -72,11 +62,11 @@ impl VnodeOpener for TemporaryTagScanOpener {
                     vnode_id,
                     option,
                     kv_inst,
-                    data_out,
                     SpanRecorder::new(
                         span_ctx.child_span(format!("LocalTskvTagScanStream ({vnode_id})")),
                     ),
-                );
+                )
+                .map_err(CoordinatorError::from);
                 Ok(Box::pin(stream) as SendableCoordinatorRecordBatchStream)
             } else {
                 // 路由到远程的引擎

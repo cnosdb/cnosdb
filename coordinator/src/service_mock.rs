@@ -16,7 +16,7 @@ use models::schema::Precision;
 use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
 use trace::SpanContext;
 use tskv::engine_mock::MockEngine;
-use tskv::query_iterator::QueryOption;
+use tskv::reader::QueryOption;
 use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;

@@ -1,28 +1,24 @@
 use std::sync::Arc;
 
+use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::MetaRef;
-use metrics::count::U64Counter;
-use models::meta_data::{NodeId, VnodeInfo};
+use models::arrow::stream::{BoxStream, ParallelMergeStream};
+use models::meta_data::VnodeInfo;
 use tokio::runtime::Runtime;
 use trace::{SpanContext, SpanExt, SpanRecorder};
-use tskv::query_iterator::QueryOption;
-use tskv::EngineRef;
 
 use super::status_listener::VnodeStatusListener;
-use super::table_scan::local::LocalTskvTableScanStream;
-use super::tag_scan::local::LocalTskvTagScanStream;
-use super::ParallelMergeStream;
-use crate::errors::{CoordinatorError, CoordinatorResult};
-use crate::service::CoordServiceMetrics;
-use crate::SendableCoordinatorRecordBatchStream;
+use super::table_scan::LocalTskvTableScanStream;
+use super::tag_scan::LocalTskvTagScanStream;
+use crate::error::Result;
+use crate::reader::{QueryOption, SendableTskvRecordBatchStream};
+use crate::EngineRef;
 
 pub struct QueryExecutor {
     option: QueryOption,
     meta: MetaRef,
     runtime: Arc<Runtime>,
-    kv_inst: Option<EngineRef>,
-
-    data_out: U64Counter,
+    kv_inst: EngineRef,
 }
 
 impl QueryExecutor {
@@ -30,43 +26,29 @@ impl QueryExecutor {
         option: QueryOption,
         runtime: Arc<Runtime>,
         meta: MetaRef,
-        kv_inst: Option<EngineRef>,
-        metrics: Arc<CoordServiceMetrics>,
+        kv_inst: EngineRef,
     ) -> Self {
-        let data_out = metrics.data_out(
-            option.table_schema.tenant.as_str(),
-            option.table_schema.db.as_str(),
-        );
         Self {
             option,
             runtime,
             meta,
             kv_inst,
-            data_out,
         }
     }
 
     pub fn local_node_executor(
         &self,
-        node_id: NodeId,
         vnodes: Vec<VnodeInfo>,
         span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
-        let kv = self
-            .kv_inst
-            .as_ref()
-            .ok_or(CoordinatorError::KvInstanceNotFound { node_id })?
-            .clone();
-
-        let mut streams = Vec::with_capacity(vnodes.len());
+    ) -> Result<SendableTskvRecordBatchStream> {
+        let mut streams: Vec<BoxStream<Result<RecordBatch>>> = Vec::with_capacity(vnodes.len());
 
         vnodes.into_iter().for_each(|vnode| {
             let input = Box::pin(LocalTskvTableScanStream::new(
                 vnode.id,
                 self.option.clone(),
-                kv.clone(),
+                self.kv_inst.clone(),
                 self.runtime.clone(),
-                self.data_out.clone(),
                 SpanRecorder::new(
                     span_ctx.child_span(format!("LocalTskvTableScanStream ({})", vnode.id)),
                 ),
@@ -77,7 +59,7 @@ impl QueryExecutor {
                 vnode.id,
                 input,
             );
-            streams.push(Box::pin(stream) as SendableCoordinatorRecordBatchStream);
+            streams.push(Box::pin(stream));
         });
 
         let parallel_merge_stream = ParallelMergeStream::new(Some(self.runtime.clone()), streams);
@@ -87,28 +69,20 @@ impl QueryExecutor {
 
     pub fn local_node_tag_scan(
         &self,
-        node_id: NodeId,
         vnodes: Vec<VnodeInfo>,
         span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
-        let kv = self
-            .kv_inst
-            .as_ref()
-            .ok_or(CoordinatorError::KvInstanceNotFound { node_id })?
-            .clone();
-
+    ) -> Result<SendableTskvRecordBatchStream> {
         let mut streams = Vec::with_capacity(vnodes.len());
         vnodes.into_iter().for_each(|vnode| {
             let stream = LocalTskvTagScanStream::new(
                 vnode.id,
                 self.option.clone(),
-                kv.clone(),
-                self.data_out.clone(),
+                self.kv_inst.clone(),
                 SpanRecorder::new(
                     span_ctx.child_span(format!("LocalTskvTagScanStream ({})", vnode.id)),
                 ),
             );
-            streams.push(Box::pin(stream) as SendableCoordinatorRecordBatchStream);
+            streams.push(Box::pin(stream) as SendableTskvRecordBatchStream);
         });
 
         let parallel_merge_stream = ParallelMergeStream::new(Some(self.runtime.clone()), streams);

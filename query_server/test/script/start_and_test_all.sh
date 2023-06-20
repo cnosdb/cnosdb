@@ -101,6 +101,7 @@ function clean_env(){
   killdb
   killmeta
   rm -rf /tmp/cnosdb
+  rm -rf /tmp/data/
 }
 
 function build(){
@@ -262,9 +263,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ${flag} -eq 1 ]]
+if [[ ${flag} -ne 1 ]]
 then
   test || EXIT_CODE=$?
+  echo "Test complete, killing CnosDB Server "
+else
+  echo "Testing query/test" && \
+  cargo run --package test -- --query-url http://127.0.0.1:8902 --storage-url http://127.0.0.1:8912 || EXIT_CODE=$?
   echo "Test complete, killing CnosDB Server "
 fi
 clean_env

@@ -175,7 +175,11 @@ impl VnodeManager {
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
         let request = tonic::Request::new(cmd);
 
-        let response = client.exec_admin_command(request).await?.into_inner();
+        let response = client
+            .exec_admin_command(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
         status_response_to_result(&response)
     }
 
@@ -190,7 +194,11 @@ impl VnodeManager {
             vnode_id: all_info.vnode_id,
         });
 
-        let resp = client.fetch_vnode_summary(request).await?.into_inner();
+        let resp = client
+            .fetch_vnode_summary(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
         if resp.code != SUCCESS_RESPONSE_CODE {
             return Err(CoordinatorError::GRPCRequest {
                 msg: format!(
@@ -246,7 +254,11 @@ impl VnodeManager {
             vnode_id: all_info.vnode_id,
         });
 
-        let resp = client.get_vnode_files_meta(request).await?.into_inner();
+        let resp = client
+            .get_vnode_files_meta(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
         info!("node id: {}, files meta: {:?}", all_info.vnode_id, resp);
 
         Ok(resp)
@@ -275,7 +287,11 @@ impl VnodeManager {
             vnode_id: req.vnode_id,
             filename: filename.to_string(),
         });
-        let mut resp_stream = client.download_file(request).await?.into_inner();
+        let mut resp_stream = client
+            .download_file(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
         while let Some(received) = resp_stream.next().await {
             let received = received?;
             if received.code != SUCCESS_RESPONSE_CODE {
