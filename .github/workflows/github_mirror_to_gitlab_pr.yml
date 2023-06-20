@@ -1,0 +1,48 @@
+name: github mirror to gitlab on pr comment
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  mirror_and_comment:
+    if: github.event.issue.pull_request && github.event.comment.body == 'begin benchmark'
+    runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ github.event.issue.number }}
+
+    steps:
+    - name: Print comment and repo
+      id: set-var
+      shell: bash
+      run: |
+        echo "Comment content: '${{ github.event.comment.body }}'"
+        echo "Comment author: '${{ github.event.comment.user.login }}'"
+        echo "pr number: $PR_NUMBER"
+        source_repo="$(curl -s https://api.github.com/repos/cnosdb/cnosdb/pulls/$PR_NUMBER|jq -r .head.repo.full_name)"
+        echo "source_repo: $source_repo"
+        echo "source_repo1=$source_repo" >> $GITHUB_OUTPUT
+        source_repo_commit_id="$(curl -s https://api.github.com/repos/cnosdb/cnosdb/pulls/$PR_NUMBER|jq -r .head.sha|cut -c 1-7)"
+        echo "source repo commit id: $source_repo_commit_id"
+        echo "source_repo_commit_id1=$source_repo_commit_id" >> $GITHUB_OUTPUT
+         
+    - uses: actions/checkout@v1
+      with:
+        repository: ${{ steps.set-var.outputs.source_repo1 }}
+    - name: Mirrror + trigger CI
+      uses: lutengda/gitlab-mirror-and-ci-action@master
+      with:
+        args: "http://gitlab.cnosdb.com:8280/root/cnosdb"
+      env:
+        FOLLOW_TAGS: "false"
+        FORCE_PUSH: "true"
+        GITLAB_HOSTNAME: "43.247.178.238:8280"
+        GITLAB_USERNAME: "root"
+        GITLAB_PASSWORD: ${{ secrets.GITLAB_PASSWORD }}
+        GITLAB_PROJECT_ID: "9"
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Comment on PR
+      shell: bash
+      run: |
+        curl -L -X POST -H "Accept: application/vnd.github+json" -H "Authorization: Bearer ${{ secrets.FOR_PR_COMMENT }}" -H "X-GitHub-Api-Version: 2022-11-28" https://api.github.com/repos/cnosdb/cnosdb/issues/$PR_NUMBER/comments -d '{"body":"https://cnosdb-admin.teleport.cnosdb.com/benchmark-hits/hits_${{ steps.set-var.outputs.source_repo_commit_id1 }}.html\nhttps://cnosdb-admin.teleport.cnosdb.com/benchmark-tsbs/tsbs_${{ steps.set-var.outputs.source_repo_commit_id1 }}.html"}'
