@@ -3,6 +3,9 @@
 ##########
 
 statement ok
+alter database public set ttl '3650d';
+
+statement ok
 DROP TABLE IF EXISTS readings_ext;
 
 # create external table for data import
@@ -10,6 +13,28 @@ statement ok
 CREATE EXTERNAL TABLE readings_ext
 STORED AS PARQUET
 LOCATION 'query_server/test/resource/parquet/part-0.parquet';
+
+
+statement ok
+DROP TABLE IF EXISTS readings;
+
+statement ok
+create table readings(
+  latitude double,
+  longitude double,
+  elevation double,
+  velocity double,
+  heading double,
+  grade double,
+  fuel_consumption double,
+  load_capacity double,
+  fuel_capacity double,
+  nominal_fuel_consumption double,
+  tags(name, fleet, driver, model, device_version)
+);
+
+statement error Arrow error: Io error: Cannot connect to endpoint: transport error
+insert into readings select * from readings_ext;
 
 ##########
 ## Query
@@ -52,3 +77,23 @@ select sample(time, 2), sample(name, 2), sample(latitude, 2) from readings_ext;
 # with group
 statement ok
 select sample(time, 2), sample(name, 2), sample(latitude, 2), model from readings_ext group by model;
+
+# timestamp
+statement ok
+select sample(time, 2) from readings;
+
+# string
+statement ok
+select sample(name, 2) from readings;
+
+# double
+statement ok
+select sample(latitude, 2) from readings;
+
+# timestamp
+statement ok
+select sample(time, 2), sample(name, 3), sample(latitude, 9) from readings;
+
+# with group
+statement ok
+select sample(time, 2), sample(name, 3), sample(latitude, 7), model from readings group by model;
