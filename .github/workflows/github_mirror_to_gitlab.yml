@@ -17,6 +17,7 @@ jobs:
       env:
         FOLLOW_TAGS: "false"
         FORCE_PUSH: "true"
+        LOCAL_GITHUB_REF: ${{ github.ref }}
         GITLAB_HOSTNAME: "43.247.178.238:8280"
         GITLAB_USERNAME: "root"
         GITLAB_PASSWORD: ${{ secrets.GITLAB_PASSWORD }}
