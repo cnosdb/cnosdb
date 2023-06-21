@@ -465,17 +465,16 @@ impl Coordinator for CoordService {
             requests.push(self.exec_admin_command_on_node(node.id, req.clone()));
         }
 
-        let result = futures::future::try_join_all(requests).await;
-
-        info!(
-            "exec command:{:?} at:{:?}, elapsed:{:?}, result:{:?}",
-            req,
-            now,
-            now.elapsed(),
-            result
-        );
-
-        result?;
+        for result in futures::future::join_all(requests).await {
+            debug!(
+                "exec command:{:?} at:{:?}, elapsed:{:?}, result:{:?}",
+                req,
+                now,
+                now.elapsed(),
+                result
+            );
+            result?
+        }
         Ok(())
     }
 
@@ -559,7 +558,9 @@ impl Coordinator for CoordService {
                     }
                 }
 
-                futures::future::try_join_all(req_futures).await?;
+                for res in futures::future::join_all(req_futures).await {
+                    res?
+                }
 
                 return Ok(());
             }
