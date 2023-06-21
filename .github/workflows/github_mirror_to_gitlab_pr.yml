@@ -28,6 +28,7 @@ jobs:
          
     - uses: actions/checkout@v3
       with:
+        fetch-depth: 0
         repository: ${{ steps.set-var.outputs.source_repo1 }}
     - name: Mirrror + trigger CI
       uses: lutengda/gitlab-mirror-and-ci-action@master
