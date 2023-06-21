@@ -387,16 +387,17 @@ impl PointWriter {
             }
         }
 
-        let res = futures::future::try_join_all(requests).await.map(|_| ());
+        for res in futures::future::join_all(requests).await {
+            debug!(
+                "parallel write points on vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
+                now,
+                now.elapsed(),
+                res
+            );
+            res?
+        }
 
-        debug!(
-            "parallel write points on vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
-            now,
-            now.elapsed(),
-            res,
-        );
-
-        res
+        Ok(())
     }
 
     async fn write_to_node(
