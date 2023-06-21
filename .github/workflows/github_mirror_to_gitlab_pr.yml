@@ -22,14 +22,24 @@ jobs:
         source_repo="$(curl -s https://api.github.com/repos/cnosdb/cnosdb/pulls/$PR_NUMBER|jq -r .head.repo.full_name)"
         echo "source_repo: $source_repo"
         echo "source_repo1=$source_repo" >> $GITHUB_OUTPUT
+
         source_repo_commit_id="$(curl -s https://api.github.com/repos/cnosdb/cnosdb/pulls/$PR_NUMBER|jq -r .head.sha|cut -c 1-7)"
         echo "source repo commit id: $source_repo_commit_id"
         echo "source_repo_commit_id1=$source_repo_commit_id" >> $GITHUB_OUTPUT
+
+        source_repo_full_commit_id="$(curl -s https://api.github.com/repos/cnosdb/cnosdb/pulls/$PR_NUMBER|jq -r .head.sha)"
+        echo "source repo full commit id: $source_repo_full_commit_id"
+        echo "source_repo_full_commit_id1=$source_repo_full_commit_id" >> $GITHUB_OUTPUT
+
+        source_repo_branch="$(curl -s https://api.github.com/repos/cnosdb/cnosdb/pulls/$PR_NUMBER|jq -r .head.ref)"
+        echo "source_repo_branch: $source_repo_branch"
+        echo "source_repo_branch1=$source_repo_branch" >> $GITHUB_OUTPUT
          
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0
         repository: ${{ steps.set-var.outputs.source_repo1 }}
+        ref: ${{ steps.set-var.outputs.source_repo_full_commit_id1 }}
     - name: Mirrror + trigger CI
       uses: lutengda/gitlab-mirror-and-ci-action@master
       with:
