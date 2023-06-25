@@ -27,3 +27,7 @@ runs:
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler
         protoc --version
+    - name: Disable incremental compilation
+      # Disable incremental compilation
+      shell: bash
+      run: echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
