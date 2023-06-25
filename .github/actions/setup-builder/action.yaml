@@ -26,6 +26,11 @@ runs:
         apt-get update
         apt-get install -y protobuf-compiler
         protoc --version
+    - name: Install psmisc
+      # killall
+      shell: bash
+      run: |
+        apt-get install -y psmisc
     - name: Disable incremental compilation
       # Disable incremental compilation
       shell: bash
