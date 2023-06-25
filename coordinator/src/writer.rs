@@ -432,7 +432,7 @@ impl PointWriter {
                 span_recorder.span_ctx(),
             )
             .await;
-        if let Err(err @ CoordinatorError::FailoverNode { id: _ }) = result {
+        if let Err(err @ CoordinatorError::FailoverNode { .. }) = result {
             debug!(
                 "write data to remote {}({}) failed; write to hinted handoff!",
                 node_id, vnode_id
@@ -496,7 +496,10 @@ impl PointWriter {
             .meta_manager
             .get_node_conn(node_id)
             .await
-            .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?;
+            .map_err(|error| CoordinatorError::FailoverNode {
+                id: node_id,
+                error: error.to_string(),
+            })?;
         let timeout_channel = Timeout::new(channel, Duration::from_millis(self.timeout_ms));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
 
@@ -520,7 +523,10 @@ impl PointWriter {
             .await
             .map_err(|err| match err.code() {
                 Code::Internal => CoordinatorError::TskvError { source: err.into() },
-                _ => CoordinatorError::FailoverNode { id: node_id },
+                _ => CoordinatorError::FailoverNode {
+                    id: node_id,
+                    error: format!("{err:?}"),
+                },
             })?
             .into_inner();
 

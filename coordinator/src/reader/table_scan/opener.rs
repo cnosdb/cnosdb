@@ -97,17 +97,22 @@ impl VnodeOpener for TemporaryTableScanOpener {
                 })?;
 
                 let resp_stream = {
-                    let channel = meta
-                        .get_node_conn(node_id)
-                        .await
-                        .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?;
+                    let channel = meta.get_node_conn(node_id).await.map_err(|error| {
+                        CoordinatorError::FailoverNode {
+                            id: node_id,
+                            error: error.to_string(),
+                        }
+                    })?;
                     let timeout_channel =
                         Timeout::new(channel, Duration::from_millis(config.read_timeout_ms));
                     let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
                     client
                         .query_record_batch(request)
                         .await
-                        .map_err(|_| CoordinatorError::FailoverNode { id: node_id })?
+                        .map_err(|error| CoordinatorError::FailoverNode {
+                            id: node_id,
+                            error: format!("{error:?}"),
+                        })?
                         .into_inner()
                 };
 
