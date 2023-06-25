@@ -4,7 +4,6 @@ set -e
 # define environment
 export HTTP_HOST=${HTTP_HOST:-"127.0.0.1:8902"}
 export URL="http://${HTTP_HOST}/api/v1/ping"
-source "$HOME/.cargo/env"
 EXE_PATH="./target/test-ci/cnosdb"
 META_PATH="./target/test-ci/cnosdb-meta"
 CONF_DATA_1="./config/config_8902.toml"
