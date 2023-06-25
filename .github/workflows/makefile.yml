@@ -13,7 +13,10 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        rust: [nightly]
+        arch: [ amd64 ]
+        rust: [ nightly ]
+    container:
+      image: ${{ matrix.arch }}/rust
     steps:
       - uses: actions/checkout@v3
       - name: Prepare Rust Builder
@@ -34,7 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        arch: [ amd64 ]
         rust: [ stable ]
+    container:
+      image: ${{ matrix.arch }}/rust
     steps:
       - uses: actions/checkout@v3
       - name: Prepare Rust Builder
@@ -57,15 +63,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable]
+        arch: [ amd64 ]
+        rust: [ stable ]
+    container:
+      image: ${{ matrix.arch }}/rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezone
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
         with:
@@ -84,15 +89,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable]
+        arch: [ amd64 ]
+        rust: [ stable ]
+    container:
+      image: ${{ matrix.arch }}/rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezone
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
         with:
@@ -107,15 +111,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable]
+        arch: [ amd64 ]
+        rust: [ stable ]
+    container:
+      image: ${{ matrix.arch }}/rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezone
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
         with:
@@ -130,15 +133,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable]
+        arch: [ amd64 ]
+        rust: [ stable ]
+    container:
+      image: ${{ matrix.arch }}/rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezon
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
         with:
@@ -154,15 +156,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable]
+        arch: [ amd64 ]
+        rust: [ stable ]
+    container:
+      image: ${{ matrix.arch }}/rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezon
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
         with:
@@ -178,15 +179,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable]
+        arch: [ amd64 ]
+        rust: [ stable ]
+    container:
+      image: ${{ matrix.arch }}/rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezon
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
         with:
@@ -202,15 +202,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable]
+        arch: [ amd64 ]
+        rust: [ stable ]
+    container:
+      image: ${{ matrix.arch }}/rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezon
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
         with:
