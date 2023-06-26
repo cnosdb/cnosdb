@@ -34,10 +34,16 @@ impl Writer {
             // Get none as footer data.
             None
         } else {
-            let footer_data = match Reader::read_footer(path).await {
+            let footer_data = match Reader::read_footer(&path).await {
                 Ok((_, f)) => Some(f),
                 Err(Error::NoFooter) => None,
-                Err(e) => return Err(e),
+                Err(e) => {
+                    trace::error!(
+                        "Failed to read footer of record_file '{}': {e}",
+                        path.display()
+                    );
+                    return Err(e);
+                }
             };
 
             // For writed file, skip to footer position, next write is at (file.len() - footer_len).
@@ -105,8 +111,9 @@ impl Writer {
             self.cursor
                 .write_vec(&mut write_buf)
                 .await
-                .context(error::WriteFileSnafu {
+                .map_err(|e| Error::WriteFile {
                     path: self.path.clone(),
+                    source: e,
                 })?;
         self.file_size += written_size as u64;
         Ok(written_size)
@@ -120,8 +127,9 @@ impl Writer {
         self.cursor
             .read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf)
             .await
-            .context(error::ReadFileSnafu {
+            .map_err(|e| Error::ReadFile {
                 path: self.path.clone(),
+                source: e,
             })?;
         let crc = crc32fast::hash(&buf);
 
@@ -132,8 +140,9 @@ impl Writer {
         self.cursor
             .write(&footer)
             .await
-            .context(error::WriteFileSnafu {
+            .map_err(|e| Error::WriteFile {
                 path: self.path.clone(),
+                source: e,
             })
     }
 

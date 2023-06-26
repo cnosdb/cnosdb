@@ -452,6 +452,7 @@ impl WalManager {
     ) -> Result<bool> {
         let mut seq_gt_min_seq = false;
         let decoder = get_str_codec(Encoding::Zstd);
+        let mut decoded_data = Vec::new();
         loop {
             match reader.next_wal_entry().await {
                 Ok(Some(e)) => {
@@ -462,9 +463,13 @@ impl WalManager {
                     seq_gt_min_seq = true;
                     match e.typ {
                         WalEntryType::Write => {
-                            let mut dst = Vec::new();
-                            decoder.decode(e.data(), &mut dst).context(DecodeSnafu)?;
-                            debug_assert_eq!(dst.len(), 1);
+                            decoded_data.truncate(0);
+                            decoder
+                                .decode(e.data(), &mut decoded_data)
+                                .context(DecodeSnafu)?;
+                            if decoded_data.is_empty() {
+                                continue;
+                            }
                             let vnode_id = e.vnode_id();
                             if let Some(tsf_last_seq) = vnode_last_seq_map.get(&vnode_id) {
                                 // If `seq_no` of TsFamily is greater than or equal to `seq`,
@@ -483,7 +488,7 @@ impl WalManager {
                                     user: None,
                                     password: None,
                                 }),
-                                points: dst[0].to_vec(),
+                                points: decoded_data[0].to_vec(),
                             };
                             engine
                                 .write_from_wal(vnode_id, precision, req, seq)

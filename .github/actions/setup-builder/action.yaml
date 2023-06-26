@@ -1,10 +1,5 @@
 name: Prepare Rust Builder
 description: 'Prepare Rust Build Environment'
-inputs:
-  rust-version:
-    description: 'version of rust to install (e.g. stable)'
-    required: true
-    default: 'stable'
 runs:
   using: "composite"
   steps:
@@ -14,16 +9,25 @@ runs:
         curl -o flatbuffers.zip -sL https://github.com/google/flatbuffers/releases/download/v22.9.29/Linux.flatc.binary.clang++-12.zip
         unzip  flatbuffers.zip
         mv flatc /usr/local/bin
-    - name: Setup Rust toolchain
-      shell: bash
-      run: |
-        echo "Installing ${{ inputs.rust-version }}"
-        source "$HOME/.cargo/env"
-        rustup toolchain install ${{ inputs.rust-version }}
-        rustup default ${{ inputs.rust-version }}
     - name: Install Protoc
       shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
+        apt-get update
+        apt-get install -y protobuf-compiler
         protoc --version
+    - name: Install psmisc
+      # killall
+      shell: bash
+      run: |
+        apt-get install -y psmisc
+    - name: Disable incremental compilation
+      # Disable incremental compilation
+      shell: bash
+      run: echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
+    - name: Fixup git permissions
+      # https://github.com/actions/checkout/issues/766
+      shell: bash
+      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    - name: Enable backtraces
+      shell: bash
+      run: echo "RUST_BACKTRACE=1" >> $GITHUB_ENV

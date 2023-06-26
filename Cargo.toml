@@ -106,7 +106,6 @@ sled = "0.34.7"
 snafu = "0.7"
 snap = "1.0.0"
 static_assertions = "1.1"
-surf = { version = "2.3.2", features = ["curl-client", "encoding"], default-features = false }
 sys-info = "0.9.1"
 sysinfo = "0.28.4"
 tempfile = "3"
@@ -143,7 +142,7 @@ opentelemetry_api = { version = "0.19.0" }
 
 [workspace.package]
 edition = "2021"
-version = "2.3.0"
+version = "2.3.1"
 
 # When you want to debug a third-party library,
 # you can use patch,
