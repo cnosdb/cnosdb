@@ -105,10 +105,11 @@ pub enum CoordinatorError {
         id: u32,
     },
 
-    #[snafu(display("Node failover: {}", id))]
+    #[snafu(display("Node failover: {}, error: {}", id, error))]
     #[error_code(code = 16)]
     FailoverNode {
         id: u64,
+        error: String,
     },
 
     #[snafu(display("Request timeout: {}", id))]

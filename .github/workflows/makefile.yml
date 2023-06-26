@@ -11,15 +11,18 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      matrix:
-        rust: [nightly]
+    container:
+      image: rust
     steps:
       - uses: actions/checkout@v3
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
-        with:
-          rust-version: ${{ matrix.rust }}
+      - name: Setup Rust toolchain
+        shell: bash
+        run: |
+          echo "Installing nightly"
+          rustup toolchain install nightly
+          rustup default nightly
       - name: Install clippy rustfmt
         run: |
           rustup component add clippy
@@ -32,15 +35,12 @@ jobs:
   unit-test:
     name: "Unit Test"
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [ stable ]
+    container:
+      image: rust
     steps:
       - uses: actions/checkout@v3
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
-        with:
-          rust-version: ${{ matrix.rust }}
       - name: start meta
         shell: bash
         run: |
@@ -55,21 +55,14 @@ jobs:
   integration-test:
     name: "Integration Test"
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
+    container:
+      image: rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezone
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
-        with:
-          rust-version: ${{ matrix.rust }}
       - name: start meta
         shell: bash
         run: |
@@ -82,21 +75,14 @@ jobs:
   integration-test-singleton:
     name: "Integration Test Singleton"
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
+    container:
+      image: rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezone
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
-        with:
-          rust-version: ${{ matrix.rust }}
       - name: Test
         shell: bash
         run: |
@@ -105,21 +91,14 @@ jobs:
   integration-test-3meta:
     name: "Integration Test 3meta"
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
+    container:
+      image: rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezone
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
-        with:
-          rust-version: ${{ matrix.rust }}
       - name: Test
         shell: bash
         run: |
@@ -128,93 +107,30 @@ jobs:
   integration-test-3m2d:
     name: "Integration Test 3meta 2data cluster"
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
+    container:
+      image: rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezon
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
-        with:
-          rust-version: ${{ matrix.rust }}
       - name: Test
         shell: bash
         run: |
           bash ./query_server/test/script/start_and_test_all.sh 3meta2data
 
-
-  integration-test-1m2d:
-    name: "Integration Test 1meta 2data cluster"
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: true
-      - name: Setup timezon
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
-      - name: Prepare Rust Builder
-        uses: ./.github/actions/setup-builder
-        with:
-          rust-version: ${{ matrix.rust }}
-      - name: Test
-        shell: bash
-        run: |
-          bash ./query_server/test/script/start_and_test_all.sh 1meta2data
-  
-
-  integration-test-1m1d:
-    name: "Integration Test 1meta 1data cluster"
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: true
-      - name: Setup timezon
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
-      - name: Prepare Rust Builder
-        uses: ./.github/actions/setup-builder
-        with:
-          rust-version: ${{ matrix.rust }}
-      - name: Test
-        shell: bash
-        run: |
-          bash ./query_server/test/script/start_and_test_all.sh 1meta1data
-
-
   integration-test-Separation-of-storage-and-computing:
     name: "Integration Test Separation of storage and computing"
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
+    container:
+      image: rust
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Setup timezon
-        uses: zcong1993/setup-timezone@master
-        with:
-          timezone: Asia/Shanghai
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
-        with:
-          rust-version: ${{ matrix.rust }}
       - name: Test
         shell: bash
         run: |
