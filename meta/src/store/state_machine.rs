@@ -419,7 +419,7 @@ impl StateMachine {
 
     pub fn process_read_node_metrics(&self, cluster: &str) -> MetaResult<Vec<NodeMetrics>> {
         let response: Vec<NodeMetrics> = self
-            .children_data::<NodeMetrics>(&KeyPath::data_nodes(cluster))?
+            .children_data::<NodeMetrics>(&KeyPath::data_nodes_metrics(cluster))?
             .into_values()
             .collect();
 
