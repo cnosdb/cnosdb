@@ -1,9 +1,10 @@
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use openraft::error::{ClientWriteError, ForwardToLeader, NetworkError, RPCError, RemoteError};
 use openraft::raft::ClientWriteResponse;
 use openraft::AnyError;
+use parking_lot::RwLock;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +21,7 @@ pub type WriteError =
 pub struct MetaHttpClient {
     inner: Arc<reqwest::Client>,
     addrs: Vec<String>,
-    pub leader: Arc<Mutex<String>>,
+    pub leader: Arc<RwLock<String>>,
 }
 
 impl MetaHttpClient {
@@ -34,9 +35,9 @@ impl MetaHttpClient {
         let leader_addr = addrs[0].clone();
 
         Self {
-            inner: Arc::new(reqwest::Client::new()),
             addrs,
-            leader: Arc::new(Mutex::new(leader_addr)),
+            inner: Arc::new(reqwest::Client::new()),
+            leader: Arc::new(RwLock::new(leader_addr)),
         }
     }
 
@@ -78,8 +79,8 @@ impl MetaHttpClient {
 
     //////////////////////////////////////////////////
 
-    fn switch_leader(&self) {
-        let mut t = self.leader.lock().unwrap();
+    async fn switch_leader(&self) {
+        let mut t = self.leader.write();
 
         if let Ok(index) = self.addrs.binary_search(&t) {
             let index = (index + 1) % self.addrs.len();
@@ -132,7 +133,7 @@ impl MetaHttpClient {
                 }) = forward_err_res
                 {
                     {
-                        let mut t = self.leader.lock().unwrap();
+                        let mut t = self.leader.write();
                         *t = leader_node.api_addr;
                     }
 
@@ -141,10 +142,10 @@ impl MetaHttpClient {
                         continue;
                     }
                 } else {
-                    self.switch_leader();
+                    self.switch_leader().await;
                 }
             } else {
-                self.switch_leader();
+                self.switch_leader().await;
             }
 
             return Err(rpc_err);
@@ -161,7 +162,7 @@ impl MetaHttpClient {
         Resp: Serialize + DeserializeOwned,
         Err: std::error::Error + Serialize + DeserializeOwned,
     {
-        let url = format!("http://{}/{}", self.leader.lock().unwrap(), uri);
+        let url = format!("http://{}/{}", self.leader.read(), uri);
 
         let resp = if let Some(r) = req {
             self.inner.post(url.clone()).json(r)
