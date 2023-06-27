@@ -1,32 +1,40 @@
-// #![cfg(feature = "cn_e2e_tests")]
+#![cfg(feature = "coorfinator_e2e_test")]
 #![allow(dead_code)]
-use std::io::{self, IoSlice, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
-// use std::sync::Arc;
-use std::thread;
+use std::{thread, io};
 use std::time::Duration;
 
-// pub use arrow_schema::datatype;
 use meta::{client, store::command};
 use models::schema::{DatabaseSchema, Tenant};
 use sysinfo::{ProcessExt, System, SystemExt};
 
-// #[cfg(feature = "cn_e2e_test")]
+#[cfg(feature = "coorfinator_e2e_test")]
 #[cfg(test)]
 mod tests {
-    // use std::os::unix::thread;
-    use std::process::{Command, Output};
-    use std::result;
 
     use meta::client;
     use meta::store::command;
     use models::schema::{DatabaseOptions, DatabaseSchema, Duration, Precision};
+    // use tonic::body;
 
     use super::*;
+    #[cfg(feature = "coorfinator_e2e_test")]
+    #[tokio::test]
+    #[ignore = "for debug test cases only"]
+    async fn test_20230602_1551() {
+        let output = exec_curl("curl www.baidu.com", "").unwrap();
+        // let output = query("tenant1", "tenant1db1");
+        println!("status: {} \nstdout: {} \nstderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
 
+    #[cfg(feature = "coorfinator_e2e_test")]
     #[tokio::test]
     #[ignore = "for debug test cases only"]
     async fn test_20230602_1638() {
@@ -46,7 +54,7 @@ mod tests {
         );
         println!("{curl}");
         let body = format!("tb1,tag1=tag1,tag2=tag2 field1={}", 1);
-        let output = exec_curl_post(&curl, &body).unwrap();
+        let output = exec_curl(&curl, &body).unwrap();
         println!("output: {:?}", output);
         println!("status: {}", output.status);
         println!("stdout: {:?}", String::from_utf8_lossy(&output.stdout));
@@ -59,8 +67,6 @@ mod tests {
         clean_env();
         // start cluster
         start_cluster();
-        // let opt: Output = start_cluster();
-        // assert!(opt.status.code() == Some(0));
         // create  tenants
         prepare().await;
         if !prepare_data().await {
@@ -71,14 +77,9 @@ mod tests {
             let tenant = format!("tenant{}", i);
             let db = format!("tenant{}db1", i);
             let output = query(&tenant, &db);
-            // assert!(output.status.code() == Some(0));
-            // println!("output: {}", String::from_utf8_lossy(&output.stdout));
-            // assert!(String::from_utf8_lossy(&output.stdout).contains("100"));
-            // assert!(String::from_utf8_lossy(&output.stdout).contains("200 OK"));
             let result_csv = String::from_utf8_lossy(&output.stdout);
             println!("Result CSV: {}", &result_csv);
-            let line_10 = result_csv.lines().skip(9).next();
-            // println!("lines {}: {:?}", i, lines.next());
+            let line_10 = result_csv.lines().nth(6);
             assert_eq!(line_10, Some("100"));
         }
 
@@ -89,12 +90,9 @@ mod tests {
     #[tokio::test]
     async fn test_replica() {
         // clean env
-        kill_process("cnosdb-meta");
-        kill_process("cnosdb");
+        clean_env();
         // start cluster
         start_cluster();
-        // let opt: Output = start_cluster();
-        // assert!(opt.status.code() == Some(0));
         // database option schema
         let dboption = DatabaseOptions::new(
             Duration::new("365"),
@@ -112,33 +110,29 @@ mod tests {
             dbschema,
         );
         // create db
-        let _rsp = cli
+        let rsp = cli
             .write::<command::TenaneMetaDataResp>(&req)
             .await
             .unwrap();
-        let api = "http://127.0.0.1:8901/debug".to_string();
-        let output = Command::new("curl")
-            .args([&api])
-            .output()
-            .expect("failed to execute process");
+        println!("rsp : {:?}", rsp);
+        println!("rsp : {:?}", rsp.status.code);
+        assert!(rsp.status.code == 0);
+        let cmd = "curl http://127.0.0.1:8901/debug";
+        let output = exec_curl(cmd, "").unwrap();
         assert!(output.status.code() == Some(0));
         print!("output: {}", String::from_utf8_lossy(&output.stdout));
         assert!(String::from_utf8_lossy(&output.stdout).contains("\"replica\":2"));
         // todo: check replica
         // clean env
-        kill_process("cnosdb-meta");
-        kill_process("cnosdb");
+        clean_env();
     }
 
     #[tokio::test]
     async fn test_shard() {
         // clean env
-        kill_process("cnosdb-meta");
-        kill_process("cnosdb");
+        clean_env();
         // start cluster
         start_cluster();
-        // let opt: Output = start_cluster();
-        // assert!(opt.status.code() == Some(0));
         // database option schema
         let dboption = DatabaseOptions::new(
             Duration::new("365"),
@@ -160,30 +154,28 @@ mod tests {
             .write::<command::TenaneMetaDataResp>(&req)
             .await
             .unwrap();
-        let api = "http://127.0.0.1:8901/debug".to_string();
-        let output = Command::new("curl")
-            .args([&api])
-            .output()
-            .expect("failed to execute process");
+        let cmd = "curl http://127.0.0.1:8901/debug";
+        let output = exec_curl(cmd, "").unwrap();
+        assert!(output.status.code() == Some(0));
+        // let api = "http://127.0.0.1:8901/debug".to_string();
+        // let output = Command::new("curl")
+        //     .args([&api])
+        //     .output()
+        //     .expect("failed to execute process");
         assert!(output.status.code() == Some(0));
         print!("output: {}", String::from_utf8_lossy(&output.stdout));
         assert!(String::from_utf8_lossy(&output.stdout).contains("\"shard_num\":2"));
 
         // clean env
-        kill_process("cnosdb-meta");
-        kill_process("cnosdb");
+        clean_env();
     }
 
     #[tokio::test]
     async fn test_ttl() {
         // clean env
-        kill_process("cnosdb-meta");
-        kill_process("cnosdb");
+        clean_env();
         // start cluster
         start_cluster();
-        // let opt: Output = start_cluster();
-        // assert!(opt.status.code() == Some(0));
-        // database option schema
         let dboption = DatabaseOptions::new(
             Duration::new("1"),
             Some(2),
@@ -204,62 +196,35 @@ mod tests {
             .write::<command::TenaneMetaDataResp>(&req)
             .await
             .unwrap();
-        let api = "http://127.0.0.1:8901/debug".to_string();
-        let output = Command::new("curl")
-            .args([&api])
-            .output()
-            .expect("failed to execute process");
+        let cmd = "curl http://127.0.0.1:8901/debug";
+        let output = exec_curl(cmd, "").unwrap();
         assert!(output.status.code() == Some(0));
         print!("output: {}", String::from_utf8_lossy(&output.stdout));
         assert!(String::from_utf8_lossy(&output.stdout).contains("\"time_num\":1"));
         // write data
-        let api: String = "http://127.0.0.1:8902/api/v1/write?db=db1".to_string();
-        let output = Command::new("curl")
-            .args([
-                "-i",
-                "-u",
-                "root:",
-                "-XPOST",
-                &api,
-                "-d",
-                "tb1,tag1=tag1,tag2=tag2 field1=1 1683259054000000000",
-            ])
-            .output()
-            .expect("failed to execute process");
+        let cmd = "curl -i -u root: -XPOST http://127.0.0.1:8902/api/v1/write?db=db1";
+        let body = "tb1,tag1=tag1,tag2=tag2 field1=1 1683259054000000000";
+        let output = exec_curl(cmd, body).unwrap();
         assert!(output.status.code() == Some(0));
         assert!(
             String::from_utf8_lossy(&output.stdout).contains("write expired time data not permit")
         );
-
-        let output = Command::new("curl")
-            .args([
-                "-i",
-                "-u",
-                "root:",
-                "-XPOST",
-                &api,
-                "-d",
-                "tb1,tag1=tag1,tag2=tag2 field1=2",
-            ])
-            .output()
-            .expect("failed to execute process");
+        let cmd = "curl -i -u root: -XPOST http://127.0.0.1:8902/api/v1/write?db=db1";
+        let body = "tb1,tag1=tag1,tag2=tag2 field1=2";
+        let output = exec_curl(cmd, body).unwrap();
         assert!(output.status.code() == Some(0));
         print!("output: {}", String::from_utf8_lossy(&output.stdout));
         assert!(String::from_utf8_lossy(&output.stdout).contains("200 OK"));
         // clean env
-        kill_process("cnosdb-meta");
-        kill_process("cnosdb");
+        clean_env();
     }
 
     #[tokio::test]
     async fn test_balance() {
         // clean env
-        kill_process("cnosdb-meta");
-        kill_process("cnosdb");
+        clean_env();
         // start cluster
         start_cluster();
-        // let opt: Output = start_cluster();
-        // assert!(opt.status.code() == Some(0));
         // database option schema
         let dboption = DatabaseOptions::new(
             Duration::new("1"),
@@ -283,27 +248,20 @@ mod tests {
             .unwrap();
 
         let api = "http://127.0.0.1:8902/api/v1/write?db=db1".to_string();
-        for j in 0..10000 {
-            let output = Command::new("curl")
-                .args([
-                    "-i",
-                    "-u",
-                    "root:",
-                    "-XPOST",
-                    &api,
-                    "-d",
-                    &format!("tb1,tag1=tag1,tag2=tag2 field1={}", j),
-                ])
-                .output()
-                .expect("failed to execute process");
-            println!("status: {}", output.status);
-            println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
-            println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+        println!("before write data");
+        for j in 0..10 {
+            println!("writeing data");
+            let body = format!("tb1,tag1=tag1,tag2=tag2 field1={}", j);
+            println!("body: {}", &body);
+            let cmd = format!("curl -i -u root: -XPOST {}", &api);
+            println!("cmd: {}", &cmd);
+            let output = exec_curl(&cmd, &body).unwrap();
+            println!("status: {:?}", output);
         }
+        println!("after write data");
         // todo check balance
         // clean env
-        kill_process("cnosdb-meta");
-        kill_process("cnosdb");
+        clean_env();
     }
 }
 
@@ -331,6 +289,8 @@ async fn prepare() {
             tenant.clone(),
             DatabaseSchema::new(&tenant, &db),
         );
+        thread::sleep(Duration::from_secs(3));
+        println!("db req{:?}", req);
         // create db
         let rsp = cli
             .write::<command::TenaneMetaDataResp>(&req)
@@ -341,14 +301,6 @@ async fn prepare() {
     }
 }
 
-// #[allow(dead_code)]
-// fn start_cluster() -> std::process::Output {
-//     let output: Output = Command::new("bash")
-//         .args(["-c", "cd ../ && ./run_cluster.sh"])
-//         .output()
-//         .expect("failed to execute process");
-//     output
-// }
 
 #[allow(dead_code)]
 fn kill_process(process_name: &str) {
@@ -365,21 +317,22 @@ fn kill_process(process_name: &str) {
     }
 }
 
+// clean env
 #[allow(dead_code)]
 fn clean_env() {
+    println!("Cleaning environment...");
     kill_process("cnosdb");
     kill_process("cnosdb-meta");
     let _ = std::fs::remove_dir_all("/tmp/cnosdb");
+    println!("Clean environment completed.");
 }
+
+// prepare data
 #[allow(dead_code)]
 async fn prepare_data() -> bool {
     let mut handles: Vec<thread::JoinHandle<()>> = vec![];
     let has_failed = Arc::new(AtomicBool::new(false));
     for i in 0..5 {
-        // let api: String = format!(
-        //     "http://127.0.0.1:8902/api/v1/write?tenant=tenant{}&&db=tenant{}db1",
-        //     i, i
-        // );
         let curl = format!(
             r#"curl -u root: -XPOST -w %{{http_code}} -s -o /dev/null
             http://127.0.0.1:8902/api/v1/write?tenant=tenant{}&db=tenant{}db1"#,
@@ -395,7 +348,7 @@ async fn prepare_data() -> bool {
                 let body = format!("tb1,tag1=tag1,tag2=tag2 field1={}", j);
                 let mut write_fail_count = 0;
                 while write_fail_count < 3 {
-                    let output = match exec_curl_post(&curl, &body) {
+                    let output = match exec_curl(&curl, &body) {
                         Ok(o) => o,
                         Err(e) => {
                             write_fail_count += 1;
@@ -403,33 +356,11 @@ async fn prepare_data() -> bool {
                             continue;
                         }
                     };
-                    // let output = Command::new("curl")
-                    //     .args([
-                    //         "-i",
-                    //         "-u",
-                    //         "root:",
-                    //         "-XPOST",
-                    //         &api,
-                    //         "-d",
-                    //         &format!("tb1,tag1=tag1,tag2=tag2 field1={}", j),
-                    //         "-w",
-                    //         "%{http_code}",
-                    //         "-s",
-                    //         "-o",
-                    //         "/dev/null",
-                    //     ])
-                    //     .output()
-                    //     .expect("failed to execute process");
-                    // println!("output : {:?}", output);
-                    // io::stdout()
-                    //     .write_vectored(&[
-                    //         IoSlice::new(format!("{}\n", &output.status).as_bytes()),
-                    //         IoSlice::new(&output.stdout),
-                    //         IoSlice::new(b"\n"),
-                    //         IoSlice::new(&output.stderr),
-                    //         IoSlice::new(b"\n"),
-                    //     ])
-                    //     .unwrap();
+                    println!("status: {} \nstdout: {} \nstderr: {}",
+                        output.status,
+                        String::from_utf8_lossy(&output.stdout),
+                        String::from_utf8_lossy(&output.stderr),
+                    );
                     if output.stdout == b"200" {
                         break;
                     } else {
@@ -454,6 +385,7 @@ async fn prepare_data() -> bool {
     !has_failed.load(atomic::Ordering::SeqCst)
 }
 
+// query data
 #[allow(dead_code)]
 fn query(tenant: &str, db: &str) -> Output {
     let curl = format!(
@@ -462,41 +394,56 @@ fn query(tenant: &str, db: &str) -> Output {
         tenant, db
     );
     let body = "select count(*) from tb1";
-    exec_curl_post(&curl, body).unwrap()
-    // let output = Command::new("curl")
-    //     .args([
-    //         "-i",
-    //         "-u",
-    //         "root:",
-    //         "-XPOST",
-    //         &api,
-    //         "-d",
-    //         "select count(*) from tb1",
-    //     ])
-    //     .output()
-    //     .expect("failed to execute process");
-    // output
+    exec_curl(&curl, body).unwrap()
 }
 
 #[test]
 #[ignore = "for debug test cases only"]
 fn test_20230602_1551() {
     let output = query("tenant", "db");
-    io::stdout().write(&output.stdout).unwrap();
-    io::stdout().write(&output.stderr).unwrap();
+    println!("status: {} \nstdout: {} \nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
 }
 
-fn exec_curl_post(cmd: &str, body: &str) -> io::Result<Output> {
+// execute curl command
+fn exec_curl(cmd: &str, body: &str) -> io::Result<Output> {
     let cmd_args = cmd
         .split(&[' ', '\n', '\r'])
         .filter(|s| !s.is_empty())
         .collect::<Vec<&str>>();
     let mut command = Command::new(cmd_args[0]);
-    command.args(cmd_args[1..].into_iter().chain(["-d", body].iter()));
-    // println!("{:?}", command);
+    if body.is_empty() {
+        command.args(cmd_args[1..].iter());
+    } else {
+        command.args(cmd_args[1..].iter().chain(["-d", body].iter()));
+    }
+    println!("Executing command 'curl': {:?}", command);
     command.output()
 }
 
+
+// wait cnosdb startup, check ping api
+fn wait_cnosdb_startup(host: &str) {
+    let pint_api = format!("http://{host}/api/v1/ping");
+    let startup_time = std::time::Instant::now();
+    loop {
+        if let Ok(output) = exec_curl(format!("curl {pint_api}").as_str(), "") {
+            if output.status.success() {
+                break;
+            }
+            eprintln!("Execution 'curl {pint_api}' returned failure after {:?} seconds", startup_time.elapsed().as_secs());
+            thread::sleep(Duration::from_secs(3));
+        } else {
+            eprintln!("Execution 'curl {pint_api}' failed after {:?} seconds", startup_time.elapsed().as_secs());
+            thread::sleep(Duration::from_secs(1));
+        }
+    }
+}
+
+// start meta node 
 fn start_meta<P: AsRef<Path>>(workspace_dir: P) -> [Child; 3] {
     let workspace_dir = workspace_dir.as_ref();
     let mut cargo_build = Command::new("cargo");
@@ -585,6 +532,7 @@ fn start_meta<P: AsRef<Path>>(workspace_dir: P) -> [Child; 3] {
     [meta1, meta2, meta3]
 }
 
+// start data node 
 fn start_data<P: AsRef<Path>>(workspace_dir: P) -> [Child; 2] {
     let workspace_dir = workspace_dir.as_ref();
     let mut cargo_build = Command::new("cargo");
@@ -622,15 +570,22 @@ fn start_data<P: AsRef<Path>>(workspace_dir: P) -> [Child; 2] {
         .spawn()
         .expect("failed to execute cnosdb process");
 
+    wait_cnosdb_startup("127.0.0.1:8902");
+    wait_cnosdb_startup("127.0.0.1:8912");
+
     [data1, data2]
 }
 
+
+// start cluster 
 #[allow(dead_code)]
 #[test]
 fn start_cluster() {
-    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_dir = crate_dir.parent().unwrap();
 
-    start_meta(&workspace_dir);
+    start_meta(workspace_dir);
     start_data(workspace_dir);
+    // sleep 3 seconds
+    thread::sleep(Duration::from_secs(3));
 }

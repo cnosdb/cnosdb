@@ -2247,8 +2247,8 @@ name = "e2e_test"
 version = "2.3.0"
 dependencies = [
  "actix-rt",
- "arrow-schema",
  "arrow-flight",
+ "arrow-schema",
  "datafusion",
  "flatbuffers 22.12.6",
  "futures",

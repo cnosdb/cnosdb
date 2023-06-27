@@ -24,3 +24,7 @@ tokio-stream = { workspace = true }
 datafusion = { workspace = true }
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
+
+[features]
+default = []
+coorfinator_e2e_test = []
