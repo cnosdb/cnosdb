@@ -966,7 +966,7 @@ mod test {
         let wal_dir = "/tmp/test/repair/1/wal".to_string();
         let log_dir = "/tmp/test/repair/1/log".to_string();
         // trace::init_default_global_tracing(&log_dir, "test.log", "debug");
-        let _ = std::fs::remove_dir(&base_dir);
+        let _ = std::fs::remove_dir_all(&base_dir);
         let tenant_name = "cnosdb".to_string();
         let database_name = "test_get_vnode_hash_tree".to_string();
         let vnode_id: TseriesFamilyId = 1;

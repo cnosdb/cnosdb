@@ -688,17 +688,17 @@ impl Engine for TsKv {
 
     async fn add_table_column(
         &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        new_column: TableColumn,
+        _tenant: &str,
+        _database: &str,
+        _table: &str,
+        _new_column: TableColumn,
     ) -> Result<()> {
-        let db = self.get_db(tenant, database).await?;
-        let db = db.read().await;
-        let sids = db.get_table_sids(table).await?;
-        for (_ts_family_id, ts_family) in db.ts_families().iter() {
-            ts_family.read().await.add_column(&sids, &new_column);
-        }
+        // let db = self.get_db(tenant, database).await?;
+        // let db = db.read().await;
+        // let sids = db.get_table_sids(table).await?;
+        // for (_ts_family_id, ts_family) in db.ts_families().iter() {
+        //     ts_family.read().await.add_column(&sids, &new_column);
+        // }
         Ok(())
     }
 
@@ -730,22 +730,22 @@ impl Engine for TsKv {
 
     async fn change_table_column(
         &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        column_name: &str,
-        new_column: TableColumn,
+        _tenant: &str,
+        _database: &str,
+        _table: &str,
+        _column_name: &str,
+        _new_column: TableColumn,
     ) -> Result<()> {
-        let db = self.get_db(tenant, database).await?;
-        let db = db.read().await;
-        let sids = db.get_table_sids(table).await?;
+        // let db = self.get_db(tenant, database).await?;
+        // let db = db.read().await;
+        // let sids = db.get_table_sids(table).await?;
 
-        for (_ts_family_id, ts_family) in db.ts_families().iter() {
-            ts_family
-                .read()
-                .await
-                .change_column(&sids, column_name, &new_column);
-        }
+        // for (_ts_family_id, ts_family) in db.ts_families().iter() {
+        //     ts_family
+        //         .read()
+        //         .await
+        //         .change_column(&sids, column_name, &new_column);
+        // }
         Ok(())
     }
 

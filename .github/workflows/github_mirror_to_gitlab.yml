@@ -1,14 +1,15 @@
 name: Mirror and run GitLab CI
 
 on:
-  [push, workflow_dispatch]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/main'
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
     - name: Mirrror + trigger CI
       uses: lutengda/gitlab-mirror-and-ci-action@master
       with:
@@ -16,6 +17,7 @@ jobs:
       env:
         FOLLOW_TAGS: "false"
         FORCE_PUSH: "true"
+        LOCAL_GITHUB_REF: ${{ github.ref }}
         GITLAB_HOSTNAME: "43.247.178.238:8280"
         GITLAB_USERNAME: "root"
         GITLAB_PASSWORD: ${{ secrets.GITLAB_PASSWORD }}

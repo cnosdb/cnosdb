@@ -142,8 +142,7 @@ impl BinlogWriter {
         // Get file and check if new file
         let mut new_file = false;
         let file = if file_manager::try_exists(path) {
-            let f = file_manager::get_file_manager()
-                .open_file(path)
+            let f = file_manager::open_create_file(path)
                 .await
                 .map_err(|e| IndexError::FileErrors { msg: e.to_string() })?;
             if f.is_empty() {
@@ -152,8 +151,7 @@ impl BinlogWriter {
             f
         } else {
             new_file = true;
-            file_manager::get_file_manager()
-                .create_file(path)
+            file_manager::create_file(path)
                 .await
                 .map_err(|e| IndexError::FileErrors { msg: e.to_string() })?
         };
