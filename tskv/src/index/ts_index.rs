@@ -80,7 +80,7 @@ impl TSIndex {
     }
 
     async fn recover_from_file(&mut self, reader_file: &mut BinlogReader) -> IndexResult<()> {
-        let mut max_id = 0;
+        let mut max_id = self.incr_id.load(Ordering::Relaxed);
         while let Some(block) = reader_file.next_block().await? {
             if block.data_len > 0 {
                 // add series
