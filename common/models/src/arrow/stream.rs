@@ -34,10 +34,14 @@ where
             let sender = sender.clone();
             let task = async move {
                 while let Some(item) = stream.next().await {
+                    let exit = item.is_err();
                     // If send fails, stream being torn down,
                     // there is no place to send the error.
                     if sender.send(item).await.is_err() {
                         warn!("Stopping execution: output is gone, ParallelMergeStream cancelling");
+                        return;
+                    }
+                    if exit {
                         return;
                     }
                 }
