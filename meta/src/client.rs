@@ -4,9 +4,9 @@ use std::sync::Arc;
 use openraft::error::{ClientWriteError, ForwardToLeader, NetworkError, RPCError, RemoteError};
 use openraft::raft::ClientWriteResponse;
 use openraft::AnyError;
+use parking_lot::RwLock;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
@@ -80,7 +80,7 @@ impl MetaHttpClient {
     //////////////////////////////////////////////////
 
     async fn switch_leader(&self) {
-        let mut t = self.leader.write().await;
+        let mut t = self.leader.write();
 
         if let Ok(index) = self.addrs.binary_search(&t) {
             let index = (index + 1) % self.addrs.len();
@@ -133,7 +133,7 @@ impl MetaHttpClient {
                 }) = forward_err_res
                 {
                     {
-                        let mut t = self.leader.write().await;
+                        let mut t = self.leader.write();
                         *t = leader_node.api_addr;
                     }
 
@@ -162,7 +162,7 @@ impl MetaHttpClient {
         Resp: Serialize + DeserializeOwned,
         Err: std::error::Error + Serialize + DeserializeOwned,
     {
-        let url = format!("http://{}/{}", self.leader.read().await, uri);
+        let url = format!("http://{}/{}", self.leader.read(), uri);
 
         let resp = if let Some(r) = req {
             self.inner.post(url.clone()).json(r)
