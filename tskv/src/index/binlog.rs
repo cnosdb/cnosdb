@@ -15,7 +15,7 @@ const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x02];
 const SEGMENT_FILE_MAX_SIZE: u64 = 64 * 1024 * 1024;
 const BLOCK_HEADER_SIZE: usize = 16;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct SeriesKeyBlock {
     pub ts: i64,
     pub series_id: u32,
@@ -360,4 +360,61 @@ pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
     file.set_len(max_can_repair as u64)?;
 
     Ok(())
+}
+
+mod test {
+
+    #[tokio::test]
+    async fn test_index_log_read_write() {
+        use std::path::PathBuf;
+
+        use crate::file_utils::make_index_binlog_file;
+        use crate::index::binlog::{BinlogReader, BinlogWriter, IndexBinlog, SeriesKeyBlock};
+
+        let dir = "/tmp/cnosdb/index_log_test";
+        let _ = std::fs::remove_dir_all(dir);
+
+        let path = PathBuf::from(dir);
+        let mut index = IndexBinlog::new(path.clone()).await.unwrap();
+
+        let block1 = SeriesKeyBlock {
+            ts: 10001,
+            series_id: 101,
+            data_len: 3,
+            data: "abc".into(),
+        };
+
+        let block2 = SeriesKeyBlock {
+            ts: 10002,
+            series_id: 102,
+            data_len: 3,
+            data: "efg".into(),
+        };
+
+        let block3 = SeriesKeyBlock {
+            ts: 10003,
+            series_id: 103,
+            data_len: 3,
+            data: "hij".into(),
+        };
+
+        index.write(&block1.encode()).await.unwrap();
+        index.write(&block2.encode()).await.unwrap();
+        index.write(&block3.encode()).await.unwrap();
+
+        let name = make_index_binlog_file(path, 1);
+        let tmp_file = BinlogWriter::open(1, name).await.unwrap();
+        let mut reader_file = BinlogReader::new(1, tmp_file.file.into()).await.unwrap();
+
+        assert_eq!(block1, reader_file.next_block().await.unwrap().unwrap());
+        assert_eq!(block2, reader_file.next_block().await.unwrap().unwrap());
+        assert_eq!(block3, reader_file.next_block().await.unwrap().unwrap());
+        assert_eq!(None, reader_file.next_block().await.unwrap());
+
+        index.advance_write_offset(0).await.unwrap();
+
+        assert_eq!(None, reader_file.next_block().await.unwrap());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
