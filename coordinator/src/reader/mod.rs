@@ -11,7 +11,7 @@ use futures::future::BoxFuture;
 use futures::{ready, FutureExt, Stream, StreamExt, TryFutureExt};
 use metrics::count::U64Counter;
 use models::meta_data::VnodeInfo;
-use tracing::info;
+use tracing::warn;
 use tskv::reader::QueryOption;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
@@ -94,9 +94,9 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                             self.state = StreamState::Scan(stream);
                         }
                         Err(err) => {
-                            if let CoordinatorError::FailoverNode { id: _ } = err {
+                            if let CoordinatorError::FailoverNode { id: _, ref error } = err {
                                 if let Some(vnode) = self.option.split.pop_front() {
-                                    info!("failover reader try to read another vnode: {:?}", vnode);
+                                    warn!("failover reader try to read another vnode: {:?}, error: {}", vnode, error);
                                     self.vnode = vnode;
                                     self.state = StreamState::Idle;
                                 } else {
