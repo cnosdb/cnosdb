@@ -6,7 +6,7 @@
   <a href="https://github.com/cnosdb/cnosdb/actions">
   <img alt="CI" src="https://github.com/cnosdb/cnosdb/actions/workflows/makefile.yml/badge.svg" />
   </a>
-
+  
   <a href="https://www.rust-lang.org/">
   <img alt="Rust" src="https://img.shields.io/badge/Language-Rust-blue.svg" />
   </a>
@@ -23,7 +23,11 @@
   <img alt="linkedin" src="https://img.shields.io/badge/linkedin--white.svg?logo=linkedin&style=social" />
   </a>
 </p>
-
+<p align="center">
+  <a href="https://discord.com/invite/D8cB4WGpP4">
+  <img alt="CI" src="https://i.imgur.com/lrVy2Pf.jpeg" />
+  </a>
+</p>
 <h3 align="center">
     <a href="https://www.cnosdb.com/">Website</a>
     •
@@ -31,6 +35,7 @@
     •
     <a href="https://docs.cnosdb.com/en/quick_start.html">Quick Start</a>
 </h3>
+
 
 English | [简体中文](./README_CN.md)
 
