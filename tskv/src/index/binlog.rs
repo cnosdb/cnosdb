@@ -137,28 +137,13 @@ pub struct BinlogWriter {
 
 impl BinlogWriter {
     pub async fn open(id: u64, path: impl AsRef<Path>) -> IndexResult<Self> {
-        let path = path.as_ref();
-
-        // Get file and check if new file
-        let mut new_file = false;
-        let file = if file_manager::try_exists(path) {
-            let f = file_manager::open_create_file(path)
-                .await
-                .map_err(|e| IndexError::FileErrors { msg: e.to_string() })?;
-            if f.is_empty() {
-                new_file = true;
-            }
-            f
-        } else {
-            new_file = true;
-            file_manager::create_file(path)
-                .await
-                .map_err(|e| IndexError::FileErrors { msg: e.to_string() })?
-        };
+        let file = file_manager::create_file(path.as_ref())
+            .await
+            .map_err(|e| IndexError::FileErrors { msg: e.to_string() })?;
 
         let mut size = file.len();
-        if new_file {
-            size = 8;
+        if size < SEGMENT_FILE_HEADER_SIZE as u64 {
+            size = SEGMENT_FILE_HEADER_SIZE as u64;
             BinlogWriter::write_header(&file, SEGMENT_FILE_HEADER_SIZE as u32).await?;
         }
 
