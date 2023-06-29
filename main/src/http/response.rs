@@ -8,6 +8,7 @@ use http_protocol::header::{APPLICATION_JSON, CONTENT_TYPE};
 use http_protocol::status_code::{
     BAD_REQUEST, INTERNAL_SERVER_ERROR, METHOD_NOT_ALLOWED, NOT_FOUND, OK, PAYLOAD_TOO_LARGE,
 };
+use metrics::count::U64Counter;
 use serde::Serialize;
 use spi::query::execution::Output;
 use warp::http::header::HeaderMap;
@@ -111,21 +112,24 @@ pub struct HttpResponse {
     format: ResultFormat,
     done: bool,
     schema: Option<SchemaRef>,
+    body_counter: U64Counter,
 }
 
 impl HttpResponse {
-    pub fn new(result: Output, format: ResultFormat) -> Self {
+    pub fn new(result: Output, format: ResultFormat, body_counter: U64Counter) -> Self {
         let schema = result.schema();
         Self {
             result,
             format,
             schema: Some(schema),
             done: false,
+            body_counter,
         }
     }
     pub async fn wrap_batches_to_response(self) -> Result<Response, HttpError> {
         let actual = self.result.chunk_result().await?;
-        self.format.wrap_batches_to_response(&actual, true)
+        self.format
+            .wrap_batches_to_response(&actual, true, self.body_counter.clone())
     }
     pub fn wrap_stream_to_response(self) -> Result<Response, HttpError> {
         let resp = ResponseBuilder::new(OK)
@@ -169,6 +173,10 @@ impl Stream for HttpResponse {
                             .format_batches(&[rb], self.schema.is_some())
                             .map_err(|e| HttpError::FetchResult {
                                 reason: format!("{}", e),
+                            })
+                            .map(|b| {
+                                self.body_counter.inc(b.len() as u64);
+                                b
                             });
                         self.schema = None;
                         return Poll::Ready(Some(buffer));

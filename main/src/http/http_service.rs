@@ -306,13 +306,20 @@ impl HttpService {
                     let result = {
                         let mut span_recorder =
                             SpanRecorder::new(span_context.child_span("sql handle"));
-                        sql_handle(&query, &dbms, result_fmt, span_recorder.span_ctx())
-                            .await
-                            .map_err(|e| {
-                                span_recorder.error(e.to_string());
-                                trace::error!("Failed to handle http sql request, err: {}", e);
-                                reject::custom(e)
-                            })
+                        sql_handle(
+                            &query,
+                            &dbms,
+                            result_fmt,
+                            span_recorder.span_ctx(),
+                            &metrics,
+                            addr.as_str(),
+                        )
+                        .await
+                        .map_err(|e| {
+                            span_recorder.error(e.to_string());
+                            trace::error!("Failed to handle http sql request, err: {}", e);
+                            reject::custom(e)
+                        })
                     };
 
                     let tenant = query.context().tenant();
@@ -697,6 +704,13 @@ impl HttpService {
                         span_recorder.record(ctx)
                     };
 
+                    let tenant_name = context.tenant();
+                    let username = context.user_info().desc().name();
+                    let database_name = context.database();
+
+                    let counter =
+                        metrics.http_data_out(tenant_name, username, database_name, addr.as_str());
+
                     let result = {
                         let mut span_recorder =
                             SpanRecorder::new(span_context.child_span("remote read"));
@@ -710,11 +724,11 @@ impl HttpService {
                                 );
                                 reject::custom(HttpError::from(e))
                             })
+                            .map(|b| {
+                                counter.inc(b.len() as u64);
+                                b
+                            })
                     };
-
-                    let tenant_name = context.tenant();
-                    let username = context.user_info().desc().name();
-                    let database_name = context.database();
 
                     metrics.queries_inc(tenant_name, username, database_name, addr.as_str());
 
@@ -1109,6 +1123,8 @@ async fn sql_handle(
     dbms: &DBMSRef,
     fmt: ResultFormat,
     span_ctx: Option<&SpanContext>,
+    metrics: &Arc<HttpMetrics>,
+    addr: &str,
 ) -> Result<Response, HttpError> {
     debug!("prepare to execute: {:?}", query.content());
     let handle = {
@@ -1122,7 +1138,13 @@ async fn sql_handle(
     };
 
     let out = handle.result();
-    let resp = HttpResponse::new(out, fmt.clone());
+    let counter = metrics.http_data_out(
+        query.context().tenant(),
+        query.context().user_info().desc().name(),
+        query.context().database(),
+        addr,
+    );
+    let resp = HttpResponse::new(out, fmt.clone(), counter.clone());
 
     let _response_span_recorder = SpanRecorder::new(span_ctx.child_span("build response"));
     if !query.context().chunked() {
@@ -1141,7 +1163,7 @@ async fn sql_handle(
                         })?
                 };
                 let out = handle.result();
-                let resp = HttpResponse::new(out, fmt);
+                let resp = HttpResponse::new(out, fmt, counter.clone());
                 return resp.wrap_batches_to_response().await;
             }
         }

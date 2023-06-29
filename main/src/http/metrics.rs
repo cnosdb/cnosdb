@@ -9,6 +9,7 @@ pub struct HttpMetrics {
     queries: Metric<U64Counter>,
     writes: Metric<U64Counter>,
     write_data_in: Metric<U64Counter>,
+    http_data_out: Metric<U64Counter>,
 }
 
 impl HttpMetrics {
@@ -27,10 +28,13 @@ impl HttpMetrics {
             "Traffic statistics written by tenants through the http write",
         );
 
+        let http_data_out = register.metric("http_data_out", "Count the body of http response");
+
         Self {
             queries,
             writes,
             write_data_in,
+            http_data_out,
         }
     }
 
@@ -64,5 +68,10 @@ impl HttpMetrics {
         self.write_data_in
             .recorder(Self::tenant_user_db_host_labels(tenant, user, db, host))
             .inc(data_in)
+    }
+
+    pub fn http_data_out(&self, tenant: &str, user: &str, db: &str, host: &str) -> U64Counter {
+        self.http_data_out
+            .recorder(Self::tenant_user_db_host_labels(tenant, user, db, host))
     }
 }

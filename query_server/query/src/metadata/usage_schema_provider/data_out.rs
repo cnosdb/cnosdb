@@ -9,6 +9,7 @@ use crate::metadata::usage_schema_provider::{
 use crate::metadata::TableHandleProviderRef;
 
 pub const USAGE_SCHEMA_COORD_DATA_OUT: &str = "coord_data_out";
+pub const USAGE_SCHEMA_HTTP_DATA_OUT: &str = "http_data_out";
 
 pub struct CoordDataOut {}
 
@@ -22,5 +23,21 @@ impl UsageSchemaTableFactory for CoordDataOut {
         base_table_provider: &TableHandleProviderRef,
     ) -> spi::Result<Arc<dyn TableProvider>> {
         create_usage_schema_view_table(session, base_table_provider, USAGE_SCHEMA_COORD_DATA_OUT)
+    }
+}
+
+pub struct HttpDataOut {}
+
+impl UsageSchemaTableFactory for HttpDataOut {
+    fn table_name(&self) -> &str {
+        USAGE_SCHEMA_HTTP_DATA_OUT
+    }
+
+    fn create(
+        &self,
+        session: &SessionCtx,
+        base_table_provider: &TableHandleProviderRef,
+    ) -> spi::Result<Arc<dyn TableProvider>> {
+        create_usage_schema_view_table(session, base_table_provider, USAGE_SCHEMA_HTTP_DATA_OUT)
     }
 }
