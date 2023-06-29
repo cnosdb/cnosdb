@@ -251,11 +251,11 @@ impl HintedOffManager {
                 )
                 .await;
 
-            if let Err(CoordinatorError::FailoverNode { id: _ }) = result {
+            if let Err(CoordinatorError::FailoverNode { id: _, error }) = result {
                 let size = queue.write().await.size().await;
                 warn!(
-                    "hinted_off write data to {}({}) failed, try later...; remain size: {:?}",
-                    all_info.node_id, block.vnode_id, size
+                    "hinted_off write data to {}({}) failed, error: {}, try later...; remain size: {:?}",
+                    all_info.node_id, block.vnode_id, error, size
                 );
 
                 time::sleep(Duration::from_secs(10)).await;
