@@ -24,8 +24,8 @@
   </a>
 </p>
 <p align="center">
-  <a href="https://discord.com/invite/D8cB4WGpP4">
-  <img alt="CI" src="https://i.imgur.com/lrVy2Pf.jpeg" />
+  <a class="discord-widget" href="https://discord.com/invite/D8cB4WGpP4" title="Join us on Discord">
+    <img src="https://discordapp.com/api/guilds/1104023581194715229/embed.png?style=banner3">
   </a>
 </p>
 <h3 align="center">
