@@ -1,28 +1,24 @@
-ARG RUST_VERSION=1.68.2
-FROM rust:${RUST_VERSION}-slim-bullseye as builder
+FROM cnosdb/cnosdb-build as build
 
-RUN apt update \
-    && apt install --yes pkg-config openssl libssl-dev g++ cmake protobuf-compiler git
+# This environment variable is set by Github Actions.
+#
+# Unlike the 'git clone' command, Github CI won't generate directory '.git' when coping source code
+# for git commands to use, so here uses docker build-arg to fetch the commit hash.
+ARG git_hash
+ENV CNOSDB_GIT_HASH = $git_hash
 
-RUN git clone -b v22.9.29 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers \
-    && cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
-    && make install && cd .. && rm -rf flatbuffers
-
-
-COPY . /cnosdb
-WORKDIR /cnosdb
-
-RUN cargo build --release --workspace --bin cnosdb --bin cnosdb-cli
+# Build
+COPY ../../Desktop /cnosdb
+RUN cd /cnosdb && cargo build --release --package main --bin cnosdb \
+    && cargo build --release --package client --bin cnosdb-cli \
+    && cargo build --release --package meta --bin cnosdb-meta
 
 FROM ubuntu:focal
 
 ENV RUST_BACKTRACE 1
 
-COPY --from=builder /cnosdb/target/release/cnosdb /cnosdb/target/release/cnosdb-cli /usr/bin/
+COPY --from=build /cnosdb/target/release/cnosdb /usr/bin/cnosdb
+COPY --from=build /cnosdb/target/release/cnosdb-cli /usr/bin/cnosdb-cli
+COPY --from=build /cnosdb/target/release/cnosdb-meta /usr/bin/cnosdb-meta
 
-COPY config/config.toml /etc/cnosdb/cnosdb.conf
-RUN chmod +x /usr/bin/cnosdb /usr/bin/cnosdb-cli
-
-CMD ["-M", "singleton"]
-
-ENTRYPOINT ["/bin/bash", "-c", "cnosdb run --config /etc/cnosdb/cnosdb.conf \"$@\"", "--"]
+COPY ./config/config.toml /etc/cnosdb/cnosdb.conf
