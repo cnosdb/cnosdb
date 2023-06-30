@@ -16,8 +16,6 @@ RUN cargo build --release --workspace --bin cnosdb --bin cnosdb-cli
 
 FROM ubuntu:focal
 
-ENV RUST_BACKTRACE 1
-
 COPY --from=builder /cnosdb/target/release/cnosdb /cnosdb/target/release/cnosdb-cli /usr/bin/
 
 COPY config/config.toml /etc/cnosdb/cnosdb.conf
