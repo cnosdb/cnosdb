@@ -402,7 +402,7 @@ fn handle_projection(proj: &Projection) -> Result<Option<LogicalPlan>> {
     }) else {
         // If this is not a projection that is a parent to a GapFill node,
         // then there is nothing to do.
-        return Ok(None)
+        return Ok(None);
     };
 
     let fill_cols: Vec<(&Expr, FillStrategy, &str)> = proj_exprs
