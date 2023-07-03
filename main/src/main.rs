@@ -191,7 +191,7 @@ fn main() -> Result<(), std::io::Error> {
     init_tskv_metrics_recorder();
 
     let runtime = Arc::new(init_runtime(Some(config.deployment.cpu))?);
-    let mem_bytes = run_args.cpu.unwrap_or(config.deployment.memory) * 1024 * 1024 * 1024;
+    let mem_bytes = run_args.memory.unwrap_or(config.deployment.memory) * 1024 * 1024 * 1024;
     let memory_pool = Arc::new(GreedyMemoryPool::new(mem_bytes));
     runtime.clone().block_on(async move {
         let builder = server::ServiceBuilder {
