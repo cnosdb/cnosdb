@@ -1128,7 +1128,7 @@ async fn sql_handle(
     if !query.context().chunked() {
         let result = resp.wrap_batches_to_response().await;
         if let Err(err) = &result {
-            if err.to_string().contains("read tsm block file error") {
+            if tskv::Error::vnode_broken_code(err.error_code().code()) {
                 info!("tsm file broken {:?}, try read....", err);
                 let handle = {
                     let mut execute_span_recorder =

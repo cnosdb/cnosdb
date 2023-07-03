@@ -427,6 +427,7 @@ impl Coordinator for CoordService {
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
             option,
             opener,
+            self.meta.clone(),
             Box::pin(checker),
             &self.metrics,
         )))
@@ -449,6 +450,7 @@ impl Coordinator for CoordService {
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
             option,
             opener,
+            self.meta.clone(),
             Box::pin(checker),
             &self.metrics,
         )))

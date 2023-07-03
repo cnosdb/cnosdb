@@ -50,7 +50,13 @@ pub enum ReadTsmError {
 
 impl From<ReadTsmError> for Error {
     fn from(rte: ReadTsmError) -> Self {
-        Error::ReadTsm { source: rte }
+        match rte {
+            ReadTsmError::CrcCheck
+            | ReadTsmError::FileNotFound { reason: _ }
+            | ReadTsmError::Invalid { reason: _ } => Error::TsmFileBroken { source: rte },
+
+            _ => Error::ReadTsm { source: rte },
+        }
     }
 }
 
