@@ -1,13 +1,14 @@
 #![allow(dead_code, clippy::if_same_then_else)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::Arc;
 
 use client::MetaHttpClient;
 use config::TenantObjectLimiterConfig;
-use models::auth::privilege::DatabasePrivilege;
+use models::auth::privilege::{DatabasePrivilege, Privilege};
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
+use models::auth::user::UserDesc;
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
 use models::schema::{DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TskvTableSchema};
@@ -146,7 +147,7 @@ impl TenantMeta {
             max_users_number, ..
         } = limiter_config;
 
-        let user_number = self.data.read().users.len();
+        let user_number = self.data.read().members.len();
 
         if let Some(max) = max_users_number {
             if user_number >= *max {
@@ -180,6 +181,53 @@ impl TenantMeta {
         );
 
         self.client.write::<()>(&req).await
+    }
+
+    pub async fn user_privileges(
+        &self,
+        user_desc: &UserDesc,
+    ) -> MetaResult<HashSet<Privilege<Oid>>> {
+        let role = {
+            let cache = self
+                .data
+                .read()
+                .members
+                .get(&user_desc.id().to_string())
+                .cloned();
+            if let Some(role) = cache {
+                role.clone()
+            } else {
+                self.member_role(user_desc.id()).await?.ok_or_else(|| {
+                    MetaError::MemberNotFound {
+                        member_name: user_desc.name().to_string(),
+                        tenant_name: self.tenant_name(),
+                    }
+                })?
+            }
+        };
+
+        let tenant_id = self.tenant().id();
+        let privileges = match role {
+            TenantRoleIdentifier::System(sys_role) => sys_role.to_privileges(tenant_id),
+            TenantRoleIdentifier::Custom(ref role_name) => {
+                let cache = self
+                    .data
+                    .read()
+                    .roles
+                    .get(&user_desc.id().to_string())
+                    .cloned();
+                if let Some(role) = cache {
+                    role.to_privileges(tenant_id)
+                } else {
+                    self.custom_role(role_name)
+                        .await?
+                        .map(|e| e.to_privileges(tenant_id))
+                        .unwrap_or_default()
+                }
+            }
+        };
+
+        Ok(privileges)
     }
 
     // tenant member start
@@ -655,6 +703,8 @@ impl TenantMeta {
         self.data.read().version
     }
 
+    // **[6]    /cluster_name/tenants/tenant/roles/name -> [CustomTenantRole<Oid>]
+    // **[6]    /cluster_name/tenants/tenant/members/oid -> [TenantRoleIdentifier]
     pub async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()> {
         let strs: Vec<&str> = entry.key.split('/').collect();
 
@@ -716,9 +766,26 @@ impl TenantMeta {
             } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
                 data.dbs.remove(db_name);
             }
-        } else if len == 6 && strs[4] == key_path::USERS && strs[2] == key_path::TENANTS {
         } else if len == 6 && strs[4] == key_path::MEMBERS && strs[2] == key_path::TENANTS {
+            let key = strs[5];
+            let mut data = self.data.write();
+            if entry.tye == command::ENTRY_LOG_TYPE_SET {
+                if let Ok(info) = serde_json::from_str::<TenantRoleIdentifier>(&entry.val) {
+                    data.members.insert(key.to_owned(), info);
+                }
+            } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
+                data.members.remove(key);
+            }
         } else if len == 6 && strs[4] == key_path::ROLES && strs[2] == key_path::TENANTS {
+            let key = strs[5];
+            let mut data = self.data.write();
+            if entry.tye == command::ENTRY_LOG_TYPE_SET {
+                if let Ok(info) = serde_json::from_str::<CustomTenantRole<Oid>>(&entry.val) {
+                    data.roles.insert(key.to_owned(), info);
+                }
+            } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
+                data.roles.remove(key);
+            }
         }
 
         Ok(())

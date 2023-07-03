@@ -345,8 +345,10 @@ impl StateMachine {
     pub fn to_tenant_meta_data(&self, cluster: &str, tenant: &str) -> MetaResult<TenantMetaData> {
         let mut meta = TenantMetaData::new();
         meta.version = self.version()?;
-        meta.users = self.children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant))?;
-
+        meta.roles =
+            self.children_data::<CustomTenantRole<Oid>>(&KeyPath::roles(cluster, tenant))?;
+        meta.members =
+            self.children_data::<TenantRoleIdentifier>(&KeyPath::members(cluster, tenant))?;
         let db_schemas =
             self.children_data::<DatabaseSchema>(&KeyPath::tenant_dbs(cluster, tenant))?;
 
