@@ -80,14 +80,20 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                             self.state = StreamState::Idle;
                         }
 
-                        Err(err) => return Poll::Ready(Some(Err(err))),
+                        Err(err) => {
+                            self.state.close();
+                            return Poll::Ready(Some(Err(err)));
+                        }
                     };
                 }
                 StreamState::Idle => {
                     // TODO record time used
                     let future = match self.opener.open(&self.vnode, &self.option) {
                         Ok(future) => future,
-                        Err(err) => return Poll::Ready(Some(Err(err))),
+                        Err(err) => {
+                            self.state.close();
+                            return Poll::Ready(Some(Err(err)));
+                        }
                     };
                     self.state = StreamState::Open(future);
                 }
@@ -104,15 +110,18 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                                     self.vnode = vnode;
                                     self.state = StreamState::Idle;
                                 } else {
+                                    self.state.close();
                                     return Poll::Ready(Some(Err(err)));
                                 }
                             } else {
+                                self.state.close();
                                 return Poll::Ready(Some(Err(err)));
                             }
                         }
                     };
                 }
                 StreamState::Scan(stream) => return stream.poll_next_unpin(cx),
+                StreamState::Closed => return Poll::Ready(None),
             }
         }
     }
@@ -177,6 +186,12 @@ pub async fn change_vnode_to_broken(
 enum StreamState {
     Check(CheckFuture),
     Idle,
+    Closed,
     Open(VnodeOpenFuture),
     Scan(SendableCoordinatorRecordBatchStream),
+}
+impl StreamState {
+    fn close(&mut self) {
+        *self = StreamState::Closed
+    }
 }
