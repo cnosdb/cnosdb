@@ -13,7 +13,7 @@ drop database db_precision;
 
 CREATE DATABASE db_precision WITH TTL '100000d' precision 'ms';
 
-create table test(col bigint,);
+create table test(col bigint);
 
 insert into test(time, col) values (1667456411001, 10);
 
