@@ -551,14 +551,7 @@ impl<'a> ExtParser<'a> {
 
     fn parse_alter_table_add_column(&mut self, table_name: ObjectName) -> Result<ExtStatement> {
         if self.parse_cnos_keyword(CnosKeyWord::FIELD) {
-            let field_name = self.parser.parse_identifier()?;
-            let data_type = self.parse_column_type()?;
-            let encoding = if self.peek_cnos_keyword().eq(&Ok(CnosKeyWord::CODEC)) {
-                Some(self.parse_codec_type()?)
-            } else {
-                None
-            };
-            let column = ColumnOption::new_field(field_name, data_type, encoding);
+            let column = self.parse_cnos_field()?;
             Ok(ExtStatement::AlterTable(AlterTable {
                 table_name,
                 alter_action: AlterTableAction::AddColumn { column },
@@ -585,7 +578,10 @@ impl<'a> ExtParser<'a> {
 
     fn parse_alter_table_alter_column(&mut self, table_name: ObjectName) -> Result<ExtStatement> {
         let column_name = self.parser.parse_identifier()?;
+        // parse: SET CODEC(encoding_type)
         self.parser.expect_keyword(Keyword::SET)?;
+
+        self.expect_cnos_keyword(CnosKeyWord::CODEC)?;
         let encoding = self.parse_codec_type()?;
         Ok(ExtStatement::AlterTable(AlterTable {
             table_name,
@@ -1496,6 +1492,29 @@ impl<'a> ExtParser<'a> {
         }
     }
 
+    fn expect_cnos_keyword(&mut self, key_word: CnosKeyWord) -> Result<()> {
+        if self.parse_cnos_keyword(key_word) {
+            Ok(())
+        } else {
+            self.parser.expected(
+                format!("{:?}", &key_word).as_str(),
+                self.parser.peek_token(),
+            )
+        }
+    }
+
+    // parse: ident data_type [CODEC(encoding_type)]
+    fn parse_cnos_field(&mut self) -> Result<ColumnOption, ParserError> {
+        let name = self.parser.parse_identifier()?;
+        let column_type = self.parse_column_type()?;
+        let encoding = if self.parse_cnos_keyword(CnosKeyWord::CODEC) {
+            Some(self.parse_codec_type()?)
+        } else {
+            None
+        };
+        Ok(ColumnOption::new_field(name, column_type, encoding))
+    }
+
     fn parse_cnos_columns(&mut self) -> Result<Vec<ColumnOption>> {
         // -- Parse as is without adding any semantics
         let mut all_columns: Vec<ColumnOption> = vec![];
@@ -1505,36 +1524,28 @@ impl<'a> ExtParser<'a> {
             return parser_err!("Expected field columns when create table");
         }
         loop {
-            let name = self.parser.parse_identifier()?;
-            let column_type = self.parse_column_type()?;
-
-            let encoding = if self.parser.peek_token().eq(&Token::Comma) {
-                None
+            let column = self.parse_cnos_field()?;
+            field_columns.push(column);
+            if self.consume_token(&Token::Comma) {
+                // parse TAGS(...,...)
+                if self.parse_cnos_keyword(CnosKeyWord::TAGS) {
+                    let idents: Vec<Ident> = self
+                        .parser
+                        .parse_parenthesized_column_list(IsOptional::Mandatory, true)?;
+                    let column_options = idents.into_iter().map(|i| ColumnOption {
+                        name: i,
+                        is_tag: true,
+                        data_type: DataType::String,
+                        encoding: None,
+                    });
+                    all_columns.extend(column_options);
+                    self.parser.expect_token(&Token::RParen)?;
+                    break;
+                }
+            } else if self.parser.consume_token(&Token::RParen) {
+                break;
             } else {
-                Some(self.parse_codec_type()?)
-            };
-
-            field_columns.push(ColumnOption {
-                name,
-                is_tag: false,
-                data_type: column_type,
-                encoding,
-            });
-            let comma = self.consume_token(&Token::Comma);
-            if self.consume_token(&Token::RParen) {
-                // allow a trailing comma, even though it's not in standard
-                // return parser_err!(format!("table should have TAGS"));
-                break;
-            } else if !comma {
-                return self.expected(
-                    "',' or ')' after column definition",
-                    self.parser.peek_token(),
-                );
-            }
-            if self.parse_cnos_keyword(CnosKeyWord::TAGS) {
-                self.parse_tag_columns(&mut all_columns)?;
-                self.parser.expect_token(&Token::RParen)?;
-                break;
+                return parser_err!("Expected token ',', 'TAGS' or ')'");
             }
         }
         // tag1, tag2, ..., field1, field2, ...
@@ -1542,30 +1553,6 @@ impl<'a> ExtParser<'a> {
 
         Ok(all_columns)
     }
-
-    fn parse_tag_columns(&mut self, columns: &mut Vec<ColumnOption>) -> Result<()> {
-        if !self.consume_token(&Token::LParen) || self.consume_token(&Token::RParen) {
-            return Ok(());
-        }
-        loop {
-            let name = self.parser.parse_identifier()?;
-            columns.push(ColumnOption {
-                name,
-                is_tag: true,
-                data_type: DataType::String,
-                encoding: None,
-            });
-            let is_comma = self.consume_token(&Token::Comma);
-            if self.consume_token(&Token::RParen) {
-                break;
-            }
-            if !is_comma {
-                return parser_err!(format!(", is expected after column"));
-            }
-        }
-        Ok(())
-    }
-
     fn parse_column_type(&mut self) -> Result<DataType> {
         let TokenWithLocation { token, location: _ } = self.parser.next_token();
         match token {
@@ -1599,10 +1586,6 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_codec_type(&mut self) -> Result<Encoding> {
-        if !self.parse_cnos_keyword(CnosKeyWord::CODEC) {
-            return self.expected("CODEC or ','", self.parser.peek_token());
-        }
-
         self.parser.expect_token(&Token::LParen)?;
         if self.parser.peek_token().eq(&Token::RParen) {
             return parser_err!(format!("expect codec encoding type in ()"));
@@ -1718,6 +1701,28 @@ mod tests {
             }
             _ => panic!("failed"),
         }
+    }
+
+    #[test]
+    fn test_create_table_without_tags() {
+        let sql = "CREATE TABLE test(column1 BIGINT);";
+        let statement1 = ExtParser::parse_sql(sql).unwrap().pop_front().unwrap();
+        assert_eq!(
+            statement1,
+            ExtStatement::CreateTable(CreateTable {
+                name: ObjectName(vec!["test".into()]),
+                if_not_exists: false,
+                columns: vec![ColumnOption {
+                    name: "column1".into(),
+                    is_tag: false,
+                    data_type: DataType::BigInt(None),
+                    encoding: None
+                }]
+            })
+        );
+
+        let sql = "CREATE TABLE test(column1 BIGINT,);";
+        ExtParser::parse_sql(sql).err().unwrap();
     }
 
     #[test]
