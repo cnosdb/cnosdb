@@ -5,7 +5,7 @@ logical_plan,"TableWriterMerge: SUM(rows) AS rows
   TableWriter: table=external_location_table, rows(CAST(col1 AS Utf8), col2) AS rows
     Projection: Int64(1) AS col1, Utf8(""xx"") AS col2
       EmptyRelation"
-physical_plan,"TableWriterMergeExec
+physical_plan,"TableWriterMergeExec: expr=[rows]
   TableWriterExec: [file:///tmp/data/parquet_out2/]
     CoalesceBatchesExec: target_batch_size=8192
       ProjectionExec: expr=[1 as col1, xx as col2]

@@ -43,9 +43,8 @@ cnosdb,explain_stream_query,tskvtablewithoutschema,TABLE,STREAM,TODO
 -- EXECUTE SQL: explain select * from TskvTable; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: tskvtable.time, tskvtable.column1, tskvtable.column6
-  Watermark: event_time=time, delay=0ms
-    StreamScan: [tskvtable.time,tskvtable.column1,tskvtable.column6]"
+logical_plan,"Watermark: event_time=time, delay=0ms
+  StreamScan: [tskvtable.time,tskvtable.column1,tskvtable.column6]"
 
 -- EXECUTE SQL: explain select * from TskvTableWithoutSchema; --
 200 OK

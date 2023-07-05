@@ -143,6 +143,20 @@ impl ExecutionPlan for TableWriterExec {
             DisplayFormatType::Default => {
                 write!(f, "TableWriterExec: [{}]", self.table,)
             }
+            DisplayFormatType::Verbose => {
+                let schemas = self
+                    .schema
+                    .fields()
+                    .iter()
+                    .map(|e| e.name().to_string())
+                    .collect::<Vec<_>>();
+                write!(
+                    f,
+                    "TableWriterExec: [{}], output=[{}]",
+                    self.table,
+                    schemas.join(",")
+                )
+            }
         }
     }
 

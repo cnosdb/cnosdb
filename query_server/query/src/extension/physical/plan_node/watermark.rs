@@ -50,7 +50,7 @@ impl WatermarkExec {
             .fields()
             .iter()
             .map(|e| {
-                let mut field = e.clone();
+                let mut field = e.as_ref().clone();
                 if e.name() == &watermark.column {
                     let mut metadata = e.metadata().clone();
                     let _ = metadata.insert(
@@ -59,9 +59,9 @@ impl WatermarkExec {
                     );
                     field.set_metadata(metadata);
                 }
-                field
+                Arc::new(field)
             })
-            .collect();
+            .collect::<Vec<_>>();
         let schema = Arc::new(Schema::new_with_metadata(fields, schema.metadata().clone()));
 
         Ok(Self {
@@ -161,7 +161,7 @@ impl ExecutionPlan for WatermarkExec {
 
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
-            DisplayFormatType::Default => {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
                 write!(
                     f,
                     "WatermarkExec: event_time={}, delay={}ms",

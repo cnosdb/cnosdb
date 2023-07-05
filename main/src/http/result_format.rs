@@ -23,7 +23,9 @@ macro_rules! batches_to_json {
         let mut bytes = vec![];
         {
             let mut writer = $WRITER::new(&mut bytes);
-            writer.write_batches($batches)?;
+            for batch in $batches {
+                writer.write(batch)?;
+            }
             writer.finish()?;
         }
         Ok(bytes)
@@ -146,7 +148,6 @@ mod tests {
 
     use datafusion::arrow::array::Int32Array;
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
-    use datafusion::from_slice::FromSlice;
 
     use super::*;
 
@@ -167,9 +168,9 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema,
             vec![
-                Arc::new(Int32Array::from_slice([1, 2, 3])),
-                Arc::new(Int32Array::from_slice([4, 5, 6])),
-                Arc::new(Int32Array::from_slice([7, 8, 9])),
+                Arc::new(Int32Array::from(vec![1, 2, 3])),
+                Arc::new(Int32Array::from(vec![4, 5, 6])),
+                Arc::new(Int32Array::from(vec![7, 8, 9])),
             ],
         )
         .unwrap();
@@ -197,9 +198,9 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema,
             vec![
-                Arc::new(Int32Array::from_slice([1, 2, 3])),
-                Arc::new(Int32Array::from_slice([4, 5, 6])),
-                Arc::new(Int32Array::from_slice([7, 8, 9])),
+                Arc::new(Int32Array::from(vec![1, 2, 3])),
+                Arc::new(Int32Array::from(vec![4, 5, 6])),
+                Arc::new(Int32Array::from(vec![7, 8, 9])),
             ],
         )
         .unwrap();

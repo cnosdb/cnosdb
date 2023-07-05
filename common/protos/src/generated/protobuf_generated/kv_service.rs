@@ -278,7 +278,7 @@ pub mod tskv_service_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -334,10 +334,26 @@ pub mod tskv_service_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         pub async fn ping(
             &mut self,
             request: impl tonic::IntoRequest<super::PingRequest>,
-        ) -> Result<tonic::Response<super::PingResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::PingResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -351,14 +367,17 @@ pub mod tskv_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/kv_service.TSKVService/Ping",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "Ping"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn write_points(
             &mut self,
             request: impl tonic::IntoStreamingRequest<
                 Message = super::WritePointsRequest,
             >,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::WritePointsResponse>>,
             tonic::Status,
         > {
@@ -375,12 +394,15 @@ pub mod tskv_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/kv_service.TSKVService/WritePoints",
             );
-            self.inner.streaming(request.into_streaming_request(), path, codec).await
+            let mut req = request.into_streaming_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "WritePoints"));
+            self.inner.streaming(req, path, codec).await
         }
         pub async fn write_vnode_points(
             &mut self,
             request: impl tonic::IntoRequest<super::WriteVnodeRequest>,
-        ) -> Result<tonic::Response<super::StatusResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -394,12 +416,15 @@ pub mod tskv_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/kv_service.TSKVService/WriteVnodePoints",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "WriteVnodePoints"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn query_record_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::QueryRecordBatchRequest>,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::BatchBytesResponse>>,
             tonic::Status,
         > {
@@ -416,12 +441,15 @@ pub mod tskv_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/kv_service.TSKVService/QueryRecordBatch",
             );
-            self.inner.server_streaming(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "QueryRecordBatch"));
+            self.inner.server_streaming(req, path, codec).await
         }
         pub async fn exec_admin_command(
             &mut self,
             request: impl tonic::IntoRequest<super::AdminCommandRequest>,
-        ) -> Result<tonic::Response<super::StatusResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -435,12 +463,18 @@ pub mod tskv_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/kv_service.TSKVService/ExecAdminCommand",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "ExecAdminCommand"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn exec_admin_fetch_command(
             &mut self,
             request: impl tonic::IntoRequest<super::AdminFetchCommandRequest>,
-        ) -> Result<tonic::Response<super::BatchBytesResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::BatchBytesResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -454,12 +488,17 @@ pub mod tskv_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/kv_service.TSKVService/ExecAdminFetchCommand",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("kv_service.TSKVService", "ExecAdminFetchCommand"),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn download_file(
             &mut self,
             request: impl tonic::IntoRequest<super::DownloadFileRequest>,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::BatchBytesResponse>>,
             tonic::Status,
         > {
@@ -476,12 +515,18 @@ pub mod tskv_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/kv_service.TSKVService/DownloadFile",
             );
-            self.inner.server_streaming(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "DownloadFile"));
+            self.inner.server_streaming(req, path, codec).await
         }
         pub async fn get_vnode_files_meta(
             &mut self,
             request: impl tonic::IntoRequest<super::GetVnodeFilesMetaRequest>,
-        ) -> Result<tonic::Response<super::GetVnodeFilesMetaResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::GetVnodeFilesMetaResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -495,12 +540,18 @@ pub mod tskv_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/kv_service.TSKVService/GetVnodeFilesMeta",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "GetVnodeFilesMeta"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn fetch_vnode_summary(
             &mut self,
             request: impl tonic::IntoRequest<super::FetchVnodeSummaryRequest>,
-        ) -> Result<tonic::Response<super::BatchBytesResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::BatchBytesResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -514,12 +565,15 @@ pub mod tskv_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/kv_service.TSKVService/FetchVnodeSummary",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "FetchVnodeSummary"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn tag_scan(
             &mut self,
             request: impl tonic::IntoRequest<super::QueryRecordBatchRequest>,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::BatchBytesResponse>>,
             tonic::Status,
         > {
@@ -536,7 +590,10 @@ pub mod tskv_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/kv_service.TSKVService/TagScan",
             );
-            self.inner.server_streaming(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "TagScan"));
+            self.inner.server_streaming(req, path, codec).await
         }
     }
 }
@@ -550,67 +607,85 @@ pub mod tskv_service_server {
         async fn ping(
             &self,
             request: tonic::Request<super::PingRequest>,
-        ) -> Result<tonic::Response<super::PingResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::PingResponse>, tonic::Status>;
         /// Server streaming response type for the WritePoints method.
         type WritePointsStream: futures_core::Stream<
-                Item = Result<super::WritePointsResponse, tonic::Status>,
+                Item = std::result::Result<super::WritePointsResponse, tonic::Status>,
             >
             + Send
             + 'static;
         async fn write_points(
             &self,
             request: tonic::Request<tonic::Streaming<super::WritePointsRequest>>,
-        ) -> Result<tonic::Response<Self::WritePointsStream>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<Self::WritePointsStream>,
+            tonic::Status,
+        >;
         async fn write_vnode_points(
             &self,
             request: tonic::Request<super::WriteVnodeRequest>,
-        ) -> Result<tonic::Response<super::StatusResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
         /// Server streaming response type for the QueryRecordBatch method.
         type QueryRecordBatchStream: futures_core::Stream<
-                Item = Result<super::BatchBytesResponse, tonic::Status>,
+                Item = std::result::Result<super::BatchBytesResponse, tonic::Status>,
             >
             + Send
             + 'static;
         async fn query_record_batch(
             &self,
             request: tonic::Request<super::QueryRecordBatchRequest>,
-        ) -> Result<tonic::Response<Self::QueryRecordBatchStream>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<Self::QueryRecordBatchStream>,
+            tonic::Status,
+        >;
         async fn exec_admin_command(
             &self,
             request: tonic::Request<super::AdminCommandRequest>,
-        ) -> Result<tonic::Response<super::StatusResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
         async fn exec_admin_fetch_command(
             &self,
             request: tonic::Request<super::AdminFetchCommandRequest>,
-        ) -> Result<tonic::Response<super::BatchBytesResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::BatchBytesResponse>,
+            tonic::Status,
+        >;
         /// Server streaming response type for the DownloadFile method.
         type DownloadFileStream: futures_core::Stream<
-                Item = Result<super::BatchBytesResponse, tonic::Status>,
+                Item = std::result::Result<super::BatchBytesResponse, tonic::Status>,
             >
             + Send
             + 'static;
         async fn download_file(
             &self,
             request: tonic::Request<super::DownloadFileRequest>,
-        ) -> Result<tonic::Response<Self::DownloadFileStream>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<Self::DownloadFileStream>,
+            tonic::Status,
+        >;
         async fn get_vnode_files_meta(
             &self,
             request: tonic::Request<super::GetVnodeFilesMetaRequest>,
-        ) -> Result<tonic::Response<super::GetVnodeFilesMetaResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::GetVnodeFilesMetaResponse>,
+            tonic::Status,
+        >;
         async fn fetch_vnode_summary(
             &self,
             request: tonic::Request<super::FetchVnodeSummaryRequest>,
-        ) -> Result<tonic::Response<super::BatchBytesResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::BatchBytesResponse>,
+            tonic::Status,
+        >;
         /// Server streaming response type for the TagScan method.
         type TagScanStream: futures_core::Stream<
-                Item = Result<super::BatchBytesResponse, tonic::Status>,
+                Item = std::result::Result<super::BatchBytesResponse, tonic::Status>,
             >
             + Send
             + 'static;
         async fn tag_scan(
             &self,
             request: tonic::Request<super::QueryRecordBatchRequest>,
-        ) -> Result<tonic::Response<Self::TagScanStream>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<Self::TagScanStream>, tonic::Status>;
     }
     /// --------------------------------------------------------------------
     #[derive(Debug)]
@@ -618,6 +693,8 @@ pub mod tskv_service_server {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: TskvService> TskvServiceServer<T> {
@@ -630,6 +707,8 @@ pub mod tskv_service_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -653,6 +732,22 @@ pub mod tskv_service_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for TskvServiceServer<T>
     where
@@ -666,7 +761,7 @@ pub mod tskv_service_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -686,13 +781,15 @@ pub mod tskv_service_server {
                             &mut self,
                             request: tonic::Request<super::PingRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).ping(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -702,6 +799,10 @@ pub mod tskv_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -727,7 +828,7 @@ pub mod tskv_service_server {
                                 tonic::Streaming<super::WritePointsRequest>,
                             >,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).write_points(request).await
                             };
@@ -736,6 +837,8 @@ pub mod tskv_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -745,6 +848,10 @@ pub mod tskv_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.streaming(method, req).await;
                         Ok(res)
@@ -767,7 +874,7 @@ pub mod tskv_service_server {
                             &mut self,
                             request: tonic::Request<super::WriteVnodeRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).write_vnode_points(request).await
                             };
@@ -776,6 +883,8 @@ pub mod tskv_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -785,6 +894,10 @@ pub mod tskv_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -809,7 +922,7 @@ pub mod tskv_service_server {
                             &mut self,
                             request: tonic::Request<super::QueryRecordBatchRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).query_record_batch(request).await
                             };
@@ -818,6 +931,8 @@ pub mod tskv_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -827,6 +942,10 @@ pub mod tskv_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
                         Ok(res)
@@ -849,7 +968,7 @@ pub mod tskv_service_server {
                             &mut self,
                             request: tonic::Request<super::AdminCommandRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).exec_admin_command(request).await
                             };
@@ -858,6 +977,8 @@ pub mod tskv_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -867,6 +988,10 @@ pub mod tskv_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -889,7 +1014,7 @@ pub mod tskv_service_server {
                             &mut self,
                             request: tonic::Request<super::AdminFetchCommandRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).exec_admin_fetch_command(request).await
                             };
@@ -898,6 +1023,8 @@ pub mod tskv_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -907,6 +1034,10 @@ pub mod tskv_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -930,7 +1061,7 @@ pub mod tskv_service_server {
                             &mut self,
                             request: tonic::Request<super::DownloadFileRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).download_file(request).await
                             };
@@ -939,6 +1070,8 @@ pub mod tskv_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -948,6 +1081,10 @@ pub mod tskv_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
                         Ok(res)
@@ -970,7 +1107,7 @@ pub mod tskv_service_server {
                             &mut self,
                             request: tonic::Request<super::GetVnodeFilesMetaRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).get_vnode_files_meta(request).await
                             };
@@ -979,6 +1116,8 @@ pub mod tskv_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -988,6 +1127,10 @@ pub mod tskv_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1010,7 +1153,7 @@ pub mod tskv_service_server {
                             &mut self,
                             request: tonic::Request<super::FetchVnodeSummaryRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).fetch_vnode_summary(request).await
                             };
@@ -1019,6 +1162,8 @@ pub mod tskv_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1028,6 +1173,10 @@ pub mod tskv_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1052,13 +1201,15 @@ pub mod tskv_service_server {
                             &mut self,
                             request: tonic::Request<super::QueryRecordBatchRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).tag_scan(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1068,6 +1219,10 @@ pub mod tskv_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
                         Ok(res)
@@ -1096,12 +1251,14 @@ pub mod tskv_service_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: TskvService> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {

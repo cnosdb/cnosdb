@@ -7,12 +7,11 @@ use config::TenantLimiterConfig;
 use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
-use datafusion::logical_expr::expr::AggregateFunction as AggregateFunctionExpr;
 use datafusion::logical_expr::type_coercion::aggregates::{
     DATES, NUMERICS, STRINGS, TIMES, TIMESTAMPS,
 };
 use datafusion::logical_expr::{
-    AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan, ReturnTypeFunction, ScalarUDF,
+    expr, expr_fn, CreateExternalTable, LogicalPlan as DFPlan, ReturnTypeFunction, ScalarUDF,
     Signature, Volatility,
 };
 use datafusion::physical_plan::functions::make_scalar_function;
@@ -556,22 +555,13 @@ pub trait LogicalPlanner {
 
 /// Additional output information
 pub fn affected_row_expr(args: Vec<Expr>) -> Expr {
-    Expr::ScalarUDF {
-        fun: TABLE_WRITE_UDF.clone(),
-        args,
-    }
-    .alias(AFFECTED_ROWS.0)
+    let udf = expr::ScalarUDF::new(TABLE_WRITE_UDF.clone(), args);
+
+    Expr::ScalarUDF(udf).alias(AFFECTED_ROWS.0)
 }
 
 pub fn merge_affected_row_expr() -> Expr {
-    // lit(ScalarValue::Null).alias("COUNT")
-    Expr::AggregateFunction(AggregateFunctionExpr {
-        fun: AggregateFunction::Sum,
-        args: vec![col(AFFECTED_ROWS.0)],
-        distinct: false,
-        filter: None,
-    })
-    .alias(AFFECTED_ROWS.0)
+    expr_fn::sum(col(AFFECTED_ROWS.0)).alias(AFFECTED_ROWS.0)
 }
 
 /// Normalize a SQL object name

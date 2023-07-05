@@ -1,5 +1,5 @@
 use datafusion::logical_expr::utils::find_exprs_in_expr;
-use datafusion::logical_expr::{BinaryExpr, Operator};
+use datafusion::logical_expr::{expr, BinaryExpr, Operator};
 use datafusion::prelude::Expr;
 use models::schema::TIME_FIELD_NAME;
 
@@ -46,10 +46,10 @@ pub fn find_selector_function_exprs(exprs: &[Expr]) -> Vec<Expr> {
     find_exprs_in_exprs(exprs, &|nested_expr| {
         matches!(
             nested_expr,
-            Expr::ScalarUDF {
+            Expr::ScalarUDF(expr::ScalarUDF {
                 fun,
                 ..
-            } if fun.name.eq_ignore_ascii_case(BOTTOM)
+            }) if fun.name.eq_ignore_ascii_case(BOTTOM)
             || fun.name.eq_ignore_ascii_case(TOPK)
         )
     })
@@ -77,10 +77,10 @@ pub fn find_selector_function_exprs_deeply_nested(exprs: &[Expr]) -> Vec<Expr> {
     find_exprs_in_exprs(exprs, &|nested_expr| {
         matches!(
             nested_expr,
-            Expr::ScalarUDF {
+            Expr::ScalarUDF(expr::ScalarUDF {
                 fun,
                 ..
-            } if fun.name.eq_ignore_ascii_case(BOTTOM)
+            }) if fun.name.eq_ignore_ascii_case(BOTTOM)
             || fun.name.eq_ignore_ascii_case(TOPK)
         )
     })

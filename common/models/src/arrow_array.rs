@@ -1,4 +1,4 @@
-use arrow_schema::{Field, Schema};
+use arrow_schema::Schema;
 use datafusion::arrow::array::{
     ArrayBuilder, BooleanBuilder, Float64Builder, Int64Builder, StringBuilder,
     TimestampMicrosecondBuilder, TimestampMillisecondBuilder, TimestampNanosecondBuilder,
@@ -51,7 +51,7 @@ pub fn build_arrow_array_builders(
     schema
         .fields()
         .iter()
-        .map(|f: &Field| build_arrow_array_builder(f.data_type(), batch_size))
+        .map(|f| build_arrow_array_builder(f.data_type(), batch_size))
         .collect::<Result<Vec<_>, ArrowError>>()
 }
 

@@ -6,8 +6,8 @@ use datafusion::error::Result;
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::expr_rewriter::unnormalize_cols;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
-use datafusion::physical_plan::planner::ExtensionPlanner;
-use datafusion::physical_plan::{ExecutionPlan, PhysicalPlanner};
+use datafusion::physical_plan::ExecutionPlan;
+use datafusion::physical_planner::{ExtensionPlanner, PhysicalPlanner};
 use spi::query::datasource::stream::Offset;
 
 use crate::extension::logical::plan_node::stream_scan::StreamScanPlanNode;

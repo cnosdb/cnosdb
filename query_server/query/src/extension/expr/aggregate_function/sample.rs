@@ -11,8 +11,8 @@ use datafusion::logical_expr::type_coercion::aggregates::{
     DATES, NUMERICS, STRINGS, TIMES, TIMESTAMPS,
 };
 use datafusion::logical_expr::{
-    AccumulatorFunctionImplementation, AggregateUDF, ReturnTypeFunction, Signature,
-    StateTypeFunction, TypeSignature, Volatility,
+    AccumulatorFactoryFunction, AggregateUDF, ReturnTypeFunction, Signature, StateTypeFunction,
+    TypeSignature, Volatility,
 };
 use datafusion::physical_plan::Accumulator;
 use datafusion::scalar::ScalarValue;
@@ -31,14 +31,14 @@ pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<A
 
 fn new() -> AggregateUDF {
     let return_type: ReturnTypeFunction = Arc::new(move |input| {
-        let date_type = DataType::List(Box::new(Field::new("item", input[0].clone(), true)));
+        let date_type = DataType::List(Arc::new(Field::new("item", input[0].clone(), true)));
         Ok(Arc::new(date_type))
     });
 
     let state_type: StateTypeFunction =
         Arc::new(move |output| Ok(Arc::new(vec![output.clone(), DataType::UInt32])));
 
-    let accumulator: AccumulatorFunctionImplementation = Arc::new(|output| match output {
+    let accumulator: AccumulatorFactoryFunction = Arc::new(|output| match output {
         DataType::List(f) => Ok(Box::new(SampleAccumulator::try_new(
             output.clone(),
             f.data_type().clone(),
