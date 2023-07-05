@@ -3,3 +3,5 @@
 DESCRIBE DATABASE usage_schema;
 
 DESCRIBE TABLE coord_data_out;
+
+DESCRIBE TABLE http_data_out;

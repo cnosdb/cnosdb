@@ -1,3 +1,9 @@
+create tenant tenant_a;
+create user user_a;
+alter tenant tenant_a add user user_a as owner;
+drop tenant tenant_a;
+drop user user_a;
+
 drop tenant if exists test_ts_tenant1;
 drop user if exists test_ts_u1;
 drop user if exists test_ts_u2;

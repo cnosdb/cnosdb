@@ -10,6 +10,7 @@ use http_protocol::header::{
     APPLICATION_TABLE, APPLICATION_TSV, CONTENT_TYPE, STAR_STAR,
 };
 use http_protocol::status_code::OK;
+use metrics::count::U64Counter;
 use warp::reply::Response;
 use warp::{reject, Rejection};
 
@@ -91,12 +92,14 @@ impl ResultFormat {
         &self,
         batches: &[RecordBatch],
         has_headers: bool,
+        body_counter: U64Counter,
     ) -> Result<Response, HttpError> {
         let result =
             self.format_batches(batches, has_headers)
                 .map_err(|e| HttpError::FetchResult {
                     reason: format!("{}", e),
                 })?;
+        body_counter.inc(result.len() as u64);
 
         let resp = ResponseBuilder::new(OK)
             .insert_header((CONTENT_TYPE, self.get_http_content_type()))
