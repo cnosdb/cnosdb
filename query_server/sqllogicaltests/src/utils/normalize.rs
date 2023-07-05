@@ -1,5 +1,5 @@
 use arrow::array::ArrayRef;
-use arrow::datatypes::{DataType, Field, SchemaRef};
+use arrow::datatypes::{DataType, Fields, SchemaRef};
 use arrow::error::ArrowError;
 use arrow::record_batch::RecordBatch;
 use arrow::util::display;
@@ -63,7 +63,7 @@ fn equivalent_names_and_types(schema: &SchemaRef, other: SchemaRef) -> bool {
 }
 
 /// Converts columns to a result as expected by sqllogicteset.
-pub fn convert_schema_to_types(columns: &[Field]) -> Vec<CnosDBColumnType> {
+pub fn convert_schema_to_types(columns: &Fields) -> Vec<CnosDBColumnType> {
     columns
         .iter()
         .map(|f| f.data_type())

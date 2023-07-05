@@ -397,9 +397,9 @@ impl Coordinator for CoordService {
         };
 
         let now = tokio::time::Instant::now();
-        debug!("write points, now: {:?}", now);
+        trace::trace!("write points, now: {:?}", now);
         let res = self.writer.write_points(&req, span_ctx).await;
-        debug!(
+        trace::trace!(
             "write points result: {:?}, start at: {:?} elapsed: {:?}",
             res,
             now,

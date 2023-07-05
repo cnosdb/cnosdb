@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
 use std::ops::Not;
 use std::str::FromStr;
@@ -684,22 +684,6 @@ impl<'a> ExtParser<'a> {
         }
     }
 
-    fn parse_has_file_compression_type(&mut self) -> bool {
-        self.parser
-            .parse_keywords(&[Keyword::COMPRESSION, Keyword::TYPE])
-    }
-
-    /// This is a copy of the equivalent implementation in Datafusion.
-    fn parse_csv_has_header(&mut self) -> bool {
-        self.parser
-            .parse_keywords(&[Keyword::WITH, Keyword::HEADER, Keyword::ROW])
-    }
-
-    /// This is a copy of the equivalent implementation in Datafusion.
-    fn parse_has_delimiter(&mut self) -> bool {
-        self.parser.parse_keyword(Keyword::DELIMITER)
-    }
-
     /// This is a copy of the equivalent implementation in Datafusion.
     fn parse_delimiter(&mut self) -> Result<char, ParserError> {
         let token = self.parser.parse_literal_string()?;
@@ -721,54 +705,127 @@ impl<'a> ExtParser<'a> {
         }
     }
 
-    fn parse_create_external_table(&mut self) -> Result<ExtStatement> {
+    fn parse_create_external_table(&mut self, unbounded: bool) -> Result<ExtStatement> {
         self.parser.expect_keyword(Keyword::TABLE)?;
         let if_not_exists =
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let table_name = self.parser.parse_object_name()?;
         let (columns, _) = self.parser.parse_columns()?;
-        self.parser
-            .expect_keywords(&[Keyword::STORED, Keyword::AS])?;
 
-        // THIS is the main difference: we parse a different file format.
-        let file_type = self.parse_file_format()?;
+        #[derive(Default)]
+        struct Builder {
+            file_type: Option<String>,
+            location: Option<String>,
+            has_header: Option<bool>,
+            delimiter: Option<char>,
+            file_compression_type: Option<CompressionTypeVariant>,
+            table_partition_cols: Option<Vec<String>>,
+            order_exprs: Vec<Vec<OrderByExpr>>,
+            options: Option<HashMap<String, String>>,
+        }
+        let mut builder = Builder::default();
 
-        let has_header = self.parse_csv_has_header();
+        fn ensure_not_set<T>(field: &Option<T>, name: &str) -> Result<(), ParserError> {
+            if field.is_some() {
+                return Err(ParserError::ParserError(format!(
+                    "{name} specified more than once",
+                )));
+            }
+            Ok(())
+        }
 
-        let has_delimiter = self.parse_has_delimiter();
-        let delimiter = match has_delimiter {
-            true => self.parse_delimiter()?,
-            false => ',',
-        };
+        loop {
+            if let Some(keyword) = self.parser.parse_one_of_keywords(&[
+                Keyword::STORED,
+                Keyword::LOCATION,
+                Keyword::WITH,
+                Keyword::DELIMITER,
+                Keyword::COMPRESSION,
+                Keyword::PARTITIONED,
+                Keyword::OPTIONS,
+            ]) {
+                match keyword {
+                    Keyword::STORED => {
+                        self.parser.expect_keyword(Keyword::AS)?;
+                        ensure_not_set(&builder.file_type, "STORED AS")?;
+                        builder.file_type = Some(self.parse_file_format()?);
+                    }
+                    Keyword::LOCATION => {
+                        ensure_not_set(&builder.location, "LOCATION")?;
+                        builder.location = Some(self.parser.parse_literal_string()?);
+                    }
+                    Keyword::WITH => {
+                        if self.parser.parse_keyword(Keyword::ORDER) {
+                            builder.order_exprs.push(self.parse_order_by_exprs()?);
+                        } else {
+                            self.parser.expect_keyword(Keyword::HEADER)?;
+                            self.parser.expect_keyword(Keyword::ROW)?;
+                            ensure_not_set(&builder.has_header, "WITH HEADER ROW")?;
+                            builder.has_header = Some(true);
+                        }
+                    }
+                    Keyword::DELIMITER => {
+                        ensure_not_set(&builder.delimiter, "DELIMITER")?;
+                        builder.delimiter = Some(self.parse_delimiter()?);
+                    }
+                    Keyword::COMPRESSION => {
+                        self.parser.expect_keyword(Keyword::TYPE)?;
+                        ensure_not_set(&builder.file_compression_type, "COMPRESSION TYPE")?;
+                        builder.file_compression_type = Some(self.parse_file_compression_type()?);
+                    }
+                    Keyword::PARTITIONED => {
+                        self.parser.expect_keyword(Keyword::BY)?;
+                        ensure_not_set(&builder.table_partition_cols, "PARTITIONED BY")?;
+                        builder.table_partition_cols = Some(self.parse_partitions()?);
+                    }
+                    Keyword::OPTIONS => {
+                        ensure_not_set(&builder.options, "OPTIONS")?;
+                        builder.options = Some(self.parse_string_options()?);
+                    }
+                    _ => {
+                        unreachable!()
+                    }
+                }
+            } else {
+                let token = self.parser.next_token();
+                if token == Token::EOF || token == Token::SemiColon {
+                    break;
+                } else {
+                    return Err(ParserError::ParserError(format!(
+                        "Unexpected token {token}"
+                    )));
+                }
+            }
+        }
 
-        let file_compression_type = if self.parse_has_file_compression_type() {
-            self.parse_file_compression_type()?
-        } else {
-            CompressionTypeVariant::UNCOMPRESSED
-        };
-
-        let order_exprs = if self.parser.parse_keywords(&[Keyword::WITH, Keyword::ORDER]) {
-            self.parse_order_by_exprs()?
-        } else {
-            vec![]
-        };
-
-        self.parser.expect_keyword(Keyword::LOCATION)?;
-        let location = self.parser.parse_literal_string()?;
+        // Validations: location and file_type are required
+        if builder.file_type.is_none() {
+            return Err(ParserError::ParserError(
+                "Missing STORED AS clause in CREATE EXTERNAL TABLE statement".into(),
+            ));
+        }
+        if builder.location.is_none() {
+            return Err(ParserError::ParserError(
+                "Missing LOCATION clause in CREATE EXTERNAL TABLE statement".into(),
+            ));
+        }
 
         let create = CreateExternalTable {
             name: table_name.to_string(),
             columns,
-            file_type,
-            has_header,
-            delimiter,
-            location,
-            table_partition_cols: Default::default(),
+            file_type: builder.file_type.unwrap(),
+            has_header: builder.has_header.unwrap_or(false),
+            delimiter: builder.delimiter.unwrap_or(','),
+            location: builder.location.unwrap(),
+            table_partition_cols: builder.table_partition_cols.unwrap_or(vec![]),
+            order_exprs: builder.order_exprs,
             if_not_exists,
-            file_compression_type,
-            options: Default::default(),
-            order_exprs,
+            file_compression_type: builder
+                .file_compression_type
+                .unwrap_or(CompressionTypeVariant::UNCOMPRESSED),
+            unbounded,
+            options: builder.options.unwrap_or(HashMap::new()),
         };
         Ok(ExtStatement::CreateExternalTable(create))
     }
@@ -828,6 +885,56 @@ impl<'a> ExtParser<'a> {
                 ))
             }
         }
+    }
+
+    fn parse_partitions(&mut self) -> Result<Vec<String>, ParserError> {
+        let mut partitions: Vec<String> = vec![];
+        if !self.parser.consume_token(&Token::LParen) || self.parser.consume_token(&Token::RParen) {
+            return Ok(partitions);
+        }
+
+        loop {
+            if let Token::Word(_) = self.parser.peek_token().token {
+                let identifier = self.parser.parse_identifier()?;
+                partitions.push(identifier.to_string());
+            } else {
+                return self.expected("partition name", self.parser.peek_token());
+            }
+            let comma = self.parser.consume_token(&Token::Comma);
+            if self.parser.consume_token(&Token::RParen) {
+                // allow a trailing comma, even though it's not in standard
+                break;
+            } else if !comma {
+                return self.expected(
+                    "',' or ')' after partition definition",
+                    self.parser.peek_token(),
+                );
+            }
+        }
+        Ok(partitions)
+    }
+
+    /// Parses (key value) style options where the values are literal strings.
+    fn parse_string_options(&mut self) -> Result<HashMap<String, String>, ParserError> {
+        let mut options = HashMap::new();
+        self.parser.expect_token(&Token::LParen)?;
+
+        loop {
+            let key = self.parser.parse_literal_string()?;
+            let value = self.parser.parse_literal_string()?;
+            options.insert(key, value);
+            let comma = self.parser.consume_token(&Token::Comma);
+            if self.parser.consume_token(&Token::RParen) {
+                // allow a trailing comma, even though it's not in standard
+                break;
+            } else if !comma {
+                return self.expected(
+                    "',' or ')' after option definition",
+                    self.parser.peek_token(),
+                );
+            }
+        }
+        Ok(options)
     }
 
     fn parse_string_value(&mut self) -> Result<String> {
@@ -1057,7 +1164,10 @@ impl<'a> ExtParser<'a> {
     fn parse_create(&mut self) -> Result<ExtStatement> {
         // Currently only supports the creation of external tables
         if self.parser.parse_keyword(Keyword::EXTERNAL) {
-            self.parse_create_external_table()
+            self.parse_create_external_table(false)
+        } else if self.parser.parse_keyword(Keyword::UNBOUNDED) {
+            self.parser.expect_keyword(Keyword::EXTERNAL)?;
+            self.parse_create_external_table(true)
         } else if self.parser.parse_keyword(Keyword::TABLE) {
             self.parse_create_table()
         } else if self.parser.parse_keyword(Keyword::DATABASE) {

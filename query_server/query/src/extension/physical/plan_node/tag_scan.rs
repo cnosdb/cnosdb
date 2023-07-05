@@ -140,7 +140,7 @@ impl ExecutionPlan for TagScanExec {
 
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
-            DisplayFormatType::Default => {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
                 let filter = self.predicate();
                 let fields: Vec<_> = self
                     .proj_schema

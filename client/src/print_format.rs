@@ -33,7 +33,9 @@ macro_rules! batches_to_json {
         let mut bytes = vec![];
         {
             let mut writer = $WRITER::new(&mut bytes);
-            writer.write_batches($batches)?;
+            for batch in $batches {
+                writer.write(batch)?;
+            }
             writer.finish()?;
         }
         String::from_utf8(bytes).map_err(|e| DataFusionError::Execution(e.to_string()))?
@@ -63,7 +65,9 @@ impl PrintFormat {
             Self::Csv => println!("{}", print_batches_with_sep(batches, b',')?),
             Self::Tsv => println!("{}", print_batches_with_sep(batches, b'\t')?),
             Self::Table => pretty::print_batches(batches)?,
-            Self::Json => println!("{}", batches_to_json!(ArrayWriter, batches)),
+            Self::Json => {
+                println!("{}", batches_to_json!(ArrayWriter, batches))
+            }
             Self::NdJson => {
                 println!("{}", batches_to_json!(LineDelimitedWriter, batches))
             }
@@ -88,7 +92,6 @@ mod tests {
 
     use datafusion::arrow::array::Int32Array;
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
-    use datafusion::from_slice::FromSlice;
 
     use super::*;
 
@@ -106,15 +109,15 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema,
             vec![
-                Arc::new(Int32Array::from_slice([1, 2, 3])),
-                Arc::new(Int32Array::from_slice([4, 5, 6])),
-                Arc::new(Int32Array::from_slice([7, 8, 9])),
+                Arc::new(Int32Array::from(vec![1, 2, 3])),
+                Arc::new(Int32Array::from(vec![4, 5, 6])),
+                Arc::new(Int32Array::from(vec![7, 8, 9])),
             ],
         )
         .unwrap();
 
-        let batches = vec![batch];
-        let r = print_batches_with_sep(&batches, b',').unwrap();
+        let batches = &[batch];
+        let r = print_batches_with_sep(batches, b',').unwrap();
         assert_eq!("a,b,c\n1,4,7\n2,5,8\n3,6,9\n", r);
     }
 
@@ -136,14 +139,14 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema,
             vec![
-                Arc::new(Int32Array::from_slice([1, 2, 3])),
-                Arc::new(Int32Array::from_slice([4, 5, 6])),
-                Arc::new(Int32Array::from_slice([7, 8, 9])),
+                Arc::new(Int32Array::from(vec![1, 2, 3])),
+                Arc::new(Int32Array::from(vec![4, 5, 6])),
+                Arc::new(Int32Array::from(vec![7, 8, 9])),
             ],
         )
         .unwrap();
 
-        let batches = vec![batch];
+        let batches = vec![&batch];
         let r = batches_to_json!(ArrayWriter, &batches);
         assert_eq!(
             "[{\"a\":1,\"b\":4,\"c\":7},{\"a\":2,\"b\":5,\"c\":8},{\"a\":3,\"b\":6,\"c\":9}]",

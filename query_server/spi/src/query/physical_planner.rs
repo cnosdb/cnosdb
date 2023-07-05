@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::logical_expr::LogicalPlan;
-use datafusion::physical_plan::planner::ExtensionPlanner;
 use datafusion::physical_plan::ExecutionPlan;
+use datafusion::physical_planner::ExtensionPlanner;
 
 use super::session::SessionCtx;
 use crate::Result;

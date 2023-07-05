@@ -1,17 +1,33 @@
 use std::collections::HashMap;
-use std::fmt::{self};
+use std::fmt;
 
 use arrow_flight::sql::{Any, ProstMessageExt};
-use arrow_flight::{FlightDescriptor, FlightEndpoint, Location, Ticket};
+use arrow_flight::{FlightDescriptor, FlightEndpoint, IpcMessage, Location, SchemaAsIpc, Ticket};
 use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::buffer::Buffer;
-use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::datatypes::{Schema, SchemaRef};
+use datafusion::arrow::error::ArrowError;
+use datafusion::arrow::ipc::writer::IpcWriteOptions;
 use datafusion::arrow::ipc::{self, reader};
 use datafusion::arrow::record_batch::RecordBatch;
 use http_protocol::header::AUTHORIZATION;
 use prost::Message;
 use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::{Request, Status};
+
+#[macro_export]
+macro_rules! status_with_location {
+    ($desc:expr, $err:expr) => {
+        Status::internal(format!("{}: {} at {}:{}", $desc, $err, file!(), line!()))
+    };
+}
+
+#[macro_export]
+macro_rules! status {
+    ($desc:expr, $err:expr) => {
+        Status::internal(format!("{}: {}", $desc, $err))
+    };
+}
 
 /// Helper method for retrieving a value from the Authorization header.
 ///
@@ -149,4 +165,9 @@ pub fn dictionary_from_message(
     );
     dictionary_batch_result
         .map_err(|e| Status::internal(format!("Could not convert to Dictionary: {:?}", e)))
+}
+
+pub fn schema_to_ipc_message(schema: &Schema) -> Result<IpcMessage, ArrowError> {
+    let options = IpcWriteOptions::default();
+    SchemaAsIpc::new(schema, &options).try_into()
 }

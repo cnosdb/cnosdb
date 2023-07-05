@@ -38,45 +38,45 @@ rows
 rows
 1
 
--- EXECUTE SQL: select topk(time, 2), * from m2; --
+-- EXECUTE SQL: select topk(time, 2), t0,t1,t2,f0,f1 from m2; --
 -- AFTER_SORT --
 200 OK
-time,time,t0,t1,t2,f0,f1
-1970-01-01T00:00:00.000000103,1970-01-01T00:00:00.000000103,tag13,tag23,,333,222.0
-1970-01-01T00:00:00.000000104,1970-01-01T00:00:00.000000104,tag14,tag24,,444,111.0
+time,t0,t1,t2,f0,f1
+1970-01-01T00:00:00.000000103,tag13,tag23,,333,222.0
+1970-01-01T00:00:00.000000104,tag14,tag24,,444,111.0
 
--- EXECUTE SQL: select topk(t0, 3), * from m2; --
+-- EXECUTE SQL: select topk(t0, 3), time,t1,t2,f0,f1 from m2; --
 -- AFTER_SORT --
 200 OK
-t0,time,t0,t1,t2,f0,f1
-tag12,1970-01-01T00:00:00.000000102,tag12,tag22,,222,333.0
-tag13,1970-01-01T00:00:00.000000103,tag13,tag23,,333,222.0
-tag14,1970-01-01T00:00:00.000000104,tag14,tag24,,444,111.0
+t0,time,t1,t2,f0,f1
+tag12,1970-01-01T00:00:00.000000102,tag22,,222,333.0
+tag13,1970-01-01T00:00:00.000000103,tag23,,333,222.0
+tag14,1970-01-01T00:00:00.000000104,tag24,,444,111.0
 
--- EXECUTE SQL: select topk(t1, 2), * from m2; --
+-- EXECUTE SQL: select topk(t1, 2), time,t0,t2,f0,f1 from m2; --
 -- AFTER_SORT --
 200 OK
-t1,time,t0,t1,t2,f0,f1
-tag23,1970-01-01T00:00:00.000000103,tag13,tag23,,333,222.0
-tag24,1970-01-01T00:00:00.000000104,tag14,tag24,,444,111.0
+t1,time,t0,t2,f0,f1
+tag23,1970-01-01T00:00:00.000000103,tag13,,333,222.0
+tag24,1970-01-01T00:00:00.000000104,tag14,,444,111.0
 
--- EXECUTE SQL: select topk(f0, 2), * from m2; --
+-- EXECUTE SQL: select topk(f0, 2), time,t0,t1,t2,f1 from m2; --
 -- AFTER_SORT --
 200 OK
-f0,time,t0,t1,t2,f0,f1
-333,1970-01-01T00:00:00.000000103,tag13,tag23,,333,222.0
-444,1970-01-01T00:00:00.000000104,tag14,tag24,,444,111.0
+f0,time,t0,t1,t2,f1
+333,1970-01-01T00:00:00.000000103,tag13,tag23,,222.0
+444,1970-01-01T00:00:00.000000104,tag14,tag24,,111.0
 
--- EXECUTE SQL: select topk(f1, 3), * from m2; --
+-- EXECUTE SQL: select topk(f1, 3), time,t0,t1,t2,f0 from m2; --
 -- AFTER_SORT --
 200 OK
-f1,time,t0,t1,t2,f0,f1
-222.0,1970-01-01T00:00:00.000000103,tag13,tag23,,333,222.0
-333.0,1970-01-01T00:00:00.000000102,tag12,tag22,,222,333.0
-444.0,1970-01-01T00:00:00.000000101,tag11,tag21,,111,444.0
+f1,time,t0,t1,t2,f0
+222.0,1970-01-01T00:00:00.000000103,tag13,tag23,,333
+333.0,1970-01-01T00:00:00.000000102,tag12,tag22,,222
+444.0,1970-01-01T00:00:00.000000101,tag11,tag21,,111
 
 -- EXECUTE SQL: select topk(time, 2), topk(t0, 3) from m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: 1. There cannot be nested selection functions. 2. There cannot be multiple selection functions., found: [\n    TOPK(m2.time, Int64(2)),\n    TOPK(m2.t0, Int64(3)),\n]"}
+{"error_code":"010001","error_message":"Datafusion: transform_bottom_func_to_topk_node\ncaused by\nError during planning: 1. There cannot be nested selection functions. 2. There cannot be multiple selection functions., found: [TOPK(m2.time,Int64(2)), TOPK(m2.t0,Int64(3))]"}
 -- ERROR:  --

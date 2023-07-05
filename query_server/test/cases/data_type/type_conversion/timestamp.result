@@ -300,11 +300,11 @@ plan_type,plan
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
-  Filter: test_timestamp_conv.time = TimestampNanosecond(859800416123000000, None) OR test_timestamp_conv.time = TimestampNanosecond(12345678865, None)
-    TableScan: test_timestamp_conv projection=[time, fa], partial_filters=[test_timestamp_conv.time = TimestampNanosecond(859800416123000000, None) OR test_timestamp_conv.time = TimestampNanosecond(12345678865, None)]"
+  Filter: test_timestamp_conv.time = TimestampNanosecond(12345678865, None) OR test_timestamp_conv.time = TimestampNanosecond(859800416123000000, None)
+    TableScan: test_timestamp_conv projection=[time, fa], partial_filters=[test_timestamp_conv.time = TimestampNanosecond(12345678865, None) OR test_timestamp_conv.time = TimestampNanosecond(859800416123000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
   CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: time@0 = 859800416123000000 OR time@0 = 12345678865
+    FilterExec: time@0 = 12345678865 OR time@0 = 859800416123000000
       EmptyExec: produce_one_row=false
 "
 

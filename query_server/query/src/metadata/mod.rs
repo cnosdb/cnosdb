@@ -8,7 +8,7 @@ use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::datasource::TableProvider;
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
+use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource, WindowUDF};
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::TableReference;
 pub use information_schema_provider::{
@@ -260,6 +260,11 @@ impl ContextProvider for MetadataProvider {
     fn options(&self) -> &ConfigOptions {
         // TODO refactor
         &self.config_options
+    }
+
+    fn get_window_meta(&self, _name: &str) -> Option<Arc<WindowUDF>> {
+        // TODO udwf
+        None
     }
 }
 

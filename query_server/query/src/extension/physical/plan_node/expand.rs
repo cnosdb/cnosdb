@@ -11,7 +11,7 @@ use datafusion::error::Result;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_expr::equivalence::project_equivalence_properties;
 use datafusion::physical_expr::{
-    normalize_out_expr_with_alias_schema, EquivalenceProperties, PhysicalSortExpr,
+    normalize_out_expr_with_columns_map, EquivalenceProperties, PhysicalSortExpr,
 };
 use datafusion::physical_plan::expressions::Column;
 use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
@@ -90,11 +90,8 @@ impl ExpandExec {
                 let normalized_exprs = sort_exprs
                     .iter()
                     .map(|sort_expr| {
-                        let expr = normalize_out_expr_with_alias_schema(
-                            sort_expr.expr.clone(),
-                            &alias_map,
-                            &schema,
-                        );
+                        let expr =
+                            normalize_out_expr_with_columns_map(sort_expr.expr.clone(), &alias_map);
                         PhysicalSortExpr {
                             expr,
                             options: sort_expr.options,
@@ -157,9 +154,7 @@ impl ExecutionPlan for ExpandExec {
             Partitioning::Hash(exprs, part) => {
                 let normalized_exprs = exprs
                     .into_iter()
-                    .map(|expr| {
-                        normalize_out_expr_with_alias_schema(expr, &self.alias_map, &self.schema)
-                    })
+                    .map(|expr| normalize_out_expr_with_columns_map(expr, &self.alias_map))
                     .collect::<Vec<_>>();
                 Partitioning::Hash(normalized_exprs, part)
             }
@@ -224,7 +219,7 @@ impl ExecutionPlan for ExpandExec {
 
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
-            DisplayFormatType::Default => {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
                 let proj_strs = self
                     .exprs
                     .iter()

@@ -29,7 +29,7 @@ impl RecordBatchSerializer for NdJsonRecordBatchSerializer {
 
             while let Some(batch) = stream.try_next().await? {
                 num_rows += batch.num_rows();
-                writer.write(batch).context(SerializeJsonSnafu)?;
+                writer.write(&batch).context(SerializeJsonSnafu)?;
             }
         }
 
@@ -49,7 +49,7 @@ impl RecordBatchSerializer for NdJsonRecordBatchSerializer {
 
             for batch in batches {
                 num_rows += batch.num_rows();
-                writer.write(batch.clone()).context(SerializeJsonSnafu)?;
+                writer.write(batch).context(SerializeJsonSnafu)?;
             }
         }
 

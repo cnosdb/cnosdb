@@ -67,6 +67,8 @@ where
                             AggregateMode::PartialMerge,
                             aggregate_exec.group_expr().clone(),
                             aggregate_exec.aggr_expr().to_vec(),
+                            aggregate_exec.filter_expr().to_vec(),
+                            aggregate_exec.order_by_expr().to_vec(),
                             state_restore_exec.clone(),
                             state_restore_exec.schema(),
                         )?);
