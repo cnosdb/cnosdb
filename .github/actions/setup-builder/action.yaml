@@ -3,6 +3,10 @@ description: 'Prepare Rust Build Environment'
 runs:
   using: "composite"
   steps:
+    - name: clean pkg
+      shell: bash
+      run: |
+        bash ./.github/tools/free_disk_space.sh
     - name: Install Build Dependencies
       shell: bash
       run: |
@@ -12,14 +16,14 @@ runs:
     - name: Install Protoc
       shell: bash
       run: |
-        apt-get update
-        apt-get install -y protobuf-compiler
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
         protoc --version
     - name: Install psmisc
       # killall
       shell: bash
       run: |
-        apt-get install -y psmisc
+        sudo apt-get install -y psmisc
     - name: Disable incremental compilation
       # Disable incremental compilation
       shell: bash
