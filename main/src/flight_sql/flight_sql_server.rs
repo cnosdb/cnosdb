@@ -921,22 +921,19 @@ where
     /// because ad-hoc statement of flight jdbc needs to call this interface, so it is simple to implement
     async fn do_put_prepared_statement_update(
         &self,
-        _query: CommandPreparedStatementUpdate,
-        _request: Request<Streaming<FlightData>>,
+        query: CommandPreparedStatementUpdate,
+        request: Request<Streaming<FlightData>>,
     ) -> Result<i64, Status> {
-        // debug!(
-        //     "do_put_prepared_statement_update: query: {:?}, request: {:?}",
-        //     query, request
-        // );
-        //
-        // let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
-        //
-        // let rows_count = self.fetch_affected_rows_count(prepared_statement_handle)?;
-        //
-        // Ok(rows_count)
-        Err(Status::unimplemented(
-            "do_put_prepared_statement_update not implemented",
-        ))
+        let prepared_statement_ident = query.prepared_statement_handle.to_byte_slice();
+        debug!(
+            "do_put_prepared_statement_update query: {:?}",
+            prepared_statement_ident
+        );
+        let _ = get_span_recorder(
+            request.extensions(),
+            "flight sql do_put_prepared_statement_update",
+        );
+        Ok(-1)
     }
 
     /// Prepared statement is not supported,
