@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use config::TenantLimiterConfig;
 use datafusion::arrow::array::ArrayRef;
-use datafusion::arrow::datatypes::{DataType, Schema, SchemaRef};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
 use datafusion::logical_expr::expr::AggregateFunction as AggregateFunctionExpr;
 use datafusion::logical_expr::type_coercion::aggregates::{
@@ -151,7 +151,26 @@ pub enum DDLPlan {
 
 impl DDLPlan {
     pub fn schema(&self) -> SchemaRef {
-        Arc::new(Schema::empty())
+        match self {
+            DDLPlan::DescribeTable(_) => Arc::new(Schema::new(vec![
+                Field::new("COLUMN_NAME", DataType::Utf8, false),
+                Field::new("DATA_TYPE", DataType::Utf8, false),
+                Field::new("COLUMN_TYPE", DataType::Utf8, false),
+                Field::new("COMPRESSION_CODEC", DataType::Utf8, false),
+            ])),
+            DDLPlan::DescribeDatabase(_) => Arc::new(Schema::new(vec![
+                Field::new("TTL", DataType::Utf8, false),
+                Field::new("SHARD", DataType::Utf8, false),
+                Field::new("VNODE_DURATION", DataType::Utf8, false),
+                Field::new("REPLICA", DataType::Utf8, false),
+                Field::new("PRECISION", DataType::Utf8, false),
+            ])),
+            DDLPlan::ChecksumGroup(_) => Arc::new(Schema::new(vec![
+                Field::new("VNODE_ID", DataType::UInt32, false),
+                Field::new("CHECK_SUM", DataType::Utf8, false),
+            ])),
+            _ => Arc::new(Schema::empty()),
+        }
     }
 }
 
@@ -190,7 +209,16 @@ pub enum SYSPlan {
 
 impl SYSPlan {
     pub fn schema(&self) -> SchemaRef {
-        Arc::new(Schema::empty())
+        match self {
+            SYSPlan::ShowQueries => Arc::new(Schema::new(vec![
+                Field::new("query_id", DataType::Utf8, false),
+                Field::new("user", DataType::Utf8, false),
+                Field::new("query", DataType::Utf8, false),
+                Field::new("state", DataType::Utf8, false),
+                Field::new("duration", DataType::UInt64, false),
+            ])),
+            _ => Arc::new(Schema::empty()),
+        }
     }
 }
 
