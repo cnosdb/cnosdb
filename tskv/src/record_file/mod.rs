@@ -23,7 +23,7 @@
 //! ### Wal
 //! ```text
 //! +------------+--------------+---------------+--------------+--------------+
-//! | 0: 4 bytes | 4: 4 bytes   | 8: 8 bytes   | 16: 8 bytes  | 24: 8 bytes  |
+//! | 0: 4 bytes | 4: 4 bytes   | 8: 8 bytes   | 16: 8 bytes  | 24: 8 bytes   |
 //! +------------+--------------+---------------+--------------+--------------+
 //! | "walo"     | crc32_number | padding_zeros | min_sequence | max_sequence |
 //! +------------+--------------+---------------+--------------+--------------+
@@ -36,6 +36,8 @@
 mod reader;
 mod record;
 mod writer;
+
+use std::fmt::Display;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 pub use reader::*;
@@ -83,4 +85,15 @@ pub enum RecordDataType {
     Tombstone = 4,
     Wal = 8,
     IndexLog = 16,
+}
+
+impl Display for RecordDataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecordDataType::Summary => write!(f, "summary"),
+            RecordDataType::Tombstone => write!(f, "tombstone"),
+            RecordDataType::Wal => write!(f, "WAL"),
+            RecordDataType::IndexLog => write!(f, "indexlog"),
+        }
+    }
 }

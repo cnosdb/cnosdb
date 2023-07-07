@@ -126,15 +126,23 @@ pub enum Error {
         message: String,
     },
 
-    #[snafu(display("fails to send to channel"))]
-    Send,
-
-    #[snafu(display("fails to receive from channel"))]
-    Receive {
-        source: tokio::sync::oneshot::error::RecvError,
+    /// Failed to send someting to a channel
+    #[snafu(display("{source}"))]
+    ChannelSend {
+        source: ChannelSendError,
     },
 
-    #[snafu(display("wal truncated"))]
+    /// Failed to receive something from a channel
+    #[snafu(display("{source}"))]
+    ChannelReceive {
+        source: ChannelReceiveError,
+    },
+
+    /// WAL file is truncated, it's because CnosDB didn't shutdown properly.
+    ///
+    /// This error is handled by WAL module:
+    /// just stop the current WAL file reading, go to the next WAL file.
+    #[snafu(display("Internal handled: WAL truncated"))]
     WalTruncated,
 
     #[snafu(display("read/write record file block: {}", reason))]
@@ -294,6 +302,20 @@ impl From<Status> for Error {
             _ => Self::Network { source },
         }
     }
+}
+
+#[derive(Snafu, Debug)]
+pub enum ChannelSendError {
+    #[snafu(display("Failed to send a WAL task"))]
+    WalTask,
+}
+
+#[derive(Snafu, Debug)]
+pub enum ChannelReceiveError {
+    #[snafu(display("Failed to receive write WAL result: {source}"))]
+    WriteWalResult {
+        source: tokio::sync::oneshot::error::RecvError,
+    },
 }
 
 #[test]

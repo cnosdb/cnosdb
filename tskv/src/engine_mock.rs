@@ -55,12 +55,30 @@ impl Engine for MockEngine {
         Ok(())
     }
 
+    async fn remove_tsfamily_from_wal(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
         Ok(())
     }
 
     async fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
         println!("drop_database.sql {:?}", database);
+        Ok(())
+    }
+
+    async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
+        println!("drop_table db:{:?}, table:{:?}", database, table);
+        Ok(())
+    }
+
+    async fn drop_table_from_wal(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         Ok(())
     }
 
@@ -83,11 +101,6 @@ impl Engine for MockEngine {
     // fn get_db_schema(&self, tenant: &str, name: &str) -> Result<Option<DatabaseSchema>> {
     //     Ok(Some(DatabaseSchema::new(tenant, name)))
     // }
-
-    async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
-        println!("drop_table db:{:?}, table:{:?}", database, table);
-        Ok(())
-    }
 
     async fn delete_series(
         &self,

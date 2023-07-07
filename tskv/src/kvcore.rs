@@ -36,7 +36,7 @@ use crate::summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
-use crate::wal::{WalEntryType, WalManager, WalTask};
+use crate::wal::{WalManager, WalTask};
 use crate::{database, file_utils, tenant_name_from_request, Engine, Error, TseriesFamilyId};
 
 // TODO: A small summay channel capacity can cause a block
@@ -195,22 +195,8 @@ impl TsKv {
     }
 
     pub(crate) fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: Receiver<WalTask>) {
-        async fn on_write(
-            wal_manager: &mut WalManager,
-            points: Arc<Vec<u8>>,
-            cb: oneshot::Sender<Result<(u64, usize)>>,
-            id: TseriesFamilyId,
-            tenant: Arc<Vec<u8>>,
-            precision: Precision,
-        ) {
-            let ret = wal_manager
-                .write(WalEntryType::Write, points, id, tenant, precision)
-                .await;
-            let send_ret = cb.send(ret);
-            if let Err(e) = send_ret {
-                // WAL job closed, leaving this write request.
-                warn!("send WAL write result failed: {:?}", e);
-            }
+        async fn on_write(wal_manager: &mut WalManager, wal_task: WalTask) {
+            wal_manager.write(wal_task).await;
         }
 
         async fn on_tick_sync(wal_manager: &WalManager) {
@@ -260,7 +246,9 @@ impl TsKv {
                     tokio::select! {
                         wal_task = receiver.recv() => {
                             match wal_task {
-                                Some(WalTask::Write { id, points, precision,tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant, precision).await,
+                                Some(t) => {
+                                    on_write(&mut wal_manager, t).await
+                                },
                                 _ => break
                             }
                         }
@@ -282,7 +270,9 @@ impl TsKv {
                     tokio::select! {
                         wal_task = receiver.recv() => {
                             match wal_task {
-                                Some(WalTask::Write { id, points, precision,tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant, precision).await,
+                                Some(t) => {
+                                    on_write(&mut wal_manager, t).await
+                                },
                                 _ => break
                             }
                         }
@@ -456,31 +446,31 @@ impl TsKv {
 
     async fn write_wal(
         &self,
-        id: TseriesFamilyId,
-        tenant: &str,
+        vnode_id: VnodeId,
+        tenant: String,
         precision: Precision,
-        points: &[u8],
+        points: Vec<u8>,
     ) -> Result<u64> {
         if !self.options.wal.enabled {
             return Ok(0);
         }
 
-        let (cb, rx) = oneshot::channel();
         let mut enc_points = Vec::with_capacity(points.len() / 2);
         get_str_codec(Encoding::Zstd)
-            .encode(&[points], &mut enc_points)
-            .map_err(|_| Error::Send)?;
+            .encode(&[&points], &mut enc_points)
+            .with_context(|_| error::EncodeSnafu)?;
+        drop(points);
+
+        let (wal_task, rx) = WalTask::new_write(tenant, vnode_id, precision, enc_points);
         self.wal_sender
-            .send(WalTask::Write {
-                id,
-                precision,
-                cb,
-                points: Arc::new(enc_points),
-                tenant: Arc::new(tenant.as_bytes().to_vec()),
-            })
+            .send(wal_task)
             .await
-            .map_err(|_| Error::Send)?;
-        let seq = rx.await.context(error::ReceiveSnafu)??.0;
+            .map_err(|_| Error::ChannelSend {
+                source: error::ChannelSendError::WalTask,
+            })?;
+        let (seq, _size) = rx.await.map_err(|e| Error::ChannelReceive {
+            source: error::ChannelReceiveError::WriteWalResult { source: e },
+        })??;
 
         Ok(seq)
     }
@@ -491,20 +481,22 @@ impl Engine for TsKv {
     async fn write(
         &self,
         span_ctx: Option<&SpanContext>,
-        id: TseriesFamilyId,
+        vnode_id: TseriesFamilyId,
         precision: Precision,
         write_batch: WritePointsRequest,
     ) -> Result<WritePointsResponse> {
         let span_recorder = SpanRecorder::new(span_ctx.child_span("tskv engine write"));
 
         let tenant = tenant_name_from_request(&write_batch);
-        let points = Arc::new(write_batch.points);
+        let points = write_batch.points;
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = get_db_from_fb_points(&fb_points)?;
         let db = self.get_db_or_else_create(&tenant, &db_name).await?;
-        let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
+        let ts_index = self
+            .get_ts_index_or_else_create(db.clone(), vnode_id)
+            .await?;
 
         let tables = fb_points.tables().ok_or(Error::CommonError {
             reason: "points missing table".to_string(),
@@ -524,7 +516,7 @@ impl Engine for TsKv {
 
         let seq = {
             let mut span_recorder = span_recorder.child("write wal");
-            self.write_wal(id, &tenant, precision, &points)
+            self.write_wal(vnode_id, tenant, precision, points)
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
@@ -533,7 +525,7 @@ impl Engine for TsKv {
         };
 
         let tsf = self
-            .get_tsfamily_or_else_create(seq, id, None, db.clone())
+            .get_tsfamily_or_else_create(seq, vnode_id, None, db.clone())
             .await?;
 
         let res = {
@@ -552,7 +544,7 @@ impl Engine for TsKv {
 
     async fn write_from_wal(
         &self,
-        id: TseriesFamilyId,
+        vnode_id: TseriesFamilyId,
         precision: Precision,
         write_batch: WritePointsRequest,
         seq: u64,
@@ -564,7 +556,9 @@ impl Engine for TsKv {
 
         let db_name = get_db_from_fb_points(&fb_points)?;
         let db = self.get_db_or_else_create(&tenant, &db_name).await?;
-        let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
+        let ts_index = self
+            .get_ts_index_or_else_create(db.clone(), vnode_id)
+            .await?;
 
         let write_group = db
             .read()
@@ -580,7 +574,7 @@ impl Engine for TsKv {
             .await?;
 
         let tsf = self
-            .get_tsfamily_or_else_create(seq, id, None, db.clone())
+            .get_tsfamily_or_else_create(seq, vnode_id, None, db.clone())
             .await?;
         tsf.read().await.put_points(seq, write_group)?;
         return Ok(());
@@ -614,6 +608,20 @@ impl Engine for TsKv {
     }
 
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
+        // Store this action in WAL.
+        let (wal_task, rx) =
+            WalTask::new_delete_table(tenant.to_string(), database.to_string(), table.to_string());
+        self.wal_sender
+            .send(wal_task)
+            .await
+            .map_err(|_| Error::ChannelSend {
+                source: error::ChannelSendError::WalTask,
+            })?;
+        // Receive WAL write action result.
+        let _ = rx.await.map_err(|e| Error::ChannelReceive {
+            source: error::ChannelReceiveError::WriteWalResult { source: e },
+        })??;
+
         // TODO Create global DropTable flag for droping the same table at the same time.
         let version_set = self.version_set.clone();
         let database = database.to_string();
@@ -623,30 +631,99 @@ impl Engine for TsKv {
         database::delete_table_async(tenant, database, table, version_set).await
     }
 
-    async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
-        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            let mut db_wlock = db.write().await;
+    async fn drop_table_from_wal(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
+        // TODO Create global DropTable flag for droping the same table at the same time.
+        let version_set = self.version_set.clone();
+        let database = database.to_string();
+        let table = table.to_string();
+        let tenant = tenant.to_string();
 
+        database::delete_table_async(tenant, database, table, version_set).await
+    }
+
+    async fn remove_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()> {
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            // Store this action in WAL.
+            let (wal_task, rx) =
+                WalTask::new_delete_vnode(tenant.to_string(), database.to_string(), vnode_id);
+            self.wal_sender
+                .send(wal_task)
+                .await
+                .map_err(|_| Error::ChannelSend {
+                    source: error::ChannelSendError::WalTask,
+                })?;
+            // Receive WAL write action result.
+            let _ = rx.await.map_err(|e| Error::ChannelReceive {
+                source: error::ChannelReceiveError::WriteWalResult { source: e },
+            })??;
+
+            let mut db_wlock = db.write().await;
+            db_wlock.del_ts_index(vnode_id);
             db_wlock
-                .del_tsfamily(id, self.summary_task_sender.clone())
+                .del_tsfamily(vnode_id, self.summary_task_sender.clone())
                 .await;
 
             let ts_dir = self
                 .options
                 .storage
-                .ts_family_dir(&make_owner(tenant, database), id);
-            let result = std::fs::remove_dir_all(&ts_dir);
-            info!(
-                "Remove TsFamily data '{}', result: {:?}",
-                ts_dir.display(),
-                result
-            );
+                .ts_family_dir(&make_owner(tenant, database), vnode_id);
+            match std::fs::remove_dir_all(&ts_dir) {
+                Ok(()) => {
+                    info!("Removed TsFamily directory '{}'", ts_dir.display());
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to remove TsFamily directory '{}': {}",
+                        ts_dir.display(),
+                        e
+                    );
+                }
+            }
         }
 
         Ok(())
     }
 
-    async fn prepare_copy_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()> {
+    async fn remove_tsfamily_from_wal(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+    ) -> Result<()> {
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            let mut db_wlock = db.write().await;
+            db_wlock.del_ts_index(vnode_id);
+            db_wlock
+                .del_tsfamily(vnode_id, self.summary_task_sender.clone())
+                .await;
+
+            let ts_dir = self
+                .options
+                .storage
+                .ts_family_dir(&make_owner(tenant, database), vnode_id);
+            match std::fs::remove_dir_all(&ts_dir) {
+                Ok(()) => {
+                    info!("Removed TsFamily directory '{}'", ts_dir.display());
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to remove TsFamily directory '{}': {}",
+                        ts_dir.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn prepare_copy_vnode(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+    ) -> Result<()> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             if let Some(tsfamily) = db.read().await.get_tsfamily(vnode_id) {
                 tsfamily.write().await.update_status(VnodeStatus::Copying);
@@ -655,9 +732,9 @@ impl Engine for TsKv {
         self.flush_tsfamily(tenant, database, vnode_id).await
     }
 
-    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+    async fn flush_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            if let Some(tsfamily) = db.read().await.get_tsfamily(id) {
+            if let Some(tsfamily) = db.read().await.get_tsfamily(vnode_id) {
                 let request = {
                     let mut tsfamily = tsfamily.write().await;
                     tsfamily.switch_to_immutable();
@@ -678,7 +755,7 @@ impl Engine for TsKv {
                 }
             }
 
-            if let Some(ts_index) = db.read().await.get_ts_index(id) {
+            if let Some(ts_index) = db.read().await.get_ts_index(vnode_id) {
                 let _ = ts_index.flush().await;
             }
         }
@@ -786,11 +863,11 @@ impl Engine for TsKv {
         tenant: &str,
         database: &str,
         tab: &str,
-        id: SeriesId,
+        vnode_id: VnodeId,
         filter: &ColumnDomains<String>,
     ) -> Result<Vec<SeriesId>> {
         let ts_index = match self.version_set.read().await.get_db(tenant, database) {
-            Some(db) => match db.read().await.get_ts_index(id) {
+            Some(db) => match db.read().await.get_ts_index(vnode_id) {
                 Some(ts_index) => ts_index,
                 None => return Ok(vec![]),
             },
@@ -819,11 +896,11 @@ impl Engine for TsKv {
         &self,
         tenant: &str,
         database: &str,
-        vnode_id: u32,
-        sid: u32,
+        vnode_id: VnodeId,
+        series_id: SeriesId,
     ) -> Result<Option<SeriesKey>> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            return Ok(db.read().await.get_series_key(vnode_id, sid).await?);
+            return Ok(db.read().await.get_series_key(vnode_id, series_id).await?);
         }
 
         Ok(None)
@@ -833,7 +910,7 @@ impl Engine for TsKv {
         &self,
         tenant: &str,
         database: &str,
-        vnode_id: u32,
+        vnode_id: VnodeId,
     ) -> Result<Option<Arc<SuperVersion>>> {
         let version_set = self.version_set.read().await;
         // Comment it, It's not a error, Maybe the data not right!
@@ -865,7 +942,7 @@ impl Engine for TsKv {
         &self,
         tenant: &str,
         database: &str,
-        vnode_id: u32,
+        vnode_id: VnodeId,
     ) -> Result<Option<VersionEdit>> {
         let version_set = self.version_set.read().await;
         if let Some(db) = version_set.get_db(tenant, database) {
@@ -896,7 +973,7 @@ impl Engine for TsKv {
         &self,
         tenant: &str,
         database: &str,
-        vnode_id: u32,
+        vnode_id: VnodeId,
         summary: VersionEdit,
     ) -> Result<()> {
         info!("apply tsfamily summary: {:?}", summary);
@@ -929,25 +1006,25 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
+    async fn drop_vnode(&self, vnode_id: TseriesFamilyId) -> Result<()> {
         let r_version_set = self.version_set.read().await;
         let all_db = r_version_set.get_all_db();
         for (db_name, db) in all_db {
-            if db.read().await.get_tsfamily(id).is_none() {
+            if db.read().await.get_tsfamily(vnode_id).is_none() {
                 continue;
             }
             {
                 let mut db_wlock = db.write().await;
-                db_wlock.del_ts_index(id);
+                db_wlock.del_ts_index(vnode_id);
                 db_wlock
-                    .del_tsfamily(id, self.summary_task_sender.clone())
+                    .del_tsfamily(vnode_id, self.summary_task_sender.clone())
                     .await;
             }
-            let tsf_dir = self.options.storage.tsfamily_dir(db_name, id);
+            let tsf_dir = self.options.storage.tsfamily_dir(db_name, vnode_id);
             if let Err(e) = std::fs::remove_dir_all(&tsf_dir) {
                 error!("Failed to remove dir '{}', e: {}", tsf_dir.display(), e);
             }
-            let index_dir = self.options.storage.index_dir(db_name, id);
+            let index_dir = self.options.storage.index_dir(db_name, vnode_id);
             if let Err(e) = std::fs::remove_dir_all(&index_dir) {
                 error!("Failed to remove dir '{}', e: {}", index_dir.display(), e);
             }
