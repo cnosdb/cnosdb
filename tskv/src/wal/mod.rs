@@ -4,11 +4,26 @@
 //!
 //! ## Record Data
 //! ```text
-//! +------------+------------+------------+
-//! | 0: 1 byte  | 1: 8 bytes | 9: n bytes |
-//! +------------+------------+------------+
-//! |    type    |  sequence  |    data    |
-//! +------------+------------+------------+
+//! # type = Write
+//! +------------+------------+------------+------------+--------------+-----------------+-----------+
+//! | 0: 1 byte  | 1: 8 bytes | 9: 4 bytes | 13: 1 byte | 14: 8 bytes  | 22: tenant_size |  n bytes  |
+//! +------------+------------+------------+------------+--------------+-----------------+-----------+
+//! |    type    |  sequence  |  vnode_id  |  precision | tenant_size  |  tenant         |   data    |
+//! +------------+------------+------------+------------+--------------+-----------------+-----------+
+//!
+//! # type = DeleteVnode
+//! +------------+------------+------------+-------------+-------------+----------+
+//! | 0: 1 byte  | 1: 8 bytes | 9: 4 bytes | 13: 8 bytes | 21: n bytes | n bytes  |
+//! +------------+------------+------------+-------------+-------------+----------+
+//! |    type    |  sequence  |  vnode_id  | tenant_size |  tenant     | database |
+//! +------------+------------+------------+-------------+-------------+----------+
+//!
+//! # type = DeleteTable
+//! +------------+------------+-------------+---------------+-----------------+---------------+---------+
+//! | 0: 1 byte  | 1: 8 bytes | 9: 8 bytes  | 17: 4 bytes   | 21: tenant_size | database_size | n bytes |
+//! +------------+------------+-------------+---------------+-----------------+---------------+---------+
+//! |    type    |  sequence  | tenant_size | database_size |  tenant         |  database     | table   |
+//! +------------+------------+-------------+---------------+-----------------+---------------+---------+
 //! ```
 //!
 //! ## Footer
@@ -20,59 +35,55 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
+mod reader;
+mod writer;
+
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::string::String;
+use std::fmt::Display;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use models::codec::Encoding;
+use models::meta_data::VnodeId;
 use models::schema::Precision;
 use protos::kv_service::{Meta, WritePointsRequest};
-use protos::models_helper::print_points;
+pub use reader::print_wal_statistics;
 use snafu::ResultExt;
 use tokio::sync::oneshot;
-use trace::{debug, error, info, warn};
 
-use crate::byte_utils::{decode_be_u32, decode_be_u64};
+use self::reader::WalEntry;
 use crate::context::GlobalSequenceContext;
-use crate::error::{Error, Result};
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
-use crate::record_file::{self, RecordDataType, RecordDataVersion};
 use crate::tsm::codec::get_str_codec;
-use crate::tsm::DecodeSnafu;
-use crate::{file_utils, Engine, TseriesFamilyId};
+use crate::{error, file_utils, Engine, Error, Result};
 
 const ENTRY_TYPE_LEN: usize = 1;
 const ENTRY_SEQUENCE_LEN: usize = 8;
-const ENTRY_VNODE_LEN: usize = 4;
-const ENTRY_TENANT_LEN: usize = 8;
-// 1 + 8 + 4 + 1 + 8
-const ENTRY_HEADER_LEN: usize = 22;
+/// 9 = type(1) + sequence(8)
+const ENTRY_HEADER_LEN: usize = 9;
+
+const ENTRY_VNODE_ID_LEN: usize = 4;
+const ENTRY_PRECISION_LEN: usize = 1;
+const ENTRY_TENANT_SIZE_LEN: usize = 8;
+const ENTRY_DATABASE_SIZE_LEN: usize = 4;
+const ENTRY_TABLE_SIZE_LEN: usize = 4;
+
 const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'w', b'a', b'l', b'o']);
 const FOOTER_MAGIC_NUMBER_LEN: usize = 4;
 
 const SEGMENT_MAGIC: [u8; 4] = [0x57, 0x47, 0x4c, 0x00];
 
-const BLOCK_HEADER_SIZE: usize = 25;
-
-pub enum WalTask {
-    Write {
-        id: TseriesFamilyId,
-        precision: Precision,
-        points: Arc<Vec<u8>>,
-        tenant: Arc<Vec<u8>>,
-        // (seq_no, written_size)
-        cb: oneshot::Sender<Result<(u64, usize)>>,
-    },
-}
+/// A channel sender that send write WAL result: `(seq_no: u64, written_size: usize)`
+type WriteResultSender = oneshot::Sender<crate::Result<(u64, usize)>>;
+type WriteResultReceiver = oneshot::Receiver<crate::Result<(u64, usize)>>;
 
 #[repr(u8)]
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 pub enum WalEntryType {
     Write = 1,
-    Delete = 2,
-    DeleteRange = 3,
+    DeleteVnode = 11,
+    DeleteTable = 21,
     Unknown = 127,
 }
 
@@ -80,169 +91,122 @@ impl From<u8> for WalEntryType {
     fn from(typ: u8) -> Self {
         match typ {
             1 => WalEntryType::Write,
-            2 => WalEntryType::Delete,
-            3 => WalEntryType::DeleteRange,
+            11 => WalEntryType::DeleteVnode,
+            21 => WalEntryType::DeleteTable,
             _ => WalEntryType::Unknown,
         }
     }
 }
 
-pub struct WalEntryBlock {
-    pub typ: WalEntryType,
-    buf: Vec<u8>,
-}
-
-impl WalEntryBlock {
-    pub fn new(typ: WalEntryType, buf: Vec<u8>) -> Self {
-        Self { typ, buf }
-    }
-
-    pub fn seq(&self) -> u64 {
-        decode_be_u64(&self.buf[1..9])
-    }
-
-    pub fn vnode_id(&self) -> TseriesFamilyId {
-        decode_be_u32(&self.buf[9..13])
-    }
-
-    pub fn precision(&self) -> Precision {
-        Precision::from(self.buf[13])
-    }
-
-    pub fn tenant(&self) -> &[u8] {
-        let tenant_len = decode_be_u64(&self.buf[14..22]) as usize;
-        &self.buf[ENTRY_HEADER_LEN..(ENTRY_HEADER_LEN + tenant_len)]
-    }
-
-    pub fn data(&self) -> &[u8] {
-        let tenant_len = decode_be_u64(&self.buf[14..22]) as usize;
-        &self.buf[(ENTRY_HEADER_LEN + tenant_len)..]
-    }
-}
-
-fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_FOOTER_LEN] {
-    let mut footer = [0_u8; record_file::FILE_FOOTER_LEN];
-    footer[0..4].copy_from_slice(&FOOTER_MAGIC_NUMBER.to_be_bytes());
-    footer[16..24].copy_from_slice(&min_sequence.to_be_bytes());
-    footer[24..32].copy_from_slice(&max_sequence.to_be_bytes());
-    footer
-}
-
-/// Reads a wal file and parse footer, returns sequence range
-async fn read_footer(path: impl AsRef<Path>) -> Result<Option<(u64, u64)>> {
-    if file_manager::try_exists(&path) {
-        let reader = WalReader::open(path).await?;
-        Ok(Some((reader.min_sequence, reader.max_sequence)))
-    } else {
-        Ok(None)
-    }
-}
-
-struct WalWriter {
-    id: u64,
-    inner: record_file::Writer,
-    size: u64,
-    path: PathBuf,
-    config: Arc<WalOptions>,
-
-    buf: Vec<u8>,
-    min_sequence: u64,
-    max_sequence: u64,
-}
-
-impl WalWriter {
-    /// Opens a wal file at path, returns a WalWriter with id and config.
-    /// If wal file doesn't exist, create new wal file and set it's min_log_sequence(default 0).
-    pub async fn open(
-        config: Arc<WalOptions>,
-        id: u64,
-        path: impl AsRef<Path>,
-        min_seq: u64,
-    ) -> Result<Self> {
-        let path = path.as_ref();
-
-        // Use min_sequence existing in file, otherwise in parameter
-        let (writer, min_sequence, max_sequence) = if file_manager::try_exists(path) {
-            let writer = record_file::Writer::open(path, RecordDataType::Wal).await?;
-            let (min_sequence, max_sequence) = match writer.footer() {
-                Some(footer) => WalReader::parse_footer(footer).unwrap_or((min_seq, min_seq)),
-                None => (min_seq, min_seq),
-            };
-            (writer, min_sequence, max_sequence)
-        } else {
-            (
-                record_file::Writer::open(path, RecordDataType::Wal).await?,
-                min_seq,
-                min_seq,
-            )
-        };
-
-        let size = writer.file_size();
-
-        Ok(Self {
-            id,
-            inner: writer,
-            size,
-            path: PathBuf::from(path),
-            config,
-            buf: Vec::new(),
-            min_sequence,
-            max_sequence,
-        })
-    }
-
-    /// Writes data, returns data sequence and data size.
-    pub async fn write(
-        &mut self,
-        typ: WalEntryType,
-        data: Arc<Vec<u8>>,
-        id: TseriesFamilyId,
-        tenant: Arc<Vec<u8>>,
-        precision: Precision,
-    ) -> Result<(u64, usize)> {
-        let seq = self.max_sequence;
-        let tenant_len = tenant.len() as u64;
-
-        let written_size = self
-            .inner
-            .write_record(
-                RecordDataVersion::V1 as u8,
-                RecordDataType::Wal as u8,
-                [
-                    &[typ as u8][..],
-                    &seq.to_be_bytes(),
-                    &id.to_be_bytes(),
-                    &(precision as u8).to_be_bytes(),
-                    &tenant_len.to_be_bytes(),
-                    &tenant,
-                    &data,
-                ]
-                .as_slice(),
-            )
-            .await?;
-
-        if self.config.sync {
-            self.inner.sync().await?;
+impl Display for WalEntryType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WalEntryType::Write => write!(f, "write"),
+            WalEntryType::DeleteVnode => write!(f, "delete_vnode"),
+            WalEntryType::DeleteTable => write!(f, "delete_table"),
+            WalEntryType::Unknown => write!(f, "unknown"),
         }
-        // write & fsync succeed
-        self.max_sequence += 1;
-        self.size += written_size as u64;
-        Ok((seq, written_size))
+    }
+}
+
+pub enum WalTask {
+    Write {
+        tenant: String,
+        vnode_id: VnodeId,
+        precision: Precision,
+        points: Vec<u8>,
+        cb: WriteResultSender,
+    },
+    DeleteVnode {
+        tenant: String,
+        database: String,
+        vnode_id: VnodeId,
+        cb: WriteResultSender,
+    },
+    DeleteTable {
+        tenant: String,
+        database: String,
+        table: String,
+        cb: WriteResultSender,
+    },
+}
+
+impl WalTask {
+    pub fn new_write(
+        tenant: String,
+        vnode_id: VnodeId,
+        precision: Precision,
+        points: Vec<u8>,
+    ) -> (WalTask, WriteResultReceiver) {
+        let (cb, rx) = oneshot::channel();
+        (
+            WalTask::Write {
+                tenant,
+                vnode_id,
+                precision,
+                points,
+                cb,
+            },
+            rx,
+        )
     }
 
-    pub async fn sync(&self) -> Result<()> {
-        self.inner.sync().await
+    pub fn new_delete_vnode(
+        tenant: String,
+        database: String,
+        vnode_id: VnodeId,
+    ) -> (WalTask, WriteResultReceiver) {
+        let (cb, rx) = oneshot::channel();
+        (
+            WalTask::DeleteVnode {
+                tenant,
+                database,
+                vnode_id,
+                cb,
+            },
+            rx,
+        )
     }
 
-    pub async fn close(mut self) -> Result<usize> {
-        info!(
-            "Closing wal with sequence: [{}, {})",
-            self.min_sequence, self.max_sequence
-        );
-        let footer = build_footer(self.min_sequence, self.max_sequence);
-        let size = self.inner.write_footer(footer).await?;
-        self.inner.close().await?;
-        Ok(size)
+    pub fn new_delete_table(
+        tenant: String,
+        database: String,
+        table: String,
+    ) -> (WalTask, WriteResultReceiver) {
+        let (cb, rx) = oneshot::channel();
+        (
+            WalTask::DeleteTable {
+                tenant,
+                database,
+                table,
+                cb,
+            },
+            rx,
+        )
+    }
+
+    pub fn wal_entry_type(&self) -> WalEntryType {
+        match self {
+            WalTask::Write { .. } => WalEntryType::Write,
+            WalTask::DeleteVnode { .. } => WalEntryType::DeleteVnode,
+            WalTask::DeleteTable { .. } => WalEntryType::DeleteTable,
+        }
+    }
+
+    fn write_wal_result_sender(self) -> WriteResultSender {
+        match self {
+            WalTask::Write { cb, .. } => cb,
+            WalTask::DeleteVnode { cb, .. } => cb,
+            WalTask::DeleteTable { cb, .. } => cb,
+        }
+    }
+
+    pub fn fail(self, e: crate::Error) -> crate::Result<()> {
+        self.write_wal_result_sender()
+            .send(Err(e))
+            .map_err(|_| crate::Error::ChannelSend {
+                source: crate::error::ChannelSendError::WalTask,
+            })
     }
 }
 
@@ -250,7 +214,7 @@ pub struct WalManager {
     config: Arc<WalOptions>,
     global_seq_ctx: Arc<GlobalSequenceContext>,
     current_dir: PathBuf,
-    current_file: WalWriter,
+    current_file: writer::WalWriter,
     total_file_size: u64,
     old_file_max_sequence: HashMap<u64, u64>,
 }
@@ -278,17 +242,17 @@ impl WalManager {
                 Ok(m) => {
                     total_file_size += m.len();
                 }
-                Err(e) => error!("Failed to get WAL file metadata for '{}': {:?}", &f, e),
+                Err(e) => trace::error!("Failed to get WAL file metadata for '{}': {:?}", &f, e),
             }
-            match read_footer(file_path).await {
+            match reader::read_footer(file_path).await {
                 Ok(Some((_, max_seq))) => match file_utils::get_wal_file_id(&f) {
                     Ok(file_id) => {
                         old_file_max_sequence.insert(file_id, max_seq);
                     }
-                    Err(e) => error!("Failed to parse WAL file name for '{}': {:?}", &f, e),
+                    Err(e) => trace::error!("Failed to parse WAL file name for '{}': {:?}", &f, e),
                 },
-                Ok(None) => warn!("Failed to parse WAL file footer for '{}'", &f),
-                Err(e) => warn!("Failed to parse WAL file footer for '{}': {:?}", &f, e),
+                Ok(None) => trace::warn!("Failed to parse WAL file footer for '{}'", &f),
+                Err(e) => trace::warn!("Failed to parse WAL file footer for '{}': {:?}", &f, e),
             }
         }
 
@@ -298,7 +262,7 @@ impl WalManager {
             {
                 Some((_, id)) => {
                     let path = file_utils::make_wal_file(&config.path, id);
-                    let (_, max_seq) = read_footer(&path).await?.unwrap_or((1_u64, 1_u64));
+                    let (_, max_seq) = reader::read_footer(&path).await?.unwrap_or((1_u64, 1_u64));
                     (max_seq + 1, id + 1)
                 }
                 None => (1_u64, 1_u64),
@@ -306,9 +270,9 @@ impl WalManager {
 
         let new_wal = file_utils::make_wal_file(&config.path, next_file_id);
         let current_file =
-            WalWriter::open(config.clone(), next_file_id, new_wal, pre_max_seq).await?;
-        total_file_size += current_file.size;
-        info!("WAL '{}' starts write", current_file.id);
+            writer::WalWriter::open(config.clone(), next_file_id, new_wal, pre_max_seq).await?;
+        total_file_size += current_file.size();
+        trace::info!("WAL '{}' starts write", current_file.id());
         let current_dir = config.path.clone();
         Ok(WalManager {
             config,
@@ -321,39 +285,41 @@ impl WalManager {
     }
 
     async fn roll_wal_file(&mut self, max_file_size: u64) -> Result<()> {
-        if self.current_file.size > max_file_size {
-            info!(
+        if self.current_file.size() > max_file_size {
+            trace::info!(
                 "WAL '{}' is full at seq '{}', begin rolling.",
-                self.current_file.id, self.current_file.max_sequence
+                self.current_file.id(),
+                self.current_file.max_sequence()
             );
 
-            let new_file_id = self.current_file.id + 1;
+            let new_file_id = self.current_file.id() + 1;
             let new_file_name = file_utils::make_wal_file(&self.config.path, new_file_id);
 
-            let new_file = WalWriter::open(
+            let new_file = writer::WalWriter::open(
                 self.config.clone(),
                 new_file_id,
                 new_file_name,
-                self.current_file.max_sequence,
+                self.current_file.max_sequence(),
             )
             .await?;
             // Total WALs size add WAL header size.
-            self.total_file_size += new_file.size;
+            self.total_file_size += new_file.size();
 
             let mut old_file = std::mem::replace(&mut self.current_file, new_file);
-            if old_file.max_sequence <= old_file.min_sequence {
-                old_file.max_sequence = old_file.min_sequence;
+            if old_file.max_sequence() <= old_file.min_sequence() {
+                old_file.set_max_sequence(old_file.min_sequence());
             } else {
-                old_file.max_sequence -= 1;
+                old_file.set_max_sequence(old_file.max_sequence() - 1);
             }
             self.old_file_max_sequence
-                .insert(old_file.id, old_file.max_sequence);
+                .insert(old_file.id(), old_file.max_sequence());
             // Total WALs size add WAL footer size.
             self.total_file_size += old_file.close().await? as u64;
 
-            info!(
+            trace::info!(
                 "WAL '{}' starts write at seq {}",
-                self.current_file.id, self.current_file.max_sequence
+                self.current_file.id(),
+                self.current_file.max_sequence()
             );
 
             self.check_to_delete().await;
@@ -373,11 +339,11 @@ impl WalManager {
         if !old_files_to_delete.is_empty() {
             for file_id in old_files_to_delete {
                 let file_path = file_utils::make_wal_file(&self.config.path, file_id);
-                debug!("Removing wal file '{}'", file_path.display());
+                trace::debug!("Removing wal file '{}'", file_path.display());
                 let file_size = match tokio::fs::metadata(&file_path).await {
                     Ok(m) => m.len(),
                     Err(e) => {
-                        error!(
+                        trace::error!(
                             "Failed to get WAL file metadata for '{}': {:?}",
                             file_path.display(),
                             e
@@ -386,7 +352,7 @@ impl WalManager {
                     }
                 };
                 if let Err(e) = tokio::fs::remove_file(&file_path).await {
-                    error!("Failed to remove file '{}': {:?}", file_path.display(), e);
+                    trace::error!("Failed to remove file '{}': {:?}", file_path.display(), e);
                 }
                 // Remove max_sequence record for deleted file.
                 self.old_file_max_sequence.remove(&file_id);
@@ -397,27 +363,67 @@ impl WalManager {
     }
 
     /// Checks if wal file is full then writes data. Return data sequence and data size.
-    pub async fn write(
-        &mut self,
-        typ: WalEntryType,
-        data: Arc<Vec<u8>>,
-        id: TseriesFamilyId,
-        tenant: Arc<Vec<u8>>,
-        precision: Precision,
-    ) -> Result<(u64, usize)> {
-        self.roll_wal_file(self.config.max_file_size).await?;
-        let (seq, size) = self
-            .current_file
-            .write(typ, data, id, tenant, precision)
-            .await?;
-        self.total_file_size += size as u64;
-        Ok((seq, size))
+    pub async fn write(&mut self, wal_task: WalTask) {
+        if let Err(e) = self.roll_wal_file(self.config.max_file_size).await {
+            trace::error!("Failed to roll WAL file: {}", e);
+            if wal_task.fail(e).is_err() {
+                trace::error!("Failed to send roll WAL error to tskv");
+            }
+            return;
+        }
+        let (write_ret, cb) = match wal_task {
+            WalTask::Write {
+                tenant,
+                vnode_id,
+                precision,
+                points,
+                cb,
+            } => (
+                self.current_file
+                    .write(tenant, vnode_id, precision, points)
+                    .await,
+                cb,
+            ),
+            WalTask::DeleteVnode {
+                tenant,
+                database,
+                vnode_id,
+                cb,
+            } => (
+                self.current_file
+                    .delete_vnode(tenant, database, vnode_id)
+                    .await,
+                cb,
+            ),
+            WalTask::DeleteTable {
+                tenant,
+                database,
+                table,
+                cb,
+            } => (
+                self.current_file
+                    .delete_table(tenant, database, table)
+                    .await,
+                cb,
+            ),
+        };
+        let send_ret = match write_ret {
+            Ok((seq, size)) => {
+                self.total_file_size += size as u64;
+                cb.send(Ok((seq, size)))
+            }
+            Err(e) => cb.send(Err(e)),
+        };
+        if let Err(e) = send_ret {
+            // WAL job closed, leaving this write request.
+            trace::warn!("send WAL write result failed: {:?}", e);
+        }
     }
 
     pub async fn recover(&self, engine: &impl Engine) -> Result<()> {
         let vnode_last_seq_map = self.global_seq_ctx.cloned();
         let min_log_seq = self.global_seq_ctx.min_seq();
-        warn!("Recover: reading wal from seq '{}'", min_log_seq);
+        trace::warn!("Recover: reading wal from seq '{}'", min_log_seq);
 
         let wal_files = file_manager::list_file_names(&self.current_dir);
         // TODO: Parallel get min_sequence at first.
@@ -426,16 +432,18 @@ impl WalManager {
             if !file_manager::try_exists(&path) {
                 continue;
             }
-            let mut reader = WalReader::open(&path).await?;
+            let mut reader = reader::WalReader::open(&path).await?;
             if reader.is_empty() {
                 continue;
             }
             // If this file has no footer, try to read all it's records.
             // If max_sequence of this file is greater than min_log_seq, read all it's records.
-            if reader.max_sequence == 0 || reader.max_sequence >= min_log_seq {
-                info!(
+            if reader.max_sequence() == 0 || reader.max_sequence() >= min_log_seq {
+                trace::info!(
                     "Recover: reading wal '{}' for seq {} to {}",
-                    file_name, reader.min_sequence, reader.max_sequence
+                    file_name,
+                    reader.min_sequence(),
+                    reader.max_sequence(),
                 );
                 Self::read_wal_to_engine(&mut reader, engine, min_log_seq, &vnode_last_seq_map)
                     .await?;
@@ -445,32 +453,32 @@ impl WalManager {
     }
 
     async fn read_wal_to_engine(
-        reader: &mut WalReader,
+        reader: &mut reader::WalReader,
         engine: &impl Engine,
         min_log_seq: u64,
-        vnode_last_seq_map: &HashMap<TseriesFamilyId, u64>,
+        vnode_last_seq_map: &HashMap<VnodeId, u64>,
     ) -> Result<bool> {
         let mut seq_gt_min_seq = false;
         let decoder = get_str_codec(Encoding::Zstd);
         let mut decoded_data = Vec::new();
         loop {
             match reader.next_wal_entry().await {
-                Ok(Some(e)) => {
-                    let seq = e.seq();
+                Ok(Some(wal_entry_blk)) => {
+                    let seq = wal_entry_blk.seq;
                     if seq < min_log_seq {
                         continue;
                     }
                     seq_gt_min_seq = true;
-                    match e.typ {
-                        WalEntryType::Write => {
+                    match wal_entry_blk.entry {
+                        WalEntry::Write(blk) => {
                             decoded_data.truncate(0);
                             decoder
-                                .decode(e.data(), &mut decoded_data)
-                                .context(DecodeSnafu)?;
+                                .decode(blk.points(), &mut decoded_data)
+                                .context(error::DecodeSnafu)?;
                             if decoded_data.is_empty() {
                                 continue;
                             }
-                            let vnode_id = e.vnode_id();
+                            let vnode_id = blk.vnode_id();
                             if let Some(tsf_last_seq) = vnode_last_seq_map.get(&vnode_id) {
                                 // If `seq_no` of TsFamily is greater than or equal to `seq`,
                                 // it means that data was writen to tsm.
@@ -479,8 +487,8 @@ impl WalManager {
                                 }
                             }
                             let tenant =
-                                unsafe { String::from_utf8_unchecked(e.tenant().to_vec()) };
-                            let precision = e.precision();
+                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
+                            let precision = blk.precision();
                             let req = WritePointsRequest {
                                 version: 1,
                                 meta: Some(Meta {
@@ -495,11 +503,36 @@ impl WalManager {
                                 .await
                                 .unwrap();
                         }
-                        WalEntryType::Delete => {
-                            // TODO delete a memcache entry
+                        WalEntry::DeleteVnode(blk) => {
+                            let vnode_id = blk.vnode_id();
+                            let tenant =
+                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
+                            let database =
+                                unsafe { String::from_utf8_unchecked(blk.database().to_vec()) };
+                            trace::info!("Recover: delete vnode, tenant: {}, database: {}, vnode_id: {vnode_id}", &tenant, &database);
+                            engine
+                                .remove_tsfamily_from_wal(&tenant, &database, vnode_id)
+                                .await
+                                .unwrap();
                         }
-                        WalEntryType::DeleteRange => {
-                            // TODO delete range in a memcache
+                        WalEntry::DeleteTable(blk) => {
+                            // TODO(zipper) may we only delete data in memcache?
+                            let tenant =
+                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
+                            let database =
+                                unsafe { String::from_utf8_unchecked(blk.database().to_vec()) };
+                            let table =
+                                unsafe { String::from_utf8_unchecked(blk.table().to_vec()) };
+                            trace::info!(
+                                "Recover: delete table, tenant: {}, database: {}, table: {}",
+                                &tenant,
+                                &database,
+                                &table
+                            );
+                            engine
+                                .drop_table_from_wal(&tenant, &database, &table)
+                                .await
+                                .unwrap();
                         }
                         _ => {}
                     };
@@ -529,7 +562,7 @@ impl WalManager {
     }
 
     pub fn current_seq_no(&self) -> u64 {
-        self.current_file.max_sequence
+        self.current_file.max_sequence()
     }
 
     pub fn sync_interval(&self) -> std::time::Duration {
@@ -542,117 +575,6 @@ impl WalManager {
 
     pub fn total_file_size(&self) -> u64 {
         self.total_file_size
-    }
-}
-
-pub struct WalReader {
-    inner: record_file::Reader,
-    /// Min write sequence in the wal file, may be 0 if wal file is new or
-    /// CnosDB was crushed or force-killed.
-    min_sequence: u64,
-    /// Max write sequence in the wal file, may be 0 if wal file is new or
-    /// CnosDB was crushed or force-killed.
-    max_sequence: u64,
-}
-
-impl WalReader {
-    pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let reader = record_file::Reader::open(&path).await?;
-
-        let (min_sequence, max_sequence) = match reader.footer() {
-            Some(footer) => Self::parse_footer(footer).unwrap_or((0_u64, 0_u64)),
-            None => (0_u64, 0_u64),
-        };
-
-        Ok(Self {
-            inner: reader,
-            min_sequence,
-            max_sequence,
-        })
-    }
-
-    /// Parses wal footer, returns sequence range.
-    pub fn parse_footer(footer: [u8; record_file::FILE_FOOTER_LEN]) -> Option<(u64, u64)> {
-        let magic_number = decode_be_u32(&footer[0..4]);
-        if magic_number != FOOTER_MAGIC_NUMBER {
-            // There is no footer in wal file.
-            return None;
-        }
-        let min_sequence = decode_be_u64(&footer[16..24]);
-        let max_sequence = decode_be_u64(&footer[24..32]);
-        Some((min_sequence, max_sequence))
-    }
-
-    pub async fn next_wal_entry(&mut self) -> Result<Option<WalEntryBlock>> {
-        let data = match self.inner.read_record().await {
-            Ok(r) => r.data,
-            Err(Error::Eof) => {
-                return Ok(None);
-            }
-            Err(e) => {
-                error!("Error reading wal: {:?}", e);
-                return Err(Error::WalTruncated);
-            }
-        };
-        if data.len() < ENTRY_HEADER_LEN {
-            error!("Error reading wal: block length too small: {}", data.len());
-            return Ok(None);
-        }
-        Ok(Some(WalEntryBlock::new(data[0].into(), data)))
-    }
-
-    pub fn path(&self) -> PathBuf {
-        self.inner.path()
-    }
-
-    pub fn len(&self) -> u64 {
-        self.inner.len()
-    }
-
-    /// If this record file has some records in it.
-    pub fn is_empty(&self) -> bool {
-        match self
-            .len()
-            .checked_sub((record_file::FILE_MAGIC_NUMBER_LEN + record_file::FILE_FOOTER_LEN) as u64)
-        {
-            Some(d) => d == 0,
-            None => true,
-        }
-    }
-}
-
-pub async fn print_wal_statistics(path: impl AsRef<Path>) {
-    use protos::models as fb_models;
-
-    let mut reader = WalReader::open(path).await.unwrap();
-    let decoder = get_str_codec(Encoding::Zstd);
-    loop {
-        match reader.next_wal_entry().await {
-            Ok(Some(entry)) => {
-                println!("============================================================");
-                let ety_data = entry.data();
-                let mut data_buf = Vec::new();
-                decoder.decode(ety_data, &mut data_buf).unwrap();
-                match flatbuffers::root::<fb_models::Points>(&data_buf[0]) {
-                    Ok(points) => {
-                        print_points(points);
-                    }
-                    Err(e) => panic!("unexpected data: '{:?}'", e),
-                }
-            }
-            Ok(None) => {
-                println!("============================================================");
-                break;
-            }
-            Err(Error::WalTruncated) => {
-                println!("============================================================");
-                println!("WAL file truncated");
-                break;
-            }
-            Err(e) => {
-                panic!("Failed to read wal file: {:?}", e);
-            }
-        }
     }
 }
 
@@ -682,9 +604,10 @@ mod test {
     use crate::kv_option::WalOptions;
     use crate::memcache::test::get_one_series_cache_data;
     use crate::memcache::FieldVal;
-    use crate::tsm::codec::get_str_codec;
-    use crate::wal::{WalEntryType, WalManager, WalReader};
-    use crate::{kv_option, Engine, Error, Result, TsKv};
+    use crate::tsm::codec::{get_str_codec, StringCodec};
+    use crate::wal::reader::{WalEntry, WalReader};
+    use crate::wal::{WalManager, WalTask};
+    use crate::{error, kv_option, Engine, Error, Result, TsKv};
 
     fn random_write_data() -> Vec<u8> {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -695,7 +618,7 @@ mod test {
 
     /// Generate flatbuffers data and memcache data
     #[allow(clippy::type_complexity)]
-    fn const_write_data(
+    pub fn const_write_data(
         start_timestamp: i64,
         num: usize,
     ) -> (Vec<u8>, HashMap<String, Vec<(Timestamp, FieldVal)>>) {
@@ -738,7 +661,7 @@ mod test {
 
     async fn check_wal_files(
         wal_dir: impl AsRef<Path>,
-        data: Vec<Arc<Vec<u8>>>,
+        data: Vec<Vec<u8>>,
         is_flatbuffers: bool,
     ) -> Result<()> {
         let wal_dir = wal_dir.as_ref();
@@ -752,28 +675,37 @@ mod test {
             println!("Reading data from wal file '{}'", path.display());
             loop {
                 match reader.next_wal_entry().await {
-                    Ok(Some(entry)) => {
+                    Ok(Some(entry_block)) => {
                         println!("Reading entry from wal file '{}'", path.display());
-                        let ety_data = entry.data();
-                        let ori_data = match data_iter.next() {
-                            Some(d) => d,
-                            None => {
-                                panic!("unexpected data to compare that is less than file count.")
+                        match entry_block.entry {
+                            WalEntry::Write(entry) => {
+                                let ety_data = entry.points();
+                                let ori_data = match data_iter.next() {
+                                    Some(d) => d,
+                                    None => {
+                                        panic!("unexpected data to compare that is less than file count.")
+                                    }
+                                };
+                                if is_flatbuffers {
+                                    let mut data_buf = Vec::new();
+                                    decoder.decode(ety_data, &mut data_buf).unwrap();
+                                    assert_eq!(data_buf[0].as_slice(), ori_data.as_slice());
+                                    if let Err(e) =
+                                        flatbuffers::root::<fb_models::Points>(&data_buf[0])
+                                    {
+                                        panic!(
+                                            "unexpected data in wal file, ignored file '{}' because '{}'",
+                                            wal_dir.display(),
+                                            e
+                                        );
+                                    }
+                                } else {
+                                    assert_eq!(ety_data, ori_data.as_slice());
+                                }
                             }
-                        };
-                        if is_flatbuffers {
-                            let mut data_buf = Vec::new();
-                            decoder.decode(ety_data, &mut data_buf).unwrap();
-                            assert_eq!(data_buf[0].as_slice(), ori_data.as_ref().as_slice());
-                            if let Err(e) = flatbuffers::root::<fb_models::Points>(&data_buf[0]) {
-                                panic!(
-                                    "unexpected data in wal file, ignored file '{}' because '{}'",
-                                    wal_dir.display(),
-                                    e
-                                );
-                            }
-                        } else {
-                            assert_eq!(ety_data, ori_data.as_ref().as_slice());
+                            WalEntry::DeleteVnode(_) => todo!(),
+                            WalEntry::DeleteTable(_) => todo!(),
+                            WalEntry::Unknown => todo!(),
                         }
                     }
                     Ok(None) => {
@@ -801,24 +733,17 @@ mod test {
         global_config.wal.path = dir.clone();
         let wal_config = WalOptions::from(&global_config);
 
+        let tenant = "cnosdb".to_string();
         let mut mgr = WalManager::open(Arc::new(wal_config), GlobalSequenceContext::empty())
             .await
             .unwrap();
         let mut data_vec = Vec::new();
         for i in 1..=10_u64 {
-            let data = Arc::new(b"hello".to_vec());
+            let data = b"hello".to_vec();
             data_vec.push(data.clone());
-
-            let (seq, _) = mgr
-                .write(
-                    WalEntryType::Write,
-                    data,
-                    0,
-                    Arc::new(b"cnosdb".to_vec()),
-                    Precision::NS,
-                )
-                .await
-                .unwrap();
+            let (wal_task, rx) = WalTask::new_write(tenant.clone(), 0, Precision::NS, data);
+            mgr.write(wal_task).await;
+            let (seq, _) = rx.await.unwrap().unwrap();
             assert_eq!(i, seq)
         }
         mgr.close().await.unwrap();
@@ -841,31 +766,23 @@ mod test {
         global_config.wal.flush_trigger_total_file_size = 100;
         let wal_config = WalOptions::from(&global_config);
 
-        let tenant = Arc::new(b"cnosdb".to_vec());
+        let tenant = "cnosdb".to_string();
         let min_seq_no = 6;
 
         let gcs = GlobalSequenceContext::empty();
         gcs.set_min_seq(min_seq_no);
 
         let mut mgr = WalManager::open(Arc::new(wal_config), gcs).await.unwrap();
-        let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
+        let mut data_vec: Vec<Vec<u8>> = Vec::new();
         for seq in 1..=10 {
-            let data = Arc::new(format!("{}", seq).as_bytes().to_vec());
+            let data = format!("{}", seq).into_bytes();
             if seq >= min_seq_no {
-                // Data in file_id taat less than version_set_min_seq_no will be deleted.
+                // Data in file_id that less than version_set_min_seq_no will be deleted.
                 data_vec.push(data.clone());
             }
-
-            let (write_seq, _) = mgr
-                .write(
-                    WalEntryType::Write,
-                    data.clone(),
-                    0,
-                    tenant.clone(),
-                    Precision::NS,
-                )
-                .await
-                .unwrap();
+            let (wal_task, rx) = WalTask::new_write(tenant.clone(), 0, Precision::NS, data);
+            mgr.write(wal_task).await;
+            let (write_seq, _) = rx.await.unwrap().unwrap();
             assert_eq!(seq, write_seq)
         }
         assert_eq!(mgr.total_file_size(), 364);
@@ -884,34 +801,63 @@ mod test {
         global_config.wal.path = dir.clone();
         let wal_config = WalOptions::from(&global_config);
 
+        let tenant = "cnosdb".to_string();
         let mut mgr = WalManager::open(Arc::new(wal_config), GlobalSequenceContext::empty())
             .await
             .unwrap();
         let coder = get_str_codec(Encoding::Zstd);
-        let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
+        let mut data_vec: Vec<Vec<u8>> = Vec::new();
 
         for _i in 0..10 {
-            let data = Arc::new(random_write_data());
+            let data = random_write_data();
             data_vec.push(data.clone());
 
             let mut enc_points = Vec::new();
             coder
                 .encode(&[&data], &mut enc_points)
-                .map_err(|_| Error::Send)
+                .map_err(|_| Error::ChannelSend {
+                    source: crate::error::ChannelSendError::WalTask,
+                })
                 .unwrap();
-            mgr.write(
-                WalEntryType::Write,
-                Arc::new(enc_points),
-                0,
-                Arc::new("cnosdb".as_bytes().to_vec()),
-                Precision::NS,
-            )
-            .await
-            .unwrap();
+            let (wal_task, rx) = WalTask::new_write(tenant.clone(), 0, Precision::NS, enc_points);
+            mgr.write(wal_task).await;
+            rx.await.unwrap().unwrap();
         }
         // Do not close wal manager, so footer won't write.
 
         check_wal_files(dir, data_vec, true).await.unwrap();
+    }
+
+    async fn write_points_to_wal(
+        max_ts: i64,
+        tenant: String,
+        wal_mgr: &mut WalManager,
+        coder: Box<dyn StringCodec + Send + Sync>,
+        data_vec: &mut Vec<Vec<u8>>,
+        wrote_data: &mut HashMap<String, Vec<(Timestamp, FieldVal)>>,
+    ) {
+        for i in 1..=max_ts {
+            let (data, mem_data) = const_write_data(i, 1);
+            data_vec.push(data.clone());
+
+            for (col_name, values) in mem_data {
+                wrote_data
+                    .entry(col_name)
+                    .or_default()
+                    .extend(values.into_iter());
+            }
+
+            let mut enc_points = Vec::new();
+            coder
+                .encode(&[&data], &mut enc_points)
+                .map_err(|_| Error::ChannelSend {
+                    source: error::ChannelSendError::WalTask,
+                })
+                .unwrap();
+            let (wal_task, rx) = WalTask::new_write(tenant.clone(), 10, Precision::NS, enc_points);
+            wal_mgr.write(wal_task).await;
+            rx.await.unwrap().unwrap();
+        }
     }
 
     #[test]
@@ -928,39 +874,22 @@ mod test {
 
         let mut wrote_data: HashMap<String, Vec<(Timestamp, FieldVal)>> = HashMap::new();
         rt.block_on(async {
+            let tenant = "cnosdb".to_string();
             let mut mgr = WalManager::open(Arc::new(wal_config), GlobalSequenceContext::empty())
                 .await
                 .unwrap();
             let coder = get_str_codec(Encoding::Zstd);
-            let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
+            let mut data_vec: Vec<Vec<u8>> = Vec::new();
 
-            for i in 1..=10 {
-                let (fb_data, mem_data) = const_write_data(i, 1);
-                let data = Arc::new(fb_data);
-                data_vec.push(data.clone());
-
-                for (col_name, values) in mem_data {
-                    wrote_data
-                        .entry(col_name)
-                        .or_default()
-                        .extend(values.into_iter());
-                }
-
-                let mut enc_points = Vec::new();
-                coder
-                    .encode(&[&data], &mut enc_points)
-                    .map_err(|_| Error::Send)
-                    .unwrap();
-                mgr.write(
-                    WalEntryType::Write,
-                    Arc::new(enc_points),
-                    10,
-                    Arc::new("cnosdb".as_bytes().to_vec()),
-                    Precision::NS,
-                )
-                .await
-                .expect("write succeed");
-            }
+            write_points_to_wal(
+                10,
+                tenant.clone(),
+                &mut mgr,
+                coder,
+                &mut data_vec,
+                &mut wrote_data,
+            )
+            .await;
             mgr.close().await.unwrap();
             check_wal_files(dir, data_vec, true).await.unwrap();
         });

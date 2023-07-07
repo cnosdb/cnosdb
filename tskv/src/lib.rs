@@ -50,6 +50,7 @@ pub type ColumnFileId = u64;
 type TseriesFamilyId = u32;
 type LevelId = u32;
 
+/// Returns the tenant of a WRitePOintsRequest
 pub fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) -> String {
     match &req.meta {
         Some(meta) => meta.tenant.clone(),
@@ -61,31 +62,79 @@ pub type EngineRef = Arc<dyn Engine>;
 
 #[async_trait]
 pub trait Engine: Send + Sync + Debug {
+    /// Tskv engine write the gRPC message `WritePointsRequest`(which contains
+    /// the tenant, user, database, some tables, and each table has some rows)
+    /// into a `Vnode` managed by engine.
+    ///
+    /// - span_ctx - The trace span.
+    /// - vnode_id - ID of the storage unit(caches and files).
+    /// - precision - The timestamp precision of table rows.
+    ///
+    /// Data will be written to the write-ahead-log first.
     async fn write(
         &self,
         span_ctx: Option<&SpanContext>,
-        id: u32,
+        vnode_id: VnodeId,
         precision: Precision,
         write_batch: WritePointsRequest,
     ) -> Result<WritePointsResponse>;
 
+    /// Tskv engine write the gRPC message `WritePointsRequest`(which contains
+    /// the tenant, user, database, some tables, and each table has some rows)
+    /// that from a WAL into a storage unit managed by engine.
+    ///
+    /// - vnode_id - ID of the storage unit(caches and files).
+    /// - precision - The timestamp precision of table rows.
+    /// - seq - The WAL sequence of the stored gRPC message.
+    ///
+    /// Data is from the WAL(write-ahead-log), so won't write back to WAL.
     async fn write_from_wal(
         &self,
-        id: u32,
+        vnode_id: VnodeId,
         precision: Precision,
         write_batch: WritePointsRequest,
         seq: u64,
     ) -> Result<()>;
 
+    /// Remove all storage unit(caches and files) in specified database,
+    /// then remove directory of the database.
     async fn drop_database(&self, tenant: &str, database: &str) -> Result<()>;
 
+    /// Delete all data of a table.
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
 
-    async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
+    /// Delete all data of a table.
+    ///
+    /// Data is from the WAL(write-ahead-log), so won't write back to WAL.
+    async fn drop_table_from_wal(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
 
-    async fn prepare_copy_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()>;
-    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
+    /// Remove the storage unit(caches and files) managed by engine,
+    /// then remove directory of the storage unit.
+    async fn remove_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()>;
 
+    /// Remove the storage unit(caches and files) managed by engine,
+    /// then remove directory of the storage unit.
+    ///
+    /// Data is from the WAL(write-ahead-log), so won't write back to WAL.
+    async fn remove_tsfamily_from_wal(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+    ) -> Result<()>;
+
+    /// Mark the storage unit as `Copying` and flush caches.
+    async fn prepare_copy_vnode(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+    ) -> Result<()>;
+
+    /// Flush all caches of the storage unit into a file.
+    async fn flush_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()>;
+
+    // TODO this method is not completed,
     async fn add_table_column(
         &self,
         tenant: &str,
@@ -94,6 +143,7 @@ pub trait Engine: Send + Sync + Debug {
         column: TableColumn,
     ) -> Result<()>;
 
+    // TODO this method is not completed,
     async fn drop_table_column(
         &self,
         tenant: &str,
@@ -102,6 +152,7 @@ pub trait Engine: Send + Sync + Debug {
         column: &str,
     ) -> Result<()>;
 
+    // TODO this method is not completed,
     async fn change_table_column(
         &self,
         tenant: &str,
@@ -111,6 +162,7 @@ pub trait Engine: Send + Sync + Debug {
         new_column: TableColumn,
     ) -> Result<()>;
 
+    // TODO this method is not completed,
     async fn delete_series(
         &self,
         tenant: &str,
@@ -120,32 +172,38 @@ pub trait Engine: Send + Sync + Debug {
         time_range: &TimeRange,
     ) -> Result<()>;
 
+    /// Read index of a storage unit, find series ids that matches the filter.
     async fn get_series_id_by_filter(
         &self,
         tenant: &str,
-        db: &str,
-        tab: &str,
+        database: &str,
+        table: &str,
         vnode_id: VnodeId,
         filter: &ColumnDomains<String>,
     ) -> Result<Vec<SeriesId>>;
 
+    /// Read index of a storage unit, get `SeriesKey` of the geiven series id.
     async fn get_series_key(
         &self,
         tenant: &str,
-        db: &str,
-        vnode_id: u32,
-        sid: SeriesId,
+        database: &str,
+        vnode_id: VnodeId,
+        series_id: SeriesId,
     ) -> Result<Option<SeriesKey>>;
 
+    /// Get a `SuperVersion` that contains the latest version of caches and files
+    /// of the storage unit.
     async fn get_db_version(
         &self,
         tenant: &str,
-        db: &str,
+        database: &str,
         vnode_id: u32,
     ) -> Result<Option<Arc<SuperVersion>>>;
 
+    /// Get the storage options which was used to install the engine.
     fn get_storage_options(&self) -> Arc<StorageOptions>;
 
+    /// Get the summary(information of files) of the storae unit.
     async fn get_vnode_summary(
         &self,
         tenant: &str,
@@ -153,6 +211,8 @@ pub trait Engine: Send + Sync + Debug {
         vnode_id: u32,
     ) -> Result<Option<VersionEdit>>;
 
+    /// Try to build a new storage unit from the summary(information of files),
+    /// if it already exists, delete first.
     async fn apply_vnode_summary(
         &self,
         tenant: &str,
@@ -161,11 +221,18 @@ pub trait Engine: Send + Sync + Debug {
         summary: VersionEdit,
     ) -> Result<()>;
 
+    // TODO this method is the same as remove_tsfamily and not be referenced,
+    // we can delete it.
+    #[deprecated]
     async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
 
+    /// For the specified storage units, flush all caches into files, then compact
+    /// files into larger files.
     async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()>;
 
+    /// Get a compressed hash_tree(ID and checksum of each vnode) of engine.
     async fn get_vnode_hash_tree(&self, vnode_id: VnodeId) -> Result<RecordBatch>;
 
+    /// Close all background jobs of engine.
     async fn close(&self);
 }
