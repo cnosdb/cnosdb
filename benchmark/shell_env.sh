@@ -12,7 +12,7 @@ export BENCHMARK_DATASET=$1
 export BENCHMARK_TYPE=${BENCHMARK_TYPE:-"pr"}
 
 # hits
-#export HITS_DATA_URL=${HITS_DATA_URL:-"/data/hits.parquet"}
+export HITS_DATA_URL=${HITS_DATA_URL:-"/data/hits.parquet"}
 
 # tsbs
 export TSBS_LOAD_CMD=${TSBS_LOAD_CMD:-"load_cnosdb"}

@@ -16,6 +16,6 @@ ${SQL_CLI} --file ${current_dir}/sql/create.sql >/dev/null
 q_end=$(date +%s.%N)
 q_time=$(echo "$q_end - $q_start" | bc -l)
 
-data_size=$(wc -c </data/hits.parquet)
+data_size=$(wc -c <${HITS_DATA_URL})
 
 echo "${data_size} ${q_time}"
