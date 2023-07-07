@@ -13,7 +13,9 @@ use datafusion::common::tree_node::{
 use datafusion::config::ConfigOptions;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::utils::expr_to_columns;
-use datafusion::logical_expr::{Aggregate, Extension, GetIndexedField, LogicalPlan, Projection};
+use datafusion::logical_expr::{
+    expr, Aggregate, Extension, GetIndexedField, LogicalPlan, Projection,
+};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::{col, Expr};
 
@@ -343,7 +345,7 @@ impl TreeNodeRewriter for TimeWindowGapfillRewriter {
     type N = Expr;
     fn pre_visit(&mut self, expr: &Expr) -> Result<RewriteRecursion> {
         match expr {
-            Expr::ScalarUDF { fun, .. } if fun.name == TIME_WINDOW_GAPFILL => {
+            Expr::ScalarUDF(expr::ScalarUDF { fun, .. }) if fun.name == TIME_WINDOW_GAPFILL => {
                 Ok(RewriteRecursion::Mutate)
             }
             _ => Ok(RewriteRecursion::Continue),
@@ -355,7 +357,7 @@ impl TreeNodeRewriter for TimeWindowGapfillRewriter {
         // so that everything stays wired up.
         let orig_name = expr.display_name()?;
         match expr {
-            Expr::ScalarUDF { fun, args } if fun.name == TIME_WINDOW_GAPFILL => {
+            Expr::ScalarUDF(expr::ScalarUDF { fun, args }) if fun.name == TIME_WINDOW_GAPFILL => {
                 self.args = Some(args.clone());
                 // Ok(Expr::ScalarUDF {
                 //     fun: TIME_WINDOW_UDF.clone(),
@@ -363,10 +365,10 @@ impl TreeNodeRewriter for TimeWindowGapfillRewriter {
                 // }
                 // .alias(orig_name));
 
-                let expr = Expr::ScalarUDF {
+                let expr = Expr::ScalarUDF(expr::ScalarUDF {
                     fun: TIME_WINDOW_UDF.clone(),
                     args,
-                };
+                });
 
                 Ok(
                     Expr::GetIndexedField(GetIndexedField::new(
@@ -408,7 +410,7 @@ fn handle_projection(proj: &Projection) -> Result<Option<LogicalPlan>> {
     let fill_cols: Vec<(&Expr, FillStrategy, &str)> = proj_exprs
         .iter()
         .filter_map(|e| match e {
-            Expr::ScalarUDF { fun, args } => {
+            Expr::ScalarUDF(expr::ScalarUDF { fun, args }) => {
                 if let Some(strategy) = udf_to_fill_strategy(&fun.name) {
                     let col = &args[0];
                     Some((col, strategy, fun.name.as_str()))
@@ -441,7 +443,9 @@ fn handle_projection(proj: &Projection) -> Result<Option<LogicalPlan>> {
         .iter()
         .cloned()
         .map(|e| match e {
-            Expr::ScalarUDF { fun, mut args } if udf_to_fill_strategy(&fun.name).is_some() => {
+            Expr::ScalarUDF(expr::ScalarUDF { fun, mut args })
+                if udf_to_fill_strategy(&fun.name).is_some() =>
+            {
                 args.remove(0)
             }
             _ => e,
@@ -465,7 +469,7 @@ fn count_udf(e: &Expr, name: &str) -> Result<usize> {
     let mut count = 0;
     e.apply(&mut |expr| {
         match expr {
-            Expr::ScalarUDF { fun, .. } if fun.name == name => {
+            Expr::ScalarUDF(expr::ScalarUDF { fun, .. }) if fun.name == name => {
                 count += 1;
             }
             _ => (),

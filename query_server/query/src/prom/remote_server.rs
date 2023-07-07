@@ -364,7 +364,6 @@ mod test {
     use datafusion::arrow::array::{Float64Array, StringArray, TimestampNanosecondArray};
     use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
     use datafusion::arrow::record_batch::RecordBatch;
-    use datafusion::from_slice::FromSlice;
     use models::auth::user::{User, UserDesc, UserOptions};
     use protos::prompb::types::{Label, Sample, TimeSeries};
     use spi::query::execution::Output;
@@ -389,11 +388,9 @@ mod test {
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(TimestampNanosecondArray::from_slice(vec![
-                    1673069176267000000,
-                ])),
-                Arc::new(StringArray::from_slice(vec!["tag1"])),
-                Arc::new(Float64Array::from_slice(vec![1.1_f64])),
+                Arc::new(TimestampNanosecondArray::from(vec![1673069176267000000])),
+                Arc::new(StringArray::from(vec!["tag1"])),
+                Arc::new(Float64Array::from(vec![1.1_f64])),
             ],
         )
         .unwrap();

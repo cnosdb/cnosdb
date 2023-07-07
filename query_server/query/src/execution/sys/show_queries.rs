@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use datafusion::arrow::array::{StringBuilder, UInt64Builder};
-use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
 use spi::query::execution::{Output, QueryState, QueryStateMachineRef};
@@ -15,19 +15,23 @@ use super::SystemTask;
 use crate::dispatcher::query_tracker::QueryTracker;
 
 pub struct ShowQueriesTask {
+    schema: SchemaRef,
     query_tracker: Arc<QueryTracker>,
 }
 
 impl ShowQueriesTask {
-    pub fn new(query_tracker: Arc<QueryTracker>) -> Self {
-        Self { query_tracker }
+    pub fn new(query_tracker: Arc<QueryTracker>, schema: SchemaRef) -> Self {
+        Self {
+            schema,
+            query_tracker,
+        }
     }
 }
 
 #[async_trait]
 impl SystemTask for ShowQueriesTask {
     async fn execute(&self, _query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        let mut result_builder = ShowQueriesResultBuilder::new();
+        let mut result_builder = ShowQueriesResultBuilder::new(self.schema.clone());
 
         self.query_tracker.running_queries().iter().for_each(|e| {
             let info = e.info();
@@ -58,15 +62,7 @@ struct ShowQueriesResultBuilder {
 }
 
 impl ShowQueriesResultBuilder {
-    fn new() -> Self {
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("query_id", DataType::Utf8, false),
-            Field::new("user", DataType::Utf8, false),
-            Field::new("query", DataType::Utf8, false),
-            Field::new("state", DataType::Utf8, false),
-            Field::new("duration", DataType::UInt64, false),
-        ]));
-
+    fn new(schema: SchemaRef) -> Self {
         Self {
             schema,
             query_ids: StringBuilder::new(),

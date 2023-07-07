@@ -5,14 +5,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use config::TenantLimiterConfig;
 use datafusion::arrow::array::ArrayRef;
-use datafusion::arrow::datatypes::{DataType, Schema, SchemaRef};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
-use datafusion::logical_expr::expr::AggregateFunction as AggregateFunctionExpr;
 use datafusion::logical_expr::type_coercion::aggregates::{
     DATES, NUMERICS, STRINGS, TIMES, TIMESTAMPS,
 };
 use datafusion::logical_expr::{
-    AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan, ReturnTypeFunction, ScalarUDF,
+    expr, expr_fn, CreateExternalTable, LogicalPlan as DFPlan, ReturnTypeFunction, ScalarUDF,
     Signature, Volatility,
 };
 use datafusion::physical_plan::functions::make_scalar_function;
@@ -151,7 +150,26 @@ pub enum DDLPlan {
 
 impl DDLPlan {
     pub fn schema(&self) -> SchemaRef {
-        Arc::new(Schema::empty())
+        match self {
+            DDLPlan::DescribeTable(_) => Arc::new(Schema::new(vec![
+                Field::new("COLUMN_NAME", DataType::Utf8, false),
+                Field::new("DATA_TYPE", DataType::Utf8, false),
+                Field::new("COLUMN_TYPE", DataType::Utf8, false),
+                Field::new("COMPRESSION_CODEC", DataType::Utf8, false),
+            ])),
+            DDLPlan::DescribeDatabase(_) => Arc::new(Schema::new(vec![
+                Field::new("TTL", DataType::Utf8, false),
+                Field::new("SHARD", DataType::Utf8, false),
+                Field::new("VNODE_DURATION", DataType::Utf8, false),
+                Field::new("REPLICA", DataType::Utf8, false),
+                Field::new("PRECISION", DataType::Utf8, false),
+            ])),
+            DDLPlan::ChecksumGroup(_) => Arc::new(Schema::new(vec![
+                Field::new("VNODE_ID", DataType::UInt32, false),
+                Field::new("CHECK_SUM", DataType::Utf8, false),
+            ])),
+            _ => Arc::new(Schema::empty()),
+        }
     }
 }
 
@@ -190,7 +208,16 @@ pub enum SYSPlan {
 
 impl SYSPlan {
     pub fn schema(&self) -> SchemaRef {
-        Arc::new(Schema::empty())
+        match self {
+            SYSPlan::ShowQueries => Arc::new(Schema::new(vec![
+                Field::new("query_id", DataType::Utf8, false),
+                Field::new("user", DataType::Utf8, false),
+                Field::new("query", DataType::Utf8, false),
+                Field::new("state", DataType::Utf8, false),
+                Field::new("duration", DataType::UInt64, false),
+            ])),
+            _ => Arc::new(Schema::empty()),
+        }
     }
 }
 
@@ -528,22 +555,13 @@ pub trait LogicalPlanner {
 
 /// Additional output information
 pub fn affected_row_expr(args: Vec<Expr>) -> Expr {
-    Expr::ScalarUDF {
-        fun: TABLE_WRITE_UDF.clone(),
-        args,
-    }
-    .alias(AFFECTED_ROWS.0)
+    let udf = expr::ScalarUDF::new(TABLE_WRITE_UDF.clone(), args);
+
+    Expr::ScalarUDF(udf).alias(AFFECTED_ROWS.0)
 }
 
 pub fn merge_affected_row_expr() -> Expr {
-    // lit(ScalarValue::Null).alias("COUNT")
-    Expr::AggregateFunction(AggregateFunctionExpr {
-        fun: AggregateFunction::Sum,
-        args: vec![col(AFFECTED_ROWS.0)],
-        distinct: false,
-        filter: None,
-    })
-    .alias(AFFECTED_ROWS.0)
+    expr_fn::sum(col(AFFECTED_ROWS.0)).alias(AFFECTED_ROWS.0)
 }
 
 /// Normalize a SQL object name

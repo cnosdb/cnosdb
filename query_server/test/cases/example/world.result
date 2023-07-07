@@ -15,7 +15,7 @@ Float64(3) / Int64(5)
 
 -- EXECUTE SQL: SELECT 3 + TRUE; --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Int64 + Boolean can't be evaluated because there isn't a common type to coerce the types to"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Unsupported argument types. Can not evaluate Int64 + Boolean"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT *; --

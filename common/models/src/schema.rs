@@ -26,7 +26,7 @@ use datafusion::datasource::file_format::json::JsonFormat;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::ListingOptions;
-use datafusion::error::Result as DataFusionResult;
+use datafusion::error::{DataFusionError, Result as DataFusionResult};
 use datafusion::prelude::Column;
 use datafusion::scalar::ScalarValue;
 use derive_builder::Builder;
@@ -126,6 +126,11 @@ impl ExternalTableSchema {
             FileType::AVRO => Arc::new(AvroFormat::default()),
             FileType::JSON => {
                 Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
+            }
+            FileType::ARROW => {
+                return Err(DataFusionError::NotImplemented(
+                    "Arrow external table.".to_string(),
+                ))
             }
         };
 

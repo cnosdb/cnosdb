@@ -23,7 +23,7 @@ use datafusion::datasource::listing::{
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
-use datafusion::logical_expr::expr::Sort;
+use datafusion::logical_expr::expr::{ScalarFunction, Sort};
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
@@ -505,6 +505,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             file_compression_type,
             options,
             order_exprs,
+            unbounded,
         } = statement;
 
         // semantic checks
@@ -546,6 +547,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             file_compression_type,
             options,
             order_exprs: ordered_exprs,
+            unbounded,
         })
     }
 
@@ -2017,6 +2019,11 @@ fn build_file_extension_and_format(
         FileType::JSON => {
             Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
         }
+        FileType::ARROW => {
+            return Err(DataFusionError::NotImplemented(
+                "Arrow file format is not supported".to_string(),
+            ))
+        }
     };
 
     Ok((file_extension, file_format))
@@ -2083,11 +2090,8 @@ fn show_series_projection(
         .chain(iter::once(lit(&table_schema.name)))
         .chain(tag_concat_expr_iter)
         .collect::<Vec<Expr>>();
-    let concat_ws = Expr::ScalarFunction {
-        fun: BuiltinScalarFunction::ConcatWithSeparator,
-        args: concat_ws_args,
-    }
-    .alias("key");
+    let func = ScalarFunction::new(BuiltinScalarFunction::ConcatWithSeparator, concat_ws_args);
+    let concat_ws = Expr::ScalarFunction(func).alias("key");
     Ok(plan_builder.project(iter::once(concat_ws))?.build()?)
 }
 
@@ -2158,13 +2162,15 @@ fn show_tag_value_projections(
     };
 
     let mut projections = Vec::new();
+    let tag_key = "key";
+    let tag_value = "value";
     for tag in tags {
-        let key_column = lit(&tag.name).alias("key");
-        let value_column = col(Column::new_unqualified(&tag.name)).alias("value");
+        let key_column = lit(&tag.name).alias(tag_key);
+        let value_column = col(Column::new_unqualified(&tag.name)).alias(tag_value);
         let projection = plan_builder
             .clone()
             .project(vec![key_column, value_column.clone()])?;
-        let filter_expr = value_column.is_not_null();
+        let filter_expr = col(tag_value).is_not_null();
         let projection = projection.filter(filter_expr)?.distinct()?.build()?;
         projections.push(Arc::new(projection));
     }
@@ -2395,6 +2401,10 @@ mod tests {
 
         fn options(&self) -> &datafusion::config::ConfigOptions {
             unimplemented!()
+        }
+
+        fn get_window_meta(&self, _name: &str) -> Option<Arc<datafusion::logical_expr::WindowUDF>> {
+            None
         }
     }
 

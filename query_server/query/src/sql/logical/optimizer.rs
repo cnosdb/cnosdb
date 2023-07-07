@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::optimizer::common_subexpr_eliminate::CommonSubexprEliminate;
-use datafusion::optimizer::decorrelate_where_exists::DecorrelateWhereExists;
-use datafusion::optimizer::decorrelate_where_in::DecorrelateWhereIn;
+use datafusion::optimizer::decorrelate_predicate_subquery::DecorrelatePredicateSubquery;
 use datafusion::optimizer::eliminate_cross_join::EliminateCrossJoin;
 use datafusion::optimizer::eliminate_duplicated_expr::EliminateDuplicatedExpr;
 use datafusion::optimizer::eliminate_filter::EliminateFilter;
+use datafusion::optimizer::eliminate_join::EliminateJoin;
 use datafusion::optimizer::eliminate_limit::EliminateLimit;
 use datafusion::optimizer::eliminate_outer_join::EliminateOuterJoin;
 use datafusion::optimizer::eliminate_project::EliminateProjection;
@@ -64,8 +64,8 @@ impl Default for DefaultLogicalOptimizer {
             Arc::new(SimplifyExpressions::new()),
             Arc::new(UnwrapCastInComparison::new()),
             Arc::new(ReplaceDistinctWithAggregate::new()),
-            Arc::new(DecorrelateWhereExists::new()),
-            Arc::new(DecorrelateWhereIn::new()),
+            Arc::new(EliminateJoin::new()),
+            Arc::new(DecorrelatePredicateSubquery::new()),
             Arc::new(ScalarSubqueryToJoin::new()),
             Arc::new(ExtractEquijoinPredicate::new()),
             // simplify expressions does not simplify expressions in subqueries, so we

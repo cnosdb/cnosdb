@@ -18,7 +18,7 @@ use meta::error::MetaError;
 use models::schema::{ExternalTableSchema, TableSchema};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::{DatafusionSnafu, Result};
+use spi::{DatafusionSnafu, QueryError, Result};
 
 use super::DDLDefinitionTask;
 
@@ -179,6 +179,11 @@ fn build_external_table_config(
         FileType::AVRO => Arc::new(AvroFormat::default()),
         FileType::JSON => {
             Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
+        }
+        FileType::ARROW => {
+            return Err(QueryError::NotImplemented {
+                err: "Build arrow external table config".to_string(),
+            })
         }
     };
 

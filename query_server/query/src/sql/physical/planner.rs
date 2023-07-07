@@ -13,10 +13,11 @@ use datafusion::physical_optimizer::repartition::Repartition;
 use datafusion::physical_optimizer::sort_enforcement::EnforceSorting;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
-use datafusion::physical_plan::planner::{
+use datafusion::physical_plan::ExecutionPlan;
+use datafusion::physical_planner::{
     DefaultPhysicalPlanner as DFDefaultPhysicalPlanner, ExtensionPlanner,
+    PhysicalPlanner as DFPhysicalPlanner,
 };
-use datafusion::physical_plan::{ExecutionPlan, PhysicalPlanner as DFPhysicalPlanner};
 use spi::query::physical_planner::PhysicalPlanner;
 use spi::query::session::SessionCtx;
 use spi::Result;

@@ -7,7 +7,6 @@ use datafusion::arrow;
 use datafusion::datasource::MemTable;
 use datafusion::error::Result;
 use datafusion::execution::context::SessionContext;
-use datafusion::from_slice::FromSlice;
 use parking_lot::Mutex;
 use query::extension::expr::func_manager::DFSessionContextFuncAdapter;
 use query::extension::expr::load_all_functions;
@@ -133,7 +132,7 @@ fn create_record_batch(
         schema,
         vec![
             Arc::new(StringArray::from(keys)),
-            Arc::new(Float32Array::from_slice(vec![i as f32; batch_size])),
+            Arc::new(Float32Array::from(vec![i as f32; batch_size])),
             Arc::new(Float64Array::from(values)),
             Arc::new(UInt64Array::from(integer_values_wide)),
             Arc::new(UInt64Array::from(integer_values_narrow)),
