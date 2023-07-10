@@ -12,8 +12,8 @@ use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid};
 use models::schema::{Tenant, TenantOptions};
 use models::utils::{build_address, now_timestamp_secs};
+use parking_lot::RwLock;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::RwLock;
 use tonic::transport::{Channel, Endpoint};
 use trace::error;
 use tracing::info;
@@ -47,8 +47,8 @@ pub struct AdminMeta {
     config: Config,
     client: MetaHttpClient,
 
-    watch_version: Arc<AtomicU64>,
-    watch_tenants: Arc<RwLock<HashSet<String>>>,
+    watch_version: AtomicU64,
+    watch_tenants: RwLock<HashSet<String>>,
     watch_notify: Sender<UseTenantInfo>,
 
     users: RwLock<HashMap<String, UserDesc>>,
@@ -74,8 +74,8 @@ impl AdminMeta {
             tenants: RwLock::new(HashMap::new()),
             limiters: RwLock::new(HashMap::new()),
 
-            watch_tenants: Arc::new(RwLock::new(HashSet::new())),
-            watch_version: Arc::new(AtomicU64::new(0)),
+            watch_version: AtomicU64::new(0),
+            watch_tenants: RwLock::new(HashSet::new()),
         }
     }
 
@@ -95,8 +95,8 @@ impl AdminMeta {
             tenants: RwLock::new(HashMap::new()),
             limiters: RwLock::new(HashMap::new()),
 
-            watch_tenants: Arc::new(RwLock::new(HashSet::new())),
-            watch_version: Arc::new(AtomicU64::new(0)),
+            watch_version: AtomicU64::new(0),
+            watch_tenants: RwLock::new(HashSet::new()),
         });
 
         let base_ver = admin.sync_gobal_info().await.unwrap();
@@ -138,7 +138,7 @@ impl AdminMeta {
     }
 
     pub async fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {
-        if let Some(val) = self.data_nodes.read().await.get(&id) {
+        if let Some(val) = self.data_nodes.read().get(&id) {
             return Ok(val.clone());
         }
 
@@ -146,7 +146,7 @@ impl AdminMeta {
     }
 
     pub async fn get_node_conn(&self, node_id: u64) -> MetaResult<Channel> {
-        if let Some(val) = self.conn_map.read().await.get(&node_id) {
+        if let Some(val) = self.conn_map.read().get(&node_id) {
             return Ok(val.clone());
         }
 
@@ -165,7 +165,7 @@ impl AdminMeta {
                 msg: err.to_string(),
             })?;
 
-        self.conn_map.write().await.insert(node_id, channel.clone());
+        self.conn_map.write().insert(node_id, channel.clone());
 
         Ok(channel)
     }
@@ -181,7 +181,7 @@ impl AdminMeta {
         let req = command::ReadCommand::DataNodes(self.config.cluster.name.clone());
         let (resp, version) = self.client.read::<(Vec<NodeInfo>, u64)>(&req).await?;
         {
-            let mut nodes = self.data_nodes.write().await;
+            let mut nodes = self.data_nodes.write();
             nodes.clear();
             for item in resp.iter() {
                 nodes.insert(item.id, item.clone());
@@ -191,7 +191,7 @@ impl AdminMeta {
         let req = command::ReadCommand::Users(self.cluster());
         let resp = self.client.read::<Vec<UserDesc>>(&req).await?;
         {
-            let mut users = self.users.write().await;
+            let mut users = self.users.write();
             users.clear();
             for item in resp.iter() {
                 users.insert(item.name().to_owned(), item.clone());
@@ -203,11 +203,11 @@ impl AdminMeta {
 
     /******************** Watch Meta Data Change Begin *********************/
     pub async fn use_tenant(&self, name: &str) -> MetaResult<()> {
-        if self.watch_tenants.read().await.contains(name) {
+        if self.watch_tenants.read().contains(name) {
             return Ok(());
         }
 
-        if self.watch_tenants.read().await.contains(&"".to_string()) {
+        if self.watch_tenants.read().contains(&"".to_string()) {
             return Ok(());
         }
 
@@ -249,7 +249,7 @@ impl AdminMeta {
                     .fetch_min(info.version, Ordering::Relaxed);
                 admin.watch_version.store(base_ver, Ordering::Relaxed);
 
-                let mut tenants = admin.watch_tenants.write().await;
+                let mut tenants = admin.watch_tenants.write();
                 if info.name.is_empty() {
                     tenants.clear();
                 }
@@ -270,7 +270,7 @@ impl AdminMeta {
     }
 
     pub async fn watch_data_task(admin: Arc<AdminMeta>) {
-        let tenants = admin.watch_tenants.read().await.clone();
+        let tenants = admin.watch_tenants.read().clone();
         let base_ver = admin.watch_version.load(Ordering::Relaxed);
 
         let client_id = format!("watch.{}", admin.node_id());
@@ -304,7 +304,7 @@ impl AdminMeta {
     pub async fn process_full_sync(&self) -> u64 {
         loop {
             if let Ok(base_ver) = self.sync_gobal_info().await {
-                self.tenants.write().await.clear();
+                self.tenants.write().clear();
                 return base_ver;
             } else {
                 info!("sync all data node failed");
@@ -327,7 +327,8 @@ impl AdminMeta {
 
             if len > 3 && strs[2] == key_path::TENANTS {
                 let name = strs[3];
-                if let Some(client) = self.tenants.read().await.get(name) {
+                let opt_client = self.tenants.read().get(name).cloned();
+                if let Some(client) = opt_client {
                     let _ = client.process_watch_log(entry).await;
                 }
             } else if len == 4 && strs[2] == key_path::DATA_NODES {
@@ -347,20 +348,20 @@ impl AdminMeta {
             if let Ok(node_id) = serde_json::from_str::<u64>(strs[3]) {
                 if entry.tye == command::ENTRY_LOG_TYPE_SET {
                     if let Ok(info) = serde_json::from_str::<NodeInfo>(&entry.val) {
-                        self.data_nodes.write().await.insert(node_id, info);
+                        self.data_nodes.write().insert(node_id, info);
                     }
                 } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
-                    self.data_nodes.write().await.remove(&node_id);
-                    self.conn_map.write().await.remove(&node_id);
+                    self.data_nodes.write().remove(&node_id);
+                    self.conn_map.write().remove(&node_id);
                 }
             }
         } else if len == 4 && strs[2] == key_path::USERS {
             if entry.tye == command::ENTRY_LOG_TYPE_SET {
                 if let Ok(user) = serde_json::from_str::<UserDesc>(&entry.val) {
-                    self.users.write().await.insert(strs[3].to_owned(), user);
+                    self.users.write().insert(strs[3].to_owned(), user);
                 }
             } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
-                self.users.write().await.remove(strs[3]);
+                self.users.write().remove(strs[3]);
             }
         }
 
@@ -404,14 +405,14 @@ impl AdminMeta {
         let req = command::WriteCommand::AddDataNode(cluster_name, node.clone());
         self.client.write::<()>(&req).await?;
 
-        self.data_nodes.write().await.insert(node.id, node);
+        self.data_nodes.write().insert(node.id, node);
 
         Ok(())
     }
 
     pub async fn data_nodes(&self) -> Vec<NodeInfo> {
         let mut nodes = vec![];
-        for (_, val) in self.data_nodes.read().await.iter() {
+        for (_, val) in self.data_nodes.read().iter() {
             nodes.push(val.clone())
         }
 
@@ -501,7 +502,7 @@ impl AdminMeta {
         tenant_name: Option<&str>,
     ) -> MetaResult<User> {
         let user_desc = {
-            let cache = self.users.read().await.get(user_name).cloned();
+            let cache = self.users.read().get(user_name).cloned();
             if let Some(user) = cache {
                 user.clone()
             } else {
@@ -546,14 +547,10 @@ impl AdminMeta {
 
         self.tenants
             .write()
-            .await
             .insert(tenant_name.clone(), client.clone());
 
         let limiter = self.new_limiter(&self.cluster(), &tenant_name, &option);
-        self.limiters
-            .write()
-            .await
-            .insert(tenant_name.clone(), limiter);
+        self.limiters.write().insert(tenant_name.clone(), limiter);
 
         let info = UseTenantInfo {
             name: tenant_name,
@@ -592,15 +589,12 @@ impl AdminMeta {
 
         let tenant = self.client.write::<Tenant>(&req).await?;
         let meta_client = self.create_tenant_meta(tenant).await?;
-        self.limiters
-            .write()
-            .await
-            .insert(name.to_string(), limiter);
+        self.limiters.write().insert(name.to_string(), limiter);
         Ok(meta_client)
     }
 
     pub async fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>> {
-        if let Some(client) = self.tenants.read().await.get(name) {
+        if let Some(client) = self.tenants.read().get(name) {
             return Ok(Some(client.tenant().clone()));
         }
 
@@ -621,32 +615,28 @@ impl AdminMeta {
         let tenant = self.client.write::<Tenant>(&req).await?;
 
         let tenant_meta = self.create_tenant_meta(tenant).await?;
-        self.limiters
-            .write()
-            .await
-            .insert(name.to_string(), limiter);
-        self.tenants
-            .write()
-            .await
-            .insert(name.to_string(), tenant_meta);
+
+        self.limiters.write().insert(name.to_string(), limiter);
+        self.tenants.write().insert(name.to_string(), tenant_meta);
+
         Ok(())
     }
 
     pub async fn drop_tenant(&self, name: &str) -> MetaResult<bool> {
-        if self.tenants.write().await.remove(name).is_some() {
+        // notice: can't move it to if clause
+        let exist = self.tenants.write().remove(name).is_some();
+        if exist {
             let req = command::WriteCommand::DropTenant(self.cluster(), name.to_string());
 
             self.client.write::<()>(&req).await?;
-            self.limiters.write().await.remove(name);
-
-            Ok(true)
-        } else {
-            Ok(false)
+            self.limiters.write().remove(name);
         }
+
+        Ok(exist)
     }
 
     pub async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
-        if let Some(client) = self.tenants.read().await.get(tenant) {
+        if let Some(client) = self.tenants.read().get(tenant) {
             return Some(client.clone());
         }
 
@@ -658,16 +648,23 @@ impl AdminMeta {
         None
     }
 
+    pub fn try_change_local_vnode_status(&self, tenant: &str, id: u32, status: VnodeStatus) {
+        if let Some(client) = self.tenants.read().get(tenant) {
+            info!("local change vnode status {} {:?}", id, status);
+            let _ = client.change_local_vnode_status(id, status);
+        }
+    }
+
     pub async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         let mut list = vec![];
-        for (_key, val) in self.tenants.write().await.iter() {
+        for (_key, val) in self.tenants.write().iter() {
             list.append(&mut val.expired_bucket());
         }
         list
     }
 
     pub async fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter> {
-        match self.limiters.read().await.get(tenant) {
+        match self.limiters.read().get(tenant) {
             Some(limiter) => limiter.clone(),
             None => Arc::new(NoneLimiter),
         }

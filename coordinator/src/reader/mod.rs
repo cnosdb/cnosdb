@@ -9,8 +9,9 @@ use std::task::{Context, Poll};
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
 use futures::{ready, FutureExt, Stream, StreamExt, TryFutureExt};
+use meta::model::MetaRef;
 use metrics::count::U64Counter;
-use models::meta_data::VnodeInfo;
+use models::meta_data::{VnodeId, VnodeInfo, VnodeStatus};
 use tracing::warn;
 use tskv::reader::QueryOption;
 
@@ -32,6 +33,7 @@ pub trait VnodeOpener: Unpin {
 
 pub struct CheckedCoordinatorRecordBatchStream<O: VnodeOpener> {
     opener: O,
+    meta: MetaRef,
     vnode: VnodeInfo,
     option: QueryOption,
     state: StreamState,
@@ -43,6 +45,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
     pub fn new(
         option: QueryOption,
         opener: O,
+        meta: MetaRef,
         checker: CheckFuture,
         metrics: &CoordServiceMetrics,
     ) -> Self {
@@ -54,6 +57,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
         Self {
             option,
             opener,
+            meta,
             vnode: VnodeInfo::default(),
             state: StreamState::Check(checker),
             data_out,
@@ -122,8 +126,52 @@ impl<O: VnodeOpener> Stream for CheckedCoordinatorRecordBatchStream<O> {
         if let Poll::Ready(Some(Ok(batch))) = &poll {
             self.data_out.inc(batch.get_array_memory_size() as u64);
         }
+
+        if let Poll::Ready(Some(Err(err))) = &poll {
+            if tskv::Error::vnode_broken_code(err.error_code().code()) {
+                let id = self.vnode.id;
+                let meta = self.meta.clone();
+                let tenant = self.option.tenant_name();
+
+                trace::warn!("updated vnode {} status broken", id);
+                meta.try_change_local_vnode_status(&tenant, id, VnodeStatus::Broken);
+                tokio::spawn(change_vnode_to_broken(tenant, id, meta));
+            }
+        }
+
         poll
     }
+}
+
+pub async fn change_vnode_to_broken(
+    tenant: String,
+    vnode_id: VnodeId,
+    meta: MetaRef,
+) -> CoordinatorResult<()> {
+    let meta_client = meta.tenant_meta(&tenant).await;
+
+    if let Some(meta_client) = meta_client {
+        if let Some(mut all_info) = meta_client.get_vnode_all_info(vnode_id) {
+            all_info.set_status(VnodeStatus::Broken);
+            meta_client.update_vnode(&all_info).await?;
+
+            return Ok(());
+        }
+
+        warn!(
+            "Vnode not found: {}, when changing vnode state to broken.",
+            vnode_id
+        );
+
+        return Ok(());
+    }
+
+    warn!(
+        "Tenant not found: {}, when changing vnode state to broken.",
+        tenant
+    );
+
+    Ok(())
 }
 
 enum StreamState {

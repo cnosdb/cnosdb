@@ -61,6 +61,24 @@ pub enum Error {
         source: ArrowError,
     },
 
+    #[snafu(display("read tsm block file error: {}", source))]
+    #[error_code(code = 7)]
+    ReadTsm {
+        source: ReadTsmError,
+    },
+
+    #[snafu(display("found damaged tsm file error: {}", source))]
+    #[error_code(code = 8)]
+    TsmFileBroken {
+        source: ReadTsmError,
+    },
+
+    #[snafu(display("write tsm block file error: {}", source))]
+    #[error_code(code = 9)]
+    WriteTsm {
+        source: WriteTsmError,
+    },
+
     // Internal Error
     #[snafu(display("{}", source))]
     IO {
@@ -155,16 +173,6 @@ pub enum Error {
     #[snafu(display("error apply edits to summary"))]
     ErrApplyEdit,
 
-    #[snafu(display("read tsm block file error: {}", source))]
-    ReadTsm {
-        source: ReadTsmError,
-    },
-
-    #[snafu(display("write tsm block file error: {}", source))]
-    WriteTsm {
-        source: WriteTsmError,
-    },
-
     #[snafu(display("character set error"))]
     ErrCharacterSet,
 
@@ -235,18 +243,12 @@ impl Error {
         }
     }
 
-    pub fn invalid_vnode(&self) -> bool {
-        match self {
-            Self::ReadTsm { source } => {
-                matches!(
-                    source,
-                    ReadTsmError::CrcCheck
-                        | ReadTsmError::FileNotFound { .. }
-                        | ReadTsmError::Invalid { .. }
-                )
-            }
-            _ => false,
-        }
+    pub fn vnode_broken_code(code: &str) -> bool {
+        let e = Self::ReadTsm {
+            source: ReadTsmError::CrcCheck,
+        };
+
+        e.code() == code
     }
 }
 
