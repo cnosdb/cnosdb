@@ -932,11 +932,16 @@ where
             "do_put_prepared_statement_update query: {:?}",
             prepared_statement_ident
         );
-        let _ = get_span_recorder(
+        let span_recorder = get_span_recorder(
             request.extensions(),
             "flight sql do_put_prepared_statement_update",
         );
-        Ok(-1)
+        let (plan, query_machine) =
+            self.get_plan_and_qsm(prepared_statement_ident, span_recorder.span_ctx().cloned())?;
+        // execute plan
+        let query_result = self.execute_logical_plan(plan, query_machine).await?;
+        let output = query_result.result();
+        Ok(output.affected_rows().await)
     }
 
     /// Prepared statement is not supported,
