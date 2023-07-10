@@ -11,8 +11,9 @@ pub enum SchemaError {
         source: MetaError,
     },
 
-    #[snafu(display("table '{}' not found", table))]
+    #[snafu(display("table '{database}.{table}' not found"))]
     TableNotFound {
+        database: String,
         table: String,
     },
 
@@ -21,8 +22,10 @@ pub enum SchemaError {
         field: String,
     },
 
-    #[snafu(display("field not found '{}'", field))]
-    NotFoundField {
+    #[snafu(display("field '{database}.{table}'.'{}' not found", field))]
+    FiledNotFound {
+        database: String,
+        table: String,
         field: String,
     },
 

@@ -380,9 +380,11 @@ mod test {
 
     pub fn create_random_points_include_delta<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        database: &str,
+        table: &str,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
-        let db = fbb.create_vector("db".as_bytes());
+        let db = fbb.create_vector(database.as_bytes());
         let mut tags_names: HashMap<&str, usize> = HashMap::new();
         tags_names.insert("ta", 0);
         tags_names.insert("tb", 1);
@@ -464,7 +466,7 @@ mod test {
         let fb_schema = build_fb_schema_offset(fbb, &schema);
 
         let point = fbb.create_vector(&points);
-        let tab = fbb.create_vector("table".as_bytes());
+        let tab = fbb.create_vector(table.as_bytes());
 
         let mut table_builder = TableBuilder::new(fbb);
 
@@ -487,6 +489,7 @@ mod test {
 
     pub fn create_big_random_points<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        table: &str,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
         let db = fbb.create_vector("db".as_bytes());
@@ -534,7 +537,7 @@ mod test {
         let fb_schema = build_fb_schema_offset(fbb, &schema);
 
         let point = fbb.create_vector(&points);
-        let tab = fbb.create_vector("table".as_bytes());
+        let tab = fbb.create_vector(table.as_bytes());
 
         let mut table_builder = TableBuilder::new(fbb);
 
