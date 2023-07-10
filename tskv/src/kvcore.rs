@@ -555,15 +555,25 @@ impl Engine for TsKv {
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = get_db_from_fb_points(&fb_points)?;
-        let db = self.get_db_or_else_create(&tenant, &db_name).await?;
+        // If database not exists, skip this record.
+        let db = match self.get_db(&tenant, &db_name).await {
+            Ok(db) => db,
+            Err(_) => return Ok(()),
+        };
+        let tsf = match db.read().await.get_tsfamily(vnode_id) {
+            Some(tsf) => tsf,
+            None => return Ok(()),
+        };
+
         let ts_index = self
             .get_ts_index_or_else_create(db.clone(), vnode_id)
             .await?;
 
+        // Write data assuming schemas are created (strict mode).
         let write_group = db
             .read()
             .await
-            .build_write_group(
+            .build_write_group_strict_mode(
                 &db_name,
                 precision,
                 fb_points.tables().ok_or(Error::CommonError {
@@ -571,10 +581,6 @@ impl Engine for TsKv {
                 })?,
                 ts_index,
             )
-            .await?;
-
-        let tsf = self
-            .get_tsfamily_or_else_create(seq, vnode_id, None, db.clone())
             .await?;
         tsf.read().await.put_points(seq, write_group)?;
         return Ok(());
@@ -631,16 +637,6 @@ impl Engine for TsKv {
         database::delete_table_async(tenant, database, table, version_set).await
     }
 
-    async fn drop_table_from_wal(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
-        // TODO Create global DropTable flag for droping the same table at the same time.
-        let version_set = self.version_set.clone();
-        let database = database.to_string();
-        let table = table.to_string();
-        let tenant = tenant.to_string();
-
-        database::delete_table_async(tenant, database, table, version_set).await
-    }
-
     async fn remove_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             // Store this action in WAL.
@@ -657,40 +653,6 @@ impl Engine for TsKv {
                 source: error::ChannelReceiveError::WriteWalResult { source: e },
             })??;
 
-            let mut db_wlock = db.write().await;
-            db_wlock.del_ts_index(vnode_id);
-            db_wlock
-                .del_tsfamily(vnode_id, self.summary_task_sender.clone())
-                .await;
-
-            let ts_dir = self
-                .options
-                .storage
-                .ts_family_dir(&make_owner(tenant, database), vnode_id);
-            match std::fs::remove_dir_all(&ts_dir) {
-                Ok(()) => {
-                    info!("Removed TsFamily directory '{}'", ts_dir.display());
-                }
-                Err(e) => {
-                    error!(
-                        "Failed to remove TsFamily directory '{}': {}",
-                        ts_dir.display(),
-                        e
-                    );
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn remove_tsfamily_from_wal(
-        &self,
-        tenant: &str,
-        database: &str,
-        vnode_id: VnodeId,
-    ) -> Result<()> {
-        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             let mut db_wlock = db.write().await;
             db_wlock.del_ts_index(vnode_id);
             db_wlock
@@ -791,12 +753,15 @@ impl Engine for TsKv {
             db.read()
                 .await
                 .get_table_schema(table)?
-                .ok_or(SchemaError::TableNotFound {
+                .ok_or_else(|| SchemaError::TableNotFound {
+                    database: database.to_string(),
                     table: table.to_string(),
                 })?;
         let column_id = schema
             .column(column_name)
-            .ok_or(SchemaError::NotFoundField {
+            .ok_or_else(|| SchemaError::FiledNotFound {
+                database: database.to_string(),
+                table: table.to_string(),
                 field: column_name.to_string(),
             })?
             .id;

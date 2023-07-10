@@ -69,7 +69,7 @@ fn big_write(c: &mut Criterion) {
             for _i in 0..50 {
                 let _database = "db".to_string();
                 let mut fbb = flatbuffers::FlatBufferBuilder::new();
-                let points = models_helper::create_big_random_points(&mut fbb, 10);
+                let points = models_helper::create_big_random_points(&mut fbb, "big_write", 10);
                 fbb.finish(points, None);
                 let points = fbb.finished_data().to_vec();
 

@@ -469,73 +469,41 @@ impl WalManager {
                         continue;
                     }
                     seq_gt_min_seq = true;
-                    match wal_entry_blk.entry {
-                        WalEntry::Write(blk) => {
-                            decoded_data.truncate(0);
-                            decoder
-                                .decode(blk.points(), &mut decoded_data)
-                                .context(error::DecodeSnafu)?;
-                            if decoded_data.is_empty() {
+                    if let WalEntry::Write(blk) = wal_entry_blk.entry {
+                        decoded_data.truncate(0);
+                        decoder
+                            .decode(blk.points(), &mut decoded_data)
+                            .context(error::DecodeSnafu)?;
+                        if decoded_data.is_empty() {
+                            continue;
+                        }
+                        let vnode_id = blk.vnode_id();
+                        if let Some(tsf_last_seq) = vnode_last_seq_map.get(&vnode_id) {
+                            // If `seq_no` of TsFamily is greater than or equal to `seq`,
+                            // it means that data was writen to tsm.
+                            if *tsf_last_seq >= seq {
                                 continue;
                             }
-                            let vnode_id = blk.vnode_id();
-                            if let Some(tsf_last_seq) = vnode_last_seq_map.get(&vnode_id) {
-                                // If `seq_no` of TsFamily is greater than or equal to `seq`,
-                                // it means that data was writen to tsm.
-                                if *tsf_last_seq >= seq {
-                                    continue;
-                                }
-                            }
-                            let tenant =
-                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
-                            let precision = blk.precision();
-                            let req = WritePointsRequest {
-                                version: 1,
-                                meta: Some(Meta {
-                                    tenant,
-                                    user: None,
-                                    password: None,
-                                }),
-                                points: decoded_data[0].to_vec(),
-                            };
-                            engine
-                                .write_from_wal(vnode_id, precision, req, seq)
-                                .await
-                                .unwrap();
                         }
-                        WalEntry::DeleteVnode(blk) => {
-                            let vnode_id = blk.vnode_id();
-                            let tenant =
-                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
-                            let database =
-                                unsafe { String::from_utf8_unchecked(blk.database().to_vec()) };
-                            trace::info!("Recover: delete vnode, tenant: {}, database: {}, vnode_id: {vnode_id}", &tenant, &database);
-                            engine
-                                .remove_tsfamily_from_wal(&tenant, &database, vnode_id)
-                                .await
-                                .unwrap();
-                        }
-                        WalEntry::DeleteTable(blk) => {
-                            // TODO(zipper) may we only delete data in memcache?
-                            let tenant =
-                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
-                            let database =
-                                unsafe { String::from_utf8_unchecked(blk.database().to_vec()) };
-                            let table =
-                                unsafe { String::from_utf8_unchecked(blk.table().to_vec()) };
-                            trace::info!(
-                                "Recover: delete table, tenant: {}, database: {}, table: {}",
-                                &tenant,
-                                &database,
-                                &table
-                            );
-                            engine
-                                .drop_table_from_wal(&tenant, &database, &table)
-                                .await
-                                .unwrap();
-                        }
-                        _ => {}
-                    };
+                        let tenant = unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
+                        let precision = blk.precision();
+                        let req = WritePointsRequest {
+                            version: 1,
+                            meta: Some(Meta {
+                                tenant,
+                                user: None,
+                                password: None,
+                            }),
+                            points: decoded_data[0].to_vec(),
+                        };
+                        engine
+                            .write_from_wal(vnode_id, precision, req, seq)
+                            .await
+                            .unwrap();
+                    } else {
+                        // WalEntry::DeleteVnode(_) => do nothing
+                        // WalEntry::DeleteTable(_) => do nothing
+                    }
                 }
                 Ok(None) | Err(Error::WalTruncated) => {
                     break;
@@ -585,29 +553,23 @@ mod test {
     use std::path::Path;
     use std::sync::Arc;
 
-    use memory_pool::GreedyMemoryPool;
-    use meta::model::meta_admin::AdminMeta;
-    use meta::model::MetaRef;
-    use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
     use models::codec::Encoding;
-    use models::schema::{Precision, TenantOptions};
+    use models::schema::Precision;
     use models::Timestamp;
     use protos::models::FieldType;
     use protos::{models as fb_models, models_helper, FbSchema};
     use serial_test::serial;
-    use tokio::runtime;
     use trace::init_default_global_tracing;
 
     use crate::context::GlobalSequenceContext;
     use crate::file_system::file_manager::list_file_names;
     use crate::kv_option::WalOptions;
-    use crate::memcache::test::get_one_series_cache_data;
     use crate::memcache::FieldVal;
     use crate::tsm::codec::{get_str_codec, StringCodec};
     use crate::wal::reader::{WalEntry, WalReader};
     use crate::wal::{WalManager, WalTask};
-    use crate::{error, kv_option, Engine, Error, Result, TsKv};
+    use crate::{error, Error, Result};
 
     fn random_write_data() -> Vec<u8> {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -858,74 +820,6 @@ mod test {
             wal_mgr.write(wal_task).await;
             rx.await.unwrap().unwrap();
         }
-    }
-
-    #[test]
-    #[serial]
-    fn test_recover_from_wal() {
-        init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let rt = Arc::new(runtime::Runtime::new().unwrap());
-        let dir = "/tmp/test/wal/4/wal";
-        let _ = std::fs::remove_dir_all(dir);
-        let mut global_config = config::get_config_for_test();
-        global_config.wal.path = dir.to_string();
-        global_config.storage.path = "/tmp/test/wal/4".to_string();
-        let wal_config = WalOptions::from(&global_config);
-
-        let mut wrote_data: HashMap<String, Vec<(Timestamp, FieldVal)>> = HashMap::new();
-        rt.block_on(async {
-            let tenant = "cnosdb".to_string();
-            let mut mgr = WalManager::open(Arc::new(wal_config), GlobalSequenceContext::empty())
-                .await
-                .unwrap();
-            let coder = get_str_codec(Encoding::Zstd);
-            let mut data_vec: Vec<Vec<u8>> = Vec::new();
-
-            write_points_to_wal(
-                10,
-                tenant.clone(),
-                &mut mgr,
-                coder,
-                &mut data_vec,
-                &mut wrote_data,
-            )
-            .await;
-            mgr.close().await.unwrap();
-            check_wal_files(dir, data_vec, true).await.unwrap();
-        });
-        let rt_2 = rt.clone();
-        rt.block_on(async {
-            let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-            let opt = kv_option::Options::from(&global_config);
-            let meta_manager: MetaRef = AdminMeta::new(global_config.clone()).await;
-
-            meta_manager.add_data_node().await.unwrap();
-
-            let _ = meta_manager
-                .create_tenant("cnosdb".to_string(), TenantOptions::default())
-                .await;
-            let tskv = TsKv::open(
-                meta_manager,
-                opt,
-                rt_2,
-                memory_pool,
-                Arc::new(MetricsRegister::default()),
-            )
-            .await
-            .unwrap();
-            let ver = tskv
-                .get_db_version("cnosdb", "dba", 10)
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(ver.ts_family_id, 10);
-
-            let cached_data = get_one_series_cache_data(ver.caches.mut_cache.clone());
-            // fa, fb
-            assert_eq!(cached_data.len(), 2);
-            assert_eq!(wrote_data.len(), 2);
-            assert_eq!(wrote_data, cached_data);
-        });
     }
 
     #[test]

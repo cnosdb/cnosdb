@@ -321,9 +321,10 @@ pub enum ChannelReceiveError {
 #[test]
 fn test_mod_code() {
     let e = Error::Schema {
-        source: SchemaError::ColumnAlreadyExists {
-            name: "".to_string(),
+        source: SchemaError::TableNotFound {
+            database: String::new(),
+            table: String::new(),
         },
     };
-    assert!(e.code().starts_with("02"));
+    assert_eq!(e.code(), "020004");
 }
