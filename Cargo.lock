@@ -1574,7 +1574,7 @@ dependencies = [
 [[package]]
 name = "datafusion"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#b3a8ab9f3d1fdac623baa9eae0503826a4b9739e"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#0a2fe02a5bddf6fcde297c65411be32f659e9dd4"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1622,7 +1622,7 @@ dependencies = [
 [[package]]
 name = "datafusion-common"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#b3a8ab9f3d1fdac623baa9eae0503826a4b9739e"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#0a2fe02a5bddf6fcde297c65411be32f659e9dd4"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -1636,7 +1636,7 @@ dependencies = [
 [[package]]
 name = "datafusion-execution"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#b3a8ab9f3d1fdac623baa9eae0503826a4b9739e"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#0a2fe02a5bddf6fcde297c65411be32f659e9dd4"
 dependencies = [
  "dashmap",
  "datafusion-common",
@@ -1653,7 +1653,7 @@ dependencies = [
 [[package]]
 name = "datafusion-expr"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#b3a8ab9f3d1fdac623baa9eae0503826a4b9739e"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#0a2fe02a5bddf6fcde297c65411be32f659e9dd4"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1667,7 +1667,7 @@ dependencies = [
 [[package]]
 name = "datafusion-optimizer"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#b3a8ab9f3d1fdac623baa9eae0503826a4b9739e"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#0a2fe02a5bddf6fcde297c65411be32f659e9dd4"
 dependencies = [
  "arrow",
  "async-trait",
@@ -1684,7 +1684,7 @@ dependencies = [
 [[package]]
 name = "datafusion-physical-expr"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#b3a8ab9f3d1fdac623baa9eae0503826a4b9739e"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#0a2fe02a5bddf6fcde297c65411be32f659e9dd4"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1716,7 +1716,7 @@ dependencies = [
 [[package]]
 name = "datafusion-proto"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#b3a8ab9f3d1fdac623baa9eae0503826a4b9739e"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#0a2fe02a5bddf6fcde297c65411be32f659e9dd4"
 dependencies = [
  "arrow",
  "chrono",
@@ -1730,7 +1730,7 @@ dependencies = [
 [[package]]
 name = "datafusion-row"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#b3a8ab9f3d1fdac623baa9eae0503826a4b9739e"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#0a2fe02a5bddf6fcde297c65411be32f659e9dd4"
 dependencies = [
  "arrow",
  "datafusion-common",
@@ -1741,7 +1741,7 @@ dependencies = [
 [[package]]
 name = "datafusion-sql"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#b3a8ab9f3d1fdac623baa9eae0503826a4b9739e"
+source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#0a2fe02a5bddf6fcde297c65411be32f659e9dd4"
 dependencies = [
  "arrow",
  "arrow-schema",
