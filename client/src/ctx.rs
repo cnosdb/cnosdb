@@ -17,6 +17,7 @@ pub const DEFAULT_DATABASE: &str = "public";
 pub const DEFAULT_PRECISION: &str = "NS";
 pub const DEFAULT_USE_SSL: bool = false;
 pub const DEFAULT_USE_UNSAFE_SSL: bool = false;
+pub const DEFAULT_CHUNKED: bool = false;
 
 pub const API_V1_SQL_PATH: &str = "/api/v1/sql";
 pub const API_V1_WRITE_PATH: &str = "/api/v1/write";
@@ -33,6 +34,7 @@ pub struct SessionConfig {
     pub config_options: ConfigOptions,
     pub use_ssl: bool,
     pub use_unsafe_ssl: bool,
+    pub chunked: bool,
 }
 
 impl SessionConfig {
@@ -52,6 +54,7 @@ impl SessionConfig {
             fmt: PrintFormat::Csv,
             use_ssl: DEFAULT_USE_SSL,
             use_unsafe_ssl: DEFAULT_USE_UNSAFE_SSL,
+            chunked: DEFAULT_CHUNKED,
         }
     }
 
@@ -137,6 +140,12 @@ impl SessionConfig {
 
         self
     }
+
+    pub fn with_chunked(mut self, chunked: bool) -> Self {
+        self.chunked = chunked;
+
+        self
+    }
 }
 
 pub struct UserInfo {
@@ -205,10 +214,11 @@ impl SessionContext {
         let db = self.session_config.database.clone();
         let target_partitions = self.session_config.target_partitions;
         let stream_trigger_interval = self.session_config.stream_trigger_interval.clone();
+        let chunked = self.session_config.chunked;
         let param = SqlParam {
             tenant: Some(tenant),
             db: Some(db),
-            chunked: None,
+            chunked: Some(chunked),
             target_partitions,
             stream_trigger_interval,
         };
