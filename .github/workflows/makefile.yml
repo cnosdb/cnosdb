@@ -96,7 +96,7 @@ jobs:
 
   integration-test-3m2d:
     name: "Integration Test 3meta 2data cluster"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4c16g
     steps:
       - uses: actions/checkout@v3
         with:
@@ -110,7 +110,7 @@ jobs:
 
   integration-test-Separation-of-storage-and-computing:
     name: "Integration Test Separation of storage and computing"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4c16g
     steps:
       - uses: actions/checkout@v3
         with:
