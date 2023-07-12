@@ -130,8 +130,8 @@ function 3m2d_sep(){
   rpc 8901/change-membership '[1, 2, 3]'
   sleep 1
   rpc 8901/metrics
-  nohup ${EXE_PATH} run -M query  --config ${CONF_DATA_1} > ${DN_1_LOG_PATH} &2>1 &
-  nohup ${EXE_PATH} run -M tskv --config ${CONF_DATA_2} > ${DN_2_LOG_PATH} &2>1 &
+  nohup ${EXE_PATH} run -M query -c 2 --config ${CONF_DATA_1} > ${DN_1_LOG_PATH} &2>1 &
+  nohup ${EXE_PATH} run -M tskv  -c 2 --config ${CONF_DATA_2} > ${DN_2_LOG_PATH} &2>1 &
 }
 
 function 3m2d(){
@@ -268,7 +268,7 @@ then
   echo "Test complete, killing CnosDB Server "
 else
   echo "Testing query/test" && \
-  cargo run --package test -- --query-url http://127.0.0.1:8902 --storage-url http://127.0.0.1:8912 || EXIT_CODE=$?
+  cargo run --package test -- --thread 1 --query-url http://127.0.0.1:8902 --storage-url http://127.0.0.1:8912 || EXIT_CODE=$?
   echo "Test complete, killing CnosDB Server "
 fi
 clean_env
