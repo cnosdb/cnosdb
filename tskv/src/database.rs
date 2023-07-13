@@ -11,7 +11,6 @@ use models::schema::{DatabaseSchema, Precision, TskvTableSchema};
 use models::utils::unite_id;
 use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
 use protos::models::{FieldType, Point, Table};
-use protos::{fb_table_name, schema_field_name, schema_field_type, schema_tag_name};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
@@ -238,7 +237,7 @@ impl Database {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
         for table in tables {
-            let table_name = fb_table_name(&table)?;
+            let table_name = table.tab_ext()?;
 
             let points = table.points().ok_or(Error::CommonError {
                 reason: "table missing points".to_string(),
@@ -248,16 +247,16 @@ impl Database {
                 let schema = table.schema().ok_or(Error::CommonError {
                     reason: "table missing schema in point".to_string(),
                 })?;
-                let field_type = schema_field_type(&schema)?;
-                let field_names = schema_field_name(&schema)?;
-                let tag_names = schema_tag_name(&schema)?;
+                let field_type = schema.field_type_ext();
+                let field_names = schema.field_name_ext();
+                let tag_names = schema.tag_name_ext();
 
                 let sid =
-                    Self::build_index(db_name, &table_name, &point, &tag_names, ts_index.clone())
+                    Self::build_index(db_name, table_name, &point, &tag_names, ts_index.clone())
                         .await?;
                 self.build_row_data(
                     &mut map,
-                    &table_name,
+                    table_name,
                     precision,
                     point,
                     &field_names,
@@ -278,7 +277,7 @@ impl Database {
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         let mut map = HashMap::new();
         for table in tables {
-            let table_name = fb_table_name(&table)?;
+            let table_name = table.tab_ext()?;
 
             let points = table.points().ok_or(Error::CommonError {
                 reason: "table missing points".to_string(),
@@ -288,22 +287,22 @@ impl Database {
                 let schema = table.schema().ok_or(Error::CommonError {
                     reason: "table missing schema in point".to_string(),
                 })?;
-                let tag_names = schema_tag_name(&schema)?;
-                let field_names = schema_field_name(&schema)?;
-                let field_type = schema_field_type(&schema)?;
+                let tag_names = schema.tag_name_ext();
+                let field_names = schema.field_name_ext();
+                let field_type = schema.field_type_ext();
 
                 let sid =
-                    Self::build_index(db_name, &table_name, &point, &tag_names, ts_index.clone())
+                    Self::build_index(db_name, table_name, &point, &tag_names, ts_index.clone())
                         .await?;
                 if self
                     .schemas
-                    .check_field_type_from_cache(&table_name, &tag_names, &field_names, &field_type)
+                    .check_field_type_from_cache(table_name, &tag_names, &field_names, &field_type)
                     .is_err()
                 {
                     self.schemas
                         .check_field_type_or_else_add(
                             db_name,
-                            &table_name,
+                            table_name,
                             &tag_names,
                             &field_names,
                             &field_type,
@@ -313,7 +312,7 @@ impl Database {
 
                 self.build_row_data(
                     &mut map,
-                    &table_name,
+                    table_name,
                     precision,
                     point,
                     &field_names,

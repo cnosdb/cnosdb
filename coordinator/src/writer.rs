@@ -9,11 +9,11 @@ use models::schema::{timestamp_convert, Precision};
 use models::utils::{now_timestamp_millis, now_timestamp_nanos};
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{Meta, WritePointsRequest, WriteVnodeRequest};
+use protos::models as fb_models;
 use protos::models::{
     FieldBuilder, Point, PointBuilder, Points, PointsArgs, Schema, SchemaBuilder, TableBuilder,
     TagBuilder,
 };
-use protos::{fb_table_name, get_db_from_fb_points, models as fb_models};
 use snafu::ResultExt;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
@@ -23,8 +23,6 @@ use tower::timeout::Timeout;
 use trace::{debug, SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::append_trace_context;
 use tskv::EngineRef;
-use utils::bitset::ImmutBitSet;
-use utils::BkdrHasher;
 
 use crate::errors::*;
 use crate::hh_queue::{HintedOffBlock, HintedOffWriteReq};
@@ -40,7 +38,7 @@ pub struct VnodePoints<'a> {
     pub repl_set: ReplicationSet,
 }
 
-impl VnodePoints<'_> {
+impl<'a> VnodePoints<'a> {
     pub fn new(db: String, repl_set: ReplicationSet) -> Self {
         Self {
             db,
@@ -185,7 +183,7 @@ impl VnodePoints<'_> {
 }
 
 pub struct VnodeMapping<'a> {
-    // replication id -> VnodePoints
+    /// Maps replication id to VnodePoints.
     pub points: HashMap<u32, VnodePoints<'a>>,
     pub sets: HashMap<u32, ReplicationSet>,
 }
@@ -207,11 +205,12 @@ impl<'a> VnodeMapping<'a> {
         schema: Schema<'_>,
         point: Point<'_>,
     ) -> CoordinatorResult<()> {
-        let db_schema = meta_client
-            .get_db_schema(db_name)?
-            .ok_or(MetaError::DatabaseNotFound {
-                database: db_name.to_string(),
-            })?;
+        let db_schema =
+            meta_client
+                .get_db_schema(db_name)?
+                .ok_or_else(|| MetaError::DatabaseNotFound {
+                    database: db_name.to_string(),
+                })?;
         let db_precision = db_schema.config.precision_or_default();
         let ts = timestamp_convert(precision, *db_precision, point.timestamp()).ok_or(
             CoordinatorError::CommonError {
@@ -227,39 +226,7 @@ impl<'a> VnodeMapping<'a> {
             }
         }
 
-        let hash_id = {
-            let mut hasher = BkdrHasher::new();
-            hasher.hash_with(tab_name.as_bytes());
-            if let Some(tags_key) = schema.tag_name() {
-                let tag_nullbit = point.tags_nullbit().ok_or(CoordinatorError::Points {
-                    msg: "point missing tag null bit".to_string(),
-                })?;
-                let len = tags_key.len();
-                let tag_nullbit = ImmutBitSet::new_without_check(len, tag_nullbit.bytes());
-                for (idx, (tag_key, tag_value)) in tags_key
-                    .iter()
-                    .zip(point.tags().ok_or(CoordinatorError::Points {
-                        msg: "point missing tag value".to_string(),
-                    })?)
-                    .enumerate()
-                {
-                    if !tag_nullbit.get(idx) {
-                        continue;
-                    }
-                    hasher.hash_with(tag_key.as_bytes());
-                    hasher.hash_with(
-                        tag_value
-                            .value()
-                            .ok_or(CoordinatorError::Points {
-                                msg: "point missing tag value".to_string(),
-                            })?
-                            .bytes(),
-                    );
-                }
-            }
-
-            hasher.number()
-        };
+        let hash_id = point.hash_id_ext(tab_name, &schema)?;
 
         //let full_name = format!("{}.{}", meta_client.tenant_name(), db);
         let info = meta_client
@@ -326,19 +293,12 @@ impl PointWriter {
             let _span_recorder = SpanRecorder::new(span_ctx.child_span("map point"));
             let fb_points = flatbuffers::root::<fb_models::Points>(&req.request.points)
                 .context(InvalidFlatbufferSnafu)?;
-            let database_name = get_db_from_fb_points(&fb_points)?;
-            for table in fb_points.tables().ok_or(CoordinatorError::Points {
-                msg: "point missing tables".to_string(),
-            })? {
-                let table_name = fb_table_name(&table)?;
+            let database_name = fb_points.db_ext()?.to_string();
+            for table in fb_points.tables_iter_ext()? {
+                let table_name = table.tab_ext()?.to_string();
+                let schema = table.schema_ext()?;
 
-                let schema = table.schema().ok_or(CoordinatorError::Points {
-                    msg: "points missing table schema".to_string(),
-                })?;
-
-                for item in table.points().ok_or(CoordinatorError::Points {
-                    msg: "table missing table points".to_string(),
-                })? {
+                for item in table.points_iter_ext()? {
                     mapping
                         .map_point(
                             meta_client.clone(),
@@ -365,7 +325,10 @@ impl PointWriter {
                     });
                 }
                 for vnode in points.repl_set.vnodes.iter() {
-                    debug!("write points on vnode {:?},  now: {:?}", vnode, now);
+                    debug!(
+                        "Preparing write points on vnode {:?}, start at {:?}",
+                        vnode, now
+                    );
                     if vnode.status == VnodeStatus::Copying {
                         return Err(CoordinatorError::CommonError {
                             msg: "vnode is moving write forbidden ".to_string(),
@@ -389,9 +352,9 @@ impl PointWriter {
 
         for res in futures::future::join_all(requests).await {
             debug!(
-                "parallel write points on vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
+                "Parallel write points on vnode over, start at: {:?}, elapsed: {} millis, result: {:?}",
                 now,
-                now.elapsed(),
+                now.elapsed().as_millis(),
                 res
             );
             res?
