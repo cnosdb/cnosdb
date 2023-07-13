@@ -1,11 +1,12 @@
 # CnosDB2.0 Road Map
 
-## Design Objectives of CnosDB2.0
+![RoadMap](../source/_static/img/roadmap.png)
+## The Overall Design Objectives of CnosDB 2.0
 
 To design and develop a high performance, high compression ratio, highly available, distributed cloud native time series
 database, which meets the following objectives.
 
-> Time Series Database
+### Time Series Database
 
 1. Extensibility, theoretically support time series without upper limit, completely solve the problem of time series
    inflation, support horizontal/vertical expansion.
@@ -14,7 +15,7 @@ database, which meets the following objectives.
 4. Query engine supports vectorized queries.
 5. Supports multiple timing protocols to write and query, and provides external components to import data.
 
-> Cloud Native
+### Cloud Native
 
 1. Supports cloud native, making full use of the convenience brought by cloud infrastructure and integrating into cloud
    native ecology.
@@ -25,17 +26,18 @@ database, which meets the following objectives.
 6. Cloud edge - end collaboration provides the edge - end integration capability with the public cloud
 7. Converged OLAP/CloudAI data Ecosystem on the cloud.
 
-## CnosDB Architecture
+### The Design Objectives of CnosDB 2.4
 
-![整体架构](../source/_static/img/arch.jpg)
+CnosDB V version 2.4.0 will achieve: add timing functions, add lossy compression algorithms, support update and delete operations and have a master replication group, this version of CnosDB will be able to provide users with a higher performance, easier to operate, more comprehensive data processing capabilities of the open source timing database, described in detail below.
+#### Functions
+Common functions (first, last, max, min), date conversion class, monitoring class (gauges calculation).
+#### Lossy Compression
+- Deadband Compression ：A data compression algorithm used to reduce the frequency of sensor data updates and reduce data transmission and storage costs.
+- Swinging Door Trending (SDT)  Algorithm ：A real-time data stream processing algorithm that can be used to process dynamic data sets, maintaining the number of elements in the data set by constantly adjusting the size of the gate.
+#### Support Schema change 
+Support Update、Delete operations.
+#### Add Master-Slave replicaset 
+Implements exactly once semantics for processing stream data.
 
-## CnosDB Timeline
-
-| 产品特性                  | 时间节点  |
-|-----------------------| ----  |
-| 2.0 Stand-alone  Beta | 2022.10 |
-| 2.0 Distribution Beta | 2022.12 |
-| Cloud Trial on AWS    | 2023.Q1 |
-| Enterprise Service    | 2023.Q2 |
 
 
