@@ -52,5 +52,4 @@ backtrace = ["async-backtrace"]
 meta_e2e_test = ["psutil", "sysinfo"]
 
 [dev-dependencies]
-anyhow = "1.0.32"
 maplit = "1.0.2"

@@ -3075,7 +3075,6 @@ name = "meta"
 version = "2.3.1"
 dependencies = [
  "actix-web",
- "anyhow",
  "async-backtrace",
  "async-trait",
  "byteorder",
