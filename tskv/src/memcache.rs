@@ -13,7 +13,7 @@ use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueT
 use parking_lot::RwLock;
 use protos::models as fb_models;
 use protos::models::FieldType;
-use utils::bitset::BitSet;
+use utils::bitset::ImmutBitSet;
 
 use crate::error::Result;
 use crate::Error::CommonError;
@@ -138,7 +138,8 @@ impl RowData {
                     reason: "field nullbit missing in point".to_string(),
                 })?;
                 let len = fields_inner.len();
-                let field_nullbit = BitSet::new_without_check(len, field_nullbit_buffer.bytes());
+                let field_nullbit =
+                    ImmutBitSet::new_without_check(len, field_nullbit_buffer.bytes());
                 let fields_id = schema.fields_id();
                 let mut fields: Vec<Option<FieldVal>> = Vec::with_capacity(fields_id.len());
                 for _i in 0..fields.capacity() {

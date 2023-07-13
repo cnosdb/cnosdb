@@ -23,7 +23,7 @@ use tower::timeout::Timeout;
 use trace::{debug, SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::append_trace_context;
 use tskv::EngineRef;
-use utils::bitset::BitSet;
+use utils::bitset::ImmutBitSet;
 use utils::BkdrHasher;
 
 use crate::errors::*;
@@ -235,7 +235,7 @@ impl<'a> VnodeMapping<'a> {
                     msg: "point missing tag null bit".to_string(),
                 })?;
                 let len = tags_key.len();
-                let tag_nullbit = BitSet::new_without_check(len, tag_nullbit.bytes());
+                let tag_nullbit = ImmutBitSet::new_without_check(len, tag_nullbit.bytes());
                 for (idx, (tag_key, tag_value)) in tags_key
                     .iter()
                     .zip(point.tags().ok_or(CoordinatorError::Points {

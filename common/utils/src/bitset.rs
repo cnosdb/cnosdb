@@ -9,16 +9,29 @@ impl BitSet {
         Self::default()
     }
 
-    pub fn new_without_check(len: usize, buffer: &[u8]) -> Self {
-        Self {
-            buffer: buffer.to_vec(),
-            len,
-        }
+    pub fn new_without_check(len: usize, buffer: Vec<u8>) -> Self {
+        Self { buffer, len }
     }
 
     pub fn with_size(count: usize) -> Self {
         let mut bitset = Self::default();
         bitset.append_unset(count);
+        bitset
+    }
+
+    /// Create a bitset with a sequence of index number which means value exists.
+    ///
+    /// The length of the bit set is `len`, but if the max value in `offsets`
+    /// is greater than `len`, then the max value will be the `len`.
+    pub fn with_offsets(len: usize, offsets: &[usize]) -> Self {
+        let mut bitset = match offsets.iter().max() {
+            Some(&max_off) => BitSet::with_size(max_off.max(len)),
+            None => BitSet::default(),
+        };
+        for off in offsets {
+            bitset.set(*off);
+        }
+
         bitset
     }
 
@@ -148,6 +161,98 @@ impl BitSet {
     }
 }
 
+impl PartialEq for BitSet {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len != other.len {
+            return false;
+        }
+        if self.len == 0 {
+            return true;
+        }
+        let bound = self.len >> 3;
+        if self.buffer[..bound] != other.buffer[..bound] {
+            return false;
+        }
+        let mask = 0xFF >> (8 - (self.len & 7));
+        (self.buffer[bound] & mask) == (other.buffer[bound] & mask)
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ImmutBitSet<'a> {
+    buffer: &'a [u8],
+    len: usize,
+}
+
+impl<'a> ImmutBitSet<'a> {
+    pub fn new_without_check(len: usize, buffer: &'a [u8]) -> Self {
+        Self { buffer, len }
+    }
+
+    pub fn get(&self, idx: usize) -> bool {
+        assert!(idx <= self.len);
+
+        let byte_idx = idx >> 3;
+        let bit_idx = idx & 7;
+        (self.buffer[byte_idx] >> bit_idx) & 1 != 0
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn byte_len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        self.buffer
+    }
+
+    pub fn is_all_set(&self) -> bool {
+        if self.len == 0 {
+            return false;
+        }
+
+        let full_blocks = (self.len / 8).saturating_sub(1);
+        if !self.buffer.iter().take(full_blocks).all(|&v| v == u8::MAX) {
+            return false;
+        }
+
+        let mask = match self.len % 8 {
+            1..=8 => !(0xFF << (self.len % 8)), // LSB mask
+            0 => 0xFF,
+            _ => unreachable!(),
+        };
+        *self.buffer.last().unwrap() == mask
+    }
+
+    pub fn is_all_unset(&self) -> bool {
+        self.buffer.iter().all(|&v| v == 0)
+    }
+}
+
+impl<'a> PartialEq for ImmutBitSet<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len != other.len {
+            return false;
+        }
+        if self.len == 0 {
+            return true;
+        }
+        let bound = self.len >> 3;
+        if self.buffer[..bound] != other.buffer[..bound] {
+            return false;
+        }
+        let mask = 0xFF >> (8 - (self.len & 7));
+        (self.buffer[bound] & mask) == (other.buffer[bound] & mask)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::prelude::*;
@@ -218,6 +323,12 @@ mod tests {
         assert!(!mask.get(8));
         assert!(mask.get(9));
         assert!(mask.get(19));
+
+        let immut_mask = ImmutBitSet::new_without_check(mask.len(), &mask.buffer);
+        assert!(immut_mask.get(0));
+        assert!(!immut_mask.get(8));
+        assert!(immut_mask.get(9));
+        assert!(immut_mask.get(19));
     }
 
     fn make_rng() -> StdRng {
@@ -330,8 +441,57 @@ mod tests {
 
     #[test]
     fn test_all_set_unset_empty() {
-        let v = BitSet::new();
-        assert!(!v.is_all_set());
-        assert!(v.is_all_unset());
+        let v1 = BitSet::new();
+        assert!(!v1.is_all_set());
+        assert!(v1.is_all_unset());
+
+        let v2 = ImmutBitSet::new_without_check(8, &[0]);
+        assert!(!v2.is_all_set());
+        assert!(v2.is_all_unset());
+    }
+
+    #[test]
+    fn test_with_offsets() {
+        let b = BitSet::with_offsets(0, &[1, 2, 3]);
+        assert_eq!(b.len, 3);
+        assert_eq!(b.buffer, vec![0b_0000_1110]);
+
+        let b = BitSet::with_offsets(10, &[1, 2, 3]);
+        assert_eq!(b.len, 10);
+        assert_eq!(b.buffer, vec![0b_0000_1110, 0b_0000_0000]);
+    }
+
+    #[test]
+    fn test_eq() {
+        {
+            let buffer_1 = vec![0b_0000_1110];
+            let buffer_2 = vec![0b_0110_1110];
+            let a1 = BitSet::new_without_check(5, buffer_1.clone());
+            let b1 = BitSet::new_without_check(5, buffer_2.clone());
+            assert_eq!(a1, b1);
+            let a2 = ImmutBitSet::new_without_check(5, &buffer_1);
+            let b2 = ImmutBitSet::new_without_check(5, &buffer_2);
+            assert_eq!(a2, b2);
+        }
+        {
+            let buffer_1 = vec![0b_0000_1110];
+            let buffer_2 = vec![0b_0111_1110];
+            let a1 = BitSet::new_without_check(5, buffer_1.clone());
+            let b1 = BitSet::new_without_check(5, buffer_2.clone());
+            assert_ne!(a1, b1);
+            let a2 = ImmutBitSet::new_without_check(5, &buffer_1);
+            let b2 = ImmutBitSet::new_without_check(5, &buffer_2);
+            assert_ne!(a2, b2);
+        }
+        {
+            let buffer_1 = vec![0b_0000_1110, 0b_0000_0011];
+            let buffer_2 = vec![0b_0000_1110, 0b_0110_0011];
+            let a1 = BitSet::new_without_check(5, buffer_1.clone());
+            let b1 = BitSet::new_without_check(5, buffer_2.clone());
+            assert_eq!(a1, b1);
+            let a2 = ImmutBitSet::new_without_check(5, &buffer_1);
+            let b2 = ImmutBitSet::new_without_check(5, &buffer_2);
+            assert_eq!(a2, b2);
+        }
     }
 }
