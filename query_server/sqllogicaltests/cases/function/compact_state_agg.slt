@@ -1,0 +1,43 @@
+##########
+## DDL
+##########
+
+statement ok
+alter database public set ttl '1000000d';
+
+statement ok
+drop table if exists compact_state_agg_tbl;
+
+statement ok
+CREATE TABLE IF NOT EXISTS compact_state_agg_tbl(f0 BIGINT , f1 bigint , TAGS(t0, t1, t2) );
+
+##########
+## Query
+##########
+
+# prepare data
+statement ok
+INSERT compact_state_agg_tbl(TIME, f0, f1, t0, t1)
+VALUES
+    ('1999-12-31 00:00:00.000', 111, 444, 'tag11', 'tag21'),
+    ('1999-12-31 00:00:00.005', 222, 444, 'tag12', 'tag22'),
+    ('1999-12-31 00:00:00.010', 333, 222, 'tag12', 'tag23'),
+    ('1999-12-31 00:00:10.015', 444, 111, 'tag14', 'tag24'),
+    ('1999-12-31 00:00:10.020', 222, 555, 'tag14', 'tag21'),
+    ('1999-12-31 00:10:00.025', 333, 555, 'tag11', 'tag22'),
+    ('1999-12-31 00:10:00.030', 444, 333, 'tag11', 'tag23'),
+    ('1999-12-31 01:00:00.035', 555, 222, 'tag14', 'tag24');
+
+##########
+## Query
+##########
+
+statement ok
+with tmp as (select compact_state_agg(time, f1) as state from compact_state_agg_tbl)
+select state.state_duration, state.state_periods from tmp;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze. err: The function \\"compact_state_agg\\" expects 2 arguments, but 3 were provided",.*
+select compact_state_agg(time, time, time) as state from compact_state_agg_tbl;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze. err: The function \\"compact_state_agg\\" expects 2 arguments, but 1 were provided",.*
+select compact_state_agg(time) as state from compact_state_agg_tbl;

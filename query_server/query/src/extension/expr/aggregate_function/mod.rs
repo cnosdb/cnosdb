@@ -1,18 +1,27 @@
 #[cfg(test)]
 mod example;
 mod sample;
+mod state_agg;
 
+use datafusion::common::Result as DFResult;
+use datafusion::scalar::ScalarValue;
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
 pub const SAMPLE_UDAF_NAME: &str = "sample";
+pub const COMPACT_STATE_AGG_UDAF_NAME: &str = "compact_state_agg";
 
 pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...
     // eg.
     //   example::register_udaf(func_manager)?;
     sample::register_udaf(func_manager)?;
+    state_agg::register_udafs(func_manager)?;
     Ok(())
+}
+
+trait AggResult {
+    fn to_scalar(self) -> DFResult<ScalarValue>;
 }
 
 #[cfg(test)]
