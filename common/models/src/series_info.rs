@@ -71,14 +71,21 @@ impl SeriesKey {
         }
     }
 
+    /// Returns a string with format `{table}[,{tag.key}={tag.value}]`.
     pub fn string(&self) -> String {
-        let mut str = self.table.clone() + ".";
-        for tag in &self.tags {
-            str = str + &String::from_utf8(tag.key.to_vec()).unwrap() + "=";
-            str = str + &String::from_utf8(tag.value.to_vec()).unwrap() + ".";
+        let buf_len = self.tags.iter().fold(self.table.len(), |acc, tag| {
+            acc + tag.key.len() + tag.value.len() + 2 // ,{key}={value}
+        });
+        let mut buf = Vec::with_capacity(buf_len);
+        buf.extend_from_slice(self.table.as_bytes());
+        for tag in self.tags.iter() {
+            buf.extend(b",");
+            buf.extend_from_slice(&tag.key);
+            buf.extend_from_slice(b"=");
+            buf.extend_from_slice(&tag.value);
         }
 
-        str
+        String::from_utf8(buf).unwrap()
     }
 
     pub fn build_series_key(
@@ -137,5 +144,21 @@ impl PartialEq for SeriesKey {
         }
 
         true
+    }
+}
+
+impl std::fmt::Display for SeriesKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.table)?;
+        for tag in self.tags.iter() {
+            write!(
+                f,
+                ",{}={}",
+                std::str::from_utf8(&tag.key).map_err(|_| std::fmt::Error)?,
+                std::str::from_utf8(&tag.value).map_err(|_| std::fmt::Error)?,
+            )?;
+        }
+
+        Ok(())
     }
 }

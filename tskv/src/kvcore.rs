@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::panic;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -12,7 +12,7 @@ use models::meta_data::{VnodeId, VnodeStatus};
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{make_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
-use models::{ColumnId, SeriesId, SeriesKey};
+use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::{get_db_from_fb_points, models as fb_models};
 use snafu::ResultExt;
@@ -37,7 +37,7 @@ use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
 use crate::wal::{self, WalDecoder, WalEntry, WalManager, WalTask};
-use crate::{database, file_utils, tenant_name_from_request, Engine, Error, TseriesFamilyId};
+use crate::{file_utils, tenant_name_from_request, Engine, Error, TseriesFamilyId};
 
 // TODO: A small summay channel capacity can cause a block
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;
@@ -475,34 +475,117 @@ impl TsKv {
         }
     }
 
+    async fn delete_table(&self, database: Arc<RwLock<Database>>, table: &str) -> Result<()> {
+        // TODO Create global DropTable flag for droping the same table at the same time.
+        let db_rlock = database.read().await;
+        let db_owner = db_rlock.owner();
+
+        let schemas = db_rlock.get_schemas();
+        if let Some(fields) = schemas.get_table_schema(table)? {
+            let column_ids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
+            info!(
+                "Drop table: deleting columns in table: {db_owner}.{table}: {}",
+                column_ids
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            );
+
+            let time_range = &TimeRange {
+                min_ts: Timestamp::MIN,
+                max_ts: Timestamp::MAX,
+            };
+            for (ts_family_id, ts_family) in database.read().await.ts_families().iter() {
+                // TODO: Concurrent delete on ts_family.
+                // TODO: Limit parallel delete to 1.
+                if let Some(ts_index) = db_rlock.get_ts_index(*ts_family_id) {
+                    let series_ids = ts_index.get_series_id_list(table, &[]).await?;
+                    ts_family
+                        .write()
+                        .await
+                        .delete_series(&series_ids, time_range);
+
+                    let field_ids: Vec<u64> = series_ids
+                        .iter()
+                        .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
+                        .collect();
+                    info!(
+                        "Drop table: vnode {ts_family_id} deleting fields in table: {db_owner}.{table}: {}",
+                        field_ids
+                            .iter()
+                            .map(|i| i.to_string())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    );
+
+                    let version = ts_family.read().await.super_version();
+                    for column_file in version.version.column_files(&field_ids, time_range) {
+                        column_file.add_tombstone(&field_ids, time_range).await?;
+                    }
+                } else {
+                    continue;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     async fn delete_columns(
         &self,
-        tenant: &str,
-        database: &str,
+        database: Arc<RwLock<Database>>,
         table: &str,
         column_ids: &[ColumnId],
     ) -> Result<()> {
-        let db = self.get_db(tenant, database).await?;
+        // TODO Create global DropTable flag for droping the same table at the same time.
+        let db_rlock = database.read().await;
+        let db_owner = db_rlock.owner();
 
-        let series_ids = db.read().await.get_table_sids(table).await?;
+        let schemas = db_rlock.get_schemas();
+        if let Some(fields) = schemas.get_table_schema(table)? {
+            let table_column_ids: HashSet<ColumnId> =
+                fields.columns().iter().map(|f| f.id).collect();
+            let mut to_delete_column_ids = Vec::with_capacity(column_ids.len());
+            for cid in column_ids {
+                if table_column_ids.contains(cid) {
+                    to_delete_column_ids.push(*cid);
+                }
+            }
 
-        let storage_field_ids: Vec<u64> = series_ids
-            .iter()
-            .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
-            .collect();
+            let time_range = &TimeRange {
+                min_ts: Timestamp::MIN,
+                max_ts: Timestamp::MAX,
+            };
+            for (ts_family_id, ts_family) in database.read().await.ts_families().iter() {
+                // TODO: Concurrent delete on ts_family.
+                // TODO: Limit parallel delete to 1.
+                if let Some(ts_index) = db_rlock.get_ts_index(*ts_family_id) {
+                    let series_ids = ts_index.get_series_id_list(table, &[]).await?;
+                    ts_family
+                        .write()
+                        .await
+                        .delete_series(&series_ids, time_range);
 
-        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            for (_ts_family_id, ts_family) in db.read().await.ts_families().iter() {
-                ts_family.read().await.delete_columns(&storage_field_ids);
+                    let field_ids: Vec<u64> = series_ids
+                        .iter()
+                        .flat_map(|sid| to_delete_column_ids.iter().map(|fid| unite_id(*fid, *sid)))
+                        .collect();
+                    info!(
+                        "Drop table: vnode {ts_family_id} deleting fields in table: {db_owner}.{table}: {}",
+                        field_ids
+                            .iter()
+                            .map(|i| i.to_string())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    );
 
-                let version = ts_family.read().await.super_version();
-                for column_file in version
-                    .version
-                    .column_files(&storage_field_ids, &TimeRange::all())
-                {
-                    self.runtime.block_on(
-                        column_file.add_tombstone(&storage_field_ids, &TimeRange::all()),
-                    )?;
+                    let version = ts_family.read().await.super_version();
+                    for column_file in version.version.column_files(&field_ids, time_range) {
+                        column_file.add_tombstone(&field_ids, time_range).await?;
+                    }
+                } else {
+                    continue;
                 }
             }
         }
@@ -621,12 +704,10 @@ impl TsKv {
             &database,
             &table
         );
-        let version_set = self.version_set.clone();
-        let database = database.to_string();
-        let table = table.to_string();
-        let tenant = tenant.to_string();
-
-        database::delete_table_async(tenant, database, table, version_set).await
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            return self.delete_table(db, table).await;
+        }
+        Ok(())
     }
 
     /// Remove the storage unit(caches and files) managed by TsKv,
@@ -766,27 +847,28 @@ impl Engine for TsKv {
     }
 
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
-        // Store this action in WAL.
-        let (wal_task, rx) =
-            WalTask::new_delete_table(tenant.to_string(), database.to_string(), table.to_string());
-        self.wal_sender
-            .send(wal_task)
-            .await
-            .map_err(|_| Error::ChannelSend {
-                source: error::ChannelSendError::WalTask,
-            })?;
-        // Receive WAL write action result.
-        let _ = rx.await.map_err(|e| Error::ChannelReceive {
-            source: error::ChannelReceiveError::WriteWalResult { source: e },
-        })??;
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
+            // Store this action in WAL.
+            let (wal_task, rx) = WalTask::new_delete_table(
+                tenant.to_string(),
+                database.to_string(),
+                table.to_string(),
+            );
+            self.wal_sender
+                .send(wal_task)
+                .await
+                .map_err(|_| Error::ChannelSend {
+                    source: error::ChannelSendError::WalTask,
+                })?;
+            // Receive WAL write action result.
+            let _ = rx.await.map_err(|e| Error::ChannelReceive {
+                source: error::ChannelReceiveError::WriteWalResult { source: e },
+            })??;
 
-        // TODO Create global DropTable flag for droping the same table at the same time.
-        let version_set = self.version_set.clone();
-        let database = database.to_string();
-        let table = table.to_string();
-        let tenant = tenant.to_string();
+            return self.delete_table(db, table).await;
+        }
 
-        database::delete_table_async(tenant, database, table, version_set).await
+        Ok(())
     }
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()> {
@@ -900,6 +982,7 @@ impl Engine for TsKv {
         table: &str,
         column_name: &str,
     ) -> Result<()> {
+        // TODO(zipper): Store this action in WAL.
         let db = self.get_db(tenant, database).await?;
         let schema =
             db.read()
@@ -917,8 +1000,7 @@ impl Engine for TsKv {
                 field: column_name.to_string(),
             })?
             .id;
-        self.delete_columns(tenant, database, table, &[column_id])
-            .await?;
+        self.delete_columns(db, table, &[column_id]).await?;
         Ok(())
     }
 
