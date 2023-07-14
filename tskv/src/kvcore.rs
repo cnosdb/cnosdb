@@ -1242,7 +1242,10 @@ impl Engine for TsKv {
                 .await
             {
                 // TODO: stop current and prevent next flush and compaction.
-
+                if !ts_family.read().await.can_compaction() {
+                    warn!("forbidden compaction on moving vnode {}", vnode_id);
+                    return Ok(());
+                }
                 let mut tsf_wlock = ts_family.write().await;
                 tsf_wlock.switch_to_immutable();
                 let flush_req = tsf_wlock.build_flush_req(true);
