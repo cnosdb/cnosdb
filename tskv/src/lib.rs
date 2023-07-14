@@ -50,7 +50,7 @@ pub type ColumnFileId = u64;
 type TseriesFamilyId = u32;
 type LevelId = u32;
 
-/// Returns the tenant of a WRitePOintsRequest
+/// Returns the normalized tenant of a WritePointsRequest
 pub fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) -> String {
     match &req.meta {
         Some(meta) => meta.tenant.clone(),
@@ -79,25 +79,6 @@ pub trait Engine: Send + Sync + Debug {
         write_batch: WritePointsRequest,
     ) -> Result<WritePointsResponse>;
 
-    /// Tskv engine write the gRPC message `WritePointsRequest`(which contains
-    /// the tenant, user, database, some tables, and each table has some rows)
-    /// that from a WAL into a storage unit managed by engine.
-    ///
-    /// - vnode_id - ID of the storage unit(caches and files).
-    /// - precision - The timestamp precision of table rows.
-    /// - seq - The WAL sequence of the stored gRPC message.
-    ///
-    /// Data is from the WAL(write-ahead-log), so won't write back to WAL, and
-    /// would not create any schema, if database of vnode does not exist, record
-    /// will be ignored.
-    async fn write_from_wal(
-        &self,
-        vnode_id: VnodeId,
-        precision: Precision,
-        write_batch: WritePointsRequest,
-        seq: u64,
-    ) -> Result<()>;
-
     /// Remove all storage unit(caches and files) in specified database,
     /// then remove directory of the database.
     async fn drop_database(&self, tenant: &str, database: &str) -> Result<()>;
@@ -105,25 +86,9 @@ pub trait Engine: Send + Sync + Debug {
     /// Delete all data of a table.
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
 
-    /// Delete all data of a table.
-    ///
-    /// Data is from the WAL(write-ahead-log), so won't write back to WAL.
-    async fn drop_table_from_wal(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
-
     /// Remove the storage unit(caches and files) managed by engine,
     /// then remove directory of the storage unit.
     async fn remove_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()>;
-
-    /// Remove the storage unit(caches and files) managed by engine,
-    /// then remove directory of the storage unit.
-    ///
-    /// Data is from the WAL(write-ahead-log), so won't write back to WAL.
-    async fn remove_tsfamily_from_wal(
-        &self,
-        tenant: &str,
-        database: &str,
-        vnode_id: VnodeId,
-    ) -> Result<()>;
 
     /// Mark the storage unit as `Copying` and flush caches.
     async fn prepare_copy_vnode(

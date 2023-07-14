@@ -201,6 +201,12 @@ pub enum Error {
     Points {
         source: PointsError,
     },
+
+    #[snafu(display("non-UTF-8 string '{message}': {source}"))]
+    InvalidUtf8 {
+        message: String,
+        source: std::str::Utf8Error,
+    },
 }
 
 impl From<PointsError> for Error {

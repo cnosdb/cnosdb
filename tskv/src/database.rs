@@ -201,11 +201,9 @@ impl Database {
     pub async fn del_tsfamily(&mut self, tf_id: u32, summary_task_sender: Sender<SummaryTask>) {
         if let Some(tf) = self.ts_families.remove(&tf_id) {
             tf.read().await.close();
-        } else {
-            // If no ts_family recovered from summary, do not write summary.
-            return;
         }
 
+        // TODO(zipper): If no ts_family recovered from summary, do not write summary.
         let edits = vec![VersionEdit::new_del_vnode(tf_id)];
         let (task_state_sender, _task_state_receiver) = oneshot::channel();
         let task = SummaryTask::new(edits, None, None, task_state_sender);
