@@ -23,7 +23,7 @@ pub enum SchemaError {
     },
 
     #[snafu(display("field '{database}.{table}'.'{}' not found", field))]
-    FiledNotFound {
+    FieldNotFound {
         database: String,
         table: String,
         field: String,

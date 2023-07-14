@@ -637,6 +637,15 @@ impl Engine for TsKv {
         database::delete_table_async(tenant, database, table, version_set).await
     }
 
+    async fn drop_table_from_wal(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
+        let version_set = self.version_set.clone();
+        let database = database.to_string();
+        let table = table.to_string();
+        let tenant = tenant.to_string();
+
+        database::delete_table_async(tenant, database, table, version_set).await
+    }
+
     async fn remove_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             // Store this action in WAL.
@@ -653,6 +662,40 @@ impl Engine for TsKv {
                 source: error::ChannelReceiveError::WriteWalResult { source: e },
             })??;
 
+            let mut db_wlock = db.write().await;
+            db_wlock.del_ts_index(vnode_id);
+            db_wlock
+                .del_tsfamily(vnode_id, self.summary_task_sender.clone())
+                .await;
+
+            let ts_dir = self
+                .options
+                .storage
+                .ts_family_dir(&make_owner(tenant, database), vnode_id);
+            match std::fs::remove_dir_all(&ts_dir) {
+                Ok(()) => {
+                    info!("Removed TsFamily directory '{}'", ts_dir.display());
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to remove TsFamily directory '{}': {}",
+                        ts_dir.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn remove_tsfamily_from_wal(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+    ) -> Result<()> {
+        if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             let mut db_wlock = db.write().await;
             db_wlock.del_ts_index(vnode_id);
             db_wlock
@@ -759,7 +802,7 @@ impl Engine for TsKv {
                 })?;
         let column_id = schema
             .column(column_name)
-            .ok_or_else(|| SchemaError::FiledNotFound {
+            .ok_or_else(|| SchemaError::FieldNotFound {
                 database: database.to_string(),
                 table: table.to_string(),
                 field: column_name.to_string(),

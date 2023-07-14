@@ -469,40 +469,77 @@ impl WalManager {
                         continue;
                     }
                     seq_gt_min_seq = true;
-                    if let WalEntry::Write(blk) = wal_entry_blk.entry {
-                        decoded_data.truncate(0);
-                        decoder
-                            .decode(blk.points(), &mut decoded_data)
-                            .context(error::DecodeSnafu)?;
-                        if decoded_data.is_empty() {
-                            continue;
-                        }
-                        let vnode_id = blk.vnode_id();
-                        if let Some(tsf_last_seq) = vnode_last_seq_map.get(&vnode_id) {
-                            // If `seq_no` of TsFamily is greater than or equal to `seq`,
-                            // it means that data was writen to tsm.
-                            if *tsf_last_seq >= seq {
+                    match wal_entry_blk.entry {
+                        WalEntry::Write(blk) => {
+                            decoded_data.truncate(0);
+                            decoder
+                                .decode(blk.points(), &mut decoded_data)
+                                .context(error::DecodeSnafu)?;
+                            if decoded_data.is_empty() {
                                 continue;
                             }
+                            let vnode_id = blk.vnode_id();
+                            if let Some(tsf_last_seq) = vnode_last_seq_map.get(&vnode_id) {
+                                // If `seq_no` of TsFamily is greater than or equal to `seq`,
+                                // it means that data was writen to tsm.
+                                if *tsf_last_seq >= seq {
+                                    continue;
+                                }
+                            }
+                            let tenant =
+                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
+                            let precision = blk.precision();
+                            let req = WritePointsRequest {
+                                version: 1,
+                                meta: Some(Meta {
+                                    tenant,
+                                    user: None,
+                                    password: None,
+                                }),
+                                points: decoded_data[0].to_vec(),
+                            };
+                            engine
+                                .write_from_wal(vnode_id, precision, req, seq)
+                                .await
+                                .unwrap();
                         }
-                        let tenant = unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
-                        let precision = blk.precision();
-                        let req = WritePointsRequest {
-                            version: 1,
-                            meta: Some(Meta {
-                                tenant,
-                                user: None,
-                                password: None,
-                            }),
-                            points: decoded_data[0].to_vec(),
-                        };
-                        engine
-                            .write_from_wal(vnode_id, precision, req, seq)
-                            .await
-                            .unwrap();
-                    } else {
-                        // WalEntry::DeleteVnode(_) => do nothing
-                        // WalEntry::DeleteTable(_) => do nothing
+
+                        WalEntry::DeleteVnode(blk) => {
+                            let vnode_id = blk.vnode_id();
+                            let tenant =
+                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
+                            let database =
+                                unsafe { String::from_utf8_unchecked(blk.database().to_vec()) };
+                            trace::info!("Recover: delete vnode, tenant: {}, database: {}, vnode_id: {vnode_id}", &tenant, &database);
+                            if let Err(e) = engine
+                                .remove_tsfamily_from_wal(&tenant, &database, vnode_id)
+                                .await
+                            {
+                                // Ignore delete vnode error.
+                                trace::error!("Recover: failed to delete vnode, tenant: {tenant}, database: {database}, vnode_id: {vnode_id}, error: {e}");
+                            }
+                        }
+                        WalEntry::DeleteTable(blk) => {
+                            let tenant =
+                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
+                            let database =
+                                unsafe { String::from_utf8_unchecked(blk.database().to_vec()) };
+                            let table =
+                                unsafe { String::from_utf8_unchecked(blk.table().to_vec()) };
+                            trace::info!(
+                                "Recover: delete table, tenant: {}, database: {}, table: {}",
+                                &tenant,
+                                &database,
+                                &table
+                            );
+                            if let Err(e) =
+                                engine.drop_table_from_wal(&tenant, &database, &table).await
+                            {
+                                // Ignore delete vnode error.
+                                trace::error!("Recover: failed to delete table, tenant: {tenant}, database: {database}, table: {table}, error: {e}");
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 Ok(None) | Err(Error::WalTruncated) => {

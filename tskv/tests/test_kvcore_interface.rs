@@ -176,12 +176,10 @@ mod tests {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_flush_delta", None);
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points_include_delta(
-            &mut fbb,
-            "db",
-            "kvcore_flush_delta",
-            20,
-        );
+        let database = "db_flush_delta";
+        let table = "kvcore_flush_delta";
+        let points =
+            models_helper::create_random_points_include_delta(&mut fbb, database, table, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRequest {
@@ -219,12 +217,12 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
-        assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.db/0/tsm"
-        ));
-        assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.db/0/delta"
-        ));
+        assert!(file_manager::try_exists(format!(
+            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.{database}/0/tsm"
+        )));
+        assert!(file_manager::try_exists(format!(
+            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.{database}/0/delta"
+        )));
     }
 
     #[tokio::test]
@@ -245,7 +243,7 @@ mod tests {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_include_delta(
             &mut fbb,
-            "db",
+            "db_build_row_data",
             "kvcore_build_row_data",
             20,
         );
@@ -276,7 +274,7 @@ mod tests {
 
         init_default_global_tracing(dir.join("log"), "tskv.log", "debug");
         let tenant = "cnosdb";
-        let database = "db";
+        let database = "db_recover";
         let table = "kvcore_recover";
         let vnode_id = 10;
 

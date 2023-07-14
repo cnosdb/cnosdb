@@ -131,7 +131,12 @@ async fn detect_node_heartbeat(heartbeat_config: HeartBeatConfig, app: Data<Meta
         interval.tick().await;
 
         if let Ok(_leader) = app.raft.is_leader().await {
-            let opt_list = app.store.state_machine.write().await.children_data::<NodeMetrics>(&metrics_path);
+            let opt_list = app
+                .store
+                .state_machine
+                .write()
+                .await
+                .children_data::<NodeMetrics>(&metrics_path);
 
             if let Ok(list) = opt_list {
                 let node_metrics_list: Vec<NodeMetrics> = list.into_values().collect();
