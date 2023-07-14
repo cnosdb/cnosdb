@@ -36,9 +36,9 @@ fn new() -> AggregateUDF {
     });
 
     let state_type: StateTypeFunction =
-        Arc::new(move |output| Ok(Arc::new(vec![output.clone(), DataType::UInt32])));
+        Arc::new(move |_, output| Ok(Arc::new(vec![output.clone(), DataType::UInt32])));
 
-    let accumulator: AccumulatorFactoryFunction = Arc::new(|output| match output {
+    let accumulator: AccumulatorFactoryFunction = Arc::new(|_, output| match output {
         DataType::List(f) => Ok(Box::new(SampleAccumulator::try_new(
             output.clone(),
             f.data_type().clone(),
