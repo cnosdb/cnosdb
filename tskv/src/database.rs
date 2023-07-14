@@ -8,27 +8,25 @@ use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::predicate::domain::TimeRange;
 use models::schema::{DatabaseSchema, Precision, TskvTableSchema};
-use models::utils::unite_id;
-use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
+use models::{SchemaId, SeriesId, SeriesKey};
 use protos::models::{FieldType, Point, Table};
 use protos::{fb_table_name, schema_field_name, schema_field_type, schema_tag_name};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{oneshot, RwLock};
-use trace::{debug, error, info};
+use trace::{error, info};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalContext;
-use crate::error::{self, Result, SchemaSnafu};
+use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::{Options, INDEX_PATH};
 use crate::memcache::{MemCache, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
-use crate::version_set::VersionSet;
 use crate::Error::{self, InvalidPoint};
 use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
@@ -390,6 +388,7 @@ impl Database {
         }
 
         let id = ts_index.add_series_if_not_exists(&series_key).await?;
+        trace::trace!("Database '{db_name}' add series, id: {id}, series: '{series_key}'");
 
         Ok(id)
     }
@@ -468,15 +467,6 @@ impl Database {
         self.ts_indexes.clone()
     }
 
-    pub async fn get_table_sids(&self, table: &str) -> IndexResult<Vec<SeriesId>> {
-        let mut res = vec![];
-        for (_, ts_index) in self.ts_indexes.iter() {
-            let mut list = ts_index.get_series_id_list(table, &[]).await?;
-            res.append(&mut list);
-        }
-        Ok(res)
-    }
-
     pub async fn get_ts_index_or_add(&mut self, id: u32) -> Result<Arc<index::ts_index::TSIndex>> {
         if let Some(v) = self.ts_indexes.get(&id) {
             return Ok(v.clone());
@@ -510,67 +500,4 @@ impl Database {
     pub fn tsf_num(&self) -> usize {
         self.ts_families.len()
     }
-}
-
-pub(crate) async fn delete_table_async(
-    tenant: String,
-    database: String,
-    table: String,
-    version_set: Arc<RwLock<VersionSet>>,
-) -> Result<()> {
-    info!("Drop table: '{}.{}'", &database, &table);
-    let version_set_rlock = version_set.read().await;
-    let db_instance = version_set_rlock.get_db(&tenant, &database);
-    drop(version_set_rlock);
-
-    if let Some(db) = db_instance {
-        let schemas = db.read().await.get_schemas();
-        let field_infos = schemas.get_table_schema(&table)?;
-        //schemas.del_table_schema(&table).await?;
-
-        let mut sids = vec![];
-        for (_id, index) in db.read().await.ts_indexes().iter() {
-            let mut ids = index
-                .get_series_id_list(&table, &[])
-                .await
-                .context(error::IndexErrSnafu)?;
-
-            for sid in ids.iter() {
-                index
-                    .del_series_info(*sid)
-                    .await
-                    .context(error::IndexErrSnafu)?;
-            }
-            index.flush().await.context(error::IndexErrSnafu)?;
-
-            sids.append(&mut ids);
-        }
-
-        if let Some(fields) = field_infos {
-            debug!(
-                "Drop table: deleting series in table: {}.{}",
-                &database, &table
-            );
-            let fids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
-            let storage_fids: Vec<u64> = sids
-                .iter()
-                .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid, *sid)))
-                .collect();
-            let time_range = &TimeRange {
-                min_ts: Timestamp::MIN,
-                max_ts: Timestamp::MAX,
-            };
-
-            for (_ts_family_id, ts_family) in db.read().await.ts_families().iter() {
-                // TODO: Concurrent delete on ts_family.
-                // TODO: Limit parallel delete to 1.
-                ts_family.write().await.delete_series(&sids, time_range);
-                let version = ts_family.read().await.super_version();
-                for column_file in version.version.column_files(&storage_fids, time_range) {
-                    column_file.add_tombstone(&storage_fids, time_range).await?;
-                }
-            }
-        }
-    }
-    Ok(())
 }

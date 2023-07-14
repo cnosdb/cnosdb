@@ -58,7 +58,10 @@ impl TSIndex {
         };
 
         ts_index.recover().await?;
-        info!("index {:?} incr id start at:{}", path, incr_id);
+        info!(
+            "Recovered index dir '{}', incr_id start at: {incr_id}",
+            path.display()
+        );
 
         Ok(ts_index)
     }
@@ -68,10 +71,10 @@ impl TSIndex {
         let files = file_manager::list_file_names(&path);
         for filename in files.iter() {
             if let Ok(file_id) = file_utils::get_index_binlog_file_id(filename) {
-                let tmp_file = BinlogWriter::open(file_id, path.join(filename)).await?;
+                let file_path = path.join(filename);
+                info!("Recovering index binlog: '{}'", file_path.display());
+                let tmp_file = BinlogWriter::open(file_id, file_path).await?;
                 let mut reader_file = BinlogReader::new(file_id, tmp_file.file.into()).await?;
-
-                info!("index recover file: {:?}", path.join(filename));
                 self.recover_from_file(&mut reader_file).await?;
             }
         }
@@ -291,14 +294,17 @@ impl TSIndex {
         tab: &str,
         tag_domains: &HashMap<String, Domain>,
     ) -> IndexResult<Vec<u32>> {
-        debug!("pushed tags: {:?}", tag_domains);
+        debug!("Index get sids: pushed tag_domains: {:?}", tag_domains);
         let mut series_ids = vec![];
         for (k, v) in tag_domains.iter() {
             let rb = self.get_series_ids_by_domain(tab, k, v).await?;
             series_ids.push(rb);
         }
 
-        debug!("filter scan all series_ids: {:?}", series_ids);
+        debug!(
+            "Index get sids: filter scan result series_ids: {:?}",
+            series_ids
+        );
 
         let result = series_ids
             .into_iter()
@@ -573,88 +579,175 @@ pub fn encode_series_id_list(list: &[u32]) -> Vec<u8> {
 
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
-
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
     use models::schema::ExternalTableSchema;
-    use models::{SeriesKey, Tag};
+    use models::{SeriesId, SeriesKey, Tag};
 
     use super::TSIndex;
 
+    /// ( sid, database, table, [(tag_key, tag_value)] )
+    type SeriesKeyDesc<'a> = (SeriesId, &'a str, &'a str, Vec<(&'a str, &'a str)>);
+
+    fn build_series_keys(series_keys_desc: &[SeriesKeyDesc<'_>]) -> Vec<SeriesKey> {
+        let mut series_keys = Vec::with_capacity(series_keys_desc.len());
+        for (sid, db, table, tags) in series_keys_desc {
+            series_keys.push(SeriesKey {
+                id: *sid,
+                tags: tags
+                    .iter()
+                    .map(|(k, v)| Tag::new(k.as_bytes().to_vec(), v.as_bytes().to_vec()))
+                    .collect(),
+                table: table.to_string(),
+                db: db.to_string(),
+            });
+        }
+        series_keys
+    }
+
     #[tokio::test]
     async fn test_index() {
-        let series_key1 = SeriesKey {
-            id: 0,
-            db: "db_test".to_string(),
-            table: "table_test".to_string(),
+        let dir = "/tmp/test/ts_index/1";
+        let _ = std::fs::remove_dir_all(dir);
+        let database = "db_test";
+        let mut max_sid = 0;
+        {
+            // Generic tests.
+            #[rustfmt::skip]
+            let series_keys_desc: Vec<SeriesKeyDesc> = vec![
+                (0, database, "table_test", vec![("loc", "bj"), ("host", "h1")]),
+                (0, database, "table_test", vec![("loc", "bj"), ("host", "h2")]),
+                (0, database, "table_test", vec![("loc", "bj"), ("host", "h3")]),
+                (0, database, "ma", vec![("ta", "a1"), ("tb", "b1")]),
+                (0, database, "ma", vec![("ta", "a1"), ("tb", "b1")]),
+                (0, database, "table_test", vec![("loc", "nj"), ("host", "h1")]),
+                (0, database, "table_test", vec![("loc", "nj"), ("host", "h2")]),
+                (0, database, "table_test", vec![("loc", "nj"), ("host", "h3")]),
+            ];
+            let series_keys = build_series_keys(&series_keys_desc);
+            // Test build_series_key()
+            assert_eq!(series_keys_desc.len(), series_keys.len());
+            for ((id, db, table, tags), series_key) in
+                series_keys_desc.iter().zip(series_keys.iter())
+            {
+                assert_eq!(*id, series_key.id);
+                assert_eq!(*db, &series_key.db);
+                assert_eq!(*table, &series_key.table);
+                assert_eq!(tags.len(), series_key.tags.len());
+                for ((k, v), tag) in tags.iter().zip(series_key.tags.iter()) {
+                    assert_eq!(k.as_bytes(), tag.key.as_slice());
+                    assert_eq!(v.as_bytes(), tag.value.as_slice());
+                }
+            }
 
-            tags: vec![
-                Tag::new(b"loc".to_vec(), b"bj".to_vec()),
-                Tag::new(b"host".to_vec(), b"h1".to_vec()),
-            ],
-        };
+            let ts_index = TSIndex::new(dir).await.unwrap();
+            // Insert series into index.
+            let mut series_keys_sids = Vec::with_capacity(series_keys_desc.len());
+            for (i, series_key) in series_keys.iter().enumerate() {
+                let sid = ts_index.add_series_if_not_exists(series_key).await.unwrap();
+                let last_key = ts_index.get_series_key(sid).await.unwrap().unwrap();
+                assert_eq!(series_key.to_string(), last_key.to_string());
 
-        let series_key2 = SeriesKey {
-            id: 0,
-            db: "db_test".to_string(),
-            table: "table_test".to_string(),
+                max_sid = max_sid.max(sid);
+                println!("test_index#1: series {i} - '{series_key}' - id: {sid}");
+                series_keys_sids.push(sid);
+            }
 
-            tags: vec![
-                Tag::new(b"loc".to_vec(), b"bj".to_vec()),
-                Tag::new(b"host".to_vec(), b"h2".to_vec()),
-            ],
-        };
+            // Test get series from index
+            for (i, series_key) in series_keys.iter().enumerate() {
+                let sid = ts_index.get_series_id(series_key).await.unwrap().unwrap();
+                assert_eq!(series_keys_sids[i], sid);
 
-        let series_key3 = SeriesKey {
-            id: 0,
-            db: "db_test".to_string(),
-            table: "table_test".to_string(),
+                let list = ts_index
+                    .get_series_id_list(&series_key.table, &series_key.tags)
+                    .await
+                    .unwrap();
+                assert_eq!(vec![sid], list);
+            }
 
-            tags: vec![
-                Tag::new(b"loc".to_vec(), b"bj".to_vec()),
-                Tag::new(b"host".to_vec(), b"h3".to_vec()),
-            ],
-        };
+            // Test query series list
+            let query_t = "table_test";
+            let query_k = b"host".to_vec();
+            let query_v = b"h2".to_vec();
+            let mut list_1 = ts_index
+                .get_series_id_list(query_t, &[Tag::new(query_k.clone(), query_v.clone())])
+                .await
+                .unwrap();
+            list_1.sort();
+            let mut list_2 = Vec::with_capacity(list_1.len());
+            for (i, series_key) in series_keys.iter().enumerate() {
+                if series_key.table == query_t
+                    && series_key
+                        .tags
+                        .iter()
+                        .any(|t| t.key == query_k && t.value == query_v)
+                {
+                    list_2.push(series_keys_sids[i]);
+                }
+            }
+            list_2.sort();
+            assert_eq!(list_1, list_2);
 
-        let ts_index = TSIndex::new(PathBuf::from("/tmp/test".to_string()))
-            .await
-            .unwrap();
+            // Test delete series
+            ts_index.del_series_info(series_keys_sids[1]).await.unwrap();
+            assert_eq!(ts_index.get_series_id(&series_keys[1]).await.unwrap(), None);
+            let list = ts_index.get_series_id_list(query_t, &[]).await.unwrap();
+            assert_eq!(list.len(), 5);
+        }
 
-        let id = ts_index
-            .add_series_if_not_exists(&series_key1)
-            .await
-            .unwrap();
-        println!("series_key1 id: {}", id);
+        {
+            // Test re-open, query and insert.
+            let ts_index = TSIndex::new(dir).await.unwrap();
+            let list = ts_index
+                .get_series_id_list("table_test", &[])
+                .await
+                .unwrap();
+            assert_eq!(list.len(), 5);
 
-        let id = ts_index
-            .add_series_if_not_exists(&series_key2)
-            .await
-            .unwrap();
-        println!("series_key2 id: {}", id);
+            #[rustfmt::skip]
+            let series_keys_desc: Vec<SeriesKeyDesc> = vec![
+                (0, database, "table_test", vec![("loc", "dj"), ("host", "h1")]),
+                (0, database, "table_test", vec![("loc", "dj"), ("host", "h2")]),
+                (0, database, "ma", vec![("ta", "a2"), ("tb", "b2")]),
+                (0, database, "ma", vec![("ta", "a2"), ("tb", "b2")]),
+                (0, database, "table_test", vec![("loc", "xj"), ("host", "h1")]),
+                (0, database, "table_test", vec![("loc", "xj"), ("host", "h2")]),
+            ];
+            let series_keys = build_series_keys(&series_keys_desc);
 
-        let id = ts_index
-            .add_series_if_not_exists(&series_key3)
-            .await
-            .unwrap();
-        println!("series_key3 id: {}", id);
+            // Test insert after re-open.
+            let prev_max_sid = max_sid;
+            for (i, series_key) in series_keys.iter().enumerate() {
+                let sid = ts_index.add_series_if_not_exists(series_key).await.unwrap();
+                let last_key = ts_index.get_series_key(sid).await.unwrap().unwrap();
+                assert_eq!(series_key.to_string(), last_key.to_string());
 
-        // get ...
-        let id = ts_index.get_series_id(&series_key1).await.unwrap();
-        println!("get series_key1 id: {:?}", id);
+                assert!(sid > prev_max_sid);
+                max_sid = max_sid.max(sid);
+                println!("test_index#2: series {i} - '{series_key}' - id: {sid}");
+            }
+        }
 
-        let list = ts_index
-            .get_series_id_list("table_test", &[Tag::new(b"host".to_vec(), b"h2".to_vec())])
-            .await
-            .unwrap();
-        println!("get series id list h2: {:?}", list);
+        // Test re-open, do not insert and then re-open.
+        let ts_index = TSIndex::new(dir).await.unwrap();
+        drop(ts_index);
+        let ts_index = TSIndex::new(dir).await.unwrap();
+        #[rustfmt::skip]
+        let series_keys_desc: Vec<SeriesKeyDesc> = vec![
+            (0, database, "table_test", vec![("loc", "dbj"), ("host", "h1")]),
+            (0, database, "table_test", vec![("loc", "dnj"), ("host", "h2")]),
+            (0, database, "table_test", vec![("loc", "xbj"), ("host", "h1")]),
+            (0, database, "table_test", vec![("loc", "xnj"), ("host", "h2")]),
+        ];
+        let series_keys = build_series_keys(&series_keys_desc);
+        let prev_max_sid = max_sid;
+        for (i, series_key) in series_keys.iter().enumerate() {
+            let sid = ts_index.add_series_if_not_exists(series_key).await.unwrap();
+            let last_key = ts_index.get_series_key(sid).await.unwrap().unwrap();
+            assert_eq!(series_key.to_string(), last_key.to_string());
 
-        ts_index.del_series_info(1).await.unwrap();
-
-        let list = ts_index
-            .get_series_id_list("table_test", &[])
-            .await
-            .unwrap();
-        println!("get series id list all table: {:?}", list);
+            assert!(sid > prev_max_sid);
+            println!("test_index#3: series {i} - '{series_key}' - id: {sid}");
+        }
     }
 
     #[test]

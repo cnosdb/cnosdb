@@ -61,7 +61,7 @@ flight_rpc_listen_port = 8904
 tcp_listen_port = 8905
 
 [node_basic]
-node_id = 1001 
+node_id = 1001
 cold_data_server = false
 store_metrics = true
 

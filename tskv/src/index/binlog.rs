@@ -137,7 +137,7 @@ pub struct BinlogWriter {
 
 impl BinlogWriter {
     pub async fn open(id: u64, path: impl AsRef<Path>) -> IndexResult<Self> {
-        let file = file_manager::create_file(path.as_ref())
+        let file = file_manager::create_file(path)
             .await
             .map_err(|e| IndexError::FileErrors { msg: e.to_string() })?;
 
@@ -362,59 +362,91 @@ pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
     Ok(())
 }
 
+#[cfg(test)]
 mod test {
+    use super::SeriesKeyBlock;
+    use crate::file_utils::make_index_binlog_file;
+    use crate::index::binlog::{BinlogReader, BinlogWriter, IndexBinlog};
+
+    /// ( timestamp, series_id, data )
+    type SeriesKeyBlockDesc<'a> = (i64, u32, &'a str);
+
+    fn build_series_key_blocks(
+        series_key_blk_desc: &[SeriesKeyBlockDesc<'_>],
+    ) -> Vec<SeriesKeyBlock> {
+        let mut blocks = Vec::with_capacity(series_key_blk_desc.len());
+        for (ts, sid, data) in series_key_blk_desc {
+            blocks.push(SeriesKeyBlock::new(*ts, *sid, data.as_bytes().to_vec()));
+        }
+        blocks
+    }
 
     #[tokio::test]
-    async fn test_index_log_read_write() {
-        use std::path::PathBuf;
-
-        use crate::file_utils::make_index_binlog_file;
-        use crate::index::binlog::{BinlogReader, BinlogWriter, IndexBinlog, SeriesKeyBlock};
-
-        let dir = "/tmp/cnosdb/index_log_test";
+    async fn test_index_binlog_read_write() {
+        let dir = "/tmp/test/index_binlog/1";
         let _ = std::fs::remove_dir_all(dir);
 
-        let path = PathBuf::from(dir);
-        let mut index = IndexBinlog::new(path.clone()).await.unwrap();
+        #[rustfmt::skip]
+        let series_key_block_desc_1: Vec<SeriesKeyBlockDesc> = vec![
+            (1001, 101, "abc"),
+            (1002, 102, "efg"),
+            (1003, 103, "hij"),
+        ];
+        let series_key_blocks_1 = build_series_key_blocks(&series_key_block_desc_1);
+        // Test build_series_key_blocks() .
+        for ((ts, series_id, data), b) in series_key_block_desc_1
+            .iter()
+            .zip(series_key_blocks_1.iter())
+        {
+            assert_eq!(*ts, b.ts);
+            assert_eq!(*series_id, b.series_id);
+            assert_eq!(data.as_bytes(), b.data.as_slice());
+        }
 
-        let block1 = SeriesKeyBlock {
-            ts: 10001,
-            series_id: 101,
-            data_len: 3,
-            data: "abc".into(),
+        {
+            // Write the first 3 entries;
+            let mut index = IndexBinlog::new(dir).await.unwrap();
+            for blk in series_key_blocks_1.iter() {
+                index.write(&blk.encode()).await.unwrap();
+            }
+            index.close().await.unwrap();
+        }
+
+        #[rustfmt::skip]
+        let series_key_block_desc_2: Vec<SeriesKeyBlockDesc> = vec![
+            (1011, 111, "abcd"),
+            (1012, 112, "defg"),
+            (1013, 113, "hjkl"),
+        ];
+        let series_key_blocks_2 = build_series_key_blocks(&series_key_block_desc_2);
+        let binlog_id = {
+            // Write the second 3 entries;
+            let mut index = IndexBinlog::new(dir).await.unwrap();
+            for blk in series_key_blocks_2.iter() {
+                index.write(&blk.encode()).await.unwrap();
+            }
+            let binlog_id = index.writer_file.id;
+            index.close().await.unwrap();
+            binlog_id
         };
 
-        let block2 = SeriesKeyBlock {
-            ts: 10002,
-            series_id: 102,
-            data_len: 3,
-            data: "efg".into(),
-        };
+        // Read the 6 entries and check them.
+        let mut index = IndexBinlog::new(dir).await.unwrap();
 
-        let block3 = SeriesKeyBlock {
-            ts: 10003,
-            series_id: 103,
-            data_len: 3,
-            data: "hij".into(),
-        };
-
-        index.write(&block1.encode()).await.unwrap();
-        index.write(&block2.encode()).await.unwrap();
-        index.write(&block3.encode()).await.unwrap();
-
-        let name = make_index_binlog_file(path, 1);
-        let tmp_file = BinlogWriter::open(1, name).await.unwrap();
-        let mut reader_file = BinlogReader::new(1, tmp_file.file.into()).await.unwrap();
-
-        assert_eq!(block1, reader_file.next_block().await.unwrap().unwrap());
-        assert_eq!(block2, reader_file.next_block().await.unwrap().unwrap());
-        assert_eq!(block3, reader_file.next_block().await.unwrap().unwrap());
+        let name = make_index_binlog_file(dir, binlog_id);
+        let binlog_writer = BinlogWriter::open(binlog_id, name).await.unwrap();
+        let mut reader_file = BinlogReader::new(binlog_id, binlog_writer.file.into())
+            .await
+            .unwrap();
+        for series_key_block in series_key_blocks_1.iter().chain(series_key_blocks_2.iter()) {
+            assert_eq!(
+                Some(series_key_block),
+                reader_file.next_block().await.unwrap().as_ref()
+            );
+        }
         assert_eq!(None, reader_file.next_block().await.unwrap());
 
         index.advance_write_offset(0).await.unwrap();
-
         assert_eq!(None, reader_file.next_block().await.unwrap());
-
-        let _ = std::fs::remove_dir_all(dir);
     }
 }
