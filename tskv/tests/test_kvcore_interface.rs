@@ -308,7 +308,7 @@ mod tests {
             .unwrap()
             .unwrap();
         let cached_data = tskv::test::get_one_series_cache_data(version.caches.mut_cache.clone());
-        // TODO: compare cached_data and the wrote_dataa
+        // TODO: compare cached_data and the wrote_data
         assert!(!cached_data.is_empty());
     }
 

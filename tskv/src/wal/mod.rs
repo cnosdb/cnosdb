@@ -43,20 +43,22 @@ use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use minivec::MiniVec;
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
 use models::schema::Precision;
-use protos::kv_service::{Meta, WritePointsRequest};
-pub use reader::print_wal_statistics;
 use snafu::ResultExt;
 use tokio::sync::oneshot;
 
-use self::reader::WalEntry;
+use self::reader::WalReader;
 use crate::context::GlobalSequenceContext;
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
-use crate::tsm::codec::get_str_codec;
-use crate::{error, file_utils, Engine, Error, Result};
+use crate::tsm::codec::{get_str_codec, StringCodec};
+pub use crate::wal::reader::{
+    print_wal_statistics, DeleteTableBlock, DeleteVnodeBlock, WalEntry, WriteBlock,
+};
+use crate::{error, file_utils, Result};
 
 const ENTRY_TYPE_LEN: usize = 1;
 const ENTRY_SEQUENCE_LEN: usize = 8;
@@ -420,141 +422,27 @@ impl WalManager {
         }
     }
 
-    pub async fn recover(&self, engine: &impl Engine) -> Result<()> {
-        let vnode_last_seq_map = self.global_seq_ctx.cloned();
+    pub async fn readers_to_recover(&self) -> Result<Vec<WalReader>> {
         let min_log_seq = self.global_seq_ctx.min_seq();
         trace::warn!("Recover: reading wal from seq '{}'", min_log_seq);
 
         let wal_files = file_manager::list_file_names(&self.current_dir);
-        // TODO: Parallel get min_sequence at first.
+        let mut wal_readers = vec![];
         for file_name in wal_files {
             let path = self.current_dir.join(&file_name);
             if !file_manager::try_exists(&path) {
                 continue;
             }
-            let mut reader = reader::WalReader::open(&path).await?;
-            if reader.is_empty() {
-                continue;
-            }
+            let reader = reader::WalReader::open(&path).await?;
+
             // If this file has no footer, try to read all it's records.
             // If max_sequence of this file is greater than min_log_seq, read all it's records.
             if reader.max_sequence() == 0 || reader.max_sequence() >= min_log_seq {
-                trace::info!(
-                    "Recover: reading wal '{}' for seq {} to {}",
-                    file_name,
-                    reader.min_sequence(),
-                    reader.max_sequence(),
-                );
-                Self::read_wal_to_engine(&mut reader, engine, min_log_seq, &vnode_last_seq_map)
-                    .await?;
+                wal_readers.push(reader);
             }
         }
-        Ok(())
-    }
 
-    async fn read_wal_to_engine(
-        reader: &mut reader::WalReader,
-        engine: &impl Engine,
-        min_log_seq: u64,
-        vnode_last_seq_map: &HashMap<VnodeId, u64>,
-    ) -> Result<bool> {
-        let mut seq_gt_min_seq = false;
-        let decoder = get_str_codec(Encoding::Zstd);
-        let mut decoded_data = Vec::new();
-        loop {
-            match reader.next_wal_entry().await {
-                Ok(Some(wal_entry_blk)) => {
-                    let seq = wal_entry_blk.seq;
-                    if seq < min_log_seq {
-                        continue;
-                    }
-                    seq_gt_min_seq = true;
-                    match wal_entry_blk.entry {
-                        WalEntry::Write(blk) => {
-                            decoded_data.truncate(0);
-                            decoder
-                                .decode(blk.points(), &mut decoded_data)
-                                .context(error::DecodeSnafu)?;
-                            if decoded_data.is_empty() {
-                                continue;
-                            }
-                            let vnode_id = blk.vnode_id();
-                            if let Some(tsf_last_seq) = vnode_last_seq_map.get(&vnode_id) {
-                                // If `seq_no` of TsFamily is greater than or equal to `seq`,
-                                // it means that data was writen to tsm.
-                                if *tsf_last_seq >= seq {
-                                    continue;
-                                }
-                            }
-                            let tenant =
-                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
-                            let precision = blk.precision();
-                            let req = WritePointsRequest {
-                                version: 1,
-                                meta: Some(Meta {
-                                    tenant,
-                                    user: None,
-                                    password: None,
-                                }),
-                                points: decoded_data[0].to_vec(),
-                            };
-                            engine
-                                .write_from_wal(vnode_id, precision, req, seq)
-                                .await
-                                .unwrap();
-                        }
-
-                        WalEntry::DeleteVnode(blk) => {
-                            let vnode_id = blk.vnode_id();
-                            let tenant =
-                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
-                            let database =
-                                unsafe { String::from_utf8_unchecked(blk.database().to_vec()) };
-                            trace::info!("Recover: delete vnode, tenant: {}, database: {}, vnode_id: {vnode_id}", &tenant, &database);
-                            if let Err(e) = engine
-                                .remove_tsfamily_from_wal(&tenant, &database, vnode_id)
-                                .await
-                            {
-                                // Ignore delete vnode error.
-                                trace::error!("Recover: failed to delete vnode, tenant: {tenant}, database: {database}, vnode_id: {vnode_id}, error: {e}");
-                            }
-                        }
-                        WalEntry::DeleteTable(blk) => {
-                            let tenant =
-                                unsafe { String::from_utf8_unchecked(blk.tenant().to_vec()) };
-                            let database =
-                                unsafe { String::from_utf8_unchecked(blk.database().to_vec()) };
-                            let table =
-                                unsafe { String::from_utf8_unchecked(blk.table().to_vec()) };
-                            trace::info!(
-                                "Recover: delete table, tenant: {}, database: {}, table: {}",
-                                &tenant,
-                                &database,
-                                &table
-                            );
-                            if let Err(e) =
-                                engine.drop_table_from_wal(&tenant, &database, &table).await
-                            {
-                                // Ignore delete vnode error.
-                                trace::error!("Recover: failed to delete table, tenant: {tenant}, database: {database}, table: {table}, error: {e}");
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                Ok(None) | Err(Error::WalTruncated) => {
-                    break;
-                }
-                Err(e) => {
-                    panic!(
-                        "Failed to recover from {}: {:?}",
-                        reader.path().display(),
-                        e
-                    );
-                }
-            }
-        }
-        Ok(seq_gt_min_seq)
+        Ok(wal_readers)
     }
 
     pub async fn sync(&self) -> Result<()> {
@@ -580,6 +468,27 @@ impl WalManager {
 
     pub fn total_file_size(&self) -> u64 {
         self.total_file_size
+    }
+}
+
+pub struct WalDecoder {
+    buffer: Vec<MiniVec<u8>>,
+    decoder: Box<dyn StringCodec + Send + Sync>,
+}
+
+impl WalDecoder {
+    pub fn new() -> Self {
+        Self {
+            buffer: Vec::new(),
+            decoder: get_str_codec(Encoding::Zstd),
+        }
+    }
+    pub fn decode(&mut self, data: &[u8]) -> Result<Option<MiniVec<u8>>> {
+        self.buffer.truncate(0);
+        self.decoder
+            .decode(data, &mut self.buffer)
+            .context(error::DecodeSnafu)?;
+        Ok(self.buffer.drain(..).next())
     }
 }
 

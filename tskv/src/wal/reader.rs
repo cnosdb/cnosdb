@@ -4,6 +4,7 @@ use models::codec::Encoding;
 use models::meta_data::VnodeId;
 use models::schema::Precision;
 use protos::models_helper::print_points;
+use snafu::ResultExt;
 
 use super::{
     WalEntryType, ENTRY_DATABASE_SIZE_LEN, ENTRY_HEADER_LEN, ENTRY_PRECISION_LEN,
@@ -12,7 +13,7 @@ use super::{
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::file_system::file_manager;
 use crate::tsm::codec::get_str_codec;
-use crate::{record_file, Error, Result};
+use crate::{error, record_file, Error, Result};
 
 /// Reads a wal file and parse footer, returns sequence range
 pub async fn read_footer(path: impl AsRef<Path>) -> Result<Option<(u64, u64)>> {
@@ -182,6 +183,12 @@ impl WriteBlock {
         &self.buf[tenant_pos..tenant_pos + self.tenant_size]
     }
 
+    pub fn tenant_utf8(&self) -> Result<&str> {
+        std::str::from_utf8(self.tenant()).with_context(|_| error::InvalidUtf8Snafu {
+            message: "wal::WriteBlock::tenant",
+        })
+    }
+
     pub fn points(&self) -> &[u8] {
         let points_pos = ENTRY_HEADER_LEN
             + ENTRY_VNODE_ID_LEN
@@ -229,10 +236,22 @@ impl DeleteVnodeBlock {
         &self.buf[tenant_pos..tenant_pos + self.tenant_size]
     }
 
+    pub fn tenant_utf8(&self) -> Result<&str> {
+        std::str::from_utf8(self.tenant()).with_context(|_| error::InvalidUtf8Snafu {
+            message: "wal::DeleteVnodeBlock::tenant",
+        })
+    }
+
     pub fn database(&self) -> &[u8] {
         let database_pos =
             ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN + ENTRY_TENANT_SIZE_LEN + self.tenant_size;
         &self.buf[database_pos..]
+    }
+
+    pub fn database_utf8(&self) -> Result<&str> {
+        std::str::from_utf8(self.database()).with_context(|_| error::InvalidUtf8Snafu {
+            message: "wal::DeleteVnodeBlock::database",
+        })
     }
 }
 
@@ -275,10 +294,22 @@ impl DeleteTableBlock {
         &self.buf[tenant_pos..tenant_pos + self.tenant_len]
     }
 
+    pub fn tenant_utf8(&self) -> Result<&str> {
+        std::str::from_utf8(self.tenant()).with_context(|_| error::InvalidUtf8Snafu {
+            message: "wal::DeleteTableBlock::tenant",
+        })
+    }
+
     pub fn database(&self) -> &[u8] {
         let database_pos =
             ENTRY_HEADER_LEN + ENTRY_TENANT_SIZE_LEN + ENTRY_DATABASE_SIZE_LEN + self.tenant_len;
         &self.buf[database_pos..database_pos + self.database_len]
+    }
+
+    pub fn database_utf8(&self) -> Result<&str> {
+        std::str::from_utf8(self.database()).with_context(|_| error::InvalidUtf8Snafu {
+            message: "wal::DeleteTableBlock::database",
+        })
     }
 
     pub fn table(&self) -> &[u8] {
@@ -288,6 +319,12 @@ impl DeleteTableBlock {
             + self.tenant_len
             + self.database_len;
         &self.buf[table_pos..]
+    }
+
+    pub fn table_utf8(&self) -> Result<&str> {
+        std::str::from_utf8(self.table()).with_context(|_| error::InvalidUtf8Snafu {
+            message: "wal::DeleteTableBlock::tenant",
+        })
     }
 }
 
@@ -425,6 +462,33 @@ mod test {
                 tenant_len: tenant_bytes.len(),
                 database_len: database_bytes.len(),
             }
+        }
+    }
+
+    #[test]
+    fn test_wal_blocks() {
+        {
+            let block = WriteBlock::build(1, "tenant", 2, Precision::MS, vec![]);
+            assert_eq!(block.tenant(), b"tenant");
+            assert_eq!(block.tenant_utf8().unwrap(), "tenant");
+            assert_eq!(block.vnode_id(), 2);
+            assert_eq!(block.precision(), Precision::MS);
+        }
+        {
+            let block = DeleteVnodeBlock::build(3, "tenant", "database", 4);
+            assert_eq!(block.tenant(), b"tenant");
+            assert_eq!(block.tenant_utf8().unwrap(), "tenant");
+            assert_eq!(block.database(), b"database");
+            assert_eq!(block.database_utf8().unwrap(), "database");
+        }
+        {
+            let block = DeleteTableBlock::build(5, "tenant", "database", "table");
+            assert_eq!(block.tenant(), b"tenant");
+            assert_eq!(block.tenant_utf8().unwrap(), "tenant");
+            assert_eq!(block.database(), b"database");
+            assert_eq!(block.database_utf8().unwrap(), "database");
+            assert_eq!(block.table(), b"table");
+            assert_eq!(block.table_utf8().unwrap(), "table");
         }
     }
 }
