@@ -68,7 +68,7 @@ impl DBschemas {
                     });
                 }
             } else {
-                return Err(SchemaError::FiledNotFound {
+                return Err(SchemaError::FieldNotFound {
                     database: self.database_name(),
                     table: table_name.to_string(),
                     field: field_name.to_string(),
@@ -85,7 +85,7 @@ impl DBschemas {
                     });
                 }
             } else {
-                return Err(SchemaError::FiledNotFound {
+                return Err(SchemaError::FieldNotFound {
                     database: self.database_name(),
                     table: table_name.to_string(),
                     field: tag_name.to_string(),
