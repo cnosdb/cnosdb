@@ -484,12 +484,8 @@ impl TsKv {
         if let Some(fields) = schemas.get_table_schema(table)? {
             let column_ids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
             info!(
-                "Drop table: deleting columns in table: {db_owner}.{table}: {}",
-                column_ids
-                    .iter()
-                    .map(|i| i.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
+                "Drop table: deleting {} columns in table: {db_owner}.{table}",
+                column_ids.len()
             );
 
             let time_range = &TimeRange {
@@ -511,12 +507,8 @@ impl TsKv {
                         .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
                         .collect();
                     info!(
-                        "Drop table: vnode {ts_family_id} deleting fields in table: {db_owner}.{table}: {}",
-                        field_ids
-                            .iter()
-                            .map(|i| i.to_string())
-                            .collect::<Vec<String>>()
-                            .join(", ")
+                        "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}",
+                        field_ids.len()
                     );
 
                     let version = ts_family.read().await.super_version();
@@ -572,12 +564,7 @@ impl TsKv {
                         .flat_map(|sid| to_delete_column_ids.iter().map(|fid| unite_id(*fid, *sid)))
                         .collect();
                     info!(
-                        "Drop table: vnode {ts_family_id} deleting fields in table: {db_owner}.{table}: {}",
-                        field_ids
-                            .iter()
-                            .map(|i| i.to_string())
-                            .collect::<Vec<String>>()
-                            .join(", ")
+                        "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}", field_ids.len()
                     );
 
                     let version = ts_family.read().await.super_version();
@@ -628,10 +615,6 @@ impl TsKv {
     /// the tenant, user, database, some tables, and each table has some rows)
     /// that from a WAL into a storage unit managed by engine.
     ///
-    /// - vnode_id - ID of the storage unit(caches and files).
-    /// - precision - The timestamp precision of table rows.
-    /// - seq - The WAL sequence of the stored gRPC message.
-    ///
     /// Data is from the WAL(write-ahead-log), so won't write back to WAL, and
     /// would not create any schema, if database of vnode does not exist, record
     /// will be ignored.
@@ -659,11 +642,12 @@ impl TsKv {
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = fb_points.db_ext()?;
-        // If database not exists, skip this record.
+        // If database does not exist, skip this record.
         let db = match self.get_db(tenant, db_name).await {
             Ok(db) => db,
             Err(_) => return Ok(()),
         };
+        // If vnode does not exist, skip this record.
         let tsf = match db.read().await.get_tsfamily(vnode_id) {
             Some(tsf) => tsf,
             None => return Ok(()),
@@ -673,7 +657,7 @@ impl TsKv {
             .get_ts_index_or_else_create(db.clone(), vnode_id)
             .await?;
 
-        // Write data assuming schemas are created (strict mode).
+        // Write data assuming schemas were created (strict mode).
         let write_group = db
             .read()
             .await
