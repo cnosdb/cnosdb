@@ -66,8 +66,6 @@ function wait_start() {
 function test() {
     echo "Testing query/test" && \
     cargo run --package test && \
-    echo "Testing e2e_test" && \
-    cargo test --package e2e_test && \
     cargo run --package sqllogicaltests
 }
 

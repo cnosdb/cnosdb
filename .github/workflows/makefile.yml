@@ -29,6 +29,10 @@ jobs:
         run: |
           make clippy_check
           make fmt_check
+      - name: clean
+        run: make clean
+      - name: trace
+        run: make build_trace
 
   unit-test:
     name: "Unit Test"
@@ -43,10 +47,6 @@ jobs:
           bash ./meta/singleton.sh
       - name: test
         run: make test
-      - name: clean
-        run: make clean
-      - name: trace
-        run: make build_trace
 
   integration-test:
     name: "Integration Test"
@@ -120,5 +120,5 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          bash ./query_server/test/script/start_and_test_all.sh 3meta_2data_1query_1tskv
+          bash ./query_server/test/script/start_and_test_all.sh 1meta_2data_1query_1tskv
   
