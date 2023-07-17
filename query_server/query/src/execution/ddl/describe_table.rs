@@ -67,7 +67,7 @@ async fn describe_table(
                 name.append_value(column.name.as_str());
                 data_type.append_value(column.column_type.to_sql_type_str());
                 column_type.append_value(column.column_type.as_column_type_str());
-                encoding.append_value(column.encoding.as_str());
+                encoding.append_value(column.encoding.to_string().as_str());
             });
             let batch = RecordBatch::try_new(
                 schema.clone(),

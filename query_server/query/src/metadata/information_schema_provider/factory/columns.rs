@@ -142,7 +142,7 @@ fn append_tskv_table(
             "NULL",
             col.nullable(),
             col.column_type.to_sql_type_str(),
-            Some(col.encoding.as_str()),
+            Some(col.encoding.to_string().as_str()),
         );
     }
 }

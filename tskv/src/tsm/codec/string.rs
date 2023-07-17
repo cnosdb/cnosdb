@@ -84,7 +84,7 @@ pub fn str_snappy_encode(
     let actual_compressed_size = encoder.compress(data, compressed_data)?;
 
     dst.truncate(HEADER_LEN + actual_compressed_size);
-    dst.insert(0, Encoding::Gorilla as u8);
+    dst.insert(0, Encoding::Gorilla.id());
 
     Ok(())
 }
@@ -105,7 +105,7 @@ pub fn str_zstd_encode(
         data.extend_from_slice(s);
     }
 
-    dst.push(Encoding::Zstd as u8);
+    dst.push(Encoding::Zstd.id());
     zstd::stream::copy_encode(data.as_slice(), dst, ZSTD_COMPRESS_LEVEL)?;
     Ok(())
 }
@@ -129,7 +129,7 @@ pub fn str_gzip_encode(
     let mut encoder = GzEncoder::new(vec![], CompressionFlate::default());
     encoder.write_all(&data)?;
 
-    dst.push(Encoding::Gzip as u8);
+    dst.push(Encoding::Gzip.id());
     dst.append(&mut encoder.finish()?);
     Ok(())
 }
@@ -153,7 +153,7 @@ pub fn str_bzip_encode(
     let mut encoder = BzEncoder::new(vec![], CompressionBzip::default());
     encoder.write_all(&data).unwrap();
 
-    dst.push(Encoding::Bzip as u8);
+    dst.push(Encoding::Bzip.id());
     dst.append(&mut encoder.finish()?);
     Ok(())
 }
@@ -175,7 +175,7 @@ pub fn str_zlib_encode(
     }
     let mut encoder = ZlibEncoder::new(vec![], CompressionFlate::default());
     encoder.write_all(&data).unwrap();
-    dst.push(Encoding::Zlib as u8);
+    dst.push(Encoding::Zlib.id());
     dst.append(&mut encoder.finish()?);
     Ok(())
 }
@@ -189,7 +189,7 @@ pub fn str_without_compress_encode(
         return Ok(());
     }
 
-    dst.push(Encoding::Null as u8);
+    dst.push(Encoding::Null.id());
 
     for s in src {
         let len = s.len() as u64;

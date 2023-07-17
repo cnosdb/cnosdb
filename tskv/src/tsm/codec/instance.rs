@@ -9,7 +9,7 @@ use crate::tsm::codec::boolean::{
 };
 use crate::tsm::codec::float::{
     f64_gorilla_decode, f64_gorilla_encode, f64_q_compress_decode, f64_q_compress_encode,
-    f64_without_compress_decode, f64_without_compress_encode,
+    f64_sdt_decode, f64_sdt_encode, f64_without_compress_decode, f64_without_compress_encode,
 };
 use crate::tsm::codec::integer::{
     i64_q_compress_decode, i64_q_compress_encode, i64_without_compress_decode,
@@ -25,8 +25,9 @@ use crate::tsm::codec::timestamp::{
     ts_without_compress_encode, ts_zigzag_simple8b_decode, ts_zigzag_simple8b_encode,
 };
 use crate::tsm::codec::unsigned::{
-    u64_q_compress_decode, u64_q_compress_encode, u64_without_compress_decode,
-    u64_without_compress_encode, u64_zigzag_simple8b_decode, u64_zigzag_simple8b_encode,
+    u64_q_compress_decode, u64_q_compress_encode, u64_sdt_decode, u64_sdt_encode,
+    u64_without_compress_decode, u64_without_compress_encode, u64_zigzag_simple8b_decode,
+    u64_zigzag_simple8b_encode,
 };
 
 pub trait TimestampCodec {
@@ -152,6 +153,20 @@ impl FloatCodec for QuantileFloatCodec {
     }
 }
 
+struct SDTFloatCodec {
+    deviation: f64,
+}
+
+impl FloatCodec for SDTFloatCodec {
+    fn encode(&self, src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        f64_sdt_encode(src, dst, self.deviation)
+    }
+
+    fn decode(&self, src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        f64_sdt_decode(src, dst)
+    }
+}
+
 pub trait UnsignedCodec {
     fn encode(&self, src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>>;
     fn decode(&self, src: &[u8], dst: &mut Vec<u64>) -> Result<(), Box<dyn Error + Send + Sync>>;
@@ -190,6 +205,20 @@ impl UnsignedCodec for QuantileUnsignedCodec {
 
     fn decode(&self, src: &[u8], dst: &mut Vec<u64>) -> Result<(), Box<dyn Error + Send + Sync>> {
         u64_q_compress_decode(src, dst)
+    }
+}
+
+struct SDTUnsignedCodec {
+    deviation: f64,
+}
+
+impl UnsignedCodec for SDTUnsignedCodec {
+    fn encode(&self, src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        u64_sdt_encode(src, dst, self.deviation)
+    }
+
+    fn decode(&self, src: &[u8], dst: &mut Vec<u64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        u64_sdt_decode(src, dst)
     }
 }
 
@@ -357,6 +386,7 @@ pub fn get_u64_codec(algo: Encoding) -> Box<dyn UnsignedCodec + Send + Sync> {
         Encoding::Null => Box::new(NullUnsignedCodec()),
         Encoding::Delta => Box::new(DeltaUnsignedCodec()),
         Encoding::Quantile => Box::new(QuantileUnsignedCodec()),
+        Encoding::SDT { deviation } => Box::new(SDTUnsignedCodec { deviation }),
         _ => Box::new(DeltaUnsignedCodec()),
     }
 }
@@ -366,6 +396,7 @@ pub fn get_f64_codec(algo: Encoding) -> Box<dyn FloatCodec + Send + Sync> {
         Encoding::Null => Box::new(NullFloatCodec()),
         Encoding::Gorilla => Box::new(GorillaFloatCodec()),
         Encoding::Quantile => Box::new(QuantileFloatCodec()),
+        Encoding::SDT { deviation } => Box::new(SDTFloatCodec { deviation }),
         _ => Box::new(GorillaFloatCodec()),
     }
 }

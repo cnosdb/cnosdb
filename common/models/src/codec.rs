@@ -1,23 +1,27 @@
+use std::fmt::{Display, Formatter};
+use std::hash::Hash;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-pub const BIGINT_CODEC: [Encoding; 4] = [
+pub const BIGINT_CODEC: [Encoding; 5] = [
     Encoding::Default,
     Encoding::Null,
     Encoding::Delta,
     Encoding::Quantile,
+    Encoding::SDT { deviation: 0.0 },
 ];
 // Because timestamp, bigint, and unsigned bigint are all integers,
 // so their compression algorithms are the same
-pub const TIMESTAMP_CODEC: [Encoding; 4] = BIGINT_CODEC;
-pub const UNSIGNED_BIGINT_CODEC: [Encoding; 4] = BIGINT_CODEC;
+pub const TIMESTAMP_CODEC: [Encoding; 5] = BIGINT_CODEC;
+pub const UNSIGNED_BIGINT_CODEC: [Encoding; 5] = BIGINT_CODEC;
 
-pub const DOUBLE_CODEC: [Encoding; 4] = [
+pub const DOUBLE_CODEC: [Encoding; 5] = [
     Encoding::Default,
     Encoding::Null,
     Encoding::Gorilla,
     Encoding::Quantile,
+    Encoding::SDT { deviation: 0.0 },
 ];
 
 pub const STRING_CODEC: [Encoding; 7] = [
@@ -32,21 +36,58 @@ pub const STRING_CODEC: [Encoding; 7] = [
 
 pub const BOOLEAN_CODEC: [Encoding; 3] = [Encoding::Default, Encoding::Null, Encoding::BitPack];
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Hash, Default)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, Default)]
 pub enum Encoding {
     #[default]
-    Default = 0,
-    Null = 1,
-    Delta = 2,
-    Quantile = 3,
-    Gzip = 4,
-    Bzip = 5,
-    Gorilla = 6,
-    Snappy = 7,
-    Zstd = 8,
-    Zlib = 9,
-    BitPack = 10,
-    Unknown = 15,
+    Default,
+    Null,
+    Delta,
+    Quantile,
+    Gzip,
+    Bzip,
+    Gorilla,
+    Snappy,
+    Zstd,
+    Zlib,
+    BitPack,
+    SDT {
+        deviation: f64,
+    },
+    Unknown,
+}
+
+impl PartialEq<Self> for Encoding {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl Eq for Encoding {}
+
+impl Hash for Encoding {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
+    }
+}
+
+impl Display for Encoding {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Encoding::Default => write!(f, "DEFAULT"),
+            Encoding::Null => write!(f, "NULL"),
+            Encoding::Delta => write!(f, "DELTA"),
+            Encoding::Quantile => write!(f, "QUANTILE"),
+            Encoding::Gzip => write!(f, "GZIP"),
+            Encoding::Bzip => write!(f, "BZIP"),
+            Encoding::Gorilla => write!(f, "GORILLA"),
+            Encoding::Snappy => write!(f, "SNAPPY"),
+            Encoding::Zstd => write!(f, "ZSTD"),
+            Encoding::Zlib => write!(f, "ZLIB"),
+            Encoding::BitPack => write!(f, "BITPACK"),
+            Encoding::SDT { deviation } => write!(f, "SDT(deviation = {})", deviation),
+            Encoding::Unknown => write!(f, "UNKNOWN"),
+        }
+    }
 }
 
 impl Encoding {
@@ -74,20 +115,21 @@ impl Encoding {
         BOOLEAN_CODEC.contains(self)
     }
 
-    pub fn as_str(&self) -> &'static str {
+    pub fn id(&self) -> u8 {
         match self {
-            Encoding::Default => "DEFAULT",
-            Encoding::Null => "NULL",
-            Encoding::Delta => "DELTA",
-            Encoding::Quantile => "QUANTILE",
-            Encoding::Gzip => "GZIP",
-            Encoding::Bzip => "BZIP",
-            Encoding::Gorilla => "GORILLA",
-            Encoding::Snappy => "SNAPPY",
-            Encoding::Zstd => "ZSTD",
-            Encoding::Zlib => "ZLIB",
-            Encoding::BitPack => "BITPACK",
-            Encoding::Unknown => "UNKNOWN",
+            Encoding::Default => 0,
+            Encoding::Null => 1,
+            Encoding::Delta => 2,
+            Encoding::Quantile => 3,
+            Encoding::Gzip => 4,
+            Encoding::Bzip => 5,
+            Encoding::Gorilla => 6,
+            Encoding::Snappy => 7,
+            Encoding::Zstd => 8,
+            Encoding::Zlib => 9,
+            Encoding::BitPack => 10,
+            Encoding::SDT { .. } => 11,
+            Encoding::Unknown => 15,
         }
     }
 }
@@ -107,6 +149,7 @@ impl FromStr for Encoding {
             "ZSTD" => Ok(Self::Zstd),
             "ZLIB" => Ok(Self::Zlib),
             "BITPACK" => Ok(Self::BitPack),
+            "SDT" => Ok(Self::SDT { deviation: 0.0 }),
             _ => Err(s.to_string()),
         }
     }
@@ -126,6 +169,7 @@ impl From<u8> for Encoding {
             8 => Encoding::Zstd,
             9 => Encoding::Zlib,
             10 => Encoding::BitPack,
+            11 => Encoding::SDT { deviation: 0.0 },
             _ => Encoding::Unknown,
         }
     }

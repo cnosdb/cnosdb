@@ -1574,15 +1574,23 @@ impl<'a> ExtParser<'a> {
         }
     }
 
-    fn parse_codec_encoding(&mut self) -> Result<Encoding, String> {
-        self.parser
+    fn parse_codec_encoding(&mut self) -> Result<Encoding, ParserError> {
+        let encoding = self
+            .parser
             .peek_token()
             .to_string()
             .parse()
+            .map_err(|e| ParserError::ParserError(format!("{} is not valid encoding", e)))
             .map(|encoding| {
                 self.parser.next_token();
                 encoding
-            })
+            })?;
+        if matches!(encoding, Encoding::SDT { .. }) {
+            let deviation = self.parse_number::<f64>()?;
+            Ok(Encoding::SDT { deviation })
+        } else {
+            Ok(encoding)
+        }
     }
 
     fn parse_codec_type(&mut self) -> Result<Encoding> {
@@ -1590,10 +1598,7 @@ impl<'a> ExtParser<'a> {
         if self.parser.peek_token().eq(&Token::RParen) {
             return parser_err!(format!("expect codec encoding type in ()"));
         }
-        let encoding = match self.parse_codec_encoding() {
-            Ok(encoding) => encoding,
-            Err(str) => return parser_err!(format!("{} is not valid encoding", str)),
-        };
+        let encoding = self.parse_codec_encoding()?;
         self.parser.expect_token(&Token::RParen)?;
         Ok(encoding)
     }

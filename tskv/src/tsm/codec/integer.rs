@@ -76,7 +76,7 @@ pub fn i64_zigzag_simple8b_encode(
             encode_rle(deltas[0], deltas[1], deltas.len() as u64 - 1, dst);
             // 4 high bits of first byte used for the encoding type
             dst[0] |= (DeltaEncoding::Rle as u8) << 4;
-            dst.insert(0, Encoding::Delta as u8);
+            dst.insert(0, Encoding::Delta.id());
             return Ok(());
         }
     }
@@ -91,7 +91,7 @@ pub fn i64_zigzag_simple8b_encode(
         for delta in &deltas {
             dst.extend_from_slice(&delta.to_be_bytes());
         }
-        dst.insert(0, Encoding::Delta as u8);
+        dst.insert(0, Encoding::Delta.id());
         return Ok(());
     }
 
@@ -100,7 +100,7 @@ pub fn i64_zigzag_simple8b_encode(
     dst.push((DeltaEncoding::Simple8b as u8) << 4);
     dst.extend_from_slice(&deltas[0].to_be_bytes()); // encode first value
     simple8b::encode(&deltas[1..], dst)?;
-    dst.insert(0, Encoding::Delta as u8);
+    dst.insert(0, Encoding::Delta.id());
     Ok(())
 }
 

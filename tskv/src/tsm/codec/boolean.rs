@@ -61,7 +61,7 @@ pub fn bool_bitpack_encode(
     let length: usize = length.try_into()?;
 
     dst.truncate(length);
-    dst.insert(0, Encoding::BitPack as u8);
+    dst.insert(0, Encoding::BitPack.id());
 
     Ok(())
 }
@@ -70,7 +70,7 @@ pub fn bool_without_compress_encode(
     src: &[bool],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.push(Encoding::Null as u8);
+    dst.push(Encoding::Null.id());
     for i in src {
         if *i {
             dst.push(1);

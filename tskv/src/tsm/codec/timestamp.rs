@@ -25,7 +25,7 @@ pub fn ts_without_compress_encode(
     if src.is_empty() {
         return Ok(());
     }
-    dst.push(Encoding::Null as u8);
+    dst.push(Encoding::Null.id());
 
     for i in src.iter() {
         dst.extend_from_slice(i.to_be_bytes().as_slice());
@@ -42,7 +42,7 @@ pub fn ts_q_compress_encode(
         return Ok(());
     }
 
-    dst.push(Encoding::Quantile as u8);
+    dst.push(Encoding::Quantile.id());
 
     dst.append(&mut auto_compress(src, DEFAULT_COMPRESSION_LEVEL));
     Ok(())
@@ -86,7 +86,7 @@ pub fn ts_zigzag_simple8b_encode(
             encode_rle(deltas[0], deltas[1], deltas.len() as u64, dst);
             // 4 high bits of first byte used for the encoding type
             dst[0] |= (DeltaEncoding::Rle as u8) << 4;
-            dst.insert(0, Encoding::Delta as u8);
+            dst.insert(0, Encoding::Delta.id());
             return Ok(());
         }
     }
@@ -102,7 +102,7 @@ pub fn ts_zigzag_simple8b_encode(
         for delta in &deltas {
             dst.extend_from_slice(&delta.to_be_bytes());
         }
-        dst.insert(0, Encoding::Delta as u8);
+        dst.insert(0, Encoding::Delta.id());
         return Ok(());
     }
 
@@ -130,7 +130,7 @@ pub fn ts_zigzag_simple8b_encode(
     dst[0] |= ((div as f64).log10()) as u8; // 4 low bits used for log10 divisor
     dst.extend_from_slice(&deltas[0].to_be_bytes()); // encode first value
     simple8b::encode(&deltas[1..], dst)?;
-    dst.insert(0, Encoding::Delta as u8);
+    dst.insert(0, Encoding::Delta.id());
     Ok(())
 }
 
