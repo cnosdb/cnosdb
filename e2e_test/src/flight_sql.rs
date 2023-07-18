@@ -35,16 +35,16 @@ mod test {
         Ok(channel)
     }
 
-    async fn clean_env(client: &mut FlightSqlServiceClient, db_name: &str) {
+    async fn clean_env(client: &mut FlightSqlServiceClient<Channel>, db_name: &str) {
         let flight_info = client
-            .execute(format!("DROP DATABASE IF EXISTS {};", db_name))
+            .execute(format!("DROP DATABASE IF EXISTS {};", db_name), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, client).await;
         assert!(actual.is_empty());
     }
 
-    async fn check_close(client: &mut FlightSqlServiceClient) {
+    async fn check_close(client: &mut FlightSqlServiceClient<Channel>) {
         let close_info: Result<(), ArrowError> = client.close().await;
         assert!(close_info.is_ok());
     }
@@ -171,7 +171,10 @@ mod test {
         clean_env(&mut client, db_name).await;
         // create database
         let flight_info = client
-            .execute("CREATE DATABASE tc_between WITH TTL '100000d';".to_string())
+            .execute(
+                "CREATE DATABASE tc_between WITH TTL '100000d';".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -183,26 +186,27 @@ mod test {
             .execute(
                 "CREATE TABLE IF NOT EXISTS m2(f0 BIGINT UNSIGNED, f1 BIGINT, TAGS(t0, t1));"
                     .to_string(),
+                None,
             )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
 
-        let flight_info = client.execute("INSERT m2(TIME, t0, f0, t1, f1) VALUES(CAST (1672301798050000000 AS TIMESTAMP), 'Ig.UZ', 531136669299148225, 'n꓃DH~B ', 9223372036854775807),(CAST (1672301798060000000 AS TIMESTAMP), '263356943', 1040920791041719924, '', -9223372036854775807),(CAST (1672301798070000000 AS TIMESTAMP), '1040920791041719924', 442061994865016078, 'gc.', 0);".to_string()).await.unwrap();
+        let flight_info = client.execute("INSERT m2(TIME, t0, f0, t1, f1) VALUES(CAST (1672301798050000000 AS TIMESTAMP), 'Ig.UZ', 531136669299148225, 'n꓃DH~B ', 9223372036854775807),(CAST (1672301798060000000 AS TIMESTAMP), '263356943', 1040920791041719924, '', -9223372036854775807),(CAST (1672301798070000000 AS TIMESTAMP), '1040920791041719924', 442061994865016078, 'gc.', 0);".to_string(), None).await.unwrap();
         let actual: Vec<RecordBatch> = fetch_result_and_print(flight_info, &mut client).await;
         let expected: Vec<&str> = vec!["+------+", "| rows |", "+------+", "| 3    |", "+------+"];
         assert_batches_eq!(expected, &actual);
-        let flight_info = client.execute(r"INSERT m2(TIME, t0, f0, t1, f1) VALUES(CAST (3031647407609562138 AS TIMESTAMP), 'ᵵh', 4166390262642105876, '7ua', 0.0),(CAST (1079616064603730664 AS TIMESTAMP), '}\', 7806435932478031652, 'qy', 23.456), (CAST (263356943 AS TIMESTAMP), '0.6287658423307444', 5466573340614276155, ',J씟\h', -23.456), (CAST (1742494251700243812 AS TIMESTAMP), '#f^Kr잿z', 196790207, 'aF', 0.123);".to_string()).await.unwrap();
+        let flight_info = client.execute(r"INSERT m2(TIME, t0, f0, t1, f1) VALUES(CAST (3031647407609562138 AS TIMESTAMP), 'ᵵh', 4166390262642105876, '7ua', 0.0),(CAST (1079616064603730664 AS TIMESTAMP), '}\', 7806435932478031652, 'qy', 23.456), (CAST (263356943 AS TIMESTAMP), '0.6287658423307444', 5466573340614276155, ',J씟\h', -23.456), (CAST (1742494251700243812 AS TIMESTAMP), '#f^Kr잿z', 196790207, 'aF', 0.123);".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected: Vec<&str> = vec!["+------+", "| rows |", "+------+", "| 4    |", "+------+"];
         assert_batches_eq!(expected, &actual);
-        let flight_info = client.execute("INSERT m2(TIME, t0, f0, t1, f1) VALUES(CAST (3584132160280509277 AS TIMESTAMP), '', 4132058214182166915, 'V*1lE/', -0.123);".to_string()).await.unwrap();
+        let flight_info = client.execute("INSERT m2(TIME, t0, f0, t1, f1) VALUES(CAST (3584132160280509277 AS TIMESTAMP), '', 4132058214182166915, 'V*1lE/', -0.123);".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected: Vec<&str> = vec!["+------+", "| rows |", "+------+", "| 1    |", "+------+"];
         assert_batches_eq!(expected, &actual);
 
-        let flight_info = client.execute("SELECT m2.f0 FROM m2 WHERE CAST(0 AS STRING) BETWEEN (CAST( starts_with(m2.t0, m2.t1) AS STRING)) AND (m2.t1) order by time desc;".to_string()).await.unwrap();
+        let flight_info = client.execute("SELECT m2.f0 FROM m2 WHERE CAST(0 AS STRING) BETWEEN (CAST( starts_with(m2.t0, m2.t1) AS STRING)) AND (m2.t1) order by time desc;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected = vec![
             "+---------------------+",
@@ -219,7 +223,7 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("SELECT * FROM m2 ORDER BY t1;".to_string())
+            .execute("SELECT * FROM m2 ORDER BY t1;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -240,7 +244,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("SELECT * FROM m2 WHERE t1 <= '0' order by time desc;".to_string())
+            .execute(
+                "SELECT * FROM m2 WHERE t1 <= '0' order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -255,7 +262,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("SELECT * FROM m2 WHERE t1 >= '0'  order by time desc;".to_string())
+            .execute(
+                "SELECT * FROM m2 WHERE t1 >= '0'  order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -274,7 +284,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("SELECT * FROM m2 WHERE t1 <= '8' order by time desc;".to_string())
+            .execute(
+                "SELECT * FROM m2 WHERE t1 <= '8' order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -292,6 +305,7 @@ mod test {
         let flight_info = client
             .execute(
                 "SELECT * FROM m2 WHERE t1 BETWEEN '7ua' AND 'aF'  order by time desc;".to_string(),
+                None,
             )
             .await
             .unwrap();
@@ -308,7 +322,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("SELECT * FROM m2 WHERE t1 <= 'V*1lE/' order by time desc;".to_string())
+            .execute(
+                "SELECT * FROM m2 WHERE t1 <= 'V*1lE/' order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -325,7 +342,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("SELECT * FROM m2 WHERE t1 >= 'gc.' order by time desc;".to_string())
+            .execute(
+                "SELECT * FROM m2 WHERE t1 >= 'gc.' order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -341,7 +361,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("SELECT * FROM m2 WHERE f1 > -0.123 order by time desc;".to_string())
+            .execute(
+                "SELECT * FROM m2 WHERE f1 > -0.123 order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -359,7 +382,10 @@ mod test {
         ];
         assert_batches_eq!(expected, &actual);
 
-        let flight_info = client.execute("drop table m2".to_string()).await.unwrap();
+        let flight_info = client
+            .execute("drop table m2".to_string(), None)
+            .await
+            .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         // clean env
@@ -373,45 +399,51 @@ mod test {
 
         // clean env
         let flight_info = client
-            .execute("drop user if exists test_au_u1;".to_string())
+            .execute("drop user if exists test_au_u1;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("drop user if exists test_au_u2;".to_string())
+            .execute("drop user if exists test_au_u2;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         // create user
         let flight_info = client
-            .execute("create user if not exists test_au_u1;".to_string())
+            .execute("create user if not exists test_au_u1;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("create user if not exists test_au_u2;".to_string())
+            .execute("create user if not exists test_au_u2;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         // add user to cnosdb tenant
         let flight_info = client
-            .execute("alter tenant cnosdb add user test_au_u1 as member;".to_string())
+            .execute(
+                "alter tenant cnosdb add user test_au_u1 as member;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("alter tenant cnosdb add user test_au_u2 as member;".to_string())
+            .execute(
+                "alter tenant cnosdb add user test_au_u2 as member;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         // check user info
-        let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string()).await.unwrap();
+        let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected = vec![
             "+------------+----------+-------------------------------------------------------------------------------------------------+",
@@ -425,12 +457,15 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("alter user test_au_u1 set granted_admin = true;".to_string())
+            .execute(
+                "alter user test_au_u1 set granted_admin = true;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
-        let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string()).await.unwrap();
+        let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected = vec![
             "+------------+----------+-------------------------------------------------------------------------------------------------+",
@@ -444,12 +479,15 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("alter user test_au_u2 set granted_admin = true;".to_string())
+            .execute(
+                "alter user test_au_u2 set granted_admin = true;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
-        let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string()).await.unwrap();
+        let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected = vec![
             "+------------+----------+-------------------------------------------------------------------------------------------------+",
@@ -463,18 +501,24 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("alter user test_au_u1 set granted_admin = false;".to_string())
+            .execute(
+                "alter user test_au_u1 set granted_admin = false;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("alter user test_au_u2 set granted_admin = false;".to_string())
+            .execute(
+                "alter user test_au_u2 set granted_admin = false;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
-        let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string()).await.unwrap();
+        let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected = vec![
             "+------------+----------+-------------------------------------------------------------------------------------------------+",
@@ -489,13 +533,13 @@ mod test {
 
         // clean env
         let flight_info = client
-            .execute("drop user if exists test_au_u1;".to_string())
+            .execute("drop user if exists test_au_u1;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("drop user if exists test_au_u2;".to_string())
+            .execute("drop user if exists test_au_u2;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -512,11 +556,11 @@ mod test {
         let db_name = "alter_database";
         clean_env(&mut client, db_name).await;
 
-        let flight_info = client.execute("CREATE DATABASE alter_database WITH TTl '10d' SHARD 5 VNOdE_DURATiON '3d' REPLICA 1 pRECISIOn 'us';".to_string()).await.unwrap();
+        let flight_info = client.execute("CREATE DATABASE alter_database WITH TTl '10d' SHARD 5 VNOdE_DURATiON '3d' REPLICA 1 pRECISIOn 'us';".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("DESCRIBE DATABASE alter_database;".to_string())
+            .execute("DESCRIBE DATABASE alter_database;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -530,13 +574,16 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("ALTER DATABASE alter_database Set TTL '30d';".to_string())
+            .execute(
+                "ALTER DATABASE alter_database Set TTL '30d';".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("DESCRIBE DATABASE alter_database;".to_string())
+            .execute("DESCRIBE DATABASE alter_database;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -551,14 +598,17 @@ mod test {
 
         // set shard 6
         let flight_info = client
-            .execute("ALTER DATABASE alter_database Set SHARD 6;".to_string())
+            .execute(
+                "ALTER DATABASE alter_database Set SHARD 6;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
 
         let flight_info = client
-            .execute("DESCRIBE DATABASE alter_database;".to_string())
+            .execute("DESCRIBE DATABASE alter_database;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -573,13 +623,16 @@ mod test {
 
         // set vnode_duration 100d
         let flight_info = client
-            .execute("ALTER DATABASE alter_database Set VNODE_DURATION '100d';".to_string())
+            .execute(
+                "ALTER DATABASE alter_database Set VNODE_DURATION '100d';".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("DESCRIBE DATABASE alter_database;".to_string())
+            .execute("DESCRIBE DATABASE alter_database;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -593,13 +646,16 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("ALTER DATABASE alter_database Set REPLICA 1;".to_string())
+            .execute(
+                "ALTER DATABASE alter_database Set REPLICA 1;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("DESCRIBE DATABASE alter_database;".to_string())
+            .execute("DESCRIBE DATABASE alter_database;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -627,19 +683,22 @@ mod test {
         clean_env(&mut client, db_name).await;
 
         let flight_info = client
-            .execute("CREATE DATABASE empty_table;".to_string())
+            .execute("CREATE DATABASE empty_table;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("CREATE TABLE empty_table.empty (f DOUBLE, TAGS(t));".to_string())
+            .execute(
+                "CREATE TABLE empty_table.empty (f DOUBLE, TAGS(t));".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("SELECT * FROM empty_table.empty;".to_string())
+            .execute("SELECT * FROM empty_table.empty;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -661,7 +720,10 @@ mod test {
         clean_env(&mut client, db_name).await;
 
         let flight_info = client
-            .execute("CREATE DATABASE filter_push_down WITH TTL '100000d';".to_string())
+            .execute(
+                "CREATE DATABASE filter_push_down WITH TTL '100000d';".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -678,6 +740,7 @@ mod test {
             f4 DOUBLE CODEC(GORILLA),
             TAGS(t0, t1));"
                     .to_string(),
+                None,
             )
             .await
             .unwrap();
@@ -687,6 +750,7 @@ mod test {
             .execute(
                 "INSERT m0(TIME, f2) VALUES(5867172425191822176, 888), (3986678807649375642, 999);"
                     .to_string(),
+                None,
             )
             .await
             .unwrap();
@@ -694,14 +758,20 @@ mod test {
         let expected: Vec<&str> = vec!["+------+", "| rows |", "+------+", "| 2    |", "+------+"];
         assert_batches_eq!(expected, &actual);
         let flight_info = client
-            .execute("INSERT m0(TIME, f3) VALUES(7488251815539246350, FALSE);".to_string())
+            .execute(
+                "INSERT m0(TIME, f3) VALUES(7488251815539246350, FALSE);".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected: Vec<&str> = vec!["+------+", "| rows |", "+------+", "| 1    |", "+------+"];
         assert_batches_eq!(expected, &actual);
         let flight_info = client
-            .execute("INSERT m0(TIME, f4) VALUES(5414775681413349294, 1.111);".to_string())
+            .execute(
+                "INSERT m0(TIME, f4) VALUES(5414775681413349294, 1.111);".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -718,6 +788,7 @@ mod test {
             (5, 'a', 'a', 11, '11', 11, true, 11.11),
             (6, 'b', 'c', 15, '11', 11, false, 11.11);"
                     .to_string(),
+                None,
             )
             .await
             .unwrap();
@@ -725,7 +796,10 @@ mod test {
         let expected: Vec<&str> = vec!["+------+", "| rows |", "+------+", "| 6    |", "+------+"];
         assert_batches_eq!(expected, &actual);
         let flight_info = client
-            .execute("select * from m0 order by time, t0, t1, f0;".to_string())
+            .execute(
+                "select * from m0 order by time, t0, t1, f0;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -755,6 +829,7 @@ mod test {
         UNION ALL
         SELECT ALL * FROM m0 AS M0  WHERE (NOT ((('TOk')=(m0.t0)))) IS NULL order by time desc;"
                     .to_string(),
+                None,
             )
             .await
             .unwrap();
@@ -778,7 +853,7 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("select * from m0 where time = 0;".to_string())
+            .execute("select * from m0 where time = 0;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -791,7 +866,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("select * from m0 where time > 3 order by time desc;".to_string())
+            .execute(
+                "select * from m0 where time > 3 order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -811,7 +889,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("select * from m0 where t0 = 'xx' order by time desc;".to_string())
+            .execute(
+                "select * from m0 where t0 = 'xx' order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -819,7 +900,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("select * from m0 where t0 = 'a' order by time desc;".to_string())
+            .execute(
+                "select * from m0 where t0 = 'a' order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -839,6 +923,7 @@ mod test {
                 "select * from m0 
         where t0 = 'a' and t1 = 'b';"
                     .to_string(),
+                None,
             )
             .await
             .unwrap();
@@ -853,7 +938,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("select * from m0 where t0 = 'a' or t1 = 'b' order by time desc;".to_string())
+            .execute(
+                "select * from m0 where t0 = 'a' or t1 = 'b' order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -870,7 +958,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("select * from m0 where t0 = 'a' and f0 = 11 order by time desc;".to_string())
+            .execute(
+                "select * from m0 where t0 = 'a' and f0 = 11 order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -885,7 +976,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("select * from m0 where t0 = 'a' and f0 > 12;".to_string())
+            .execute(
+                "select * from m0 where t0 = 'a' and f0 > 12;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -893,7 +987,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("select * from m0  where t0 = 'a' or f0 = 11 order by time desc;".to_string())
+            .execute(
+                "select * from m0  where t0 = 'a' or f0 = 11 order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -909,7 +1006,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("select * from m0 where t0 = 'a' or f0 > 12 order by time desc;".to_string())
+            .execute(
+                "select * from m0 where t0 = 'a' or f0 > 12 order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -928,7 +1028,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("select * from m0 where t0 = 'a' and f0 = 11 and time > 3;".to_string())
+            .execute(
+                "select * from m0 where t0 = 'a' and f0 = 11 and time > 3;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -945,6 +1048,7 @@ mod test {
             .execute(
                 "select * from m0 where t0 = 'a' and f0 = 11 or time > 3 order by time desc;"
                     .to_string(),
+                None,
             )
             .await
             .unwrap();
@@ -966,7 +1070,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("explain select * from m0 where t0 = null;".to_string())
+            .execute(
+                "explain select * from m0 where t0 = null;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -985,7 +1092,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
-            .execute("explain select * from m0 where t0 > null;".to_string())
+            .execute(
+                "explain select * from m0 where t0 > null;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -1018,7 +1128,10 @@ mod test {
         clean_env(&mut client, db_name).await;
 
         let flight_info = client
-            .execute("CREATE DATABASE prepare WITH TTL '100000d';".to_string())
+            .execute(
+                "CREATE DATABASE prepare WITH TTL '100000d';".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -1026,20 +1139,20 @@ mod test {
         client.set_header("db", "prepare");
 
         let flight_info = client
-            .execute("create table prepare_tb(visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string())
+            .execute("create table prepare_tb(visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("INSERT INTO prepare_tb (TIME, station, visibility, temperature, presssure) VALUES (1667456411000000000, 'XiaoMaiDao1', 56, 69, 411);".to_string())
+            .execute("INSERT INTO prepare_tb (TIME, station, visibility, temperature, presssure) VALUES (1667456411000000000, 'XiaoMaiDao1', 56, 69, 411);".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected: Vec<&str> = vec!["+------+", "| rows |", "+------+", "| 1    |", "+------+"];
         assert_batches_eq!(expected, &actual);
         let flight_info = client
-            .execute("INSERT INTO prepare_tb (TIME, station, visibility, temperature, presssure) VALUES (1667456412000000000, 'XiaoMaiDao2', 56, 69, 411);".to_string())
+            .execute("INSERT INTO prepare_tb (TIME, station, visibility, temperature, presssure) VALUES (1667456412000000000, 'XiaoMaiDao2', 56, 69, 411);".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -1047,7 +1160,10 @@ mod test {
         assert_batches_eq!(expected, &actual);
 
         let mut stmt = client
-            .prepare("select * from prepare_tb order by time desc;".into())
+            .prepare(
+                "select * from prepare_tb order by time desc;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let flight_info = stmt.execute().await.unwrap();
@@ -1079,7 +1195,10 @@ mod test {
         clean_env(&mut client, db_name).await;
 
         let flight_info = client
-            .execute("CREATE DATABASE update_test WITH TTL '100000d';".to_string())
+            .execute(
+                "CREATE DATABASE update_test WITH TTL '100000d';".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -1090,18 +1209,18 @@ mod test {
         // assert_eq!(flight_info, 3);
 
         let flight_info = client
-            .execute_update("CREATE TABLE update_air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string(),)
+            .execute_update("CREATE TABLE update_air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string(), None)
             .await
             .unwrap();
         assert_eq!(flight_info, 0);
 
-        let flight_info = client.execute_update("INSERT INTO update_air (TIME, station, visibility, temperature, presssure) VALUES (now(), 'XiaoMaiDao1', 56, 69, 411);".to_string(),).await.unwrap();
+        let flight_info = client.execute_update("INSERT INTO update_air (TIME, station, visibility, temperature, presssure) VALUES (now(), 'XiaoMaiDao1', 56, 69, 411);".to_string(), None).await.unwrap();
         assert_eq!(flight_info, 1);
-        let flight_info = client.execute_update("INSERT INTO update_air (TIME, station, visibility, temperature, presssure) VALUES (now(), 'XiaoMaiDao2', 56, 69, 411);".to_string(),).await.unwrap();
+        let flight_info = client.execute_update("INSERT INTO update_air (TIME, station, visibility, temperature, presssure) VALUES (now(), 'XiaoMaiDao2', 56, 69, 411);".to_string(), None).await.unwrap();
         assert_eq!(flight_info, 1);
 
         let flight_info = client
-            .execute_update("select * from update_air;".to_string())
+            .execute_update("select * from update_air;".to_string(), None)
             .await
             .unwrap();
         assert_eq!(flight_info, 2);
@@ -1120,14 +1239,20 @@ mod test {
         clean_env(&mut client, db_name).await;
 
         let flight_info = client
-            .execute("CREATE DATABASE primary_key WITH TTL '100000d';".to_string())
+            .execute(
+                "CREATE DATABASE primary_key WITH TTL '100000d';".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
-        let flight_info = client.execute("show databases;".to_string()).await.unwrap();
+        let flight_info = client
+            .execute("show databases;".to_string(), None)
+            .await
+            .unwrap();
         let _actual = fetch_result_and_print(flight_info, &mut client).await;
-        println!("primary_key_2: {:?}", _actual);
+        // println!("primary_key_2: {:?}", _actual);
         // let expected = vec![
         //     "+---------------+",
         //     "| database_name |",
@@ -1140,7 +1265,7 @@ mod test {
         // assert_batches_eq!(expected, &actual);
         client.set_header("db", "primary_key");
 
-        let flight_info = client.execute("CREATE TABLE primary_key (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string()).await.unwrap();
+        let flight_info = client.execute("CREATE TABLE primary_key (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let getprimarykey = CommandGetPrimaryKeys {
@@ -1166,17 +1291,23 @@ mod test {
         clean_env(&mut client, db_name).await;
 
         let flight_info = client
-            .execute("CREATE DATABASE export_key_db_test WITH TTL '100000d';".to_string())
+            .execute(
+                "CREATE DATABASE export_key_db_test WITH TTL '100000d';".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         client.set_header("db", "export_key_db_test");
 
-        let flight_info = client.execute("CREATE TABLE export_key_tb (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string()).await.unwrap();
+        let flight_info = client.execute("CREATE TABLE export_key_tb (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
-        let flight_info = client.execute("show tables;".to_string()).await.unwrap();
+        let flight_info = client
+            .execute("show tables;".to_string(), None)
+            .await
+            .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
 
         let expected = vec![
@@ -1211,18 +1342,21 @@ mod test {
         clean_env(&mut client, db_name).await;
 
         let flight_info = client
-            .execute("CREATE DATABASE imported_keys_db_test WITH TTL '100000d';".to_string())
+            .execute(
+                "CREATE DATABASE imported_keys_db_test WITH TTL '100000d';".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         client.set_header("db", "imported_keys_db_test");
 
-        let flight_info = client.execute("CREATE TABLE imported_key_tb (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string()).await.unwrap();
+        let flight_info = client.execute("CREATE TABLE imported_key_tb (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let flight_info = client
-            .execute("describe table imported_key_tb;".to_string())
+            .execute("describe table imported_key_tb;".to_string(), None)
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -1263,7 +1397,10 @@ mod test {
         clean_env(&mut client, db_name).await;
 
         let flight_info = client
-            .execute("CREATE DATABASE cross_reference_db_test WITH TTL '100000d';".to_string())
+            .execute(
+                "CREATE DATABASE cross_reference_db_test WITH TTL '100000d';".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -1271,7 +1408,10 @@ mod test {
         client.set_header("db", "cross_reference_db_test");
 
         let flight_info = client
-            .execute("describe database cross_reference_db_test;".to_string())
+            .execute(
+                "describe database cross_reference_db_test;".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -1285,7 +1425,7 @@ mod test {
         ];
         assert_batches_eq!(expected, &actual);
 
-        let flight_info = client.execute("CREATE TABLE cross_reference_tb (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string()).await.unwrap();
+        let flight_info = client.execute("CREATE TABLE cross_reference_tb (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         let crossreference = CommandGetCrossReference {
@@ -1315,7 +1455,10 @@ mod test {
         clean_env(&mut client, db_name).await;
 
         let flight_info = client
-            .execute("CREATE DATABASE sql_info_db_test WITH TTL '100000d';".to_string())
+            .execute(
+                "CREATE DATABASE sql_info_db_test WITH TTL '100000d';".to_string(),
+                None,
+            )
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
@@ -1326,7 +1469,7 @@ mod test {
 
         client.set_header("db", "sql_info_db_test");
 
-        let flight_info = client.execute("CREATE TABLE sql_info_tb (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string()).await.unwrap();
+        let flight_info = client.execute("CREATE TABLE sql_info_tb (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         assert!(actual.is_empty());
         if let Err(e) = client.get_sql_info(sql_infos).await {
