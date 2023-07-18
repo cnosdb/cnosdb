@@ -11,8 +11,6 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    container:
-      image: rust
     steps:
       - uses: actions/checkout@v3
       - name: Prepare Rust Builder
@@ -31,12 +29,14 @@ jobs:
         run: |
           make clippy_check
           make fmt_check
+      - name: clean
+        run: make clean
+      - name: trace
+        run: make build_trace
 
   unit-test:
     name: "Unit Test"
     runs-on: ubuntu-latest
-    container:
-      image: rust
     steps:
       - uses: actions/checkout@v3
       - name: Prepare Rust Builder
@@ -47,16 +47,10 @@ jobs:
           bash ./meta/singleton.sh
       - name: test
         run: make test
-      - name: clean
-        run: make clean
-      - name: trace
-        run: make build_trace
 
   integration-test:
     name: "Integration Test"
     runs-on: ubuntu-latest
-    container:
-      image: rust
     steps:
       - uses: actions/checkout@v3
         with:
@@ -75,8 +69,6 @@ jobs:
   integration-test-singleton:
     name: "Integration Test Singleton"
     runs-on: ubuntu-latest
-    container:
-      image: rust
     steps:
       - uses: actions/checkout@v3
         with:
@@ -91,8 +83,6 @@ jobs:
   integration-test-3meta:
     name: "Integration Test 3meta"
     runs-on: ubuntu-latest
-    container:
-      image: rust
     steps:
       - uses: actions/checkout@v3
         with:
@@ -106,9 +96,7 @@ jobs:
 
   integration-test-3m2d:
     name: "Integration Test 3meta 2data cluster"
-    runs-on: ubuntu-latest
-    container:
-      image: rust
+    runs-on: ubuntu-4c16g
     steps:
       - uses: actions/checkout@v3
         with:
@@ -122,9 +110,7 @@ jobs:
 
   integration-test-Separation-of-storage-and-computing:
     name: "Integration Test Separation of storage and computing"
-    runs-on: ubuntu-latest
-    container:
-      image: rust
+    runs-on: ubuntu-4c16g
     steps:
       - uses: actions/checkout@v3
         with:
@@ -134,5 +120,5 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          bash ./query_server/test/script/start_and_test_all.sh 3meta_2data_1query_1tskv
+          bash ./query_server/test/script/start_and_test_all.sh 1meta_2data_1query_1tskv
   

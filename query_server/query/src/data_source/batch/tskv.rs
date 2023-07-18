@@ -304,6 +304,7 @@ impl TableProvider for ClusterTable {
                     args,
                     distinct,
                     filter,
+                    order_by,
                 }) => {
                     let support_agg_func = matches!(
                         fun,
@@ -320,6 +321,7 @@ impl TableProvider for ClusterTable {
                         // not distinct
                         && !*distinct
                         && filter.is_none()
+                        && order_by.is_none()
                 }
                 _ => false,
             }

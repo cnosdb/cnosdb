@@ -51,7 +51,7 @@ mod test {
 
     async fn fetch_result_and_print(
         flight_info: FlightInfo,
-        client: &mut FlightSqlServiceClient,
+        client: &mut FlightSqlServiceClient<Channel>,
     ) -> Vec<RecordBatch> {
         let mut batches = vec![];
         for ep in &flight_info.endpoint {
@@ -65,7 +65,7 @@ mod test {
         batches
     }
 
-    async fn authed_client() -> FlightSqlServiceClient {
+    async fn authed_client() -> FlightSqlServiceClient<Channel> {
         let channel = flight_channel("localhost", 8904).await.unwrap();
         let mut client = FlightSqlServiceClient::new(channel);
 
@@ -1350,5 +1350,26 @@ mod test {
         assert!(close_info.is_ok());
         //clean env
         clean_env(&mut client, db_name).await;
+    }
+
+    #[tokio::test]
+    async fn test_select() {
+        let mut client = authed_client().await;
+
+        let expected = vec![
+            "+----------+",
+            "| Int64(1) |",
+            "+----------+",
+            "| 1        |",
+            "+----------+",
+        ];
+
+        // 2. execute query, get result metadata
+        let mut stmt = client.prepare("select 1;".to_string(), None).await.unwrap();
+        let flight_info = stmt.execute().await.unwrap();
+
+        let actual = fetch_result_and_print(flight_info, &mut client).await;
+
+        assert_batches_eq!(expected, &actual);
     }
 }

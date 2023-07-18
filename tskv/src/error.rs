@@ -61,6 +61,24 @@ pub enum Error {
         source: ArrowError,
     },
 
+    #[snafu(display("read tsm block file error: {}", source))]
+    #[error_code(code = 7)]
+    ReadTsm {
+        source: ReadTsmError,
+    },
+
+    #[snafu(display("found damaged tsm file error: {}", source))]
+    #[error_code(code = 8)]
+    TsmFileBroken {
+        source: ReadTsmError,
+    },
+
+    #[snafu(display("write tsm block file error: {}", source))]
+    #[error_code(code = 9)]
+    WriteTsm {
+        source: WriteTsmError,
+    },
+
     // Internal Error
     #[snafu(display("{}", source))]
     IO {
@@ -108,15 +126,23 @@ pub enum Error {
         message: String,
     },
 
-    #[snafu(display("fails to send to channel"))]
-    Send,
-
-    #[snafu(display("fails to receive from channel"))]
-    Receive {
-        source: tokio::sync::oneshot::error::RecvError,
+    /// Failed to send someting to a channel
+    #[snafu(display("{source}"))]
+    ChannelSend {
+        source: ChannelSendError,
     },
 
-    #[snafu(display("wal truncated"))]
+    /// Failed to receive something from a channel
+    #[snafu(display("{source}"))]
+    ChannelReceive {
+        source: ChannelReceiveError,
+    },
+
+    /// WAL file is truncated, it's because CnosDB didn't shutdown properly.
+    ///
+    /// This error is handled by WAL module:
+    /// just stop the current WAL file reading, go to the next WAL file.
+    #[snafu(display("Internal handled: WAL truncated"))]
     WalTruncated,
 
     #[snafu(display("read/write record file block: {}", reason))]
@@ -155,16 +181,6 @@ pub enum Error {
     #[snafu(display("error apply edits to summary"))]
     ErrApplyEdit,
 
-    #[snafu(display("read tsm block file error: {}", source))]
-    ReadTsm {
-        source: ReadTsmError,
-    },
-
-    #[snafu(display("write tsm block file error: {}", source))]
-    WriteTsm {
-        source: WriteTsmError,
-    },
-
     #[snafu(display("character set error"))]
     ErrCharacterSet,
 
@@ -184,6 +200,12 @@ pub enum Error {
     #[snafu(display("invalid points : '{}'", source))]
     Points {
         source: PointsError,
+    },
+
+    #[snafu(display("non-UTF-8 string '{message}': {source}"))]
+    InvalidUtf8 {
+        message: String,
+        source: std::str::Utf8Error,
     },
 }
 
@@ -235,18 +257,12 @@ impl Error {
         }
     }
 
-    pub fn invalid_vnode(&self) -> bool {
-        match self {
-            Self::ReadTsm { source } => {
-                matches!(
-                    source,
-                    ReadTsmError::CrcCheck
-                        | ReadTsmError::FileNotFound { .. }
-                        | ReadTsmError::Invalid { .. }
-                )
-            }
-            _ => false,
-        }
+    pub fn vnode_broken_code(code: &str) -> bool {
+        let e = Self::ReadTsm {
+            source: ReadTsmError::CrcCheck,
+        };
+
+        e.code() == code
     }
 }
 
@@ -294,12 +310,27 @@ impl From<Status> for Error {
     }
 }
 
+#[derive(Snafu, Debug)]
+pub enum ChannelSendError {
+    #[snafu(display("Failed to send a WAL task"))]
+    WalTask,
+}
+
+#[derive(Snafu, Debug)]
+pub enum ChannelReceiveError {
+    #[snafu(display("Failed to receive write WAL result: {source}"))]
+    WriteWalResult {
+        source: tokio::sync::oneshot::error::RecvError,
+    },
+}
+
 #[test]
 fn test_mod_code() {
     let e = Error::Schema {
-        source: SchemaError::ColumnAlreadyExists {
-            name: "".to_string(),
+        source: SchemaError::TableNotFound {
+            database: String::new(),
+            table: String::new(),
         },
     };
-    assert!(e.code().starts_with("02"));
+    assert_eq!(e.code(), "020004");
 }

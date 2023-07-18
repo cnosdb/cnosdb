@@ -156,10 +156,13 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::CreateTenant(sub_plan) => Box::new(CreateTenantTask::new(*sub_plan.clone())),
             DDLPlan::CreateUser(sub_plan) => Box::new(CreateUserTask::new(sub_plan.clone())),
             DDLPlan::CreateRole(sub_plan) => Box::new(CreateRoleTask::new(sub_plan.clone())),
-            DDLPlan::DescribeDatabase(sub_plan) => {
-                Box::new(DescribeDatabaseTask::new(sub_plan.clone()))
+            DDLPlan::DescribeDatabase(sub_plan) => Box::new(DescribeDatabaseTask::new(
+                sub_plan.clone(),
+                self.plan.schema(),
+            )),
+            DDLPlan::DescribeTable(sub_plan) => {
+                Box::new(DescribeTableTask::new(sub_plan.clone(), self.plan.schema()))
             }
-            DDLPlan::DescribeTable(sub_plan) => Box::new(DescribeTableTask::new(sub_plan.clone())),
             DDLPlan::AlterDatabase(sub_plan) => Box::new(AlterDatabaseTask::new(sub_plan.clone())),
             DDLPlan::AlterTable(sub_plan) => Box::new(AlterTableTask::new(sub_plan.clone())),
             DDLPlan::AlterTenant(sub_plan) => Box::new(AlterTenantTask::new(sub_plan.clone())),
@@ -169,7 +172,9 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::CopyVnode(sub_plan) => Box::new(CopyVnodeTask::new(sub_plan.clone())),
             DDLPlan::MoveVnode(sub_plan) => Box::new(MoveVnodeTask::new(sub_plan.clone())),
             DDLPlan::CompactVnode(sub_plan) => Box::new(CompactVnodeTask::new(sub_plan.clone())),
-            DDLPlan::ChecksumGroup(sub_plan) => Box::new(ChecksumGroupTask::new(sub_plan.clone())),
+            DDLPlan::ChecksumGroup(sub_plan) => {
+                Box::new(ChecksumGroupTask::new(sub_plan.clone(), self.plan.schema()))
+            }
             DDLPlan::CreateStreamTable(sub_plan) => {
                 let checker = self.stream_checker_manager.checker(&sub_plan.stream_type);
 

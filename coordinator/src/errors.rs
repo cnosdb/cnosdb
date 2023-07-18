@@ -5,6 +5,8 @@ use datafusion::arrow::error::ArrowError;
 use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
+use models::schema::Precision;
+use models::Timestamp;
 use protos::PointsError;
 use snafu::Snafu;
 use tonic::Status;
@@ -153,6 +155,22 @@ pub enum CoordinatorError {
     #[error_code(code = 23)]
     NoValidReplica {
         id: u32,
+    },
+
+    #[snafu(display("Failed to convert '{from}' to '{to}' for timestamp: {ts}"))]
+    #[error_code(code = 24)]
+    NormalizeTimestamp {
+        from: Precision,
+        to: Precision,
+        ts: Timestamp,
+    },
+
+    #[snafu(display("Writing expired timestamp {point_ts} which is less than {database_min_ts} to database '{database}'"))]
+    #[error_code(code = 25)]
+    PointTimestampExpired {
+        database: String,
+        database_min_ts: Timestamp,
+        point_ts: Timestamp,
     },
 }
 

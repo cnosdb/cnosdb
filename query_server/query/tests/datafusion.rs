@@ -71,7 +71,7 @@ impl Table {
             Table::test_columns()
                 .iter()
                 .map(|c| Field::new(&c.name, c.data_type.clone(), true))
-                .collect(),
+                .collect::<Vec<_>>(),
         ))
     }
 }
@@ -184,7 +184,7 @@ impl ExecutionPlan for TableScanExec {
             self.columns
                 .iter()
                 .map(|c| Field::new(&c.name, c.data_type.clone(), true))
-                .collect(),
+                .collect::<Vec<_>>(),
         ))
     }
 

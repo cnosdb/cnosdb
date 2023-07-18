@@ -17,7 +17,6 @@ use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicateRef, TimeRanges};
 use models::record_batch_decode;
 use models::schema::{Precision, DEFAULT_CATALOG};
-use protos::get_db_from_fb_points;
 use protos::kv_service::admin_command_request::Command::*;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{WritePointsRequest, *};
@@ -377,7 +376,7 @@ impl Coordinator for CoordService {
             let points = request.points.as_slice();
 
             let fb_points = flatbuffers::root::<Points>(points)?;
-            let db = get_db_from_fb_points(&fb_points)?;
+            let db = fb_points.db_ext()?;
 
             let write_size = points.len();
 
@@ -385,7 +384,7 @@ impl Coordinator for CoordService {
             limiter.check_data_in(write_size).await?;
 
             self.metrics
-                .data_in(tenant.as_str(), db.as_str())
+                .data_in(tenant.as_str(), db)
                 .inc(write_size as u64);
         }
 
@@ -397,9 +396,9 @@ impl Coordinator for CoordService {
         };
 
         let now = tokio::time::Instant::now();
-        debug!("write points, now: {:?}", now);
+        trace::trace!("write points, now: {:?}", now);
         let res = self.writer.write_points(&req, span_ctx).await;
-        debug!(
+        trace::trace!(
             "write points result: {:?}, start at: {:?} elapsed: {:?}",
             res,
             now,
@@ -427,6 +426,7 @@ impl Coordinator for CoordService {
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
             option,
             opener,
+            self.meta.clone(),
             Box::pin(checker),
             &self.metrics,
         )))
@@ -449,6 +449,7 @@ impl Coordinator for CoordService {
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
             option,
             opener,
+            self.meta.clone(),
             Box::pin(checker),
             &self.metrics,
         )))

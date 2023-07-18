@@ -3,24 +3,25 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::arrow::datatypes::{Schema, SchemaRef};
+use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::error::Result;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_expr::PhysicalSortExpr;
-use datafusion::physical_plan::aggregates::AggregateMode;
-use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
+use datafusion::physical_plan::aggregates::{AggregateExec, AggregateMode, PhysicalGroupBy};
+use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::{
-    create_schema, AggregateExpr, AggregateStream, DisplayFormatType, Distribution, ExecutionPlan,
-    Partitioning, SendableRecordBatchStream, Statistics,
+    AggregateExpr, AggregateStream, DisplayFormatType, Distribution, ExecutionPlan, Partitioning,
+    SendableRecordBatchStream, Statistics,
 };
 use trace::debug;
 
 pub struct TableWriterMergeExec {
-    input: Arc<dyn ExecutionPlan>,
-    /// Execution metrics
-    metrics: ExecutionPlanMetricsSet,
+    // input: Arc<dyn ExecutionPlan>,
+    // /// Execution metrics
+    // metrics: ExecutionPlanMetricsSet,
     aggr_expr: Vec<Arc<dyn AggregateExpr>>,
-    schema: SchemaRef,
+    // schema: SchemaRef,
+    agg_exec: Arc<AggregateExec>,
 }
 
 impl TableWriterMergeExec {
@@ -28,21 +29,11 @@ impl TableWriterMergeExec {
         input: Arc<dyn ExecutionPlan>,
         aggr_expr: Vec<Arc<dyn AggregateExpr>>,
     ) -> Result<Self> {
-        let fields = aggr_expr
-            .iter()
-            .map(|expr| expr.field())
-            .collect::<Result<Vec<_>>>()?;
-
-        let schema = Arc::new(Schema::new_with_metadata(
-            fields,
-            input.schema().metadata().clone(),
-        ));
+        let agg_exec = create_aggregate_exec(input, AggregateMode::Single, &aggr_expr)?;
 
         Ok(Self {
-            input,
-            metrics: ExecutionPlanMetricsSet::new(),
             aggr_expr,
-            schema,
+            agg_exec: Arc::new(agg_exec),
         })
     }
 }
@@ -61,19 +52,19 @@ impl ExecutionPlan for TableWriterMergeExec {
     }
 
     fn schema(&self) -> SchemaRef {
-        self.schema.clone()
+        self.agg_exec.schema()
     }
 
     fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(1)
+        self.agg_exec.output_partitioning()
     }
 
     fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.input.output_ordering()
+        self.agg_exec.output_ordering()
     }
 
     fn benefits_from_input_partitioning(&self) -> bool {
-        false
+        self.agg_exec.benefits_from_input_partitioning()
     }
 
     fn required_input_distribution(&self) -> Vec<Distribution> {
@@ -81,19 +72,14 @@ impl ExecutionPlan for TableWriterMergeExec {
     }
 
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
-        vec![self.input.clone()]
+        self.agg_exec.children()
     }
 
     fn with_new_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        Ok(Arc::new(TableWriterMergeExec {
-            input: children[0].clone(),
-            aggr_expr: self.aggr_expr.clone(),
-            metrics: self.metrics.clone(),
-            schema: self.schema.clone(),
-        }))
+        Ok(Self::try_new(children[0].clone(), self.aggr_expr.clone()).map(Arc::new)?)
     }
 
     fn execute(
@@ -108,67 +94,50 @@ impl ExecutionPlan for TableWriterMergeExec {
             context.task_id()
         );
 
-        let partial_input = self.input.execute(partition, Arc::clone(&context))?;
-        let partial_stream = create_aggregate_stream(
-            partition,
-            context.clone(),
-            BaselineMetrics::new(&self.metrics, partition),
-            partial_input,
-            AggregateMode::Partial,
-            &self.aggr_expr,
-        )?;
-
-        let final_stream = create_aggregate_stream(
-            partition,
+        Ok(Box::pin(AggregateStream::new(
+            self.agg_exec.as_ref(),
             context,
-            BaselineMetrics::new(&self.metrics, partition),
-            Box::pin(partial_stream),
-            AggregateMode::Final,
-            &self.aggr_expr,
-        )?;
-
-        Ok(Box::pin(final_stream))
+            partition,
+        )?))
     }
 
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
-            DisplayFormatType::Default => {
-                write!(f, "TableWriterMergeExec",)
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
+                let exprs: Vec<String> = self
+                    .agg_exec
+                    .aggr_expr()
+                    .iter()
+                    .map(|agg| agg.name().to_string())
+                    .collect();
+                write!(f, "TableWriterMergeExec: expr=[{}]", exprs.join(","))
             }
         }
     }
 
     fn metrics(&self) -> Option<MetricsSet> {
-        Some(self.metrics.clone_inner())
+        self.agg_exec.metrics()
     }
 
     fn statistics(&self) -> Statistics {
-        self.input.statistics()
+        self.agg_exec.statistics()
     }
 }
 
-fn create_aggregate_stream(
-    partition: usize,
-    context: Arc<TaskContext>,
-    baseline_metrics: BaselineMetrics,
-    stream: SendableRecordBatchStream,
+fn create_aggregate_exec(
+    input: Arc<dyn ExecutionPlan>,
     mode: AggregateMode,
     aggr_expr: &[Arc<dyn AggregateExpr>],
-) -> Result<AggregateStream> {
-    let input_schema = Arc::new(create_schema(
-        stream.schema().as_ref(),
-        &[],
-        aggr_expr,
-        false,
+) -> Result<AggregateExec> {
+    let filter_expr = vec![None; aggr_expr.len()];
+    let order_by_expr = vec![None; aggr_expr.len()];
+    AggregateExec::try_new(
         mode,
-    )?);
-    AggregateStream::new(
-        mode,
-        input_schema,
+        PhysicalGroupBy::default(),
         aggr_expr.to_vec(),
-        stream,
-        baseline_metrics,
-        context,
-        partition,
+        filter_expr,
+        order_by_expr,
+        input.clone(),
+        input.schema(),
     )
 }

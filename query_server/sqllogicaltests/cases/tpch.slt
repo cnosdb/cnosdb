@@ -124,13 +124,13 @@ order by
     l_returnflag,
     l_linestatus;
 ----
-A F 27.0000000000 39890.8800000000 37497.4272000000 40122.2471040000 27.00000000000000 39890.88000000000000 0.06000000000000 1
-N O 166.0000000000 205387.5000000000 191556.1888000000 199866.7593360000 27.66666666666666 34231.25000000000000 0.07500000000000 6
-R F 94.0000000000 100854.5200000000 92931.3900000000 92931.3900000000 47.00000000000000 50427.26000000000000 0.08000000000000 2
+A F 27.0000000000 39890.8800000000 37497.42720000000000000000 40122.247104000000000000000000000000 27.00000000000000 39890.88000000000000 0.06000000000000 1
+N O 166.0000000000 205387.5000000000 191556.18880000000000000000 199866.759336000000000000000000000000 27.66666666666666 34231.25000000000000 0.07500000000000 6
+R F 94.0000000000 100854.5200000000 92931.39000000000000000000 92931.390000000000000000000000000000 47.00000000000000 50427.26000000000000 0.08000000000000 2
 
 
 # q2
-query T
+statement ok
 select
     s_acctbal,
     s_name,
@@ -174,11 +174,10 @@ order by
     n_name,
     s_name,
     p_partkey;
-----
 
 
 # q3
-query T
+statement ok
 select
     l_orderkey,
     sum(l_extendedprice * (1 - l_discount)) as revenue,
@@ -201,11 +200,10 @@ group by
 order by
     revenue desc,
     o_orderdate;
-----
 
 
 # q4
-query T
+statement ok
 select
     l_orderkey,
     sum(l_extendedprice * (1 - l_discount)) as revenue,
@@ -228,12 +226,11 @@ group by
 order by
     revenue desc,
     o_orderdate;
-----
 
 
 
 # q5
-query T
+statement ok
 select
     n_name,
     sum(l_extendedprice * (1 - l_discount)) as revenue
@@ -258,7 +255,6 @@ group by
     n_name
 order by
     revenue desc;
-----
 
 
 # q6
@@ -277,7 +273,7 @@ NULL
 
 
 # q7
-query T
+statement ok
 select
     supp_nation,
     cust_nation,
@@ -317,11 +313,10 @@ order by
     supp_nation,
     cust_nation,
     l_year;
-----
 
 
 # q8
-query T
+statement ok
 select
     o_year,
     sum(case
@@ -359,11 +354,10 @@ group by
     o_year
 order by
     o_year;
-----
 
 
 # q9
-query T
+statement ok
 select
     nation,
     o_year,
@@ -396,11 +390,10 @@ group by
 order by
     nation,
     o_year desc;
-----
 
 
 # q10
-query T
+statement ok
 select
     c_custkey,
     c_name,
@@ -432,11 +425,10 @@ group by
     c_comment
 order by
     revenue desc;
-----
 
 
 # q11
-query T
+statement ok
 select
     ps_partkey,
     sum(ps_supplycost * ps_availqty) as value
@@ -464,11 +456,10 @@ group by
     )
 order by
     value desc;
-----
 
 
 # q12
-query T
+statement ok
 select
     l_shipmode,
     sum(case
@@ -499,7 +490,6 @@ group by
     l_shipmode
 order by
     l_shipmode;
-----
 
 
 # q13
@@ -546,7 +536,7 @@ where
 NULL
 
 # q15
-query 
+statement ok
 with revenue0 as(
 	select
 		l_suppkey as supplier_no,
@@ -577,10 +567,9 @@ where
 	)
 order by
 	s_suppkey;
-----
 
 # q16
-query T
+statement ok
 select
     p_brand,
     p_type,
@@ -611,7 +600,6 @@ order by
     p_brand,
     p_type,
     p_size;
-----
 
 
 # q17
@@ -637,7 +625,7 @@ where
 NULL
 
 # q18
-query T
+statement ok
 select
     c_name,
     c_custkey,
@@ -670,7 +658,6 @@ group by
 order by
     o_totalprice desc,
     o_orderdate;
-----
 
 
 # q19
@@ -715,7 +702,7 @@ NULL
 
 
 # q20
-query T
+statement ok
 select
     s_name,
     s_address
@@ -753,11 +740,10 @@ where
   and n_name = 'CANADA'
 order by
     s_name;
-----
 
 
 # q21
-query T
+statement ok
 select
     s_name,
     count(*) as numwait
@@ -797,7 +783,6 @@ group by
 order by
     numwait desc,
     s_name;
-----
 
 
 # q22

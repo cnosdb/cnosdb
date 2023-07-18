@@ -131,9 +131,14 @@ async fn detect_node_heartbeat(heartbeat_config: HeartBeatConfig, app: Data<Meta
         interval.tick().await;
 
         if let Ok(_leader) = app.raft.is_leader().await {
-            let sm = app.store.state_machine.write().await;
+            let opt_list = app
+                .store
+                .state_machine
+                .write()
+                .await
+                .children_data::<NodeMetrics>(&metrics_path);
 
-            if let Ok(list) = sm.children_data::<NodeMetrics>(&metrics_path) {
+            if let Ok(list) = opt_list {
                 let node_metrics_list: Vec<NodeMetrics> = list.into_values().collect();
 
                 let time = now_timestamp_secs();
@@ -151,7 +156,9 @@ async fn detect_node_heartbeat(heartbeat_config: HeartBeatConfig, app: Data<Meta
                             now_node_metrics,
                         );
 
-                        sm.process_write_command(&req);
+                        if app.raft.client_write(req).await.is_err() {
+                            tracing::error!("failed to change node status to unreachable");
+                        }
                     }
                 }
             }

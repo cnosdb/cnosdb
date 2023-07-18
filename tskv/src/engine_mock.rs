@@ -40,17 +40,6 @@ impl Engine for MockEngine {
         Ok(WritePointsResponse { points_number: 0 })
     }
 
-    async fn write_from_wal(
-        &self,
-        id: u32,
-        precision: Precision,
-        write_batch: WritePointsRequest,
-        seq: u64,
-    ) -> Result<()> {
-        debug!("write point");
-        Ok(())
-    }
-
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
         Ok(())
     }

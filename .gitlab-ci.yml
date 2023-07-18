@@ -12,12 +12,12 @@ bench-job:
     - killall cnosdb
     - set -e
     # - pkill -9 cnosdb-meta
-    - sudo rm -rf /data1/cnosdb
+    - sudo rm -rf /home/gitlab-runner/cnosdb
     - echo "compile code"
     - make build_release
     - sleep 10
     - echo "modify default config"
-    - sed -i "s/tmp/data1/g" config/config_8902.toml
+    - sed -i "s/tmp/home\/gitlab-runner/g" config/config_8902.toml
     #- sed -i "s/tmp/data1/g" config/config_8912.toml
     #- sed -i "s/tmp/data1/g" meta/config/config_8921.toml
     #- sed -i "s/tmp/data1/g" meta/config/config_8901.toml
@@ -36,6 +36,10 @@ bench-job:
     - echo "hits test"
     - commit_id=${commit_id:-$(git log -1 --pretty=%h)}
     - cd benchmark
+    - export HITS_DATA_URL="/home/cnosdb_dev/hits.parquet"
+    - export TSBS_DATA_URL="/home/cnosdb_dev/cnosdb_iot_123_2022.gz"
+    - export TSBS_QUERY_DIR="/home/cnosdb_dev/queries"
+    - sudo mv ../target/release/cnosdb-cli /bin/
     - ./benchmark.sh hits
     - ./update-results.sh hits
     - scp -i /home/gitlab-runner/.ssh/id_rsa ./results/hits.html root@192.168.0.20:/usr/src/benchmark-hits/hits_${commit_id}.html
@@ -68,5 +72,5 @@ bench-job:
     - set +e
     - killall cnosdb
     - set -e
-    - sudo rm -rf /data1/cnosdb
+    - sudo rm -rf /home/gitlab-runner/cnosdb
     - echo "bench job Done"

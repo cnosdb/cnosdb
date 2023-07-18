@@ -360,6 +360,10 @@ impl QueryOption {
         }
     }
 
+    pub fn tenant_name(&self) -> String {
+        self.table_schema.tenant.clone()
+    }
+
     pub fn to_query_record_batch_request(
         &self,
         vnode_ids: Vec<VnodeId>,
@@ -1207,7 +1211,7 @@ impl SeriesGroupRowIterator {
                 );
 
                 if !path.is_file() {
-                    return Err(Error::ReadTsm {
+                    return Err(Error::TsmFileBroken {
                         source: crate::tsm::ReadTsmError::FileNotFound {
                             reason: format!("File Not Found: {}", path.display()),
                         },

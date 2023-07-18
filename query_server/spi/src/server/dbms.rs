@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use datafusion::arrow::array::{Float32Array, Float64Array};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::from_slice::FromSlice;
 use models::auth::role::UserRole;
 use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
 use trace::SpanContext;
@@ -83,8 +82,8 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
                 RecordBatch::try_new(
                     schema.clone(),
                     vec![
-                        Arc::new(Float32Array::from_slice(vec![i as f32; batch_size])),
-                        Arc::new(Float64Array::from_slice(vec![i as f64; batch_size])),
+                        Arc::new(Float32Array::from(vec![i as f32; batch_size])),
+                        Arc::new(Float64Array::from(vec![i as f64; batch_size])),
                     ],
                 )
                 .unwrap()

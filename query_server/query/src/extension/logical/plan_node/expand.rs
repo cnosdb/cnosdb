@@ -118,7 +118,7 @@ impl UserDefinedLogicalNodeCore for ExpandNode {
 mod tests {
     use std::sync::Arc;
 
-    use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+    use datafusion::arrow::datatypes::{DataType, Field, Fields, Schema, TimeUnit};
     use datafusion::error::DataFusionError;
     use datafusion::logical_expr::logical_plan::table_scan;
     use datafusion::logical_expr::{
@@ -224,7 +224,10 @@ mod tests {
         let end_field = expand_schema.field_with_unqualified_name("$end")?;
 
         let window_expr = Expr::ScalarVariable(
-            DataType::Struct(vec![start_field.field().clone(), end_field.field().clone()]),
+            DataType::Struct(Fields::from(vec![
+                start_field.field().clone(),
+                end_field.field().clone(),
+            ])),
             vec!["window".to_string()],
         );
 

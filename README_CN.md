@@ -30,6 +30,8 @@
     <a href="https://docs.cnosdb.com/zh/">Documentation</a>
     •
     <a href="https://docs.cnosdb.com/zh/guide/quick_start.html">Quick Start</a>
+    •
+    <a href="https://docs.cnosdb.com/zh/latest/versatility/ai/LangChain.html">CnosDB with LangChain</a>
 </h3>
 
 CnosDB 是一款高性能、高压缩率、高易用性的开源分布式时序数据库。主要应用场景为物联网，工业互联网，车联网，IT运维等。所有代码均已在GitHub开源。
@@ -273,5 +275,6 @@ CnosDB支持多种客户端的连接：
 - CnosDB 2.0使用[Apache Arrow](https://github.com/apache/arrow)作为内存模型。
 - CnosDB 2.0的查询引擎基于[Apache Arrow DataFusion](https://github.com/apache/arrow-datafusion)构建。
 - CnosDB 2.0的Bug挖掘工具使用[SQLancer](https://github.com/sqlancer/sqlancer)作为支持。
-- CnosDB 2.0的集成测试框架基于[sqllogictest-rs](https://github.com/risinglightdb/sqllogictest-rs)构建.
+- CnosDB 2.0的集成测试框架基于[sqllogictest-rs](https://github.com/risinglightdb/sqllogictest-rs)构建。
+- CnosDB 2.0 结合 [LangChain](https://github.com/hwchase17/langchain) 实现自然语言与数据库的交流。
 

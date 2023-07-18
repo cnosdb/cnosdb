@@ -5,8 +5,8 @@ use datafusion::common::DFSchema;
 use datafusion::error::Result;
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
-use datafusion::physical_plan::planner::{physical_name, ExtensionPlanner};
-use datafusion::physical_plan::{ExecutionPlan, PhysicalExpr, PhysicalPlanner};
+use datafusion::physical_plan::{ExecutionPlan, PhysicalExpr};
+use datafusion::physical_planner::{physical_name, ExtensionPlanner, PhysicalPlanner};
 use datafusion::prelude::Expr;
 use models::errors::tuple_err;
 

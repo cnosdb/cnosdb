@@ -33,7 +33,9 @@
     •
     <a href="https://docs.cnosdb.com/">Documentation</a>
     •
-    <a href="https://docs.cnosdb.com/en/quick_start.html">Quick Start</a>
+    <a href="https://docs.cnosdb.com/en/latest/start/quick_start.html">Quick Start</a>
+    •
+    <a href="https://docs.cnosdb.com/en/latest/versatility/ai/LangChain.html">CnosDB with LangChain</a>
 </h3>
 
 
@@ -280,3 +282,5 @@ Please refer to [Contribution Guide](./CONTRIBUTING_EN.md) to contribute to Cnos
 - CnosDB 2.0's query engine is powered by [Apache Arrow DataFusion](https://github.com/apache/arrow-datafusion).
 - CnosDB 2.0's bug detection is powered by [SQLancer](https://github.com/sqlancer/sqlancer).
 - CnosDB 2.0's integration test framework is powered by [sqllogictest-rs](https://github.com/risinglightdb/sqllogictest-rs).
+- CnosDB 2.0 combining [LangChain](https://github.com/hwchase17/langchain) to realize the natural language to communicate with the database。
+

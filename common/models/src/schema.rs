@@ -26,7 +26,7 @@ use datafusion::datasource::file_format::json::JsonFormat;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::ListingOptions;
-use datafusion::error::Result as DataFusionResult;
+use datafusion::error::{DataFusionError, Result as DataFusionResult};
 use datafusion::prelude::Column;
 use datafusion::scalar::ScalarValue;
 use derive_builder::Builder;
@@ -126,6 +126,11 @@ impl ExternalTableSchema {
             FileType::AVRO => Arc::new(AvroFormat::default()),
             FileType::JSON => {
                 Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
+            }
+            FileType::ARROW => {
+                return Err(DataFusionError::NotImplemented(
+                    "Arrow external table.".to_string(),
+                ))
             }
         };
 
@@ -708,8 +713,8 @@ pub struct DatabaseOptions {
 
 impl DatabaseOptions {
     pub const DEFAULT_TTL: Duration = Duration {
-        time_num: 365,
-        unit: DurationUnit::Day,
+        time_num: 0,
+        unit: DurationUnit::Inf,
     };
     pub const DEFAULT_SHARD_NUM: u64 = 1;
     pub const DEFAULT_REPLICA: u64 = 1;
@@ -866,6 +871,7 @@ pub enum DurationUnit {
     Minutes,
     Hour,
     Day,
+    Inf,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
@@ -880,6 +886,7 @@ impl fmt::Display for Duration {
             DurationUnit::Minutes => write!(f, "{} Minutes", self.time_num),
             DurationUnit::Hour => write!(f, "{} Hours", self.time_num),
             DurationUnit::Day => write!(f, "{} Days", self.time_num),
+            DurationUnit::Inf => write!(f, "INF"),
         }
     }
 }
@@ -937,6 +944,7 @@ impl Duration {
             DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_NANOS),
             DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_NANOS),
             DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_NANOS),
+            DurationUnit::Inf => i64::MAX,
         }
     }
 
@@ -945,6 +953,7 @@ impl Duration {
             DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_MICROS),
             DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_MICROS),
             DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_MICROS),
+            DurationUnit::Inf => i64::MAX,
         }
     }
 
@@ -953,6 +962,7 @@ impl Duration {
             DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_MILLS),
             DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_MILLS),
             DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_MILLS),
+            DurationUnit::Inf => i64::MAX,
         }
     }
 

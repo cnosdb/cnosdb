@@ -101,7 +101,7 @@ pub fn record_batch_to_points_flat_buffer(
         // Get wip offset of flatbuffer through arrow::Array of non-time column
         let wip_offset_array = arrow_array_to_offset_array!(fbb, col_array);
         // Save column metadata in field order of record_batch, without time column
-        column_schemas_without_time_col.push(col);
+        column_schemas_without_time_col.push(col.as_ref());
         // Save wip offset
         columns_wip_offset_without_time_col.push(wip_offset_array?)
     }

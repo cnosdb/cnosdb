@@ -13,7 +13,7 @@ use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueT
 use parking_lot::RwLock;
 use protos::models as fb_models;
 use protos::models::FieldType;
-use utils::bitset::BitSet;
+use utils::bitset::ImmutBitSet;
 
 use crate::error::Result;
 use crate::Error::CommonError;
@@ -138,7 +138,8 @@ impl RowData {
                     reason: "field nullbit missing in point".to_string(),
                 })?;
                 let len = fields_inner.len();
-                let field_nullbit = BitSet::new_without_check(len, field_nullbit_buffer.bytes());
+                let field_nullbit =
+                    ImmutBitSet::new_without_check(len, field_nullbit_buffer.bytes());
                 let fields_id = schema.fields_id();
                 let mut fields: Vec<Option<FieldVal>> = Vec::with_capacity(fields_id.len());
                 for _i in 0..fields.capacity() {
@@ -627,22 +628,19 @@ impl Display for DataType {
     }
 }
 
-#[cfg(test)]
 pub(crate) mod test {
     use std::collections::HashMap;
     use std::mem::size_of;
     use std::sync::Arc;
 
-    use datafusion::arrow::datatypes::TimeUnit;
-    use memory_pool::{GreedyMemoryPool, MemoryPool};
     use models::predicate::domain::TimeRange;
-    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::{SchemaId, SeriesId, Timestamp, ValueType};
+    use models::schema::TskvTableSchema;
+    use models::{SchemaId, SeriesId, Timestamp};
     use parking_lot::RwLock;
 
     use super::{FieldVal, MemCache, RowData, RowGroup};
 
-    pub(crate) fn put_rows_to_cache(
+    pub fn put_rows_to_cache(
         cache: &mut MemCache,
         series_id: SeriesId,
         schema_id: SchemaId,
@@ -677,7 +675,7 @@ pub(crate) mod test {
         cache.write_group(series_id, 1, row_group).unwrap();
     }
 
-    pub(crate) fn get_one_series_cache_data(
+    pub fn get_one_series_cache_data(
         cache: Arc<RwLock<MemCache>>,
     ) -> HashMap<String, Vec<(Timestamp, FieldVal)>> {
         let mut fname_vals_map: HashMap<String, Vec<(Timestamp, FieldVal)>> = HashMap::new();
@@ -706,6 +704,19 @@ pub(crate) mod test {
 
         fname_vals_map
     }
+}
+
+#[cfg(test)]
+mod test_memcache {
+    use std::sync::Arc;
+
+    use datafusion::arrow::datatypes::TimeUnit;
+    use memory_pool::{GreedyMemoryPool, MemoryPool};
+    use models::predicate::domain::TimeRange;
+    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::{SeriesId, ValueType};
+
+    use super::{FieldVal, MemCache, RowData, RowGroup};
 
     #[test]
     fn test_write_group() {

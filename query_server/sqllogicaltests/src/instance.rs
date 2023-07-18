@@ -89,7 +89,7 @@ async fn run_query(
     let _ = client.handshake(username, password).await?;
 
     // 2. execute query, get result metadata
-    let mut stmt = client.prepare(sql.into()).await?;
+    let mut stmt = client.prepare(sql.into(), None).await?;
     let flight_info = stmt.execute().await?;
 
     let mut batches = vec![];

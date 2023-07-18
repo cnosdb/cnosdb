@@ -100,6 +100,7 @@ impl ExecutionPlan for TracedProxyExec {
                     session_config,
                     Default::default(),
                     Default::default(),
+                    Default::default(),
                     context.runtime_env(),
                 ))
             })

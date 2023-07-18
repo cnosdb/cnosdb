@@ -5,25 +5,29 @@ use std::time::Duration;
 use arrow_flight::flight_service_server::FlightService;
 use arrow_flight::sql::server::FlightSqlService;
 use arrow_flight::sql::{
+    ActionBeginSavepointRequest, ActionBeginSavepointResult, ActionBeginTransactionRequest,
+    ActionBeginTransactionResult, ActionCancelQueryRequest, ActionCancelQueryResult,
     ActionClosePreparedStatementRequest, ActionCreatePreparedStatementRequest,
-    ActionCreatePreparedStatementResult, CommandGetCatalogs, CommandGetCrossReference,
-    CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys, CommandGetPrimaryKeys,
-    CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables, CommandPreparedStatementQuery,
-    CommandPreparedStatementUpdate, CommandStatementQuery, CommandStatementUpdate, SqlInfo,
-    TicketStatementQuery,
+    ActionCreatePreparedStatementResult, ActionCreatePreparedSubstraitPlanRequest,
+    ActionEndSavepointRequest, ActionEndTransactionRequest, CommandGetCatalogs,
+    CommandGetCrossReference, CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys,
+    CommandGetPrimaryKeys, CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables,
+    CommandGetXdbcTypeInfo, CommandPreparedStatementQuery, CommandPreparedStatementUpdate,
+    CommandStatementQuery, CommandStatementSubstraitPlan, CommandStatementUpdate, ProstMessageExt,
+    SqlInfo, TicketStatementQuery,
 };
 use arrow_flight::{
-    utils as flight_utils, Action, FlightData, FlightDescriptor, FlightInfo, HandshakeRequest,
-    HandshakeResponse, SchemaAsIpc, Ticket,
+    utils as flight_utils, Action, FlightData, FlightDescriptor, FlightEndpoint, FlightInfo,
+    HandshakeRequest, HandshakeResponse, IpcMessage, Ticket,
 };
 use datafusion::arrow::datatypes::{Schema, SchemaRef, ToByteSlice};
-use datafusion::arrow::ipc::writer::IpcWriteOptions;
 use futures::Stream;
 use http_protocol::header::{DB, STREAM_TRIGGER_INTERVAL, TARGET_PARTITIONS, TENANT};
 use models::auth::user::User;
 use models::oid::UuidGenerator;
 use moka::sync::Cache;
 use prost::bytes::Bytes;
+use prost::Message;
 use spi::query::config::StreamTriggerInterval;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::Plan;
@@ -36,6 +40,9 @@ use trace::{debug, SpanContext, SpanExt, SpanRecorder};
 use super::auth_middleware::CallHeaderAuthenticator;
 use crate::flight_sql::auth_middleware::AuthResult;
 use crate::flight_sql::utils;
+use crate::status;
+
+const UNKNOWN_AFFECTED_ROWS_COUNT: i64 = -1;
 
 pub struct FlightSqlServiceImpl<T> {
     instance: DBMSRef,
@@ -134,9 +141,17 @@ where
             .pre_precess_statement_query_req_and_save(sql, request.metadata(), span_ctx)
             .await?;
 
+        let ticket = TicketStatementQuery {
+            statement_handle: result_ident.into(),
+        };
+
         // construct response start
-        let flight_info =
-            self.construct_flight_info(result_ident, schema.as_ref(), 0, request.into_inner())?;
+        let flight_info = self.construct_flight_info(
+            ticket.as_any().encode_to_vec(),
+            schema.as_ref(),
+            UNKNOWN_AFFECTED_ROWS_COUNT,
+            request.into_inner(),
+        )?;
 
         Ok(Response::new(flight_info))
     }
@@ -148,22 +163,18 @@ where
         total_records: i64,
         flight_descriptor: FlightDescriptor,
     ) -> Result<FlightInfo, Status> {
-        let option = IpcWriteOptions::default();
-        let ipc_message = SchemaAsIpc::new(schema, &option)
-            .try_into()
-            .map_err(|e| Status::internal(format!("{}", e)))?;
-        let tkt = TicketStatementQuery {
-            statement_handle: result_ident.into(),
+        let ticket = Ticket {
+            ticket: result_ident.into(),
         };
-        let endpoint = utils::endpoint(tkt, Default::default()).map_err(Status::internal)?;
+        let endpoint = FlightEndpoint::new().with_ticket(ticket);
 
-        let flight_info = FlightInfo::new(
-            ipc_message,
-            Some(flight_descriptor),
-            vec![endpoint],
-            total_records,
-            -1,
-        );
+        let flight_info = FlightInfo::new()
+            .try_with_schema(schema)
+            .map_err(|e| status!("Unable to encode schema", e))?
+            .with_endpoint(endpoint)
+            .with_descriptor(flight_descriptor)
+            .with_total_records(total_records)
+            .with_ordered(false);
 
         Ok(flight_info)
     }
@@ -217,10 +228,7 @@ where
             .instance
             .build_query_state_machine(query, span_context)
             .await
-            .map_err(|e| {
-                // TODO convert error message
-                Status::internal(format!("{}", e))
-            })?;
+            .map_err(|e| status!("Build query state machine", e))?;
         Ok(query_state_machine)
     }
 
@@ -232,10 +240,7 @@ where
             .instance
             .build_logical_plan(query_state_machine)
             .await
-            .map_err(|e| {
-                // TODO convert error message
-                Status::internal(format!("{}", e))
-            })?;
+            .map_err(|e| status!("Build logical plan", e))?;
         Ok(logical_plan)
     }
 
@@ -254,10 +259,7 @@ where
                 .instance
                 .execute_logical_plan(logical_plan, query_state_machine)
                 .await
-                .map_err(|e| {
-                    // TODO convert error message
-                    Status::internal(format!("{}", e))
-                })?,
+                .map_err(|e| status!("Execute logical plan", e))?,
         };
         Ok(query_result)
     }
@@ -279,7 +281,7 @@ where
         Ok((logical_plan, query_state_machine))
     }
 
-    async fn fetch_result_set(
+    async fn execute_and_fetch_result_set(
         &self,
         statement_handle: &[u8],
         span_ctx: Option<&SpanContext>,
@@ -297,10 +299,10 @@ where
         let batches = output
             .chunk_result()
             .await
-            .map_err(|e| Status::internal(format!("Could not chunk result, error: {}", e)))?;
+            .map_err(|e| status!("Could not chunk result", e))?;
 
         let flight_data = flight_utils::batches_to_flight_data(schema, batches)
-            .map_err(|e| Status::internal(format!("Could not convert batches, error: {}", e)))?
+            .map_err(|e| status!("Could not convert batches", e))?
             .into_iter()
             .map(Ok);
         let stream: Pin<Box<dyn Stream<Item = Result<FlightData, Status>> + Send>> =
@@ -380,13 +382,8 @@ where
         let meta_data = request.metadata();
         let auth_result = self.authenticator.authenticate(meta_data).await?;
 
-        let result = HandshakeResponse {
-            protocol_version: 0,
-            payload: "NULL".into(),
-        };
-        let result = Ok(result);
         let output: Pin<Box<dyn Stream<Item = Result<HandshakeResponse, Status>> + Send>> =
-            Box::pin(futures::stream::iter(vec![result]));
+            Box::pin(futures::stream::empty());
         let mut resp = Response::new(output);
 
         // Append the token generated by authenticator to the response header
@@ -412,7 +409,8 @@ where
         let span_recorder =
             get_span_recorder(request.extensions(), "flight sql get_flight_info_statement");
 
-        let CommandStatementQuery { query: sql } = query;
+        // ignore transaction_id
+        let CommandStatementQuery { query: sql, .. } = query;
 
         self.precess_flight_info_req(sql, request, span_recorder.span_ctx())
             .await
@@ -431,21 +429,23 @@ where
             query, request
         );
 
-        let _span_recorder = get_span_recorder(
+        let span_recorder = get_span_recorder(
             request.extensions(),
             "flight sql get_flight_info_prepared_statement",
         );
 
-        let CommandPreparedStatementQuery {
-            prepared_statement_handle,
-        } = query;
-        let prepared_statement_handle = prepared_statement_handle.to_byte_slice().to_owned();
+        let statement_handle = query.prepared_statement_handle.to_byte_slice();
+        let (plan, _) =
+            self.get_plan_and_qsm(statement_handle, span_recorder.span_ctx().cloned())?;
+        let schema = plan
+            .map(|e| e.schema())
+            .unwrap_or(Arc::new(Schema::empty()));
 
         // construct response start
         let flight_info = self.construct_flight_info(
-            prepared_statement_handle,
-            &Schema::empty(),
-            0,
+            query.as_any().encode_to_vec(),
+            schema.as_ref(),
+            UNKNOWN_AFFECTED_ROWS_COUNT,
             request.into_inner(),
         )?;
 
@@ -578,8 +578,6 @@ where
                 TABLE_TYPE, TABLE_CAT, TABLE_SCHEM, TABLE_NAME"
         );
 
-        trace::warn!("CommandGetTables:\n{sql}");
-
         self.precess_flight_info_req(sql, request, span_recorder.span_ctx())
             .await
     }
@@ -707,7 +705,7 @@ where
         let TicketStatementQuery { statement_handle } = ticket;
 
         let output = self
-            .fetch_result_set(&statement_handle, span_recorder.span_ctx())
+            .execute_and_fetch_result_set(&statement_handle, span_recorder.span_ctx())
             .await?;
 
         // clear cache of this query
@@ -736,7 +734,7 @@ where
         let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
 
         let output = self
-            .fetch_result_set(prepared_statement_handle, span_recorder.span_ctx())
+            .execute_and_fetch_result_set(prepared_statement_handle, span_recorder.span_ctx())
             .await?;
 
         // clear cache of this query
@@ -880,8 +878,8 @@ where
         let span_recorder =
             get_span_recorder(request.extensions(), "flight sql do_put_statement_update");
         let span_ctx = span_recorder.span_ctx();
-
-        let CommandStatementUpdate { query } = ticket;
+        // ignore transaction_id
+        let CommandStatementUpdate { query, .. } = ticket;
         let req_headers = request.metadata();
 
         let (logical_plan, query_state_machine) = self
@@ -921,22 +919,24 @@ where
     /// because ad-hoc statement of flight jdbc needs to call this interface, so it is simple to implement
     async fn do_put_prepared_statement_update(
         &self,
-        _query: CommandPreparedStatementUpdate,
-        _request: Request<Streaming<FlightData>>,
+        query: CommandPreparedStatementUpdate,
+        request: Request<Streaming<FlightData>>,
     ) -> Result<i64, Status> {
-        // debug!(
-        //     "do_put_prepared_statement_update: query: {:?}, request: {:?}",
-        //     query, request
-        // );
-        //
-        // let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
-        //
-        // let rows_count = self.fetch_affected_rows_count(prepared_statement_handle)?;
-        //
-        // Ok(rows_count)
-        Err(Status::unimplemented(
-            "do_put_prepared_statement_update not implemented",
-        ))
+        let prepared_statement_ident = query.prepared_statement_handle.to_byte_slice();
+        debug!(
+            "do_put_prepared_statement_update query: {:?}",
+            prepared_statement_ident
+        );
+        let span_recorder = get_span_recorder(
+            request.extensions(),
+            "flight sql do_put_prepared_statement_update",
+        );
+        let (plan, query_machine) =
+            self.get_plan_and_qsm(prepared_statement_ident, span_recorder.span_ctx().cloned())?;
+        // execute plan
+        let query_result = self.execute_logical_plan(plan, query_machine).await?;
+        let output = query_result.result();
+        Ok(output.affected_rows().await)
     }
 
     /// Prepared statement is not supported,
@@ -956,10 +956,10 @@ where
             request.extensions(),
             "flight sql do_action_create_prepared_statement",
         );
+        // ignore transaction_id
+        let ActionCreatePreparedStatementRequest { query: sql, .. } = query;
 
-        let ActionCreatePreparedStatementRequest { query: sql } = query;
-
-        let (result_ident, _schema) = self
+        let (result_ident, schema) = self
             .pre_precess_statement_query_req_and_save(
                 sql,
                 request.metadata(),
@@ -967,8 +967,14 @@ where
             )
             .await?;
 
+        let IpcMessage(dataset_schema) = utils::schema_to_ipc_message(schema.as_ref())
+            .map_err(|e| status!("Schema to ipc message", e))?;
+        // JDBC:
+        //    - schema.getFields().isEmpty() ? StatementType.UPDATE : StatementType.SELECT;
+        //    - long updateCount = statementType.equals(StatementType.UPDATE) ? preparedStatement.executeUpdate() : -1L;
         let result = ActionCreatePreparedStatementResult {
             prepared_statement_handle: result_ident.into(),
+            dataset_schema,
             ..Default::default()
         };
 
@@ -982,16 +988,110 @@ where
         &self,
         query: ActionClosePreparedStatementRequest,
         request: Request<Action>,
-    ) {
+    ) -> Result<(), Status> {
         debug!(
             "do_action_close_prepared_statement: query: {:?}, request: {:?}",
             query, request
         );
+
+        Ok(())
     }
 
     /// not support
     async fn register_sql_info(&self, _id: i32, _result: &SqlInfo) {
         debug!("register_sql_info: _id: {:?}, request: {:?}", _id, _result);
+    }
+
+    async fn do_action_create_prepared_substrait_plan(
+        &self,
+        _query: ActionCreatePreparedSubstraitPlanRequest,
+        _request: Request<Action>,
+    ) -> Result<ActionCreatePreparedStatementResult, Status> {
+        Err(Status::unimplemented(
+            "Implement do_action_create_prepared_substrait_plan",
+        ))
+    }
+
+    async fn do_action_begin_transaction(
+        &self,
+        _query: ActionBeginTransactionRequest,
+        _request: Request<Action>,
+    ) -> Result<ActionBeginTransactionResult, Status> {
+        Err(Status::unimplemented(
+            "Implement do_action_begin_transaction",
+        ))
+    }
+
+    async fn do_action_end_transaction(
+        &self,
+        _query: ActionEndTransactionRequest,
+        _request: Request<Action>,
+    ) -> Result<(), Status> {
+        Err(Status::unimplemented("Implement do_action_end_transaction"))
+    }
+
+    async fn do_action_begin_savepoint(
+        &self,
+        _query: ActionBeginSavepointRequest,
+        _request: Request<Action>,
+    ) -> Result<ActionBeginSavepointResult, Status> {
+        Err(Status::unimplemented("Implement do_action_begin_savepoint"))
+    }
+
+    async fn do_action_end_savepoint(
+        &self,
+        _query: ActionEndSavepointRequest,
+        _request: Request<Action>,
+    ) -> Result<(), Status> {
+        Err(Status::unimplemented("Implement do_action_end_savepoint"))
+    }
+
+    async fn do_action_cancel_query(
+        &self,
+        _query: ActionCancelQueryRequest,
+        _request: Request<Action>,
+    ) -> Result<ActionCancelQueryResult, Status> {
+        Err(Status::unimplemented("Implement do_action_cancel_query"))
+    }
+
+    async fn do_put_substrait_plan(
+        &self,
+        _ticket: CommandStatementSubstraitPlan,
+        _request: Request<Streaming<FlightData>>,
+    ) -> Result<i64, Status> {
+        Err(Status::unimplemented(
+            "do_put_substrait_plan not implemented",
+        ))
+    }
+
+    async fn get_flight_info_substrait_plan(
+        &self,
+        _query: CommandStatementSubstraitPlan,
+        _request: Request<FlightDescriptor>,
+    ) -> Result<Response<FlightInfo>, Status> {
+        Err(Status::unimplemented(
+            "get_flight_info_substrait_plan not implemented",
+        ))
+    }
+
+    async fn get_flight_info_xdbc_type_info(
+        &self,
+        _query: CommandGetXdbcTypeInfo,
+        _request: Request<FlightDescriptor>,
+    ) -> Result<Response<FlightInfo>, Status> {
+        Err(Status::unimplemented(
+            "get_flight_info_xdbc_type_info not implemented",
+        ))
+    }
+
+    async fn do_get_xdbc_type_info(
+        &self,
+        _query: CommandGetXdbcTypeInfo,
+        _request: Request<Ticket>,
+    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        Err(Status::unimplemented(
+            "do_get_xdbc_type_info not implemented",
+        ))
     }
 }
 
@@ -1067,6 +1167,7 @@ mod test {
         // 2. execute query, get result metadata
         let cmd = CommandStatementQuery {
             query: "select 1;".to_string(),
+            ..Default::default()
         };
         let any = Any::pack(&cmd).expect("pack");
         let fd = FlightDescriptor::new_cmd(any.encode_to_vec());
@@ -1150,7 +1251,7 @@ mod test {
         let _ = client.handshake("root", "").await.unwrap();
 
         // 2. execute query, get result metadata
-        let mut stmt = client.prepare("select 1".into()).await.unwrap();
+        let mut stmt = client.prepare("select 1".into(), None).await.unwrap();
         let flight_info = stmt.execute().await.unwrap();
 
         let mut batches = vec![];

@@ -659,7 +659,7 @@ impl TenantMeta {
         self.client.write::<()>(&req).await
     }
 
-    pub async fn change_vnode_status(&self, id: u32, status: VnodeStatus) -> MetaResult<()> {
+    pub fn change_local_vnode_status(&self, id: u32, status: VnodeStatus) -> MetaResult<()> {
         let mut data = self.data.write();
         for (_db_name, db_info) in data.dbs.iter_mut() {
             for bucket in db_info.buckets.iter_mut() {

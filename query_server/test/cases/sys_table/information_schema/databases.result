@@ -50,19 +50,19 @@
 -- AFTER_SORT --
 200 OK
 tenant_name,database_name,ttl,shard,vnode_duration,replica,percision
-test_dbs_tenant1,test_dbs_db1,365 Days,1,365 Days,1,NS
-test_dbs_tenant1,test_dbs_db2,365 Days,1,365 Days,1,NS
+test_dbs_tenant1,test_dbs_db1,INF,1,365 Days,1,NS
+test_dbs_tenant1,test_dbs_db2,INF,1,365 Days,1,NS
 
 -- EXECUTE SQL: select * from information_schema.DATABASES; --
 -- AFTER_SORT --
 200 OK
 tenant_name,database_name,ttl,shard,vnode_duration,replica,percision
-test_dbs_tenant1,test_dbs_db1,365 Days,1,365 Days,1,NS
-test_dbs_tenant1,test_dbs_db2,365 Days,1,365 Days,1,NS
+test_dbs_tenant1,test_dbs_db1,INF,1,365 Days,1,NS
+test_dbs_tenant1,test_dbs_db2,INF,1,365 Days,1,NS
 
 -- EXECUTE SQL: select * from information_schema.DATABASES; --
 -- AFTER_SORT --
 200 OK
 tenant_name,database_name,ttl,shard,vnode_duration,replica,percision
-test_dbs_tenant1,test_dbs_db1,365 Days,1,365 Days,1,NS
-test_dbs_tenant1,test_dbs_db2,365 Days,1,365 Days,1,NS
+test_dbs_tenant1,test_dbs_db1,INF,1,365 Days,1,NS
+test_dbs_tenant1,test_dbs_db2,INF,1,365 Days,1,NS

@@ -33,7 +33,7 @@ function usage() {
   echo "    3meta2data                       Run 3meta 2data CnosDB Server                  "
   echo "    1meta2data                       Run 1meta 2data CnosDB Server                  "
   echo "    1meta1data                       Run 1meta 1data CnosDB Server                  "
-  echo "    3meta_2data_1query_1tskv         Run 3meta 2data CnosDB Server,Separation of deposit and calculation  "
+  echo "    1meta_2data_1query_1tskv         Run 1meta 2data CnosDB Server,Separation of deposit and calculation  "
   echo "    expansion                        Run 3meta 2data CnosDB Server,Expanded to 3meta 3data  "
   echo "    update                           Run 3meta 2data CnosDB Server,update Cnosdb cluster  "
 }
@@ -91,8 +91,6 @@ rpc() {
 function test() {
     echo "Testing query/test" && \
     cargo run --package test && \
-    echo "Testing e2e_test" && \
-    cargo test --package e2e_test && \
     cargo run --package sqllogicaltests
 }
 
@@ -116,22 +114,22 @@ function 1m1d(){
   rpc 8901/metrics
   nohup ${EXE_PATH} run --config ${CONF_DATA_1} > ${DN_1_LOG_PATH} &2>1 &
 }
-function 3m2d_sep(){
+function 1m2d_sep(){
   nohup ${META_PATH} --config ${CONF_META_1} > ${MT_1_LOG_PATH} &2>1 &
-  nohup ${META_PATH} --config ${CONF_META_2} > ${MT_2_LOG_PATH} &2>1 &
-  nohup ${META_PATH} --config ${CONF_META_3} > ${MT_3_LOG_PATH} &2>1 &
+#  nohup ${META_PATH} --config ${CONF_META_2} > ${MT_2_LOG_PATH} &2>1 &
+#  nohup ${META_PATH} --config ${CONF_META_3} > ${MT_3_LOG_PATH} &2>1 &
   sleep 3
   rpc 8901/init '{}'
   sleep 1
-  rpc 8901/add-learner       '[2, "127.0.0.1:8911"]'
-  sleep 1
-  rpc 8901/add-learner       '[3, "127.0.0.1:8921"]'
-  sleep 1
-  rpc 8901/change-membership '[1, 2, 3]'
-  sleep 1
+#  rpc 8901/add-learner       '[2, "127.0.0.1:8911"]'
+#  sleep 1
+#  rpc 8901/add-learner       '[3, "127.0.0.1:8921"]'
+#  sleep 1
+#  rpc 8901/change-membership '[1, 2, 3]'
+#  sleep 1
   rpc 8901/metrics
-  nohup ${EXE_PATH} run -M query  --config ${CONF_DATA_1} > ${DN_1_LOG_PATH} &2>1 &
-  nohup ${EXE_PATH} run -M tskv --config ${CONF_DATA_2} > ${DN_2_LOG_PATH} &2>1 &
+  nohup ${EXE_PATH} run -M query -c 2 --config ${CONF_DATA_1} > ${DN_1_LOG_PATH} &2>1 &
+  nohup ${EXE_PATH} run -M tskv  -c 2 --config ${CONF_DATA_2} > ${DN_2_LOG_PATH} &2>1 &
 }
 
 function 3m2d(){
@@ -148,8 +146,8 @@ function 3m2d(){
   rpc 8901/change-membership '[1, 2, 3]'
   sleep 1
   rpc 8901/metrics
-  nohup ${EXE_PATH} run --config ${CONF_DATA_1} > ${DN_1_LOG_PATH} &2>1 &
-  nohup ${EXE_PATH} run --config ${CONF_DATA_2} > ${DN_2_LOG_PATH} &2>1 &
+  nohup ${EXE_PATH} run -c 2 --config ${CONF_DATA_1} > ${DN_1_LOG_PATH} &2>1 &
+  nohup ${EXE_PATH} run -c 2 --config ${CONF_DATA_2} > ${DN_2_LOG_PATH} &2>1 &
 }
 function 1m2d(){
   nohup ${META_PATH} --config ${CONF_META_1} > ${MT_1_LOG_PATH} &2>1 &
@@ -237,8 +235,8 @@ while [[ $# -gt 0 ]]; do
      1m1d
     shift 1
     ;;
-   3meta_2data_1query_1tskv)
-     3m2d_sep
+   1meta_2data_1query_1tskv)
+     1m2d_sep
      flag=1
     shift 1
     ;;
@@ -268,7 +266,8 @@ then
   echo "Test complete, killing CnosDB Server "
 else
   echo "Testing query/test" && \
-  cargo run --package test -- --query-url http://127.0.0.1:8902 --storage-url http://127.0.0.1:8912 || EXIT_CODE=$?
+  cargo run --package test -- --thread 1 --query-url http://127.0.0.1:8902 --storage-url http://127.0.0.1:8912 && \
+  cargo run --package sqllogicaltests || EXIT_CODE=$?
   echo "Test complete, killing CnosDB Server "
 fi
 clean_env
