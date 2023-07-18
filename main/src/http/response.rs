@@ -8,6 +8,7 @@ use http_protocol::header::{APPLICATION_JSON, CONTENT_TYPE};
 use http_protocol::status_code::{
     BAD_REQUEST, INTERNAL_SERVER_ERROR, METHOD_NOT_ALLOWED, NOT_FOUND, OK, PAYLOAD_TOO_LARGE,
 };
+use metrics::count::U64Counter;
 use serde::Serialize;
 use spi::query::execution::Output;
 use warp::http::header::HeaderMap;
@@ -21,14 +22,14 @@ use super::Error as HttpError;
 
 #[derive(Default)]
 pub struct ResponseBuilder {
-    status_code: Option<StatusCode>,
+    status_code: StatusCode,
     headers: HeaderMap<HeaderValue>,
 }
 
 impl ResponseBuilder {
     pub fn new(status_code: StatusCode) -> Self {
         Self {
-            status_code: Some(status_code),
+            status_code,
             ..Default::default()
         }
     }
@@ -45,7 +46,7 @@ impl ResponseBuilder {
 
         *res.headers_mut() = self.headers;
 
-        *res.status_mut() = self.status_code.unwrap();
+        *res.status_mut() = self.status_code;
 
         res
     }
@@ -55,7 +56,7 @@ impl ResponseBuilder {
 
         *res.headers_mut() = self.headers;
 
-        *res.status_mut() = self.status_code.unwrap();
+        *res.status_mut() = self.status_code;
 
         res
     }
@@ -106,26 +107,29 @@ impl ResponseBuilder {
     }
 }
 
-pub struct HttpRespone {
+pub struct HttpResponse {
     result: Output,
     format: ResultFormat,
     done: bool,
     schema: Option<SchemaRef>,
+    body_counter: U64Counter,
 }
 
-impl HttpRespone {
-    pub fn new(result: Output, format: ResultFormat) -> Self {
+impl HttpResponse {
+    pub fn new(result: Output, format: ResultFormat, body_counter: U64Counter) -> Self {
         let schema = result.schema();
         Self {
             result,
             format,
             schema: Some(schema),
             done: false,
+            body_counter,
         }
     }
     pub async fn wrap_batches_to_response(self) -> Result<Response, HttpError> {
         let actual = self.result.chunk_result().await?;
-        self.format.wrap_batches_to_response(&actual, true)
+        self.format
+            .wrap_batches_to_response(&actual, true, self.body_counter.clone())
     }
     pub fn wrap_stream_to_response(self) -> Result<Response, HttpError> {
         let resp = ResponseBuilder::new(OK)
@@ -135,7 +139,7 @@ impl HttpRespone {
     }
 }
 
-impl Stream for HttpRespone {
+impl Stream for HttpResponse {
     type Item = std::result::Result<Vec<u8>, HttpError>;
 
     fn poll_next(
@@ -169,6 +173,10 @@ impl Stream for HttpRespone {
                             .format_batches(&[rb], self.schema.is_some())
                             .map_err(|e| HttpError::FetchResult {
                                 reason: format!("{}", e),
+                            })
+                            .map(|b| {
+                                self.body_counter.inc(b.len() as u64);
+                                b
                             });
                         self.schema = None;
                         return Poll::Ready(Some(buffer));
@@ -185,7 +193,7 @@ impl Stream for HttpRespone {
     }
 }
 
-impl Reply for HttpRespone {
+impl Reply for HttpResponse {
     fn into_response(self) -> Response {
         let body = hyper::Body::wrap_stream(self);
         Response::new(body)

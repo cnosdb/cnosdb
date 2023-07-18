@@ -3,12 +3,11 @@ use std::sync::Arc;
 use datafusion::arrow::array::{BooleanBuilder, StringBuilder, UInt64Builder};
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
+    pub static ref COLUMN_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
         Field::new("tenant_name", DataType::Utf8, false),
         Field::new("database_name", DataType::Utf8, false),
         Field::new("table_name", DataType::Utf8, false),
@@ -23,6 +22,7 @@ lazy_static! {
 }
 
 /// Builds the `information_schema.Columns` table row by row
+#[derive(Default)]
 pub struct InformationSchemaColumnsBuilder {
     tenant_names: StringBuilder,
     database_names: StringBuilder,
@@ -34,23 +34,6 @@ pub struct InformationSchemaColumnsBuilder {
     is_nullables: BooleanBuilder,
     data_types: StringBuilder,
     compression_codecs: StringBuilder,
-}
-
-impl Default for InformationSchemaColumnsBuilder {
-    fn default() -> Self {
-        Self {
-            tenant_names: StringBuilder::new(),
-            database_names: StringBuilder::new(),
-            table_names: StringBuilder::new(),
-            column_names: StringBuilder::new(),
-            column_types: StringBuilder::new(),
-            ordinal_positions: UInt64Builder::new(),
-            column_defaults: StringBuilder::new(),
-            is_nullables: BooleanBuilder::new(),
-            data_types: StringBuilder::new(),
-            compression_codecs: StringBuilder::new(),
-        }
-    }
 }
 
 impl InformationSchemaColumnsBuilder {
@@ -83,7 +66,7 @@ impl InformationSchemaColumnsBuilder {
     }
 }
 
-impl TryFrom<InformationSchemaColumnsBuilder> for MemTable {
+impl TryFrom<InformationSchemaColumnsBuilder> for RecordBatch {
     type Error = DataFusionError;
 
     fn try_from(value: InformationSchemaColumnsBuilder) -> Result<Self, Self::Error> {
@@ -101,7 +84,7 @@ impl TryFrom<InformationSchemaColumnsBuilder> for MemTable {
         } = value;
 
         let batch = RecordBatch::try_new(
-            SCHEMA.clone(),
+            COLUMN_SCHEMA.clone(),
             vec![
                 Arc::new(tenant_names.finish()),
                 Arc::new(database_names.finish()),
@@ -116,6 +99,6 @@ impl TryFrom<InformationSchemaColumnsBuilder> for MemTable {
             ],
         )?;
 
-        MemTable::try_new(SCHEMA.clone(), vec![vec![batch]])
+        Ok(batch)
     }
 }

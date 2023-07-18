@@ -3,12 +3,11 @@ use std::sync::Arc;
 use datafusion::arrow::array::{BooleanBuilder, StringBuilder};
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
+    pub static ref USER_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
         Field::new("user_name", DataType::Utf8, false),
         Field::new("is_admin", DataType::Boolean, false),
         Field::new("user_options", DataType::Utf8, false),
@@ -16,20 +15,11 @@ lazy_static! {
 }
 
 /// Builds the `information_schema.USERS` table row by row
+#[derive(Default)]
 pub struct ClusterSchemaUsersBuilder {
     user_names: StringBuilder,
     is_admins: BooleanBuilder,
     options: StringBuilder,
-}
-
-impl Default for ClusterSchemaUsersBuilder {
-    fn default() -> Self {
-        Self {
-            user_names: StringBuilder::new(),
-            is_admins: BooleanBuilder::new(),
-            options: StringBuilder::new(),
-        }
-    }
 }
 
 impl ClusterSchemaUsersBuilder {
@@ -46,7 +36,7 @@ impl ClusterSchemaUsersBuilder {
     }
 }
 
-impl TryFrom<ClusterSchemaUsersBuilder> for MemTable {
+impl TryFrom<ClusterSchemaUsersBuilder> for RecordBatch {
     type Error = DataFusionError;
 
     fn try_from(value: ClusterSchemaUsersBuilder) -> Result<Self, Self::Error> {
@@ -57,7 +47,7 @@ impl TryFrom<ClusterSchemaUsersBuilder> for MemTable {
         } = value;
 
         let batch = RecordBatch::try_new(
-            SCHEMA.clone(),
+            USER_SCHEMA.clone(),
             vec![
                 Arc::new(user_names.finish()),
                 Arc::new(is_admins.finish()),
@@ -65,6 +55,6 @@ impl TryFrom<ClusterSchemaUsersBuilder> for MemTable {
             ],
         )?;
 
-        MemTable::try_new(SCHEMA.clone(), vec![vec![batch]])
+        Ok(batch)
     }
 }

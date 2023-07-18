@@ -8,6 +8,7 @@ config = { path = "../config" }
 models = { path = "../common/models" }
 protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
+trace_http = { path = "../common/trace_http" }
 utils = { path = "../common/utils" }
 tskv = { path = "../tskv" }
 meta = { path = "../meta" }
@@ -33,6 +34,7 @@ tonic = { workspace = true }
 chrono = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 md-5 = { workspace = true }
+rand = { workspace = true }
 
 [features]
 default = []

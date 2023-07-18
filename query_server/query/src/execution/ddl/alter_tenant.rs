@@ -30,9 +30,8 @@ impl DDLDefinitionTask for AlterTenantTask {
             ref alter_tenant_action,
         } = self.stmt;
 
-        let tenant_manager = query_state_machine.meta.tenant_manager();
-
-        let meta = tenant_manager
+        let meta = query_state_machine
+            .meta
             .tenant_meta(tenant_name)
             .await
             .ok_or_else(|| QueryError::Meta {
@@ -65,17 +64,17 @@ impl DDLDefinitionTask for AlterTenantTask {
                 // user_id: Oid,
                 // role: TenantRoleIdentifier,
                 // tenant_id: Oid,
-                // fn reasign_member_role_in_tenant(
+                // fn reassign_member_role_in_tenant(
                 //     &mut self,
                 //     user_id: Oid,
                 //     role: TenantRoleIdentifier,
                 //     tenant_id: Oid,
                 // ) -> Result<()>;
                 debug!(
-                    "Reasign role {:?} of user {} in tenant {}",
+                    "Reassign role {:?} of user {} in tenant {}",
                     role, user_id, tenant_name
                 );
-                meta.reasign_member_role(*user_id, role.clone()).await?;
+                meta.reassign_member_role(*user_id, role.clone()).await?;
                 // .context(MetaSnafu)?;
             }
             AlterTenantAction::RemoveUser(user_id) => {
@@ -92,7 +91,8 @@ impl DDLDefinitionTask for AlterTenantTask {
                 // .context(MetaSnafu)?;
             }
             AlterTenantAction::SetOption(tenant_option) => {
-                tenant_manager
+                query_state_machine
+                    .meta
                     .alter_tenant(tenant_name, *tenant_option.clone())
                     .await?;
             }

@@ -4,12 +4,14 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use datafusion::arrow::record_batch::RecordBatch;
+use models::meta_data::VnodeId;
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{Precision, TableColumn};
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
-use trace::debug;
+use trace::{debug, SpanContext};
 
 use crate::error::Result;
 use crate::kv_option::StorageOptions;
@@ -24,6 +26,7 @@ pub struct MockEngine {}
 impl Engine for MockEngine {
     async fn write(
         &self,
+        _span_ctx: Option<&SpanContext>,
         id: u32,
         precision: Precision,
         write_batch: WritePointsRequest,
@@ -35,17 +38,6 @@ impl Engine for MockEngine {
         debug!("writed point: {:?}", fb_points);
 
         Ok(WritePointsResponse { points_number: 0 })
-    }
-
-    async fn write_from_wal(
-        &self,
-        id: u32,
-        precision: Precision,
-        write_batch: WritePointsRequest,
-        seq: u64,
-    ) -> Result<()> {
-        debug!("write point");
-        Ok(())
     }
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
@@ -193,5 +185,13 @@ impl Engine for MockEngine {
         todo!()
     }
 
+    async fn get_vnode_hash_tree(&self, vnode_ids: VnodeId) -> Result<RecordBatch> {
+        todo!()
+    }
+
     async fn close(&self) {}
+
+    async fn prepare_copy_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()> {
+        todo!()
+    }
 }

@@ -5,6 +5,8 @@ use datafusion::arrow::error::ArrowError;
 use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
+use models::schema::Precision;
+use models::Timestamp;
 use protos::PointsError;
 use snafu::Snafu;
 use tonic::Status;
@@ -105,10 +107,11 @@ pub enum CoordinatorError {
         id: u32,
     },
 
-    #[snafu(display("Node failover: {}", id))]
+    #[snafu(display("Node failover: {}, error: {}", id, error))]
     #[error_code(code = 16)]
     FailoverNode {
         id: u64,
+        error: String,
     },
 
     #[snafu(display("Request timeout: {}", id))]
@@ -118,10 +121,9 @@ pub enum CoordinatorError {
         elapsed: String,
     },
 
-    #[snafu(display("kv instance not found: node_id:{}, vnode_id:{}", node_id, vnode_id))]
+    #[snafu(display("kv instance not found: node_id:{}", node_id))]
     #[error_code(code = 18)]
     KvInstanceNotFound {
-        vnode_id: u32,
         node_id: u64,
     },
 
@@ -141,6 +143,34 @@ pub enum CoordinatorError {
     #[error_code(code = 21)]
     FBPoints {
         source: PointsError,
+    },
+
+    #[snafu(display("ReplicationSet not found: {}", id))]
+    #[error_code(code = 22)]
+    ReplicationSetNotFound {
+        id: u32,
+    },
+
+    #[snafu(display("Not enough valid replica of ReplicationSet({})", id))]
+    #[error_code(code = 23)]
+    NoValidReplica {
+        id: u32,
+    },
+
+    #[snafu(display("Failed to convert '{from}' to '{to}' for timestamp: {ts}"))]
+    #[error_code(code = 24)]
+    NormalizeTimestamp {
+        from: Precision,
+        to: Precision,
+        ts: Timestamp,
+    },
+
+    #[snafu(display("Writing expired timestamp {point_ts} which is less than {database_min_ts} to database '{database}'"))]
+    #[error_code(code = 25)]
+    PointTimestampExpired {
+        database: String,
+        database_min_ts: Timestamp,
+        point_ts: Timestamp,
     },
 }
 

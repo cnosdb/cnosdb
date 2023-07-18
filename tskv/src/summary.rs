@@ -15,14 +15,13 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Sender as OneShotSender;
 use tokio::sync::RwLock;
-use trace::error;
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::{GlobalContext, GlobalSequenceTask};
 use crate::error::{Error, Result};
 use crate::file_system::file_manager::try_exists;
-use crate::kv_option::{Options, StorageOptions};
+use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
@@ -34,7 +33,7 @@ const MAX_BATCH_SIZE: usize = 64;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct CompactMeta {
-    pub file_id: u64,
+    pub file_id: ColumnFileId,
     pub file_size: u64,
     pub tsf_id: TseriesFamilyId,
     pub level: LevelId,
@@ -93,6 +92,36 @@ impl CompactMeta {
             let base_dir = storage_opt.tsm_dir(database, ts_family_id);
             file_utils::make_tsm_file_name(base_dir, self.file_id)
         }
+    }
+
+    pub async fn rename_file(
+        &mut self,
+        storage_opt: &StorageOptions,
+        database: &str,
+        ts_family_id: TseriesFamilyId,
+        file_id: ColumnFileId,
+    ) -> Result<PathBuf> {
+        let old_name = if self.is_delta {
+            let base_dir = storage_opt
+                .move_dir(database, ts_family_id)
+                .join(DELTA_PATH);
+            file_utils::make_delta_file_name(base_dir, self.file_id)
+        } else {
+            let base_dir = storage_opt.move_dir(database, ts_family_id).join(TSM_PATH);
+            file_utils::make_tsm_file_name(base_dir, self.file_id)
+        };
+
+        let new_name = if self.is_delta {
+            let base_dir = storage_opt.delta_dir(database, ts_family_id);
+            file_utils::make_delta_file_name(base_dir, file_id)
+        } else {
+            let base_dir = storage_opt.tsm_dir(database, ts_family_id);
+            file_utils::make_tsm_file_name(base_dir, file_id)
+        };
+        trace::info!("rename file from {:?} to {:?}", &old_name, &new_name);
+        file_utils::rename(old_name, &new_name).await?;
+        self.file_id = file_id;
+        Ok(new_name)
     }
 }
 
@@ -188,17 +217,18 @@ impl VersionEdit {
     }
 
     pub fn encode(&self) -> Result<Vec<u8>> {
-        bincode::serialize(self).map_err(|e| Error::Encode { source: (e) })
+        bincode::serialize(self).map_err(|e| Error::RecordFileEncode { source: (e) })
     }
 
     pub fn decode(buf: &[u8]) -> Result<Self> {
-        bincode::deserialize(buf).map_err(|e| Error::Decode { source: (e) })
+        bincode::deserialize(buf).map_err(|e| Error::RecordFileDecode { source: (e) })
     }
 
     pub fn encode_vec(data: &[Self]) -> Result<Vec<u8>> {
         let mut buf: Vec<u8> = Vec::with_capacity(data.len() * 32);
         for ve in data {
-            let ve_buf = bincode::serialize(ve).map_err(|e| Error::Encode { source: (e) })?;
+            let ve_buf =
+                bincode::serialize(ve).map_err(|e| Error::RecordFileEncode { source: (e) })?;
             let pos = buf.len();
             buf.resize(pos + 4 + ve_buf.len(), 0_u8);
             buf[pos..pos + 4].copy_from_slice((ve_buf.len() as u32).to_be_bytes().as_slice());
@@ -441,6 +471,9 @@ impl Summary {
             }
 
             // Recover levels_info according to `CompactMeta`s;
+            let tsm_reader_cache =
+                Arc::new(ShardedCache::with_capacity(opt.storage.max_cached_readers));
+            let weak_tsm_reader_cache = Arc::downgrade(&tsm_reader_cache);
             let mut levels = LevelInfo::init_levels(database.clone(), tsf_id, opt.storage.clone());
             for meta in files.into_values() {
                 let field_filter = if load_field_filter {
@@ -450,7 +483,11 @@ impl Summary {
                 } else {
                     Arc::new(BloomFilter::default())
                 };
-                levels[meta.level as usize].push_compact_meta(&meta, field_filter);
+                levels[meta.level as usize].push_compact_meta(
+                    &meta,
+                    field_filter,
+                    weak_tsm_reader_cache.clone(),
+                );
             }
             let ver = Version::new(
                 tsf_id,
@@ -459,7 +496,7 @@ impl Summary {
                 max_seq_no,
                 levels,
                 max_level_ts,
-                Arc::new(ShardedCache::default()),
+                tsm_reader_cache,
             );
             versions.insert(tsf_id, Arc::new(ver));
         }
@@ -537,6 +574,7 @@ impl Summary {
         for (tsf_id, edits) in tsf_version_edits {
             let min_seq = tsf_min_seq.get(&tsf_id);
             if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
+                trace::info!("Applying new version for ts_family {}.", tsf_id);
                 let new_version = tsf.read().await.version().copy_apply_version_edits(
                     edits,
                     &mut file_metas,
@@ -546,6 +584,7 @@ impl Summary {
                 tsf.write()
                     .await
                     .new_version(new_version, flushed_mem_cahces);
+                trace::info!("Applied new version for ts_family {}.", tsf_id);
             }
         }
         drop(version_set);
@@ -559,7 +598,7 @@ impl Summary {
             })
             .await
         {
-            error!("Failed to send AfterSummaryTask");
+            trace::error!("Failed to send AfterSummaryTask");
         }
 
         Ok(())
@@ -578,7 +617,7 @@ impl Summary {
                 match remove_file(new_path) {
                     Ok(_) => (),
                     Err(e) => {
-                        error!("failed remove file {:?}, in case {:?}", new_path, e);
+                        trace::error!("Failed to remove file '{}': {:?}", new_path.display(), e);
                     }
                 };
             }
@@ -590,9 +629,11 @@ impl Summary {
             match rename(new_path, old_path) {
                 Ok(_) => (),
                 Err(e) => {
-                    error!(
-                        "failed remove old file {:?}, and create new file {:?},in case {:?}",
-                        old_path, new_path, e
+                    trace::error!(
+                        "Failed to remove old file '{}' and create new file '{}': {:?}",
+                        old_path.display(),
+                        new_path.display(),
+                        e
                     );
                 }
             };
@@ -781,7 +822,7 @@ mod test {
     use std::sync::Arc;
 
     use memory_pool::GreedyMemoryPool;
-    use meta::model::meta_manager::RemoteMetaManager;
+    use meta::model::meta_admin::AdminMeta;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
@@ -791,7 +832,7 @@ mod test {
     use utils::BloomFilter;
 
     use crate::compaction::{CompactTask, FlushReq};
-    use crate::context::GlobalSequenceTask;
+    use crate::context::{GlobalContext, GlobalSequenceTask};
     use crate::file_system::file_manager;
     use crate::kv_option::Options;
     use crate::kvcore::{
@@ -944,14 +985,11 @@ mod test {
         compact_task_sender: Sender<CompactTask>,
     ) {
         let opt = Arc::new(Options::from(&config));
-        let empty_path = "";
-        let meta_manager: MetaRef =
-            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
+        let meta_manager = AdminMeta::new(config.clone()).await;
 
-        meta_manager.admin_meta().add_data_node().await.unwrap();
+        meta_manager.add_data_node().await.unwrap();
 
         let _ = meta_manager
-            .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
             .await;
         let summary_dir = opt.storage.summary_dir();
@@ -996,14 +1034,11 @@ mod test {
         compact_task_sender: Sender<CompactTask>,
     ) {
         let opt = Arc::new(Options::from(&config));
-        let empty_path = "";
-        let meta_manager: MetaRef =
-            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
+        let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
 
-        meta_manager.admin_meta().add_data_node().await.unwrap();
+        meta_manager.add_data_node().await.unwrap();
 
         let _ = meta_manager
-            .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
             .await;
         let summary_dir = opt.storage.summary_dir();
@@ -1072,13 +1107,10 @@ mod test {
         compact_task_sender: Sender<CompactTask>,
     ) {
         let opt = Arc::new(Options::from(&config));
-        let empty_path = "";
-        let meta_manager: MetaRef =
-            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
+        let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
 
-        meta_manager.admin_meta().add_data_node().await.unwrap();
+        meta_manager.add_data_node().await.unwrap();
         let _ = meta_manager
-            .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
             .await;
         let database = "test".to_string();
@@ -1087,6 +1119,7 @@ mod test {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let global = Arc::new(GlobalContext::new());
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
@@ -1119,8 +1152,10 @@ mod test {
                     summary_task_sender.clone(),
                     flush_task_sender.clone(),
                     compact_task_sender.clone(),
+                    global.clone(),
                 )
-                .await;
+                .await
+                .expect("add tsfamily successfully");
             let edit = VersionEdit::new_add_vnode(i, make_owner("cnosdb", &database), 0);
             edits.push(edit.clone());
         }
@@ -1168,14 +1203,11 @@ mod test {
         let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
 
         let opt = Arc::new(Options::from(&config));
-        let empty_path = "";
-        let meta_manager: MetaRef =
-            RemoteMetaManager::new(config.clone(), empty_path.to_string()).await;
+        let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
 
-        meta_manager.admin_meta().add_data_node().await.unwrap();
+        meta_manager.add_data_node().await.unwrap();
 
         let _ = meta_manager
-            .tenant_manager()
             .create_tenant("cnosdb".to_string(), TenantOptions::default())
             .await;
         let database = "test".to_string();
@@ -1204,6 +1236,7 @@ mod test {
             )
             .await
             .unwrap();
+        let cxt = Arc::new(GlobalContext::new());
         db.write()
             .await
             .add_tsfamily(
@@ -1213,8 +1246,10 @@ mod test {
                 summary_task_sender.clone(),
                 flush_task_sender.clone(),
                 compact_task_sender.clone(),
+                cxt.clone(),
             )
-            .await;
+            .await
+            .expect("add tsfamily failed");
 
         let mut edits = vec![];
         let edit = VersionEdit::new_add_vnode(10, "cnosdb.hello".to_string(), 0);
@@ -1237,6 +1272,7 @@ mod test {
                 &mut HashMap::new(),
                 None,
             );
+            let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache);
 
             summary.ctx.set_last_seq(1);
             let mut edit = VersionEdit::new(10);
@@ -1251,7 +1287,11 @@ mod test {
                 high_seq: 1,
                 ..Default::default()
             };
-            version.levels_info[1].push_compact_meta(&meta, Arc::new(BloomFilter::default()));
+            version.levels_info[1].push_compact_meta(
+                &meta,
+                Arc::new(BloomFilter::default()),
+                tsm_reader_cache,
+            );
             tsf.write().await.new_version(version, None);
             edit.add_file(meta, 1);
             edits.push(edit);

@@ -26,6 +26,12 @@ pub struct UpdateVnodeReplSetArgs {
     pub add_info: Vec<VnodeInfo>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UpdateVnodeArgs {
+    pub cluster: String,
+    pub vnode_info: VnodeAllInfo,
+}
+
 /******************* write command *************************/
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WriteCommand {
@@ -34,6 +40,7 @@ pub enum WriteCommand {
 
     UpdateVnodeReplSet(UpdateVnodeReplSetArgs),
 
+    UpdateVnode(UpdateVnodeArgs),
     // cluster, node info
     AddDataNode(String, NodeInfo),
 
@@ -137,82 +144,6 @@ pub enum ReadCommand {
     Tenant(String, String),
     // cluster
     Tenants(String),
-}
-
-/******************* response  *************************/
-pub const META_REQUEST_FAILED: i32 = -1;
-pub const META_REQUEST_SUCCESS: i32 = 0;
-pub const META_REQUEST_DB_EXIST: i32 = 1;
-pub const META_REQUEST_TABLE_EXIST: i32 = 2;
-pub const META_REQUEST_USER_EXIST: i32 = 3;
-pub const META_REQUEST_USER_NOT_FOUND: i32 = 4;
-pub const META_REQUEST_TENANT_EXIST: i32 = 5;
-pub const META_REQUEST_TENANT_NOT_FOUND: i32 = 6;
-pub const META_REQUEST_ROLE_EXIST: i32 = 7;
-pub const META_REQUEST_ROLE_NOT_FOUND: i32 = 8;
-pub const META_REQUEST_PRIVILEGE_EXIST: i32 = 9;
-pub const META_REQUEST_PRIVILEGE_NOT_FOUND: i32 = 10;
-pub const META_REQUEST_DB_NOT_FOUND: i32 = 11;
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct StatusResponse {
-    pub code: i32,
-    pub msg: String,
-}
-
-impl StatusResponse {
-    pub fn new(code: i32, msg: String) -> Self {
-        Self { code, msg }
-    }
-}
-
-impl ToString for StatusResponse {
-    fn to_string(&self) -> String {
-        serde_json::to_string(&self).unwrap()
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct TenaneMetaDataResp {
-    pub status: StatusResponse,
-    pub data: TenantMetaData,
-}
-
-impl TenaneMetaDataResp {
-    pub fn new(code: i32, msg: String) -> Self {
-        Self {
-            status: StatusResponse::new(code, msg),
-            data: TenantMetaData::new(),
-        }
-    }
-
-    pub fn new_from_data(code: i32, msg: String, data: TenantMetaData) -> Self {
-        let mut rsp = TenaneMetaDataResp::new(code, msg);
-        rsp.data = data;
-
-        rsp
-    }
-}
-
-impl ToString for TenaneMetaDataResp {
-    fn to_string(&self) -> String {
-        serde_json::to_string(&self).unwrap()
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum CommonResp<T> {
-    Ok(T),
-    Err(StatusResponse),
-}
-
-impl<T> ToString for CommonResp<T>
-where
-    T: Serialize,
-{
-    fn to_string(&self) -> String {
-        serde_json::to_string(&self).unwrap()
-    }
 }
 
 pub const ENTRY_LOG_TYPE_SET: i32 = 1;
@@ -340,7 +271,7 @@ impl CircleBuf {
             };
 
             if self.buf[index].ver <= ver {
-                return index.try_into().unwrap();
+                return index as i32;
             }
         }
 
@@ -355,7 +286,7 @@ impl CircleBuf {
 
         let mut index = (index + 1) % self.capacity;
         while index != self.writer {
-            let entry = self.buf.get(index).unwrap();
+            let entry = &self.buf[index];
             if filter(entry) {
                 entrys.push(entry.clone());
             }

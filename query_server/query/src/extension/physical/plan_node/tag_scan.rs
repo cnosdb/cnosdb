@@ -1,11 +1,11 @@
 use std::any::Any;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use coordinator::reader::ReaderIterator;
 use coordinator::service::CoordinatorRef;
+use coordinator::SendableCoordinatorRecordBatchStream;
 use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
@@ -17,15 +17,17 @@ use datafusion::physical_plan::{
     DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream,
     Statistics,
 };
-use futures::{FutureExt, Stream};
-use models::predicate::domain::{PredicateRef, TimeRange};
-use models::predicate::Split;
+use futures::{Stream, StreamExt};
+use models::predicate::domain::PredicateRef;
+use models::predicate::PlacedSplit;
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 use spi::QueryError;
-use trace::debug;
-use tskv::query_iterator::{QueryOption, TableScanMetrics};
+use trace::{debug, SpanContext, SpanExt, SpanRecorder};
+use tskv::reader::QueryOption;
 
-#[derive(Debug, Clone)]
+use crate::extension::physical::plan_node::TableScanMetrics;
+
+#[derive(Clone)]
 pub struct TagScanExec {
     // connection
     // db: CustomDataSource,
@@ -33,6 +35,7 @@ pub struct TagScanExec {
     proj_schema: SchemaRef,
     predicate: PredicateRef,
     coord: CoordinatorRef,
+    splits: Vec<PlacedSplit>,
 
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
@@ -44,6 +47,7 @@ impl TagScanExec {
         proj_schema: SchemaRef,
         predicate: PredicateRef,
         coord: CoordinatorRef,
+        splits: Vec<PlacedSplit>,
     ) -> Self {
         let metrics = ExecutionPlanMetricsSet::new();
         Self {
@@ -51,6 +55,7 @@ impl TagScanExec {
             proj_schema,
             predicate,
             coord,
+            splits,
             metrics,
         }
     }
@@ -70,7 +75,7 @@ impl ExecutionPlan for TagScanExec {
     }
 
     fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(1)
+        Partitioning::UnknownPartitioning(self.splits.len())
     }
 
     fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
@@ -90,6 +95,7 @@ impl ExecutionPlan for TagScanExec {
             proj_schema: self.proj_schema.clone(),
             coord: self.coord.clone(),
             metrics: self.metrics.clone(),
+            splits: self.splits.clone(),
             predicate: self.predicate.clone(),
         }))
     }
@@ -106,17 +112,26 @@ impl ExecutionPlan for TagScanExec {
             context.task_id()
         );
 
+        let split = unsafe {
+            debug_assert!(partition < self.splits.len(), "Partition not exists");
+            self.splits.get_unchecked(partition).clone()
+        };
+
+        debug!("Split of partition: {:?}", split);
+
         let batch_size = context.session_config().batch_size();
 
-        let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
+        let metrics = TableScanMetrics::new(&self.metrics, partition);
+        let span_ctx = context.session_config().get_extension::<SpanContext>();
 
         let tag_scan_stream = TagScanStream::new(
             self.table_schema.clone(),
             self.schema(),
             self.coord.clone(),
+            split,
             batch_size,
-            self.predicate.clone(),
             metrics,
+            SpanRecorder::new(span_ctx.child_span(format!("TagScanStream ({partition})"))),
         )
         .map_err(|err| DataFusionError::External(Box::new(err)))?;
 
@@ -125,7 +140,7 @@ impl ExecutionPlan for TagScanExec {
 
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
-            DisplayFormatType::Default => {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
                 let filter = self.predicate();
                 let fields: Vec<_> = self
                     .proj_schema
@@ -153,8 +168,17 @@ impl ExecutionPlan for TagScanExec {
     }
 }
 
+impl std::fmt::Debug for TagScanExec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TagScanExec")
+            .field("table_schema", &self.table_schema)
+            .field("proj_schema", &self.proj_schema)
+            .field("predicate", &self.predicate)
+            .finish()
+    }
+}
+
 /// A wrapper to customize PredicateRef display
-#[derive(Debug)]
 struct PredicateDisplay<'a>(&'a PredicateRef);
 
 impl<'a> Display for PredicateDisplay<'a> {
@@ -194,9 +218,11 @@ pub struct TagScanStream {
     batch_size: usize,
     coord: CoordinatorRef,
 
-    iterator: ReaderIterator,
+    stream: SendableCoordinatorRecordBatchStream,
 
     metrics: TableScanMetrics,
+    #[allow(unused)]
+    span_recorder: SpanRecorder,
 }
 
 impl TagScanStream {
@@ -204,9 +230,10 @@ impl TagScanStream {
         table_schema: TskvTableSchemaRef,
         proj_schema: SchemaRef,
         coord: CoordinatorRef,
+        split: PlacedSplit,
         batch_size: usize,
-        predicate: PredicateRef,
         metrics: TableScanMetrics,
+        span_recorder: SpanRecorder,
     ) -> Result<Self, QueryError> {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for field_name in proj_schema.fields().iter().map(|f| f.name()) {
@@ -228,42 +255,25 @@ impl TagScanStream {
             proj_fileds,
         );
 
-        let split = Split::new(0, table_schema, TimeRange::all(), predicate);
-
         let option = QueryOption::new(
             batch_size,
             split,
             None,
             proj_schema.clone(),
             proj_table_schema,
-            metrics.tskv_metrics(),
         );
 
-        let iterator = coord.tag_scan(option)?;
+        let span_ctx = span_recorder.span_ctx();
+        let stream = coord.tag_scan(option, span_ctx)?;
 
         Ok(Self {
             proj_schema,
             batch_size,
             coord,
-            iterator,
+            stream,
             metrics,
+            span_recorder,
         })
-    }
-
-    pub fn with_iterator(
-        proj_schema: SchemaRef,
-        batch_size: usize,
-        coord: CoordinatorRef,
-        iterator: ReaderIterator,
-        metrics: TableScanMetrics,
-    ) -> Self {
-        Self {
-            proj_schema,
-            batch_size,
-            coord,
-            iterator,
-            metrics,
-        }
     }
 }
 
@@ -278,20 +288,10 @@ impl Stream for TagScanStream {
         let metrics = &this.metrics;
         let timer = metrics.elapsed_compute().timer();
 
-        let result = match Box::pin(this.iterator.next()).poll_unpin(cx) {
-            Poll::Ready(Some(Ok(record_batch))) => match metrics.record_memory(&record_batch) {
-                Ok(_) => Poll::Ready(Some(Ok(record_batch))),
-                Err(e) => Poll::Ready(Some(Err(e))),
-            },
-            Poll::Ready(Some(Err(e))) => {
-                Poll::Ready(Some(Err(DataFusionError::External(Box::new(e)))))
-            }
-            Poll::Ready(None) => {
-                metrics.done();
-                Poll::Ready(None)
-            }
-            Poll::Pending => Poll::Pending,
-        };
+        let result = this
+            .stream
+            .poll_next_unpin(cx)
+            .map_err(|err| DataFusionError::External(Box::new(err)));
 
         timer.done();
         metrics.record_poll(result)

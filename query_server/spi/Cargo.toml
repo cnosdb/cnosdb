@@ -30,3 +30,5 @@ duration-str = { workspace = true }
 futures = { workspace = true }
 arrow-flight = { workspace = true }
 tonic = { workspace = true }
+chrono = { workspace = true }
+rand = { workspace = true }

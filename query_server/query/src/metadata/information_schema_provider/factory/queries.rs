@@ -1,13 +1,23 @@
+use std::any::Any;
 use std::sync::Arc;
 
-use datafusion::datasource::MemTable;
-use meta::error::MetaError;
+use async_trait::async_trait;
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::datasource::{TableProvider, TableType};
+use datafusion::execution::context::SessionState;
+use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::Expr;
+use datafusion::physical_plan::memory::MemoryExec;
+use datafusion::physical_plan::ExecutionPlan;
 use meta::model::MetaClientRef;
 use models::auth::user::User;
 use models::oid::Identifier;
 
 use crate::dispatcher::query_tracker::QueryTracker;
-use crate::metadata::information_schema_provider::builder::queries::InformationSchemaQueriesBuilder;
+use crate::metadata::information_schema_provider::builder::queries::{
+    InformationSchemaQueriesBuilder, QUERY_SCHEMA,
+};
 use crate::metadata::information_schema_provider::InformationSchemaTableFactory;
 
 const INFORMATION_SCHEMA_QUERIES: &str = "QUERIES";
@@ -19,29 +29,75 @@ const INFORMATION_SCHEMA_QUERIES: &str = "QUERIES";
 /// For non-Owner members, only the SQL submitted by the current member is displayed.
 pub struct QueriesFactory {}
 
-#[async_trait::async_trait]
 impl InformationSchemaTableFactory for QueriesFactory {
     fn table_name(&self) -> &'static str {
         INFORMATION_SCHEMA_QUERIES
     }
 
-    async fn create(
+    fn create(
         &self,
         user: &User,
         metadata: MetaClientRef,
         query_tracker: Arc<QueryTracker>,
-    ) -> std::result::Result<Arc<MemTable>, MetaError> {
+    ) -> Arc<dyn TableProvider> {
+        Arc::new(InformationQueriesTable::new(
+            query_tracker,
+            metadata,
+            user.clone(),
+        ))
+    }
+}
+
+pub struct InformationQueriesTable {
+    user: User,
+    query_tracker: Arc<QueryTracker>,
+    metadata: MetaClientRef,
+}
+
+impl InformationQueriesTable {
+    pub fn new(query_tracker: Arc<QueryTracker>, metadata: MetaClientRef, user: User) -> Self {
+        Self {
+            user,
+            query_tracker,
+            metadata,
+        }
+    }
+}
+
+#[async_trait]
+impl TableProvider for InformationQueriesTable {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn schema(&self) -> SchemaRef {
+        QUERY_SCHEMA.clone()
+    }
+
+    fn table_type(&self) -> TableType {
+        TableType::Base
+    }
+
+    async fn scan(
+        &self,
+        _state: &SessionState,
+        projection: Option<&Vec<usize>>,
+        _filters: &[Expr],
+        _agg_with_grouping: Option<&AggWithGrouping>,
+        _limit: Option<usize>,
+    ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
         let mut builder = InformationSchemaQueriesBuilder::default();
 
-        let user_id = user.desc().id();
-        let tenant_id = *metadata.tenant().id();
+        let user_id = self.user.desc().id();
+        let tenant_id = *self.metadata.tenant().id();
 
-        let queries_of_tenant = query_tracker
+        let queries_of_tenant = self
+            .query_tracker
             .running_queries()
             .into_iter()
             .filter(|e| e.info().tenant_id() == tenant_id);
 
-        let running_queries = if !user.can_access_system(tenant_id) {
+        let running_queries = if !self.user.can_access_system(tenant_id) {
             queries_of_tenant
                 .filter(|e| e.info().user_id() == *user_id)
                 .collect::<Vec<_>>()
@@ -79,9 +135,12 @@ impl InformationSchemaTableFactory for QueriesFactory {
                 error_count,
             );
         }
+        let rb: RecordBatch = builder.try_into()?;
 
-        let mem_table = MemTable::try_from(builder)
-            .map_err(|e| MetaError::CommonError { msg: e.to_string() })?;
-        Ok(Arc::new(mem_table))
+        Ok(Arc::new(MemoryExec::try_new(
+            &[vec![rb]],
+            self.schema(),
+            projection.cloned(),
+        )?))
     }
 }

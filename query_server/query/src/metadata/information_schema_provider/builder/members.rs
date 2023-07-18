@@ -3,12 +3,11 @@ use std::sync::Arc;
 use datafusion::arrow::array::StringBuilder;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
+    pub static ref MEMBER_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
         Field::new("user_name", DataType::Utf8, false),
         Field::new("role_name", DataType::Utf8, false),
     ]));
@@ -37,7 +36,7 @@ impl InformationSchemaMembersBuilder {
     }
 }
 
-impl TryFrom<InformationSchemaMembersBuilder> for MemTable {
+impl TryFrom<InformationSchemaMembersBuilder> for RecordBatch {
     type Error = DataFusionError;
 
     fn try_from(value: InformationSchemaMembersBuilder) -> Result<Self, Self::Error> {
@@ -47,10 +46,10 @@ impl TryFrom<InformationSchemaMembersBuilder> for MemTable {
         } = value;
 
         let batch = RecordBatch::try_new(
-            SCHEMA.clone(),
+            MEMBER_SCHEMA.clone(),
             vec![Arc::new(user_names.finish()), Arc::new(role_names.finish())],
         )?;
 
-        MemTable::try_new(SCHEMA.clone(), vec![vec![batch]])
+        Ok(batch)
     }
 }

@@ -9,7 +9,7 @@ use protos::kv_service::{
 };
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{AlterTable, AlterTableAction};
-use spi::Result;
+use spi::{QueryError, Result};
 
 // use crate::execution::ddl::query::spi::MetaSnafu;
 use crate::execution::ddl::DDLDefinitionTask;
@@ -28,14 +28,11 @@ impl DDLDefinitionTask for AlterTableTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let table_name = &self.stmt.table_name;
         let tenant = table_name.tenant();
-        let client = query_state_machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .await
-            .ok_or(MetaError::TenantNotFound {
+        let client = query_state_machine.meta.tenant_meta(tenant).await.ok_or(
+            MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            })?;
+            },
+        )?;
 
         let mut schema = client
             .get_tskv_table_schema(table_name.database(), table_name.table())?
@@ -76,6 +73,12 @@ impl DDLDefinitionTask for AlterTableTask {
                 column_name,
                 new_column,
             } => {
+                if !new_column.encoding_valid() {
+                    return Err(QueryError::EncodingType {
+                        encoding_type: new_column.encoding,
+                        data_type: new_column.column_type.to_string(),
+                    });
+                }
                 schema.change_column(column_name, new_column.clone());
                 AdminCommandRequest {
                     tenant: tenant.to_string(),

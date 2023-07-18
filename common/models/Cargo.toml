@@ -33,9 +33,10 @@ tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
+snap = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { workspace = true }
+windows = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 [features]
 default = []

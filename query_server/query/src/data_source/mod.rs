@@ -12,6 +12,7 @@ use spi::{QueryError, Result};
 
 use self::table_source::TableSourceAdapter;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
+use crate::extension::DropEmptyRecordBatchStream;
 
 pub mod batch;
 pub mod sink;
@@ -33,8 +34,9 @@ pub trait WriteExecExt: Send + Sync {
 pub trait RecordBatchSink: Send + Sync {
     async fn append(&self, record_batch: RecordBatch) -> Result<SinkMetadata>;
 
-    async fn stream_write(&self, mut stream: SendableRecordBatchStream) -> Result<SinkMetadata> {
+    async fn stream_write(&self, stream: SendableRecordBatchStream) -> Result<SinkMetadata> {
         let mut meta = SinkMetadata::default();
+        let mut stream = DropEmptyRecordBatchStream::new(stream);
 
         while let Some(batch) = stream.next().await {
             let batch: RecordBatch = batch?;

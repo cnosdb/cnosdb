@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 
+use datafusion::arrow::error::ArrowError;
 use error_code::{ErrorCode, ErrorCoder};
+use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
 use protos::PointsError;
 use snafu::Snafu;
+use tonic::{Code, Status};
 
 use crate::index::IndexError;
 use crate::schema::error::SchemaError;
@@ -15,6 +18,14 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[snafu(visibility(pub))]
 #[error_code(mod_code = "02")]
 pub enum Error {
+    ErrorResponse {
+        error: ErrorResponse,
+    },
+
+    Network {
+        source: Status,
+    },
+
     Meta {
         source: MetaError,
     },
@@ -45,6 +56,29 @@ pub enum Error {
     #[error_code(code = 5)]
     MemoryExhausted,
 
+    #[error_code(code = 6)]
+    Arrow {
+        source: ArrowError,
+    },
+
+    #[snafu(display("read tsm block file error: {}", source))]
+    #[error_code(code = 7)]
+    ReadTsm {
+        source: ReadTsmError,
+    },
+
+    #[snafu(display("found damaged tsm file error: {}", source))]
+    #[error_code(code = 8)]
+    TsmFileBroken {
+        source: ReadTsmError,
+    },
+
+    #[snafu(display("write tsm block file error: {}", source))]
+    #[error_code(code = 9)]
+    WriteTsm {
+        source: WriteTsmError,
+    },
+
     // Internal Error
     #[snafu(display("{}", source))]
     IO {
@@ -53,6 +87,12 @@ pub enum Error {
 
     #[snafu(display("Unable to open file '{}': {}", path.display(), source))]
     OpenFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Unable to create file '{}': {}", path.display(), source))]
+    CreateFile {
         path: PathBuf,
         source: std::io::Error,
     },
@@ -86,15 +126,23 @@ pub enum Error {
         message: String,
     },
 
-    #[snafu(display("fails to send to channel"))]
-    Send,
-
-    #[snafu(display("fails to receive from channel"))]
-    Receive {
-        source: tokio::sync::oneshot::error::RecvError,
+    /// Failed to send someting to a channel
+    #[snafu(display("{source}"))]
+    ChannelSend {
+        source: ChannelSendError,
     },
 
-    #[snafu(display("wal truncated"))]
+    /// Failed to receive something from a channel
+    #[snafu(display("{source}"))]
+    ChannelReceive {
+        source: ChannelReceiveError,
+    },
+
+    /// WAL file is truncated, it's because CnosDB didn't shutdown properly.
+    ///
+    /// This error is handled by WAL module:
+    /// just stop the current WAL file reading, go to the next WAL file.
+    #[snafu(display("Internal handled: WAL truncated"))]
     WalTruncated,
 
     #[snafu(display("read/write record file block: {}", reason))]
@@ -105,14 +153,24 @@ pub enum Error {
     #[snafu(display("Unexpected eof"))]
     Eof,
 
-    #[snafu(display("read record file block: {}", source))]
-    Encode {
+    #[snafu(display("Failed to encode record file block: {}", source))]
+    RecordFileEncode {
         source: bincode::Error,
     },
 
-    #[snafu(display("read record file block: {}", source))]
-    Decode {
+    #[snafu(display("Faield to decode record file block: {}", source))]
+    RecordFileDecode {
         source: bincode::Error,
+    },
+
+    #[snafu(display("Failed to do encode: {}", source))]
+    Encode {
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    #[snafu(display("Faield to do decode: {}", source))]
+    Decode {
+        source: Box<dyn std::error::Error + Send + Sync>,
     },
 
     #[snafu(display("Index: : {}", source))]
@@ -122,16 +180,6 @@ pub enum Error {
 
     #[snafu(display("error apply edits to summary"))]
     ErrApplyEdit,
-
-    #[snafu(display("read tsm block file error: {}", source))]
-    ReadTsm {
-        source: ReadTsmError,
-    },
-
-    #[snafu(display("write tsm block file error: {}", source))]
-    WriteTsm {
-        source: WriteTsmError,
-    },
 
     #[snafu(display("character set error"))]
     ErrCharacterSet,
@@ -152,6 +200,12 @@ pub enum Error {
     #[snafu(display("invalid points : '{}'", source))]
     Points {
         source: PointsError,
+    },
+
+    #[snafu(display("non-UTF-8 string '{message}': {source}"))]
+    InvalidUtf8 {
+        message: String,
+        source: std::str::Utf8Error,
     },
 }
 
@@ -182,21 +236,101 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl From<MetaError> for Error {
+    fn from(source: MetaError) -> Self {
+        Error::Meta { source }
+    }
+}
+
+impl From<ArrowError> for Error {
+    fn from(source: ArrowError) -> Self {
+        Error::Arrow { source }
+    }
+}
+
 impl Error {
     pub fn error_code(&self) -> &dyn ErrorCode {
         match self {
             Error::Meta { source } => source.error_code(),
+            Error::ErrorResponse { error } => error,
             _ => self,
         }
     }
+
+    pub fn vnode_broken_code(code: &str) -> bool {
+        let e = Self::ReadTsm {
+            source: ReadTsmError::CrcCheck,
+        };
+
+        e.code() == code
+    }
+}
+
+// default conversion from CoordinatorError to tonic treats everything
+// other than `Status` as an internal error
+impl From<Error> for Status {
+    fn from(value: Error) -> Self {
+        let error_resp = ErrorResponse::new(value.error_code());
+
+        match serde_json::to_string(&error_resp) {
+            Ok(err) => Status::internal(err),
+            Err(err) => {
+                let error_str = format!("Serialize TskvError, error: {}", err);
+                trace::error!(error_str);
+                Status::unknown(error_str)
+            }
+        }
+    }
+}
+
+impl From<Status> for Error {
+    fn from(source: Status) -> Self {
+        let error_message = source.message();
+        match source.code() {
+            Code::Internal => {
+                match serde_json::from_str::<ErrorResponse>(error_message) {
+                    Ok(error) => Error::ErrorResponse { error },
+                    Err(err) => {
+                        // Deserialization tskv error failed, maybe a bug
+                        Error::CommonError {
+                            reason: err.to_string(),
+                        }
+                    }
+                }
+            }
+            Code::Unknown => {
+                // The server will return this exception if serialization of tskv error fails, maybe a bug
+                trace::error!("The server will return this exception if serialization of tskv error fails, maybe a bug");
+                Error::CommonError {
+                    reason: error_message.to_string(),
+                }
+            }
+            _ => Self::Network { source },
+        }
+    }
+}
+
+#[derive(Snafu, Debug)]
+pub enum ChannelSendError {
+    #[snafu(display("Failed to send a WAL task"))]
+    WalTask,
+}
+
+#[derive(Snafu, Debug)]
+pub enum ChannelReceiveError {
+    #[snafu(display("Failed to receive write WAL result: {source}"))]
+    WriteWalResult {
+        source: tokio::sync::oneshot::error::RecvError,
+    },
 }
 
 #[test]
 fn test_mod_code() {
     let e = Error::Schema {
-        source: SchemaError::ColumnAlreadyExists {
-            name: "".to_string(),
+        source: SchemaError::TableNotFound {
+            database: String::new(),
+            table: String::new(),
         },
     };
-    assert!(e.code().starts_with("02"));
+    assert_eq!(e.code(), "020004");
 }

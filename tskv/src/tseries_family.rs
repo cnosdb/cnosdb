@@ -1,14 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
-use models::predicate::domain::TimeRange;
+use models::meta_data::VnodeStatus;
+use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{split_owner, TableColumn};
 use models::{FieldId, SchemaId, SeriesId, Timestamp};
 use parking_lot::RwLock;
@@ -26,6 +27,7 @@ use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::{DataBlock, TsmReader, TsmTombstone};
+use crate::Error::CommonError;
 use crate::{ColumnFileId, LevelId, TseriesFamilyId};
 
 #[derive(Debug)]
@@ -40,6 +42,7 @@ pub struct ColumnFile {
     compacting: AtomicBool,
 
     path: PathBuf,
+    tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
 }
 
 impl ColumnFile {
@@ -47,6 +50,7 @@ impl ColumnFile {
         meta: &CompactMeta,
         path: impl AsRef<Path>,
         field_id_filter: Arc<BloomFilter>,
+        tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
     ) -> Self {
         Self {
             file_id: meta.file_id,
@@ -58,6 +62,7 @@ impl ColumnFile {
             deleted: AtomicBool::new(false),
             compacting: AtomicBool::new(false),
             path: path.as_ref().into(),
+            tsm_reader_cache,
         }
     }
 
@@ -141,6 +146,13 @@ impl Drop for ColumnFile {
         debug!("Removing file {}", self.file_id);
         if self.is_deleted() {
             let path = self.file_path();
+            if let Some(cache) = self.tsm_reader_cache.upgrade() {
+                let k = format!("{}", path.display());
+                tokio::spawn(async move {
+                    cache.remove(&k).await;
+                });
+            }
+
             if let Err(e) = std::fs::remove_file(&path) {
                 error!(
                     "Error when removing file {} at '{}': {}",
@@ -175,6 +187,7 @@ impl ColumnFile {
             deleted: AtomicBool::new(false),
             compacting: AtomicBool::new(false),
             path: path.as_ref().into(),
+            tsm_reader_cache: Weak::new(),
         }
     }
 
@@ -202,7 +215,7 @@ impl LevelInfo {
         tsf_id: u32,
         storage_opt: Arc<StorageOptions>,
     ) -> Self {
-        let max_size = storage_opt.level_file_size(level);
+        let max_size = storage_opt.level_max_file_size(level);
         Self {
             files: Vec::new(),
             database,
@@ -236,6 +249,7 @@ impl LevelInfo {
         &mut self,
         compact_meta: &CompactMeta,
         field_filter: Arc<BloomFilter>,
+        tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
     ) {
         let file_path = if compact_meta.is_delta {
             let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
@@ -248,6 +262,7 @@ impl LevelInfo {
             compact_meta,
             file_path,
             field_filter,
+            tsm_reader_cache,
         )));
         self.tsf_id = compact_meta.tsf_id;
         self.cur_size += compact_meta.file_size;
@@ -284,6 +299,10 @@ impl LevelInfo {
         field_id: FieldId,
         time_range: &TimeRange,
     ) -> Vec<DataBlock> {
+        let time_ranges = Arc::new(TimeRanges::with_inclusive_bounds(
+            time_range.min_ts,
+            time_range.max_ts,
+        ));
         let mut data = vec![];
         for file in self.files.iter() {
             if file.is_deleted() || !file.overlap(time_range) {
@@ -298,7 +317,7 @@ impl LevelInfo {
                 }
             };
             for idx in tsm_reader.index_iterator_opt(field_id) {
-                for blk in idx.block_iterator_opt(time_range) {
+                for blk in idx.block_iterator_opt(time_ranges.clone()) {
                     if let Ok(blk) = tsm_reader.get_data_block(&blk).await {
                         data.push(blk);
                     }
@@ -384,6 +403,7 @@ impl Version {
             self.ts_family_id,
             self.storage_opt.clone(),
         );
+        let weak_tsm_reader_cache = Arc::downgrade(&self.tsm_reader_cache);
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
                 if deleted_files[file.level as usize].contains(&file.file_id) {
@@ -394,7 +414,11 @@ impl Version {
             }
             for file in added_files[level.level as usize].iter() {
                 let field_filter = file_metas.remove(&file.file_id).unwrap_or_default();
-                new_levels[level.level as usize].push_compact_meta(file, field_filter);
+                new_levels[level.level as usize].push_compact_meta(
+                    file,
+                    field_filter,
+                    weak_tsm_reader_cache.clone(),
+                );
             }
             new_levels[level.level as usize].update_time_range();
         }
@@ -560,26 +584,16 @@ impl SuperVersion {
         }
     }
 
-    pub fn column_files(&self, time_ranges: &[TimeRange]) -> Vec<Arc<ColumnFile>> {
+    pub fn column_files(&self, time_ranges: &TimeRanges) -> Vec<Arc<ColumnFile>> {
         let mut files = Vec::new();
 
         for lv in self.version.levels_info.iter() {
-            let mut overlapped = false;
-            for tr in time_ranges {
-                if lv.time_range.overlaps(tr) {
-                    overlapped = true;
-                    break;
-                }
-            }
-            if !overlapped {
+            if !time_ranges.overlaps(&lv.time_range) {
                 continue;
             }
             for cf in lv.files.iter() {
-                for tr in time_ranges {
-                    if cf.overlap(tr) {
-                        files.push(cf.clone());
-                        break;
-                    }
+                if time_ranges.overlaps(&cf.time_range) {
+                    files.push(cf.clone());
                 }
             }
         }
@@ -643,6 +657,7 @@ pub struct TseriesFamily {
     cancellation_token: CancellationToken,
     memory_pool: MemoryPoolRef,
     tsf_metrics: TsfMetrics,
+    status: VnodeStatus,
 }
 
 impl TseriesFamily {
@@ -688,13 +703,8 @@ impl TseriesFamily {
             cancellation_token: CancellationToken::new(),
             memory_pool,
             tsf_metrics: TsfMetrics::new(register, database.as_str(), tf_id as u64),
+            status: VnodeStatus::Running,
         }
-    }
-
-    pub fn switch_memcache(&mut self, cache: Arc<RwLock<MemCache>>) {
-        self.immut_cache.push(self.mut_cache.clone());
-        self.new_super_version(self.version.clone());
-        self.mut_cache = cache;
     }
 
     fn new_super_version(&mut self, version: Arc<Version>) {
@@ -805,9 +815,14 @@ impl TseriesFamily {
         seq: u64,
         points: HashMap<(SeriesId, SchemaId), RowGroup>,
     ) -> Result<u64> {
+        if self.status == VnodeStatus::Copying {
+            return Err(CommonError {
+                reason: "vnode is moving please retry later".to_string(),
+            });
+        }
         let mut res = 0;
         for ((sid, _schema_id), group) in points {
-            let mem = self.super_version.caches.mut_cache.read();
+            let mem = self.mut_cache.read();
             res += group.rows.len();
             mem.write_group(sid, seq, group)?;
         }
@@ -815,7 +830,7 @@ impl TseriesFamily {
     }
 
     pub async fn check_to_flush(&mut self) {
-        if self.super_version.caches.mut_cache.read().is_full() {
+        if self.mut_cache.read().is_full() {
             info!(
                 "mut_cache is full, switch to immutable. current pool_size : {}",
                 self.memory_pool.reserved()
@@ -829,6 +844,10 @@ impl TseriesFamily {
 
     pub async fn update_last_modified(&self) {
         *self.last_modified.write().await = Some(Instant::now());
+    }
+
+    pub fn update_status(&mut self, status: VnodeStatus) {
+        self.status = status;
     }
 
     pub fn delete_columns(&self, field_ids: &[FieldId]) {
@@ -976,6 +995,9 @@ impl TseriesFamily {
             .sum::<u64>()
             + self.mut_cache.read().cache_size()
     }
+    pub fn can_compaction(&self) -> bool {
+        self.status == VnodeStatus::Running
+    }
 }
 
 impl Drop for TseriesFamily {
@@ -992,7 +1014,7 @@ pub mod test_tseries_family {
 
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use meta::model::meta_manager::RemoteMetaManager;
+    use meta::model::meta_admin::AdminMeta;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{DatabaseSchema, TenantOptions};
@@ -1033,7 +1055,7 @@ pub mod test_tseries_family {
         //! - Lv.3: [ ]
         //! - Lv.4: [ ]
         let dir = "/tmp/test/ts_family/1";
-        let _ = std::fs::remove_dir(dir);
+        let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
@@ -1128,7 +1150,7 @@ pub mod test_tseries_family {
         //! - Lv.3: [ (6, 1~2000) ]
         //! - Lv.4: [ ]
         let dir = "/tmp/test/ts_family/2";
-        let _ = std::fs::remove_dir(dir);
+        let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
@@ -1269,7 +1291,7 @@ pub mod test_tseries_family {
     #[tokio::test]
     pub async fn test_tsf_delete() {
         let dir = "/tmp/test/ts_family/tsf_delete";
-        let _ = std::fs::remove_dir(dir);
+        let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
@@ -1380,13 +1402,11 @@ pub mod test_tseries_family {
 
         let config = config::get_config_for_test();
         let meta_manager: MetaRef = runtime.block_on(async {
-            let meta_manager: MetaRef =
-                RemoteMetaManager::new(config.clone(), config.storage.path.clone()).await;
+            let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
 
-            meta_manager.admin_meta().add_data_node().await.unwrap();
+            meta_manager.add_data_node().await.unwrap();
 
             let _ = meta_manager
-                .tenant_manager()
                 .create_tenant("cnosdb".to_string(), TenantOptions::default())
                 .await;
             meta_manager
@@ -1420,7 +1440,7 @@ pub mod test_tseries_family {
         };
 
         let dir = "/tmp/test/ts_family/read_with_tomb";
-        let _ = std::fs::remove_dir(dir);
+        let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
@@ -1464,7 +1484,7 @@ pub mod test_tseries_family {
                 .await
                 .get_db(&tenant, &database)
                 .unwrap();
-
+            let cxt = Arc::new(GlobalContext::new());
             let ts_family_id = db
                 .write()
                 .await
@@ -1475,8 +1495,10 @@ pub mod test_tseries_family {
                     summary_task_sender.clone(),
                     flush_task_sender.clone(),
                     compact_task_sender.clone(),
+                    cxt.clone(),
                 )
                 .await
+                .unwrap()
                 .read()
                 .await
                 .tf_id();

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use std::iter;
 use std::option::Option;
 use std::sync::Arc;
+use std::{iter, vec};
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -23,7 +23,7 @@ use datafusion::datasource::listing::{
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
-use datafusion::logical_expr::expr::Sort;
+use datafusion::logical_expr::expr::{ScalarFunction, Sort};
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
@@ -90,7 +90,11 @@ use crate::data_source::source_downcast_adapter;
 use crate::data_source::stream::{get_event_time_column, get_watermark_delay};
 use crate::data_source::table_source::{TableHandle, TableSourceAdapter, TEMP_LOCATION_TABLE_NAME};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
-use crate::metadata::{ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
+use crate::metadata::{
+    ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, DATABASES_DATABASE_NAME,
+    INFORMATION_SCHEMA, INFORMATION_SCHEMA_DATABASES, INFORMATION_SCHEMA_TABLES,
+    TABLES_TABLE_DATABASE, TABLES_TABLE_NAME,
+};
 
 /// CnosDB SQL query planner
 pub struct SqlPlanner<'a, S: ContextProviderExtension> {
@@ -105,8 +109,17 @@ impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlanne
         statement: ExtStatement,
         session: &SessionCtx,
     ) -> Result<Plan> {
-        let PlanWithPrivileges { plan, privileges } =
-            self.statement_to_plan(statement, session).await?;
+        let PlanWithPrivileges { plan, privileges } = {
+            let mut span_recorder = session.get_child_span_recorder("statement to logical plan");
+            self.statement_to_plan(statement, session)
+                .await
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
+
+        let _ = session.get_child_span_recorder("check privilege");
         check_privilege(session.user(), privileges)?;
         Ok(plan)
     }
@@ -141,8 +154,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::DropGlobalObject(s) => self.drop_global_object_to_plan(s),
             ExtStatement::DescribeTable(stmt) => self.table_to_describe(stmt, session),
             ExtStatement::DescribeDatabase(stmt) => self.database_to_describe(stmt, session),
-            ExtStatement::ShowDatabases() => self.database_to_show(session),
-            ExtStatement::ShowTables(stmt) => self.table_to_show(stmt, session),
+            ExtStatement::ShowDatabases() => self.show_databases_to_plan(session),
+            ExtStatement::ShowTables(stmt) => self.show_tables_to_plan(stmt, session),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
             ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(*stmt, session),
             ExtStatement::Explain(stmt) => {
@@ -492,6 +505,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             file_compression_type,
             options,
             order_exprs,
+            unbounded,
         } = statement;
 
         // semantic checks
@@ -533,6 +547,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             file_compression_type,
             options,
             order_exprs: ordered_exprs,
+            unbounded,
         })
     }
 
@@ -788,8 +803,21 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn database_to_show(&self, session: &SessionCtx) -> Result<PlanWithPrivileges> {
-        let plan = Plan::DDL(DDLPlan::ShowDatabases());
+    fn show_databases_to_plan(&self, session: &SessionCtx) -> Result<PlanWithPrivileges> {
+        let projections = vec![col(DATABASES_DATABASE_NAME)];
+        let sorts = vec![col(DATABASES_DATABASE_NAME).sort(true, true)];
+
+        let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_DATABASES);
+
+        let table_source = self.get_table_source(table_ref.clone())?;
+
+        let df_plan = LogicalPlanBuilder::scan(table_ref, table_source, None)?
+            .project(projections)?
+            .sort(sorts)?
+            .build()?;
+
+        let plan = Plan::Query(QueryPlan { df_plan });
+
         // privileges
         let tenant_id = *session.tenant_id();
         let privilege = Privilege::TenantObject(
@@ -802,13 +830,32 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn table_to_show(
+    fn show_tables_to_plan(
         &self,
         database: Option<Ident>,
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
+        let database_name = session.default_database();
         let db_name = database.map(normalize_ident);
-        let plan = Plan::DDL(DDLPlan::ShowTables(db_name.clone()));
+
+        let projections = vec![col(TABLES_TABLE_NAME)];
+        let sorts = vec![col(TABLES_TABLE_NAME).sort(true, true)];
+
+        let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_TABLES);
+        let table_source = self.get_table_source(table_ref.clone())?;
+
+        let builder = LogicalPlanBuilder::scan(table_ref, table_source, None)?;
+
+        let builder = if let Some(db) = &db_name {
+            builder.filter(col(TABLES_TABLE_DATABASE).eq(lit(db)))?
+        } else {
+            builder.filter(col(TABLES_TABLE_DATABASE).eq(lit(database_name)))?
+        };
+
+        let df_plan = builder.project(projections)?.sort(sorts)?.build()?;
+
+        let plan = Plan::Query(QueryPlan { df_plan });
+
         // privileges
         Ok(PlanWithPrivileges {
             plan,
@@ -1373,18 +1420,21 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let user_desc = self.schema_provider.get_user(&user_name).await?;
         let user_id = *user_desc.id();
 
+        let mut privileges = vec![Privilege::Global(GlobalPrivilege::User(Some(user_id)))];
+
         let alter_user_action = match operation {
             AlterUserOperation::RenameTo(new_name) => {
                 AlterUserAction::RenameTo(normalize_ident(new_name))
             }
             AlterUserOperation::Set(sql_option) => {
                 let user_options = sql_options_to_user_options(vec![sql_option])?;
-
+                if user_options.granted_admin().is_some() {
+                    // 修改admin参数需要系统管理权限
+                    privileges = vec![Privilege::Global(GlobalPrivilege::System)];
+                }
                 AlterUserAction::Set(user_options)
             }
         };
-
-        let privileges = vec![Privilege::Global(GlobalPrivilege::User(Some(user_id)))];
 
         let plan = Plan::DDL(DDLPlan::AlterUser(AlterUser {
             user_name,
@@ -1969,6 +2019,11 @@ fn build_file_extension_and_format(
         FileType::JSON => {
             Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
         }
+        FileType::ARROW => {
+            return Err(DataFusionError::NotImplemented(
+                "Arrow file format is not supported".to_string(),
+            ))
+        }
     };
 
     Ok((file_extension, file_format))
@@ -2035,11 +2090,8 @@ fn show_series_projection(
         .chain(iter::once(lit(&table_schema.name)))
         .chain(tag_concat_expr_iter)
         .collect::<Vec<Expr>>();
-    let concat_ws = Expr::ScalarFunction {
-        fun: BuiltinScalarFunction::ConcatWithSeparator,
-        args: concat_ws_args,
-    }
-    .alias("key");
+    let func = ScalarFunction::new(BuiltinScalarFunction::ConcatWithSeparator, concat_ws_args);
+    let concat_ws = Expr::ScalarFunction(func).alias("key");
     Ok(plan_builder.project(iter::once(concat_ws))?.build()?)
 }
 
@@ -2110,13 +2162,15 @@ fn show_tag_value_projections(
     };
 
     let mut projections = Vec::new();
+    let tag_key = "key";
+    let tag_value = "value";
     for tag in tags {
-        let key_column = lit(&tag.name).alias("key");
-        let value_column = col(Column::new_unqualified(&tag.name)).alias("value");
+        let key_column = lit(&tag.name).alias(tag_key);
+        let value_column = col(Column::new_unqualified(&tag.name)).alias(tag_value);
         let projection = plan_builder
             .clone()
             .project(vec![key_column, value_column.clone()])?;
-        let filter_expr = value_column.is_not_null();
+        let filter_expr = col(tag_value).is_not_null();
         let projection = projection.filter(filter_expr)?.distinct()?.build()?;
         projections.push(Arc::new(projection));
     }
@@ -2348,6 +2402,10 @@ mod tests {
         fn options(&self) -> &datafusion::config::ConfigOptions {
             unimplemented!()
         }
+
+        fn get_window_meta(&self, _name: &str) -> Option<Arc<datafusion::logical_expr::WindowUDF>> {
+            None
+        }
     }
 
     struct TestTable {
@@ -2407,7 +2465,7 @@ mod tests {
         let context = ContextBuilder::new(user).build();
         let pool = UnboundedMemoryPool::default();
         SessionCtxFactory::default()
-            .create_session_ctx("", context, 0_u128, Arc::new(pool))
+            .create_session_ctx("", context, 0_u128, Arc::new(pool), None)
             .unwrap()
     }
 

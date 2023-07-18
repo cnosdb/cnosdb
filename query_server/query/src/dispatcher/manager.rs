@@ -17,7 +17,7 @@ use spi::query::parser::Parser;
 use spi::query::session::{SessionCtx, SessionCtxFactory};
 use spi::service::protocol::{ContextBuilder, Query, QueryId};
 use spi::{QueryError, Result};
-use trace::info;
+use trace::{info, SpanContext, SpanExt, SpanRecorder, TraceExporter};
 
 use super::query_tracker::QueryTracker;
 use crate::data_source::split::SplitManagerRef;
@@ -44,6 +44,7 @@ pub struct SimpleQueryDispatcher {
     query_execution_factory: QueryExecutionFactoryRef,
     func_manager: FuncMetaManagerRef,
     stream_provider_manager: StreamProviderManagerRef,
+    trace_collector: Option<Arc<dyn TraceExporter>>,
 }
 
 #[async_trait]
@@ -63,7 +64,11 @@ impl QueryDispatcher for SimpleQueryDispatcher {
                 .with_tenant(Some(tenant_name.to_owned()))
                 .build();
             let query = Query::new(ctx, sql.to_owned());
-            match self.execute_query(tenant_id, query_id, &query).await {
+            let span_context = self.trace_collector.clone().map(SpanContext::new);
+            match self
+                .execute_query(tenant_id, query_id, &query, span_context.as_ref())
+                .await
+            {
                 Ok(_) => {
                     info!("Re-execute persistent query: {}", query.content());
                 }
@@ -93,10 +98,14 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         tenant_id: Oid,
         query_id: QueryId,
         query: &Query,
+        span_ctx: Option<&SpanContext>,
     ) -> Result<Output> {
-        let query_state_machine = self
-            .build_query_state_machine(tenant_id, query_id, query.clone())
-            .await?;
+        let query_state_machine = {
+            let _span_recorder = SpanRecorder::new(span_ctx.child_span("init session ctx"));
+            self.build_query_state_machine(tenant_id, query_id, query.clone(), span_ctx)
+                .await?
+        };
+
         let logical_plan = self.build_logical_plan(query_state_machine.clone()).await?;
         let logical_plan = match logical_plan {
             Some(plan) => plan,
@@ -119,6 +128,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 
         let logical_planner = DefaultLogicalPlanner::new(&scheme_provider);
 
+        let mut span_recorder = session.get_child_span_recorder("parse sql");
         let statements = self.parser.parse(query.content())?;
 
         // not allow multi statement
@@ -133,6 +143,8 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             Some(stmt) => stmt.clone(),
             None => return Ok(None),
         };
+        span_recorder.set_metadata("statement", format!("{:?}", stmt));
+        drop(span_recorder);
 
         let logical_plan = self
             .statement_to_logical_plan(stmt, &logical_planner, query_state_machine)
@@ -154,12 +166,14 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         tenant_id: Oid,
         query_id: QueryId,
         query: Query,
+        span_ctx: Option<&SpanContext>,
     ) -> Result<Arc<QueryStateMachine>> {
         let session = self.session_factory.create_session_ctx(
             query_id.to_string(),
             query.context().clone(),
             tenant_id,
             self.memory_pool.clone(),
+            span_ctx.cloned(),
         )?;
 
         let query_state_machine = Arc::new(QueryStateMachine::begin(
@@ -266,7 +280,7 @@ impl SimpleQueryDispatcher {
             Arc::new(BaseTableProvider::new(
                 self.coord.clone(),
                 self.split_manager.clone(),
-                meta_client.clone(),
+                meta_client,
                 self.stream_provider_manager.clone(),
             ));
 
@@ -288,6 +302,7 @@ pub struct SimpleQueryDispatcherBuilder {
 
     func_manager: Option<FuncMetaManagerRef>,
     stream_provider_manager: Option<StreamProviderManagerRef>,
+    trace_collector: Option<Arc<dyn TraceExporter>>,
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -350,6 +365,11 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
+    pub fn with_trace_collector(mut self, trace_collector: Arc<dyn TraceExporter>) -> Self {
+        self.trace_collector = Some(trace_collector);
+        self
+    }
+
     pub fn build(self) -> Result<SimpleQueryDispatcher> {
         let coord = self.coord.ok_or_else(|| QueryError::BuildQueryDispatcher {
             err: "lost of coord".to_string(),
@@ -409,6 +429,8 @@ impl SimpleQueryDispatcherBuilder {
                     err: "lost of default_table_provider".to_string(),
                 })?;
 
+        let trace_collector = self.trace_collector;
+
         Ok(SimpleQueryDispatcher {
             coord,
             default_table_provider,
@@ -420,6 +442,7 @@ impl SimpleQueryDispatcherBuilder {
             query_tracker,
             func_manager,
             stream_provider_manager,
+            trace_collector,
         })
     }
 }

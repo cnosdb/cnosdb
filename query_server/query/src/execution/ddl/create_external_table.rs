@@ -18,7 +18,7 @@ use meta::error::MetaError;
 use models::schema::{ExternalTableSchema, TableSchema};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::{DatafusionSnafu, Result};
+use spi::{DatafusionSnafu, QueryError, Result};
 
 use super::DDLDefinitionTask;
 
@@ -48,7 +48,6 @@ impl DDLDefinitionTask for CreateExternalTableTask {
         );
         let client = query_state_machine
             .meta
-            .tenant_manager()
             .tenant_meta(&table_name.catalog)
             .await
             .ok_or(MetaError::TenantNotFound {
@@ -92,14 +91,14 @@ async fn create_exernal_table(
     .await?;
 
     let tenant = query_state_machine.session.tenant();
-    let client = query_state_machine
-        .meta
-        .tenant_manager()
-        .tenant_meta(tenant)
-        .await
-        .ok_or(MetaError::TenantNotFound {
-            tenant: tenant.to_string(),
-        })?;
+    let client =
+        query_state_machine
+            .meta
+            .tenant_meta(tenant)
+            .await
+            .ok_or(MetaError::TenantNotFound {
+                tenant: tenant.to_string(),
+            })?;
     // .context(MetaSnafu)?;
 
     Ok(client
@@ -180,6 +179,11 @@ fn build_external_table_config(
         FileType::AVRO => Arc::new(AvroFormat::default()),
         FileType::JSON => {
             Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
+        }
+        FileType::ARROW => {
+            return Err(QueryError::NotImplemented {
+                err: "Build arrow external table config".to_string(),
+            })
         }
     };
 

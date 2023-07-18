@@ -21,6 +21,7 @@ mod value_type;
 #[macro_use]
 // pub mod error_code;
 pub mod arrow_array;
+pub mod arrow;
 pub mod auth;
 pub mod duration;
 pub mod object_reference;
@@ -28,6 +29,7 @@ pub mod oid;
 pub mod predicate;
 pub mod record_batch;
 pub mod runtime;
+pub mod snappy;
 
 pub type ShardId = u64;
 pub type CatalogId = u64;

@@ -79,7 +79,7 @@ impl<T: MetricRecorder> Metric<T> {
             Entry::Occupied(o) => o.get().clone(),
             Entry::Vacant(v) => {
                 let res = T::create(&self.shard.options);
-                v.insert(T::create(&self.shard.options));
+                v.insert(res.clone());
                 res
             }
         }

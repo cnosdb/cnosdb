@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
+use clap::builder::PossibleValuesParser;
 use clap::{value_parser, Parser};
 use client::ctx::{SessionConfig, SessionContext};
 use client::print_format::PrintFormat;
@@ -10,76 +11,56 @@ use client::{exec, CNOSDB_CLI_VERSION};
 #[derive(Debug, Parser, PartialEq)]
 #[command(author, version, about, long_about= None)]
 struct Args {
+    /// Host of CnosDB server.
     #[arg(
-        short = 'H',
-        long,
-        help = "CnosDB server http api host",
+        short = 'H', long,
         default_value = "localhost",
-        value_parser = try_parse_host
+        value_parser = try_parse_host,
     )]
     host: String,
 
+    /// Port of CnosDB server HTTP API.
     #[arg(
-        short = 'P',
-        long,
-        help = "CnosDB server http api port",
+        short = 'P', long,
         default_value = "8902",
-        value_parser = value_parser!(u16).range(0..=65535)
+        value_parser = value_parser!(u16).range(0..=65535),
     )]
     port: u16,
 
-    #[arg(
-        short,
-        long,
-        help = "The user name used to connect to the CnosDB",
-        default_value = "root"
-    )]
+    /// Username to connect to CnosDB server.
+    #[arg(short, long, default_value = "root")]
     user: String,
 
-    #[arg(short, long, help = "Password used to connect to the CnosDB")]
+    /// Password to connect to CnosDB server.
+    #[arg(short, long)]
     password: Option<String>,
 
-    #[arg(
-        long,
-        help = "Rsa private key path for key pair authentication used to connect to the CnosDB"
-    )]
+    /// Rsa private key path for key pair authentication used to connect to the CnosDB.
+    #[arg(long)]
     private_key_path: Option<String>,
 
-    #[arg(
-        short,
-        long,
-        help = "Default database to connect to the CnosDB",
-        default_value = "public"
-    )]
+    /// Default database to connect to the CnosDB.
+    #[arg(short, long, default_value = "public")]
     database: String,
 
-    #[arg(
-        short,
-        long,
-        help = "Default tenant to connect to the CnosDB",
-        default_value = "cnosdb"
-    )]
+    /// Default tenant to connect to the CnosDB.
+    #[arg(short, long, default_value = "cnosdb")]
     tenant: String,
 
-    #[arg(
-        long,
-        help = "Number of partitions for query execution. Increasing partitions can increase concurrency.",
-        value_parser = try_parse_target_partitions
-    )]
+    /// The precision of the unix timestamps, will be used as the url param 'precision'.
+    #[arg(long, value_parser = PossibleValuesParser::new(["ns", "us", "ms"]))]
+    precision: Option<String>,
+
+    /// Number of partitions for query execution. Increasing partitions can increase concurrency.
+    #[arg(long, value_parser = try_parse_target_partitions)]
     target_partitions: Option<usize>,
 
-    #[arg(
-        short,
-        long,
-        help = "Optionally, specify the micro batch stream trigger interval. e.g. once, 1m, 10s"
-    )]
+    /// Optionally, specify the micro batch stream trigger interval. e.g. once, 1m, 10s .
+    #[arg(short, long)]
     stream_trigger_interval: Option<String>,
 
-    #[arg(
-        long,
-        help = "Path to your data, default to current directory",
-        value_parser = try_parse_data_dir
-    )]
+    /// Path to your data, default to current directory
+    #[arg(long, value_parser = try_parse_data_dir)]
     data_path: Option<String>,
 
     // #[arg(
@@ -88,43 +69,46 @@ struct Args {
     //     value_parser = is_valid_batch_size
     // )]
     // batch_size: Option<usize>,
+    /// Execute commands from file(s), then exit.
     #[arg(
-        short,
-        long,
+        short, long,
         num_args = 0..,
-        help = "Execute commands from file(s), then exit",
-        value_parser = try_parse_file
+        value_parser = try_parse_file,
     )]
     file: Vec<String>,
 
+    /// Run the provided files on startup instead of ~/.cnosdbrc .
     #[arg(
         long,
         num_args = 0..,
-        help = "Run the provided files on startup instead of ~/.cnosdbrc",
         value_parser = try_parse_file,
-        conflicts_with = "file"
+        conflicts_with = "file",
     )]
     rc: Option<Vec<String>>,
 
     #[arg(long, value_enum, default_value_t = PrintFormat::Table)]
     format: PrintFormat,
 
-    #[arg(
-        short,
-        long,
-        help = "Reduce printing other than the results and work quietly"
-    )]
+    /// Reduce printing other than the results and work quietly.
+    #[arg(short, long)]
     quiet: bool,
 
-    #[arg(short = 'W', long, help = "write linie protocol from path")]
+    /// Write line protocol from file.
+    #[arg(short = 'W', long, value_name = "FILE")]
     write_line_protocol: Option<PathBuf>,
 
-    #[arg(
-        long,
-        help = "The precision for the unix timestamps within the body protocol",
-        value_parser = try_parse_precision
-    )]
-    precision: Option<String>,
+    /// Use HTTPS connection.
+    #[arg(name = "ssl", long)]
+    use_ssl: bool,
+
+    /// Allow unsafe HTTPS connections.
+    #[arg(name = "unsafe-ssl", long)]
+    use_unsafe_ssl: bool,
+
+    /// Use the specified certificate file to verify the connection peer.
+    /// The certificate(s) must be in PEM format.
+    #[arg(long, value_name = "FILE")]
+    cacert: Vec<String>,
 }
 
 #[tokio::main]
@@ -142,8 +126,8 @@ pub async fn main() -> Result<(), anyhow::Error> {
         env::set_current_dir(p).unwrap();
     };
 
-    let private_key = args.private_key_path.as_ref().map(|e| {
-        let p = Path::new(e);
+    let private_key = args.private_key_path.as_ref().map(|p| {
+        let p = Path::new(p);
         fs::read_to_string(p).expect("Read private key file.")
     });
 
@@ -158,7 +142,10 @@ pub async fn main() -> Result<(), anyhow::Error> {
         .with_target_partitions(args.target_partitions)
         .with_stream_trigger_interval(args.stream_trigger_interval)
         .with_result_format(args.format)
-        .with_precision(args.precision);
+        .with_precision(args.precision)
+        .with_ssl(args.use_ssl)
+        .with_unsafe_ssl(args.use_unsafe_ssl)
+        .with_ca_certs(args.cacert);
 
     let mut ctx = SessionContext::new(session_config);
     if let Some(ref path) = args.write_line_protocol {
@@ -225,12 +212,5 @@ fn try_parse_target_partitions(size: &str) -> std::result::Result<usize, String>
     match size.parse::<usize>() {
         Ok(s) if s > 0 => Ok(s),
         _ => Err(format!("target-partitions is not in 1..={}", usize::MAX)),
-    }
-}
-
-fn try_parse_precision(precision: &str) -> std::result::Result<String, String> {
-    match precision.to_lowercase().as_str() {
-        "ns" | "us" | "ms" => Ok(precision.to_string()),
-        _ => Err("precision must be one of ns, us, ms".to_string()),
     }
 }

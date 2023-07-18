@@ -1,4 +1,4 @@
-use std::io::SeekFrom;
+use std::io::{Read, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use trace::{debug, error};
@@ -15,7 +15,7 @@ const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x02];
 const SEGMENT_FILE_MAX_SIZE: u64 = 64 * 1024 * 1024;
 const BLOCK_HEADER_SIZE: usize = 16;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct SeriesKeyBlock {
     pub ts: i64,
     pub series_id: u32,
@@ -137,30 +137,13 @@ pub struct BinlogWriter {
 
 impl BinlogWriter {
     pub async fn open(id: u64, path: impl AsRef<Path>) -> IndexResult<Self> {
-        let path = path.as_ref();
-
-        // Get file and check if new file
-        let mut new_file = false;
-        let file = if file_manager::try_exists(path) {
-            let f = file_manager::get_file_manager()
-                .open_file(path)
-                .await
-                .map_err(|e| IndexError::FileErrors { msg: e.to_string() })?;
-            if f.is_empty() {
-                new_file = true;
-            }
-            f
-        } else {
-            new_file = true;
-            file_manager::get_file_manager()
-                .create_file(path)
-                .await
-                .map_err(|e| IndexError::FileErrors { msg: e.to_string() })?
-        };
+        let file = file_manager::create_file(path)
+            .await
+            .map_err(|e| IndexError::FileErrors { msg: e.to_string() })?;
 
         let mut size = file.len();
-        if new_file {
-            size = 8;
+        if size < SEGMENT_FILE_HEADER_SIZE as u64 {
+            size = SEGMENT_FILE_HEADER_SIZE as u64;
             BinlogWriter::write_header(&file, SEGMENT_FILE_HEADER_SIZE as u32).await?;
         }
 
@@ -267,51 +250,203 @@ impl BinlogReader {
         BinlogWriter::write_header(self.cursor.file_ref(), offset).await
     }
 
-    pub async fn next_block(&mut self) -> Option<SeriesKeyBlock> {
+    pub fn read_pos(&self) -> u32 {
+        self.cursor.pos() as u32
+    }
+
+    pub fn file_len(&self) -> u32 {
+        self.cursor.len() as u32
+    }
+
+    pub async fn next_block(&mut self) -> IndexResult<Option<SeriesKeyBlock>> {
+        if self.read_over() {
+            return Ok(None);
+        }
+
         debug!("Read index binlog: cursor.pos={}", self.cursor.pos());
 
-        let read_bytes = match self.cursor.read(&mut self.header_buf[..]).await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("failed read block header buf : {:?}", e);
-                return None;
-            }
-        };
+        let read_bytes = self.cursor.read(&mut self.header_buf[..]).await?;
         if read_bytes < BLOCK_HEADER_SIZE {
-            return None;
+            return Err(IndexError::FileErrors {
+                msg: format!("read header length {} < {}", read_bytes, BLOCK_HEADER_SIZE),
+            });
         }
 
         let ts = byte_utils::decode_be_i64(self.header_buf[0..8].into());
         let id = byte_utils::decode_be_u32(self.header_buf[8..12].into());
         let data_len = byte_utils::decode_be_u32(self.header_buf[12..16].into());
         if data_len == 0 {
-            return Some(SeriesKeyBlock {
+            return Ok(Some(SeriesKeyBlock {
                 ts,
                 series_id: id,
                 data_len,
                 data: vec![],
-            });
+            }));
         }
         debug!("Read Binlog Reader: data_len={}", data_len);
+
+        if data_len > (self.file_len() - self.read_pos()) {
+            error!(
+                "binlog read block error {}, {} {} ",
+                data_len,
+                self.file_len(),
+                self.read_pos()
+            );
+
+            return Err(IndexError::FileErrors {
+                msg: format!(
+                    "{} block data length {} > {}-{}",
+                    ts,
+                    data_len,
+                    self.file_len(),
+                    self.read_pos()
+                ),
+            });
+        }
 
         if data_len as usize > self.body_buf.len() {
             self.body_buf.resize(data_len as usize, 0);
         }
 
         let buf = &mut self.body_buf.as_mut_slice()[0..data_len as usize];
-        let _read_bytes = match self.cursor.read(buf).await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("failed read body buf : {:?}", e);
-                return None;
-            }
-        };
+        let read_bytes = self.cursor.read(buf).await?;
+        if read_bytes != data_len as usize {
+            return Err(IndexError::FileErrors {
+                msg: format!(
+                    "{} read block data error {} != {}",
+                    ts, read_bytes, data_len
+                ),
+            });
+        }
 
-        Some(SeriesKeyBlock {
+        Ok(Some(SeriesKeyBlock {
             ts,
             series_id: id,
             data_len,
             data: buf.to_vec(),
-        })
+        }))
+    }
+}
+
+pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
+    let tmp_file = BinlogWriter::open(0, PathBuf::from(file_name)).await?;
+    let mut reader_file = BinlogReader::new(0, tmp_file.file.into()).await?;
+
+    let file_read_offset = reader_file.read_pos();
+    let mut max_can_repair = 0;
+
+    while let Ok(Some(_)) = reader_file.next_block().await {
+        max_can_repair = reader_file.read_pos();
+    }
+
+    println!(
+        "file length: {}, persistence offset: {},  can repair offset: {}",
+        reader_file.file_len(),
+        file_read_offset,
+        max_can_repair
+    );
+
+    if file_read_offset >= max_can_repair {
+        println!("don't need generate repaire file");
+        return Ok(());
+    }
+
+    let mut buffer = Vec::new();
+    std::fs::File::open(file_name)?.read_to_end(&mut buffer)?;
+
+    let mut file = std::fs::File::create(format!("{}.repair", file_name))?;
+
+    file.write_all(&buffer)?;
+    file.set_len(max_can_repair as u64)?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::SeriesKeyBlock;
+    use crate::file_utils::make_index_binlog_file;
+    use crate::index::binlog::{BinlogReader, BinlogWriter, IndexBinlog};
+
+    /// ( timestamp, series_id, data )
+    type SeriesKeyBlockDesc<'a> = (i64, u32, &'a str);
+
+    fn build_series_key_blocks(
+        series_key_blk_desc: &[SeriesKeyBlockDesc<'_>],
+    ) -> Vec<SeriesKeyBlock> {
+        let mut blocks = Vec::with_capacity(series_key_blk_desc.len());
+        for (ts, sid, data) in series_key_blk_desc {
+            blocks.push(SeriesKeyBlock::new(*ts, *sid, data.as_bytes().to_vec()));
+        }
+        blocks
+    }
+
+    #[tokio::test]
+    async fn test_index_binlog_read_write() {
+        let dir = "/tmp/test/index_binlog/1";
+        let _ = std::fs::remove_dir_all(dir);
+
+        #[rustfmt::skip]
+        let series_key_block_desc_1: Vec<SeriesKeyBlockDesc> = vec![
+            (1001, 101, "abc"),
+            (1002, 102, "efg"),
+            (1003, 103, "hij"),
+        ];
+        let series_key_blocks_1 = build_series_key_blocks(&series_key_block_desc_1);
+        // Test build_series_key_blocks() .
+        for ((ts, series_id, data), b) in series_key_block_desc_1
+            .iter()
+            .zip(series_key_blocks_1.iter())
+        {
+            assert_eq!(*ts, b.ts);
+            assert_eq!(*series_id, b.series_id);
+            assert_eq!(data.as_bytes(), b.data.as_slice());
+        }
+
+        {
+            // Write the first 3 entries;
+            let mut index = IndexBinlog::new(dir).await.unwrap();
+            for blk in series_key_blocks_1.iter() {
+                index.write(&blk.encode()).await.unwrap();
+            }
+            index.close().await.unwrap();
+        }
+
+        #[rustfmt::skip]
+        let series_key_block_desc_2: Vec<SeriesKeyBlockDesc> = vec![
+            (1011, 111, "abcd"),
+            (1012, 112, "defg"),
+            (1013, 113, "hjkl"),
+        ];
+        let series_key_blocks_2 = build_series_key_blocks(&series_key_block_desc_2);
+        let binlog_id = {
+            // Write the second 3 entries;
+            let mut index = IndexBinlog::new(dir).await.unwrap();
+            for blk in series_key_blocks_2.iter() {
+                index.write(&blk.encode()).await.unwrap();
+            }
+            let binlog_id = index.writer_file.id;
+            index.close().await.unwrap();
+            binlog_id
+        };
+
+        // Read the 6 entries and check them.
+        let mut index = IndexBinlog::new(dir).await.unwrap();
+
+        let name = make_index_binlog_file(dir, binlog_id);
+        let binlog_writer = BinlogWriter::open(binlog_id, name).await.unwrap();
+        let mut reader_file = BinlogReader::new(binlog_id, binlog_writer.file.into())
+            .await
+            .unwrap();
+        for series_key_block in series_key_blocks_1.iter().chain(series_key_blocks_2.iter()) {
+            assert_eq!(
+                Some(series_key_block),
+                reader_file.next_block().await.unwrap().as_ref()
+            );
+        }
+        assert_eq!(None, reader_file.next_block().await.unwrap());
+
+        index.advance_write_offset(0).await.unwrap();
+        assert_eq!(None, reader_file.next_block().await.unwrap());
     }
 }

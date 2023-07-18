@@ -4,7 +4,6 @@ set -e
 # define environment
 export HTTP_HOST=${HTTP_HOST:-"127.0.0.1:8902"}
 export URL="http://${HTTP_HOST}/api/v1/ping"
-source "$HOME/.cargo/env"
 
 function usage() {
   echo "Start CnosDB Server and run tests, you may need to start CnosDB Meta Server first."
@@ -67,6 +66,7 @@ function wait_start() {
 function test() {
     echo "Testing query/test" && \
     cargo run --package test && \
+
     echo "Testing e2e_test" && \
     # cargo test --package e2e_test && \
     cargo test --package e2e_test  -- http_api_tests::test  && \

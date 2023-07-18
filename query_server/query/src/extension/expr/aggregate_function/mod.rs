@@ -1,13 +1,17 @@
 #[cfg(test)]
 mod example;
+mod sample;
 
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
-pub fn register_udafs(_func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
+pub const SAMPLE_UDAF_NAME: &str = "sample";
+
+pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...
     // eg.
     //   example::register_udaf(func_manager)?;
+    sample::register_udaf(func_manager)?;
     Ok(())
 }
 

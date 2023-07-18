@@ -20,7 +20,7 @@ use spi::query::session::SessionCtxFactory;
 use spi::server::dbms::DatabaseManagerSystem;
 use spi::service::protocol::{Query, QueryHandle, QueryId};
 use spi::{AuthSnafu, Result};
-use trace::debug;
+use trace::{debug, SpanContext};
 use tskv::kv_option::Options;
 
 use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
@@ -64,27 +64,33 @@ where
             .context(AuthSnafu)
     }
 
-    async fn execute(&self, query: &Query) -> Result<QueryHandle> {
-        let query_id = self.query_dispatcher.create_query_id();
-
+    async fn execute(
+        &self,
+        query: &Query,
+        span_context: Option<&SpanContext>,
+    ) -> Result<QueryHandle> {
         let tenant_id = self.get_tenant_id(query.context().tenant()).await?;
+        let query_id = self.query_dispatcher.create_query_id();
 
         let result = self
             .query_dispatcher
-            .execute_query(tenant_id, query_id, query)
+            .execute_query(tenant_id, query_id, query, span_context)
             .await?;
 
         Ok(QueryHandle::new(query_id, query.clone(), result))
     }
 
-    async fn build_query_state_machine(&self, query: Query) -> Result<QueryStateMachineRef> {
+    async fn build_query_state_machine(
+        &self,
+        query: Query,
+        span_context: Option<&SpanContext>,
+    ) -> Result<QueryStateMachineRef> {
         let query_id = self.query_dispatcher.create_query_id();
-
         let tenant_id = self.get_tenant_id(query.context().tenant()).await?;
 
         let query_state_machine = self
             .query_dispatcher
-            .build_query_state_machine(tenant_id, query_id, query)
+            .build_query_state_machine(tenant_id, query_id, query, span_context)
             .await?;
 
         Ok(query_state_machine)
@@ -266,7 +272,7 @@ mod tests {
     use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::record_batch::RecordBatch;
     use datafusion::arrow::util::pretty::pretty_format_batches;
-    use datafusion::execution::memory_pool::GreedyMemoryPool;
+    use memory_pool::GreedyMemoryPool;
     use models::auth::user::UserInfo;
     use models::schema::DEFAULT_CATALOG;
     use spi::service::protocol::ContextBuilder;
@@ -305,7 +311,7 @@ mod tests {
 
         let query = Query::new(ContextBuilder::new(user).build(), sql.to_string());
 
-        let result = db.execute(&query).await.unwrap();
+        let result = db.execute(&query, None).await.unwrap();
 
         result.result().chunk_result().await.unwrap().to_vec()
     }

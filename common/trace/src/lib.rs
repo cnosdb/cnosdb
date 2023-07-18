@@ -1,10 +1,21 @@
+pub mod exporter;
+/// Part of the code fork influxdb_iox
+pub mod id;
+pub mod span;
+pub mod span_ctx;
+
 use std::net::SocketAddr;
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use config::TokioTrace;
+pub use exporter::*;
+pub use id::*;
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, Once};
+pub use span::*;
+pub use span_ctx::*;
 use time::UtcOffset;
 use tracing::metadata::LevelFilter;
 pub use tracing::{debug, error, info, instrument, trace, warn};
@@ -18,7 +29,7 @@ use tracing_subscriber::{filter, fmt, EnvFilter, Layer, Registry};
 
 /// only use for unit test
 /// parameter only use for first call
-pub fn init_default_global_tracing(dir: &str, file_name: &str, level: &str) {
+pub fn init_default_global_tracing(dir: impl AsRef<Path>, file_name: &str, level: &str) {
     static START: Once = Once::new();
 
     START.call_once(|| {
@@ -48,7 +59,7 @@ pub fn targets_filter(level: LevelFilter, defined_tokio_trace: bool) -> filter::
             ("http_protocol", level),
             ("limiter_bucket", level),
             ("lru_cache", level),
-            ("main", level),
+            ("cnosdb", level),
             ("memory_pool", level),
             ("meta", level),
             ("metrics", level),
@@ -77,7 +88,7 @@ pub fn targets_filter(level: LevelFilter, defined_tokio_trace: bool) -> filter::
 }
 
 pub fn init_process_global_tracing(
-    log_path: &str,
+    log_path: impl AsRef<Path>,
     log_level: &str,
     log_file_prefix_name: &str,
     tokio_trace: Option<&TokioTrace>,
@@ -97,7 +108,7 @@ pub fn init_process_global_tracing(
 }
 
 pub fn init_global_tracing(
-    log_path: &str,
+    log_path: impl AsRef<Path>,
     log_level: &str,
     log_file_prefix_name: &str,
     tokio_trace: Option<&TokioTrace>,

@@ -12,6 +12,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
+use trace::SpanContext;
 
 use super::dispatcher::{QueryInfo, QueryStatus};
 use super::logical_planner::Plan;
@@ -195,7 +196,7 @@ pub struct QueryStateMachine {
 
 impl QueryStateMachine {
     /// only for test
-    pub fn test(query: Query) -> Self {
+    pub fn test(query: Query, span_context: Option<SpanContext>) -> Self {
         use coordinator::service_mock::MockCoordinator;
         use datafusion::execution::memory_pool::UnboundedMemoryPool;
 
@@ -212,6 +213,7 @@ impl QueryStateMachine {
                     ctx,
                     0,
                     Arc::new(UnboundedMemoryPool::default()),
+                    span_context,
                 )
                 .expect("create test session ctx"),
             Arc::new(MockCoordinator {}),
@@ -289,6 +291,19 @@ impl QueryStateMachine {
 
     fn translate_to(&self, state: Box<QueryState>) {
         self.state.store(Box::into_raw(state), Ordering::Relaxed);
+    }
+
+    pub fn with_span_ctx(&self, span_ctx: Option<SpanContext>) -> Self {
+        let state = AtomicPtr::new(Box::into_raw(Box::new(self.state().clone())));
+        Self {
+            session: self.session.with_span_ctx(span_ctx),
+            query_id: self.query_id,
+            query: self.query.clone(),
+            meta: self.meta.clone(),
+            coord: self.coord.clone(),
+            state,
+            start: self.start,
+        }
     }
 }
 

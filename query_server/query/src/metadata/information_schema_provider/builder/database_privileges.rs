@@ -3,12 +3,11 @@ use std::sync::Arc;
 use datafusion::arrow::array::StringBuilder;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
+    pub static ref DATABASE_PRIVILEGE_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
         Field::new("tenant_name", DataType::Utf8, false),
         Field::new("database_name", DataType::Utf8, false),
         Field::new("privilege_type", DataType::Utf8, false),
@@ -17,22 +16,12 @@ lazy_static! {
 }
 
 /// Builds the `information_schema.DatabasePrivileges` table row by row
+#[derive(Default)]
 pub struct InformationSchemaDatabasePrivilegesBuilder {
     tenant_names: StringBuilder,
     database_names: StringBuilder,
     privilege_types: StringBuilder,
     role_names: StringBuilder,
-}
-
-impl Default for InformationSchemaDatabasePrivilegesBuilder {
-    fn default() -> Self {
-        Self {
-            tenant_names: StringBuilder::new(),
-            database_names: StringBuilder::new(),
-            privilege_types: StringBuilder::new(),
-            role_names: StringBuilder::new(),
-        }
-    }
 }
 
 impl InformationSchemaDatabasePrivilegesBuilder {
@@ -51,7 +40,7 @@ impl InformationSchemaDatabasePrivilegesBuilder {
     }
 }
 
-impl TryFrom<InformationSchemaDatabasePrivilegesBuilder> for MemTable {
+impl TryFrom<InformationSchemaDatabasePrivilegesBuilder> for RecordBatch {
     type Error = DataFusionError;
 
     fn try_from(value: InformationSchemaDatabasePrivilegesBuilder) -> Result<Self, Self::Error> {
@@ -63,7 +52,7 @@ impl TryFrom<InformationSchemaDatabasePrivilegesBuilder> for MemTable {
         } = value;
 
         let batch = RecordBatch::try_new(
-            SCHEMA.clone(),
+            DATABASE_PRIVILEGE_SCHEMA.clone(),
             vec![
                 Arc::new(tenant_names.finish()),
                 Arc::new(database_names.finish()),
@@ -72,6 +61,6 @@ impl TryFrom<InformationSchemaDatabasePrivilegesBuilder> for MemTable {
             ],
         )?;
 
-        MemTable::try_new(SCHEMA.clone(), vec![vec![batch]])
+        Ok(batch)
     }
 }

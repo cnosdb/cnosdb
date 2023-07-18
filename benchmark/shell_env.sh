@@ -5,19 +5,19 @@ set -ex
 # 机器型号
 export MACHINE=${MACHINE:-$(uname -p)}
 # 此次任务的名称
-export BENCHMARK_ID=${BENCHMARK_ID:-$(date +%s)}
+export BENCHMARK_ID=${BENCHMARK_ID:-$(git log -1 --pretty=%h)}
 # 数据集
-export BENCHMARK_DATASET=${BENCHMARK_DATASET:-hits}
+export BENCHMARK_DATASET=$1
 # pr or release
 export BENCHMARK_TYPE=${BENCHMARK_TYPE:-"pr"}
 
 # hits
-export HITS_DATA_URL=${HITS_DATA_URL:-"http://127.0.0.1:8902/data.gz"}
+export HITS_DATA_URL=${HITS_DATA_URL:-"/data/hits.parquet"}
 
 # tsbs
 export TSBS_LOAD_CMD=${TSBS_LOAD_CMD:-"load_cnosdb"}
 export TSBS_LOAD_URL=${TSBS_LOAD_URL:-"http://127.0.0.1:8902"}
-export TSBS_DATA_URL=${TSBS_DATA_URL:-"http://127.0.0.1:8902/data.gz"}
+export TSBS_DATA_URL=${TSBS_DATA_URL:-"/data/cnosdb_iot_123_2022.gz"}
 export TSBS_LOAD_WORKERS=${TSBS_LOAD_WORKERS:-24}
 # tsbc optional
 export TSBS_QUERY_NUM=${TSBS_QUERY_NUM:-24}
@@ -35,4 +35,4 @@ export SQL_CLI="${CLI_CMD} --host ${QUERY_HOST}  --port ${QUERY_PORT}"
 
 # benchmark.sh 脚本的输出结果目录
 export RESULT_DIR=${RESULT_DIR:-"./results"}
-export TMP_DIR="/tmp/cnosdb"
+#export TMP_DIR="/tmp/cnosdb"

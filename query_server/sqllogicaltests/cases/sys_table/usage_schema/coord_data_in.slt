@@ -1,0 +1,6 @@
+include ./setup.slt
+
+query 
+select count(*) >= 1 from usage_schema.coord_data_in where value > 0;
+----
+true

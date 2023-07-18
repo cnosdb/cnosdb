@@ -3,13 +3,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use config::HintedOffConfig;
+use meta::model::MetaRef;
 use models::schema::Precision;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::RwLock;
 use tokio::time::{self, Duration};
-use trace::{debug, info};
+use trace::{debug, warn};
+use tracing::info;
 use tskv::byte_utils;
 use tskv::file_system::file_manager::list_dir_names;
 use tskv::file_system::queue::{Queue, QueueConfig};
@@ -111,14 +113,16 @@ impl DataBlock for HintedOffBlock {
 }
 
 pub struct HintedOffManager {
+    meta: MetaRef,
     config: HintedOffConfig,
     writer: Arc<PointWriter>,
     nodes: RwLock<HashMap<u64, Arc<RwLock<Queue>>>>,
 }
 
 impl HintedOffManager {
-    pub async fn new(config: HintedOffConfig, writer: Arc<PointWriter>) -> Self {
+    pub async fn new(config: HintedOffConfig, meta: MetaRef, writer: Arc<PointWriter>) -> Self {
         let manager = Self {
+            meta,
             config,
             writer,
             nodes: RwLock::new(HashMap::new()),
@@ -176,53 +180,96 @@ impl HintedOffManager {
         let queue = Arc::new(RwLock::new(queue));
         nodes.insert(id, queue.clone());
 
-        tokio::spawn(HintedOffManager::hinted_off_service(
-            id,
-            self.writer.clone(),
-            queue.clone(),
-        ));
+        for _ in 0..self.config.threads {
+            tokio::spawn(HintedOffManager::hinted_off_service(
+                id,
+                self.meta.clone(),
+                self.writer.clone(),
+                queue.clone(),
+            ));
+        }
 
         Ok(queue)
     }
 
-    async fn hinted_off_service(node_id: u64, writer: Arc<PointWriter>, queue: Arc<RwLock<Queue>>) {
+    async fn hinted_off_service(
+        node_id: u64,
+        meta: MetaRef,
+        writer: Arc<PointWriter>,
+        queue: Arc<RwLock<Queue>>,
+    ) {
         debug!("hinted_off_service started for node: {}", node_id);
 
+        let mut count = 0;
         let mut block = HintedOffBlock::new(0, 0, "".to_string(), Precision::NS, vec![]);
         loop {
             let read_result = queue.write().await.read(&mut block).await;
             match read_result {
                 Ok(_) => {
-                    HintedOffManager::write_until_success(writer.clone(), &block, node_id).await;
+                    HintedOffManager::write_until_success(
+                        meta.clone(),
+                        queue.clone(),
+                        writer.clone(),
+                        &block,
+                    )
+                    .await;
                     let _ = queue.write().await.commit().await;
                 }
 
                 Err(err) => {
                     debug!("read hindoff data: {}", err.to_string());
-                    time::sleep(Duration::from_secs(3)).await;
+                    time::sleep(Duration::from_secs(10)).await;
                 }
             }
+
+            if count % 1000 == 0 {
+                let size = queue.write().await.size().await;
+                info!("hinted handoff remain size: {:?}, node: {}", size, node_id)
+            }
+            count += 1
         }
     }
 
-    async fn write_until_success(writer: Arc<PointWriter>, block: &HintedOffBlock, node_id: u64) {
-        loop {
-            if writer
+    async fn write_until_success(
+        meta: MetaRef,
+        queue: Arc<RwLock<Queue>>,
+        writer: Arc<PointWriter>,
+        block: &HintedOffBlock,
+    ) {
+        while let Ok(all_info) =
+            crate::get_vnode_all_info(meta.clone(), &block.tenant, block.vnode_id).await
+        {
+            let result = writer
                 .write_to_remote_node(
                     block.vnode_id,
-                    node_id,
+                    all_info.node_id,
                     &block.tenant,
                     block.precision,
                     block.data.clone(),
+                    // not record trace
+                    None,
                 )
-                .await
-                .is_ok()
-            {
-                break;
-            } else {
-                info!("hinted_off write data to node {} failed", node_id);
-                time::sleep(Duration::from_secs(3)).await;
+                .await;
+
+            if let Err(CoordinatorError::FailoverNode { id: _, error }) = result {
+                let size = queue.write().await.size().await;
+                warn!(
+                    "hinted_off write data to {}({}) failed, error: {}, try later...; remain size: {:?}",
+                    all_info.node_id, block.vnode_id, error, size
+                );
+
+                time::sleep(Duration::from_secs(10)).await;
+                continue;
             }
+
+            if result.is_err() {
+                info!(
+                    "hinted_off write data {}({}) failed, {:?}",
+                    all_info.node_id, block.vnode_id, result
+                );
+            }
+
+            break;
         }
     }
 }
@@ -240,7 +287,7 @@ mod test {
     use tokio::io::AsyncSeekExt;
     use tokio::sync::RwLock;
     use tokio::time::{self, Duration};
-    use trace::init_default_global_tracing;
+    use trace::{info, init_default_global_tracing};
 
     use super::*;
 

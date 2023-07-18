@@ -4,8 +4,11 @@ use async_trait::async_trait;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
-use datafusion::physical_plan::planner::{create_aggregate_expr, ExtensionPlanner};
-use datafusion::physical_plan::{displayable, ExecutionPlan, PhysicalPlanner};
+use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
+use datafusion::physical_plan::{displayable, ExecutionPlan};
+use datafusion::physical_planner::{
+    create_aggregate_expr_and_maybe_filter, ExtensionPlanner, PhysicalPlanner,
+};
 use trace::{debug, trace};
 
 use crate::data_source::{source_downcast_adapter, WriteExecExt};
@@ -43,7 +46,13 @@ impl ExtensionPlanner for TableWriterPlanner {
                     physical_inputs.len(),
                     "TableWriterPlanNode has multiple inputs."
                 );
-                let physical_input = physical_inputs[0].clone();
+
+                let batch_size = session_state.config().batch_size();
+                // CoalesceBatchesExec combines small batches into larger batches for more efficient writing
+                let physical_input = Arc::new(CoalesceBatchesExec::new(
+                    physical_inputs[0].clone(),
+                    batch_size,
+                ));
 
                 let table_provider = source_downcast_adapter(target_table)
                     .map_err(|e| DataFusionError::External(Box::new(e)))?;
@@ -52,7 +61,7 @@ impl ExtensionPlanner for TableWriterPlanner {
 
                 debug!(
                     "After Apply TableWriterPlanner. Transformed physical plan: {}",
-                    displayable(result.as_ref()).indent()
+                    displayable(result.as_ref()).indent(false)
                 );
                 trace!("Full transformed physical plan:\n {:?}", result);
 
@@ -76,12 +85,14 @@ impl ExtensionPlanner for TableWriterPlanner {
                 let physical_aggr_expr = agg_expr
                     .iter()
                     .map(|e| {
-                        create_aggregate_expr(
+                        let expr = create_aggregate_expr_and_maybe_filter(
                             e,
                             logical_input_schema.as_ref(),
                             physical_input_schema.as_ref(),
                             session_state.execution_props(),
-                        )
+                        )?
+                        .0;
+                        Ok(expr)
                     })
                     .collect::<Result<Vec<_>>>()?;
 
@@ -92,7 +103,7 @@ impl ExtensionPlanner for TableWriterPlanner {
 
                 debug!(
                     "After Apply TableWriterPlanner. Transformed physical plan: {}",
-                    displayable(result.as_ref()).indent()
+                    displayable(result.as_ref()).indent(false)
                 );
                 trace!("Full transformed physical plan:\n {:?}", result);
 

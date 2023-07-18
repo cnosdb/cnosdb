@@ -64,7 +64,7 @@ impl QueryExecution for SystemExecution {
             qsm.query.content().to_string(),
             *qsm.session.tenant_id(),
             qsm.session.tenant().to_string(),
-            qsm.query.context().user_info().desc().clone(),
+            qsm.session.user().desc().clone(),
         )
     }
     // 运行时信息
@@ -90,7 +90,10 @@ struct SystemTaskFactory {
 impl SystemTaskFactory {
     fn create_task(&self) -> Box<dyn SystemTask> {
         match &self.plan {
-            SYSPlan::ShowQueries => Box::new(ShowQueriesTask::new(self.query_tracker.clone())),
+            SYSPlan::ShowQueries => Box::new(ShowQueriesTask::new(
+                self.query_tracker.clone(),
+                self.plan.schema(),
+            )),
             SYSPlan::KillQuery(query_id) => {
                 Box::new(KillQueryTask::new(self.query_tracker.clone(), *query_id))
             }

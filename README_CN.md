@@ -30,6 +30,8 @@
     <a href="https://docs.cnosdb.com/zh/">Documentation</a>
     •
     <a href="https://docs.cnosdb.com/zh/guide/quick_start.html">Quick Start</a>
+    •
+    <a href="https://docs.cnosdb.com/zh/latest/versatility/ai/LangChain.html">CnosDB with LangChain</a>
 </h3>
 
 CnosDB 是一款高性能、高压缩率、高易用性的开源分布式时序数据库。主要应用场景为物联网，工业互联网，车联网，IT运维等。所有代码均已在GitHub开源。
@@ -110,13 +112,10 @@ make build
 
 #### 运行CnosDB
 
-以下为单节点启动，如需启动集群，见[集群启动流程](https://docs.cnosdb.com/zh/guide/cluster/cluster.html#%E9%9B%86%E7%BE%A4%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B)
+以下为单节点启动，如需启动集群，见 [启动一个集群](https://docs.cnosdb.com/zh/guide/cluster/cluster.html#%E9%9B%86%E7%BE%A4%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B)
 
 ```bash
-./target/debug/cnosdb-meta --id 1 --http-addr 127.0.0.1:8901
-curl http://127.0.0.1:8901/init -d '{}'
-curl http://127.0.0.1:8901/metrics
-./target/debug/cnosdb run --config ./config/config_8902.toml
+./target/debug/cnosdb run -M singleton --config ./config/config.toml
 ```
 
 #### **运行CLI**
@@ -130,11 +129,11 @@ cargo run --package client --bin cnosdb-cli
 
 2. 使用 Docker 启动容器
 ```shell
-docker run --name cnosdb -d  --env cpu=2 --env memory=4 -p 31007:31007 cnosdb/cnosdb:v2.0.1
+docker run --name cnosdb -d cnosdb/cnosdb:community-latest cnosdb run -M singleton --config /etc/cnosdb/cnosdb.conf
 ```
 3. 进入容器
 ```shell
-docker exec -it cnosdb sh
+docker exec -it cnosdb bash
 ```
 4. 运行`cnosdb-cli`
 ```shell
@@ -143,14 +142,14 @@ cnosdb-cli
 
 > 退出请输入`\q`
 > 查看帮助请输入`\?`
-> 更多内容请查看[基本操作](https://docs.cnosdb.com/zh/guide/tools/cli.html)
+> 更多内容请查看[快速开始](https://docs.cnosdb.com/zh/latest/start/quick_start.html)
 
 ## 数据写入
 
-- [SQL写入](https://docs.cnosdb.com/zh/guide/query/insert.html#insert)
+- [SQL写入](https://docs.cnosdb.com/zh/latest/reference/sql.html#insert)
 - [influxdb行协议](https://docs.influxdata.com/influxdb/v2.6/reference/syntax/line-protocol/)
-- [批量导入](https://docs.cnosdb.com/zh/guide/query/bulk_load.html)
-- [telegraf](https://docs.cnosdb.com/zh/guide/ecology/telegraf.html)
+- [批量导入](https://docs.cnosdb.com/zh/latest/develop/write.html#load-data)
+- [telegraf](https://docs.cnosdb.com/en/latest/versatility/collect/telegraf.html)
 
 下面将展示使用cli进行SQL写入的例子
 
@@ -215,8 +214,8 @@ Query took 0.038 seconds.
 
 ## 数据查询
 
-- [SQL](https://docs.cnosdb.com/zh/guide/query/sql.html)，兼容SQL标准
-- Prometheus remote read
+- [SQL](https://docs.cnosdb.com/zh/latest/reference/sql.html)，兼容SQL标准
+- [Prometheus remote read](https://docs.cnosdb.com/zh/latest/versatility/collect/prometheus.html#remote-read)
 
 下面将展示使用cli进行SQL查询的例子
 
@@ -240,11 +239,18 @@ Query took 0.036 seconds.
 
 # 连接器
 
-- Java: 支持[JDBC](https://docs.cnosdb.com/zh/guide/application/JDBC.html)和[Java Arrow Flight](https://docs.cnosdb.com/zh/guide/application/java.html)
-- C++: 支持[ODBC](https://docs.cnosdb.com/zh/guide/application/c++.html)和[C++ Arrow Flight](https://docs.cnosdb.com/zh/guide/application/c++.html)
-- [Go](https://docs.cnosdb.com/zh/guide/application/go.html)
-- [Python](https://docs.cnosdb.com/zh/guide/application/python.html): 符合[Python数据访问规范(PEP 249)](https://peps.python.org/pep-0249/)
-- [Rust](https://docs.cnosdb.com/zh/guide/application/rust.html)
+CnosDB支持多种客户端的连接：
+
+- C/C++
+- Go
+- Java
+- Rust
+- Python
+- JDBC
+- ODBC
+- Arrow Flight SQL
+
+以上示例请访问文档中的 [Connector](https://docs.cnosdb.com/zh/latest/reference/connector/) 章节。
 
 # 路线图
 
@@ -269,5 +275,6 @@ Query took 0.036 seconds.
 - CnosDB 2.0使用[Apache Arrow](https://github.com/apache/arrow)作为内存模型。
 - CnosDB 2.0的查询引擎基于[Apache Arrow DataFusion](https://github.com/apache/arrow-datafusion)构建。
 - CnosDB 2.0的Bug挖掘工具使用[SQLancer](https://github.com/sqlancer/sqlancer)作为支持。
-- CnosDB 2.0的集成测试框架基于[sqllogictest-rs](https://github.com/risinglightdb/sqllogictest-rs)构建.
+- CnosDB 2.0的集成测试框架基于[sqllogictest-rs](https://github.com/risinglightdb/sqllogictest-rs)构建。
+- CnosDB 2.0 结合 [LangChain](https://github.com/hwchase17/langchain) 实现自然语言与数据库的交流。
 

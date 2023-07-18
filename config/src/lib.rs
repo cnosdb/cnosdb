@@ -17,6 +17,7 @@ pub use crate::node_config::*;
 pub use crate::query_config::*;
 pub use crate::security_config::*;
 pub use crate::storage_config::*;
+pub use crate::trace::*;
 pub use crate::wal_config::*;
 
 mod cache_config;
@@ -32,25 +33,65 @@ mod node_config;
 mod query_config;
 mod security_config;
 mod storage_config;
+mod trace;
 mod wal_config;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    ///
     #[serde(default = "Config::default_reporting_disabled")]
     pub reporting_disabled: bool,
+
+    ///
     #[serde(default = "Config::default_host")]
     pub host: String,
+
+    ///
+    #[serde(default = "Default::default")]
     pub deployment: DeploymentConfig,
+
+    ///
+    #[serde(default = "Default::default")]
     pub query: QueryConfig,
+
+    ///
+    #[serde(default = "Default::default")]
     pub storage: StorageConfig,
+
+    ///
+    #[serde(default = "Default::default")]
     pub wal: WalConfig,
+
+    ///
+    #[serde(default = "Default::default")]
     pub cache: CacheConfig,
+
+    ///
+    #[serde(default = "Default::default")]
     pub log: LogConfig,
+
+    ///
+    #[serde(default = "Default::default")]
     pub security: SecurityConfig,
+
+    ///
+    #[serde(default = "Default::default")]
     pub cluster: ClusterConfig,
+
+    ///
+    #[serde(default = "Default::default")]
     pub hinted_off: HintedOffConfig,
+
+    ///
+    #[serde(default = "Default::default")]
     pub heartbeat: HeartBeatConfig,
+
+    ///
+    #[serde(default = "Default::default")]
     pub node_basic: NodeBasicConfig,
+
+    #[serde(default = "Default::default")]
+    pub trace: TraceConfig,
 }
 
 impl Default for Config {
@@ -69,6 +110,7 @@ impl Default for Config {
             hinted_off: Default::default(),
             heartbeat: Default::default(),
             node_basic: Default::default(),
+            trace: Default::default(),
         }
     }
 }
@@ -92,7 +134,7 @@ impl Config {
     }
 
     pub fn to_string_pretty(&self) -> String {
-        toml::to_string_pretty(self).unwrap_or_else(|_| "Failed to stringfy Config".to_string())
+        toml::to_string_pretty(self).unwrap_or_else(|_| "Failed to stringify Config".to_string())
     }
 }
 
@@ -220,7 +262,7 @@ mod test {
         let _ = cfg_file.write(cfg.to_string_pretty().as_bytes()).unwrap();
         let cfg_2 = crate::get_config(cfg_path).unwrap();
 
-        assert_eq!(cfg, cfg_2);
+        assert_eq!(cfg.to_string_pretty(), cfg_2.to_string_pretty());
     }
 
     #[test]
@@ -321,7 +363,7 @@ http_listen_port = 31007
 grpc_listen_port = 31008
 
 [node_basic]
-node_id = 1001 
+node_id = 1001
 cold_data_server = false
 store_metrics = true
 
@@ -332,6 +374,15 @@ report_time_interval_secs = 30
 enable = true
 path = '/tmp/cnosdb/hh'
 "#;
+
+        let config: Config = toml::from_str(config_str).unwrap();
+        assert!(toml::to_string_pretty(&config).is_ok());
+        dbg!(config);
+    }
+
+    #[test]
+    fn test_parse_empty() {
+        let config_str = "";
 
         let config: Config = toml::from_str(config_str).unwrap();
         assert!(toml::to_string_pretty(&config).is_ok());

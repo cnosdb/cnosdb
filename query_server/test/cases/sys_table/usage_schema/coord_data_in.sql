@@ -4,6 +4,10 @@ DESCRIBE DATABASE usage_schema;
 
 DESCRIBE TABLE coord_data_in;
 
+DESCRIBE TABLE sql_data_in;
+
+DESCRIBE TABLE write_data_in;
+
 drop tenant if exists test_coord_data_in;
 drop user if exists test_cdi_u1;
 

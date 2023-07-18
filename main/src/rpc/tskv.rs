@@ -1,31 +1,30 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use coordinator::errors::CoordinatorResult;
 use coordinator::file_info::get_files_meta;
-use coordinator::reader::{QueryExecutor, ReaderIterator};
-use coordinator::service::{CoordServiceMetrics, CoordinatorRef};
+use coordinator::service::CoordinatorRef;
 use coordinator::vnode_mgr::VnodeManager;
 use coordinator::{FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE};
-use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
-use futures::Stream;
+use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
 use models::predicate::domain::{self, QueryArgs, QueryExpr};
+use models::record_batch_encode;
 use models::schema::{Precision, TableColumn};
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::*;
 use protos::models::{PingBody, PingBodyBuilder};
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::StreamExt;
-use tonic::{Request, Response, Status};
-use trace::{debug, error, info};
-use tskv::query_iterator::{QueryOption, TableScanMetrics};
+use tonic::{Extensions, Request, Response, Status};
+use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
+use tskv::error::Result as TskvResult;
+use tskv::reader::query_executor::QueryExecutor;
+use tskv::reader::serialize::TonicRecordBatchEncoder;
+use tskv::reader::{QueryOption, SendableTskvRecordBatchStream};
 use tskv::EngineRef;
 
 type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, tonic::Status>> + Send>>;
@@ -152,7 +151,7 @@ impl TskvServiceImpl {
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
         let meta = self.coord.meta_manager();
         let manager = VnodeManager::new(meta, self.kv_inst.clone(), self.coord.node_id());
-        if let Err(err) = manager.copy_vnode(tenant, request.vnode_id).await {
+        if let Err(err) = manager.copy_vnode(tenant, request.vnode_id, true).await {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
         } else {
             self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
@@ -185,94 +184,72 @@ impl TskvServiceImpl {
         }
     }
 
-    async fn query_record_batch_exec(
+    async fn admin_fetch_vnode_checksum(
+        &self,
+        _tenant: &str,
+        request: &FetchVnodeChecksumRequest,
+    ) -> Result<tonic::Response<BatchBytesResponse>, tonic::Status> {
+        match self.kv_inst.get_vnode_hash_tree(request.vnode_id).await {
+            Ok(record) => match record_batch_encode(&record) {
+                Ok(bytes) => self.bytes_response(SUCCESS_RESPONSE_CODE, bytes),
+                Err(_) => self.bytes_response(FAILED_RESPONSE_CODE, vec![]),
+            },
+            // TODO(zipper): Add error message in BatchBytesResponse
+            Err(_) => self.bytes_response(FAILED_RESPONSE_CODE, vec![]),
+        }
+    }
+
+    fn query_record_batch_exec(
         self,
         args: QueryArgs,
         expr: QueryExpr,
         aggs: Option<Vec<TableColumn>>,
-        sender: Sender<CoordinatorResult<RecordBatch>>,
-    ) {
-        let plan_metrics = ExecutionPlanMetricsSet::new();
-        let scan_metrics = TableScanMetrics::new(&plan_metrics, 0, None);
+        span_ctx: Option<&SpanContext>,
+    ) -> TskvResult<SendableTskvRecordBatchStream> {
         let option = QueryOption::new(
             args.batch_size,
             expr.split,
             aggs,
             Arc::new(expr.df_schema),
             expr.table_schema,
-            scan_metrics.tskv_metrics(),
         );
 
         let meta = self.coord.meta_manager();
         let node_id = meta.node_id();
         let mut vnodes = Vec::with_capacity(args.vnode_ids.len());
         for id in args.vnode_ids.iter() {
-            vnodes.push(VnodeInfo { id: *id, node_id })
+            vnodes.push(VnodeInfo::new(*id, node_id))
         }
 
-        let executor = QueryExecutor::new(
-            option,
-            self.runtime.clone(),
-            Some(self.kv_inst.clone()),
-            meta,
-            sender.clone(),
-            Arc::new(CoordServiceMetrics::new(&self.metrics_register)),
-        );
-        if let Err(err) = executor.local_node_executor(vnodes).await {
-            if sender.is_closed() {
-                return;
-            }
-            debug!("select statement execute failed: {}", err.to_string());
-            let _ = sender.send(Err(err)).await;
-        } else {
-            debug!("select statement execute success");
-        }
+        let executor = QueryExecutor::new(option, self.runtime.clone(), meta, self.kv_inst.clone());
+        executor.local_node_executor(vnodes, span_ctx)
     }
 
-    async fn tag_scan_exec(
+    fn tag_scan_exec(
         args: QueryArgs,
         expr: QueryExpr,
         meta: MetaRef,
         run_time: Arc<Runtime>,
         kv_inst: EngineRef,
-        sender: Sender<CoordinatorResult<RecordBatch>>,
-        metrics_register: Arc<MetricsRegister>,
-    ) {
-        let plan_metrics = ExecutionPlanMetricsSet::new();
-        let scan_metrics = TableScanMetrics::new(&plan_metrics, 0, None);
+        span_ctx: Option<&SpanContext>,
+    ) -> TskvResult<SendableTskvRecordBatchStream> {
         let option = QueryOption::new(
             args.batch_size,
             expr.split,
             None,
             Arc::new(expr.df_schema),
             expr.table_schema,
-            scan_metrics.tskv_metrics(),
         );
 
         let node_id = meta.node_id();
         let vnodes = args
             .vnode_ids
             .iter()
-            .map(|id| VnodeInfo { id: *id, node_id })
+            .map(|id| VnodeInfo::new(*id, node_id))
             .collect::<Vec<_>>();
 
-        let executor = QueryExecutor::new(
-            option,
-            run_time,
-            Some(kv_inst),
-            meta,
-            sender.clone(),
-            Arc::new(CoordServiceMetrics::new(&metrics_register)),
-        );
-        if let Err(err) = executor.local_node_tag_scan(vnodes).await {
-            if sender.is_closed() {
-                return;
-            }
-            debug!("select statement execute failed: {}", err.to_string());
-            let _ = sender.send(Err(err)).await;
-        } else {
-            debug!("select statement execute success");
-        }
+        let executor = QueryExecutor::new(option, run_time, meta, kv_inst);
+        executor.local_node_tag_scan(vnodes, span_ctx)
     }
 }
 
@@ -309,6 +286,7 @@ impl TskvService for TskvServiceImpl {
     }
 
     type WritePointsStream = ResponseStream<WritePointsResponse>;
+    // TODO remove, use `write_vnode_point` instead
     async fn write_points(
         &self,
         request: tonic::Request<tonic::Streaming<WritePointsRequest>>,
@@ -320,7 +298,7 @@ impl TskvService for TskvServiceImpl {
                 Ok(req) => {
                     let ret = self
                         .kv_inst
-                        .write(0, Precision::NS, req)
+                        .write(None, 0, Precision::NS, req)
                         .await
                         .map_err(|err| tonic::Status::internal(err.to_string()));
                     resp_sender.send(ret).await.expect("successful");
@@ -343,6 +321,7 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: tonic::Request<WriteVnodeRequest>,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let span_recorder = get_span_recorder(request.extensions(), "grpc write_vnode_points");
         let inner = request.into_inner();
         let request = WritePointsRequest {
             version: 1,
@@ -354,20 +333,17 @@ impl TskvService for TskvServiceImpl {
             points: inner.data,
         };
 
-        if let Err(err) = self
+        let _ = self
             .kv_inst
             .write(
+                span_recorder.span_ctx(),
                 inner.vnode_id,
                 Precision::from(inner.precision as u8),
                 request,
             )
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            info!("success write data to vnode: {}", inner.vnode_id);
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
+            .await?;
+
+        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
     }
 
     async fn exec_admin_command(
@@ -414,6 +390,24 @@ impl TskvService for TskvServiceImpl {
         }
     }
 
+    async fn exec_admin_fetch_command(
+        &self,
+        request: Request<AdminFetchCommandRequest>,
+    ) -> Result<Response<BatchBytesResponse>, Status> {
+        let inner = request.into_inner();
+
+        if let Some(command) = inner.command {
+            match &command {
+                admin_fetch_command_request::Command::FetchVnodeChecksum(command) => {
+                    self.admin_fetch_vnode_checksum(&inner.tenant, command)
+                        .await
+                }
+            }
+        } else {
+            self.bytes_response(FAILED_RESPONSE_CODE, vec![])
+        }
+    }
+
     async fn fetch_vnode_summary(
         &self,
         request: tonic::Request<FetchVnodeSummaryRequest>,
@@ -448,7 +442,7 @@ impl TskvService for TskvServiceImpl {
 
         if let Err(err) = self
             .kv_inst
-            .flush_tsfamily(&inner.tenant, &inner.db, inner.vnode_id)
+            .prepare_copy_vnode(&inner.tenant, &inner.db, inner.vnode_id)
             .await
         {
             return Err(tonic::Status::new(tonic::Code::Internal, err.to_string()));
@@ -506,6 +500,7 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: tonic::Request<QueryRecordBatchRequest>,
     ) -> Result<tonic::Response<Self::QueryRecordBatchStream>, tonic::Status> {
+        let span_recorder = get_span_recorder(request.extensions(), "grpc query_record_batch");
         let inner = request.into_inner();
 
         let args = match QueryArgs::decode(&inner.args) {
@@ -524,46 +519,21 @@ impl TskvService for TskvServiceImpl {
         };
 
         let service = self.clone();
-        let (mut iterator, record_batch_sender) = ReaderIterator::new();
-        tokio::spawn(TskvServiceImpl::query_record_batch_exec(
-            service,
-            args,
-            expr,
-            aggs,
-            record_batch_sender,
-        ));
 
-        let (send, recv) = mpsc::channel(1024);
-        tokio::spawn(async move {
-            while let Some(item) = iterator.next_and_encdoe().await {
-                match item {
-                    Ok(data) => {
-                        let _ = send
-                            .send(Ok(BatchBytesResponse {
-                                code: SUCCESS_RESPONSE_CODE,
-                                data,
-                            }))
-                            .await;
-                    }
+        let encoded_stream = {
+            let span_recorder = span_recorder.child("RecordBatch encorder stream");
 
-                    Err(err) => {
-                        info!("query record batch failed: {}", err);
-                        let _ = send
-                            .send(Ok(BatchBytesResponse {
-                                code: FAILED_RESPONSE_CODE,
-                                data: err.to_string().into(),
-                            }))
-                            .await;
+            let stream = TskvServiceImpl::query_record_batch_exec(
+                service,
+                args,
+                expr,
+                aggs,
+                span_recorder.span_ctx(),
+            )?;
+            TonicRecordBatchEncoder::new(stream, span_recorder).map_err(Into::into)
+        };
 
-                        break;
-                    }
-                }
-            }
-        });
-
-        let out_stream = ReceiverStream::new(recv);
-
-        Ok(tonic::Response::new(Box::pin(out_stream)))
+        Ok(tonic::Response::new(Box::pin(encoded_stream)))
     }
 
     type TagScanStream = ResponseStream<BatchBytesResponse>;
@@ -571,6 +541,7 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: Request<QueryRecordBatchRequest>,
     ) -> Result<Response<Self::TagScanStream>, Status> {
+        let span_recorder = get_span_recorder(request.extensions(), "grpc query_record_batch");
         let inner = request.into_inner();
 
         let args = match QueryArgs::decode(&inner.args) {
@@ -582,47 +553,26 @@ impl TskvService for TskvServiceImpl {
             Ok(expr) => expr,
             Err(err) => return Err(self.tonic_status(err.to_string())),
         };
-        let (mut iterator, record_batch_sender) = ReaderIterator::new();
-        tokio::spawn(TskvServiceImpl::tag_scan_exec(
-            args,
-            expr,
-            self.coord.meta_manager(),
-            self.runtime.clone(),
-            self.kv_inst.clone(),
-            record_batch_sender,
-            self.metrics_register.clone(),
-        ));
 
-        let (send, recv) = mpsc::channel(1024);
-        tokio::spawn(async move {
-            while let Some(item) = iterator.next_and_encdoe().await {
-                match item {
-                    Ok(data) => {
-                        let _ = send
-                            .send(Ok(BatchBytesResponse {
-                                code: SUCCESS_RESPONSE_CODE,
-                                data,
-                            }))
-                            .await;
-                    }
+        let stream = {
+            let span_recorder = span_recorder.child("RecordBatch encorder stream");
+            let stream = TskvServiceImpl::tag_scan_exec(
+                args,
+                expr,
+                self.coord.meta_manager(),
+                self.runtime.clone(),
+                self.kv_inst.clone(),
+                span_recorder.span_ctx(),
+            )?;
 
-                    Err(err) => {
-                        info!("query record batch failed: {}", err);
-                        let _ = send
-                            .send(Ok(BatchBytesResponse {
-                                code: FAILED_RESPONSE_CODE,
-                                data: err.to_string().into(),
-                            }))
-                            .await;
+            TonicRecordBatchEncoder::new(stream, span_recorder).map_err(Into::into)
+        };
 
-                        break;
-                    }
-                }
-            }
-        });
-
-        let out_stream = ReceiverStream::new(recv);
-
-        Ok(tonic::Response::new(Box::pin(out_stream)))
+        Ok(tonic::Response::new(Box::pin(stream)))
     }
+}
+
+fn get_span_recorder(extensions: &Extensions, child_span_name: &'static str) -> SpanRecorder {
+    let span_context = extensions.get::<SpanContext>();
+    SpanRecorder::new(span_context.child_span(child_span_name))
 }

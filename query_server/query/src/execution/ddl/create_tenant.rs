@@ -29,8 +29,7 @@ impl DDLDefinitionTask for CreateTenantTask {
         } = self.stmt;
 
         // 元数据接口查询tenant是否存在
-        let tenant_manager = query_state_machine.meta.tenant_manager();
-        let tenant = tenant_manager.tenant_meta(name).await;
+        let tenant = query_state_machine.meta.tenant_meta(name).await;
 
         match (if_not_exists, tenant) {
             // do not create if exists
@@ -45,7 +44,8 @@ impl DDLDefinitionTask for CreateTenantTask {
                 // name: String
                 // options: TenantOptions
                 debug!("Create tenant {} with options [{}]", name, options);
-                let meta_client = tenant_manager
+                let meta_client = query_state_machine
+                    .meta
                     .create_tenant(name.to_string(), options.clone())
                     .await?;
                 if name.eq(DEFAULT_CATALOG) {

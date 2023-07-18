@@ -489,6 +489,12 @@ pub enum QueryError {
     PersistQuery {
         reason: String,
     },
+
+    #[snafu(display("Analyze pushed down predicates, error: {}", reason))]
+    #[error_code(code = 72)]
+    AnalyzePushedFilter {
+        reason: String,
+    },
 }
 
 impl From<ParserError> for QueryError {
@@ -521,6 +527,12 @@ impl From<DataFusionError> for QueryError {
                     source: *e.downcast::<CoordinatorError>().unwrap(),
                 }
             }
+
+            DataFusionError::External(e) if e.downcast_ref::<ArrowError>().is_some() => {
+                let arrow_error = *e.downcast::<ArrowError>().unwrap();
+                arrow_error.into()
+            }
+
             DataFusionError::ArrowError(e) => e.into(),
             v => QueryError::Datafusion { source: v },
         }

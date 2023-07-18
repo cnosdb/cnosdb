@@ -7,7 +7,6 @@ use datafusion::arrow;
 use datafusion::datasource::MemTable;
 use datafusion::error::Result;
 use datafusion::execution::context::SessionContext;
-use datafusion::from_slice::FromSlice;
 use parking_lot::Mutex;
 use query::extension::expr::func_manager::DFSessionContextFuncAdapter;
 use query::extension::expr::load_all_functions;
@@ -15,7 +14,6 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use tokio::runtime::Runtime;
-use trace::warn;
 
 pub fn query(ctx: Arc<Mutex<SessionContext>>, sql: &str) {
     let rt = Runtime::new().unwrap();
@@ -32,9 +30,7 @@ pub fn create_context(
     // temporary(database level): wrap SessionContext into function meta manager
     let mut func_manager = DFSessionContextFuncAdapter::new(&mut ctx);
     // temporary(database level): register function to function meta manager
-    if let Err(e) = load_all_functions(&mut func_manager) {
-        warn!("Failed to load consdb's built-in function. err: {}", e);
-    };
+    load_all_functions(&mut func_manager).expect("load_all_functions");
     let provider = create_table_provider(partitions_len, array_len, batch_size)?;
     ctx.register_table("t", provider)?;
     Ok(Arc::new(Mutex::new(ctx)))
@@ -136,7 +132,7 @@ fn create_record_batch(
         schema,
         vec![
             Arc::new(StringArray::from(keys)),
-            Arc::new(Float32Array::from_slice(vec![i as f32; batch_size])),
+            Arc::new(Float32Array::from(vec![i as f32; batch_size])),
             Arc::new(Float64Array::from(values)),
             Arc::new(UInt64Array::from(integer_values_wide)),
             Arc::new(UInt64Array::from(integer_values_narrow)),

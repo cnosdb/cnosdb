@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use datafusion::execution::memory_pool::GreedyMemoryPool;
-use meta::model::meta_manager::RemoteMetaManager;
+use memory_pool::GreedyMemoryPool;
+use meta::model::meta_admin::AdminMeta;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::schema::Precision;
@@ -24,10 +24,9 @@ async fn get_tskv() -> TsKv {
             .unwrap(),
     );
 
-    let meta_manager: MetaRef =
-        RemoteMetaManager::new(global_config.clone(), global_config.storage.path.clone()).await;
+    let meta_manager: MetaRef = AdminMeta::new(global_config.clone()).await;
 
-    meta_manager.admin_meta().add_data_node().await.unwrap();
+    meta_manager.add_data_node().await.unwrap();
 
     let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
     TsKv::open(
@@ -43,7 +42,7 @@ async fn get_tskv() -> TsKv {
 
 fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRequest) {
     let rt = Runtime::new().unwrap();
-    rt.block_on(tskv.lock().write(0, Precision::NS, request))
+    rt.block_on(tskv.lock().write(None, 0, Precision::NS, request))
         .unwrap();
 }
 
@@ -70,7 +69,7 @@ fn big_write(c: &mut Criterion) {
             for _i in 0..50 {
                 let _database = "db".to_string();
                 let mut fbb = flatbuffers::FlatBufferBuilder::new();
-                let points = models_helper::create_big_random_points(&mut fbb, 10);
+                let points = models_helper::create_big_random_points(&mut fbb, "big_write", 10);
                 fbb.finish(points, None);
                 let points = fbb.finished_data().to_vec();
 
@@ -79,7 +78,8 @@ fn big_write(c: &mut Criterion) {
                     meta: None,
                     points,
                 };
-                rt.block_on(tskv.write(0, Precision::NS, request)).unwrap();
+                rt.block_on(tskv.write(None, 0, Precision::NS, request))
+                    .unwrap();
             }
         })
     });

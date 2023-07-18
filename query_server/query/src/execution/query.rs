@@ -39,7 +39,7 @@ impl SqlQueryExecution {
     async fn start(&self) -> Result<Output> {
         // begin optimize
         self.query_state_machine.begin_optimize();
-        let optimized_physical_plan = self
+        let physical_plan = self
             .optimizer
             .optimize(&self.plan.df_plan, &self.query_state_machine.session)
             .await?;
@@ -50,13 +50,15 @@ impl SqlQueryExecution {
         let stream = self
             .scheduler
             .schedule(
-                optimized_physical_plan,
+                physical_plan.clone(),
                 self.query_state_machine.session.inner().task_ctx(),
             )
             .await?
             .stream();
+
         debug!("Success build result stream.");
         self.query_state_machine.end_schedule();
+
         Ok(Output::StreamData(stream))
     }
 }
@@ -104,7 +106,7 @@ impl QueryExecution for SqlQueryExecution {
             qsm.query.content().to_string(),
             *qsm.session.tenant_id(),
             qsm.session.tenant().to_string(),
-            qsm.query.context().user_info().desc().clone(),
+            qsm.session.user().desc().clone(),
         )
     }
 

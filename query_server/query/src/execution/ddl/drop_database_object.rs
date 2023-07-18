@@ -35,14 +35,11 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                 // TODO 删除指定租户下的表
                 info!("Drop table {}", object_name);
                 let tenant = object_name.tenant();
-                let client = query_state_machine
-                    .meta
-                    .tenant_manager()
-                    .tenant_meta(tenant)
-                    .await
-                    .ok_or(MetaError::TenantNotFound {
+                let client = query_state_machine.meta.tenant_meta(tenant).await.ok_or(
+                    MetaError::TenantNotFound {
                         tenant: tenant.to_string(),
-                    })?;
+                    },
+                )?;
 
                 let req = AdminCommandRequest {
                     tenant: tenant.to_string(),

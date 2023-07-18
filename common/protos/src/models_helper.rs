@@ -2,108 +2,8 @@ use protobuf::Message;
 #[cfg(feature = "test")]
 pub use test::*;
 
-use crate::models::Points;
-use crate::FieldType;
-
-pub fn print_points(points: Points) {
-    if let Some(db) = points.db() {
-        println!(
-            "Database: {}",
-            String::from_utf8(db.bytes().to_vec()).unwrap()
-        );
-    }
-    if let Some(tables) = points.tables() {
-        for table in tables {
-            for point in table.points().unwrap_or_default() {
-                print!("\nTimestamp: {}", point.timestamp());
-                if let Some(tags) = point.tags() {
-                    print!("\nTags[{}]: ", tags.len());
-                    for (tag_idx, tag) in tags.iter().enumerate() {
-                        if let Some(key) = table.schema().map(|schema| schema.tag_name()).unwrap() {
-                            let key = key.get(tag_idx);
-                            print!("{{ {}: ", key)
-                        } else {
-                            print!("{{ EMPTY_TAG_KEY: ")
-                        }
-                        if let Some(val) = tag.value() {
-                            print!("{} }}", String::from_utf8(val.bytes().to_vec()).unwrap())
-                        } else {
-                            print!("EMPTY_TAG_VAL }}")
-                        }
-                        if tag_idx < tags.len() - 1 {
-                            print!(", ")
-                        }
-                    }
-                } else {
-                    println!("Tags[0]")
-                }
-                if let Some(fields) = point.fields() {
-                    print!("\nFields[{}]: ", fields.len());
-                    for (field_idx, field) in fields.iter().enumerate() {
-                        if let Some(name) =
-                            table.schema().map(|schema| schema.field_name()).unwrap()
-                        {
-                            let name = name.get(field_idx);
-                            print!("{{ {}: ", name)
-                        } else {
-                            print!("{{ EMPTY_FIELD_NAME: ");
-                        }
-                        if let Some(val) = field.value() {
-                            let val_bytes = val.bytes().to_vec();
-                            let field_type =
-                                table.schema().unwrap().field_type().unwrap().get(field_idx);
-                            match field_type {
-                                FieldType::Integer => {
-                                    let val = unsafe {
-                                        i64::from_be_bytes(
-                                            *(&val_bytes as *const _ as *const [u8; 8]),
-                                        )
-                                    };
-                                    print!("{}, ", val);
-                                }
-                                FieldType::Unsigned => {
-                                    let val = unsafe {
-                                        u64::from_be_bytes(
-                                            *(&val_bytes as *const _ as *const [u8; 8]),
-                                        )
-                                    };
-                                    print!("{}, ", val);
-                                }
-                                FieldType::Float => {
-                                    let val = unsafe {
-                                        f64::from_be_bytes(
-                                            *(&val_bytes as *const _ as *const [u8; 8]),
-                                        )
-                                    };
-                                    print!("{}, ", val);
-                                }
-                                FieldType::Boolean => {
-                                    if val_bytes[0] == 1 {
-                                        print!("true, ");
-                                    } else {
-                                        print!("false, ");
-                                    }
-                                }
-                                FieldType::String => {
-                                    print!("{}, ", String::from_utf8(val_bytes).unwrap())
-                                }
-                                _ => {
-                                    print!("UNKNOWN_FIELD_VAL, ");
-                                }
-                            }
-                            print!("{} }}", field_type.0)
-                        }
-                        if field_idx < fields.len() - 1 {
-                            print!(", ")
-                        }
-                    }
-                } else {
-                    println!("Fields[0]");
-                }
-                println!();
-            }
-        }
-    }
+pub fn print_points(points: crate::models::Points) {
+    println!("{points}")
 }
 
 pub fn parse_proto_bytes<T>(bytes: &[u8]) -> Result<T, protobuf::Error>
@@ -128,6 +28,14 @@ where
 }
 
 pub fn parse_prost_bytes<T>(bytes: &[u8]) -> Result<T, prost::DecodeError>
+where
+    T: prost::Message,
+    T: Default,
+{
+    T::decode(bytes)
+}
+
+pub fn bincode<T>(bytes: &[u8]) -> Result<T, prost::DecodeError>
 where
     T: prost::Message,
     T: Default,
@@ -372,9 +280,11 @@ mod test {
 
     pub fn create_random_points_include_delta<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        database: &str,
+        table: &str,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
-        let db = fbb.create_vector("db".as_bytes());
+        let db = fbb.create_vector(database.as_bytes());
         let mut tags_names: HashMap<&str, usize> = HashMap::new();
         tags_names.insert("ta", 0);
         tags_names.insert("tb", 1);
@@ -456,7 +366,7 @@ mod test {
         let fb_schema = build_fb_schema_offset(fbb, &schema);
 
         let point = fbb.create_vector(&points);
-        let tab = fbb.create_vector("table".as_bytes());
+        let tab = fbb.create_vector(table.as_bytes());
 
         let mut table_builder = TableBuilder::new(fbb);
 
@@ -479,6 +389,7 @@ mod test {
 
     pub fn create_big_random_points<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        table: &str,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
         let db = fbb.create_vector("db".as_bytes());
@@ -526,7 +437,7 @@ mod test {
         let fb_schema = build_fb_schema_offset(fbb, &schema);
 
         let point = fbb.create_vector(&points);
-        let tab = fbb.create_vector("table".as_bytes());
+        let tab = fbb.create_vector(table.as_bytes());
 
         let mut table_builder = TableBuilder::new(fbb);
 

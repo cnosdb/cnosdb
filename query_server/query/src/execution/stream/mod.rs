@@ -8,7 +8,6 @@ use datafusion::arrow::array::StringArray;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
-use datafusion::from_slice::FromSlice;
 use datafusion::physical_plan::displayable;
 use datafusion::prelude::SessionConfig;
 use futures::TryStreamExt;
@@ -213,10 +212,8 @@ impl QueryExecution for MicroBatchStreamExecution {
             false,
         )]));
         let id = self.query_state_machine.query_id.to_string();
-        let batch = RecordBatch::try_new(
-            schema.clone(),
-            vec![Arc::new(StringArray::from_slice([id]))],
-        )?;
+        let batch =
+            RecordBatch::try_new(schema.clone(), vec![Arc::new(StringArray::from(vec![id]))])?;
         Ok(Output::StreamData(Box::pin(RecordBatchStreamWrapper::new(
             schema,
             vec![batch],
@@ -252,7 +249,7 @@ impl QueryExecution for MicroBatchStreamExecution {
             qsm.query.content().to_string(),
             *qsm.session.tenant_id(),
             qsm.session.tenant().to_string(),
-            qsm.query.context().user_info().desc().clone(),
+            qsm.session.user().desc().clone(),
         )
     }
 
@@ -342,7 +339,7 @@ where
         trace::debug!(
             "Final stream physical plan:\nOutput partition count: {}\n{}\n",
             exec_plan.output_partitioning().partition_count(),
-            displayable(exec_plan.as_ref()).indent()
+            displayable(exec_plan.as_ref()).indent(false)
         );
 
         let mut stream = self

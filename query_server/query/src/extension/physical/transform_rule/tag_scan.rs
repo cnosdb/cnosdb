@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use datafusion::error::Result;
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
-use datafusion::physical_plan::planner::ExtensionPlanner;
-use datafusion::physical_plan::{ExecutionPlan, PhysicalPlanner};
+use datafusion::physical_plan::ExecutionPlan;
+use datafusion::physical_planner::{ExtensionPlanner, PhysicalPlanner};
 
 use crate::extension::logical::plan_node::tag_scan::TagScanPlanNode;
 
@@ -21,7 +21,7 @@ impl ExtensionPlanner for TagScanPlanner {
         node: &dyn UserDefinedLogicalNode,
         _logical_inputs: &[&LogicalPlan],
         _physical_inputs: &[Arc<dyn ExecutionPlan>],
-        _session_state: &SessionState,
+        session_state: &SessionState,
     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
         let res = if let Some(TagScanPlanNode {
             table_name: _,
@@ -32,8 +32,14 @@ impl ExtensionPlanner for TagScanPlanner {
             fetch,
         }) = as_tag_scan_plan_node(node)
         {
-            let tag_scan =
-                source.create_tag_scan_physical_plan(projected_schema, filters, *fetch)?;
+            let tag_scan = source
+                .create_tag_scan_physical_plan(
+                    session_state,
+                    projected_schema.as_ref().into(),
+                    filters,
+                    *fetch,
+                )
+                .await?;
 
             Some(tag_scan)
         } else {

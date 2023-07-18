@@ -9,10 +9,11 @@ use config::Config;
 use crate::TseriesFamilyId;
 
 const SUMMARY_PATH: &str = "summary";
-const INDEX_PATH: &str = "index";
+pub const INDEX_PATH: &str = "index";
 const DATA_PATH: &str = "data";
-const TSM_PATH: &str = "tsm";
-const DELTA_PATH: &str = "delta";
+pub const TSM_PATH: &str = "tsm";
+pub const DELTA_PATH: &str = "delta";
+pub const MOVE_PATH: &str = "move";
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -39,6 +40,7 @@ pub struct StorageOptions {
     pub max_summary_size: u64,
     pub base_file_size: u64,
     pub flush_req_channel_cap: usize,
+    pub max_cached_readers: usize,
     pub max_level: u16,
     pub compact_trigger_file_num: u32,
     pub compact_trigger_cold_duration: Duration,
@@ -51,7 +53,8 @@ pub struct StorageOptions {
 // database/data/ts_family_id/delta
 // database/data/ts_family_id/index
 impl StorageOptions {
-    pub fn level_file_size(&self, lvl: u32) -> u64 {
+    pub fn level_max_file_size(&self, lvl: u32) -> u64 {
+        // TODO(zipper): size of lvl-0 is zero?
         self.base_file_size * lvl as u64 * self.compact_trigger_file_num as u64
     }
 
@@ -79,6 +82,12 @@ impl StorageOptions {
             .join(TSM_PATH)
     }
 
+    pub fn move_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.database_dir(database)
+            .join(ts_family_id.to_string())
+            .join(MOVE_PATH)
+    }
+
     pub fn delta_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
         self.database_dir(database)
             .join(ts_family_id.to_string())
@@ -97,6 +106,7 @@ impl From<&Config> for StorageOptions {
             max_summary_size: config.storage.max_summary_size,
             base_file_size: config.storage.base_file_size,
             flush_req_channel_cap: config.storage.flush_req_channel_cap,
+            max_cached_readers: config.storage.max_cached_readers,
             max_level: config.storage.max_level,
             compact_trigger_file_num: config.storage.compact_trigger_file_num,
             compact_trigger_cold_duration: config.storage.compact_trigger_cold_duration,

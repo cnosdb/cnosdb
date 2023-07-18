@@ -10,6 +10,8 @@ pub struct HintedOffConfig {
     pub enable: bool,
     #[serde(default = "HintedOffConfig::default_path")]
     pub path: String,
+    #[serde(default = "HintedOffConfig::default_threads")]
+    pub threads: i32,
 }
 
 impl HintedOffConfig {
@@ -21,12 +23,19 @@ impl HintedOffConfig {
         "/tmp/cnosdb/hh".to_string()
     }
 
+    fn default_threads() -> i32 {
+        3
+    }
+
     pub fn override_by_env(&mut self) {
         if let Ok(enable) = std::env::var("CNOSDB_HINTEDOFF_ENABLE") {
             self.enable = enable.parse::<bool>().unwrap();
         }
         if let Ok(path) = std::env::var("CNOSDB_HINTEDOFF_PATH") {
             self.path = path;
+        }
+        if let Ok(threads) = std::env::var("CNOSDB_HINTEDOFF_THREADS") {
+            self.threads = threads.parse::<i32>().unwrap();
         }
     }
 }
@@ -36,6 +45,7 @@ impl Default for HintedOffConfig {
         Self {
             enable: Self::default_enable(),
             path: Self::default_path(),
+            threads: Self::default_threads(),
         }
     }
 }

@@ -8,7 +8,6 @@ use models::oid::Oid;
 // **    /cluster_name/auto_incr_id -> id
 // **    /cluster_name/data_nodes/node_id -> [NodeInfo] 集群、数据节点等信息
 
-// **    /cluster_name/tenant_name/users/name -> [UserInfo] 租户下用户信息、访问权限等
 // **    /cluster_name/tenant_name/dbs/db_name -> [DatabaseInfo] db相关信息、保留策略等
 // **    /cluster_name/tenant_name/dbs/db_name/buckets/id -> [BucketInfo] bucket相关信息
 // **    /cluster_name/tenant_name/dbs/db_name/schemas/name -> [TskvTableSchema] schema相关信息
@@ -60,14 +59,6 @@ impl KeyPath {
     pub fn data_node_metrics(cluster: &str, id: u64) -> String {
         format!("/{}/data_nodes_metrics/{}", cluster, id)
     }
-
-    pub fn tenant_users(cluster: &str, tenant: &str) -> String {
-        format!("/{}/tenants/{}/users", cluster, tenant)
-    }
-
-    // pub fn tenant_user_name(cluster: &str, tenant: &str, name: &str) -> String {
-    //     format!("/{}/{}/users/{}", cluster, tenant, name)
-    // }
 
     pub fn tenant_dbs(cluster: &str, tenant: &str) -> String {
         format!("/{}/tenants/{}/dbs", cluster, tenant)

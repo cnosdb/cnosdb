@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use datafusion::arrow::array::{Float32Array, Float64Array};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::from_slice::FromSlice;
 use models::auth::role::UserRole;
 use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
+use trace::SpanContext;
 
 use crate::query::execution::{Output, QueryStateMachine, QueryStateMachineRef};
 use crate::query::logical_planner::Plan;
@@ -20,8 +20,16 @@ pub type DBMSRef = Arc<dyn DatabaseManagerSystem + Send + Sync>;
 pub trait DatabaseManagerSystem {
     async fn start(&self) -> Result<()>;
     async fn authenticate(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User>;
-    async fn execute(&self, query: &Query) -> Result<QueryHandle>;
-    async fn build_query_state_machine(&self, query: Query) -> Result<QueryStateMachineRef>;
+    async fn execute(
+        &self,
+        query: &Query,
+        span_context: Option<&SpanContext>,
+    ) -> Result<QueryHandle>;
+    async fn build_query_state_machine(
+        &self,
+        query: Query,
+        span_context: Option<&SpanContext>,
+    ) -> Result<QueryStateMachineRef>;
     async fn build_logical_plan(
         &self,
         query_state_machine: QueryStateMachineRef,
@@ -54,7 +62,11 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         Ok(mock_user)
     }
 
-    async fn execute(&self, query: &Query) -> Result<QueryHandle> {
+    async fn execute(
+        &self,
+        query: &Query,
+        _span_context: Option<&SpanContext>,
+    ) -> Result<QueryHandle> {
         println!("DatabaseManagerSystemMock::execute({:?})", query.content());
 
         // define a schema.
@@ -70,8 +82,8 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
                 RecordBatch::try_new(
                     schema.clone(),
                     vec![
-                        Arc::new(Float32Array::from_slice(vec![i as f32; batch_size])),
-                        Arc::new(Float64Array::from_slice(vec![i as f64; batch_size])),
+                        Arc::new(Float32Array::from(vec![i as f32; batch_size])),
+                        Arc::new(Float64Array::from(vec![i as f64; batch_size])),
                     ],
                 )
                 .unwrap()
@@ -85,8 +97,15 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         ))
     }
 
-    async fn build_query_state_machine(&self, query: Query) -> Result<QueryStateMachineRef> {
-        Ok(Arc::new(QueryStateMachine::test(query)))
+    async fn build_query_state_machine(
+        &self,
+        query: Query,
+        span_context: Option<&SpanContext>,
+    ) -> Result<QueryStateMachineRef> {
+        Ok(Arc::new(QueryStateMachine::test(
+            query,
+            span_context.cloned(),
+        )))
     }
 
     async fn build_logical_plan(
@@ -101,7 +120,14 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         _logical_plan: Plan,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<QueryHandle> {
-        self.execute(&query_state_machine.query).await
+        self.execute(
+            &query_state_machine.query,
+            query_state_machine
+                .session
+                .get_child_span_recorder("mock execute logical plan")
+                .span_ctx(),
+        )
+        .await
     }
 
     fn metrics(&self) -> String {

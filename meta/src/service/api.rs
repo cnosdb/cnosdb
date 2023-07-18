@@ -8,7 +8,7 @@ use trace::info;
 use web::Json;
 
 use crate::store::command::*;
-use crate::store::state_machine::CommandResp;
+use crate::store::state_machine::{response_encode, CommandResp};
 use crate::MetaApp;
 
 #[post("/read")]
@@ -37,10 +37,13 @@ pub async fn dump(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     let sm = app.store.state_machine.read().await;
     let mut response = "".to_string();
     for res in sm.db.iter() {
-        let (k, v) = res.unwrap();
-        let k = String::from_utf8((*k).to_owned()).unwrap();
-        let v = String::from_utf8((*v).to_owned()).unwrap();
-        response = response + &format!("{}: {}\n", k, v);
+        let (key, val) = res.map_or(("".to_string(), "".to_string()), |(k, v)| {
+            (
+                String::from_utf8((*k).to_owned()).map_or("".to_string(), |d| d),
+                String::from_utf8((*v).to_owned()).map_or("".to_string(), |d| d),
+            )
+        });
+        response = response + &format!("{}: {}\n", key, val);
     }
 
     Ok(response)
@@ -91,8 +94,9 @@ pub async fn watch(
             "{} {}.{}: change logs: {:?} ",
             client, base_ver, follow_ver, watch_data
         );
+
         if watch_data.need_return(base_ver) {
-            let data = serde_json::to_string(&watch_data).unwrap();
+            let data = response_encode(Ok(watch_data));
             let response: Result<CommandResp, Infallible> = Ok(data);
             return Ok(Json(response));
         }
@@ -111,7 +115,7 @@ pub async fn watch(
             client, base_ver, follow_ver, watch_data
         );
         if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
-            let data = serde_json::to_string(&watch_data).unwrap();
+            let data = response_encode(Ok(watch_data));
             let response: Result<CommandResp, Infallible> = Ok(data);
             return Ok(Json(response));
         }
@@ -127,10 +131,13 @@ pub async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     let sm = app.store.state_machine.read().await;
     let mut response = "******---------------------------******\n".to_string();
     for res in sm.db.iter() {
-        let (k, v) = res.unwrap();
-        let k = String::from_utf8((*k).to_owned()).unwrap();
-        let v = String::from_utf8((*v).to_owned()).unwrap();
-        response = response + &format!("* {}: {}\n", k, v);
+        let (key, val) = res.map_or(("".to_string(), "".to_string()), |(k, v)| {
+            (
+                String::from_utf8((*k).to_owned()).map_or("".to_string(), |d| d),
+                String::from_utf8((*v).to_owned()).map_or("".to_string(), |d| d),
+            )
+        });
+        response = response + &format!("* {}: {}\n", key, val);
     }
     response += "******----------------------------------------------******\n";
 

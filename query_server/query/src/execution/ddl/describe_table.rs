@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::arrow::array::StringBuilder;
-use datafusion::arrow::datatypes::{DataType, Field, Schema};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::error::MetaError;
 use models::object_reference::ResolvedTable;
@@ -15,30 +15,36 @@ use spi::{QueryError, Result};
 use crate::execution::ddl::DDLDefinitionTask;
 
 pub struct DescribeTableTask {
+    schema: SchemaRef,
     stmt: DescribeTable,
 }
 
 impl DescribeTableTask {
-    pub fn new(stmt: DescribeTable) -> Self {
-        Self { stmt }
+    pub fn new(stmt: DescribeTable, schema: SchemaRef) -> Self {
+        Self { schema, stmt }
     }
 }
 
 #[async_trait]
 impl DDLDefinitionTask for DescribeTableTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        describe_table(&self.stmt.table_name, query_state_machine).await
+        describe_table(
+            &self.stmt.table_name,
+            query_state_machine,
+            self.schema.clone(),
+        )
+        .await
     }
 }
 
 async fn describe_table(
     table_name: &ResolvedTable,
     machine: QueryStateMachineRef,
+    schema: SchemaRef,
 ) -> Result<Output> {
     let tenant = table_name.tenant();
     let client = machine
         .meta
-        .tenant_manager()
         .tenant_meta(tenant)
         .await
         .ok_or(MetaError::TenantNotFound {
@@ -63,13 +69,6 @@ async fn describe_table(
                 column_type.append_value(column.column_type.as_column_type_str());
                 encoding.append_value(column.encoding.as_str());
             });
-            let schema = Arc::new(Schema::new(vec![
-                Field::new("COLUMN_NAME", DataType::Utf8, false),
-                Field::new("DATA_TYPE", DataType::Utf8, false),
-                Field::new("COLUMN_TYPE", DataType::Utf8, false),
-                Field::new("COMPRESSION_CODEC", DataType::Utf8, false),
-            ]));
-
             let batch = RecordBatch::try_new(
                 schema.clone(),
                 vec![

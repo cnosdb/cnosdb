@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use meta::model::MetaRef;
-use models::meta_data::{VnodeAllInfo, VnodeInfo};
+use models::meta_data::{VnodeAllInfo, VnodeInfo, VnodeStatus};
 use protos::kv_service::admin_command_request::Command::DelVnode;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{
@@ -36,35 +36,49 @@ impl VnodeManager {
     }
 
     pub async fn move_vnode(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
-        self.copy_vnode(tenant, vnode_id).await?;
-        self.drop_vnode_remote(tenant, vnode_id).await?;
+        let all_info = crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
+        let db_name = all_info.db_name;
+        let src_node_id = all_info.node_id;
+        self.copy_vnode(tenant, vnode_id, false).await?;
+        self.drop_vnode_remote(tenant, &db_name, src_node_id, vnode_id)
+            .await?;
 
         Ok(())
     }
 
-    pub async fn copy_vnode(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
-        let admin_meta = self.meta.admin_meta();
-        let meta_client = self.meta.tenant_manager().tenant_meta(tenant).await.ok_or(
-            CoordinatorError::TenantNotFound {
-                name: tenant.to_string(),
-            },
-        )?;
+    pub async fn copy_vnode(
+        &self,
+        tenant: &str,
+        vnode_id: u32,
+        add_replication: bool,
+    ) -> CoordinatorResult<()> {
+        let meta_client =
+            self.meta
+                .tenant_meta(tenant)
+                .await
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant.to_string(),
+                })?;
 
-        let new_id = admin_meta.retain_id(1).await?;
-        let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
+        let mut all_info = crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
+
+        let (new_id, del_repl) = if add_replication {
+            let id = self.meta.retain_id(1).await?;
+            (id, vec![])
+        } else {
+            (vnode_id, vec![VnodeInfo::new(vnode_id, all_info.node_id)])
+        };
         info!(
             "Begin Copy Vnode:{} from: {} to: {}; new id: {}",
             vnode_id, all_info.node_id, self.node_id, new_id
         );
 
+        all_info.set_status(VnodeStatus::Copying);
+        meta_client.update_vnode(&all_info).await?;
         let owner = models::schema::make_owner(&all_info.tenant, &all_info.db_name);
-        let path = self
-            .kv_inst
-            .get_storage_options()
-            .ts_family_dir(&owner, new_id);
+        let path = self.kv_inst.get_storage_options().move_dir(&owner, new_id);
 
-        let node_id = all_info.node_id;
-        let channel = self.meta.admin_meta().get_node_conn(node_id).await?;
+        let channel = self.meta.get_node_conn(all_info.node_id).await?;
         let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
 
@@ -76,30 +90,30 @@ impl VnodeManager {
             return Err(err);
         }
 
-        let add_repl = vec![VnodeInfo {
-            id: new_id,
-            node_id: self.node_id,
-        }];
-        meta_client
-            .update_replication_set(
-                &all_info.db_name,
-                all_info.bucket_id,
-                all_info.repl_set_id,
-                &[],
-                &add_repl,
-            )
-            .await?;
-
         let ve = self.fetch_vnode_summary(&all_info, &mut client).await?;
         self.kv_inst
             .apply_vnode_summary(tenant, &all_info.db_name, new_id, ve)
             .await?;
 
+        let add_repl = vec![VnodeInfo::new(new_id, self.node_id)];
+        meta_client
+            .update_replication_set(
+                &all_info.db_name,
+                all_info.bucket_id,
+                all_info.repl_set_id,
+                &del_repl,
+                &add_repl,
+            )
+            .await?;
+
+        all_info.set_status(VnodeStatus::Running);
+        meta_client.update_vnode(&all_info).await?;
+
         Ok(())
     }
 
     pub async fn flush_vnode(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
-        let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
+        let all_info = crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
 
         self.kv_inst
             .flush_tsfamily(tenant, &all_info.db_name, vnode_id)
@@ -109,13 +123,15 @@ impl VnodeManager {
     }
 
     pub async fn drop_vnode(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
-        let all_info = self.get_vnode_all_info(tenant, vnode_id).await?;
+        let all_info = crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
 
-        let meta_client = self.meta.tenant_manager().tenant_meta(tenant).await.ok_or(
-            CoordinatorError::TenantNotFound {
-                name: tenant.to_string(),
-            },
-        )?;
+        let meta_client =
+            self.meta
+                .tenant_meta(tenant)
+                .await
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant.to_string(),
+                })?;
 
         self.kv_inst
             .remove_tsfamily(tenant, &all_info.db_name, vnode_id)
@@ -123,7 +139,8 @@ impl VnodeManager {
 
         let del_repl = vec![VnodeInfo {
             id: vnode_id,
-            node_id: all_info.node_id,
+            node_id: self.node_id,
+            status: Default::default(),
         }];
         meta_client
             .update_replication_set(
@@ -138,22 +155,31 @@ impl VnodeManager {
         Ok(())
     }
 
-    async fn drop_vnode_remote(&self, tenant: &str, vnode_id: u32) -> CoordinatorResult<()> {
-        let info = self.get_vnode_all_info(tenant, vnode_id).await?;
+    async fn drop_vnode_remote(
+        &self,
+        tenant: &str,
+        db: &str,
+        node_id: u64,
+        vnode_id: u32,
+    ) -> CoordinatorResult<()> {
         let cmd = AdminCommandRequest {
             tenant: tenant.to_string(),
             command: Some(DelVnode(DeleteVnodeRequest {
-                db: info.db_name.clone(),
+                db: db.to_string(),
                 vnode_id,
             })),
         };
 
-        let channel = self.meta.admin_meta().get_node_conn(info.node_id).await?;
+        let channel = self.meta.get_node_conn(node_id).await?;
         let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
         let request = tonic::Request::new(cmd);
 
-        let response = client.exec_admin_command(request).await?.into_inner();
+        let response = client
+            .exec_admin_command(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
         status_response_to_result(&response)
     }
 
@@ -168,7 +194,11 @@ impl VnodeManager {
             vnode_id: all_info.vnode_id,
         });
 
-        let resp = client.fetch_vnode_summary(request).await?.into_inner();
+        let resp = client
+            .fetch_vnode_summary(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
         if resp.code != SUCCESS_RESPONSE_CODE {
             return Err(CoordinatorError::GRPCRequest {
                 msg: format!(
@@ -224,7 +254,11 @@ impl VnodeManager {
             vnode_id: all_info.vnode_id,
         });
 
-        let resp = client.get_vnode_files_meta(request).await?.into_inner();
+        let resp = client
+            .get_vnode_files_meta(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
         info!("node id: {}, files meta: {:?}", all_info.vnode_id, resp);
 
         Ok(resp)
@@ -253,7 +287,11 @@ impl VnodeManager {
             vnode_id: req.vnode_id,
             filename: filename.to_string(),
         });
-        let mut resp_stream = client.download_file(request).await?.into_inner();
+        let mut resp_stream = client
+            .download_file(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
         while let Some(received) = resp_stream.next().await {
             let received = received?;
             if received.code != SUCCESS_RESPONSE_CODE {
@@ -270,22 +308,5 @@ impl VnodeManager {
         }
 
         Ok(())
-    }
-
-    async fn get_vnode_all_info(
-        &self,
-        tenant: &str,
-        vnode_id: u32,
-    ) -> CoordinatorResult<VnodeAllInfo> {
-        match self.meta.tenant_manager().tenant_meta(tenant).await {
-            Some(meta_client) => match meta_client.get_vnode_all_info(vnode_id) {
-                Some(all_info) => Ok(all_info),
-                None => Err(CoordinatorError::VnodeNotFound { id: vnode_id }),
-            },
-
-            None => Err(CoordinatorError::TenantNotFound {
-                name: tenant.to_string(),
-            }),
-        }
     }
 }

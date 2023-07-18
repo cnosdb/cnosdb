@@ -149,7 +149,7 @@ where
 
     fn fmt_as(&self, t: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
         match t {
-            DisplayFormatType::Default => {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
                 write!(f, "StateSaveExec: watermark={}ns", self.watermark_ns)
             }
         }

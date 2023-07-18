@@ -3,23 +3,31 @@ use std::sync::Arc;
 use datafusion::arrow::array::{StringBuilder, UInt64Builder};
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
+pub const DATABASES_TENANT_NAME: &str = "tenant_name";
+pub const DATABASES_DATABASE_NAME: &str = "database_name";
+pub const DATABASES_TTL: &str = "ttl";
+pub const DATABASES_SHARD: &str = "shard";
+pub const DATABASES_VNODE_DURATION: &str = "vnode_duration";
+pub const DATABASES_REPLICA: &str = "replica";
+pub const DATABASES_PERCISION: &str = "percision";
+
 lazy_static! {
-    static ref SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
-        Field::new("tenant_name", DataType::Utf8, false),
-        Field::new("database_name", DataType::Utf8, false),
-        Field::new("ttl", DataType::Utf8, false),
-        Field::new("shard", DataType::UInt64, false),
-        Field::new("vnode_duration", DataType::Utf8, false),
-        Field::new("replica", DataType::UInt64, false),
-        Field::new("percision", DataType::Utf8, false),
+    pub static ref DATABASE_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new(DATABASES_TENANT_NAME, DataType::Utf8, false),
+        Field::new(DATABASES_DATABASE_NAME, DataType::Utf8, false),
+        Field::new(DATABASES_TTL, DataType::Utf8, false),
+        Field::new(DATABASES_SHARD, DataType::UInt64, false),
+        Field::new(DATABASES_VNODE_DURATION, DataType::Utf8, false),
+        Field::new(DATABASES_REPLICA, DataType::UInt64, false),
+        Field::new(DATABASES_PERCISION, DataType::Utf8, false),
     ]));
 }
 
 /// Builds the `information_schema.DATABASES` table row by row
+#[derive(Default)]
 pub struct InformationSchemaDatabasesBuilder {
     tenant_names: StringBuilder,
     database_names: StringBuilder,
@@ -28,20 +36,6 @@ pub struct InformationSchemaDatabasesBuilder {
     option_vnode_durations: StringBuilder,
     option_replicas: UInt64Builder,
     option_percisions: StringBuilder,
-}
-
-impl Default for InformationSchemaDatabasesBuilder {
-    fn default() -> Self {
-        Self {
-            tenant_names: StringBuilder::new(),
-            database_names: StringBuilder::new(),
-            option_ttls: StringBuilder::new(),
-            option_shards: UInt64Builder::new(),
-            option_vnode_durations: StringBuilder::new(),
-            option_replicas: UInt64Builder::new(),
-            option_percisions: StringBuilder::new(),
-        }
-    }
 }
 
 impl InformationSchemaDatabasesBuilder {
@@ -68,7 +62,7 @@ impl InformationSchemaDatabasesBuilder {
     }
 }
 
-impl TryFrom<InformationSchemaDatabasesBuilder> for MemTable {
+impl TryFrom<InformationSchemaDatabasesBuilder> for RecordBatch {
     type Error = DataFusionError;
 
     fn try_from(value: InformationSchemaDatabasesBuilder) -> Result<Self, Self::Error> {
@@ -83,7 +77,7 @@ impl TryFrom<InformationSchemaDatabasesBuilder> for MemTable {
         } = value;
 
         let batch = RecordBatch::try_new(
-            SCHEMA.clone(),
+            DATABASE_SCHEMA.clone(),
             vec![
                 Arc::new(tenant_names.finish()),
                 Arc::new(database_names.finish()),
@@ -95,6 +89,6 @@ impl TryFrom<InformationSchemaDatabasesBuilder> for MemTable {
             ],
         )?;
 
-        MemTable::try_new(SCHEMA.clone(), vec![vec![batch]])
+        Ok(batch)
     }
 }

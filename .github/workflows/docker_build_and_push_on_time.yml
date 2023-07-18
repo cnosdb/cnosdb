@@ -2,7 +2,8 @@ name: docker build and push on time
 
 on:
   schedule:
-    - cron: "00 01 * * 1"  
+    - cron: "00 22 * * 0"
+  workflow_dispatch:
 
 jobs:
   docker:
@@ -17,7 +18,7 @@ jobs:
         uses: docker/setup-buildx-action@v1
       -
         name: Login to DockerHub
-        uses: docker/login-action@v1 
+        uses: docker/login-action@v1
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -26,5 +27,8 @@ jobs:
         id: docker_build
         uses: docker/build-push-action@v2
         with:
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: cnosdb/cnosdb:community-latest
+          build-args: |
+            git_hash=${{ github.sha }}

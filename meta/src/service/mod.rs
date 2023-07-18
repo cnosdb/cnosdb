@@ -5,7 +5,8 @@ use models::oid::Identifier;
 use models::schema::TenantOptionsBuilder;
 use tracing::error;
 
-use crate::store::command::{CommonResp, ReadCommand};
+use crate::error::MetaResult;
+use crate::store::command::ReadCommand;
 use crate::store::config::MetaInit;
 use crate::store::key_path::KeyPath;
 use crate::{MetaApp, WriteCommand};
@@ -67,19 +68,13 @@ pub async fn init_meta(app: &Data<MetaApp>) {
         app.meta_init.admin_user.to_string(),
     );
     let sm_r = app.store.state_machine.read().await;
-    let user_resp =
-        serde_json::from_str::<CommonResp<Option<UserDesc>>>(&sm_r.process_read_command(&req));
+    let user =
+        serde_json::from_str::<MetaResult<Option<UserDesc>>>(&sm_r.process_read_command(&req))
+            .unwrap()
+            .unwrap();
     drop(sm_r);
-    let user = if user_resp.is_err() {
-        error!(
-            "failed get admin user {}, exit init meta",
-            app.meta_init.admin_user
-        );
-        return;
-    } else {
-        user_resp.unwrap()
-    };
-    if let CommonResp::Ok(Some(user_desc)) = user {
+
+    if let Some(user_desc) = user {
         let role = TenantRoleIdentifier::System(SystemTenantRole::Owner);
         let req = WriteCommand::AddMemberToTenant(
             app.meta_init.cluster_name.clone(),

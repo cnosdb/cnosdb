@@ -1,9 +1,10 @@
 use std::fmt::Display;
 
 use models::auth::user::User;
-use models::oid::uuid_u64;
+use models::oid::{uuid_u64, Identifier};
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE, DEFAULT_PRECISION};
 use serde::{Deserialize, Serialize};
+use trace::{SpanRecorder, SpanRecorderExt};
 
 use crate::query::config::StreamTriggerInterval;
 use crate::query::execution::Output;
@@ -99,6 +100,17 @@ impl Context {
     }
 }
 
+impl SpanRecorderExt for Context {
+    fn record(&self, span_recorder: &mut SpanRecorder) {
+        if span_recorder.span().is_some() {
+            span_recorder.set_metadata("user", self.user_info().desc().name());
+            span_recorder.set_metadata("tenant", self.tenant());
+            span_recorder.set_metadata("database", self.database());
+            span_recorder.set_metadata("chunked", self.chunked());
+        }
+    }
+}
+
 pub struct ContextBuilder {
     user_info: User,
     tenant: String,
@@ -156,12 +168,14 @@ impl ContextBuilder {
         }
         self
     }
+
     pub fn with_chunked(mut self, chunked: Option<bool>) -> Self {
         if let Some(chunked) = chunked {
             self.chunked = chunked;
         }
         self
     }
+
     pub fn build(self) -> Context {
         Context {
             user_info: self.user_info,
@@ -192,6 +206,14 @@ impl Query {
 
     pub fn content(&self) -> &str {
         self.content.as_str()
+    }
+}
+
+impl SpanRecorderExt for Query {
+    fn record(&self, span_recorder: &mut SpanRecorder) {
+        if span_recorder.span().is_some() {
+            self.context().record(span_recorder);
+        }
     }
 }
 

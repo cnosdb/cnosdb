@@ -19,7 +19,7 @@ DB_NAME=${DB_NAME:-"benchmark"}
 
 TSBS_WORKERS=${TSBS_SEED:-8}
 
-TSBS_QUERY_DIR=${TSBS_QUERY_DIR:-"/tmp"}
+TSBS_QUERY_DIR=${TSBS_QUERY_DIR:-"/data/queries"}
 
 QUERY_TYPE=$1
 
@@ -36,10 +36,7 @@ function append_result() {
 
 function run_query() {
     query=$1
-
-    result=$(cat ${query} |
-        gunzip |
-        ${TSBS_RUN_QUERIES_CMD} --db-name=${DB_NAME} --workers=${TSBS_WORKERS} --urls http://${QUERY_HOST}:${QUERY_POET} |
+    result=$(${TSBS_RUN_QUERIES_CMD} --db-name=${DB_NAME} --workers=${TSBS_WORKERS} --urls http://${QUERY_HOST}:${QUERY_POET} --file ${query} |
         grep "min:" |
         # min:   280.27ms, med:  1366.21ms, mean:  1705.85ms, max: 3920.89ms, stddev:   987.03ms, sum:  85.3sec, count: 50
         sed -n 2p |
@@ -70,7 +67,7 @@ for i in "${!QUERY_TYPES[@]}"; do
     fi
 
     for j in $(seq 1 $TRIES); do
-        RES=$(run_query ${TSBS_QUERY_DIR}/${query_type}.gz)
+        RES=$(run_query ${TSBS_QUERY_DIR}/${query_type}.txt)
         [[ $RES != "" ]] &&
             append_result "$query_num" "$j" "$RES" ||
             append_result "$query_num" "$j" "null"

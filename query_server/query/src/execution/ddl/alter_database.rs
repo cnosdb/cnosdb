@@ -21,14 +21,11 @@ impl AlterDatabaseTask {
 impl DDLDefinitionTask for AlterDatabaseTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let tenant = query_state_machine.session.tenant();
-        let client = query_state_machine
-            .meta
-            .tenant_manager()
-            .tenant_meta(tenant)
-            .await
-            .ok_or(MetaError::TenantNotFound {
+        let client = query_state_machine.meta.tenant_meta(tenant).await.ok_or(
+            MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            })?;
+            },
+        )?;
         // .context(MetaSnafu)?;
         let mut schema = client
             .get_db_schema(&self.stmt.database_name)?

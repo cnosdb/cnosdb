@@ -3,6 +3,7 @@ use std::io;
 
 use error_code::{ErrorCode, ErrorCoder};
 use openraft::{AnyError, ErrorSubject, ErrorVerb, StorageError, StorageIOError};
+use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
 use crate::limiter::limiter_kind::RequestLimiterKind;
@@ -12,7 +13,7 @@ pub type StorageIOResult<T> = Result<T, StorageIOError<ClusterNodeId>>;
 pub type StorageResult<T> = Result<T, StorageError<ClusterNodeId>>;
 pub type MetaResult<T> = Result<T, MetaError>;
 
-#[derive(Snafu, Debug, ErrorCoder)]
+#[derive(Snafu, Serialize, Deserialize, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]
 #[error_code(mod_code = "03")]
 pub enum MetaError {
@@ -107,15 +108,9 @@ pub enum MetaError {
         source: StorageIOError<ClusterNodeId>,
     },
 
-    #[snafu(display("Module sled error reason: {}", source))]
+    #[snafu(display("Module sled error reason: {}", msg))]
     #[error_code(code = 22)]
-    SledConflict {
-        source: sled::transaction::ConflictableTransactionError<AnyError>,
-    },
-
-    #[snafu(display("Module raft network error reason: {}", source))]
-    #[error_code(code = 23)]
-    RaftConnect { source: tonic::transport::Error },
+    SledConflict { msg: String },
 
     #[snafu(display("{} reached limit", kind))]
     #[error_code(code = 24)]
@@ -133,6 +128,38 @@ pub enum MetaError {
     #[snafu(display("Connect to Meta error reason: {}", msg))]
     #[error_code(code = 26)]
     ConnectMetaError { msg: String },
+
+    #[snafu(display("Encode message error reason: {}", err))]
+    #[error_code(code = 27)]
+    SerdeMsgEncode { err: String },
+
+    #[snafu(display("Decode message error reason: {}", err))]
+    #[error_code(code = 28)]
+    SerdeMsgDecode { err: String },
+
+    #[snafu(display("Operation meta store io error: {}", err))]
+    #[error_code(code = 29)]
+    MetaStoreIO { err: String },
+
+    #[snafu(display("Data node already exist: {}", addr))]
+    #[error_code(code = 30)]
+    DataNodeExist { addr: String },
+
+    #[snafu(display("The bucket {} not found", id))]
+    #[error_code(code = 31)]
+    BucketNotFound { id: u32 },
+
+    #[snafu(display("database {} attribute invalid!", name))]
+    #[error_code(code = 32)]
+    DatabaseSchemaInvalid { name: String },
+
+    #[snafu(display("update table {} conflict", name))]
+    #[error_code(code = 33)]
+    UpdateTableConflict { name: String },
+
+    #[snafu(display("Operation not support: {}", msg))]
+    #[error_code(code = 34)]
+    NotSupport { msg: String },
 }
 impl MetaError {
     pub fn error_code(&self) -> &dyn ErrorCode {
@@ -174,14 +201,14 @@ pub fn l_w_err<E: Error + 'static>(e: E) -> StorageIOError<ClusterNodeId> {
 }
 
 pub fn ct_err<E: Error + 'static>(e: E) -> MetaError {
-    MetaError::SledConflict {
-        source: sled::transaction::ConflictableTransactionError::Abort(AnyError::new(&e)),
-    }
+    MetaError::SledConflict { msg: e.to_string() }
 }
 
 impl From<StorageIOError<ClusterNodeId>> for MetaError {
     fn from(err: StorageIOError<ClusterNodeId>) -> Self {
-        MetaError::Raft { source: err }
+        MetaError::MetaStoreIO {
+            err: err.to_string(),
+        }
     }
 }
 

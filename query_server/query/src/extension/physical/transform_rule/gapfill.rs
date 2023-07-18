@@ -7,8 +7,8 @@ use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
 use datafusion::physical_expr::create_physical_expr;
 use datafusion::physical_expr::execution_props::ExecutionProps;
 use datafusion::physical_plan::expressions::Column;
-use datafusion::physical_plan::planner::ExtensionPlanner;
-use datafusion::physical_plan::{ExecutionPlan, PhysicalExpr, PhysicalPlanner};
+use datafusion::physical_plan::{ExecutionPlan, PhysicalExpr};
+use datafusion::physical_planner::{ExtensionPlanner, PhysicalPlanner};
 
 use crate::extension::logical::plan_node::gapfill::{FillStrategy, GapFill};
 use crate::extension::physical::plan_node::gapfill::{GapFillExec, GapFillExecParams};

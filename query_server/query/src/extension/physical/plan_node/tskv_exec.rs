@@ -1,11 +1,10 @@
-#![allow(clippy::too_many_arguments)]
 use std::any::Any;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
 use std::task::Poll;
 
-use coordinator::reader::ReaderIterator;
 use coordinator::service::CoordinatorRef;
+use coordinator::SendableCoordinatorRecordBatchStream;
 use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result as DFResult};
@@ -16,16 +15,18 @@ use datafusion::physical_plan::{
     DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream,
     Statistics,
 };
-use futures::{FutureExt, Stream};
+use futures::{Stream, StreamExt};
 use models::codec::Encoding;
 use models::predicate::domain::PredicateRef;
-use models::predicate::Split;
+use models::predicate::PlacedSplit;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD};
 use spi::{QueryError, Result};
-use trace::debug;
-use tskv::query_iterator::{QueryOption, TableScanMetrics};
+use trace::{debug, SpanContext, SpanExt, SpanRecorder};
+use tskv::reader::QueryOption;
 
-#[derive(Debug, Clone)]
+use crate::extension::physical::plan_node::TableScanMetrics;
+
+#[derive(Clone)]
 pub struct TskvExec {
     // connection
     // db: CustomDataSource,
@@ -33,7 +34,7 @@ pub struct TskvExec {
     proj_schema: SchemaRef,
     filter: PredicateRef,
     coord: CoordinatorRef,
-    splits: Vec<Split>,
+    splits: Vec<PlacedSplit>,
 
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
@@ -45,7 +46,7 @@ impl TskvExec {
         proj_schema: SchemaRef,
         filter: PredicateRef,
         coord: CoordinatorRef,
-        splits: Vec<Split>,
+        splits: Vec<PlacedSplit>,
     ) -> Self {
         let metrics = ExecutionPlanMetricsSet::new();
 
@@ -119,7 +120,9 @@ impl ExecutionPlan for TskvExec {
 
         let batch_size = context.session_config().batch_size();
 
-        let metrics = TableScanMetrics::new(&self.metrics, partition, Some(context.memory_pool()));
+        let metrics = TableScanMetrics::new(&self.metrics, partition);
+
+        let span_ctx = context.session_config().get_extension::<SpanContext>();
 
         let table_stream = TableScanStream::new(
             self.table_schema.clone(),
@@ -128,6 +131,7 @@ impl ExecutionPlan for TskvExec {
             split,
             batch_size,
             metrics,
+            SpanRecorder::new(span_ctx.child_span(format!("TableScanStream ({partition})"))),
         )
         .map_err(|err| DataFusionError::External(Box::new(err)))?;
 
@@ -136,7 +140,7 @@ impl ExecutionPlan for TskvExec {
 
     fn fmt_as(&self, t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
         match t {
-            DisplayFormatType::Default => {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
                 let filter = self.filter();
                 let fields: Vec<_> = self
                     .proj_schema
@@ -146,8 +150,9 @@ impl ExecutionPlan for TskvExec {
                     .collect::<Vec<String>>();
                 write!(
                     f,
-                    "TskvExec: {}, projection=[{}]",
+                    "TskvExec: {}, split_num={}, projection=[{}]",
                     PredicateDisplay(&filter),
+                    self.splits.len(),
                     fields.join(","),
                 )
             }
@@ -164,8 +169,18 @@ impl ExecutionPlan for TskvExec {
     }
 }
 
+impl std::fmt::Debug for TskvExec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TskvExec")
+            .field("table_schema", &self.table_schema)
+            .field("proj_schema", &self.proj_schema)
+            .field("filter", &self.filter)
+            .field("splits", &self.splits)
+            .finish()
+    }
+}
+
 /// A wrapper to customize PredicateRef display
-#[derive(Debug)]
 struct PredicateDisplay<'a>(&'a PredicateRef);
 
 impl<'a> Display for PredicateDisplay<'a> {
@@ -186,10 +201,12 @@ pub struct TableScanStream {
     batch_size: usize,
     coord: CoordinatorRef,
 
-    iterator: ReaderIterator,
+    iterator: SendableCoordinatorRecordBatchStream,
 
     remain: Option<usize>,
     metrics: TableScanMetrics,
+    #[allow(unused)]
+    span_recorder: SpanRecorder,
 }
 
 impl TableScanStream {
@@ -197,9 +214,10 @@ impl TableScanStream {
         table_schema: TskvTableSchemaRef,
         proj_schema: SchemaRef,
         coord: CoordinatorRef,
-        split: Split,
+        split: PlacedSplit,
         batch_size: usize,
         metrics: TableScanMetrics,
+        span_recorder: SpanRecorder,
     ) -> Result<Self> {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for item in proj_schema.fields().iter() {
@@ -238,16 +256,17 @@ impl TableScanStream {
         );
 
         let remain = split.limit();
+
         let option = QueryOption::new(
             batch_size,
             split,
             None,
             proj_schema.clone(),
             proj_table_schema,
-            metrics.tskv_metrics(),
         );
 
-        let iterator = coord.read_record(option)?;
+        let span_ctx = span_recorder.span_ctx();
+        let iterator = coord.table_scan(option, span_ctx)?;
 
         Ok(Self {
             proj_schema,
@@ -256,6 +275,7 @@ impl TableScanStream {
             remain,
             iterator,
             metrics,
+            span_recorder,
         })
     }
 
@@ -263,9 +283,10 @@ impl TableScanStream {
         proj_schema: SchemaRef,
         batch_size: usize,
         coord: CoordinatorRef,
-        iterator: ReaderIterator,
+        iterator: SendableCoordinatorRecordBatchStream,
         remain: Option<usize>,
         metrics: TableScanMetrics,
+        span_recorder: SpanRecorder,
     ) -> Self {
         Self {
             proj_schema,
@@ -274,6 +295,7 @@ impl TableScanStream {
             iterator,
             remain,
             metrics,
+            span_recorder,
         }
     }
 }
@@ -289,24 +311,21 @@ impl Stream for TableScanStream {
         let metrics = &this.metrics;
         let timer = metrics.elapsed_compute().timer();
 
-        let result = match Box::pin(this.iterator.next()).poll_unpin(cx) {
-            Poll::Ready(Some(Ok(batch))) => match metrics.record_memory(&batch) {
-                Ok(_) => match this.remain.as_mut() {
-                    Some(remain) => {
-                        if *remain == 0 {
-                            Poll::Ready(None)
-                        } else if *remain > batch.num_rows() {
-                            *remain -= batch.num_rows();
-                            Poll::Ready(Some(Ok(batch)))
-                        } else {
-                            let batch = batch.slice(0, *remain);
-                            *remain = 0;
-                            Poll::Ready(Some(Ok(batch)))
-                        }
+        let result = match this.iterator.poll_next_unpin(cx) {
+            Poll::Ready(Some(Ok(batch))) => match this.remain.as_mut() {
+                Some(remain) => {
+                    if *remain == 0 {
+                        Poll::Ready(None)
+                    } else if *remain > batch.num_rows() {
+                        *remain -= batch.num_rows();
+                        Poll::Ready(Some(Ok(batch)))
+                    } else {
+                        let batch = batch.slice(0, *remain);
+                        *remain = 0;
+                        Poll::Ready(Some(Ok(batch)))
                     }
-                    None => Poll::Ready(Some(Ok(batch))),
-                },
-                Err(e) => Poll::Ready(Some(Err(e))),
+                }
+                None => Poll::Ready(Some(Ok(batch))),
             },
             Poll::Ready(Some(Err(e))) => {
                 Poll::Ready(Some(Err(DataFusionError::External(Box::new(e)))))

@@ -1,9 +1,8 @@
 -- WRITE LINE PROTOCOL --
 test_timestamp_conv,ta=a1,tb=b1 fa=1,fb=2 3
 -- LINE PROTOCOL END --
-422 Unprocessable Entity
-{"error_code":"050014","error_message":"write expired time data not permit"}
--- ERROR:  --
+200 OK
+
 
 -- WRITE LINE PROTOCOL --
 test_timestamp_conv,ta=a1,tb=b1 fa=1,fb=2 1667456411000000000
@@ -17,7 +16,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time = TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  EmptyExec: produce_one_row=false
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time = 1667456411000000000; --
@@ -26,7 +25,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time = TimestampNanosecond(1667456411000000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456411000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456411000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456411000000000, None)), bound: Exactly } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456411000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456411000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456411000000000, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time <> 12345678865; --
@@ -38,7 +37,8 @@ logical_plan,"Projection: test_timestamp_conv.fa
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: time@0 != 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, split_num=2, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time != 12345678865; --
@@ -50,7 +50,8 @@ logical_plan,"Projection: test_timestamp_conv.fa
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: time@0 != 12345678865
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, split_num=2, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time < 12345678865; --
@@ -59,7 +60,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time < TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  EmptyExec: produce_one_row=false
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Below } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time < 1667456412000000000; --
@@ -68,7 +69,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time < TimestampNanosecond(1667456412000000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456412000000000, None)), bound: Below } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456412000000000, None)), bound: Below } }} })}) }, split_num=2, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time <= 12345678865; --
@@ -77,7 +78,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time <= TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  EmptyExec: produce_one_row=false
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time <= 1667456412000000000; --
@@ -86,7 +87,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time <= TimestampNanosecond(1667456412000000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456412000000000, None)), bound: Exactly } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456412000000000, None)), bound: Exactly } }} })}) }, split_num=2, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time > 12345678865; --
@@ -95,7 +96,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time > TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, split_num=2, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time >= 12345678865; --
@@ -104,7 +105,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time >= TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, split_num=2, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time >= 12345678865; --
@@ -113,7 +114,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time >= TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, split_num=2, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time = '1997-01-31 09:26:56'; --
@@ -131,7 +132,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time = TimestampNanosecond(1667485211000000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485211000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485211000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485211000000000, None)), bound: Exactly } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485211000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485211000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485211000000000, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time <> '1997-01-31 09:26:56.123'; --
@@ -143,7 +144,8 @@ logical_plan,"Projection: test_timestamp_conv.fa
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: time@0 != 854702816123000000
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, split_num=2, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time != '1997-01-31T09:26:56.123'; --
@@ -155,7 +157,8 @@ logical_plan,"Projection: test_timestamp_conv.fa
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: time@0 != 854702816123000000
-      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, projection=[time,fa]
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, split_num=2, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time < '1997-01-31 09:26:56.123-05:00'; --
@@ -164,7 +167,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time < TimestampNanosecond(854720816123000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  EmptyExec: produce_one_row=false
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854720816123000000, None)), bound: Below } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time < '2022-11-03T14:20:12.123-05:00'; --
@@ -173,7 +176,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time < TimestampNanosecond(1667503212123000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667503212123000000, None)), bound: Below } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667503212123000000, None)), bound: Below } }} })}) }, split_num=2, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time <= '1997-01-31T09:26:56.123-05:00'; --
@@ -182,7 +185,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time <= TimestampNanosecond(854720816123000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  EmptyExec: produce_one_row=false
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854720816123000000, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time <= '2022-11-03T14:20:12.123-05:00'; --
@@ -191,7 +194,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time <= TimestampNanosecond(1667503212123000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667503212123000000, None)), bound: Exactly } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667503212123000000, None)), bound: Exactly } }} })}) }, split_num=2, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time > '1997-01-31T09:26:56.123Z'; --
@@ -200,7 +203,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time > TimestampNanosecond(854702816123000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854702816123000000, None)), bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854702816123000000, None)), bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854702816123000000, None)), bound: Above }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854702816123000000, None)), bound: Above }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time >= '1997-01-31 09:26:56'; --
@@ -209,7 +212,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time >= TimestampNanosecond(854702816000000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854702816000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854702816000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854702816000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854702816000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time >= '1997-01-31'; --
@@ -218,7 +221,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time >= TimestampNanosecond(854668800000000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854668800000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854668800000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854668800000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854668800000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time >= 'xxx'; --
@@ -240,7 +243,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time >= TimestampNanosecond(1667485210000000000, None), test_timestamp_conv.time <= TimestampNanosecond(1667485212123000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485210000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485210000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485212123000000, None)), bound: Exactly } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485210000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485210000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485212123000000, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time between 12345678865 and 12345678869; --
@@ -249,7 +252,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time >= TimestampNanosecond(12345678865, None), test_timestamp_conv.time <= TimestampNanosecond(12345678869, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  EmptyExec: produce_one_row=false
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678869, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time between 1667456410000000000 and 1667456412000000000; --
@@ -258,7 +261,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time >= TimestampNanosecond(1667456410000000000, None), test_timestamp_conv.time <= TimestampNanosecond(1667456412000000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456410000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456410000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456412000000000, None)), bound: Exactly } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456410000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456410000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456412000000000, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time between 12345678865 and '1997-03-31T09:26:56.123Z'; --
@@ -267,7 +270,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time >= TimestampNanosecond(12345678865, None), test_timestamp_conv.time <= TimestampNanosecond(859800416123000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  EmptyExec: produce_one_row=false
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(859800416123000000, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time between 1667456410000000000 and '2022-11-03T14:20:12.123Z'; --
@@ -276,7 +279,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time >= TimestampNanosecond(1667456410000000000, None), test_timestamp_conv.time <= TimestampNanosecond(1667485212123000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456410000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456410000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485212123000000, None)), bound: Exactly } }} })}) }, projection=[time,fa]
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456410000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667456410000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(1667485212123000000, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time between 12345678865 and '1997-03-31'; --
@@ -285,7 +288,7 @@ plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
   TableScan: test_timestamp_conv projection=[time, fa], full_filters=[test_timestamp_conv.time >= TimestampNanosecond(12345678865, None), test_timestamp_conv.time <= TimestampNanosecond(859766400000000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
-  EmptyExec: produce_one_row=false
+  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(859766400000000000, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time between 12345678865 and 'xxxxx'; --
@@ -296,12 +299,13 @@ plan_type,plan
 200 OK
 plan_type,plan
 logical_plan,"Projection: test_timestamp_conv.fa
-  Filter: test_timestamp_conv.time = TimestampNanosecond(859800416123000000, None) OR test_timestamp_conv.time = TimestampNanosecond(12345678865, None)
-    TableScan: test_timestamp_conv projection=[time, fa], partial_filters=[test_timestamp_conv.time = TimestampNanosecond(859800416123000000, None) OR test_timestamp_conv.time = TimestampNanosecond(12345678865, None)]"
+  Filter: test_timestamp_conv.time = TimestampNanosecond(12345678865, None) OR test_timestamp_conv.time = TimestampNanosecond(859800416123000000, None)
+    TableScan: test_timestamp_conv projection=[time, fa], partial_filters=[test_timestamp_conv.time = TimestampNanosecond(12345678865, None) OR test_timestamp_conv.time = TimestampNanosecond(859800416123000000, None)]"
 physical_plan,"ProjectionExec: expr=[fa@1 as fa]
   CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: time@0 = 859800416123000000 OR time@0 = 12345678865
-      EmptyExec: produce_one_row=false
+    FilterExec: time@0 = 12345678865 OR time@0 = 859800416123000000
+      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly } }, Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(859800416123000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(859800416123000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(859800416123000000, None)), bound: Exactly } }} })}) }, split_num=1, projection=[time,fa]
 "
 
 -- EXECUTE SQL: explain select fa from test_timestamp_conv where time in (12345678865, 'xx'); --

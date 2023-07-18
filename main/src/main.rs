@@ -13,7 +13,10 @@ use metrics::metric_register::MetricsRegister;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use tokio::runtime::Runtime;
-use trace::{info, init_process_global_tracing, WorkerGuard};
+use trace::jaeger::jaeger_exporter;
+use trace::log::{CombinationTraceCollector, LogTraceCollector};
+use trace::{info, init_process_global_tracing, TraceExporter, WorkerGuard};
+use trace_http::ctx::{SpanContextExtractor, TraceHeaderParser};
 
 use crate::report::ReportService;
 
@@ -188,7 +191,7 @@ fn main() -> Result<(), std::io::Error> {
     init_tskv_metrics_recorder();
 
     let runtime = Arc::new(init_runtime(Some(config.deployment.cpu))?);
-    let mem_bytes = run_args.cpu.unwrap_or(config.deployment.memory) * 1024 * 1024 * 1024;
+    let mem_bytes = run_args.memory.unwrap_or(config.deployment.memory) * 1024 * 1024 * 1024;
     let memory_pool = Arc::new(GreedyMemoryPool::new(mem_bytes));
     runtime.clone().block_on(async move {
         let builder = server::ServiceBuilder {
@@ -200,6 +203,7 @@ fn main() -> Result<(), std::io::Error> {
                 "node_id",
                 config.node_basic.node_id.to_string(),
             )])),
+            span_context_extractor: build_span_context_extractor(&config),
         };
 
         let mut server = server::Server::default();
@@ -287,4 +291,39 @@ fn set_cli_args_to_config(args: &RunArgs, config: &mut Config) {
     if let Some(c) = args.cpu {
         config.deployment.cpu = c;
     }
+}
+
+fn build_span_context_extractor(config: &Config) -> Arc<SpanContextExtractor> {
+    let mut res: Vec<Arc<dyn TraceExporter>> = Vec::new();
+    let mode = &config.deployment.mode;
+    let node_id = config.node_basic.node_id;
+    let service_name = format!("cnosdb_{mode}_{node_id}");
+
+    if let Some(trace_log_collector_config) = &config.trace.log {
+        info!(
+            "Log trace collector created, path: {}",
+            trace_log_collector_config.path.display()
+        );
+        res.push(Arc::new(LogTraceCollector::new(trace_log_collector_config)))
+    }
+
+    if let Some(trace_config) = &config.trace.jaeger {
+        let exporter =
+            jaeger_exporter(trace_config, service_name).expect("build jaeger trace exporter");
+        info!("Jaeger trace exporter created");
+        res.push(exporter);
+    }
+
+    // TODO HttpCollector
+    let collector: Option<Arc<dyn TraceExporter>> = if res.is_empty() {
+        None
+    } else if res.len() == 1 {
+        res.pop()
+    } else {
+        Some(Arc::new(CombinationTraceCollector::new(res)))
+    };
+
+    let parser = TraceHeaderParser::new(config.trace.auto_generate_span);
+
+    Arc::new(SpanContextExtractor::new(parser, collector))
 }

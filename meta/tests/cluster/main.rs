@@ -376,7 +376,7 @@ async fn write_data_to_meta() {
     };
     let req = command::WriteCommand::AddDataNode("cluster_xxx".to_string(), node);
     let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
-    let rsp = cli.write::<command::StatusResponse>(&req).await.unwrap();
+    let rsp = cli.write::<()>(&req).await.unwrap();
     println!("=== add nodeinfo : {:?}", rsp);
     // let req = command::WriteCommand::CreateTenant(“cluster_xxx”.to_string(), (), ())
     let req = command::WriteCommand::CreateTenant(
@@ -385,10 +385,7 @@ async fn write_data_to_meta() {
         models::schema::TenantOptions::default(),
     );
     let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
-    let rsp = cli
-        .write::<command::CommonResp<Tenant>>(&req)
-        .await
-        .unwrap();
+    let rsp = cli.write::<Tenant>(&req).await.unwrap();
     println!("=== add tenant: {:?}", rsp);
 }
 #[cfg(feature = "meta_e2e_test")]
@@ -398,7 +395,7 @@ async fn drop_data_from_meta() {
         "test_add_tenant001".to_string(),
     );
     let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
-    let rsp = cli.write::<command::CommonResp<bool>>(&req).await.unwrap();
+    let rsp = cli.write::<()>(&req).await.unwrap();
     println!("=== drop tanant: {:?}", rsp);
 }
 #[cfg(feature = "meta_e2e_test")]

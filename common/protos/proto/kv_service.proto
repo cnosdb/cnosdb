@@ -120,6 +120,17 @@ message AdminCommandRequest {
   }
 }
 
+message FetchVnodeChecksumRequest {
+    uint32 vnode_id = 1;
+}
+
+message AdminFetchCommandRequest {
+  string tenant = 1;
+  oneof command {
+    FetchVnodeChecksumRequest fetch_vnode_checksum = 8;
+  }
+}
+
 /* -------------------------------------------------------------------- */
 
 message BatchBytesResponse {
@@ -154,6 +165,7 @@ service TSKVService {
   rpc WriteVnodePoints(WriteVnodeRequest) returns (StatusResponse) {};
   rpc QueryRecordBatch(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
   rpc ExecAdminCommand(AdminCommandRequest) returns (StatusResponse) {};
+  rpc ExecAdminFetchCommand(AdminFetchCommandRequest) returns (BatchBytesResponse) {};
 
   rpc DownloadFile(DownloadFileRequest) returns (stream BatchBytesResponse) {};
   rpc GetVnodeFilesMeta(GetVnodeFilesMetaRequest) returns (GetVnodeFilesMetaResponse) {};

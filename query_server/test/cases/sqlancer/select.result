@@ -74,7 +74,7 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT * FROM m1 WHERE ((NOT (((m1.f1)>=(m1.f1)))) BETWEEN SYMMETRIC (((m1.f1) BETWEEN SYMMETRIC (m1.f1) AND (m1.f1)) IS UNKNOWN) AND ((CAST(-1148203774 AS BOOLEAN)) IS TRUE)) IS TRUE UNION ALL SELECT ALL * FROM m1 WHERE NOT (((NOT (((m1.f1)>=(m1.f1)))) BETWEEN SYMMETRIC (((m1.f1) BETWEEN SYMMETRIC (m1.f1) AND (m1.f1)) IS UNKNOWN) AND ((CAST(-1148203774 AS BOOLEAN)) IS TRUE)) IS TRUE) UNION ALL SELECT * FROM m1 WHERE (((NOT (((m1.f1)>=(m1.f1)))) BETWEEN SYMMETRIC (((m1.f1) BETWEEN SYMMETRIC (m1.f1) AND (m1.f1)) IS UNKNOWN) AND ((CAST(-1148203774 AS BOOLEAN)) IS TRUE)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1; --
@@ -122,13 +122,13 @@ MAX(m4.f0)
 -- EXECUTE SQL: SELECT m0.t0 FROM m0 WHERE NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN))) UNION ALL SELECT m0.t0 FROM m0 WHERE NOT (NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN)))) UNION ALL SELECT m0.t0 FROM m0 WHERE (NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_AND(- (+ (CAST(m3.t0 AS BIGINT)))) FROM m3 ORDER BY m3.f0 DESC, m3.t0 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named m3.f0. Valid fields are \"BIT_AND((- m3.t0))\"."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.f0, m4.t1, m4.t2 FROM m4; --
@@ -159,6 +159,7 @@ f0,t1,t2
 f0,t0,f1
 ,,0.47166914414715877
 ,916053861,0.507623643211476
+false,,
 false,,0.6326195071473769
 false,t0,0.0
 true,,
@@ -172,9 +173,9 @@ true,,0.9622249970170084
 
 -- EXECUTE SQL: SELECT BOOL_OR((((((((m3.t1)||(m3.f0)))||(CAST(0.033755319906666026 AS BOOLEAN))))LIKE(CAST(CAST(m3.f1 AS BIGINT) AS STRING)))) IS FALSE) FROM m3; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
--- ERROR:  --
+200 OK
+BOOL_OR((m3.t1 || m3.f0) || CAST(Float64(0.033755319906666026) AS Boolean) LIKE CAST(CAST(m3.f1 AS Int64) AS Utf8)  IS FALSE)
+true
 
 -- EXECUTE SQL: SELECT ALL m3.f1 FROM m3; --
 -- AFTER_SORT --
@@ -190,15 +191,15 @@ false
 
 -- EXECUTE SQL: SELECT BIT_AND(-1155506580) FROM m2; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
--- ERROR:  --
+200 OK
+BIT_AND(Int64(-1155506580))
+-1155506580
 
 -- EXECUTE SQL: SELECT BIT_AND(agg0) FROM (SELECT BIT_AND(-1155506580)  as agg0 FROM m2 WHERE ((((CAST(((m2.f1)LIKE(m2.f1)) AS STRING))LIKE(m2.t0)))<(CAST(CAST(((1367699265)+(-217143237)) AS BIGINT) AS BOOLEAN))) UNION ALL SELECT ALL BIT_AND(-1155506580)  as agg0 FROM m2 WHERE NOT (((((CAST(((m2.f1)LIKE(m2.f1)) AS STRING))LIKE(m2.t0)))<(CAST(CAST(((1367699265)+(-217143237)) AS BIGINT) AS BOOLEAN)))) UNION ALL SELECT BIT_AND(-1155506580)  as agg0 FROM m2 WHERE (((((CAST(((m2.f1)LIKE(m2.f1)) AS STRING))LIKE(m2.t0)))<(CAST(CAST(((1367699265)+(-217143237)) AS BIGINT) AS BOOLEAN)))) IS NULL) as asdf; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
--- ERROR:  --
+200 OK
+BIT_AND(asdf.agg0)
+-1155506580
 
 -- EXECUTE SQL: SELECT * FROM m4 ORDER BY m4.t0 DESC; --
 -- AFTER_SORT --
@@ -216,6 +217,7 @@ time,t0,t1,t2,f0
 -- AFTER_SORT --
 200 OK
 f1,f0,t0
+,false,
 ,true,
 ,true,
 ,true,
@@ -233,6 +235,7 @@ f1,f0,t0
 -- AFTER_SORT --
 200 OK
 f1,f0,t0
+,false,
 ,true,
 ,true,
 ,true,
@@ -260,9 +263,9 @@ t2,0,t1
 
 -- EXECUTE SQL: SELECT ALL BIT_AND(CAST(NOT (CAST(CAST(-436419271 AS BIGINT) AS BOOLEAN)) AS BIGINT)) FROM m1; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
--- ERROR:  --
+200 OK
+BIT_AND(NOT Int64(-436419271))
+0
 
 -- EXECUTE SQL: SELECT ALL * FROM m0; --
 -- AFTER_SORT --
@@ -272,6 +275,7 @@ time,t0,f0,f1
 1981-08-07T06:10:24.080382889,,false,0.6326195071473769
 1990-01-03T22:50:52.613557553,,true,
 2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
+2009-05-24T08:03:53.754651379,,false,
 2070-08-01T14:24:06.074400477,,,0.47166914414715877
 2096-05-01T02:46:47.649375642,,true,
 2105-09-29T02:51:25.038645395,,true,0.4131558313302025
@@ -289,6 +293,7 @@ time,t0,f0,f1
 1981-08-07T06:10:24.080382889,,false,0.6326195071473769
 1990-01-03T22:50:52.613557553,,true,
 2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
+2009-05-24T08:03:53.754651379,,false,
 2070-08-01T14:24:06.074400477,,,0.47166914414715877
 2096-05-01T02:46:47.649375642,,true,
 2105-09-29T02:51:25.038645395,,true,0.4131558313302025
@@ -330,6 +335,7 @@ t1
 -- AFTER_SORT --
 200 OK
 f1,f0,t0
+,false,
 ,true,
 ,true,
 ,true,
@@ -360,6 +366,7 @@ f1,f0,t0
 -- AFTER_SORT --
 200 OK
 f1,f0,t0
+,false,
 0.0,false,t0
 0.6326195071473769,false,
 
@@ -379,7 +386,7 @@ t0,f0
 -- EXECUTE SQL: SELECT m1.t0, m1.f0 FROM m1 WHERE ((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691))))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE NOT (((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691)))))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE (((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691)))))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '-1326988525' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast value '-1326988525' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
@@ -398,14 +405,14 @@ f1
 -- EXECUTE SQL: SELECT m0.f1 FROM m0 WHERE CAST(CAST(0.8194569637054474 AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '0.8194569637054474' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast value '0.8194569637054474' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(- (-1205285987)) FROM m2; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR((- Int64(-1205285987)))
+1205285987
 
 -- EXECUTE SQL: SELECT m4.f0 FROM m4; --
 -- AFTER_SORT --
@@ -477,6 +484,7 @@ t2,t0
 f0,f1
 ,0.47166914414715877
 ,0.507623643211476
+false,
 false,0.0
 false,0.6326195071473769
 true,
@@ -494,6 +502,7 @@ true,0.9622249970170084
 f0,f1
 ,0.47166914414715877
 ,0.507623643211476
+false,
 false,0.0
 false,0.6326195071473769
 true,
@@ -557,6 +566,7 @@ f0
 f0
 false
 false
+false
 true
 true
 true
@@ -575,6 +585,7 @@ true
 -- AFTER_SORT --
 200 OK
 f0
+false
 false
 false
 true
@@ -619,6 +630,7 @@ t0,f1,false
 -- AFTER_SORT --
 200 OK
 t0,f1,f0
+,,false
 ,,true
 ,,true
 ,,true
@@ -647,7 +659,7 @@ false,t0
 -- EXECUTE SQL: SELECT ALL m3.f1, m3.t0 FROM m3 WHERE (m3.t0) BETWEEN SYMMETRIC (((((CAST(m3.t0 AS STRING))||(CAST(m3.f0 AS STRING))))||(((m3.f0)^(((-1761997143)^(m3.f0))))))) AND (m3.t1); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MAX(0.6592404280882139) FROM m3; --
@@ -673,6 +685,7 @@ t0,false
 200 OK
 t0,f0,f1
 ,,0.47166914414715877
+,false,
 ,false,0.6326195071473769
 ,true,
 ,true,
@@ -690,6 +703,7 @@ t0,false,0.0
 200 OK
 t0,f0,f1
 ,,0.47166914414715877
+,false,
 ,false,0.6326195071473769
 ,true,
 ,true,
@@ -732,19 +746,19 @@ t0,0,t1
 -- EXECUTE SQL: SELECT m4.t0, m4.f0, m4.t1 FROM m4 WHERE CAST((((((((((0.9584559080711685) NOT IN (0.733569031597476, 0.7960654456099594))AND((m4.t0) BETWEEN SYMMETRIC (m4.t1) AND (m4.t1))))AND(CAST(962753936 AS BOOLEAN))))AND(NOT ((m4.t2) BETWEEN (m4.t2) AND (m4.t0)))))AND((CAST(FALSE AS BOOLEAN)) IS NOT UNKNOWN)) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1 FROM m4 WHERE NOT (CAST((((((((((0.9584559080711685) NOT IN (0.733569031597476, 0.7960654456099594))AND((m4.t0) BETWEEN SYMMETRIC (m4.t1) AND (m4.t1))))AND(CAST(962753936 AS BOOLEAN))))AND(NOT ((m4.t2) BETWEEN (m4.t2) AND (m4.t0)))))AND((CAST(FALSE AS BOOLEAN)) IS NOT UNKNOWN)) AS BOOLEAN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m4.t0, m4.f0, m4.t1 FROM m4 WHERE (CAST((((((((((0.9584559080711685) NOT IN (0.733569031597476, 0.7960654456099594))AND((m4.t0) BETWEEN SYMMETRIC (m4.t1) AND (m4.t1))))AND(CAST(962753936 AS BOOLEAN))))AND(NOT ((m4.t2) BETWEEN (m4.t2) AND (m4.t0)))))AND((CAST(FALSE AS BOOLEAN)) IS NOT UNKNOWN)) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1, m4.t2 FROM m4; --
@@ -857,9 +871,9 @@ t0,0,t1
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(m3.f0) FROM m3; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR(m3.f0)
+0
 
 -- EXECUTE SQL: SELECT m3.t0, m3.f1, m3.t1 FROM m3; --
 -- AFTER_SORT --
@@ -985,6 +999,7 @@ t0,f0,false
 f0,f1,t0
 ,0.47166914414715877,
 ,0.507623643211476,916053861
+false,,
 false,0.0,t0
 false,0.6326195071473769,
 true,,
@@ -1002,6 +1017,7 @@ true,0.9622249970170084,
 f0,f1,t0
 ,0.47166914414715877,
 ,0.507623643211476,916053861
+false,,
 false,0.0,t0
 false,0.6326195071473769,
 true,,
@@ -1027,12 +1043,13 @@ true,0.9622249970170084,
 -- AFTER_SORT --
 200 OK
 COUNT((- Boolean(true)))
-12
+13
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f1, m0.f0 FROM m0; --
 -- AFTER_SORT --
 200 OK
 t0,f1,f0
+,,false
 ,,true
 ,,true
 ,,true
@@ -1050,6 +1067,7 @@ t0,0.0,false
 -- AFTER_SORT --
 200 OK
 t0,f1,f0
+,,false
 ,,true
 ,,true
 ,,true
@@ -1082,6 +1100,7 @@ f0,t0,f1
 f0
 false
 false
+false
 true
 true
 true
@@ -1102,6 +1121,7 @@ true
 f0
 false
 false
+false
 true
 true
 true
@@ -1118,9 +1138,9 @@ true
 
 -- EXECUTE SQL: SELECT ALL BOOL_AND((0.7125738444099359) NOT IN (0.17193890888962704, 0.5773990828254518)) FROM m1 GROUP BY ((- (CAST(((m1.t0)LIKE(m1.f0)) AS BIGINT)))*(CAST(-33990896 AS BIGINT))); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
--- ERROR:  --
+200 OK
+"BOOL_AND(Float64(0.7125738444099359) NOT IN (Map { iter: Iter([Literal(Float64(0.17193890888962704)), Literal(Float64(0.5773990828254518))]) }))"
+true
 
 -- EXECUTE SQL: SELECT m3.f0, m3.t0 FROM m3; --
 -- AFTER_SORT --
@@ -1131,7 +1151,7 @@ f0,t0
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t0 FROM m3 WHERE NOT (CAST(((m3.f0) BETWEEN SYMMETRIC (m3.f0) AND (m3.f0)) IS FALSE AS BOOLEAN)) UNION ALL SELECT ALL m3.f0, m3.t0 FROM m3 WHERE NOT (NOT (CAST(((m3.f0) BETWEEN SYMMETRIC (m3.f0) AND (m3.f0)) IS FALSE AS BOOLEAN))) UNION ALL SELECT m3.f0, m3.t0 FROM m3 WHERE (NOT (CAST(((m3.f0) BETWEEN SYMMETRIC (m3.f0) AND (m3.f0)) IS FALSE AS BOOLEAN))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m2; --
@@ -1212,7 +1232,7 @@ f0
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.7069601217262456))
-8.483521460714947
+9.190481582441192
 
 -- EXECUTE SQL: SELECT SUM(+ ('-991419863')) FROM m0; --
 -- AFTER_SORT --
@@ -1235,6 +1255,7 @@ SUM(Float64(0.7069601217262456))
 200 OK
 f0,t0
 false,
+false,
 false,t0
 true,
 true,
@@ -1249,6 +1270,7 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+false,
 false,
 false,t0
 true,
@@ -1287,7 +1309,7 @@ false,f1,t0
 -- AFTER_SORT --
 200 OK
 SUM(Int64(-996695851))
--11960350212
+-12957046063
 
 -- EXECUTE SQL: SELECT MAX(m2.f1) FROM m2 ORDER BY m2.f1 ASC; --
 -- AFTER_SORT --
@@ -1298,7 +1320,7 @@ SUM(Int64(-996695851))
 -- EXECUTE SQL: SELECT m3.t1, m3.t0 FROM m3 WHERE (((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0') UNION ALL SELECT m3.t1, m3.t0 FROM m3 WHERE NOT ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) UNION ALL SELECT ALL m3.t1, m3.t0 FROM m3 WHERE ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Can not find compatible types to compare Boolean with [Boolean, Boolean, Utf8]"}
+{"error_code":"010001","error_message":"Datafusion: type_coercion\ncaused by\nError during planning: Can not find compatible types to compare Boolean with [Boolean, Boolean, Utf8]"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0 FROM m2; --
@@ -1314,14 +1336,14 @@ f1,t0
 
 -- EXECUTE SQL: SELECT BIT_OR(574679056) FROM m0; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR(Int64(574679056))
+574679056
 
 -- EXECUTE SQL: SELECT BIT_OR(agg0) FROM (SELECT ALL BIT_OR(574679056)  as agg0 FROM m0 WHERE (0.8987548809734333) BETWEEN SYMMETRIC (0.9080665405886834) AND (1819388991) UNION ALL SELECT BIT_OR(574679056)  as agg0 FROM m0 WHERE NOT ((0.8987548809734333) BETWEEN SYMMETRIC (0.9080665405886834) AND (1819388991)) UNION ALL SELECT BIT_OR(574679056)  as agg0 FROM m0 WHERE ((0.8987548809734333) BETWEEN SYMMETRIC (0.9080665405886834) AND (1819388991)) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.f1 FROM m3; --
@@ -1333,7 +1355,7 @@ false
 -- EXECUTE SQL: SELECT ALL m3.f1 FROM m3 WHERE CAST(((CAST(CAST(FALSE AS BIGINT) AS STRING))||(CAST(((m3.t1)||(3.60976499E8)) AS BIGINT))) AS BOOLEAN) UNION ALL SELECT m3.f1 FROM m3 WHERE NOT (CAST(((CAST(CAST(FALSE AS BIGINT) AS STRING))||(CAST(((m3.t1)||(3.60976499E8)) AS BIGINT))) AS BOOLEAN)) UNION ALL SELECT m3.f1 FROM m3 WHERE (CAST(((CAST(CAST(FALSE AS BIGINT) AS STRING))||(CAST(((m3.t1)||(3.60976499E8)) AS BIGINT))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't1360976499.0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.f1 FROM m3; --
@@ -1483,14 +1505,14 @@ t0,0,t1,false
 -- EXECUTE SQL: SELECT MIN(((CAST(0.5545125075521484 AS STRING))||((((m2.f0)<(m2.f0))) IN (TRUE)))) FROM m2; --
 -- AFTER_SORT --
 200 OK
-MIN(Float64(0.5545125075521484) || m2.f0 < m2.f0 IN (Map { iter: Iter([Boolean(true)]) }))
+MIN(Float64(0.5545125075521484) || m2.f0 < m2.f0 IN (Map { iter: Iter([Literal(Boolean(true))]) }))
 0.55451250755214840
 
 -- EXECUTE SQL: SELECT ALL BIT_AND(+ (CAST(CAST(+ (m3.f0) AS STRING) AS BIGINT))), CAST(0.13969056553337023 AS BIGINT) FROM m3 GROUP BY 0.2133494693314646; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
--- ERROR:  --
+200 OK
+BIT_AND(m3.f0),Float64(0.13969056553337023)
+0,0
 
 -- EXECUTE SQL: SELECT m0.f1 FROM m0; --
 -- AFTER_SORT --
@@ -1507,9 +1529,16 @@ f1
 
 -- EXECUTE SQL: SELECT m0.f1 FROM m0 WHERE (-9.92966372E8) BETWEEN (0.13685450858041304) AND (1.624016699E9) UNION ALL SELECT m0.f1 FROM m0 WHERE NOT ((-9.92966372E8) BETWEEN (0.13685450858041304) AND (1.624016699E9)) UNION ALL SELECT ALL m0.f1 FROM m0 WHERE ((-9.92966372E8) BETWEEN (0.13685450858041304) AND (1.624016699E9)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
--- ERROR:  --
+200 OK
+f1
+0.0
+0.4131558313302025
+0.47166914414715877
+0.507623643211476
+0.5469987105166848
+0.5540439337463335
+0.6326195071473769
+0.9622249970170084
 
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 ORDER BY m2.t0 ASC; --
 -- AFTER_SORT --
@@ -1525,9 +1554,9 @@ false
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR(TRUE) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
--- ERROR:  --
+200 OK
+BOOL_OR(Boolean(true))
+true
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.t0 FROM m1; --
 -- AFTER_SORT --
@@ -1560,7 +1589,7 @@ f0,t2,t0
 -- EXECUTE SQL: SELECT ALL m4.f0, m4.t2, m4.t0 FROM m4 WHERE ((((((CAST(((+ (m4.f0))*(+ (-436419271))) AS BOOLEAN))AND((((m4.t0)||(m4.t2))) NOT IN ('IEv', 'iKLོ<'))))AND((CAST(NOT (TRUE) AS BIGINT)) BETWEEN SYMMETRIC (CAST(m4.t0 AS BIGINT)) AND (- (CAST(m4.t0 AS BIGINT))))))OR(((((- (m4.f0))^(CAST(0.4641589299925929 AS BIGINT))))<=(+ (- (m4.f0)))))) UNION ALL SELECT m4.f0, m4.t2, m4.t0 FROM m4 WHERE NOT (((((((CAST(((+ (m4.f0))*(+ (-436419271))) AS BOOLEAN))AND((((m4.t0)||(m4.t2))) NOT IN ('IEv', 'iKLོ<'))))AND((CAST(NOT (TRUE) AS BIGINT)) BETWEEN SYMMETRIC (CAST(m4.t0 AS BIGINT)) AND (- (CAST(m4.t0 AS BIGINT))))))OR(((((- (m4.f0))^(CAST(0.4641589299925929 AS BIGINT))))<=(+ (- (m4.f0))))))) UNION ALL SELECT m4.f0, m4.t2, m4.t0 FROM m4 WHERE (((((((CAST(((+ (m4.f0))*(+ (-436419271))) AS BOOLEAN))AND((((m4.t0)||(m4.t2))) NOT IN ('IEv', 'iKLོ<'))))AND((CAST(NOT (TRUE) AS BIGINT)) BETWEEN SYMMETRIC (CAST(m4.t0 AS BIGINT)) AND (- (CAST(m4.t0 AS BIGINT))))))OR(((((- (m4.f0))^(CAST(0.4641589299925929 AS BIGINT))))<=(+ (- (m4.f0))))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
@@ -1597,9 +1626,9 @@ MAX(Float64(-488758559))
 
 -- EXECUTE SQL: SELECT MAX(agg0) FROM (SELECT ALL MAX(-4.88758559E8)  as agg0 FROM m3 WHERE (2.054705454E9) NOT IN (0.21952361206409599, 0.8148727002039817) UNION ALL SELECT MAX(-4.88758559E8)  as agg0 FROM m3 WHERE NOT ((2.054705454E9) NOT IN (0.21952361206409599, 0.8148727002039817)) UNION ALL SELECT MAX(-4.88758559E8)  as agg0 FROM m3 WHERE ((2.054705454E9) NOT IN (0.21952361206409599, 0.8148727002039817)) IS NULL) as asdf; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
--- ERROR:  --
+200 OK
+MAX(asdf.agg0)
+-488758559.0
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
 -- AFTER_SORT --
@@ -1659,7 +1688,7 @@ f0
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE (((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN UNION ALL SELECT m1.f0 FROM m1 WHERE NOT ((((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN) UNION ALL SELECT ALL m1.f0 FROM m1 WHERE ((((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f0 FROM m2; --
@@ -1694,7 +1723,7 @@ t0,0,t1
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1 FROM m4 WHERE (((((((CAST(TRUE AS BOOLEAN)) IN (TRUE))OR(TRUE)))AND((CAST(((m4.f0)-(m4.f0)) AS STRING)) BETWEEN SYMMETRIC (CAST(CAST(m4.f0 AS BIGINT) AS STRING)) AND (CAST(CAST(NULL AS BIGINT) AS STRING)))))AND((((m4.t0)>(m4.t1))) NOT IN (FALSE, FALSE))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.f1, m3.f0 FROM m3; --
@@ -1705,20 +1734,21 @@ false,0
 
 -- EXECUTE SQL: SELECT ALL m3.f1, m3.f0 FROM m3 WHERE ((((CAST(CAST(m3.f0 AS STRING) AS STRING))||(FALSE)))LIKE(CAST(((CAST(6.94936525E8 AS BIGINT))^(+ (m3.f0))) AS STRING))) UNION ALL SELECT m3.f1, m3.f0 FROM m3 WHERE NOT (((((CAST(CAST(m3.f0 AS STRING) AS STRING))||(FALSE)))LIKE(CAST(((CAST(6.94936525E8 AS BIGINT))^(+ (m3.f0))) AS STRING)))) UNION ALL SELECT ALL m3.f1, m3.f0 FROM m3 WHERE (((((CAST(CAST(m3.f0 AS STRING) AS STRING))||(FALSE)))LIKE(CAST(((CAST(6.94936525E8 AS BIGINT))^(+ (m3.f0))) AS STRING)))) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
--- ERROR:  --
+200 OK
+f1,f0
+false,0
 
 -- EXECUTE SQL: SELECT ALL MAX(((((CAST(CAST(FALSE AS STRING) AS STRING))||(CAST(((m4.t0)<=(m4.t2)) AS STRING))))IS DISTINCT FROM(((((CAST(TRUE AS STRING))||((('?X')||(m4.t1)))))||(m4.f0))))) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+"MAX(Boolean(false) || m4.t0 <= m4.t2 IS DISTINCT FROM Boolean(true) || Utf8(""?X"") || m4.t1 || m4.f0)"
+true
 
 -- EXECUTE SQL: SELECT m0.f0, m0.t0 FROM m0; --
 -- AFTER_SORT --
 200 OK
 f0,t0
+false,
 false,
 false,t0
 true,
@@ -1734,6 +1764,7 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+false,
 false,
 false,t0
 true,
@@ -1785,21 +1816,21 @@ SUM(Float64(0.9609833329171376))
 
 -- EXECUTE SQL: SELECT ALL MIN(((((CAST(- (+ (m4.f0)) AS BOOLEAN))OR(CAST(0.18361102209351832 AS BOOLEAN))))OR(CAST(0.14149015016136468 AS BOOLEAN)))) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+MIN((- m4.f0) OR Float64(0.18361102209351832) OR Float64(0.14149015016136468))
+true
 
 -- EXECUTE SQL: SELECT BIT_AND(CAST(CAST(((((m4.t0)||(m4.f0)))||(CAST(m4.f0 AS BIGINT))) AS BIGINT) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
+{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 't000' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(CAST(+ (CAST(((m3.f0)+(m3.f0)) AS BIGINT)) AS BIGINT)) FROM m3; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR(m3.f0 + m3.f0)
+0
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0; --
 -- AFTER_SORT --
@@ -1807,6 +1838,7 @@ SUM(Float64(0.9609833329171376))
 f0,f1,t0
 ,0.47166914414715877,
 ,0.507623643211476,916053861
+false,,
 false,0.0,t0
 false,0.6326195071473769,
 true,,
@@ -1827,7 +1859,7 @@ true,0.9622249970170084,
 -- EXECUTE SQL: SELECT ALL BOOL_OR((((((((((((m2.f1)LIKE(m2.f1)))OR(((m2.f0)AND(m2.f0)))))OR((0.5546139751565915) IN (0.3276204101429546))))AND((m2.t0) BETWEEN ('0.6468887984268011') AND (m2.f1)))) BETWEEN SYMMETRIC ((((m2.f0) BETWEEN SYMMETRIC (m2.f0) AND (m2.f0))AND(m2.f0))) AND (((CAST(m2.f0 AS STRING))LIKE(CAST(m2.f0 AS STRING)))))<=((+ (- (1120541685))) IS NOT NULL))) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f1, m1.f0 FROM m1; --
@@ -1880,9 +1912,9 @@ false,t0,f0
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(CAST((CAST(FALSE AS BIGINT)) NOT IN (0.5844695362547421, 0.7511352762098632, 0.02431858285836208) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+"BIT_OR(Boolean(false) NOT IN (Map { iter: Iter([Literal(Float64(0.5844695362547421)), Literal(Float64(0.7511352762098632)), Literal(Float64(0.02431858285836208))]) }))"
+1
 
 -- EXECUTE SQL: SELECT ALL * FROM m3; --
 -- AFTER_SORT --
@@ -1939,6 +1971,7 @@ MAX(Int64(-1770299815) # Int64(291484029) - Int64(706170751) - Int64(-488758559)
 200 OK
 f0,t0
 false,
+false,
 false,t0
 true,
 true,
@@ -1969,7 +2002,7 @@ SUM(asdf.agg0)
 -- EXECUTE SQL: SELECT COUNT(CAST(CAST(0.5224095978421741 AS STRING) AS BIGINT)) FROM m1 WHERE (NOT (((m1.t0)LIKE(m1.t0)))) IN (TRUE) GROUP BY CAST(- (CAST(CAST(m1.t0 AS STRING) AS BIGINT)) AS BIGINT); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.5224095978421741' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string '0.5224095978421741' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1; --
@@ -1988,14 +2021,15 @@ false,f0,t0
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(- (CAST(CAST(0.10877241438849494 AS DOUBLE) AS BIGINT))) FROM m1; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR((- Float64(0.10877241438849494)))
+0
 
 -- EXECUTE SQL: SELECT m0.t0, m0.f1, m0.f0 FROM m0; --
 -- AFTER_SORT --
 200 OK
 t0,f1,f0
+,,false
 ,,true
 ,,true
 ,,true
@@ -2013,6 +2047,7 @@ t0,0.0,false
 -- AFTER_SORT --
 200 OK
 t0,f1,f0
+,,false
 ,,true
 ,,true
 ,,true
@@ -2056,6 +2091,7 @@ f1
 f0,f1,t0
 ,0.47166914414715877,
 ,0.507623643211476,916053861
+false,,
 false,0.0,t0
 false,0.6326195071473769,
 true,,
@@ -2073,6 +2109,7 @@ true,0.9622249970170084,
 f0,f1,t0
 ,0.47166914414715877,
 ,0.507623643211476,916053861
+false,,
 false,0.0,t0
 false,0.6326195071473769,
 true,,
@@ -2090,6 +2127,7 @@ true,0.9622249970170084,
 f0,f1
 ,0.47166914414715877
 ,0.507623643211476
+false,
 false,0.0
 false,0.6326195071473769
 true,
@@ -2131,9 +2169,8 @@ false,f1,t0
 
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2 WHERE NOT (CAST(1.765622571E9 AS BOOLEAN)); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m0.t0 FROM m0 WHERE NOT (NOT (((CAST(m0.f1 AS STRING))LIKE(CAST(-1694794127 AS STRING))))); --
 -- AFTER_SORT --
@@ -2148,9 +2185,9 @@ MAX(Float64(0.11902110991187975))
 
 -- EXECUTE SQL: SELECT ALL BOOL_AND((0.6217647053258654) IN (0.30980467236273324)) FROM m3; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
--- ERROR:  --
+200 OK
+BOOL_AND(Float64(0.6217647053258654) IN (Map { iter: Iter([Literal(Float64(0.30980467236273324))]) }))
+false
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t2 FROM m4 WHERE CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN) UNION ALL SELECT m4.t0, m4.t2 FROM m4 WHERE NOT (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) UNION ALL SELECT ALL m4.t0, m4.t2 FROM m4 WHERE (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
@@ -2233,6 +2270,7 @@ t0
 f0,f1,t0
 ,0.47166914414715877,
 ,0.507623643211476,916053861
+false,,
 false,0.0,t0
 false,0.6326195071473769,
 true,,
@@ -2247,13 +2285,14 @@ true,0.9622249970170084,
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0 WHERE ((((CAST(299102740 AS BOOLEAN))OR(((CAST(CAST(-824534954 AS BIGINT) AS STRING))IS DISTINCT FROM(CAST(0.9496735118924012 AS STRING))))))AND((((((m0.f0) IS TRUE)OR((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0))))<(m0.f0)))) UNION ALL SELECT ALL m0.f0, m0.f1, m0.t0 FROM m0 WHERE NOT (((((CAST(299102740 AS BOOLEAN))OR(((CAST(CAST(-824534954 AS BIGINT) AS STRING))IS DISTINCT FROM(CAST(0.9496735118924012 AS STRING))))))AND((((((m0.f0) IS TRUE)OR((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0))))<(m0.f0))))) UNION ALL SELECT ALL m0.f0, m0.f1, m0.t0 FROM m0 WHERE (((((CAST(299102740 AS BOOLEAN))OR(((CAST(CAST(-824534954 AS BIGINT) AS STRING))IS DISTINCT FROM(CAST(0.9496735118924012 AS STRING))))))AND((((((m0.f0) IS TRUE)OR((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0))))<(m0.f0))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1, m0.f0, m0.t0 FROM m0; --
 -- AFTER_SORT --
 200 OK
 f1,f0,t0
+,false,
 ,true,
 ,true,
 ,true,
@@ -2271,6 +2310,7 @@ f1,f0,t0
 -- AFTER_SORT --
 200 OK
 f1,f0,t0
+,false,
 ,true,
 ,true,
 ,true,
@@ -2288,6 +2328,7 @@ f1,f0,t0
 -- AFTER_SORT --
 200 OK
 f0
+false
 false
 false
 true
@@ -2321,6 +2362,7 @@ true
 -- AFTER_SORT --
 200 OK
 f0
+false
 false
 false
 
@@ -2396,9 +2438,9 @@ false,t1
 
 -- EXECUTE SQL: SELECT BIT_OR(- (- (-1577037646))) FROM m2; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR((- (- Int64(-1577037646))))
+-1577037646
 
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2 ORDER BY m2.t0 DESC; --
 -- AFTER_SORT --
@@ -2440,7 +2482,7 @@ t0,0.0
 -- EXECUTE SQL: SELECT m0.t0, m0.f1 FROM m0 WHERE (- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280) UNION ALL SELECT ALL m0.t0, m0.f1 FROM m0 WHERE NOT ((- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280)) UNION ALL SELECT ALL m0.t0, m0.f1 FROM m0 WHERE ((- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '<{QdbO勌' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string '<{QdbO勌' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1; --
@@ -2478,9 +2520,9 @@ f0,t2,t1
 
 -- EXECUTE SQL: SELECT ALL m4.t0 FROM m4 WHERE (3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604) UNION ALL SELECT ALL m4.t0 FROM m4 WHERE NOT ((3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604)) UNION ALL SELECT m4.t0 FROM m4 WHERE ((3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
--- ERROR:  --
+200 OK
+t0
+t0
 
 -- EXECUTE SQL: SELECT ALL m0.t0 FROM m0 WHERE (((((m0.t0)||(m0.f0)))||(CAST(m0.t0 AS STRING)))) NOT IN ('Hp', ''); --
 -- AFTER_SORT --
@@ -2490,15 +2532,15 @@ t0
 
 -- EXECUTE SQL: SELECT BIT_AND(1546514567) FROM m1; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
--- ERROR:  --
+200 OK
+BIT_AND(Int64(1546514567))
+1546514567
 
 -- EXECUTE SQL: SELECT BIT_AND(agg0) FROM (SELECT ALL BIT_AND(1546514567)  as agg0 FROM m1 WHERE CAST(0.6984529796083262 AS BOOLEAN) UNION ALL SELECT ALL BIT_AND(1546514567)  as agg0 FROM m1 WHERE NOT (CAST(0.6984529796083262 AS BOOLEAN)) UNION ALL SELECT BIT_AND(1546514567)  as agg0 FROM m1 WHERE (CAST(0.6984529796083262 AS BOOLEAN)) IS NULL) as asdf; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
--- ERROR:  --
+200 OK
+BIT_AND(asdf.agg0)
+1546514567
 
 -- EXECUTE SQL: SELECT MAX(m4.f0) FROM m4; --
 -- AFTER_SORT --
@@ -2672,6 +2714,7 @@ Float64(0.3000222763276785)
 200 OK
 t0,f0
 ,false
+,false
 ,true
 ,true
 ,true
@@ -2686,6 +2729,7 @@ t0,false
 -- AFTER_SORT --
 200 OK
 t0,f0
+,false
 ,false
 ,true
 ,true
@@ -2729,6 +2773,7 @@ time,t0,f0,f1
 1981-08-07T06:10:24.080382889,,false,0.6326195071473769
 1990-01-03T22:50:52.613557553,,true,
 2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
+2009-05-24T08:03:53.754651379,,false,
 2070-08-01T14:24:06.074400477,,,0.47166914414715877
 2096-05-01T02:46:47.649375642,,true,
 2105-09-29T02:51:25.038645395,,true,0.4131558313302025
@@ -2757,6 +2802,7 @@ time,t0,f0,f1
 time,t0,f0,f1
 1970-01-01T00:00:00.000000000,t0,false,0.0
 1981-08-07T06:10:24.080382889,,false,0.6326195071473769
+2009-05-24T08:03:53.754651379,,false,
 
 -- EXECUTE SQL: SELECT ALL * FROM m0 WHERE (m0.f0) IS NULL; --
 -- AFTER_SORT --
@@ -2782,6 +2828,7 @@ t1,0,t2
 200 OK
 t0,f0,f1
 ,,0.47166914414715877
+,false,
 ,false,0.6326195071473769
 ,true,
 ,true,
@@ -2816,6 +2863,7 @@ t0,false,0.0
 -- AFTER_SORT --
 200 OK
 t0,f0,f1
+,false,
 ,true,
 ,true,
 ,true,
@@ -2847,6 +2895,7 @@ t0,0,t1,false
 -- AFTER_SORT --
 200 OK
 f1,f0
+,false
 ,true
 ,true
 ,true
@@ -2869,6 +2918,7 @@ f1,f0
 -- AFTER_SORT --
 200 OK
 f1,f0
+,false
 ,true
 ,true
 ,true
@@ -2927,6 +2977,7 @@ f0,t2
 -- AFTER_SORT --
 200 OK
 f1,f0,t0
+,false,
 ,true,
 ,true,
 ,true,
@@ -2944,6 +2995,7 @@ f1,f0,t0
 -- AFTER_SORT --
 200 OK
 f1,f0,t0
+,false,
 ,true,
 ,true,
 ,true,
@@ -2965,6 +3017,7 @@ time,t0,f0,f1
 1981-08-07T06:10:24.080382889,,false,0.6326195071473769
 1990-01-03T22:50:52.613557553,,true,
 2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
+2009-05-24T08:03:53.754651379,,false,
 2070-08-01T14:24:06.074400477,,,0.47166914414715877
 2096-05-01T02:46:47.649375642,,true,
 2105-09-29T02:51:25.038645395,,true,0.4131558313302025
@@ -2982,6 +3035,7 @@ time,t0,f0,f1
 1981-08-07T06:10:24.080382889,,false,0.6326195071473769
 1990-01-03T22:50:52.613557553,,true,
 2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
+2009-05-24T08:03:53.754651379,,false,
 2070-08-01T14:24:06.074400477,,,0.47166914414715877
 2096-05-01T02:46:47.649375642,,true,
 2105-09-29T02:51:25.038645395,,true,0.4131558313302025
@@ -3046,15 +3100,15 @@ f0
 
 -- EXECUTE SQL: SELECT BIT_OR(+ (- (CAST(CAST(m3.f0 AS BIGINT) AS BIGINT)))) FROM m3; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR((- m3.f0))
+0
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR((CAST(((m4.f0)*(360976499)) AS BIGINT)) NOT IN (0.2624596958986172, 0.685835611344487)) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
--- ERROR:  --
+200 OK
+"BOOL_OR(m4.f0 * Int64(360976499) NOT IN (Map { iter: Iter([Literal(Float64(0.2624596958986172)), Literal(Float64(0.685835611344487))]) }))"
+true
 
 -- EXECUTE SQL: SELECT m1.f1, m1.t0, m1.f0 FROM m1; --
 -- AFTER_SORT --
@@ -3066,19 +3120,19 @@ false,t0,f0
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.t0, m1.f0 FROM m1 WHERE NOT ((((-1775207148) IN (0.1688741619134384, 0.39268540295479615, 0.4546068705461972, -0.0, 0.5989936450918769)) BETWEEN SYMMETRIC (((m1.f0)IS NOT DISTINCT FROM(m1.f0))) AND ((('L')>=(m1.f0)))) IS NOT UNKNOWN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.t0, m1.f0 FROM m1 WHERE NOT (NOT ((((-1775207148) IN (0.1688741619134384, 0.39268540295479615, 0.4546068705461972, -0.0, 0.5989936450918769)) BETWEEN SYMMETRIC (((m1.f0)IS NOT DISTINCT FROM(m1.f0))) AND ((('L')>=(m1.f0)))) IS NOT UNKNOWN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.t0, m1.f0 FROM m1 WHERE (NOT ((((-1775207148) IN (0.1688741619134384, 0.39268540295479615, 0.4546068705461972, -0.0, 0.5989936450918769)) BETWEEN SYMMETRIC (((m1.f0)IS NOT DISTINCT FROM(m1.f0))) AND ((('L')>=(m1.f0)))) IS NOT UNKNOWN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.t0, m0.f1 FROM m0; --
@@ -3087,6 +3141,7 @@ false,t0,f0
 f0,t0,f1
 ,,0.47166914414715877
 ,916053861,0.507623643211476
+false,,
 false,,0.6326195071473769
 false,t0,0.0
 true,,
@@ -3104,6 +3159,7 @@ true,,0.9622249970170084
 f0,t0,f1
 ,,0.47166914414715877
 ,916053861,0.507623643211476
+false,,
 false,,0.6326195071473769
 false,t0,0.0
 true,,
@@ -3216,9 +3272,8 @@ f1,t0,false
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'ࢀ+h3356161281' to value of Boolean type"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0; --
 -- AFTER_SORT --
@@ -3226,6 +3281,7 @@ f1,t0,false
 f0,f1,t0
 ,0.47166914414715877,
 ,0.507623643211476,916053861
+false,,
 false,0.0,t0
 false,0.6326195071473769,
 true,,
@@ -3243,6 +3299,7 @@ true,0.9622249970170084,
 f0,f1,t0
 ,0.47166914414715877,
 ,0.507623643211476,916053861
+false,,
 false,0.0,t0
 false,0.6326195071473769,
 true,,
@@ -3286,19 +3343,19 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE (((m1.f1) NOT IN (FALSE, TRUE, FALSE, TRUE)) IN (NULL, FALSE, TRUE)) BETWEEN SYMMETRIC (NOT (NOT (((m1.f0)LIKE(m1.f0))))) AND ((NOT (m1.f1)) NOT IN (TRUE, TRUE, FALSE)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE NOT ((((m1.f1) NOT IN (FALSE, TRUE, FALSE, TRUE)) IN (NULL, FALSE, TRUE)) BETWEEN SYMMETRIC (NOT (NOT (((m1.f0)LIKE(m1.f0))))) AND ((NOT (m1.f1)) NOT IN (TRUE, TRUE, FALSE))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE ((((m1.f1) NOT IN (FALSE, TRUE, FALSE, TRUE)) IN (NULL, FALSE, TRUE)) BETWEEN SYMMETRIC (NOT (NOT (((m1.f0)LIKE(m1.f0))))) AND ((NOT (m1.f1)) NOT IN (TRUE, TRUE, FALSE))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1 FROM m1; --
@@ -3361,6 +3418,7 @@ COUNT(Float64(0.5249418544831504))
 200 OK
 t0,f0,f1
 ,,0.47166914414715877
+,false,
 ,false,0.6326195071473769
 ,true,
 ,true,
@@ -3378,6 +3436,7 @@ t0,false,0.0
 200 OK
 t0,f0,f1
 ,,0.47166914414715877
+,false,
 ,false,0.6326195071473769
 ,true,
 ,true,
@@ -3395,6 +3454,7 @@ t0,false,0.0
 200 OK
 f0,t0
 false,
+false,
 false,t0
 true,
 true,
@@ -3409,6 +3469,7 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+false,
 false,
 false,t0
 true,
@@ -3471,6 +3532,7 @@ time,t0,t1,f0,f1
 200 OK
 t0,f0,f1
 ,,0.47166914414715877
+,false,
 ,false,0.6326195071473769
 ,true,
 ,true,
@@ -3486,25 +3548,26 @@ t0,false,0.0
 -- EXECUTE SQL: SELECT m0.t0, m0.f0, m0.f1 FROM m0 WHERE NOT ((CAST((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0) AS BOOLEAN)) IS TRUE) UNION ALL SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0 WHERE NOT (NOT ((CAST((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0) AS BOOLEAN)) IS TRUE)) UNION ALL SELECT m0.t0, m0.f0, m0.f1 FROM m0 WHERE (NOT ((CAST((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0) AS BOOLEAN)) IS TRUE)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(m4.f0) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR(m4.f0)
+0
 
 -- EXECUTE SQL: SELECT BIT_AND(-483484156) FROM m1; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
--- ERROR:  --
+200 OK
+BIT_AND(Int64(-483484156))
+-483484156
 
 -- EXECUTE SQL: SELECT ALL m0.t0 FROM m0 WHERE CAST((((CAST(m0.f1 AS BOOLEAN))=((m0.f0) BETWEEN (m0.f0) AND (m0.f0)))) BETWEEN (m0.f0) AND (((NOT (m0.f0))OR(CAST(m0.f0 AS BOOLEAN)))) AS BOOLEAN) UNION ALL SELECT m0.t0 FROM m0 WHERE NOT (CAST((((CAST(m0.f1 AS BOOLEAN))=((m0.f0) BETWEEN (m0.f0) AND (m0.f0)))) BETWEEN (m0.f0) AND (((NOT (m0.f0))OR(CAST(m0.f0 AS BOOLEAN)))) AS BOOLEAN)) UNION ALL SELECT ALL m0.t0 FROM m0 WHERE (CAST((((CAST(m0.f1 AS BOOLEAN))=((m0.f0) BETWEEN (m0.f0) AND (m0.f0)))) BETWEEN (m0.f0) AND (((NOT (m0.f0))OR(CAST(m0.f0 AS BOOLEAN)))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 200 OK
 t0
+""
 ""
 ""
 ""
@@ -3571,9 +3634,9 @@ t0,t1,0
 
 -- EXECUTE SQL: SELECT BIT_OR(m4.f0) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR(m4.f0)
+0
 
 -- EXECUTE SQL: SELECT * FROM m0; --
 -- AFTER_SORT --
@@ -3583,6 +3646,7 @@ time,t0,f0,f1
 1981-08-07T06:10:24.080382889,,false,0.6326195071473769
 1990-01-03T22:50:52.613557553,,true,
 2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
+2009-05-24T08:03:53.754651379,,false,
 2070-08-01T14:24:06.074400477,,,0.47166914414715877
 2096-05-01T02:46:47.649375642,,true,
 2105-09-29T02:51:25.038645395,,true,0.4131558313302025
@@ -3633,7 +3697,7 @@ f1,false
 -- EXECUTE SQL: SELECT MIN(CAST(((CAST('Infinity' AS BIGINT))-(((((m4.f0)+(m4.f0)))%(CAST(m4.f0 AS BIGINT))))) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'Infinity' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string 'Infinity' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t1, m3.f0 FROM m3; --
@@ -3657,7 +3721,7 @@ f1,false,t0
 -- EXECUTE SQL: SELECT m2.f1, m2.f0, m2.t0 FROM m2 WHERE ((NOT (CAST(1826216466 AS BOOLEAN)))AND(CAST(CAST(0.9464404925619687 AS STRING) AS BOOLEAN))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '0.9464404925619687' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast value '0.9464404925619687' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.t0 FROM m1 WHERE NOT (NOT ((m1.f1) IN (TRUE, TRUE))); --
@@ -3704,6 +3768,7 @@ false
 200 OK
 t0,f0,f1
 ,,0.47166914414715877
+,false,
 ,false,0.6326195071473769
 ,true,
 ,true,
@@ -3721,6 +3786,7 @@ t0,false,0.0
 200 OK
 t0,f0,f1
 ,,0.47166914414715877
+,false,
 ,false,0.6326195071473769
 ,true,
 ,true,
@@ -3804,9 +3870,9 @@ COUNT(Int64(26056234))
 
 -- EXECUTE SQL: SELECT BIT_OR(- (CAST(CAST(((712230685)-(NULL)) AS STRING) AS BIGINT))) FROM m0; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR((- Int64(712230685) - NULL))
+""
 
 -- EXECUTE SQL: SELECT m2.f0, m2.f1 FROM m2; --
 -- AFTER_SORT --
@@ -3837,7 +3903,7 @@ t0,false
 -- AFTER_SORT --
 200 OK
 COUNT(Float64(0.5759978377746883))
-12
+13
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.t0, m0.f1 FROM m0; --
 -- AFTER_SORT --
@@ -3845,6 +3911,7 @@ COUNT(Float64(0.5759978377746883))
 f0,t0,f1
 ,,0.47166914414715877
 ,916053861,0.507623643211476
+false,,
 false,,0.6326195071473769
 false,t0,0.0
 true,,
@@ -3862,6 +3929,7 @@ true,,0.9622249970170084
 f0,t0,f1
 ,,0.47166914414715877
 ,916053861,0.507623643211476
+false,,
 false,,0.6326195071473769
 false,t0,0.0
 true,,
@@ -3883,7 +3951,7 @@ t0,false
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f1 FROM m1 WHERE NOT (NOT ((((m1.t0)||(-255724532))) BETWEEN SYMMETRIC (CAST(-1326988525 AS STRING)) AND (CAST('*[' AS STRING)))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.f1, m3.f0, m3.t1, m3.t0 FROM m3; --
@@ -3920,9 +3988,10 @@ f0,t0,false
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.t0, m1.f1 FROM m1 WHERE CAST(CAST(2.070740056E9 AS BIGINT) AS BOOLEAN); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
--- ERROR:  --
+200 OK
+f0,t0,f1
+,,false
+f0,t0,false
 
 -- EXECUTE SQL: SELECT * FROM m3; --
 -- AFTER_SORT --
@@ -4010,6 +4079,7 @@ f0
 200 OK
 f0,t0
 false,
+false,
 false,t0
 true,
 true,
@@ -4024,6 +4094,7 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+false,
 false,
 false,t0
 true,
@@ -4062,6 +4133,7 @@ time,t0,f0,f1
 200 OK
 f0,t0
 false,
+false,
 false,t0
 true,
 true,
@@ -4076,6 +4148,7 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+false,
 false,
 false,t0
 true,
@@ -4128,6 +4201,7 @@ time,t0,f0,f1
 1981-08-07T06:10:24.080382889,,false,0.6326195071473769
 1990-01-03T22:50:52.613557553,,true,
 2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
+2009-05-24T08:03:53.754651379,,false,
 2070-08-01T14:24:06.074400477,,,0.47166914414715877
 2096-05-01T02:46:47.649375642,,true,
 2105-09-29T02:51:25.038645395,,true,0.4131558313302025
@@ -4145,6 +4219,7 @@ time,t0,f0,f1
 1981-08-07T06:10:24.080382889,,false,0.6326195071473769
 1990-01-03T22:50:52.613557553,,true,
 2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
+2009-05-24T08:03:53.754651379,,false,
 2070-08-01T14:24:06.074400477,,,0.47166914414715877
 2096-05-01T02:46:47.649375642,,true,
 2105-09-29T02:51:25.038645395,,true,0.4131558313302025
@@ -4157,19 +4232,19 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL m3.t1 FROM m3 WHERE NOT (CAST((351281739) BETWEEN SYMMETRIC (((m3.f0)/(m3.f0))) AND (+ (m3.f0)) AS BOOLEAN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t1 FROM m3 WHERE NOT (NOT (CAST((351281739) BETWEEN SYMMETRIC (((m3.f0)/(m3.f0))) AND (+ (m3.f0)) AS BOOLEAN))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1 FROM m3 WHERE (NOT (CAST((351281739) BETWEEN SYMMETRIC (((m3.f0)/(m3.f0))) AND (+ (m3.f0)) AS BOOLEAN))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t1 FROM m3; --
@@ -4180,9 +4255,8 @@ f0,t1
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t1 FROM m3 WHERE ((CAST(- (+ (m3.f0)) AS BOOLEAN))OR((((m3.f0)^(m3.f0))) IN ('Infinity', NULL))); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Internal error: The expr has more than one schema, could not determine data type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT MAX(+ (CAST(((((m2.f1)||(m2.f1)))LIKE((('C')||(m2.t0)))) AS BIGINT))) FROM m2 ORDER BY m2.f1 DESC, m2.f0 DESC; --
 -- AFTER_SORT --
@@ -4287,9 +4361,9 @@ time,t0,f0,f1
 
 -- EXECUTE SQL: SELECT BIT_OR(- (CAST(+ (- (1007863218)) AS BIGINT))) FROM m2; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR((- (- Int64(1007863218))))
+1007863218
 
 -- EXECUTE SQL: SELECT ALL m2.f1 FROM m2; --
 -- AFTER_SORT --
@@ -4305,21 +4379,21 @@ f1
 
 -- EXECUTE SQL: SELECT MAX(CAST(3.50532422E8 AS STRING)) FROM m2; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
--- ERROR:  --
+200 OK
+MAX(Float64(350532422))
+350532422.0
 
 -- EXECUTE SQL: SELECT ALL MIN((((((m4.f0)+(m4.f0)))*(- (m4.f0)))) IN (0.15344075890540054)) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+MIN(m4.f0 + m4.f0 * (- m4.f0) IN (Map { iter: Iter([Literal(Float64(0.15344075890540054))]) }))
+false
 
 -- EXECUTE SQL: SELECT BOOL_OR((CAST(CAST(CAST(m4.f0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS UNKNOWN) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
--- ERROR:  --
+200 OK
+BOOL_OR(m4.f0 IS UNKNOWN)
+false
 
 -- EXECUTE SQL: SELECT m2.f0, m2.t0 FROM m2; --
 -- AFTER_SORT --
@@ -4364,7 +4438,7 @@ t1
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE CAST(((CAST((m4.t1) BETWEEN SYMMETRIC (m4.t1) AND (m4.t2) AS STRING))||(CAST(CAST(1193577717 AS BIGINT) AS STRING))) AS BOOLEAN) UNION ALL SELECT ALL m4.t1 FROM m4 WHERE NOT (CAST(((CAST((m4.t1) BETWEEN SYMMETRIC (m4.t1) AND (m4.t2) AS STRING))||(CAST(CAST(1193577717 AS BIGINT) AS STRING))) AS BOOLEAN)) UNION ALL SELECT m4.t1 FROM m4 WHERE (CAST(((CAST((m4.t1) BETWEEN SYMMETRIC (m4.t1) AND (m4.t2) AS STRING))||(CAST(CAST(1193577717 AS BIGINT) AS STRING))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0 FROM m1; --
@@ -4406,6 +4480,7 @@ false
 200 OK
 f0,t0
 false,
+false,
 false,t0
 true,
 true,
@@ -4420,6 +4495,7 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+false,
 false,
 false,t0
 true,
@@ -4481,7 +4557,7 @@ time,t0,f0,f1
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.7059204780758392))
-8.471045736910071
+9.17696621498591
 
 -- EXECUTE SQL: SELECT m3.t0, m3.f0, m3.f1, m3.t1 FROM m3; --
 -- AFTER_SORT --
@@ -4560,7 +4636,7 @@ t0,t2,0,t1
 -- EXECUTE SQL: SELECT BOOL_AND(((NOT (((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))AND(m0.f0)))AND(m0.f0)))) IS NOT UNKNOWN) IS NULL) FROM m0 ORDER BY m0.f0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named m0.f0. Valid fields are \"BOOL_AND(NOT m0.f0 OR m0.f0 AND m0.f0 AND m0.f0 AND m0.f0 IS NOT UNKNOWN IS NULL)\"."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(CAST(NOT (((m3.t0)IS DISTINCT FROM(m3.t1))) AS STRING) AS BIGINT)) FROM m3 ORDER BY m3.t0 DESC; --
@@ -4575,6 +4651,7 @@ t0,t2,0,t1
 f0,f1
 ,0.47166914414715877
 ,0.507623643211476
+false,
 false,0.0
 false,0.6326195071473769
 true,
@@ -4592,6 +4669,7 @@ true,0.9622249970170084
 f0,f1
 ,0.47166914414715877
 ,0.507623643211476
+false,
 false,0.0
 false,0.6326195071473769
 true,
@@ -4662,9 +4740,9 @@ t0,0.0
 
 -- EXECUTE SQL: SELECT BIT_AND(- (((CAST(- (m4.f0) AS BIGINT))/(m4.f0)))) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
--- ERROR:  --
+200 OK
+BIT_AND((- (- m4.f0) / m4.f0))
+""
 
 -- EXECUTE SQL: SELECT m2.f0 FROM m2; --
 -- AFTER_SORT --
@@ -4708,6 +4786,7 @@ f0,t2,t1
 f0
 false
 false
+false
 true
 true
 true
@@ -4720,7 +4799,7 @@ true
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE (0.9998372198711547) BETWEEN SYMMETRIC (0.2700300601709139) AND (- (((CAST(FALSE AS BIGINT))^(((533580250)^(2116911742)))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(m3.f0) FROM m3; --
@@ -4795,14 +4874,14 @@ time,t0,t1,f0,f1
 
 -- EXECUTE SQL: SELECT m4.t0 FROM m4 WHERE ((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING))) UNION ALL SELECT m4.t0 FROM m4 WHERE NOT (((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING)))) UNION ALL SELECT m4.t0 FROM m4 WHERE (((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING)))) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
--- ERROR:  --
+200 OK
+t0
+t0
 
 -- EXECUTE SQL: SELECT ALL SUM(2.9910274E8) FROM m4 ORDER BY m4.f0 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: sql numeric literals in scientific notation are not supported"}
+{"error_code":"010001","error_message":"Datafusion: Schema error: No field named m4.f0. Valid fields are \"SUM(Float64(299102740))\"."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m1; --
@@ -4825,6 +4904,7 @@ time,t0,f0,f1
 f0
 false
 false
+false
 true
 true
 true
@@ -4838,6 +4918,7 @@ true
 -- AFTER_SORT --
 200 OK
 f0
+false
 false
 false
 true
@@ -4857,6 +4938,7 @@ time,t0,f0,f1
 1981-08-07T06:10:24.080382889,,false,0.6326195071473769
 1990-01-03T22:50:52.613557553,,true,
 2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
+2009-05-24T08:03:53.754651379,,false,
 2070-08-01T14:24:06.074400477,,,0.47166914414715877
 2096-05-01T02:46:47.649375642,,true,
 2105-09-29T02:51:25.038645395,,true,0.4131558313302025
@@ -4875,7 +4957,7 @@ time,t0,f0,f1
 -- AFTER_SORT --
 200 OK
 SUM(Int64(1099878272))
-13198539264
+14298417536
 
 -- EXECUTE SQL: SELECT ALL SUM(0.15266774123964788) FROM m3; --
 -- AFTER_SORT --
@@ -4969,15 +5051,16 @@ t0,f0,false
 
 -- EXECUTE SQL: SELECT ALL BOOL_AND(CAST(CAST((((m4.t2)>=(m4.t1))) IS NOT UNKNOWN AS STRING) AS BOOLEAN)) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
--- ERROR:  --
+200 OK
+BOOL_AND(m4.t2 >= m4.t1 IS NOT UNKNOWN)
+true
 
 -- EXECUTE SQL: SELECT m0.t0, m0.f0, m0.f1 FROM m0; --
 -- AFTER_SORT --
 200 OK
 t0,f0,f1
 ,,0.47166914414715877
+,false,
 ,false,0.6326195071473769
 ,true,
 ,true,
@@ -5021,6 +5104,7 @@ f0,false,t0
 200 OK
 t0,f0
 ,false
+,false
 ,true
 ,true
 ,true
@@ -5035,6 +5119,7 @@ t0,false
 -- AFTER_SORT --
 200 OK
 t0,f0
+,false
 ,false
 ,true
 ,true
@@ -5061,6 +5146,7 @@ t0,false
 200 OK
 f0,t0
 false,
+false,
 false,t0
 true,
 true,
@@ -5075,6 +5161,7 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+false,
 false,
 false,t0
 true,
@@ -5098,6 +5185,7 @@ true,
 f0,f1,t0
 ,0.47166914414715877,
 ,0.507623643211476,916053861
+false,,
 false,0.0,t0
 false,0.6326195071473769,
 true,,
@@ -5115,6 +5203,7 @@ true,0.9622249970170084,
 f0,f1,t0
 ,0.47166914414715877,
 ,0.507623643211476,916053861
+false,,
 false,0.0,t0
 false,0.6326195071473769,
 true,,
@@ -5128,9 +5217,9 @@ true,0.9622249970170084,
 
 -- EXECUTE SQL: SELECT BIT_AND(- (- (CAST(CAST(m3.f1 AS STRING) AS BIGINT)))) FROM m3 GROUP BY CAST(0.13127864353966145 AS BIGINT), (CAST(((m3.f0)-(m3.f0)) AS BIGINT)) NOT IN (206859893, -714516645, 154574582, -189279528); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
--- ERROR:  --
+200 OK
+BIT_AND((- (- m3.f1)))
+0
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f0, m1.f1 FROM m1; --
 -- AFTER_SORT --
@@ -5171,6 +5260,7 @@ t1,false,t0,0
 -- AFTER_SORT --
 200 OK
 t0,f1,f0
+,,false
 ,,true
 ,,true
 ,,true
@@ -5193,6 +5283,7 @@ t0,0.0,false
 -- AFTER_SORT --
 200 OK
 t0,f1,f0
+,,false
 ,,true
 ,,true
 ,,true
@@ -5256,7 +5347,7 @@ MAX(Float64(0.8380110533784965))
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(((CAST(((m2.f0)<(m2.f0)) AS BIGINT))*(CAST((('0.40560185446598973')||('0.5010374883053191')) AS BIGINT))) AS BIGINT)) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.405601854465989730.5010374883053191' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast string '0.405601854465989730.5010374883053191' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MIN(-1.281952729E9) FROM m4; --
@@ -5273,9 +5364,9 @@ MIN(asdf.agg0)
 
 -- EXECUTE SQL: SELECT BIT_AND(- (-898117395)) FROM m1; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_and'"}
--- ERROR:  --
+200 OK
+BIT_AND((- Int64(-898117395)))
+898117395
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.f0 FROM m2; --
 -- AFTER_SORT --
@@ -5308,7 +5399,7 @@ f1,t0
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0 FROM m2 WHERE (((((((((((((((m2.f1) BETWEEN (m2.f1) AND (m2.f1))AND(((FALSE)OR(m2.f0)))))OR(NOT (m2.f0))))OR(((m2.f1)IS NOT DISTINCT FROM(m2.t0)))))OR(CAST(-2044174412 AS BOOLEAN))))OR(NOT (FALSE))))>(NOT (((((((m2.f0)AND(m2.f0)))OR(m2.f0)))AND(m2.f0))))))<=(CAST(CAST(- (64411633) AS STRING) AS BOOLEAN))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '-64411633' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast value '-64411633' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(CAST(0.871191940974261 AS BIGINT)) FROM m0; --
@@ -5319,21 +5410,21 @@ SUM(Float64(0.871191940974261))
 
 -- EXECUTE SQL: SELECT ALL BOOL_AND(NOT ((- (-217143237)) NOT IN (-65550593, 111116366))) FROM m0; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
--- ERROR:  --
+200 OK
+"BOOL_AND(NOT (- Int64(-217143237)) NOT IN (Map { iter: Iter([Literal(Int64(-65550593)), Literal(Int64(111116366))]) }))"
+false
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(+ (CAST(0.49920816779304045 AS BIGINT))) FROM m4; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR(Float64(0.49920816779304045))
+0
 
 -- EXECUTE SQL: SELECT BIT_OR(agg0) FROM (SELECT BIT_OR(+ (CAST(0.49920816779304045 AS BIGINT)))  as agg0 FROM m4 WHERE TRUE UNION ALL SELECT BIT_OR(+ (CAST(0.49920816779304045 AS BIGINT)))  as agg0 FROM m4 WHERE NOT (TRUE) UNION ALL SELECT ALL BIT_OR(+ (CAST(0.49920816779304045 AS BIGINT)))  as agg0 FROM m4 WHERE (TRUE) IS NULL) as asdf; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bit_or'"}
--- ERROR:  --
+200 OK
+BIT_OR(asdf.agg0)
+0
 
 -- EXECUTE SQL: SELECT ALL * FROM m4; --
 -- AFTER_SORT --
@@ -5422,6 +5513,7 @@ f0,t0
 200 OK
 t0,f0
 ,false
+,false
 ,true
 ,true
 ,true
@@ -5467,6 +5559,7 @@ t0,f0
 200 OK
 f0,t0
 false,
+false,
 false,t0
 true,
 true,
@@ -5480,14 +5573,14 @@ true,
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.t0 FROM m0 WHERE (CAST(NOT (((m0.t0)LIKE(m0.t0))) AS BIGINT)) BETWEEN SYMMETRIC (0.6166842807970822) AND (- (CAST(CAST(m0.f1 AS BOOLEAN) AS BIGINT))) UNION ALL SELECT m0.f0, m0.t0 FROM m0 WHERE NOT ((CAST(NOT (((m0.t0)LIKE(m0.t0))) AS BIGINT)) BETWEEN SYMMETRIC (0.6166842807970822) AND (- (CAST(CAST(m0.f1 AS BOOLEAN) AS BIGINT)))) UNION ALL SELECT ALL m0.f0, m0.t0 FROM m0 WHERE ((CAST(NOT (((m0.t0)LIKE(m0.t0))) AS BIGINT)) BETWEEN SYMMETRIC (0.6166842807970822) AND (- (CAST(CAST(m0.f1 AS BOOLEAN) AS BIGINT)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'"}
+{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BOOL_OR(CAST(((1498176990)/(CAST(0.013198073302153945 AS BIGINT))) AS BOOLEAN)) FROM m0; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_or'"}
--- ERROR:  --
+200 OK
+BOOL_OR(Int64(1498176990) / Float64(0.013198073302153945))
+""
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 ORDER BY m1.f0 DESC; --
 -- AFTER_SORT --
@@ -5498,7 +5591,7 @@ f0
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE CAST(CAST(0.5590183968399077 AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: simplify_expressions\ncaused by\nInternal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast value '0.5590183968399077' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010001","error_message":"Datafusion: Optimizer rule 'simplify_expressions' failed\ncaused by\nArrow error: Cast error: Cannot cast value '0.5590183968399077' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t1, m4.f0, m4.t2 FROM m4; --
@@ -5515,9 +5608,9 @@ t0,t1,0,t2
 
 -- EXECUTE SQL: SELECT ALL BOOL_AND((- (+ (m3.f0))) IN (-2034004639, -1209273618)) FROM m3; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'bool_and'"}
--- ERROR:  --
+200 OK
+"BOOL_AND((- m3.f0) IN (Map { iter: Iter([Literal(Int64(-2034004639)), Literal(Int64(-1209273618))]) }))"
+false
 
 -- EXECUTE SQL: SELECT ALL * FROM m4 ORDER BY m4.t2 DESC; --
 -- AFTER_SORT --
@@ -5543,9 +5636,9 @@ time,t0,t1,t2,f0
 
 -- EXECUTE SQL: SELECT ALL MIN(CAST(+ (((((-1020629854)-(94972736)))/(CAST(616702680 AS BIGINT)))) AS BOOLEAN)) FROM m2; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+MIN(Int64(-1020629854) - Int64(94972736) / Int64(616702680))
+true
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1; --
 -- AFTER_SORT --

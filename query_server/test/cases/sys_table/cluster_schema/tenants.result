@@ -1,3 +1,23 @@
+-- EXECUTE SQL: create tenant tenant_a; --
+200 OK
+
+
+-- EXECUTE SQL: create user user_a; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant tenant_a add user user_a as owner; --
+200 OK
+
+
+-- EXECUTE SQL: drop tenant tenant_a; --
+200 OK
+
+
+-- EXECUTE SQL: drop user user_a; --
+200 OK
+
+
 -- EXECUTE SQL: drop tenant if exists test_ts_tenant1; --
 200 OK
 

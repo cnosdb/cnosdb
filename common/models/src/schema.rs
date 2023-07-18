@@ -26,7 +26,7 @@ use datafusion::datasource::file_format::json::JsonFormat;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::ListingOptions;
-use datafusion::error::Result as DataFusionResult;
+use datafusion::error::{DataFusionError, Result as DataFusionResult};
 use datafusion::prelude::Column;
 use datafusion::scalar::ScalarValue;
 use derive_builder::Builder;
@@ -126,6 +126,11 @@ impl ExternalTableSchema {
             FileType::AVRO => Arc::new(AvroFormat::default()),
             FileType::JSON => {
                 Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
+            }
+            FileType::ARROW => {
+                return Err(DataFusionError::NotImplemented(
+                    "Arrow external table.".to_string(),
+                ))
             }
         };
 
@@ -449,6 +454,26 @@ impl TableColumn {
         f.set_metadata(map);
         f
     }
+
+    pub fn encoding_valid(&self) -> bool {
+        if let ColumnType::Field(ValueType::Float) = self.column_type {
+            return self.encoding.is_double_encoding();
+        } else if let ColumnType::Field(ValueType::Boolean) = self.column_type {
+            return self.encoding.is_bool_encoding();
+        } else if let ColumnType::Field(ValueType::Integer) = self.column_type {
+            return self.encoding.is_bigint_encoding();
+        } else if let ColumnType::Field(ValueType::Unsigned) = self.column_type {
+            return self.encoding.is_unsigned_encoding();
+        } else if let ColumnType::Field(ValueType::String) = self.column_type {
+            return self.encoding.is_string_encoding();
+        } else if let ColumnType::Time(_) = self.column_type {
+            return self.encoding.is_timestamp_encoding();
+        } else if let ColumnType::Tag = self.column_type {
+            return self.encoding.is_string_encoding();
+        }
+
+        true
+    }
 }
 
 impl From<ColumnType> for ArrowDataType {
@@ -694,14 +719,14 @@ pub struct DatabaseOptions {
     vnode_duration: Option<Duration>,
 
     replica: Option<u64>,
-    // timestamp percision
+    // timestamp precision
     precision: Option<Precision>,
 }
 
 impl DatabaseOptions {
     pub const DEFAULT_TTL: Duration = Duration {
-        time_num: 365,
-        unit: DurationUnit::Day,
+        time_num: 0,
+        unit: DurationUnit::Inf,
     };
     pub const DEFAULT_SHARD_NUM: u64 = 1;
     pub const DEFAULT_REPLICA: u64 = 1;
@@ -874,6 +899,7 @@ pub enum DurationUnit {
     Minutes,
     Hour,
     Day,
+    Inf,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
@@ -888,6 +914,7 @@ impl fmt::Display for Duration {
             DurationUnit::Minutes => write!(f, "{} Minutes", self.time_num),
             DurationUnit::Hour => write!(f, "{} Hours", self.time_num),
             DurationUnit::Day => write!(f, "{} Days", self.time_num),
+            DurationUnit::Inf => write!(f, "INF"),
         }
     }
 }
@@ -945,6 +972,7 @@ impl Duration {
             DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_NANOS),
             DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_NANOS),
             DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_NANOS),
+            DurationUnit::Inf => i64::MAX,
         }
     }
 
@@ -953,6 +981,7 @@ impl Duration {
             DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_MICROS),
             DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_MICROS),
             DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_MICROS),
+            DurationUnit::Inf => i64::MAX,
         }
     }
 
@@ -961,11 +990,20 @@ impl Duration {
             DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_MILLS),
             DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_MILLS),
             DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_MILLS),
+            DurationUnit::Inf => i64::MAX,
+        }
+    }
+
+    pub fn to_precision(&self, pre: Precision) -> i64 {
+        match pre {
+            Precision::MS => self.to_millisecond(),
+            Precision::US => self.to_microseconds(),
+            Precision::NS => self.to_nanoseconds(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Tenant {
     id: Oid,
     name: String,

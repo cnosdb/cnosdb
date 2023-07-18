@@ -465,7 +465,7 @@ tag14 1999-12-31T00:00:00.042 222.0
 tag14 1999-12-31T00:00:00.052 222.0
 
 # Too many overlapping windows
-query error Arrow error: Io error: Status \{ code: Internal, message: "Datafusion: Error during planning: Too many overlapping windows: 500000000", .*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_time_window\\ncaused by\\nError during planning: Too many overlapping windows: 500000000", .*
 SELECT
   t0,
   time_window_gapfill(time, interval '5000000000 milliseconds', interval '10 milliseconds', timestamp '1970-01-01T00:00:00.002Z') as minute,
@@ -485,7 +485,7 @@ where time between timestamp '1999-12-31T00:00:00.000Z' and timestamp '1999-12-3
 group by t0, minute;
 
 # Too many overlapping windows
-query error Arrow error: Io error: Status \{ code: Internal, message: "Datafusion: Error during planning: Too many overlapping windows: 101", .*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_time_window\\ncaused by\\nError during planning: Too many overlapping windows: 101", .*
 SELECT
   t0,
   time_window_gapfill(time, interval '101 milliseconds', interval '1 milliseconds', timestamp '1970-01-01T00:00:00.002Z') as minute,

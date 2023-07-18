@@ -7,8 +7,8 @@ use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
-use models::consistency_level::ConsistencyLevel;
-use models::schema::{Precision, TskvTableSchema, TIME_FIELD_NAME};
+use models::schema::{TskvTableSchema, TIME_FIELD_NAME};
+use models::snappy::SnappyCodec;
 use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::Line;
 use protos::kv_service::WritePointsRequest;
@@ -20,13 +20,11 @@ use protos::prompb::types::label_matcher::Type;
 use protos::prompb::types::TimeSeries;
 use protos::FieldValue;
 use regex::Regex;
-use snap::raw::{decompress_len, max_compress_len, Decoder, Encoder};
-use snap::Result as SnapResult;
 use spi::server::dbms::DBMSRef;
 use spi::server::prom::PromRemoteServer;
 use spi::service::protocol::{Context, Query, QueryHandle};
 use spi::{QueryError, Result};
-use trace::{debug, warn};
+use trace::{debug, warn, SpanContext, SpanExt, SpanRecorder};
 
 use super::time_series::writer::WriterBuilder;
 use super::{METRIC_NAME_LABEL, METRIC_SAMPLE_COLUMN_NAME};
@@ -40,11 +38,15 @@ pub struct PromRemoteSqlServer {
 
 #[async_trait]
 impl PromRemoteServer for PromRemoteSqlServer {
-    async fn remote_read(&self, ctx: &Context, req: Bytes) -> Result<Vec<u8>> {
+    async fn remote_read(
+        &self,
+        ctx: &Context,
+        req: Bytes,
+        span_ctx: Option<&SpanContext>,
+    ) -> Result<Vec<u8>> {
         let meta = self
             .coord
             .meta_manager()
-            .tenant_manager()
             .tenant_meta(ctx.tenant())
             .await
             .ok_or_else(|| MetaError::TenantNotFound {
@@ -55,30 +57,22 @@ impl PromRemoteServer for PromRemoteSqlServer {
 
         debug!("Received remote read request: {:?}", read_request);
 
-        let read_response = self.process_read_request(ctx, meta, read_request).await?;
+        let span_recorder = SpanRecorder::new(span_ctx.child_span("process read request"));
+        let read_response = self
+            .process_read_request(ctx, meta, read_request, span_recorder)
+            .await?;
 
         debug!("Return remote read response: {:?}", read_response);
 
         self.serialize_read_response(read_response).await
     }
 
-    async fn remote_write(&self, ctx: &Context, req: Bytes) -> Result<()> {
-        let prom_write_request = self.deserialize_write_request(req).await?;
-        let write_points_request = self
-            .prom_write_request_to_write_points_request(ctx, prom_write_request)
-            .await?;
-        debug!("Received remote write request: {:?}", write_points_request);
+    fn remote_write(&self, ctx: &Context, req: Bytes) -> Result<WritePointsRequest> {
+        let prom_write_request = self.deserialize_write_request(req)?;
+        let write_points_request =
+            self.prom_write_request_to_write_points_request(ctx, prom_write_request)?;
 
-        self.coord
-            .write_points(
-                ctx.tenant().to_string(),
-                ConsistencyLevel::Any,
-                Precision::NS,
-                write_points_request,
-            )
-            .await?;
-
-        Ok(())
+        Ok(write_points_request)
     }
 }
 
@@ -104,7 +98,7 @@ impl PromRemoteSqlServer {
         })
     }
 
-    async fn deserialize_write_request(&self, req: Bytes) -> Result<WriteRequest> {
+    fn deserialize_write_request(&self, req: Bytes) -> Result<WriteRequest> {
         let mut decompressed = Vec::new();
         let compressed = req.to_byte_slice();
         self.codec.decompress(compressed, &mut decompressed, None)?;
@@ -115,7 +109,7 @@ impl PromRemoteSqlServer {
         })
     }
 
-    async fn prom_write_request_to_write_points_request(
+    fn prom_write_request_to_write_points_request(
         &self,
         ctx: &Context,
         req: WriteRequest,
@@ -157,6 +151,7 @@ impl PromRemoteSqlServer {
         ctx: &Context,
         meta: MetaClientRef,
         read_request: ReadRequest,
+        span_recorder: SpanRecorder,
     ) -> Result<ReadResponse> {
         let mut results = Vec::with_capacity(read_request.queries.len());
         for q in read_request.queries {
@@ -165,8 +160,12 @@ impl PromRemoteSqlServer {
 
             debug!("Prepare to execute: {:?}", sqls);
 
-            for sql in sqls {
-                timeseries.append(&mut self.process_single_sql(ctx, sql).await?);
+            for (idx, sql) in sqls.into_iter().enumerate() {
+                timeseries.append(
+                    &mut self
+                        .process_single_sql(ctx, sql, span_recorder.child(idx.to_string()))
+                        .await?,
+                );
             }
 
             results.push(QueryResult {
@@ -185,6 +184,7 @@ impl PromRemoteSqlServer {
         &self,
         ctx: &Context,
         sql: SqlWithTable,
+        span_recorder: SpanRecorder,
     ) -> Result<Vec<TimeSeries>> {
         let table_schema = sql.table;
         let tag_name_indices = table_schema.tag_indices();
@@ -202,7 +202,10 @@ impl PromRemoteSqlServer {
         })?;
 
         let inner_query = Query::new(ctx.clone(), sql.sql);
-        let result = self.db.execute(&inner_query).await?;
+        let result = self
+            .db
+            .execute(&inner_query, span_recorder.span_ctx())
+            .await?;
 
         transform_time_series(result, tag_name_indices, sample_value_idx, sample_time_idx).await
     }
@@ -353,49 +356,6 @@ struct SqlWithTable {
     pub table: Arc<TskvTableSchema>,
 }
 
-#[derive(Default)]
-pub struct SnappyCodec {}
-
-impl SnappyCodec {
-    /// Decompresses data stored in slice `input_buf` and appends output to `output_buf`.
-    ///
-    /// If the uncompress_size is provided it will allocate the exact amount of memory.
-    /// Otherwise, it will estimate the uncompressed size, allocating an amount of memory
-    /// greater or equal to the real uncompress_size.
-    ///
-    /// Returns the total number of bytes written.
-    fn decompress(
-        &self,
-        input_buf: &[u8],
-        output_buf: &mut Vec<u8>,
-        uncompress_size: Option<usize>,
-    ) -> SnapResult<usize> {
-        let len = match uncompress_size {
-            Some(size) => size,
-            None => decompress_len(input_buf)?,
-        };
-        let offset = output_buf.len();
-        output_buf.resize(offset + len, 0);
-        let mut decoder = Decoder::new();
-        decoder.decompress(input_buf, &mut output_buf[offset..])
-    }
-
-    /// Compresses data stored in slice `input_buf` and appends the compressed result
-    /// to `output_buf`.
-    ///
-    /// Note that you'll need to call `clear()` before reusing the same `output_buf`
-    /// across different `compress` calls.
-    fn compress(&self, input_buf: &[u8], output_buf: &mut Vec<u8>) -> SnapResult<()> {
-        let output_buf_len = output_buf.len();
-        let required_len = max_compress_len(input_buf.len());
-        output_buf.resize(output_buf_len + required_len, 0);
-        let mut encoder = Encoder::new();
-        let n = encoder.compress(input_buf, &mut output_buf[output_buf_len..])?;
-        output_buf.truncate(output_buf_len + n);
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
@@ -404,7 +364,6 @@ mod test {
     use datafusion::arrow::array::{Float64Array, StringArray, TimestampNanosecondArray};
     use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
     use datafusion::arrow::record_batch::RecordBatch;
-    use datafusion::from_slice::FromSlice;
     use models::auth::user::{User, UserDesc, UserOptions};
     use protos::prompb::types::{Label, Sample, TimeSeries};
     use spi::query::execution::Output;
@@ -429,11 +388,9 @@ mod test {
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(TimestampNanosecondArray::from_slice(vec![
-                    1673069176267000000,
-                ])),
-                Arc::new(StringArray::from_slice(vec!["tag1"])),
-                Arc::new(Float64Array::from_slice(vec![1.1_f64])),
+                Arc::new(TimestampNanosecondArray::from(vec![1673069176267000000])),
+                Arc::new(StringArray::from(vec!["tag1"])),
+                Arc::new(Float64Array::from(vec![1.1_f64])),
             ],
         )
         .unwrap();

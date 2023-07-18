@@ -3,7 +3,7 @@ use std::sync::Arc;
 use chrono::Duration;
 use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::{
-    DataType, Field, IntervalDayTimeType, IntervalMonthDayNanoType, TimeUnit,
+    DataType, Field, Fields, IntervalDayTimeType, IntervalMonthDayNanoType, TimeUnit,
 };
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::type_coercion::aggregates::TIMESTAMPS;
@@ -81,10 +81,10 @@ fn new() -> ScalarUDF {
 
     // Struct(_start, _end)
     let return_type: ReturnTypeFunction = Arc::new(move |input_expr_types| {
-        let window = DataType::Struct(vec![
+        let window = DataType::Struct(Fields::from(vec![
             Field::new(WINDOW_START, input_expr_types[0].clone(), false),
             Field::new(WINDOW_END, input_expr_types[0].clone(), false),
-        ]);
+        ]));
 
         Ok(Arc::new(window))
     });

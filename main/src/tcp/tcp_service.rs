@@ -83,7 +83,13 @@ impl Service for TcpService {
                                 points,
                             };
                             coord
-                                .write_points(DEFAULT_CATALOG.to_string(), Any, Precision::MS, req)
+                                .write_points(
+                                    DEFAULT_CATALOG.to_string(),
+                                    Any,
+                                    Precision::MS,
+                                    req,
+                                    None,
+                                )
                                 .await
                                 .map_err(|e| Error::Common {
                                     reason: format!("open opentsdb write point failed: {:?}", e),

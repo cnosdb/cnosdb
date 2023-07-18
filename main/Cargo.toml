@@ -13,7 +13,6 @@ path = "src/main.rs"
 config = { path = "../config" }
 coordinator = { path = "../coordinator" }
 http_protocol = { path = "../common/http_protocol" }
-license = { path = "../common/license" }
 memory_pool = { path = "../common/memory_pool" }
 meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }
@@ -23,6 +22,7 @@ protos = { path = "../common/protos" }
 query = { path = "../query_server/query" }
 spi = { path = "../query_server/spi" }
 trace = { path = "../common/trace" }
+trace_http = { path = "../common/trace_http" }
 tskv = { path = "../tskv" }
 utils = { path = "../common/utils" }
 
@@ -59,7 +59,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sled = { workspace = true }
 snafu = { workspace = true }
-surf = { workspace = true, features = ["curl-client", "encoding"], default-features = false }
 sys-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time", "tracing"] }
 tokio-stream = { workspace = true, features = ["net"] }
@@ -76,8 +75,8 @@ default = []
 backtrace = ["async-backtrace"]
 
 [dev-dependencies]
-prost-types = { version = "0.11.2" }
-reqwest = "0.11"
+prost-types = { workspace = true }
+reqwest = { workspace = true }
 
 
 [[example]]

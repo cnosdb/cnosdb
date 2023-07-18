@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use coordinator::service::{CoordService, CoordinatorRef};
 use memory_pool::MemoryPoolRef;
-use meta::model::meta_manager::RemoteMetaManager;
-use meta::model::{MetaManager, MetaRef};
+use meta::model::meta_admin::AdminMeta;
+use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::utils::build_address;
 use query::instance::make_cnosdbms;
@@ -16,6 +16,7 @@ use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
 use tokio::time;
 use trace::error;
+use trace_http::ctx::SpanContextExtractor;
 use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
@@ -111,15 +112,16 @@ pub(crate) struct ServiceBuilder {
     pub runtime: Arc<Runtime>,
     pub memory_pool: MemoryPoolRef,
     pub metrics_register: Arc<MetricsRegister>,
+    pub span_context_extractor: Arc<SpanContextExtractor>,
 }
 
-async fn regular_report_node_metrics(meta: Arc<dyn MetaManager>, heartbeat_interval: u64) {
+async fn regular_report_node_metrics(meta: MetaRef, heartbeat_interval: u64) {
     let mut interval = time::interval(Duration::from_secs(heartbeat_interval));
 
     loop {
         interval.tick().await;
 
-        if let Err(e) = meta.admin_meta().report_node_metrics().await {
+        if let Err(e) = meta.report_node_metrics().await {
             error!("{}", e);
         }
     }
@@ -133,7 +135,7 @@ impl ServiceBuilder {
     pub async fn build_storage_server(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
 
-        meta.admin_meta().add_data_node().await.unwrap();
+        meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
             self.config.heartbeat.report_time_interval_secs,
@@ -177,7 +179,7 @@ impl ServiceBuilder {
     pub async fn build_query_storage(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
 
-        meta.admin_meta().add_data_node().await.unwrap();
+        meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
             self.config.heartbeat.report_time_interval_secs,
@@ -211,8 +213,7 @@ impl ServiceBuilder {
     }
 
     async fn create_meta(&self) -> MetaRef {
-        let meta: MetaRef =
-            RemoteMetaManager::new(self.config.clone(), self.config.storage.path.clone()).await;
+        let meta: MetaRef = AdminMeta::new(self.config.clone()).await;
 
         meta
     }
@@ -292,6 +293,7 @@ impl ServiceBuilder {
             self.config.query.write_sql_limit,
             mode,
             self.metrics_register.clone(),
+            self.span_context_extractor.clone(),
         )
     }
 
@@ -317,8 +319,9 @@ impl ServiceBuilder {
             kv,
             coord,
             addr,
-            self.config.security.tls_config.clone(),
+            None,
             self.metrics_register.clone(),
+            self.span_context_extractor.clone(),
         )
     }
 
@@ -347,6 +350,6 @@ impl ServiceBuilder {
             .copied()
             .expect("Config flight_rpc_listen_addr cannot be empty.");
 
-        FlightSqlServiceAdapter::new(dbms, addr, tls_config)
+        FlightSqlServiceAdapter::new(dbms, addr, tls_config, self.span_context_extractor.clone())
     }
 }

@@ -4,7 +4,7 @@ use std::ops::Deref;
 use chrono::{DateTime, Utc};
 use config::RateBucketConfig;
 use parking_lot::{Mutex, MutexGuard};
-use serde::de::{SeqAccess, Visitor};
+use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -124,6 +124,55 @@ impl<'de> Deserialize<'de> for RateBucket {
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(3, &self))?;
 
+                Ok(RateBucket {
+                    refill,
+                    interval: chrono::Duration::milliseconds(interval),
+                    max,
+                    critical: Mutex::new(critical),
+                })
+            }
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut refill = None;
+                let mut interval = None;
+                let mut max = None;
+                let mut critical = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Refill => {
+                            if refill.is_some() {
+                                return Err(serde::de::Error::duplicate_field("refill"));
+                            }
+                            refill = Some(map.next_value()?);
+                        }
+                        Field::Interval => {
+                            if interval.is_some() {
+                                return Err(serde::de::Error::duplicate_field("interval"));
+                            }
+                            interval = Some(map.next_value()?);
+                        }
+                        Field::Max => {
+                            if max.is_some() {
+                                return Err(serde::de::Error::duplicate_field("max"));
+                            }
+                            max = Some(map.next_value()?);
+                        }
+                        Field::Critical => {
+                            if critical.is_some() {
+                                return Err(serde::de::Error::duplicate_field("critical"));
+                            }
+                            critical = Some(map.next_value()?);
+                        }
+                    }
+                }
+                let refill = refill.ok_or_else(|| serde::de::Error::missing_field("refill"))?;
+                let interval =
+                    interval.ok_or_else(|| serde::de::Error::missing_field("interval"))?;
+                let max = max.ok_or_else(|| serde::de::Error::missing_field("max"))?;
+                let critical =
+                    critical.ok_or_else(|| serde::de::Error::missing_field("critical"))?;
                 Ok(RateBucket {
                     refill,
                     interval: chrono::Duration::milliseconds(interval),
@@ -358,5 +407,8 @@ fn test_serialize_rate_limiter() {
         .build();
     let data = bincode::serialize(&limiter1).unwrap();
     let limiter2 = bincode::deserialize(data.as_slice()).unwrap();
-    assert_eq!(limiter1, limiter2)
+    let data = serde_json::to_string_pretty(&limiter1).unwrap();
+    let limiter3 = serde_json::from_str(&data).unwrap();
+    assert_eq!(limiter1, limiter2);
+    assert_eq!(limiter1, limiter3);
 }
