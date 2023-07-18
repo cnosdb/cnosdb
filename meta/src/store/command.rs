@@ -144,6 +144,8 @@ pub enum ReadCommand {
     Tenant(String, String),
     // cluster
     Tenants(String),
+    // cluster, tenant, db, table
+    TableSchema(String, String, String, String),
 }
 
 pub const ENTRY_LOG_TYPE_SET: i32 = 1;

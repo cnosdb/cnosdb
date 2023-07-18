@@ -17,7 +17,7 @@ use store::command;
 use trace::info;
 
 use crate::error::{MetaError, MetaResult};
-use crate::store::command::EntryLog;
+use crate::store::command::{EntryLog, ReadCommand};
 use crate::store::key_path;
 use crate::{client, store};
 
@@ -463,6 +463,24 @@ impl TenantMeta {
         table: &str,
     ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
         if let Some(TableSchema::TsKvTableSchema(val)) = self.data.read().table_schema(db, table) {
+            return Ok(Some(val));
+        }
+        Ok(None)
+    }
+
+    pub async fn get_tskv_table_schema_by_meta(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
+        let req = ReadCommand::TableSchema(
+            self.cluster.clone(),
+            self.tenant.name().to_string(),
+            db.to_string(),
+            table.to_string(),
+        );
+        let rsp = self.client.read::<Option<TableSchema>>(&req).await?;
+        if let Some(TableSchema::TsKvTableSchema(val)) = rsp {
             return Ok(Some(val));
         }
         Ok(None)
