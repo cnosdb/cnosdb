@@ -406,6 +406,10 @@ impl StateMachine {
                 response_encode(self.get_struct::<Tenant>(&path))
             }
             ReadCommand::Tenants(cluster) => response_encode(self.process_read_tenants(cluster)),
+            ReadCommand::TableSchema(cluster, tenant_name, db_name, table_name) => {
+                let path = KeyPath::tenant_schema_name(cluster, tenant_name, db_name, table_name);
+                response_encode(self.get_struct::<TableSchema>(&path))
+            }
         }
     }
 

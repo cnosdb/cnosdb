@@ -395,17 +395,27 @@ impl PointWriter {
                 span_recorder.span_ctx(),
             )
             .await;
-        if let Err(err @ CoordinatorError::FailoverNode { .. }) = result {
-            debug!(
-                "write data to remote {}({}) failed; write to hinted handoff!",
-                node_id, vnode_id
-            );
 
-            span_recorder.error(err.to_string());
+        if let Err(ref err) = result {
+            let meta_retry = MetaError::Retry {
+                msg: "default".to_string(),
+            };
+            let tskv_memory = tskv::Error::MemoryExhausted;
+            if matches!(*err, CoordinatorError::FailoverNode { .. })
+                || err.error_code().to_string() == meta_retry.error_code().to_string()
+                || err.error_code().to_string() == tskv_memory.error_code().to_string()
+            {
+                debug!(
+                    "write data to remote {}({}) failed; write to hinted handoff!",
+                    node_id, vnode_id
+                );
 
-            return self
-                .write_to_handoff(vnode_id, node_id, tenant, precision, data)
-                .await;
+                span_recorder.error(err.to_string());
+
+                return self
+                    .write_to_handoff(vnode_id, node_id, tenant, precision, data)
+                    .await;
+            }
         }
 
         debug!(

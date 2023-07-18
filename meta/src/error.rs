@@ -116,9 +116,12 @@ pub enum MetaError {
     #[error_code(code = 24)]
     RequestLimit { kind: RequestLimiterKind },
 
-    #[snafu(display("An error occurred while processing the data. Please try again"))]
+    #[snafu(display(
+        "An error occurred while processing the data: {}. Please try again",
+        msg
+    ))]
     #[error_code(code = 25)]
-    Retry,
+    Retry { msg: String },
 
     #[snafu(display("{}", msg))]
     ObjectLimit { msg: String },

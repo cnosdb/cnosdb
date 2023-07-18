@@ -211,8 +211,19 @@ impl DBschemas {
                     let schema_get = self
                         .client
                         .get_tskv_table_schema(&schema.db, &schema.name)
-                        .map_err(|_| MetaError::Retry)?
-                        .ok_or(MetaError::Retry)?;
+                        .map_err(|e| MetaError::Retry { msg: e.to_string() })?;
+                    let schema_get = match schema_get {
+                        None => self
+                            .client
+                            .get_tskv_table_schema_by_meta(&schema.db, &schema.name)
+                            .await
+                            .map_err(|e| MetaError::Retry { msg: e.to_string() })?
+                            .ok_or(MetaError::Retry {
+                                msg: "Table not found after TableAlreadyExists".to_string(),
+                            })?,
+                        Some(schema) => schema,
+                    };
+
                     if schema.tenant == schema_get.tenant
                         && schema.db == schema_get.db
                         && schema.columns() == schema_get.columns()
@@ -223,8 +234,19 @@ impl DBschemas {
                             let schema_get = self
                                 .client
                                 .get_tskv_table_schema(&schema.db, &schema.name)
-                                .map_err(|_| MetaError::Retry)?
-                                .ok_or(MetaError::Retry)?;
+                                .map_err(|e| MetaError::Retry { msg: e.to_string() })?;
+                            let schema_get = match schema_get {
+                                None => self
+                                    .client
+                                    .get_tskv_table_schema_by_meta(&schema.db, &schema.name)
+                                    .await
+                                    .map_err(|e| MetaError::Retry { msg: e.to_string() })?
+                                    .ok_or(MetaError::Retry {
+                                        msg: "Table not found when retry update table schema"
+                                            .to_string(),
+                                    })?,
+                                Some(schema) => schema,
+                            };
                             let mut schema = schema.as_ref().clone();
                             schema.schema_id = schema_get.schema_id + 1;
                             let schema = Arc::new(schema);
