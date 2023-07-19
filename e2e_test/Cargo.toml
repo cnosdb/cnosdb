@@ -14,19 +14,22 @@ protos = { path = "../common/protos", features = ["test"] }
 sysinfo = { workspace = true, optional = false }
 
 [dev-dependencies]
+config = { path = "../config" }
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
-meta = { path = "../meta" }
-models = { path = "../common/models" }
 
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
+chrono = { workspace = true }
 datafusion = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 protobuf = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"]}
+serial_test = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true }
 tonic = { workspace = true, features = ["tls", "transport"] }
+walkdir = { workspace = true }
 
 [features]
 default = []
-coorfinator_e2e_test = []
+coordinator_e2e_test = []

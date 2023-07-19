@@ -1,31 +1,184 @@
-#![cfg(feature = "coorfinator_e2e_test")]
 #![allow(dead_code)]
-use std::path::Path;
-use std::process::{Child, Command, Output, Stdio};
+
+use std::collections::HashMap;
+use std::ops::Sub;
+use std::path::PathBuf;
+use std::process::{Command, Output};
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{io, thread};
 
-use meta::client;
-use meta::store::command;
-use models::schema::{DatabaseSchema, Tenant};
+use meta::store::command::WriteCommand;
+use models::meta_data::TenantMetaData;
+use models::schema::{
+    DatabaseOptions, DatabaseSchema, Duration as CnosDuration, Precision, Tenant,
+};
+use serial_test::serial;
 use sysinfo::{ProcessExt, System, SystemExt};
+use tokio::runtime::Runtime;
+use walkdir::WalkDir;
 
-#[cfg(feature = "coorfinator_e2e_test")]
-#[cfg(test)]
-mod tests {
+use crate::utils::{CnosdbData, CnosdbMeta};
+use crate::{E2eError, E2eResult};
 
-    use meta::client;
-    use meta::store::command;
-    use models::schema::{DatabaseOptions, DatabaseSchema, Duration, Precision};
+const DEFAULT_CLUSTER: &str = "cluster_xxx";
+const DEFAULT_TABLE: &str = "test_table";
 
-    // use tonic::body;
+fn tenant_name(code: i32) -> String {
+    format!("tenant_{code}")
+}
+
+fn database_name(code: i32) -> String {
+    format!("tenant_{code}_database")
+}
+
+impl CnosdbMeta {
+    fn prepare_test_data(&self) {
+        for i in 0..5 {
+            // Create tenant tenant_{i}
+            let tenant = tenant_name(i);
+            let create_tenant_req = WriteCommand::CreateTenant(
+                DEFAULT_CLUSTER.to_string(),
+                tenant.clone(),
+                models::schema::TenantOptions::default(),
+            );
+            println!("Creating tenant: {:?}", &create_tenant_req);
+            let create_tenant_res = self
+                .runtime
+                .block_on(self.meta_client.write::<Tenant>(&create_tenant_req));
+            create_tenant_res.unwrap();
+
+            thread::sleep(Duration::from_secs(3));
+
+            // Create database tenant_{i}_database
+            let database = database_name(i);
+            let create_database_req = WriteCommand::CreateDB(
+                DEFAULT_CLUSTER.to_string(),
+                tenant.clone(),
+                DatabaseSchema::new(&tenant, &database),
+            );
+            println!("Creating database: {:?}", &create_database_req);
+            let create_database_res = self.runtime.block_on(
+                self.meta_client
+                    .write::<TenantMetaData>(&create_database_req),
+            );
+            create_database_res.unwrap();
+        }
+    }
+}
+
+impl CnosdbData {
+    /// Generate write line protocol `{DEFAULT_TABLE},tag_a=a1,tag_b=b1 value={}` and write to cnosdb.
+    fn prepare_test_data(&self) -> E2eResult<()> {
+        let mut handles: Vec<thread::JoinHandle<()>> = vec![];
+        let has_failed = Arc::new(AtomicBool::new(false));
+        for i in 0..5 {
+            let tenant = tenant_name(i);
+            let database = database_name(i);
+            let url = format!("http://127.0.0.1:8902/api/v1/write?tenant={tenant}&db={database}");
+            // let curl_write = format!(
+            //     "curl -u root: -XPOST -w %{{http_code}} -s -o /dev/null http://127.0.0.1:8902/api/v1/write?tenant={tenant}&db={database}",
+            // );
+            let has_failed = has_failed.clone();
+            let client = self.client.clone();
+            let handle: thread::JoinHandle<()> = thread::spawn(move || {
+                println!("Write data thread-{i} started");
+                for j in 0..100 {
+                    if has_failed.load(atomic::Ordering::SeqCst) {
+                        break;
+                    }
+                    let body = format!("{DEFAULT_TABLE},tag_a=a1,tag_b=b1 value={}", j);
+                    let mut write_fail_count = 0;
+                    // Try write and retry at most 3 times if failed..
+                    while write_fail_count < 3 {
+                        let resp = match client.post(&url, &body) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                write_fail_count += 1;
+                                eprintln!("Failed to write: {}", e);
+                                continue;
+                            }
+                        };
+                        if resp.status().as_u16() == 200 {
+                            break;
+                        } else {
+                            let message = resp
+                                .text()
+                                .unwrap_or_else(|e| format!("Receive non-UTF-8 character: {e}"));
+                            eprintln!("Received unexpected ouput: {message}",);
+                            write_fail_count += 1;
+                        }
+                    }
+                    if write_fail_count >= 3 {
+                        eprintln!("Failed to write '{}' after retried 3 times", &body);
+                        has_failed.store(true, atomic::Ordering::SeqCst);
+                        break;
+                    }
+                }
+                println!("Write data thread-{i} finished");
+            });
+            handles.push(handle);
+        }
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        if has_failed.load(atomic::Ordering::SeqCst) {
+            Err(E2eError::DataWrite(String::new()))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Start the cnosdb cluster
+fn start_cluster(runtime: Arc<Runtime>) -> (CnosdbMeta, CnosdbData) {
+    let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_dir = crate_dir.parent().unwrap();
+    let mut meta = CnosdbMeta::new(runtime.clone(), workspace_dir);
+    meta.run_cluster();
+    let mut data = CnosdbData::new(runtime, workspace_dir);
+    data.run_cluster();
+    (meta, data)
+}
+
+/// Clean test environment.
+///
+/// 1. Kill all 'cnosdb' and 'cnosdb-meta' process,
+/// 2. Remove directory '/tmp/cnosdb'.
+fn clean_env() {
+    println!("Cleaning environment...");
+    kill_process("cnosdb");
+    kill_process("cnosdb-meta");
+    println!(" - Removing directory '/tmp/cnosdb'");
+    let _ = std::fs::remove_dir_all("/tmp/cnosdb");
+    println!("Clean environment completed.");
+}
+
+/// Kill all processes with specified process name.
+fn kill_process(process_name: &str) {
+    println!("- Killing processes {process_name}...");
+    let system = System::new_all();
+    for (pid, process) in system.processes() {
+        if process.name() == process_name {
+            let output = Command::new("kill")
+                .args(["-9", &(pid.to_string())])
+                .output()
+                .expect("failed to execute kill");
+            if !output.status.success() {
+                println!(" - failed killing process {} ('{}')", pid, process.name());
+            }
+            println!(" - killed process {pid} ('{}')", process.name());
+        }
+    }
+}
+
+mod self_tests {
     use super::*;
-    #[cfg(feature = "coorfinator_e2e_test")]
-    #[tokio::test]
-    #[ignore = "for debug test cases only"]
-    async fn test_20230602_1551() {
+
+    #[test]
+    #[ignore = "run this test when developing"]
+    fn test_exec_curl() {
         let output = exec_curl("curl www.baidu.com", "").unwrap();
         // let output = query("tenant1", "tenant1db1");
         println!(
@@ -36,382 +189,455 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "coorfinator_e2e_test")]
-    #[tokio::test]
-    #[ignore = "for debug test cases only"]
-    async fn test_20230602_1638() {
+    #[test]
+    #[ignore = "run this test when developing"]
+    fn test_initialization() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(4)
+            .build()
+            .unwrap();
+        let runtime = Arc::new(runtime);
+
         clean_env();
-        start_cluster();
-        // let opt: Output = start_cluster();
-        // assert!(opt.status.code() == Some(0));
-        prepare().await;
+        {
+            let (meta, data) = start_cluster(runtime);
+            meta.prepare_test_data();
+            data.prepare_test_data().unwrap();
 
-        // std::thread::sleep(std::time::Duration::from_secs(3600));
+            let tenant = tenant_name(1);
+            let database = database_name(1);
 
-        let curl = format!(
-            r#"curl -u root: -XPOST
-            http://127.0.0.1:8902/api/v1/write?tenant=tenant{}&db=tenant{}db1
-            -w %{{http_code}} -s -o /dev/null"#,
-            1, 1
-        );
-        println!("{curl}");
-        let body = format!("tb1,tag1=tag1,tag2=tag2 field1={}", 1);
-        let output = exec_curl(&curl, &body).unwrap();
-        println!("output: {:?}", output);
-        println!("status: {}", output.status);
-        println!("stdout: {:?}", String::from_utf8_lossy(&output.stdout));
-        println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-    }
-
-    #[tokio::test]
-    async fn test_multi_tenants_write_data() {
-        // clean env
-        clean_env();
-        // start cluster
-        start_cluster();
-        // create  tenants
-        prepare().await;
-        if !prepare_data().await {
-            eprintln!("Failed to prepare data");
-            std::process::exit(1);
+            let res = data
+                .client
+                .post(
+                    format!("http://127.0.0.1:8902/api/v1/write?tenant={tenant}&db={database}"),
+                    "tb1,ta=a1,tb=b1 fa=1",
+                )
+                .unwrap();
+            println!("{}", res.text().unwrap());
         }
-        for i in 0..5 {
-            let tenant = format!("tenant{}", i);
-            let db = format!("tenant{}db1", i);
-            let output = query(&tenant, &db);
-            let result_csv = String::from_utf8_lossy(&output.stdout);
-            println!("Result CSV: {}", &result_csv);
-            let line_10 = result_csv.lines().nth(6);
-            assert_eq!(line_10, Some("100"));
-        }
-
-        // clean env
         clean_env();
     }
-
-    #[tokio::test]
-    async fn test_replica() {
-        // clean env
-        clean_env();
-        // start cluster
-        start_cluster();
-        // database option schema
-        let dboption = DatabaseOptions::new(
-            Duration::new("365"),
-            Some(2),
-            Duration::new("365"),
-            Some(2),
-            Some(Precision::NS),
-        );
-        let dbschema = DatabaseSchema::new_with_options("cnosdb", "db1", dboption);
-        let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
-
-        let req = command::WriteCommand::CreateDB(
-            "cluster_xxx".to_string(),
-            "cnosdb".to_string(),
-            dbschema,
-        );
-        // create db
-        let rsp = cli
-            .write::<command::TenaneMetaDataResp>(&req)
-            .await
-            .unwrap();
-        println!("rsp : {:?}", rsp);
-        println!("rsp : {:?}", rsp.status.code);
-        assert!(rsp.status.code == 0);
-        let cmd = "curl http://127.0.0.1:8901/debug";
-        let output = exec_curl(cmd, "").unwrap();
-        assert!(output.status.code() == Some(0));
-        print!("output: {}", String::from_utf8_lossy(&output.stdout));
-        assert!(String::from_utf8_lossy(&output.stdout).contains("\"replica\":2"));
-        // todo: check replica
-        // clean env
-        clean_env();
-    }
-
-    #[tokio::test]
-    async fn test_shard() {
-        // clean env
-        clean_env();
-        // start cluster
-        start_cluster();
-        // database option schema
-        let dboption = DatabaseOptions::new(
-            Duration::new("365"),
-            Some(2),
-            Duration::new("365"),
-            Some(2),
-            Some(Precision::NS),
-        );
-        let dbschema = DatabaseSchema::new_with_options("cnosdb", "db1", dboption);
-        let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
-
-        let req = command::WriteCommand::CreateDB(
-            "cluster_xxx".to_string(),
-            "cnosdb".to_string(),
-            dbschema,
-        );
-        // create db
-        let _rsp = cli
-            .write::<command::TenaneMetaDataResp>(&req)
-            .await
-            .unwrap();
-        let cmd = "curl http://127.0.0.1:8901/debug";
-        let output = exec_curl(cmd, "").unwrap();
-        assert!(output.status.code() == Some(0));
-        // let api = "http://127.0.0.1:8901/debug".to_string();
-        // let output = Command::new("curl")
-        //     .args([&api])
-        //     .output()
-        //     .expect("failed to execute process");
-        assert!(output.status.code() == Some(0));
-        print!("output: {}", String::from_utf8_lossy(&output.stdout));
-        assert!(String::from_utf8_lossy(&output.stdout).contains("\"shard_num\":2"));
-
-        // clean env
-        clean_env();
-    }
-
-    #[tokio::test]
-    async fn test_ttl() {
-        // clean env
-        clean_env();
-        // start cluster
-        start_cluster();
-        let dboption = DatabaseOptions::new(
-            Duration::new("1"),
-            Some(2),
-            Duration::new("365"),
-            Some(2),
-            Some(Precision::NS),
-        );
-        let dbschema = DatabaseSchema::new_with_options("cnosdb", "db1", dboption);
-        let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
-
-        let req = command::WriteCommand::CreateDB(
-            "cluster_xxx".to_string(),
-            "cnosdb".to_string(),
-            dbschema,
-        );
-        // create db
-        let _rsp = cli
-            .write::<command::TenaneMetaDataResp>(&req)
-            .await
-            .unwrap();
-        let cmd = "curl http://127.0.0.1:8901/debug";
-        let output = exec_curl(cmd, "").unwrap();
-        assert!(output.status.code() == Some(0));
-        print!("output: {}", String::from_utf8_lossy(&output.stdout));
-        assert!(String::from_utf8_lossy(&output.stdout).contains("\"time_num\":1"));
-        // write data
-        let cmd = "curl -i -u root: -XPOST http://127.0.0.1:8902/api/v1/write?db=db1";
-        let body = "tb1,tag1=tag1,tag2=tag2 field1=1 1683259054000000000";
-        let output = exec_curl(cmd, body).unwrap();
-        assert!(output.status.code() == Some(0));
-        assert!(
-            String::from_utf8_lossy(&output.stdout).contains("write expired time data not permit")
-        );
-        let cmd = "curl -i -u root: -XPOST http://127.0.0.1:8902/api/v1/write?db=db1";
-        let body = "tb1,tag1=tag1,tag2=tag2 field1=2";
-        let output = exec_curl(cmd, body).unwrap();
-        assert!(output.status.code() == Some(0));
-        print!("output: {}", String::from_utf8_lossy(&output.stdout));
-        assert!(String::from_utf8_lossy(&output.stdout).contains("200 OK"));
-        // clean env
-        clean_env();
-    }
-
-    #[tokio::test]
-    async fn test_balance() {
-        // clean env
-        clean_env();
-        // start cluster
-        start_cluster();
-        // database option schema
-        let dboption = DatabaseOptions::new(
-            Duration::new("1"),
-            Some(2),
-            Duration::new("365"),
-            Some(2),
-            Some(Precision::NS),
-        );
-        let dbschema = DatabaseSchema::new_with_options("cnosdb", "db1", dboption);
-        let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
-
-        let req = command::WriteCommand::CreateDB(
-            "cluster_xxx".to_string(),
-            "cnosdb".to_string(),
-            dbschema,
-        );
-        // create db
-        let _rsp = cli
-            .write::<command::TenaneMetaDataResp>(&req)
-            .await
-            .unwrap();
-
-        let api = "http://127.0.0.1:8902/api/v1/write?db=db1".to_string();
-        println!("before write data");
-        for j in 0..10 {
-            println!("writeing data");
-            let body = format!("tb1,tag1=tag1,tag2=tag2 field1={}", j);
-            println!("body: {}", &body);
-            let cmd = format!("curl -i -u root: -XPOST {}", &api);
-            println!("cmd: {}", &cmd);
-            let output = exec_curl(&cmd, &body).unwrap();
-            println!("status: {:?}", output);
-        }
-        println!("after write data");
-        // todo check balance
-        // clean env
-        clean_env();
-    }
-}
-
-#[allow(dead_code)]
-async fn prepare() {
-    for i in 0..5 {
-        let tenant = format!("tenant{}", i);
-        let db = format!("tenant{}db1", i);
-        let req = command::WriteCommand::CreateTenant(
-            "cluster_xxx".to_string(),
-            tenant.clone(),
-            models::schema::TenantOptions::default(),
-        );
-
-        let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
-        // create tenant
-        let _rsp = cli
-            .write::<command::CommonResp<Tenant>>(&req)
-            .await
-            .unwrap();
-        println!("create tenant rsp: {:?}", _rsp);
-        // db req
-        let req = command::WriteCommand::CreateDB(
-            "cluster_xxx".to_string(),
-            tenant.clone(),
-            DatabaseSchema::new(&tenant, &db),
-        );
-        thread::sleep(Duration::from_secs(3));
-        println!("db req{:?}", req);
-        // create db
-        let rsp = cli
-            .write::<command::TenaneMetaDataResp>(&req)
-            .await
-            .unwrap();
-
-        println!("create database rsp: {:?}", rsp);
-    }
-}
-
-#[allow(dead_code)]
-fn kill_process(process_name: &str) {
-    let system = System::new_all();
-    for (pid, process) in system.processes() {
-        if process.name() == process_name {
-            println!("{}: {}", pid, process.name());
-            let output = Command::new("kill")
-                .args(["-9", &(pid.to_string())])
-                .output()
-                .expect("failed to execute process");
-            println!("status: {}", output.status);
-        }
-    }
-}
-
-// clean env
-#[allow(dead_code)]
-fn clean_env() {
-    println!("Cleaning environment...");
-    kill_process("cnosdb");
-    kill_process("cnosdb-meta");
-    let _ = std::fs::remove_dir_all("/tmp/cnosdb");
-    println!("Clean environment completed.");
-}
-
-// prepare data
-#[allow(dead_code)]
-async fn prepare_data() -> bool {
-    let mut handles: Vec<thread::JoinHandle<()>> = vec![];
-    let has_failed = Arc::new(AtomicBool::new(false));
-    for i in 0..5 {
-        let curl = format!(
-            r#"curl -u root: -XPOST -w %{{http_code}} -s -o /dev/null
-            http://127.0.0.1:8902/api/v1/write?tenant=tenant{}&db=tenant{}db1"#,
-            i, i
-        );
-        let has_failed = has_failed.clone();
-        let handle: thread::JoinHandle<()> = thread::spawn(move || {
-            println!("thread {} started", i);
-            for j in 0..100 {
-                if has_failed.load(atomic::Ordering::SeqCst) {
-                    break;
-                }
-                let body = format!("tb1,tag1=tag1,tag2=tag2 field1={}", j);
-                let mut write_fail_count = 0;
-                while write_fail_count < 3 {
-                    let output = match exec_curl(&curl, &body) {
-                        Ok(o) => o,
-                        Err(e) => {
-                            write_fail_count += 1;
-                            eprintln!("Failed to execute curl process: {}", e);
-                            continue;
-                        }
-                    };
-                    println!(
-                        "status: {} \nstdout: {} \nstderr: {}",
-                        output.status,
-                        String::from_utf8_lossy(&output.stdout),
-                        String::from_utf8_lossy(&output.stderr),
-                    );
-                    if output.stdout == b"200" {
-                        break;
-                    } else {
-                        eprintln!("Received unexpected ouput: {}", unsafe {
-                            std::str::from_utf8_unchecked(&output.stdout)
-                        });
-                        write_fail_count += 1;
-                    }
-                }
-                if write_fail_count >= 3 {
-                    eprintln!("Failed to write '{}' after retried 3 times", &body);
-                    has_failed.store(true, atomic::Ordering::SeqCst);
-                    break;
-                }
-            }
-        });
-        handles.push(handle);
-    }
-    for handle in handles {
-        handle.join().unwrap();
-    }
-    !has_failed.load(atomic::Ordering::SeqCst)
-}
-
-// query data
-#[allow(dead_code)]
-fn query(tenant: &str, db: &str) -> Output {
-    let curl = format!(
-        r#"curl -i -u root: -XPOST
-        http://127.0.0.1:8902/api/v1/sql?tenant={}&db={}"#,
-        tenant, db
-    );
-    let body = "select count(*) from tb1";
-    exec_curl(&curl, body).unwrap()
 }
 
 #[test]
-#[ignore = "for debug test cases only"]
-fn test_20230602_1551() {
-    let output = query("tenant", "db");
-    println!(
-        "status: {} \nstdout: {} \nstderr: {}",
-        output.status,
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
+#[serial]
+fn test_multi_tenants_write_data() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(4)
+        .build()
+        .unwrap();
+    let runtime = Arc::new(runtime);
+
+    clean_env();
+    {
+        let (meta, data) = start_cluster(runtime);
+        meta.prepare_test_data();
+        data.prepare_test_data().unwrap();
+
+        for i in 0..5 {
+            let tenant = tenant_name(i);
+            let db = database_name(i);
+            let result_csv = match data.client.post(
+                format!("http://127.0.0.1:8902/api/v1/sql?tenant={tenant}&db={db}"),
+                format!("select count(*) from {DEFAULT_TABLE}").as_str(),
+            ) {
+                Ok(r) => r.text().unwrap(),
+                Err(e) => {
+                    panic!("Failed to do query: {e}");
+                }
+            };
+            println!("- Result text: {}", &result_csv);
+            let line_10 = result_csv.lines().nth(1);
+            assert_eq!(line_10, Some("100"));
+        }
+    }
+    clean_env();
 }
 
-// execute curl command
+#[test]
+#[serial]
+fn test_replica() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(4)
+        .build()
+        .unwrap();
+    let runtime = Arc::new(runtime);
+
+    clean_env();
+    {
+        let (meta, _data) = start_cluster(runtime.clone());
+
+        let tenant_name = "cnosdb";
+        let database_name = "db_test_replica";
+        let duration = CnosDuration::new_with_day(100);
+        let vnode_duration = CnosDuration::new_with_day(50);
+        let shard_num = 8;
+        let replica = 2;
+        let precision = Precision::NS;
+
+        // Create database.
+        let db_options = DatabaseOptions::new(
+            Some(duration),
+            Some(shard_num),
+            Some(vnode_duration),
+            Some(replica),
+            Some(precision),
+        );
+        let db_schema = DatabaseSchema::new_with_options(tenant_name, database_name, db_options);
+        let create_db_req = WriteCommand::CreateDB(
+            DEFAULT_CLUSTER.to_string(),
+            tenant_name.to_string(),
+            db_schema,
+        );
+        let create_db_res =
+            runtime.block_on(meta.meta_client.write::<TenantMetaData>(&create_db_req));
+        create_db_res.unwrap();
+
+        // Get meta data from debug API.
+        let meta_data = meta.query();
+        let meta_key = format!("* /{DEFAULT_CLUSTER}/tenants/{tenant_name}/dbs/{database_name}: ");
+        let mut meta_value = &meta_data[..0];
+        let expected_meta = format!("\"replica\":{replica}");
+        let mut ok = false;
+        for l in meta_data.lines() {
+            if l.starts_with(&meta_key) {
+                meta_value = &l[meta_key.len()..];
+                ok = meta_value.contains(&expected_meta);
+                break;
+            }
+        }
+        assert!(
+            ok,
+            "{meta_key} {meta_value} does not contains {expected_meta}"
+        );
+    }
+    clean_env();
+}
+
+#[test]
+#[serial]
+fn test_shard() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(4)
+        .build()
+        .unwrap();
+    let runtime = Arc::new(runtime);
+
+    clean_env();
+    {
+        let (meta, _data) = start_cluster(runtime.clone());
+
+        let tenant_name = "cnosdb";
+        let database_name = "db_test_shard";
+        let duration = CnosDuration::new_with_day(100);
+        let vnode_duration = CnosDuration::new_with_day(50);
+        let shard_num = 8;
+        let replica = 1;
+        let precision = Precision::NS;
+
+        // Create database.
+        let db_options = DatabaseOptions::new(
+            Some(duration),
+            Some(shard_num),
+            Some(vnode_duration),
+            Some(replica),
+            Some(precision),
+        );
+        let db_schema = DatabaseSchema::new_with_options(tenant_name, database_name, db_options);
+        let create_db_req = WriteCommand::CreateDB(
+            DEFAULT_CLUSTER.to_string(),
+            tenant_name.to_string(),
+            db_schema,
+        );
+        let create_db_res =
+            runtime.block_on(meta.meta_client.write::<TenantMetaData>(&create_db_req));
+        create_db_res.unwrap();
+
+        // Get meta data from debug API.
+        let meta_data = meta.query();
+        let meta_key = format!("* /{DEFAULT_CLUSTER}/tenants/{tenant_name}/dbs/{database_name}: ");
+        let mut meta_value = &meta_data[..0];
+        let expected_meta = format!("\"shard_num\":{shard_num}");
+        let mut ok = false;
+        for l in meta_data.lines() {
+            if l.starts_with(&meta_key) {
+                meta_value = &l[meta_key.len()..];
+                ok = meta_value.contains(&expected_meta);
+                break;
+            }
+        }
+        assert!(
+            ok,
+            "{meta_key} {meta_value} does not contains {expected_meta}"
+        );
+    }
+    clean_env();
+}
+
+#[test]
+#[serial]
+fn test_ttl() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(4)
+        .build()
+        .unwrap();
+    let runtime = Arc::new(runtime);
+
+    clean_env();
+    {
+        let (meta, data) = start_cluster(runtime.clone());
+
+        let tenant_name = "cnosdb";
+        let database_name = "db_test_ttl";
+        let duration = CnosDuration::new_with_day(100);
+        let vnode_duration = CnosDuration::new_with_day(50);
+        let shard_num = 1;
+        let replica = 1;
+        let precision = Precision::NS;
+
+        let chrono_now = chrono::Utc::now();
+        let chrono_duration = chrono::Duration::days(100);
+
+        // Create database.
+        let db_options = DatabaseOptions::new(
+            Some(duration.clone()),
+            Some(shard_num),
+            Some(vnode_duration),
+            Some(replica),
+            Some(precision),
+        );
+        let db_schema = DatabaseSchema::new_with_options(tenant_name, database_name, db_options);
+        let create_db_req = WriteCommand::CreateDB(
+            DEFAULT_CLUSTER.to_string(),
+            tenant_name.to_string(),
+            db_schema,
+        );
+        let create_db_res =
+            runtime.block_on(meta.meta_client.write::<TenantMetaData>(&create_db_req));
+        create_db_res.unwrap();
+
+        // Get meta data from debug API.
+        let meta_data = meta.query();
+        let meta_key = format!("* /{DEFAULT_CLUSTER}/tenants/{tenant_name}/dbs/{database_name}: ");
+        let mut meta_value = &meta_data[..0];
+        let expected_meta = [
+            format!("\"time_num\":{}", duration.time_num),
+            String::from("\"unit\":\"Day\""),
+        ];
+        let mut ok_num = 0_usize;
+        for l in meta_data.lines() {
+            if l.starts_with(&meta_key) {
+                meta_value = &l[meta_key.len()..];
+                for m in expected_meta.iter() {
+                    if meta_value.contains(m) {
+                        ok_num += 1;
+                    }
+                }
+                break;
+            }
+        }
+        assert!(
+            ok_num == expected_meta.len(),
+            "{meta_key} {meta_value} does not contains {:?}",
+            expected_meta
+        );
+
+        let url =
+            format!("http://127.0.0.1:8902/api/v1/write?&tenant={tenant_name}&db={database_name}");
+
+        // Insert the valid data.
+        let now = chrono_now.timestamp_nanos();
+        let resp = data
+            .client
+            .post(&url, format!("tab_1,ta=a1 fa=1 {now}").as_str())
+            .unwrap();
+        assert!(resp.status().is_success());
+
+        // Insert the exored-time data.
+        let past = chrono_now.sub(chrono_duration).timestamp_nanos();
+        let resp = data
+            .client
+            .post(&url, format!("tab_1,ta=a2 fa=2 {past}").as_str())
+            .unwrap();
+        assert_eq!(resp.status().as_u16(), 422);
+        assert!(resp
+            .text()
+            .unwrap()
+            .contains("write expired time data not permit"));
+    }
+    clean_env();
+}
+
+#[test]
+#[serial]
+fn test_balance() {
+    println!("Testing balance...");
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(4)
+        .build()
+        .unwrap();
+    let runtime = Arc::new(runtime);
+
+    clean_env();
+    {
+        let (meta, data) = start_cluster(runtime.clone());
+
+        let tenant_name = "cnosdb";
+        let database_name = "db_test_balance";
+        let duration = CnosDuration::new_with_day(100);
+        let vnode_duration = CnosDuration::new_with_day(50);
+        let shard_num = 2;
+        let replica = 2;
+        let precision = Precision::NS;
+
+        // Create database.
+        let db_options = DatabaseOptions::new(
+            Some(duration),
+            Some(shard_num),
+            Some(vnode_duration),
+            Some(replica),
+            Some(precision),
+        );
+        let db_schema = DatabaseSchema::new_with_options(tenant_name, database_name, db_options);
+        let create_db_req = WriteCommand::CreateDB(
+            DEFAULT_CLUSTER.to_string(),
+            tenant_name.to_string(),
+            db_schema,
+        );
+        let create_db_res =
+            runtime.block_on(meta.meta_client.write::<TenantMetaData>(&create_db_req));
+        create_db_res.unwrap();
+
+        // Write some data.
+        let url =
+            format!("http://127.0.0.1:8902/api/v1/write?&tenant={tenant_name}&db={database_name}");
+        println!("- Writing data.");
+        for j in 0..10 {
+            let body = format!("tab_1,ta=a1,tb=b1 value={}", j);
+            data.client.post(&url, &body).unwrap();
+        }
+        println!("- Write data completed.");
+
+        // Check balance
+        println!("Getting meta...");
+        let mut shard_vnode_node_ids: Vec<Vec<(u32, u64)>> = Vec::new();
+        thread::sleep(Duration::from_secs(3));
+        let meta_data = meta.query();
+        let meta_key =
+            format!("* /{DEFAULT_CLUSTER}/tenants/{tenant_name}/dbs/{database_name}/buckets/");
+        let mut ok = false;
+        for l in meta_data.lines() {
+            if l.starts_with(&meta_key) {
+                ok = true;
+                let mut i = 0;
+                // Shards loop
+                'shard: loop {
+                    let mut vnode_node_ids: Vec<(u32, u64)> = Vec::new();
+                    // "vnodes":[{"id":6,"node_id":1001,"status":"Running"},{...},...]
+                    if let Some(vnodes_i) = l[i..].find("\"vnodes\"") {
+                        i += vnodes_i;
+                        let mut found_vnodes = 0;
+                        // Replications loop
+                        loop {
+                            // Get id (vnode id).
+                            let vnode_id = if let Some(vnode_id_i) = l[i..].find("\"id\"") {
+                                i += vnode_id_i + 5; // + len("id":)
+                                let vnode_id = if let Some(vnode_id_end_i) =
+                                    l[i..].find(|c| c == ',' || c == '}')
+                                {
+                                    let vnode_id = l[i..i + vnode_id_end_i].parse::<u32>().unwrap();
+                                    i += vnode_id_end_i;
+                                    vnode_id
+                                } else {
+                                    break 'shard;
+                                };
+                                found_vnodes += 1;
+                                vnode_id
+                            } else {
+                                break 'shard;
+                            };
+                            // Get node_id
+                            if let Some(node_id_i) = l[i..].find("\"node_id\"") {
+                                i += node_id_i + 10; // + len("node_id":)
+                                if let Some(node_id_end_i) = l[i..].find(|c| c == ',' || c == '}') {
+                                    let node_id = l[i..i + node_id_end_i].parse::<u64>().unwrap();
+                                    vnode_node_ids.push((vnode_id, node_id));
+                                }
+                            } else {
+                                break 'shard;
+                            }
+
+                            if found_vnodes == replica {
+                                // Found {replica} vnodes, break to find next shard
+                                shard_vnode_node_ids.push(vnode_node_ids);
+                                break;
+                            }
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        println!("- Shard - vnode - node IDs: {:?}", shard_vnode_node_ids);
+        assert!(ok, "{meta_data} does not contains {meta_key}");
+
+        println!("Checking balance...");
+        let url =
+            format!("http://127.0.0.1:8902/api/v1/sql?&tenant={tenant_name}&db={database_name}");
+        // Shards loop
+        for vnode_node_ids in shard_vnode_node_ids.iter() {
+            // Replications loop
+            let mut vnode_sizes: HashMap<u32, u64> = HashMap::new();
+            for (vnode_id, node_id) in vnode_node_ids.iter() {
+                println!("- Flush & compaction vnode {vnode_id}");
+                let resp = data
+                    .client
+                    .post(&url, format!("compact vnode {vnode_id};").as_str())
+                    .unwrap();
+                assert!(
+                    resp.status().is_success(),
+                    "compact vnode {vnode_id} failed {}",
+                    resp.text().unwrap()
+                );
+                let dir = PathBuf::from("/tmp/cnosdb")
+                    .join(node_id.to_string())
+                    .join("db")
+                    .join("data")
+                    .join(format!("{tenant_name}.{database_name}"))
+                    .join(vnode_id.to_string());
+                if std::fs::metadata(&dir).is_err() {
+                    // If dir not exists, or could not read, ignore this shard.
+                    break;
+                }
+                // Check balance by file size.
+                let vnode_size = WalkDir::new(dir)
+                    .min_depth(1)
+                    .max_depth(3)
+                    .into_iter()
+                    .filter_map(|entry| entry.ok())
+                    .filter_map(|entry| entry.metadata().ok())
+                    .filter(|metadata| metadata.is_file())
+                    .fold(0, |acc, m| acc + m.len());
+                vnode_sizes.insert(*vnode_id, vnode_size);
+                // TODO: check balance by data count.
+            }
+
+            println!("- Vnode sizes: {:?}", vnode_sizes);
+            // TODO: check if balanced by comparing vnode_sizes.
+        }
+    }
+    clean_env();
+}
+
+/// Execute curl command
 fn exec_curl(cmd: &str, body: &str) -> io::Result<Output> {
     let cmd_args = cmd
         .split(&[' ', '\n', '\r'])
@@ -425,174 +651,4 @@ fn exec_curl(cmd: &str, body: &str) -> io::Result<Output> {
     }
     println!("Executing command 'curl': {:?}", command);
     command.output()
-}
-
-// wait cnosdb startup, check ping api
-fn wait_cnosdb_startup(host: &str) {
-    let pint_api = format!("http://{host}/api/v1/ping");
-    let startup_time = std::time::Instant::now();
-    loop {
-        if let Ok(output) = exec_curl(format!("curl {pint_api}").as_str(), "") {
-            if output.status.success() {
-                break;
-            }
-            eprintln!(
-                "Execution 'curl {pint_api}' returned failure after {:?} seconds",
-                startup_time.elapsed().as_secs()
-            );
-            thread::sleep(Duration::from_secs(3));
-        } else {
-            eprintln!(
-                "Execution 'curl {pint_api}' failed after {:?} seconds",
-                startup_time.elapsed().as_secs()
-            );
-            thread::sleep(Duration::from_secs(1));
-        }
-    }
-}
-
-// start meta node
-fn start_meta<P: AsRef<Path>>(workspace_dir: P) -> [Child; 3] {
-    let workspace_dir = workspace_dir.as_ref();
-    let mut cargo_build = Command::new("cargo");
-    let output = cargo_build
-        .current_dir(workspace_dir)
-        .args(["build", "--package", "meta"])
-        .output()
-        .expect("failed to execute cargo build");
-    if !output.status.success() {
-        panic!("Failed to build cnosdb-meta: {:?}", output);
-    }
-
-    let meta_exec = format!("{}/target/debug/cnosdb-meta", workspace_dir.display());
-    println!("cnosdb-meta executable: {meta_exec}");
-    let meta_config_dir = format!("{}/meta/config", workspace_dir.display());
-    println!("cnosdb-meta config: {meta_config_dir}");
-    let meta1 = Command::new(&meta_exec)
-        .args(["-c", format!("{meta_config_dir}/config_8901.toml").as_str()])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("failed to execute cnosdb-meta");
-    let meta2 = Command::new(&meta_exec)
-        .args(["-c", format!("{meta_config_dir}/config_8911.toml").as_str()])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("failed to execute cnosdb-meta");
-    let meta3 = Command::new(meta_exec)
-        .args(["-c", format!("{meta_config_dir}/config_8921.toml").as_str()])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("failed to execute cnosdb-meta");
-    thread::sleep(Duration::from_secs(3));
-
-    Command::new("curl")
-        .args([
-            "-s",
-            "127.0.0.1:8901/init",
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            "{}",
-        ])
-        .output()
-        .expect("failed to execute process");
-    thread::sleep(Duration::from_secs(1));
-    Command::new("curl")
-        .args([
-            "-s",
-            "127.0.0.1:8901/add-learner",
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            "[2, \"127.0.0.1:8911\"]",
-        ])
-        .output()
-        .expect("failed to execute process");
-    thread::sleep(Duration::from_secs(1));
-    Command::new("curl")
-        .args([
-            "-s",
-            "127.0.0.1:8901/add-learner",
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            "[3, \"127.0.0.1:8921\"]",
-        ])
-        .output()
-        .expect("failed to execute process");
-    thread::sleep(Duration::from_secs(1));
-    Command::new("curl")
-        .args([
-            "-s",
-            "127.0.0.1:8901/8901/change-membership",
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            "[1, 2, 3]",
-        ])
-        .output()
-        .expect("failed to execute process");
-    thread::sleep(Duration::from_secs(1));
-
-    [meta1, meta2, meta3]
-}
-
-// start data node
-fn start_data<P: AsRef<Path>>(workspace_dir: P) -> [Child; 2] {
-    let workspace_dir = workspace_dir.as_ref();
-    let mut cargo_build = Command::new("cargo");
-    let output = cargo_build
-        .current_dir(workspace_dir)
-        .args(["build", "--bin", "cnosdb"])
-        .output()
-        .expect("failed to execute cargo build");
-    if !output.status.success() {
-        panic!("Failed to build cnosdb: {:?}", output)
-    }
-
-    let data_exec = format!("{}/target/debug/cnosdb", workspace_dir.display());
-    println!("cnosdb executable: {data_exec}");
-    let data_config_dir = format!("{}/config", workspace_dir.display());
-    println!("cnosdb config: {data_config_dir}");
-    let data1 = Command::new(&data_exec)
-        .args([
-            "run",
-            "--config",
-            format!("{data_config_dir}/config_8902.toml").as_str(),
-        ])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("failed to execute cnosdb process");
-    let data2 = Command::new(data_exec)
-        .args([
-            "run",
-            "--config",
-            format!("{data_config_dir}/config_8912.toml").as_str(),
-        ])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("failed to execute cnosdb process");
-
-    wait_cnosdb_startup("127.0.0.1:8902");
-    wait_cnosdb_startup("127.0.0.1:8912");
-
-    [data1, data2]
-}
-
-// start cluster
-#[allow(dead_code)]
-#[test]
-fn start_cluster() {
-    let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_dir = crate_dir.parent().unwrap();
-
-    start_meta(workspace_dir);
-    start_data(workspace_dir);
-    // sleep 3 seconds
-    thread::sleep(Duration::from_secs(3));
 }

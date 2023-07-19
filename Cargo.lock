@@ -1869,6 +1869,8 @@ dependencies = [
  "actix-rt",
  "arrow-flight",
  "arrow-schema",
+ "chrono",
+ "config",
  "datafusion",
  "flatbuffers 22.12.6",
  "futures",
@@ -1877,10 +1879,13 @@ dependencies = [
  "models",
  "protobuf 3.2.0",
  "protos",
+ "reqwest",
+ "serial_test",
  "sysinfo",
  "tokio",
  "tokio-stream",
  "tonic",
+ "walkdir",
 ]
 
 [[package]]

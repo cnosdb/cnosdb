@@ -143,4 +143,4 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          cargo test --package e2e_test  -- coordinator_tests::tests --test-threads 1
+          cargo test --package e2e_test --features coordinator_e2e_test  -- coordinator_tests --nocapture

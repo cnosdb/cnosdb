@@ -38,7 +38,7 @@ impl TenantMeta {
             tenant: Tenant::default(),
             meta_url: "".to_string(),
             data: RwLock::new(TenantMetaData::new()),
-            client: MetaHttpClient::new("".to_string()),
+            client: MetaHttpClient::new(""),
         }
     }
 
@@ -48,7 +48,7 @@ impl TenantMeta {
             tenant,
             meta_url: meta_url.clone(),
             data: RwLock::new(TenantMetaData::new()),
-            client: MetaHttpClient::new(meta_url),
+            client: MetaHttpClient::new(&meta_url),
         });
 
         client.sync_all_tenant_metadata().await?;
