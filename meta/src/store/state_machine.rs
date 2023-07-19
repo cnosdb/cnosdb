@@ -1330,8 +1330,8 @@ mod test {
 
     use serde::{Deserialize, Serialize};
 
-    #[tokio::test]
-    async fn test_btree_map() {
+    #[test]
+    fn test_btree_map() {
         let mut map = BTreeMap::new();
         map.insert("/root/tenant".to_string(), "tenant_v".to_string());
         map.insert("/root/tenant/db1".to_string(), "123_v".to_string());
@@ -1368,8 +1368,8 @@ mod test {
         Test1(Command1),
     }
 
-    #[tokio::test]
-    async fn test_json() {
+    #[test]
+    fn test_json() {
         let cmd = Command::Test1(Command1 {
             id: 100,
             name: "test".to_string(),

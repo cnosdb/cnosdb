@@ -1868,16 +1868,24 @@ version = "2.3.1"
 dependencies = [
  "actix-rt",
  "arrow-flight",
+ "arrow-schema",
+ "chrono",
+ "config",
  "datafusion",
  "flatbuffers 22.12.6",
  "futures",
  "http_protocol",
+ "meta",
  "models",
  "protobuf 3.2.0",
  "protos",
+ "reqwest",
+ "serial_test",
+ "sysinfo",
  "tokio",
  "tokio-stream",
  "tonic",
+ "walkdir",
 ]
 
 [[package]]

@@ -375,7 +375,7 @@ async fn write_data_to_meta() {
         attribute: NodeAttribute::Hot,
     };
     let req = command::WriteCommand::AddDataNode("cluster_xxx".to_string(), node);
-    let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
+    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
     let rsp = cli.write::<()>(&req).await.unwrap();
     println!("=== add nodeinfo : {:?}", rsp);
     // let req = command::WriteCommand::CreateTenant(“cluster_xxx”.to_string(), (), ())
@@ -384,7 +384,7 @@ async fn write_data_to_meta() {
         "test_add_tenant001".to_string(),
         models::schema::TenantOptions::default(),
     );
-    let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
+    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
     let rsp = cli.write::<Tenant>(&req).await.unwrap();
     println!("=== add tenant: {:?}", rsp);
 }
@@ -394,7 +394,7 @@ async fn drop_data_from_meta() {
         "cluster_xxx".to_string(),
         "test_add_tenant001".to_string(),
     );
-    let cli = client::MetaHttpClient::new("127.0.0.1:8901".to_string());
+    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
     let rsp = cli.write::<()>(&req).await.unwrap();
     println!("=== drop tanant: {:?}", rsp);
 }
