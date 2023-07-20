@@ -1,9 +1,30 @@
+use datafusion::arrow::datatypes::DataType;
+use datafusion::common::Result as DFResult;
+use datafusion::error::DataFusionError;
 use datafusion::logical_expr::utils::find_exprs_in_expr;
 use datafusion::logical_expr::{expr, BinaryExpr, Operator};
 use datafusion::prelude::Expr;
 use models::schema::TIME_FIELD_NAME;
+use spi::QueryError;
 
 use super::selector_function::{BOTTOM, TOPK};
+
+type CheckArgsFuncSignature<'a> = &'a dyn Fn(&str, usize, &[DataType]) -> DFResult<()>;
+
+pub const CHECK_ARGS_FUNC: CheckArgsFuncSignature = &|func_name, expects, input| {
+    if input.len() != expects {
+        return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
+            err: format!(
+                "The function {:?} expects {} arguments, but {} were provided",
+                func_name,
+                expects,
+                input.len()
+            ),
+        })));
+    }
+
+    Ok(())
+};
 
 pub fn is_time_filter(expr: &Expr) -> bool {
     match expr {

@@ -4,6 +4,8 @@ use arrow::array::{Float32Array, Float64Array, StringArray, UInt64Array};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use datafusion::arrow;
+use datafusion::arrow::array::TimestampNanosecondArray;
+use datafusion::arrow::datatypes::TimeUnit;
 use datafusion::datasource::MemTable;
 use datafusion::error::Result;
 use datafusion::execution::context::SessionContext;
@@ -58,6 +60,7 @@ fn seedable_rng() -> StdRng {
 /// Create test data schema
 pub fn create_schema() -> Schema {
     Schema::new(vec![
+        Field::new("ts", DataType::Timestamp(TimeUnit::Nanosecond, None), true),
         Field::new("utf8", DataType::Utf8, true),
         Field::new("f32", DataType::Float32, true),
         Field::new("f64", DataType::Float64, true),
@@ -128,9 +131,15 @@ fn create_record_batch(
         .map(|_| rng.gen_range(0_u64..10))
         .collect::<Vec<_>>();
 
+    // Integer values between [0, 9].
+    let times = (0..batch_size)
+        .map(|_| rng.gen_range(0_i64..10))
+        .collect::<Vec<_>>();
+
     RecordBatch::try_new(
         schema,
         vec![
+            Arc::new(TimestampNanosecondArray::from(times)),
             Arc::new(StringArray::from(keys)),
             Arc::new(Float32Array::from(vec![i as f32; batch_size])),
             Arc::new(Float64Array::from(values)),

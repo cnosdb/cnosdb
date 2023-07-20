@@ -4,7 +4,6 @@ mod aggregate_function;
 pub mod expr_fn;
 pub mod expr_rewriter;
 pub mod expr_utils;
-mod function_utils;
 mod scalar_function;
 mod selector_function;
 mod window;

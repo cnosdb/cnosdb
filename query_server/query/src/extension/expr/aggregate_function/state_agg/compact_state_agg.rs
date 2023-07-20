@@ -17,6 +17,7 @@ use crate::extension::expr::aggregate_function::state_agg::{
     AggResult, StateAggData, LIST_ELEMENT_NAME,
 };
 use crate::extension::expr::aggregate_function::COMPACT_STATE_AGG_UDAF_NAME;
+use crate::extension::expr::expr_utils::CHECK_ARGS_FUNC;
 use crate::extension::expr::INTEGERS;
 
 pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<(), QueryError> {
@@ -24,24 +25,9 @@ pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<(
     Ok(())
 }
 
-const CHECK_ARGS_FUNC: &dyn Fn(&[DataType]) -> DFResult<()> = &|input: &[DataType]| {
-    if input.len() != 2 {
-        return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
-            err: format!(
-                "The function {:?} expects {} arguments, but {} were provided",
-                COMPACT_STATE_AGG_UDAF_NAME,
-                2,
-                input.len()
-            ),
-        })));
-    }
-
-    Ok(())
-};
-
 fn new() -> AggregateUDF {
     let return_type_func: ReturnTypeFunction = Arc::new(move |input| {
-        CHECK_ARGS_FUNC(input)?;
+        CHECK_ARGS_FUNC(COMPACT_STATE_AGG_UDAF_NAME, 2, input)?;
 
         let result = StateAggData::new(input[0].clone(), input[1].clone(), false);
         let date_type = result.to_scalar()?.get_datatype();
@@ -52,7 +38,7 @@ fn new() -> AggregateUDF {
     });
 
     let state_type_func: StateTypeFunction = Arc::new(move |input, _| {
-        CHECK_ARGS_FUNC(input)?;
+        CHECK_ARGS_FUNC(COMPACT_STATE_AGG_UDAF_NAME, 2, input)?;
 
         let types = input
             .iter()
@@ -65,7 +51,7 @@ fn new() -> AggregateUDF {
     });
 
     let accumulator: AccumulatorFactoryFunction = Arc::new(|input, _| {
-        CHECK_ARGS_FUNC(input)?;
+        CHECK_ARGS_FUNC(COMPACT_STATE_AGG_UDAF_NAME, 2, input)?;
 
         Ok(Box::new(CompactStateAggAccumulator::try_new(
             input.to_vec(),
