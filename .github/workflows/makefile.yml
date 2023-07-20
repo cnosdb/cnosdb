@@ -124,7 +124,7 @@ jobs:
 
   integration-test-coordinator:
     name: "Integration Test coordinator"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4c16g
     strategy:
       matrix:
         rust: [stable]
