@@ -224,6 +224,7 @@ mod self_tests {
 #[test]
 #[serial]
 fn test_multi_tenants_write_data() {
+    println!("Test begin 'test_multi_tenants_write_data'");
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(4)
@@ -255,11 +256,13 @@ fn test_multi_tenants_write_data() {
         }
     }
     clean_env();
+    println!("Test complete 'test_multi_tenants_write_data'");
 }
 
 #[test]
 #[serial]
 fn test_replica() {
+    println!("Test begin 'test_replica'");
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(4)
@@ -316,11 +319,13 @@ fn test_replica() {
         );
     }
     clean_env();
+    println!("Test complete 'test_replica'");
 }
 
 #[test]
 #[serial]
 fn test_shard() {
+    println!("Test begin 'test_shard'");
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(4)
@@ -377,11 +382,13 @@ fn test_shard() {
         );
     }
     clean_env();
+    println!("Test complete 'test_shard'");
 }
 
 #[test]
 #[serial]
 fn test_ttl() {
+    println!("Test begin 'test_ttl'");
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(4)
@@ -472,12 +479,13 @@ fn test_ttl() {
             .contains("write expired time data not permit"));
     }
     clean_env();
+    println!("Test complete 'test_ttl'");
 }
 
 #[test]
 #[serial]
 fn test_balance() {
-    println!("Testing balance...");
+    println!("Test begin 'test_balance'");
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(4)
@@ -527,8 +535,8 @@ fn test_balance() {
 
         // Check balance
         println!("Getting meta...");
-        let mut shard_vnode_node_ids: Vec<Vec<(u32, u64)>> = Vec::new();
         thread::sleep(Duration::from_secs(3));
+        let mut shard_vnode_node_ids: Vec<Vec<(u32, u64)>> = Vec::new();
         let meta_data = meta.query();
         let meta_key =
             format!("* /{DEFAULT_CLUSTER}/tenants/{tenant_name}/dbs/{database_name}/buckets/");
@@ -635,6 +643,7 @@ fn test_balance() {
         }
     }
     clean_env();
+    println!("Test complete 'test_balance'");
 }
 
 /// Execute curl command

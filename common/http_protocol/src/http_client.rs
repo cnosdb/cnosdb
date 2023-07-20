@@ -34,13 +34,14 @@ impl HttpClient {
         use_unsafe_ssl: bool,
         cert_files: &[String],
     ) -> Result<HttpClient, Error> {
+        let mut client_builder = reqwest::Client::builder();
         let addr = if use_ssl || use_unsafe_ssl {
+            client_builder = client_builder.use_rustls_tls();
             format!("https://{}:{}", host, port)
         } else {
             format!("http://{}:{}", host, port)
         };
 
-        let mut client_builder = reqwest::Client::builder();
         if use_unsafe_ssl {
             client_builder = client_builder.danger_accept_invalid_certs(true);
         }
