@@ -29,7 +29,9 @@ database, which meets the following objectives.
 ### The Design Objectives of CnosDB 2.4
 
 CnosDB V version 2.4.0 will achieve: add timing functions, add lossy compression algorithms, support update and delete operations and have a master replication group, this version of CnosDB will be able to provide users with a higher performance, easier to operate, more comprehensive data processing capabilities of the open source timing database, described in detail below.
-#### Functions
+#### The Space-Time Function 
+Support space type and space-time function, space type will be supported in the standard WKT and WKB mode, supported space-time function including but not limited to position calculation, area calculation, moving speed calculation, etc. 
+#### Advanced Functions 
 Common functions (first, last, max, min), date conversion class, monitoring class (gauges calculation).
 #### Lossy Compression
 - Deadband Compression ：A data compression algorithm used to reduce the frequency of sensor data updates and reduce data transmission and storage costs.
