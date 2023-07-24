@@ -363,8 +363,13 @@ pub struct MemCache {
 }
 
 impl MemCache {
-    pub fn new(tf_id: TseriesFamilyId, max_size: u64, seq: u64, pool: &MemoryPoolRef) -> Self {
-        let part_count = 16;
+    pub fn new(
+        tf_id: TseriesFamilyId,
+        max_size: u64,
+        part_count: usize,
+        seq: u64,
+        pool: &MemoryPoolRef,
+    ) -> Self {
         let mut partions = Vec::with_capacity(part_count);
         for _i in 0..part_count {
             partions.push(RwLock::new(HashMap::new()));
@@ -723,7 +728,7 @@ mod test_memcache {
         let sid: SeriesId = 1;
 
         let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache = MemCache::new(1, 1000, 1, &memory_pool);
+        let mem_cache = MemCache::new(1, 1000, 2, 1, &memory_pool);
         {
             let series_part = &mem_cache.partions[sid as usize].read();
             let series_data = series_part.get(&sid);
@@ -747,7 +752,7 @@ mod test_memcache {
             range: TimeRange::new(1, 3),
             rows: vec![
                 RowData { ts: 1, fields: vec![Some(FieldVal::Float(1.0))] },
-                RowData { ts: 3, fields: vec![Some(FieldVal::Float(3.0))] }
+                RowData { ts: 3, fields: vec![Some(FieldVal::Float(3.0))] },
             ],
             size: 10,
         };

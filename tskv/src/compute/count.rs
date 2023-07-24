@@ -426,7 +426,7 @@ mod test {
                 ts_family_id,
                 opt.storage.clone(),
                 CacheGroup {
-                    mut_cache: Arc::new(RwLock::new(MemCache::new(ts_family_id, 1, 1, &pool))),
+                    mut_cache: Arc::new(RwLock::new(MemCache::new(ts_family_id, 1, 2, 1, &pool))),
                     immut_cache: vec![],
                 },
                 Arc::new(version),
@@ -467,7 +467,7 @@ mod test {
         let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         #[rustfmt::skip]
         let cache_group = {
-            let mut caches = vec![MemCache::new(1, 16, 0, &pool), MemCache::new(1, 16, 0, &pool), MemCache::new(1, 16, 0, &pool)];
+            let mut caches = vec![MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool)];
             // cache, sid, schema_id, schema, time_range, put_none
             put_rows_to_cache(&mut caches[0], 1, 1, default_table_schema(vec![1]), (1, 4), false);
             put_rows_to_cache(&mut caches[0], 2, 1, default_table_schema(vec![1]), (101, 104), false);
@@ -477,7 +477,7 @@ mod test {
             put_rows_to_cache(&mut caches[2], 2, 1, default_table_schema(vec![1]), (107, 109), false);
             put_rows_to_cache(&mut caches[2], 1, 1, default_table_schema(vec![1]), (11, 15), false);
             put_rows_to_cache(&mut caches[2], 2, 1, default_table_schema(vec![1]), (111, 115), false);
-            let mut mut_cache = MemCache::new(1, 16, 0, &pool);
+            let mut mut_cache = MemCache::new(1, 16, 2, 0, &pool);
             put_rows_to_cache(&mut mut_cache, 1, 1, default_table_schema(vec![1]), (11, 15), false);
             put_rows_to_cache(&mut mut_cache, 2, 1, default_table_schema(vec![1]), (111, 115), false);
             CacheGroup {
@@ -555,7 +555,7 @@ mod test {
         let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         #[rustfmt::skip]
         let cache_group = {
-            let mut caches = vec![MemCache::new(1, 16, 0, &pool), MemCache::new(1, 16, 0, &pool), MemCache::new(1, 16, 0, &pool)];
+            let mut caches = vec![MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool)];
             // cache, sid, schema_id, schema, time_range, put_none
             put_rows_to_cache(&mut caches[0], 1, 1, default_table_schema(vec![1]), (11, 15), false);
             put_rows_to_cache(&mut caches[1], 1, 1, default_table_schema(vec![1]), (21, 25), false);
@@ -567,7 +567,7 @@ mod test {
             put_rows_to_cache(&mut caches[1], 2, 1, default_table_schema(vec![1]), (121, 125), false);
             put_rows_to_cache(&mut caches[2], 2, 1, default_table_schema(vec![1]), (32, 33), false);
             put_rows_to_cache(&mut caches[2], 2, 1, default_table_schema(vec![1]), (131, 135), false);
-            let mut mut_cache = MemCache::new(1, 16, 0, &pool);
+            let mut mut_cache = MemCache::new(1, 16, 2, 0, &pool);
             put_rows_to_cache(&mut mut_cache, 1, 1, default_table_schema(vec![1]), (31, 40), false);
             put_rows_to_cache(&mut mut_cache, 2, 1, default_table_schema(vec![1]), (36, 37), false);
             put_rows_to_cache(&mut mut_cache, 2, 1, default_table_schema(vec![1]), (131, 140), false);

@@ -52,7 +52,7 @@ sled = { workspace = true }
 snafu = { workspace = true }
 snap = { workspace = true }
 static_assertions = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full", "tracing"] }
 tokio-util = { workspace = true }
 walkdir = { workspace = true }
 zstd = { workspace = true }

@@ -9,7 +9,7 @@ edition.workspace = true
 trace = { path = "../../common/trace" }
 sqllogictest = { workspace = true }
 async-trait = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["full", "tracing"] }
 arrow = { workspace = true }
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
 tonic = { workspace = true, features = ["transport", "tls"] }

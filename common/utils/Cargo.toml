@@ -10,7 +10,7 @@ trace = { path = "../trace" }
 
 async-backtrace = { workspace = true, optional = true }
 libc = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full", "tracing"] }
 
 [target.'cfg(unix)'.dependencies]
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-pointer"] }

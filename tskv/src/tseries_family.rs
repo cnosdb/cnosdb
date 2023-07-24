@@ -762,6 +762,7 @@ impl TseriesFamily {
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
             self.tf_id,
             self.cache_opt.max_buffer_size,
+            self.cache_opt.partition,
             self.seq_no,
             &self.memory_pool,
         )));
@@ -1303,7 +1304,7 @@ pub mod test_tseries_family {
         let tsf = TseriesFamily::new(
             0,
             database.clone(),
-            MemCache::new(0, 500, 0, &memory_pool),
+            MemCache::new(0, 500, 2, 0, &memory_pool),
             Arc::new(Version::new(
                 0,
                 database.clone(),
@@ -1412,7 +1413,7 @@ pub mod test_tseries_family {
             meta_manager
         });
         let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem = MemCache::new(0, 1000, 0, &memory_pool);
+        let mem = MemCache::new(0, 1000, 2, 0, &memory_pool);
         let row_group = RowGroup {
             schema: default_table_schema(vec![0, 1, 2]).into(),
             range: TimeRange {
