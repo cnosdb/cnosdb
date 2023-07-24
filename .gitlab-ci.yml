@@ -72,5 +72,6 @@ bench-job:
     - set +e
     - killall cnosdb
     - set -e
+    - cp /home/gitlab-runner/cnosdb/1001/log/* /home/gitlab-runner/benchmark_results/logs/${commit_id}.log
     - sudo rm -rf /home/gitlab-runner/cnosdb
     - echo "bench job Done"
