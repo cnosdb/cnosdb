@@ -638,6 +638,18 @@ impl DatabaseSchema {
         }
     }
 
+    pub fn new_with_options(
+        tenant_name: &str,
+        database_name: &str,
+        options: DatabaseOptions,
+    ) -> Self {
+        DatabaseSchema {
+            tenant: tenant_name.to_string(),
+            database: database_name.to_string(),
+            config: options,
+        }
+    }
+
     pub fn database_name(&self) -> &str {
         &self.database
     }
@@ -723,6 +735,22 @@ impl DatabaseOptions {
         unit: DurationUnit::Day,
     };
     pub const DEFAULT_PRECISION: Precision = Precision::NS;
+
+    pub fn new(
+        ttl: Option<Duration>,
+        shard_num: Option<u64>,
+        vnode_duration: Option<Duration>,
+        replica: Option<u64>,
+        precision: Option<Precision>,
+    ) -> Self {
+        DatabaseOptions {
+            ttl,
+            shard_num,
+            vnode_duration,
+            replica,
+            precision,
+        }
+    }
 
     pub fn ttl(&self) -> &Option<Duration> {
         &self.ttl

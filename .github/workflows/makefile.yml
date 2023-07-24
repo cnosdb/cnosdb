@@ -121,4 +121,26 @@ jobs:
         shell: bash
         run: |
           bash ./query_server/test/script/start_and_test_all.sh 1meta_2data_1query_1tskv
-  
+
+  integration-test-coordinator:
+    name: "Integration Test coordinator"
+    runs-on: ubuntu-4c16g
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Setup timezone
+        uses: zcong1993/setup-timezone@master
+        with:
+          timezone: Asia/Shanghai
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+        with:
+          rust-version: ${{ matrix.rust }}
+      - name: Test
+        shell: bash
+        run: |
+          cargo test --package e2e_test --features coordinator_e2e_test  -- coordinator_tests --nocapture

@@ -7,8 +7,10 @@ use futures::{ready, Stream, StreamExt};
 use http_protocol::header::{APPLICATION_JSON, CONTENT_TYPE};
 use http_protocol::status_code::{
     BAD_REQUEST, INTERNAL_SERVER_ERROR, METHOD_NOT_ALLOWED, NOT_FOUND, OK, PAYLOAD_TOO_LARGE,
+    UNPROCESSABLE_ENTITY,
 };
 use metrics::count::U64Counter;
+use models::error_code::ErrorCode;
 use serde::Serialize;
 use spi::query::execution::Output;
 use warp::http::header::HeaderMap;
@@ -140,7 +142,7 @@ impl HttpResponse {
 }
 
 impl Stream for HttpResponse {
-    type Item = std::result::Result<Vec<u8>, HttpError>;
+    type Item = Result<Vec<u8>, HttpError>;
 
     fn poll_next(
         mut self: Pin<&mut Self>,
@@ -184,9 +186,16 @@ impl Stream for HttpResponse {
                 }
                 Some(Err(e)) => {
                     self.done = true;
-                    return Poll::Ready(Some(Err(HttpError::FetchResult {
-                        reason: format!("{}", e),
-                    })));
+                    let http_error = HttpError::FetchResult {
+                        reason: e.message(),
+                    };
+                    return Poll::Ready(Some(Ok(format!(
+                        r#"{}, details: {{"error_code":"{}","error_message":"{}"}}"#,
+                        UNPROCESSABLE_ENTITY,
+                        http_error.code(),
+                        http_error.error_code(),
+                    )
+                    .into_bytes())));
                 }
             }
         }

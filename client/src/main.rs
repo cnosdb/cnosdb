@@ -109,6 +109,9 @@ struct Args {
     /// The certificate(s) must be in PEM format.
     #[arg(long, value_name = "FILE")]
     cacert: Vec<String>,
+
+    #[arg(long, default_value = "false")]
+    chunked: bool,
 }
 
 #[tokio::main]
@@ -145,7 +148,8 @@ pub async fn main() -> Result<(), anyhow::Error> {
         .with_precision(args.precision)
         .with_ssl(args.use_ssl)
         .with_unsafe_ssl(args.use_unsafe_ssl)
-        .with_ca_certs(args.cacert);
+        .with_ca_certs(args.cacert)
+        .with_chunked(args.chunked);
 
     let mut ctx = SessionContext::new(session_config);
     if let Some(ref path) = args.write_line_protocol {

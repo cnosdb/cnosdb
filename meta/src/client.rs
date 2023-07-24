@@ -25,12 +25,9 @@ pub struct MetaHttpClient {
 }
 
 impl MetaHttpClient {
-    pub fn new(addr: String) -> Self {
-        let mut addrs = vec![];
-        let list: Vec<&str> = addr.split(';').collect();
-        for item in list.iter() {
-            addrs.push(item.to_string());
-        }
+    /// Create new MetaHttpClient. Param `attrs` is meta server addresses split by character ';'.
+    pub fn new(addrs: &str) -> Self {
+        let mut addrs: Vec<String> = addrs.split(';').map(|s| s.to_string()).collect();
         addrs.sort();
         let leader_addr = addrs[0].clone();
 
@@ -219,7 +216,7 @@ mod test {
 
         //let hand = tokio::spawn(watch_tenant("cluster_xxx", "tenant_test"));
 
-        let client = MetaHttpClient::new("127.0.0.1:8901".to_string());
+        let client = MetaHttpClient::new("127.0.0.1:8901");
 
         let req = command::ReadCommand::TenaneMetaData(cluster.clone(), "cnosdb".to_string());
         let rsp = client.read::<TenantMetaData>(&req).await.unwrap();
@@ -287,7 +284,7 @@ mod test {
 
         let req = command::WriteCommand::UpdateVnodeReplSet(args);
 
-        let client = MetaHttpClient::new("127.0.0.1:8901".to_string());
+        let client = MetaHttpClient::new("127.0.0.1:8901");
         let rsp = client.write::<()>(&req).await;
         println!("=========: {:?}", rsp);
     }
@@ -306,7 +303,7 @@ mod test {
 
         let req = command::WriteCommand::UpdateVnode(args);
 
-        let client = MetaHttpClient::new("127.0.0.1:8901".to_string());
+        let client = MetaHttpClient::new("127.0.0.1:8901");
         let rsp = client.write::<()>(&req).await;
         println!("=========: {:?}", rsp);
     }
@@ -321,7 +318,7 @@ mod test {
             0,
         );
 
-        let client = MetaHttpClient::new("127.0.0.1:8901".to_string());
+        let client = MetaHttpClient::new("127.0.0.1:8901");
         loop {
             let watch_data = client.watch::<command::WatchData>(&request).await.unwrap();
             println!("{:?}", watch_data);
