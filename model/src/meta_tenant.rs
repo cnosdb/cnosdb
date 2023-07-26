@@ -467,6 +467,24 @@ impl TenantMeta {
         Ok(None)
     }
 
+    pub async fn get_tskv_table_schema_by_meta(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
+        let req = command::ReadCommand::TableSchema(
+            self.cluster.clone(),
+            self.tenant.name().to_string(),
+            db.to_string(),
+            table.to_string(),
+        );
+        let rsp = self.client.read::<Option<TableSchema>>(&req).await?;
+        if let Some(TableSchema::TsKvTableSchema(val)) = rsp {
+            return Ok(Some(val));
+        }
+        Ok(None)
+    }
+
     pub fn get_external_table_schema(
         &self,
         db: &str,

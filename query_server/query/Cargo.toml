@@ -16,7 +16,7 @@ coordinator = { path = "../../coordinator" }
 protocol_parser = { path = "../../common/protocol_parser" }
 memory_pool = { path = "../../common/memory_pool" }
 spi = { path = "../spi" }
-metrics = {path = "../../common/metrics"}
+metrics = { path = "../../common/metrics" }
 
 
 async-trait = { workspace = true }
@@ -30,7 +30,7 @@ num_cpus = { workspace = true }
 parking_lot = { workspace = true }
 paste = { workspace = true }
 pin-project = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full", "tracing"] }
 tokio-util = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }

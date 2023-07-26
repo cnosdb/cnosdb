@@ -34,6 +34,14 @@ fn criterion_benchmark(c: &mut Criterion) {
             })
         });
     }
+
+    let mut group = c.benchmark_group("gauge_agg");
+    group
+        .sample_size(10)
+        .bench_function("aggregate_query_gauge_agg", |b| {
+            b.iter(|| data_utils::query(ctx.clone(), "select gauge_agg(ts, f64) FROM t"))
+        });
+    group.finish();
 }
 
 criterion_group!(benches, criterion_benchmark);

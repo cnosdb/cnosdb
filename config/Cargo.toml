@@ -8,6 +8,7 @@ serde = { workspace = true }
 toml = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 sys-info = {workspace = true}
+num_cpus = {workspace = true}
 
 [features]
 default = []

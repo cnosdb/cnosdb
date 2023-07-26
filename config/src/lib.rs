@@ -346,6 +346,7 @@ max_immutable_number = 4
 [log]
 level = 'info'
 path = 'data/log'
+tokio_trace = { addr = "127.0.0.1:6669" }
 
 [security]
 # [security.tls_config]

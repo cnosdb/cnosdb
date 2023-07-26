@@ -381,7 +381,7 @@ mod test {
         TseriesFamily::new(
             1,
             Arc::new("ts_family_1".to_string()),
-            MemCache::new(1, 1000, 1, &memory_pool),
+            MemCache::new(1, 1000, 2, 1, &memory_pool),
             version,
             opt.cache.clone(),
             opt.storage.clone(),

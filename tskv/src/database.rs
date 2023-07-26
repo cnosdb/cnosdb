@@ -81,6 +81,7 @@ impl Database {
             MemCache::new(
                 ver.tf_id(),
                 self.opt.cache.max_buffer_size,
+                self.opt.cache.partition,
                 ver.last_seq,
                 &self.memory_pool,
             ),
@@ -171,6 +172,7 @@ impl Database {
             MemCache::new(
                 tsf_id,
                 self.opt.cache.max_buffer_size,
+                self.opt.cache.partition,
                 seq_no,
                 &self.memory_pool,
             ),
