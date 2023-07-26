@@ -370,6 +370,58 @@ impl StateMachine {
         Ok(meta)
     }
 
+    pub fn all_clusters(&self) -> MetaResult<Vec<String>> {
+        let mut clusters = vec![];
+        for res in self.db.iter() {
+            let (key, _) = res.map_or(("".to_string(), "".to_string()), |(k, _)| {
+                (
+                    String::from_utf8((*k).to_owned()).map_or("".to_string(), |d| d),
+                    "".to_string(),
+                )
+            });
+            let strs: Vec<&str> = key.splitn(3, "/").collect();
+            if strs.len() > 2 {
+                let name = strs[1].to_string();
+                if !clusters.contains(&name) {
+                    clusters.push(name);
+                }
+            }
+        }
+
+        Ok(clusters)
+    }
+
+    pub fn dump_all_data_json(&self) -> MetaResult<String> {
+        #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+        struct TenantData {
+            cluster: String,
+            tenant: Tenant,
+            data: TenantMetaData,
+        }
+
+        let mut all_data = vec![];
+        let clusters = self.all_clusters()?;
+        for cluster in clusters {
+            let path = KeyPath::tenants(&cluster);
+            let tenants: Vec<Tenant> = self.children_data::<Tenant>(&path)?.into_values().collect();
+            for tenant in tenants {
+                let data = self.to_tenant_meta_data(&cluster, tenant.name())?;
+
+                all_data.push(TenantData {
+                    tenant,
+                    data,
+                    cluster: cluster.clone(),
+                });
+            }
+        }
+
+        let rsp = serde_json::to_string(&all_data).map_err(|err| MetaError::SerdeMsgEncode {
+            err: err.to_string(),
+        })?;
+
+        Ok(rsp)
+    }
+
     pub fn process_read_command(&self, req: &ReadCommand) -> CommandResp {
         debug!("meta process read command {:?}", req);
         match req {

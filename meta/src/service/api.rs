@@ -144,6 +144,17 @@ pub async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     Ok(response)
 }
 
+#[get("/debug_json")]
+pub async fn debug_json(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+    let sm = app.store.state_machine.read().await;
+
+    let data = sm
+        .dump_all_data_json()
+        .map_or_else(|e| e.to_string(), |v| v);
+
+    Ok(data)
+}
+
 #[get("/debug/pprof")]
 pub async fn cpu_pprof(_app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     #[cfg(unix)]
