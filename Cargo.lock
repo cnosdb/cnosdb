@@ -1188,6 +1188,7 @@ name = "config"
 version = "2.3.1"
 dependencies = [
  "async-backtrace",
+ "num_cpus",
  "serde",
  "sys-info",
  "toml",

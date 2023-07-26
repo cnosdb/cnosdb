@@ -1,4 +1,3 @@
-
 #reporting_disabled = false
 host = "localhost"
 
@@ -10,8 +9,12 @@ host = "localhost"
 [query]
 max_server_connections = 10240
 query_sql_limit = 16777216   # 16 * 1024 * 1024
-write_sql_limit = 167772160   # 160 * 1024 * 1024
+write_sql_limit = 167772160  # 160 * 1024 * 1024
 auth_enabled = false
+read_timeout_ms = 3000
+write_timeout_ms = 3000
+stream_trigger_cpu = 1
+stream_executor_cpu = 2
 
 [storage]
 # Directory for summary: $path/summary/
@@ -41,7 +44,7 @@ sync_interval = "0"
 [cache]
 max_buffer_size = "128M" # 134217728
 max_immutable_number = 4
-
+partition = 16          # default memcache partition number
 [log]
 level = 'info'
 path = '/tmp/cnosdb/1001/log'

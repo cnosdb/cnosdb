@@ -11,6 +11,8 @@ pub struct CacheConfig {
     pub max_buffer_size: u64,
     #[serde(default = "CacheConfig::default_max_immutable_number")]
     pub max_immutable_number: u16,
+    #[serde(default = "CacheConfig::default_partitions")]
+    pub partition: usize,
 }
 
 impl CacheConfig {
@@ -21,6 +23,9 @@ impl CacheConfig {
     fn default_max_immutable_number() -> u16 {
         4
     }
+    fn default_partitions() -> usize {
+        num_cpus::get()
+    }
 
     pub fn override_by_env(&mut self) {
         if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_BUFFER_SIZE") {
@@ -28,6 +33,9 @@ impl CacheConfig {
         }
         if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_IMMUTABLE_NUMBER") {
             self.max_immutable_number = size.parse::<u16>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_CACHE_PARTITIONS") {
+            self.partition = size.parse::<usize>().unwrap();
         }
     }
 }
@@ -37,6 +45,7 @@ impl Default for CacheConfig {
         Self {
             max_buffer_size: Self::default_max_buffer_size(),
             max_immutable_number: Self::default_max_immutable_number(),
+            partition: Self::default_partitions(),
         }
     }
 }
@@ -58,9 +67,17 @@ impl CheckConfig for CacheConfig {
             .is_none()
         {
             ret.add_error(CheckConfigItemResult {
-                config: config_name,
+                config: config_name.clone(),
                 item: "max_immutable_number".to_string(),
                 message: "'max_immutable_number' maybe too big( ('max_immutable_number' + 1) * 'max_buffer_size' caused an overflow)".to_string(),
+            });
+        }
+
+        if self.partition > 1024 {
+            ret.add_warn(CheckConfigItemResult {
+                config: config_name,
+                item: "partition".to_string(),
+                message: "'partition' maybe too big(more than 1024)".to_string(),
             });
         }
 

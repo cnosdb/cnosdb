@@ -208,6 +208,7 @@ pub async fn make_cnosdbms(
         scheduler,
         query_tracker.clone(),
         Arc::new(stream_checker_manager),
+        options.query.clone(),
     ));
 
     let meta_manager = coord.meta_manager();

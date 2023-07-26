@@ -13,7 +13,7 @@ diff = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 snafu = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full", "tracing"] }
 toml = { workspace = true }
 walkdir = { workspace = true }
 async-backtrace = { workspace = true, optional = true }

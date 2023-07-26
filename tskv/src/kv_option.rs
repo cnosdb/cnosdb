@@ -121,6 +121,12 @@ impl From<&Config> for StorageOptions {
 pub struct QueryOptions {
     pub max_server_connections: u32,
     pub auth_enabled: bool,
+    pub query_sql_limit: u64,
+    pub write_sql_limit: u64,
+    pub read_timeout_ms: u64,
+    pub write_timeout_ms: u64,
+    pub stream_trigger_cpu: usize,
+    pub stream_executor_cpu: usize,
 }
 
 impl From<&Config> for QueryOptions {
@@ -128,6 +134,12 @@ impl From<&Config> for QueryOptions {
         Self {
             max_server_connections: config.query.max_server_connections,
             auth_enabled: config.query.auth_enabled,
+            query_sql_limit: config.query.query_sql_limit,
+            write_sql_limit: config.query.write_sql_limit,
+            read_timeout_ms: config.query.read_timeout_ms,
+            write_timeout_ms: config.query.write_timeout_ms,
+            stream_trigger_cpu: config.query.stream_trigger_cpu,
+            stream_executor_cpu: config.query.stream_executor_cpu,
         }
     }
 }
@@ -161,6 +173,7 @@ impl From<&Config> for WalOptions {
 pub struct CacheOptions {
     pub max_buffer_size: u64,
     pub max_immutable_number: u16,
+    pub partition: usize,
 }
 
 impl From<&Config> for CacheOptions {
@@ -168,6 +181,7 @@ impl From<&Config> for CacheOptions {
         Self {
             max_buffer_size: config.cache.max_buffer_size,
             max_immutable_number: config.cache.max_immutable_number,
+            partition: config.cache.partition,
         }
     }
 }

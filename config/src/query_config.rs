@@ -18,6 +18,10 @@ pub struct QueryConfig {
     pub read_timeout_ms: u64,
     #[serde(default = "QueryConfig::default_write_timeout_ms")]
     pub write_timeout_ms: u64,
+    #[serde(default = "QueryConfig::default_stream_trigger_cpu")]
+    pub stream_trigger_cpu: usize,
+    #[serde(default = "QueryConfig::default_stream_executor_cpu")]
+    pub stream_executor_cpu: usize,
 }
 
 impl QueryConfig {
@@ -44,6 +48,12 @@ impl QueryConfig {
     fn default_write_timeout_ms() -> u64 {
         3 * 1000
     }
+    fn default_stream_trigger_cpu() -> usize {
+        1
+    }
+    fn default_stream_executor_cpu() -> usize {
+        2
+    }
 
     pub fn override_by_env(&mut self) {
         if let Ok(size) = std::env::var("MAX_SERVER_CONNECTIONS") {
@@ -64,6 +74,12 @@ impl QueryConfig {
         if let Ok(size) = std::env::var("WRITE_TIMEOUT_MS") {
             self.write_timeout_ms = size.parse::<u64>().unwrap();
         }
+        if let Ok(size) = std::env::var("STREAM_TRIGGER_CPU") {
+            self.stream_trigger_cpu = size.parse::<usize>().unwrap();
+        }
+        if let Ok(size) = std::env::var("STREAM_EXECUTOR_CPU") {
+            self.stream_executor_cpu = size.parse::<usize>().unwrap();
+        }
     }
 }
 
@@ -76,6 +92,8 @@ impl Default for QueryConfig {
             auth_enabled: Self::default_auth_enabled(),
             read_timeout_ms: Self::default_read_timeout_ms(),
             write_timeout_ms: Self::default_write_timeout_ms(),
+            stream_trigger_cpu: Self::default_stream_trigger_cpu(),
+            stream_executor_cpu: Self::default_stream_executor_cpu(),
         }
     }
 }
@@ -117,9 +135,24 @@ impl CheckConfig for QueryConfig {
 
         if self.write_timeout_ms < 10 {
             ret.add_warn(CheckConfigItemResult {
-                config: config_name,
+                config: config_name.clone(),
                 item: "write_timeout_ms".to_string(),
                 message: "'write_timeout_ms' maybe too small(less than 10)".to_string(),
+            })
+        }
+
+        if self.stream_executor_cpu > 1024 {
+            ret.add_warn(CheckConfigItemResult {
+                config: config_name.clone(),
+                item: "stream_executor_cpu".to_string(),
+                message: "'stream_executor_cpu' maybe too big(more than 1024)".to_string(),
+            })
+        }
+        if self.stream_trigger_cpu > 1024 {
+            ret.add_warn(CheckConfigItemResult {
+                config: config_name,
+                item: "stream_trigger_cpu".to_string(),
+                message: "'stream_trigger_cpu' maybe too big(more than 1024)".to_string(),
             })
         }
 

@@ -8,6 +8,7 @@ use spi::query::logical_planner::{Plan, QueryPlan};
 use spi::query::optimizer::Optimizer;
 use spi::query::scheduler::SchedulerRef;
 use spi::QueryError;
+use tskv::kv_option::QueryOptions;
 
 use super::query::SqlQueryExecution;
 use super::stream::trigger::executor::{TriggerExecutorFactory, TriggerExecutorFactoryRef};
@@ -35,17 +36,20 @@ impl SqlQueryExecutionFactory {
         scheduler: SchedulerRef,
         query_tracker: Arc<QueryTracker>,
         stream_checker_manager: StreamCheckerManagerRef,
+        config: Arc<QueryOptions>,
     ) -> Self {
-        // TODO configurable
         // Only do periodic scheduling, no need for many threads
-        let trigger_executor_runtime = DedicatedExecutor::new("stream-trigger", 4);
+        let trigger_executor_runtime =
+            DedicatedExecutor::new("stream-trigger", config.stream_trigger_cpu);
         let trigger_executor_factory = Arc::new(TriggerExecutorFactory::new(Arc::new(
             trigger_executor_runtime,
         )));
 
-        // TODO configurable
         // perform stream-related preparations, not actual operator execution
-        let runtime = Arc::new(DedicatedExecutor::new("stream-executor", num_cpus::get()));
+        let runtime = Arc::new(DedicatedExecutor::new(
+            "stream-executor",
+            config.stream_executor_cpu,
+        ));
 
         Self {
             optimizer,

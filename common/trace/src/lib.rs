@@ -136,7 +136,6 @@ pub fn init_global_tracing(
     let guards = vec![guard];
 
     let registry_builder = Registry::default()
-        .with(env_filter(tracing_level))
         .with(ErrorLayer::default())
         .with(formatting_layer)
         .with(file_layer)

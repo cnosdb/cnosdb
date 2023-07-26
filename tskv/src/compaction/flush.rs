@@ -613,9 +613,9 @@ pub mod flush_tests {
 
     fn flush_test_case_1(memory_pool: &MemoryPoolRef, max_level_ts: Timestamp) -> FlushTestCase {
         let mut caches = vec![
-            MemCache::new(1, 16, 0, memory_pool),
-            MemCache::new(1, 16, 0, memory_pool),
-            MemCache::new(1, 16, 0, memory_pool),
+            MemCache::new(1, 16, 2, 0, memory_pool),
+            MemCache::new(1, 16, 2, 0, memory_pool),
+            MemCache::new(1, 16, 2, 0, memory_pool),
         ];
         #[rustfmt::skip]
             let _skip_fmt = {
