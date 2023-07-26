@@ -11,7 +11,7 @@ use datafusion::arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{Stream, StreamExt, TryStreamExt};
-use meta::model::MetaRef;
+use model::MetaRef;
 use trace::SpanContext;
 
 use super::dispatcher::{QueryInfo, QueryStatus};

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use config::QueryConfig;
 use futures::TryStreamExt;
-use meta::model::MetaRef;
+use model::MetaRef;
 use models::meta_data::VnodeInfo;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use tonic::transport::Channel;

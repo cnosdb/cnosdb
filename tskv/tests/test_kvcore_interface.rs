@@ -5,9 +5,9 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use memory_pool::GreedyMemoryPool;
-    use meta::model::meta_admin::AdminMeta;
-    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
+    use model::meta_admin::AdminMeta;
+    use model::MetaRef;
     use models::schema::{Precision, TenantOptions};
     use protos::kv_service::Meta;
     use protos::{kv_service, models_helper};

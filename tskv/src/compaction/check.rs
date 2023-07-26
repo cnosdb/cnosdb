@@ -454,10 +454,10 @@ mod test {
     use config::Config;
     use datafusion::arrow::datatypes::TimeUnit;
     use memory_pool::GreedyMemoryPool;
-    use meta::model::meta_admin::AdminMeta;
-    use meta::model::{MetaClientRef, MetaRef};
     use metrics::metric_register::MetricsRegister;
     use minivec::MiniVec;
+    use model::meta_admin::AdminMeta;
+    use model::{MetaClientRef, MetaRef};
     use models::predicate::domain::TimeRange;
     use models::schema::{
         ColumnType, DatabaseOptions, DatabaseSchema, Precision, TableColumn, TableSchema,

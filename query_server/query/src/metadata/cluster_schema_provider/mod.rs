@@ -4,7 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::datasource::TableProvider;
 use meta::error::MetaError;
-use meta::model::MetaRef;
+use model::MetaRef;
 use models::auth::user::User;
 
 use self::factory::tenants::ClusterSchemaTenantsFactory;

@@ -6,11 +6,11 @@ use std::vec;
 
 use config::{Config, HintedOffConfig};
 use datafusion::arrow::record_batch::RecordBatch;
-use meta::model::{MetaClientRef, MetaRef};
 use metrics::count::U64Counter;
 use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
+use model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{ExpiredBucketInfo, ReplicationSet};
 use models::object_reference::ResolvedTable;

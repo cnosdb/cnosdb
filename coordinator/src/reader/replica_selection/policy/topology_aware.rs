@@ -1,4 +1,4 @@
-use meta::model::MetaRef;
+use model::MetaRef;
 use models::meta_data::VnodeInfo;
 
 use crate::reader::replica_selection::ReplicaSelectionPolicy;
@@ -43,7 +43,7 @@ impl ReplicaSelectionPolicy for TopologyAwareReplicaSelectionPolicy {
 mod tests {
     use std::sync::Arc;
 
-    use meta::model::meta_admin::AdminMeta;
+    use model::meta_admin::AdminMeta;
     use models::meta_data::VnodeInfo;
 
     use super::TopologyAwareReplicaSelectionPolicy;

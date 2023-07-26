@@ -18,7 +18,7 @@ use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use datafusion::prelude::Column;
 use meta::error::MetaError;
-use meta::model::MetaClientRef;
+use model::MetaClientRef;
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 use trace::debug;

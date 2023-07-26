@@ -3,7 +3,7 @@ use std::task::{Context, Poll};
 
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::{ready, Stream, StreamExt};
-use meta::model::MetaRef;
+use model::MetaRef;
 use models::meta_data::VnodeId;
 
 use crate::error::Result;

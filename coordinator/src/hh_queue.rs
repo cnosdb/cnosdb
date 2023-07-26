@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use config::HintedOffConfig;
-use meta::model::MetaRef;
+use model::MetaRef;
 use models::schema::Precision;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::Receiver;

@@ -379,7 +379,7 @@ impl StateMachine {
                     "".to_string(),
                 )
             });
-            let strs: Vec<&str> = key.splitn(3, "/").collect();
+            let strs: Vec<&str> = key.splitn(3, '/').collect();
             if strs.len() > 2 {
                 let name = strs[1].to_string();
                 if !clusters.contains(&name) {

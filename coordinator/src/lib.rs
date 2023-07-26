@@ -6,7 +6,7 @@ use std::sync::Arc;
 use datafusion::arrow::record_batch::RecordBatch;
 use errors::CoordinatorError;
 use futures::Stream;
-use meta::model::{MetaClientRef, MetaRef};
+use model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{ReplicationSet, VnodeAllInfo};
 use models::object_reference::ResolvedTable;

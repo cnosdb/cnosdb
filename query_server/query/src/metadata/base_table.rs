@@ -4,7 +4,7 @@ use coordinator::service::CoordinatorRef;
 use datafusion::common::Result as DFResult;
 use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
 use datafusion::error::DataFusionError;
-use meta::model::MetaClientRef;
+use model::MetaClientRef;
 use models::schema::TableSchema;
 use spi::query::datasource::stream::StreamProviderManagerRef;
 

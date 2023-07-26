@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use memory_pool::GreedyMemoryPool;
-use meta::model::meta_admin::AdminMeta;
-use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use model::meta_admin::AdminMeta;
+use model::MetaRef;
 use models::schema::Precision;
 use parking_lot::Mutex;
 use protos::kv_service::WritePointsRequest;

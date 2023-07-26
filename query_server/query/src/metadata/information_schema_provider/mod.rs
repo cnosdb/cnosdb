@@ -14,7 +14,7 @@ use datafusion::datasource::TableProvider;
 pub use factory::databases::INFORMATION_SCHEMA_DATABASES;
 pub use factory::tables::INFORMATION_SCHEMA_TABLES;
 use meta::error::MetaError;
-use meta::model::MetaClientRef;
+use model::MetaClientRef;
 use models::auth::user::User;
 
 use self::factory::columns::ColumnsFactory;

@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use datafusion::arrow::record_batch::RecordBatch;
 use memory_pool::{MemoryPool, MemoryPoolRef};
-use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use model::MetaRef;
 use models::codec::Encoding;
 use models::meta_data::{VnodeId, VnodeStatus};
 use models::predicate::domain::{ColumnDomains, TimeRange};

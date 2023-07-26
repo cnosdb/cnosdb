@@ -8,6 +8,7 @@ edition.workspace = true
 models = { path = "../../common/models" }
 error_code = { path = "../../common/error_code" }
 meta = { path = "../../meta" }
+model = { path = "../../model" }
 coordinator = { path = "../../coordinator" }
 tskv = { path = "../../tskv" }
 protos = { path = "../../common/protos" }

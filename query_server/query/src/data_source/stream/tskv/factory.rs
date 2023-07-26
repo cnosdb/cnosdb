@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
 use meta::error::MetaError;
-use meta::model::MetaClientRef;
+use model::MetaClientRef;
 use models::schema::StreamTable;
 use spi::query::datasource::stream::checker::SchemaChecker;
 use spi::query::datasource::stream::{StreamProviderFactory, StreamProviderRef};

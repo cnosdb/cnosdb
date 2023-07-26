@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use meta::model::MetaRef;
+use model::MetaRef;
 use models::meta_data::{ReplicationSet, ReplicationSetId, VnodeInfo};
 use policy::random::RandomReplicaSelectionPolicy;
 use policy::topology_aware::TopologyAwareReplicaSelectionPolicy;

@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use coordinator::service::{CoordService, CoordinatorRef};
 use memory_pool::MemoryPoolRef;
-use meta::model::meta_admin::AdminMeta;
-use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use model::meta_admin::AdminMeta;
+use model::MetaRef;
 use models::utils::build_address;
 use query::instance::make_cnosdbms;
 use snafu::{Backtrace, Snafu};

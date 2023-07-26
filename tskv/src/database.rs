@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
-use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use model::MetaRef;
 use models::predicate::domain::TimeRange;
 use models::schema::{DatabaseSchema, Precision, TskvTableSchema};
 use models::{SchemaId, SeriesId, SeriesKey};

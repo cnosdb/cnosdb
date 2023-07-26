@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
-use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use model::MetaRef;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
@@ -822,9 +822,9 @@ mod test {
     use std::sync::Arc;
 
     use memory_pool::GreedyMemoryPool;
-    use meta::model::meta_admin::AdminMeta;
-    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
+    use model::meta_admin::AdminMeta;
+    use model::MetaRef;
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
     use tokio::runtime::Runtime;
     use tokio::sync::mpsc;

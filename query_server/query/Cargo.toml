@@ -11,6 +11,7 @@ models = { path = "../../common/models" }
 utils = { path = "../../common/utils" }
 config = { path = "../../config" }
 meta = { path = "../../meta" }
+model = { path = "../../model" }
 coordinator = { path = "../../coordinator" }
 protocol_parser = { path = "../../common/protocol_parser" }
 memory_pool = { path = "../../common/memory_pool" }

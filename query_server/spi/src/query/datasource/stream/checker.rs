@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use meta::model::MetaClientRef;
+use model::MetaClientRef;
 use models::schema::StreamTable;
 
 use crate::QueryError;

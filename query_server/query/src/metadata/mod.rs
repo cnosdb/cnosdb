@@ -18,7 +18,7 @@ pub use information_schema_provider::{
     TABLES_TABLE_OPTIONS, TABLES_TABLE_TENANT, TABLES_TABLE_TYPE,
 };
 use meta::error::MetaError;
-use meta::model::MetaClientRef;
+use model::MetaClientRef;
 use models::auth::user::UserDesc;
 use models::object_reference::{Resolve, ResolvedTable};
 use models::schema::{Precision, Tenant, DEFAULT_CATALOG};

@@ -6,7 +6,7 @@ use bytes::Bytes;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
 use meta::error::MetaError;
-use meta::model::MetaClientRef;
+use model::MetaClientRef;
 use models::schema::{TskvTableSchema, TIME_FIELD_NAME};
 use models::snappy::SnappyCodec;
 use protocol_parser::lines_convert::parse_lines_to_points;

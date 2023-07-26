@@ -1014,9 +1014,9 @@ pub mod test_tseries_family {
 
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use meta::model::meta_admin::AdminMeta;
-    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
+    use model::meta_admin::AdminMeta;
+    use model::MetaRef;
     use models::schema::{DatabaseSchema, TenantOptions};
     use models::Timestamp;
     use parking_lot::RwLock;

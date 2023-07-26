@@ -36,8 +36,8 @@ mod tests {
     use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
     use datafusion::logical_expr::TableSource;
     use datafusion::sql::TableReference;
-    use meta::model::meta_tenant::TenantMeta;
-    use meta::model::MetaClientRef;
+    use model::meta_tenant::TenantMeta;
+    use model::MetaClientRef;
     use models::schema::{StreamTable, TskvTableSchema, Watermark};
     use spi::query::datasource::stream::{StreamProviderManager, StreamProviderRef};
     use spi::QueryError;

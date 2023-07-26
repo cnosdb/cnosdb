@@ -1,21 +1,17 @@
 [package]
-name = "coordinator"
+name = "model"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
 config = { path = "../config" }
 models = { path = "../common/models" }
-protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
-trace_http = { path = "../common/trace_http" }
 utils = { path = "../common/utils" }
-tskv = { path = "../tskv" }
 meta = { path = "../meta" }
-model = { path = "../model" }
-metrics = { path = "../common/metrics" }
-protocol_parser = { path = "../common/protocol_parser" }
 
+sys-info = { workspace = true }
+parking_lot = { workspace = true }
 walkdir = { workspace = true }
 datafusion = { workspace = true }
 snafu = { workspace = true }

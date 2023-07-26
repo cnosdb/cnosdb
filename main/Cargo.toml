@@ -15,6 +15,7 @@ coordinator = { path = "../coordinator" }
 http_protocol = { path = "../common/http_protocol" }
 memory_pool = { path = "../common/memory_pool" }
 meta = { path = "../meta" }
+model = { path = "../model" }
 metrics = { path = "../common/metrics" }
 models = { path = "../common/models" }
 protocol_parser =  { path = "../common/protocol_parser" }

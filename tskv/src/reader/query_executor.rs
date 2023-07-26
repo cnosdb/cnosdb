@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::arrow::record_batch::RecordBatch;
-use meta::model::MetaRef;
+use model::MetaRef;
 use models::arrow::stream::{BoxStream, ParallelMergeStream};
 use models::meta_data::VnodeInfo;
 use tokio::runtime::Runtime;

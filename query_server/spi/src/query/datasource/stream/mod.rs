@@ -11,7 +11,7 @@ use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::logical_expr::{TableProviderAggregationPushDown, TableProviderFilterPushDown};
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::Expr;
-use meta::model::MetaClientRef;
+use model::MetaClientRef;
 use models::schema::{StreamTable, Watermark};
 
 use self::checker::SchemaChecker;

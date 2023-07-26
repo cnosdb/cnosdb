@@ -11,7 +11,7 @@ use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::Expr;
-use meta::model::MetaClientRef;
+use model::MetaClientRef;
 use models::auth::role::SystemTenantRole;
 use models::auth::user::User;
 use models::oid::Identifier;

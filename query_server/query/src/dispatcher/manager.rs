@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
-use meta::model::MetaClientRef;
+use model::MetaClientRef;
 use models::auth::user::admin_user;
 use models::oid::Oid;
 use spi::query::ast::ExtStatement;

@@ -9,6 +9,7 @@ error_code = { path = "../common/error_code" }
 lru_cache = { path = "../common/lru_cache" }
 memory_pool = { path = "../common/memory_pool" }
 meta = { path = "../meta" }
+model = { path = "../model" }
 metrics = { path = "../common/metrics" }
 models = { path = "../common/models" }
 protos = { path = "../common/protos", features = ["test"] }

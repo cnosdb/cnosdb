@@ -6,6 +6,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use config::Config;
+use meta::client::MetaHttpClient;
+use meta::error::{MetaError, MetaResult};
+use meta::limiter::{LocalRequestLimiter, NoneLimiter, RequestLimiter};
+use meta::store::command::{self, EntryLog};
+use meta::store::key_path;
 use models::auth::user::{admin_user, User, UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
@@ -20,11 +25,6 @@ use tracing::info;
 
 use super::meta_tenant::TenantMeta;
 use super::MetaClientRef;
-use crate::client::MetaHttpClient;
-use crate::error::{MetaError, MetaResult};
-use crate::limiter::{LocalRequestLimiter, NoneLimiter, RequestLimiter};
-use crate::store::command::{self, EntryLog};
-use crate::store::key_path;
 
 pub const USE_TENANT_ACTION_ADD: i32 = 1;
 pub const USE_TENANT_ACTION_DEL: i32 = 2;

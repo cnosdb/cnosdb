@@ -11,7 +11,7 @@ use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::ExecutionPlan;
-use meta::model::MetaClientRef;
+use model::MetaClientRef;
 use models::auth::user::User;
 
 use crate::dispatcher::query_tracker::QueryTracker;

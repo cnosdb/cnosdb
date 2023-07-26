@@ -6,6 +6,10 @@ use std::sync::Arc;
 
 use client::MetaHttpClient;
 use config::TenantObjectLimiterConfig;
+use meta::error::{MetaError, MetaResult};
+use meta::store::command::EntryLog;
+use meta::store::key_path;
+use meta::{client, store};
 use models::auth::privilege::{DatabasePrivilege, Privilege};
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::UserDesc;
@@ -15,11 +19,6 @@ use models::schema::{DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, T
 use parking_lot::RwLock;
 use store::command;
 use trace::info;
-
-use crate::error::{MetaError, MetaResult};
-use crate::store::command::EntryLog;
-use crate::store::key_path;
-use crate::{client, store};
 
 #[derive(Debug)]
 pub struct TenantMeta {

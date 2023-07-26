@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use meta::error::MetaError;
-use meta::model::{MetaClientRef, MetaRef};
+use model::{MetaClientRef, MetaRef};
 use models::meta_data::*;
 use models::schema::{timestamp_convert, Precision};
 use models::utils::{now_timestamp_millis, now_timestamp_nanos};

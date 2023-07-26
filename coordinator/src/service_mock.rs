@@ -5,9 +5,9 @@ use std::sync::Arc;
 use std::todo;
 
 use datafusion::arrow::record_batch::RecordBatch;
-use meta::model::meta_admin::AdminMeta;
-use meta::model::meta_tenant::TenantMeta;
-use meta::model::{MetaClientRef, MetaRef};
+use model::meta_admin::AdminMeta;
+use model::meta_tenant::TenantMeta;
+use model::{MetaClientRef, MetaRef};
 use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{ReplicationSet, VnodeInfo, VnodeStatus};
 use models::object_reference::ResolvedTable;

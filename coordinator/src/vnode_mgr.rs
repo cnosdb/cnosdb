@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use meta::model::MetaRef;
+use model::MetaRef;
 use models::meta_data::{VnodeAllInfo, VnodeInfo, VnodeStatus};
 use protos::kv_service::admin_command_request::Command::DelVnode;
 use protos::kv_service::tskv_service_client::TskvServiceClient;

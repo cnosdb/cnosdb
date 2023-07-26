@@ -26,7 +26,7 @@ pub async fn new_async() -> Arc<Store> {
 mod tests {
     // use std::{process::Output, thread};
 
-    // use meta::model::TenantManager;
+    // use model::TenantManager;
 
     use super::*;
     #[tokio::test]
