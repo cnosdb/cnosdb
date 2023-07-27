@@ -102,7 +102,7 @@ impl Parser {
         )))
     }
 
-    pub fn parse_tcp<'a>(&self, buf: &'a [u8]) -> Result<(Vec<Line<'a>>, usize)> {
+    pub fn parse_tcp_opentsdb<'a>(&self, buf: &'a [u8]) -> Result<(Vec<Line<'a>>, usize)> {
         let mut ret: Vec<Line> = Vec::new();
         let mut pos = 0;
         let lines = std::str::from_utf8(buf).map_err(|e| Error::Common {
