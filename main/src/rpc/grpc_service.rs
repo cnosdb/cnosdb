@@ -80,7 +80,9 @@ impl Service for GrpcService {
             kv_inst: self.kv_inst.clone(),
             coord: self.coord.clone(),
             metrics_register: self.metrics_register.clone(),
-        });
+        })
+        .max_decoding_message_size(100 * 1024 * 1024);
+
         let mut grpc_builder =
             build_grpc_server!(&self.tls_config, self.span_context_extractor.clone());
         let grpc_router = grpc_builder.add_service(tskv_grpc_service);

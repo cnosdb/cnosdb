@@ -83,7 +83,8 @@ impl DataBlock for HintedOffBlock {
         written_size += file.write(&self.data_len.to_be_bytes()).await?;
 
         written_size += file.write(self.tenant.as_bytes()).await?;
-        written_size += file.write(&self.data).await?;
+        file.write_all(&self.data).await?;
+        written_size += self.data.len();
 
         Ok(written_size)
     }
