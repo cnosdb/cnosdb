@@ -198,6 +198,6 @@ impl RequestLimiter for LocalRequestLimiter {
     }
 
     async fn check_write(&self) -> MetaResult<()> {
-        self.check_bucket(RequestLimiterKind::Queries, 1).await
+        self.check_bucket(RequestLimiterKind::Writes, 1).await
     }
 }

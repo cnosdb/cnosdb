@@ -360,8 +360,8 @@ impl QueryOption {
         }
     }
 
-    pub fn tenant_name(&self) -> String {
-        self.table_schema.tenant.clone()
+    pub fn tenant_name(&self) -> &str {
+        &self.table_schema.tenant
     }
 
     pub fn to_query_record_batch_request(

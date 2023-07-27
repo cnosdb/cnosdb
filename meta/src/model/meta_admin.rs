@@ -663,7 +663,7 @@ impl AdminMeta {
         list
     }
 
-    pub async fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter> {
+    pub fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter> {
         match self.limiters.read().get(tenant) {
             Some(limiter) => limiter.clone(),
             None => Arc::new(NoneLimiter),
