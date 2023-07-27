@@ -1721,6 +1721,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dateparser"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9e12a21fe97a29f5ae9cb6770419711f180d3715a039b500b5ff7ab45bb00c4"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "lazy_static",
+ "regex",
+]
+
+[[package]]
 name = "debugid"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2930,6 +2942,7 @@ dependencies = [
  "ctrlc",
  "dashmap",
  "datafusion",
+ "dateparser",
  "flatbuffers 22.12.6",
  "futures",
  "http_protocol",

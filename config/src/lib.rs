@@ -1,3 +1,5 @@
+#![feature(is_some_and)]
+
 use std::fs::File;
 use std::io;
 use std::io::Read;

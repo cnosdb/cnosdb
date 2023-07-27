@@ -60,7 +60,7 @@ impl Service for TcpService {
                         {
                             break 'inner;
                         }
-                        if let Ok((mut lines, pos)) = parser.parse_tcp(&buffer) {
+                        if let Ok((mut lines, pos)) = parser.parse_tcp_opentsdb(&buffer) {
                             if lines.is_empty() {
                                 continue;
                             }

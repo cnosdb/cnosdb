@@ -25,6 +25,7 @@ use crate::meta_single::meta_service::MetaService;
 use crate::rpc::grpc_service::GrpcService;
 use crate::spi::service::ServiceRef;
 use crate::tcp::tcp_service::TcpService;
+use crate::vector::vector_grpc_service::VectorGrpcService;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -151,6 +152,11 @@ impl ServiceBuilder {
         let http_service =
             Box::new(self.create_http(dbms.clone(), coord.clone(), ServerMode::Store));
         let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()));
+        if let Some(port) = self.config.cluster.vector_listen_port {
+            let vector_service =
+                Box::new(self.create_vector_grpc(coord.clone(), dbms.clone(), port));
+            server.add_service(vector_service);
+        }
         let tcp_service = Box::new(self.create_tcp(coord.clone()));
 
         server.add_service(http_service);
@@ -194,6 +200,11 @@ impl ServiceBuilder {
             .await;
         let flight_sql_service = Box::new(self.create_flight_sql(dbms.clone()));
         let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()));
+        if let Some(port) = self.config.cluster.vector_listen_port {
+            let vector_service =
+                Box::new(self.create_vector_grpc(coord.clone(), dbms.clone(), port));
+            server.add_service(vector_service);
+        }
         let http_service =
             Box::new(self.create_http(dbms.clone(), coord.clone(), ServerMode::Bundle));
         let tcp_service = Box::new(self.create_tcp(coord.clone()));
@@ -318,6 +329,38 @@ impl ServiceBuilder {
             self.runtime.clone(),
             kv,
             coord,
+            addr,
+            None,
+            self.metrics_register.clone(),
+            self.span_context_extractor.clone(),
+        )
+    }
+
+    fn create_vector_grpc(
+        &self,
+        coord: CoordinatorRef,
+        dbms: DBMSRef,
+        port: u16,
+    ) -> VectorGrpcService {
+        let default_vector_grpc_addr = build_default_address(port);
+
+        let addr = default_vector_grpc_addr
+            .to_socket_addrs()
+            .map_err(|e| {
+                format!(
+                    "Cannot resolve vector_grpc_listen_addr '{}': {}",
+                    default_vector_grpc_addr, e
+                )
+            })
+            .unwrap()
+            .collect::<Vec<SocketAddr>>()
+            .first()
+            .copied()
+            .expect("Config vector_grpc_listen_addr cannot be empty.");
+
+        VectorGrpcService::new(
+            coord,
+            dbms,
             addr,
             None,
             self.metrics_register.clone(),

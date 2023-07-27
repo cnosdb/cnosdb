@@ -21,6 +21,8 @@ pub struct ClusterConfig {
     pub flight_rpc_listen_port: u16,
     #[serde(default = "ClusterConfig::default_tcp_listen_port")]
     pub tcp_listen_port: u16,
+    #[serde(default = "ClusterConfig::default_vector_listen_port")]
+    pub vector_listen_port: Option<u16>,
 }
 
 impl ClusterConfig {
@@ -46,6 +48,10 @@ impl ClusterConfig {
 
     fn default_tcp_listen_port() -> u16 {
         8905
+    }
+
+    fn default_vector_listen_port() -> Option<u16> {
+        Some(8906)
     }
 
     pub fn override_by_env(&mut self) {
@@ -76,6 +82,10 @@ impl ClusterConfig {
         if let Ok(port) = std::env::var("CNOSDB_TCP_LISTEN_PORT") {
             self.flight_rpc_listen_port = port.parse::<u16>().unwrap();
         }
+
+        if let Ok(port) = std::env::var("CNOSDB_VECTOR_LISTEN_PORT") {
+            self.vector_listen_port = Some(port.parse::<u16>().unwrap());
+        }
     }
 }
 
@@ -88,6 +98,7 @@ impl Default for ClusterConfig {
             grpc_listen_port: Self::default_grpc_listen_port(),
             flight_rpc_listen_port: Self::default_flight_rpc_listen_port(),
             tcp_listen_port: Self::default_tcp_listen_port(),
+            vector_listen_port: Self::default_vector_listen_port(),
         }
     }
 }
@@ -136,10 +147,23 @@ impl CheckConfig for ClusterConfig {
         let default_flight_rpc_addr = format!("{}:{}", &config.host, self.flight_rpc_listen_port);
         if let Err(e) = default_flight_rpc_addr.to_socket_addrs() {
             ret.add_error(CheckConfigItemResult {
-                config: config_name,
+                config: config_name.clone(),
                 item: default_flight_rpc_addr,
                 message: format!("Cannot resolve 'flight_rpc_listen_addr': {}", e),
             });
+        }
+
+        let default_vector_addr = self
+            .vector_listen_port
+            .map(|port| format!("{}:{}", &config.host, port));
+        if let Some(addr) = default_vector_addr {
+            if let Err(e) = addr.to_socket_addrs() {
+                ret.add_error(CheckConfigItemResult {
+                    config: config_name,
+                    item: addr,
+                    message: format!("Cannot resolve 'vector_listen_addr': {}", e),
+                });
+            }
         }
 
         if ret.is_empty() {
