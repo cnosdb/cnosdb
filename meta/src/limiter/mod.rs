@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
@@ -13,6 +14,7 @@ pub use limiter_kind::RequestLimiterKind;
 pub use local_request_limiter::LocalRequestLimiter;
 pub use none_limiter::NoneLimiter;
 
+pub type LimiterRef = Arc<dyn RequestLimiter>;
 #[async_trait]
 pub trait RequestLimiter: Send + Sync + Debug {
     async fn check_data_in(&self, data_len: usize) -> MetaResult<()>;

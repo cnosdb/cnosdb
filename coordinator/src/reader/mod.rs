@@ -3,12 +3,14 @@ pub mod replica_selection;
 pub mod table_scan;
 pub mod tag_scan;
 
+use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
 use futures::{ready, FutureExt, Stream, StreamExt, TryFutureExt};
+use meta::limiter::LimiterRef;
 use meta::model::MetaRef;
 use metrics::count::U64Counter;
 use models::meta_data::{VnodeId, VnodeInfo, VnodeStatus};
@@ -39,6 +41,7 @@ pub struct CheckedCoordinatorRecordBatchStream<O: VnodeOpener> {
     state: StreamState,
 
     data_out: U64Counter,
+    limiter: LimiterRef,
 }
 
 impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
@@ -53,6 +56,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
             option.table_schema.tenant.as_str(),
             option.table_schema.db.as_str(),
         );
+        let limiter = meta.limiter(option.tenant_name());
 
         Self {
             option,
@@ -61,6 +65,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
             vnode: VnodeInfo::default(),
             state: StreamState::Check(checker),
             data_out,
+            limiter,
         }
     }
 
@@ -95,7 +100,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                     // TODO record time used
                     match ready!(future.poll_unpin(cx)) {
                         Ok(stream) => {
-                            self.state = StreamState::Scan(stream);
+                            self.state = StreamState::Scan(stream, ScanState::Scan);
                         }
                         Err(err) => {
                             if let CoordinatorError::FailoverNode { id: _, ref error } = err {
@@ -112,7 +117,65 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                         }
                     };
                 }
-                StreamState::Scan(stream) => return stream.poll_next_unpin(cx),
+                StreamState::Scan(stream, state) => match state {
+                    ScanState::Scan => match ready!(stream.poll_next_unpin(cx)) {
+                        None => return Poll::Ready(None),
+                        Some(res) => match res {
+                            Ok(batch) => {
+                                let batch_memory = batch.get_array_memory_size();
+                                let limiter = self.limiter.clone();
+                                let future = async move {
+                                    limiter
+                                        .check_data_out(batch_memory)
+                                        .await
+                                        .map_err(CoordinatorError::from)
+                                };
+                                let _ = mem::replace(
+                                    state,
+                                    ScanState::CheckLimiter(batch, Box::pin(future)),
+                                );
+                            }
+                            Err(err) => {
+                                if tskv::Error::vnode_broken_code(err.error_code().code()) {
+                                    let id = self.vnode.id;
+                                    let meta = self.meta.clone();
+                                    let tenant = self.option.tenant_name();
+
+                                    trace::warn!("updated vnode {} status broken", id);
+                                    meta.try_change_local_vnode_status(
+                                        tenant,
+                                        id,
+                                        VnodeStatus::Broken,
+                                    );
+                                    let future = change_vnode_to_broken(tenant.into(), id, meta);
+                                    self.state =
+                                        StreamState::UpdateVNodeBroken(Box::pin(future), err);
+                                } else {
+                                    return Poll::Ready(Some(Err(err)));
+                                }
+                            }
+                        },
+                    },
+                    ScanState::CheckLimiter(b, c) => {
+                        return match ready!(c.try_poll_unpin(cx)) {
+                            Ok(_) => {
+                                let batch = b.clone();
+                                let _ = mem::replace(state, ScanState::Scan);
+                                Poll::Ready(Some(Ok(batch)))
+                            }
+                            Err(e) => Poll::Ready(Some(Err(e))),
+                        }
+                    }
+                },
+                StreamState::UpdateVNodeBroken(c, err) => {
+                    let _ = ready!(c.try_poll_unpin(cx));
+                    return Poll::Ready(Some(Err(mem::replace(
+                        err,
+                        CoordinatorError::CommonError {
+                            msg: "default err to mem::replace".to_string(),
+                        },
+                    ))));
+                }
             }
         }
     }
@@ -124,21 +187,8 @@ impl<O: VnodeOpener> Stream for CheckedCoordinatorRecordBatchStream<O> {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let poll = self.poll_inner(cx);
         if let Poll::Ready(Some(Ok(batch))) = &poll {
-            self.data_out.inc(batch.get_array_memory_size() as u64);
+            self.data_out.inc(batch.get_array_memory_size() as u64)
         }
-
-        if let Poll::Ready(Some(Err(err))) = &poll {
-            if tskv::Error::vnode_broken_code(err.error_code().code()) {
-                let id = self.vnode.id;
-                let meta = self.meta.clone();
-                let tenant = self.option.tenant_name();
-
-                trace::warn!("updated vnode {} status broken", id);
-                meta.try_change_local_vnode_status(&tenant, id, VnodeStatus::Broken);
-                tokio::spawn(change_vnode_to_broken(tenant, id, meta));
-            }
-        }
-
         poll
     }
 }
@@ -178,5 +228,11 @@ enum StreamState {
     Check(CheckFuture),
     Idle,
     Open(VnodeOpenFuture),
-    Scan(SendableCoordinatorRecordBatchStream),
+    Scan(SendableCoordinatorRecordBatchStream, ScanState),
+    UpdateVNodeBroken(CheckFuture, CoordinatorError),
+}
+
+enum ScanState {
+    Scan,
+    CheckLimiter(RecordBatch, CheckFuture),
 }
