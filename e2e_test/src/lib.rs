@@ -7,6 +7,7 @@ mod kv_service_tests;
 mod prom;
 #[cfg(test)]
 mod utils;
+mod vector_service_test;
 
 #[derive(Debug)]
 pub enum E2eError {

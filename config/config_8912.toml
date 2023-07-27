@@ -63,6 +63,7 @@ http_listen_port = 8912
 grpc_listen_port = 8913
 flight_rpc_listen_port = 8914
 tcp_listen_port = 8915
+vector_listen_port = 8916
 
 [node_basic]
 node_id = 2001 
