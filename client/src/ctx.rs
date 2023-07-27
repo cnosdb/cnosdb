@@ -1,3 +1,4 @@
+use std::io::BufRead;
 use std::path::Path;
 
 use anyhow::anyhow;
@@ -255,8 +256,24 @@ impl SessionContext {
     }
 
     pub async fn write_line_protocol_file(&self, path: impl AsRef<Path>) -> Result<ResultSet> {
-        let body = tokio::fs::read(path).await?;
+        let file = std::fs::File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+        let mut batch = Vec::new();
+        for (i, line) in reader.lines().enumerate() {
+            if i % 10000 == 0 && !batch.is_empty() {
+                self.write_line_protocol(batch.join("\n").into()).await?;
+                batch.clear();
+            }
+            batch.push(line.unwrap());
+        }
+        if !batch.is_empty() {
+            self.write_line_protocol(batch.join("\n").into()).await?;
+        }
 
+        Ok(ResultSet::Bytes(("".into(), 0)))
+    }
+
+    pub async fn write_line_protocol(&self, body: Vec<u8>) -> Result<ResultSet> {
         let user_info = &self.session_config.user_info;
 
         let tenant = self.session_config.tenant.clone();
