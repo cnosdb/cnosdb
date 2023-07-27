@@ -20,7 +20,7 @@ use tokio::sync::oneshot;
 use tonic::transport::Channel;
 use tonic::Code;
 use tower::timeout::Timeout;
-use trace::{debug, SpanContext, SpanExt, SpanRecorder};
+use trace::{debug, info, SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::append_trace_context;
 use tskv::EngineRef;
 
@@ -405,9 +405,9 @@ impl PointWriter {
                 || err.error_code().to_string() == meta_retry.error_code().to_string()
                 || err.error_code().to_string() == tskv_memory.error_code().to_string()
             {
-                debug!(
-                    "write data to remote {}({}) failed; write to hinted handoff!",
-                    node_id, vnode_id
+                info!(
+                    "write data to remote {}({}) failed {}; write to hh!",
+                    node_id, vnode_id, err
                 );
 
                 span_recorder.error(err.to_string());
