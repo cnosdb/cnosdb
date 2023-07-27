@@ -14,9 +14,11 @@ jobs:
     steps:
     - name: Print comment and repo
       id: set-var
+      env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
       shell: bash
       run: |
-        echo "Comment content: '${{ github.event.comment.body }}'"
+        echo "Comment content: '$COMMENT_BODY'"
         echo "Comment author: '${{ github.event.comment.user.login }}'"
         echo "pr number: $PR_NUMBER"
         source_repo="$(curl -s https://api.github.com/repos/cnosdb/cnosdb/pulls/$PR_NUMBER|jq -r .head.repo.full_name)"
