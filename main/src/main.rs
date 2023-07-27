@@ -29,6 +29,7 @@ pub mod server;
 mod signal;
 mod spi;
 mod tcp;
+mod vector;
 
 static VERSION: Lazy<String> = Lazy::new(|| {
     format!(

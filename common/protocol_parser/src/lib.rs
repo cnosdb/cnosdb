@@ -138,7 +138,7 @@ fn next_measurement(buf: &str) -> Option<(&str, usize)> {
             }
         } else {
             // Measurement begin character
-            if c.is_alphanumeric() {
+            if c.is_alphanumeric() || c == '_' {
                 exists_measurement = true;
                 tok_begin = i;
             }
