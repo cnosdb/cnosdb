@@ -25,7 +25,7 @@
 </p>
 <p align="center">
   <a class="discord-widget" href="https://discord.com/invite/D8cB4WGpP4" title="Join us on Discord">
-    <img src="https://discordapp.com/api/guilds/1104023581194715229/embed.png?style=banner3">
+    <img src="https://discordapp.com/api/guilds/1104023581194715229/embed.png">
   </a>
 </p>
 <h3 align="center">
@@ -265,12 +265,15 @@ Please refer to the "Connector" section in the documentation for the above examp
 
 # Join the community
 
-All developers/users who love time series databases are welcome to participate in the CnosDB User Group. Scan the QR
-code below and add CC to join the group.
+Welcome to join our developer community at discord: 
+  
+  https://discord.com/invite/D8cB4WGpP4
 
-Please check [Instructions for joining the group](./docs/guidelines/CnosDBWeChatUserGroupGuidelines.md) beforehand.
-
-<img src="docs/source/_static/img/u.jpg" width="300" alt=""/>
+<p align="left">
+  <a class="discord-widget" href="https://discord.com/invite/D8cB4WGpP4" title="Join us on Discord">
+    <img src="https://discordapp.com/api/guilds/1104023581194715229/embed.png?style=banner1">
+  </a>
+</p>
 
 ## Contributing
 
