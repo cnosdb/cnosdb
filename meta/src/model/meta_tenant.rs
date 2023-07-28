@@ -481,6 +481,15 @@ impl TenantMeta {
         );
         let rsp = self.client.read::<Option<TableSchema>>(&req).await?;
         if let Some(TableSchema::TsKvTableSchema(val)) = rsp {
+            let mut data_w = self.data.write();
+            let db = data_w
+                .dbs
+                .get_mut(&val.db)
+                .ok_or(MetaError::DatabaseNotFound {
+                    database: val.db.clone(),
+                })?;
+            db.tables
+                .insert(val.name.clone(), TableSchema::TsKvTableSchema(val.clone()));
             return Ok(Some(val));
         }
         Ok(None)
