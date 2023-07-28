@@ -208,7 +208,7 @@ impl ArrayBuilderPtr {
         let builder = self.ptr.as_any_mut().downcast_mut::<StringBuilder>();
         let array = array.as_any().downcast_ref::<StringArray>();
         if let (Some(b), Some(a)) = (builder, array) {
-            b.extend(a.into_iter())
+            b.extend(a)
         } else {
             error!(
                 "Failed to get string array and array builder to insert {:?} array",

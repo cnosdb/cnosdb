@@ -736,10 +736,10 @@ impl SummaryProcessor {
 
     pub fn batch(&mut self, task: SummaryTask) {
         if let Some(file_metas) = task.file_metas {
-            self.file_metas.extend(file_metas.into_iter());
+            self.file_metas.extend(file_metas);
         }
         if let Some(mem_caches) = task.mem_caches {
-            self.mem_caches.extend(mem_caches.into_iter());
+            self.mem_caches.extend(mem_caches);
         }
         let mut req = task.request;
         self.edits.append(&mut req.version_edits);

@@ -1,5 +1,5 @@
 use core::panic;
-use std::{env, fs, io::Write, ops::Deref, path::PathBuf, process::Command};
+use std::{env, fs, io::Write, path::PathBuf, process::Command};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let project_root_dir = env::current_dir()?;
@@ -82,7 +82,6 @@ mod flatbuffers_generated;
                 .collect::<Vec<&str>>()
                 .first()
                 .unwrap()
-                .deref()
                 .to_string();
 
             // <flatbuffers_file_name> -> <flatbuffers_file_name>.rs

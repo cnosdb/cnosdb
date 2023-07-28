@@ -142,10 +142,8 @@ impl ClusterTable {
                                     DataFusionError::Internal(
                                         "Pushed aggregate functions's args is none.".to_string(),
                                     )
-                                })?
-                                .deref()
-                                .clone();
-                            Ok(PushedAggregateFunction::Count(column.name))
+                                })?;
+                            Ok(PushedAggregateFunction::Count(column.name.to_owned()))
                         }
                         // aggregate_function::AggregateFunction::Max => {},
                         // aggregate_function::AggregateFunction::Min => {},

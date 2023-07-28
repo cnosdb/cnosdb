@@ -100,7 +100,7 @@ mod test {
             .await
             .unwrap();
 
-        let expected = vec![
+        let expected = [
             "+--------------+---------------+",
             "| table_schem  | table_catalog |",
             "+--------------+---------------+",
@@ -128,7 +128,7 @@ mod test {
             .await
             .unwrap();
 
-        let expected = vec![
+        let expected = [
             "+-----------+--------------+---------------+------------+",
             "| table_cat | table_schem  | table_name    | table_type |",
             "+-----------+--------------+---------------+------------+",
@@ -147,7 +147,7 @@ mod test {
 
         let flight_info = client.get_table_types().await.unwrap();
 
-        let expected = vec![
+        let expected = [
             "+-----------------+",
             "| table_type      |",
             "+-----------------+",
@@ -208,7 +208,7 @@ mod test {
 
         let flight_info = client.execute("SELECT m2.f0 FROM m2 WHERE CAST(0 AS STRING) BETWEEN (CAST( starts_with(m2.t0, m2.t1) AS STRING)) AND (m2.t1) order by time desc;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+---------------------+",
             "| f0                  |",
             "+---------------------+",
@@ -227,8 +227,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+-------------------------------+---------------------+----------+---------------------+----------------------+",
+        let expected = ["+-------------------------------+---------------------+----------+---------------------+----------------------+",
             "| time                          | t0                  | t1       | f0                  | f1                   |",
             "+-------------------------------+---------------------+----------+---------------------+----------------------+",
             "| 2022-12-29T08:16:38.060       | 263356943           |          | 1040920791041719924 | -9223372036854775807 |",
@@ -239,8 +238,7 @@ mod test {
             "| 2022-12-29T08:16:38.070       | 1040920791041719924 | gc.     | 442061994865016078  | 0                    |",
             "| 2022-12-29T08:16:38.050       | Ig.UZ               | n꓃DH~B  | 531136669299148225  | 9223372036854775807  |",
             r"| 2004-03-18T13:21:04.603730664 | }\                  | qy      | 7806435932478031652 | 23                   |",
-            "+-------------------------------+---------------------+----------+---------------------+----------------------+",
-        ];
+            "+-------------------------------+---------------------+----------+---------------------+----------------------+"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -251,14 +249,12 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+-------------------------------+--------------------+--------+---------------------+----------------------+",
+        let expected = ["+-------------------------------+--------------------+--------+---------------------+----------------------+",
             "| time                          | t0                 | t1     | f0                  | f1                   |",
             "+-------------------------------+--------------------+--------+---------------------+----------------------+",
             "| 2022-12-29T08:16:38.060       | 263356943          |        | 1040920791041719924 | -9223372036854775807 |",
             r"| 1970-01-01T00:00:00.263356943 | 0.6287658423307444 | ,J씟\h | 5466573340614276155 | -23                  |",
-            "+-------------------------------+--------------------+--------+---------------------+----------------------+",
-        ];
+            "+-------------------------------+--------------------+--------+---------------------+----------------------+"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -269,8 +265,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+-------------------------------+---------------------+----------+---------------------+---------------------+",
+        let expected = ["+-------------------------------+---------------------+----------+---------------------+---------------------+",
             "| time                          | t0                  | t1       | f0                  | f1                  |",
             "+-------------------------------+---------------------+----------+---------------------+---------------------+",
             "| 2083-07-30T00:16:00.280509277 |                     | V*1lE/   | 4132058214182166915 | 0                   |",
@@ -279,8 +274,7 @@ mod test {
             "| 2022-12-29T08:16:38.070       | 1040920791041719924 | gc.     | 442061994865016078  | 0                   |",
             "| 2022-12-29T08:16:38.050       | Ig.UZ               | n꓃DH~B  | 531136669299148225  | 9223372036854775807 |",
             r"| 2004-03-18T13:21:04.603730664 | }\                  | qy      | 7806435932478031652 | 23                  |",
-            "+-------------------------------+---------------------+----------+---------------------+---------------------+",
-        ];
+            "+-------------------------------+---------------------+----------+---------------------+---------------------+"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -291,15 +285,13 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+-------------------------------+--------------------+--------+---------------------+----------------------+",
+        let expected = ["+-------------------------------+--------------------+--------+---------------------+----------------------+",
             "| time                          | t0                 | t1     | f0                  | f1                   |",
             "+-------------------------------+--------------------+--------+---------------------+----------------------+",
             "| 2066-01-25T12:16:47.609562138 | ᵵh                 | 7ua    | 4166390262642105876 | 0                    |",
             "| 2022-12-29T08:16:38.060       | 263356943          |        | 1040920791041719924 | -9223372036854775807 |",
             r"| 1970-01-01T00:00:00.263356943 | 0.6287658423307444 | ,J씟\h | 5466573340614276155 | -23                  |",
-            "+-------------------------------+--------------------+--------+---------------------+----------------------+",
-        ];
+            "+-------------------------------+--------------------+--------+---------------------+----------------------+"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -310,7 +302,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+-------------------------------+-----------+--------+---------------------+----+",
             "| time                          | t0        | t1     | f0                  | f1 |",
             "+-------------------------------+-----------+--------+---------------------+----+",
@@ -329,16 +321,14 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+-------------------------------+--------------------+--------+---------------------+----------------------+",
+        let expected = ["+-------------------------------+--------------------+--------+---------------------+----------------------+",
             "| time                          | t0                 | t1     | f0                  | f1                   |",
             "+-------------------------------+--------------------+--------+---------------------+----------------------+",
             "| 2083-07-30T00:16:00.280509277 |                    | V*1lE/ | 4132058214182166915 | 0                    |",
             "| 2066-01-25T12:16:47.609562138 | ᵵh                 | 7ua    | 4166390262642105876 | 0                    |",
             "| 2022-12-29T08:16:38.060       | 263356943          |        | 1040920791041719924 | -9223372036854775807 |",
             r"| 1970-01-01T00:00:00.263356943 | 0.6287658423307444 | ,J씟\h | 5466573340614276155 | -23                  |",
-            "+-------------------------------+--------------------+--------+---------------------+----------------------+",
-        ];
+            "+-------------------------------+--------------------+--------+---------------------+----------------------+"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -349,15 +339,13 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+-------------------------------+---------------------+----------+---------------------+---------------------+",
+        let expected = ["+-------------------------------+---------------------+----------+---------------------+---------------------+",
             "| time                          | t0                  | t1       | f0                  | f1                  |",
             "+-------------------------------+---------------------+----------+---------------------+---------------------+",
             "| 2022-12-29T08:16:38.070       | 1040920791041719924 | gc.     | 442061994865016078  | 0                   |",
             "| 2022-12-29T08:16:38.050       | Ig.UZ               | n꓃DH~B  | 531136669299148225  | 9223372036854775807 |",
             r"| 2004-03-18T13:21:04.603730664 | }\                  | qy      | 7806435932478031652 | 23                  |",
-            "+-------------------------------+---------------------+----------+---------------------+---------------------+",
-        ];
+            "+-------------------------------+---------------------+----------+---------------------+---------------------+"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -368,8 +356,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+-------------------------------+---------------------+----------+---------------------+---------------------+",
+        let expected = ["+-------------------------------+---------------------+----------+---------------------+---------------------+",
             "| time                          | t0                  | t1       | f0                  | f1                  |",
             "+-------------------------------+---------------------+----------+---------------------+---------------------+",
             "| 2083-07-30T00:16:00.280509277 |                     | V*1lE/   | 4132058214182166915 | 0                   |",
@@ -378,8 +365,7 @@ mod test {
             "| 2022-12-29T08:16:38.070       | 1040920791041719924 | gc.     | 442061994865016078  | 0                   |",
             "| 2022-12-29T08:16:38.050       | Ig.UZ               | n꓃DH~B  | 531136669299148225  | 9223372036854775807 |",
             r"| 2004-03-18T13:21:04.603730664 | }\                  | qy      | 7806435932478031652 | 23                  |",
-            "+-------------------------------+---------------------+----------+---------------------+---------------------+",
-        ];
+            "+-------------------------------+---------------------+----------+---------------------+---------------------+"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -445,15 +431,13 @@ mod test {
         // check user info
         let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
+        let expected = ["+------------+----------+-------------------------------------------------------------------------------------------------+",
             "| user_name  | is_admin | user_options                                                                                    |",
             "+------------+----------+-------------------------------------------------------------------------------------------------+",
             "| root       | true     | {\"password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
             "| test_au_u1 | false    | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
             "| test_au_u2 | false    | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
-        ];
+            "+------------+----------+-------------------------------------------------------------------------------------------------+"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -467,15 +451,13 @@ mod test {
         assert!(actual.is_empty());
         let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
+        let expected = ["+------------+----------+-------------------------------------------------------------------------------------------------+",
             "| user_name  | is_admin | user_options                                                                                    |",
             "+------------+----------+-------------------------------------------------------------------------------------------------+",
             "| root       | true     | {\"password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
             "| test_au_u1 | true     | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
             "| test_au_u2 | false    | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
-        ];
+            "+------------+----------+-------------------------------------------------------------------------------------------------+"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -489,15 +471,13 @@ mod test {
         assert!(actual.is_empty());
         let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
+        let expected = ["+------------+----------+-------------------------------------------------------------------------------------------------+",
             "| user_name  | is_admin | user_options                                                                                    |",
             "+------------+----------+-------------------------------------------------------------------------------------------------+",
             "| root       | true     | {\"password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
             "| test_au_u1 | true     | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
             "| test_au_u2 | true     | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
-        ];
+            "+------------+----------+-------------------------------------------------------------------------------------------------+"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -520,15 +500,13 @@ mod test {
         assert!(actual.is_empty());
         let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
+        let expected = ["+------------+----------+-------------------------------------------------------------------------------------------------+",
             "| user_name  | is_admin | user_options                                                                                    |",
             "+------------+----------+-------------------------------------------------------------------------------------------------+",
             "| root       | true     | {\"password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
             "| test_au_u1 | false    | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
             "| test_au_u2 | false    | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
-        ];
+            "+------------+----------+-------------------------------------------------------------------------------------------------+"];
         assert_batches_eq!(expected, &actual);
 
         // clean env
@@ -564,7 +542,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+---------+-------+----------------+---------+-----------+",
             "| TTL     | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
             "+---------+-------+----------------+---------+-----------+",
@@ -587,7 +565,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+---------+-------+----------------+---------+-----------+",
             "| TTL     | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
             "+---------+-------+----------------+---------+-----------+",
@@ -612,7 +590,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+---------+-------+----------------+---------+-----------+",
             "| TTL     | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
             "+---------+-------+----------------+---------+-----------+",
@@ -636,7 +614,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+---------+-------+----------------+---------+-----------+",
             "| TTL     | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
             "+---------+-------+----------------+---------+-----------+",
@@ -659,7 +637,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+---------+-------+----------------+---------+-----------+",
             "| TTL     | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
             "+---------+-------+----------------+---------+-----------+",
@@ -702,7 +680,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec!["++", "++"];
+        let expected = ["++", "++"];
         assert_batches_eq!(expected, &actual);
 
         // clean env
@@ -857,7 +835,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+------+----+----+----+----+----+----+----+",
             "| time | t0 | t1 | f0 | f1 | f2 | f3 | f4 |",
             "+------+----+----+----+----+----+----+----+",
@@ -873,7 +851,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+-------------------------------+----+----+----+----+-----+-------+-------+",
             "| time                          | t0 | t1 | f0 | f1 | f2  | f3    | f4    |",
             "+-------------------------------+----+----+----+----+-----+-------+-------+",
@@ -896,7 +874,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec!["++", "++"];
+        let expected = ["++", "++"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -907,7 +885,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+-------------------------------+----+----+----+----+----+-------+-------+",
             "| time                          | t0 | t1 | f0 | f1 | f2 | f3    | f4    |",
             "+-------------------------------+----+----+----+----+----+-------+-------+",
@@ -928,7 +906,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+-------------------------------+----+----+----+----+----+------+-------+",
             "| time                          | t0 | t1 | f0 | f1 | f2 | f3   | f4    |",
             "+-------------------------------+----+----+----+----+----+------+-------+",
@@ -945,7 +923,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+-------------------------------+----+----+----+----+----+-------+-------+",
             "| time                          | t0 | t1 | f0 | f1 | f2 | f3    | f4    |",
             "+-------------------------------+----+----+----+----+----+-------+-------+",
@@ -965,7 +943,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+-------------------------------+----+----+----+----+----+------+-------+",
             "| time                          | t0 | t1 | f0 | f1 | f2 | f3   | f4    |",
             "+-------------------------------+----+----+----+----+----+------+-------+",
@@ -983,7 +961,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec!["++", "++"];
+        let expected = ["++", "++"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -994,7 +972,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+-------------------------------+----+----+----+----+----+-------+-------+",
             "| time                          | t0 | t1 | f0 | f1 | f2 | f3    | f4    |",
             "+-------------------------------+----+----+----+----+----+-------+-------+",
@@ -1013,7 +991,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+-------------------------------+----+----+----+----+----+-------+-------+",
             "| time                          | t0 | t1 | f0 | f1 | f2 | f3    | f4    |",
             "+-------------------------------+----+----+----+----+----+-------+-------+",
@@ -1035,7 +1013,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+-------------------------------+----+----+----+----+----+------+-------+",
             "| time                          | t0 | t1 | f0 | f1 | f2 | f3   | f4    |",
             "+-------------------------------+----+----+----+----+----+------+-------+",
@@ -1053,7 +1031,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
+        let expected = [
             "+-------------------------------+----+----+----+----+-----+-------+-------+",
             "| time                          | t0 | t1 | f0 | f1 | f2  | f3    | f4    |",
             "+-------------------------------+----+----+----+----+-----+-------+-------+",
@@ -1077,8 +1055,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
+        let expected = ["+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
             "| plan_type     | plan                                                                                                                                  |",
             "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
             "| logical_plan  | Filter: m0.t0 = Utf8(NULL)                                                                                                            |",
@@ -1087,8 +1064,7 @@ mod test {
             "|               |   FilterExec: t0@1 = NULL                                                                                                             |",
             "|               |     TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
             "|               |                                                                                                                                       |",
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
-        ];
+            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+"];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -1099,8 +1075,7 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = vec![
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
+        let expected = ["+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
             "| plan_type     | plan                                                                                                                                  |",
             "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
             "| logical_plan  | Filter: m0.t0 > Utf8(NULL)                                                                                                            |",
@@ -1109,8 +1084,7 @@ mod test {
             "|               |   FilterExec: t0@1 > NULL                                                                                                             |",
             "|               |     TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
             "|               |                                                                                                                                       |",
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
-        ];
+            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+"];
         assert_batches_eq!(expected, &actual);
 
         // clean env
@@ -1170,7 +1144,7 @@ mod test {
 
         let actual = fetch_result_and_print(flight_info, &mut client).await;
 
-        let expected = vec![
+        let expected = [
             "+---------------------+-------------+------------+-------------+-----------+",
             "| time                | station     | visibility | temperature | presssure |",
             "+---------------------+-------------+------------+-------------+-----------+",
@@ -1310,7 +1284,7 @@ mod test {
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
 
-        let expected = vec![
+        let expected = [
             "+---------------+",
             "| table_name    |",
             "+---------------+",
@@ -1361,7 +1335,7 @@ mod test {
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
 
-        let expected = vec![
+        let expected = [
             "+-------------+-----------------------+-------------+-------------------+",
             "| COLUMN_NAME | DATA_TYPE             | COLUMN_TYPE | COMPRESSION_CODEC |",
             "+-------------+-----------------------+-------------+-------------------+",
@@ -1416,7 +1390,7 @@ mod test {
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
 
-        let expected = vec![
+        let expected = [
             "+-------------+-------+----------------+---------+-----------+",
             "| TTL         | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
             "+-------------+-------+----------------+---------+-----------+",
@@ -1499,7 +1473,7 @@ mod test {
     async fn test_select() {
         let mut client = authed_client().await;
 
-        let expected = vec![
+        let expected = [
             "+----------+",
             "| Int64(1) |",
             "+----------+",

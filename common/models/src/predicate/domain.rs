@@ -501,21 +501,18 @@ impl PartialEq for Marker {
             .eq(other.value.as_ref().unwrap())
     }
 }
-
-impl PartialOrd for Marker {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if !self.check_type_compatibility(other) {
-            return None;
-        }
+impl Ord for Marker {
+    fn cmp(&self, other: &Self) -> Ordering {
+        debug_assert!(self.check_type_compatibility(other));
         // (∞, ∞)
         // => Equal
         // (∞, _)
         // => Greater
         if self.is_upper_unbound() {
             return if other.is_upper_unbound() {
-                Some(std::cmp::Ordering::Equal)
+                std::cmp::Ordering::Equal
             } else {
-                Some(std::cmp::Ordering::Greater)
+                std::cmp::Ordering::Greater
             };
         }
         // (-∞, -∞)
@@ -524,38 +521,38 @@ impl PartialOrd for Marker {
         // => Less
         if self.is_lower_unbound() {
             return if other.is_lower_unbound() {
-                Some(std::cmp::Ordering::Equal)
+                std::cmp::Ordering::Equal
             } else {
-                Some(std::cmp::Ordering::Less)
+                std::cmp::Ordering::Less
             };
         }
         // self not unbound
         // (_, ∞)
         // => Less
         if other.is_upper_unbound() {
-            return Some(std::cmp::Ordering::Less);
+            return std::cmp::Ordering::Less;
         }
         // self not unbound
         // (_, -∞)
         // => Greater
         if other.is_lower_unbound() {
-            return Some(std::cmp::Ordering::Greater);
+            return std::cmp::Ordering::Greater;
         }
         // value and other.value are present
         let self_data = self.value.as_ref().unwrap();
         let other_data = other.value.as_ref().unwrap();
 
-        self_data.partial_cmp(other_data)
+        self_data.partial_cmp(other_data).unwrap()
+    }
+}
+
+impl PartialOrd for Marker {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
 impl Eq for Marker {}
-
-impl Ord for Marker {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
 
 /// A Range of values across the continuous space defined by the types of the Markers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

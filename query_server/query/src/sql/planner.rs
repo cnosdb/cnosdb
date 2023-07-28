@@ -892,8 +892,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
         let table_schema = self.get_tskv_schema(table_ref.clone())?;
 
-        let (source_plan, _) =
-            self.create_table_relation(table_ref, None, &mut Default::default())?;
+        let (source_plan, _) = self.create_table_relation(table_ref, None, &Default::default())?;
 
         // build from
         let mut plan_builder = LogicalPlanBuilder::from(source_plan);
@@ -1772,7 +1771,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         )?;
 
         // 2. build source plan
-        let source_plan = self.create_relation(from, &mut Default::default())?;
+        let source_plan = self.create_relation(from, &Default::default())?;
         let source_schem = SchemaRef::new(source_plan.schema().deref().into());
 
         // 3. According to the external path, construct the external table
@@ -1797,7 +1796,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         &self,
         table_ref: OwnedTableReference,
         alias: Option<TableAlias>,
-        ctes: &mut HashMap<String, LogicalPlan>,
+        ctes: &HashMap<String, LogicalPlan>,
     ) -> DFResult<(LogicalPlan, Option<TableAlias>)> {
         let table_name = table_ref.to_string();
         let cte = ctes.get(&table_name);
@@ -1817,7 +1816,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     fn create_relation(
         &self,
         relation: TableFactor,
-        ctes: &mut HashMap<String, LogicalPlan>,
+        ctes: &HashMap<String, LogicalPlan>,
     ) -> DFResult<LogicalPlan> {
         let (plan, alias) = match relation {
             TableFactor::Table { name, alias, .. } => {
@@ -1871,7 +1870,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 .project(
                     fields
                         .iter()
-                        .zip(idents.into_iter())
+                        .zip(idents)
                         .map(|(field, ident)| col(field.name()).alias(normalize_ident(ident))),
                 )?
                 .build()
@@ -2015,7 +2014,7 @@ fn build_file_extension_and_format(
                 .with_file_compression_type(file_compression_type),
         ),
         FileType::PARQUET => Arc::new(ParquetFormat::default()),
-        FileType::AVRO => Arc::new(AvroFormat::default()),
+        FileType::AVRO => Arc::new(AvroFormat),
         FileType::JSON => {
             Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
         }

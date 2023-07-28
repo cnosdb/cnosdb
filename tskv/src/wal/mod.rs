@@ -749,10 +749,7 @@ mod test {
             data_vec.push(data.clone());
 
             for (col_name, values) in mem_data {
-                wrote_data
-                    .entry(col_name)
-                    .or_default()
-                    .extend(values.into_iter());
+                wrote_data.entry(col_name).or_default().extend(values);
             }
 
             let mut enc_points = Vec::new();

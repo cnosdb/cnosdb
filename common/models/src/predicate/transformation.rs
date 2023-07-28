@@ -1404,7 +1404,7 @@ mod tests {
 
         #[test]
         fn test_reverse() {
-            let wait_reverse = vec![
+            let wait_reverse = [
                 Operator::Lt,
                 Operator::LtEq,
                 Operator::Gt,

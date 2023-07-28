@@ -646,7 +646,7 @@ pub(crate) mod test {
     use super::{FieldVal, MemCache, RowData, RowGroup};
 
     pub fn put_rows_to_cache(
-        cache: &mut MemCache,
+        cache: &MemCache,
         series_id: SeriesId,
         schema_id: SchemaId,
         mut schema: TskvTableSchema,
