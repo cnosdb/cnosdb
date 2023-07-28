@@ -820,16 +820,16 @@ impl StateMachine {
         tenant: &str,
         schema: &TableSchema,
     ) -> MetaResult<TenantMetaData> {
-        let key = KeyPath::tenant_db_name(cluster, tenant, &schema.db());
+        let key = KeyPath::tenant_db_name(cluster, tenant, schema.db());
         if !self.contains_key(&key)? {
             return Err(MetaError::DatabaseNotFound {
-                database: schema.db(),
+                database: schema.db().to_string(),
             });
         }
-        let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db(), &schema.name());
+        let key = KeyPath::tenant_schema_name(cluster, tenant, schema.db(), schema.name());
         if self.contains_key(&key)? {
             return Err(MetaError::TableAlreadyExists {
-                table_name: schema.name(),
+                table_name: schema.name().to_string(),
             });
         }
 
@@ -844,7 +844,7 @@ impl StateMachine {
         tenant: &str,
         schema: &TableSchema,
     ) -> MetaResult<()> {
-        let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db(), &schema.name());
+        let key = KeyPath::tenant_schema_name(cluster, tenant, schema.db(), schema.name());
         if let Some(val) = self.get_struct::<TableSchema>(&key)? {
             match (val, schema) {
                 (TableSchema::TsKvTableSchema(val), TableSchema::TsKvTableSchema(schema)) => {

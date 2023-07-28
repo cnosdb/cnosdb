@@ -102,7 +102,7 @@ impl DBschemas {
         tag_names: &[&str],
         field_names: &[&str],
         field_type: &[FieldType],
-    ) -> Result<()> {
+    ) -> Result<bool> {
         //load schema first from cache,or else from storage and than cache it!
         let schema = self.client.get_tskv_table_schema(db_name, table_name)?;
         let db_schema =
@@ -196,7 +196,7 @@ impl DBschemas {
                 .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
                 .await?;
         }
-        Ok(())
+        Ok(new_schema || schema_change)
     }
 
     async fn check_create_table_res(
@@ -272,6 +272,18 @@ impl DBschemas {
         let schema = self
             .client
             .get_tskv_table_schema(&self.database_name, tab)?;
+
+        Ok(schema)
+    }
+
+    pub async fn get_table_schema_by_meta(
+        &self,
+        tab: &str,
+    ) -> Result<Option<Arc<TskvTableSchema>>> {
+        let schema = self
+            .client
+            .get_tskv_table_schema_by_meta(&self.database_name, tab)
+            .await?;
 
         Ok(schema)
     }
