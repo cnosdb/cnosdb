@@ -1,0 +1,18 @@
+include ./../setup.slt
+
+##########
+## Query
+##########
+
+query 
+select delta(gauge_agg(time, f1)) from func_tbl;
+----
+-222.0
+
+query 
+select delta(gauge_agg(time, f0)) from func_tbl;
+----
+444.0
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got TimestampNanosecond\(NULL, None\)", .*
+select delta(time) from func_tbl;

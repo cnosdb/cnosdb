@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod example;
 mod gapfill;
+mod gauge;
 mod interpolate;
 mod locf;
 mod utils;
@@ -23,6 +24,7 @@ pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<(
     gapfill::register_udf(func_manager)?;
     locf::register_udf(func_manager)?;
     interpolate::register_udf(func_manager)?;
+    gauge::register_udfs(func_manager)?;
     Ok(())
 }
 
