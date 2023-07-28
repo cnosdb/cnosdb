@@ -61,19 +61,19 @@ pub enum TableSchema {
 }
 
 impl TableSchema {
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &str {
         match self {
-            TableSchema::TsKvTableSchema(schema) => schema.name.clone(),
-            TableSchema::ExternalTableSchema(schema) => schema.name.clone(),
-            TableSchema::StreamTableSchema(schema) => schema.name().into(),
+            TableSchema::TsKvTableSchema(schema) => schema.name.as_str(),
+            TableSchema::ExternalTableSchema(schema) => schema.name.as_str(),
+            TableSchema::StreamTableSchema(schema) => schema.name(),
         }
     }
 
-    pub fn db(&self) -> String {
+    pub fn db(&self) -> &str {
         match self {
-            TableSchema::TsKvTableSchema(schema) => schema.db.clone(),
-            TableSchema::ExternalTableSchema(schema) => schema.db.clone(),
-            TableSchema::StreamTableSchema(schema) => schema.db().into(),
+            TableSchema::TsKvTableSchema(schema) => schema.db.as_str(),
+            TableSchema::ExternalTableSchema(schema) => schema.db.as_str(),
+            TableSchema::StreamTableSchema(schema) => schema.db(),
         }
     }
 

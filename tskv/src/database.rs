@@ -262,7 +262,9 @@ impl Database {
                     &field_names,
                     &field_type,
                     sid,
-                )?
+                    false,
+                )
+                .await?
             }
         }
         Ok(map)
@@ -294,12 +296,14 @@ impl Database {
                 let sid =
                     Self::build_index(db_name, table_name, &point, &tag_names, ts_index.clone())
                         .await?;
+                let mut schema_change_or_create = false;
                 if self
                     .schemas
                     .check_field_type_from_cache(table_name, &tag_names, &field_names, &field_type)
                     .is_err()
                 {
-                    self.schemas
+                    schema_change_or_create = self
+                        .schemas
                         .check_field_type_or_else_add(
                             db_name,
                             table_name,
@@ -318,23 +322,30 @@ impl Database {
                     &field_names,
                     &field_type,
                     sid,
-                )?
+                    schema_change_or_create,
+                )
+                .await?
             }
         }
         Ok(map)
     }
 
-    fn build_row_data(
+    async fn build_row_data(
         &self,
         map: &mut HashMap<(SeriesId, SchemaId), RowGroup>,
         table_name: &str,
         precision: Precision,
-        point: Point,
+        point: Point<'_>,
         field_names: &[&str],
         field_type: &[FieldType],
         sid: u32,
+        schema_change_or_create: bool,
     ) -> Result<()> {
-        let table_schema = self.schemas.get_table_schema(table_name)?;
+        let table_schema = if schema_change_or_create {
+            self.schemas.get_table_schema_by_meta(table_name).await?
+        } else {
+            self.schemas.get_table_schema(table_name)?
+        };
         let table_schema = match table_schema {
             Some(v) => v,
             None => return Ok(()),
