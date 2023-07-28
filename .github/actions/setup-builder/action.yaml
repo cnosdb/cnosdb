@@ -28,6 +28,12 @@ runs:
       # Disable incremental compilation
       shell: bash
       run: echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
+
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.3
+
+    - uses: rui314/setup-mold@v1
+
     - name: Fixup git permissions
       # https://github.com/actions/checkout/issues/766
       shell: bash
