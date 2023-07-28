@@ -403,13 +403,13 @@ impl PartialEq for CompactingFile {
 
 impl Ord for CompactingFile {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        self.field_id.cmp(&other.field_id).reverse()
     }
 }
 
 impl PartialOrd for CompactingFile {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.field_id.cmp(&other.field_id).reverse())
+        Some(self.cmp(other))
     }
 }
 
@@ -810,7 +810,7 @@ async fn write_tsm(
     };
     if let Err(e) = write_ret {
         match e {
-            tsm::WriteTsmError::IO { source } => {
+            tsm::WriteTsmError::WriteIO { source } => {
                 // TODO try re-run compaction on other time.
                 error!("Failed compaction: IO error when write tsm: {:?}", source);
                 return Err(Error::IO { source });

@@ -31,7 +31,7 @@ pub type ReadTsmResult<T, E = ReadTsmError> = std::result::Result<T, E>;
 #[snafu(visibility(pub))]
 pub enum ReadTsmError {
     #[snafu(display("IO error: {}", source))]
-    IO { source: std::io::Error },
+    ReadIO { source: std::io::Error },
 
     #[snafu(display("Decode error: {}", source))]
     Decode {
@@ -81,7 +81,7 @@ impl IndexFile {
         reader
             .read_at(file_len - FOOTER_SIZE as u64, &mut footer)
             .await
-            .context(IOSnafu)?;
+            .context(ReadIOSnafu)?;
         let bloom_filter = BloomFilter::with_data(&footer[..BLOOM_FILTER_SIZE]);
         let index_offset = decode_be_u64(&footer[BLOOM_FILTER_SIZE..]);
         Ok(Self {
@@ -105,7 +105,7 @@ impl IndexFile {
         self.reader
             .read_at(self.pos, &mut self.idx_meta_buf[..])
             .await
-            .context(IOSnafu)?;
+            .context(ReadIOSnafu)?;
         self.pos += INDEX_META_SIZE as u64;
         let (entry, blk_count) = IndexEntry::decode(&self.idx_meta_buf);
         self.index_block_idx = 0;
@@ -122,7 +122,7 @@ impl IndexFile {
         self.reader
             .read_at(self.pos, &mut self.blk_meta_buf[..])
             .await
-            .context(IOSnafu)?;
+            .context(ReadIOSnafu)?;
         self.pos += BLOCK_META_SIZE as u64;
         let entry = BlockEntry::decode(&self.blk_meta_buf);
         self.index_block_idx += 1;
@@ -204,7 +204,7 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
     reader
         .read_at(len - FOOTER_SIZE as u64, &mut buf)
         .await
-        .context(IOSnafu)?;
+        .context(ReadIOSnafu)?;
     let bloom_filter = BloomFilter::with_data(&buf[..BLOOM_FILTER_SIZE]);
     let offset = decode_be_u64(&buf[BLOOM_FILTER_SIZE..]);
     if offset > len - FOOTER_SIZE as u64 {
@@ -219,7 +219,10 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
     // TODO if data_len is too big, read data part in parts and do not store it.
     let mut data = vec![0_u8; data_len];
     // Read index data
-    reader.read_at(offset, &mut data).await.context(IOSnafu)?;
+    reader
+        .read_at(offset, &mut data)
+        .await
+        .context(ReadIOSnafu)?;
 
     // Decode index data
     let assumed_field_count = (data_len / (INDEX_META_SIZE + BLOCK_META_SIZE)) + 1;
@@ -526,7 +529,7 @@ impl TsmReader {
         self.reader
             .read_at(block_meta.offset(), &mut dst[..data_len])
             .await
-            .context(IOSnafu)?;
+            .context(ReadIOSnafu)?;
         Ok(data_len)
     }
 
@@ -618,7 +621,7 @@ async fn read_data_block(
     offset: u64,
     val_off: u64,
 ) -> ReadTsmResult<DataBlock> {
-    reader.read_at(offset, buf).await.context(IOSnafu)?;
+    reader.read_at(offset, buf).await.context(ReadIOSnafu)?;
     decode_data_block(buf, field_type, val_off - offset)
 }
 

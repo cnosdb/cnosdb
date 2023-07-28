@@ -144,7 +144,7 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &mut PrintO
 }
 
 async fn exec_and_print(
-    ctx: &mut SessionContext,
+    ctx: &SessionContext,
     print_options: &PrintOptions,
     sql: String,
 ) -> Result<()> {
