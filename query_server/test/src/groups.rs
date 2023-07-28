@@ -165,7 +165,7 @@ impl TestGroups {
             );
             let before = Instant::now();
             let failed_num = failed_cases.len();
-            failed_cases.extend(group.run().await.into_iter());
+            failed_cases.extend(group.run().await);
             let after = Instant::now();
             println!(
                 "TestGroup {} finished in {} ms has {} FAIL\n",

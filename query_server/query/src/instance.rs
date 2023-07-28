@@ -329,7 +329,7 @@ mod tests {
 
         let mut result = exec_sql(&db, "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS t (num,letter) order by num").await;
 
-        let expected = vec![
+        let expected = [
             "+-----+--------+",
             "| num | letter |",
             "+-----+--------+",
@@ -399,7 +399,7 @@ mod tests {
 
         println!("used time: {}", (start - end).num_milliseconds());
 
-        let expected = vec![
+        let expected = [
             "+-----+--------+",
             "| num | letter |",
             "+-----+--------+",
@@ -431,7 +431,7 @@ mod tests {
         )
         .await;
 
-        let expected = vec![
+        let expected = [
             "+-----+--------+",
             "| num | letter |",
             "+-----+--------+",
@@ -460,7 +460,7 @@ mod tests {
             .unwrap();
 
         assert_batches_eq!(
-            vec!["++", "++", "++",],
+            ["++", "++", "++"],
             exec_sql(
                 &db,
                 "CREATE EXTERNAL TABLE decimal_simple (
@@ -517,7 +517,7 @@ mod tests {
             .unwrap();
 
         assert_batches_eq!(
-            vec!["++", "++", "++",],
+            ["++", "++", "++"],
             exec_sql(
                 &db,
                 "
@@ -566,7 +566,7 @@ mod tests {
             .unwrap();
 
         assert_batches_eq!(
-            vec!["++", "++", "++",],
+            ["++", "++", "++"],
             exec_sql(
                 &db,
                 "
@@ -579,7 +579,7 @@ mod tests {
         );
 
         assert_batches_eq!(
-            vec![
+            [
                 "+-----+------+-------+---+",
                 "| a   | b    | c     | d |",
                 "+-----+------+-------+---+",
@@ -588,7 +588,7 @@ mod tests {
                 "| 2   | 0.6  | false |   |",
                 "| 1   | 2    | false | 4 |",
                 "| 4   |      |       |   |",
-                "+-----+------+-------+---+",
+                "+-----+------+-------+---+"
             ],
             exec_sql(
                 &db,

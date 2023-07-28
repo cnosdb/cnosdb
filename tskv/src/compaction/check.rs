@@ -737,7 +737,7 @@ mod test {
             ],
         );
 
-        for (timestamp, v) in timestamps.into_iter().zip(rows_ref.into_iter()) {
+        for (timestamp, v) in timestamps.into_iter().zip(rows_ref) {
             let (tags, tags_nullbit) =
                 models_helper::create_tags(&mut fbb, &[("ta", "a1"), ("tb", "b1")], &schema);
             let (fields, fields_nullbits) = models_helper::create_fields(&mut fbb, &v, &schema);

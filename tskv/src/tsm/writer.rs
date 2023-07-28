@@ -64,7 +64,7 @@ pub type WriteTsmResult<T, E = WriteTsmError> = std::result::Result<T, E>;
 #[snafu(visibility(pub))]
 pub enum WriteTsmError {
     #[snafu(display("IO error: {source}"))]
-    IO { source: std::io::Error },
+    WriteIO { source: std::io::Error },
 
     #[snafu(display("Encode error: {source}"))]
     Encode {
@@ -125,11 +125,11 @@ impl IndexBuf {
             writer
                 .write(&buf[..INDEX_META_SIZE])
                 .await
-                .context(IOSnafu)?;
+                .context(WriteIOSnafu)?;
             size += INDEX_META_SIZE;
             for blk in idx.blocks.iter() {
                 blk.encode(&mut buf);
-                writer.write(&buf[..]).await.context(IOSnafu)?;
+                writer.write(&buf[..]).await.context(WriteIOSnafu)?;
                 size += BLOCK_META_SIZE;
             }
         }
@@ -352,8 +352,8 @@ impl TsmWriter {
                 path: self.final_path.clone(),
             });
         }
-        self.writer.sync_data().await.context(IOSnafu)?;
-        std::fs::rename(&self.tmp_path, &self.final_path).context(IOSnafu)?;
+        self.writer.sync_data().await.context(WriteIOSnafu)?;
+        std::fs::rename(&self.tmp_path, &self.final_path).context(WriteIOSnafu)?;
         self.finished = true;
         Ok(())
     }
@@ -388,7 +388,7 @@ pub async fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
             .as_mut_slice(),
         )
         .await
-        .context(IOSnafu)?;
+        .context(WriteIOSnafu)?;
 
     Ok(size)
 }
@@ -407,7 +407,7 @@ async fn write_raw_data_to(
         .map(|s| {
             size += s;
         })
-        .context(IOSnafu)?;
+        .context(WriteIOSnafu)?;
 
     index_buf.insert_block_meta(
         IndexEntry {
@@ -449,7 +449,7 @@ async fn write_block_to(
             .as_mut_slice(),
         )
         .await
-        .context(IOSnafu)?;
+        .context(WriteIOSnafu)?;
 
     index_buf.insert_block_meta(
         IndexEntry {
@@ -486,7 +486,7 @@ async fn write_encoded_block_to(
             .as_mut_slice(),
         )
         .await
-        .context(IOSnafu)?;
+        .context(WriteIOSnafu)?;
 
     let time_range = block.time_range.expect("EncodedDataBlock is not empty");
 
@@ -524,7 +524,7 @@ async fn write_footer_to(
             .as_mut_slice(),
         )
         .await
-        .context(IOSnafu)?;
+        .context(WriteIOSnafu)?;
     Ok(size)
 }
 
@@ -553,7 +553,7 @@ pub mod tsm_writer_tests {
         let path = path.as_ref();
         let dir = path.parent().unwrap();
         if !file_manager::try_exists(dir) {
-            std::fs::create_dir_all(dir).context(super::IOSnafu)?;
+            std::fs::create_dir_all(dir).context(super::WriteIOSnafu)?;
         }
         let mut writer = TsmWriter::open(path, tsm_seq, false, 0).await?;
         for (fid, blks) in data.iter() {

@@ -3,7 +3,7 @@ use std::fs::File;
 use pprof::protos::Message;
 use tikv_jemalloc_ctl::{Access, AsName};
 
-#[cfg(all(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub async fn gernate_pprof() -> Result<String, String> {
     let guard = pprof::ProfilerGuardBuilder::default()
         .frequency(1000)
@@ -47,7 +47,7 @@ const PROF_DUMP: &[u8] = b"prof.dump\0";
 const PROFILE_OUTPUT_FILE: &[u8] = b"/tmp/mem_profile.out\0";
 const PROFILE_OUTPUT_FILE_STR: &str = "/tmp/mem_profile.out";
 
-#[cfg(all(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub async fn gernate_jeprof() -> Result<String, String> {
     set_prof_active(true)?;
     tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
