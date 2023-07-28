@@ -3,6 +3,7 @@ mod example;
 mod gapfill;
 mod interpolate;
 mod locf;
+mod utils;
 
 use std::sync::Arc;
 
