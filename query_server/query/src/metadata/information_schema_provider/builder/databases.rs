@@ -12,7 +12,7 @@ pub const DATABASES_TTL: &str = "ttl";
 pub const DATABASES_SHARD: &str = "shard";
 pub const DATABASES_VNODE_DURATION: &str = "vnode_duration";
 pub const DATABASES_REPLICA: &str = "replica";
-pub const DATABASES_PERCISION: &str = "percision";
+pub const DATABASES_PRECISION: &str = "precision";
 
 lazy_static! {
     pub static ref DATABASE_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
@@ -22,7 +22,7 @@ lazy_static! {
         Field::new(DATABASES_SHARD, DataType::UInt64, false),
         Field::new(DATABASES_VNODE_DURATION, DataType::Utf8, false),
         Field::new(DATABASES_REPLICA, DataType::UInt64, false),
-        Field::new(DATABASES_PERCISION, DataType::Utf8, false),
+        Field::new(DATABASES_PRECISION, DataType::Utf8, false),
     ]));
 }
 
