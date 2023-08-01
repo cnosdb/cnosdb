@@ -840,7 +840,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     }
 
     fn show_databases_to_plan(&self, session: &SessionCtx) -> Result<PlanWithPrivileges> {
-        let projections = vec![col(DATABASES_DATABASE_NAME).alias(DATABASES_DATABASE_NAME)];
+        let projections = vec![col(DATABASES_DATABASE_NAME).alias(DATABASES_DATABASE_NAME.to_uppercase())];
         let sorts = vec![col(DATABASES_DATABASE_NAME).sort(true, true)];
 
         let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_DATABASES);
@@ -874,7 +874,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let database_name = session.default_database();
         let db_name = database.map(normalize_ident);
 
-        let projections = vec![col(TABLES_TABLE_NAME).alias(TABLES_TABLE_NAME)];
+        let projections = vec![col(TABLES_TABLE_NAME).alias(TABLES_TABLE_NAME.to_uppercase())];
         let sorts = vec![col(TABLES_TABLE_NAME).sort(true, true)];
 
         let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_TABLES);
