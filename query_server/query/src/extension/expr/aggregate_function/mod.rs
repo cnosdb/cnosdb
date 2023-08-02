@@ -57,6 +57,10 @@ impl TSPoint {
     pub fn val(&self) -> &ScalarValue {
         &self.val
     }
+
+    pub fn ts(&self) -> &ScalarValue {
+        &self.ts
+    }
 }
 
 impl AggResult for TSPoint {

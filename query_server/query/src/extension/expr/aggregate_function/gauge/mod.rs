@@ -46,6 +46,18 @@ impl GaugeData {
             }
         }
     }
+
+    pub fn time_delta(&self) -> DFResult<ScalarValue> {
+        match self.last.ts().sub_checked(self.first.ts()) {
+            Ok(value) => Ok(value),
+            Err(_) => {
+                // null if overflow
+                let zero = ScalarValue::new_zero(&self.last.ts().get_datatype())?;
+                let interval_datatype = zero.sub(&zero)?.get_datatype();
+                ScalarValue::try_from(interval_datatype)
+            }
+        }
+    }
 }
 
 impl AggResult for GaugeData {
