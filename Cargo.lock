@@ -1113,7 +1113,7 @@ checksum = "2da6da31387c7e4ef160ffab6d5e7f00c42626fe39aea70a7b0f1773f7dd6c1b"
 
 [[package]]
 name = "client"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "anyhow",
  "async-backtrace",
@@ -1185,7 +1185,7 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "num_cpus",
@@ -1277,7 +1277,7 @@ dependencies = [
 
 [[package]]
 name = "coordinator"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "async-trait",
@@ -1854,7 +1854,7 @@ dependencies = [
 
 [[package]]
 name = "e2e_test"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "arrow-flight",
  "arrow-schema",
@@ -1984,7 +1984,7 @@ dependencies = [
 
 [[package]]
 name = "error_code"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "error_code_macro",
@@ -1993,7 +1993,7 @@ dependencies = [
 
 [[package]]
 name = "error_code_macro"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2409,7 +2409,7 @@ dependencies = [
 
 [[package]]
 name = "http_protocol"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "models",
@@ -2777,7 +2777,7 @@ dependencies = [
 
 [[package]]
 name = "limiter_bucket"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "bincode",
@@ -2849,7 +2849,7 @@ dependencies = [
 
 [[package]]
 name = "lru_cache"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "criterion",
@@ -2911,7 +2911,7 @@ dependencies = [
 
 [[package]]
 name = "main"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "actix-web",
  "arrow-flight",
@@ -3046,7 +3046,7 @@ dependencies = [
 
 [[package]]
 name = "memory_pool"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "datafusion",
@@ -3056,7 +3056,7 @@ dependencies = [
 
 [[package]]
 name = "meta"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "actix-web",
  "async-backtrace",
@@ -3095,7 +3095,7 @@ dependencies = [
 
 [[package]]
 name = "metrics"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "once_cell",
@@ -3155,7 +3155,7 @@ dependencies = [
 
 [[package]]
 name = "models"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "arrow-schema",
  "async-backtrace",
@@ -4106,7 +4106,7 @@ dependencies = [
 
 [[package]]
 name = "protocol_parser"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "bytes",
@@ -4120,7 +4120,7 @@ dependencies = [
 
 [[package]]
 name = "protos"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "chrono",
@@ -4189,7 +4189,7 @@ dependencies = [
 
 [[package]]
 name = "query"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "async-recursion",
@@ -4913,7 +4913,7 @@ dependencies = [
 
 [[package]]
 name = "spi"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "arrow-flight",
  "async-trait",
@@ -4958,7 +4958,7 @@ checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
 name = "sqllogicaltests"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "arrow",
  "arrow-flight",
@@ -5201,7 +5201,7 @@ dependencies = [
 
 [[package]]
 name = "test"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "clap 4.3.11",
@@ -5597,7 +5597,7 @@ checksum = "b6bc1c9ce2b5135ac7f93c72918fc37feb872bdc6a5533a8b85eb4b86bfdae52"
 
 [[package]]
 name = "trace"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "chrono",
@@ -5620,7 +5620,7 @@ dependencies = [
 
 [[package]]
 name = "trace_http"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "http",
  "itertools 0.11.0",
@@ -5740,7 +5740,7 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 
 [[package]]
 name = "tskv"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "async-recursion",
@@ -5928,7 +5928,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "utils"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "libc",
