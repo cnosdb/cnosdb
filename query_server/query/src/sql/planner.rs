@@ -679,7 +679,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             .project(projections)?
             .build()?;
 
-        let plan = Plan::Query(QueryPlan { df_plan: df_plan });
+        let plan = Plan::Query(QueryPlan { df_plan });
 
         // privileges
         let tenant_id = *session.tenant_id();

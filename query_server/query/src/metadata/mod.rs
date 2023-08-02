@@ -58,7 +58,7 @@ pub trait ContextProviderExtension: ContextProvider {
         name: TableReference,
     ) -> datafusion::common::Result<Arc<TableSourceAdapter>>;
     fn database_table_exist(&self, _database: &str, _table: Option<&ResolvedTable>) -> Result<(), MetaError> {
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -254,16 +254,13 @@ impl ContextProviderExtension for MetadataProvider {
                 database: database.to_string() 
         })?;
 
-        match table {
-            Some(table) => {
-                data_info.tables.get( table.table()).ok_or(MetaError::TableNotFound {
-                    table: table.to_string(), 
-                })?;
-            }
-            None => (),
+        if let Some(table) = table {
+            data_info.tables.get( table.table()).ok_or(MetaError::TableNotFound {
+                table: table.to_string(), 
+            })?;
         }
 
-        return Ok(());
+        Ok(())
     }
 }
 
