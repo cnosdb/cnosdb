@@ -270,20 +270,13 @@ impl GaugeDataBuilder {
         let len = self.container.len();
 
         let first_idx = 0;
+        let last_idx = len - 1;
         let mut second_idx = 0;
         let mut penultimate_idx = 0;
-        let mut last_idx = 0;
 
-        if len == 2 {
-            second_idx = 1;
-            last_idx = 1;
-        } else if len == 3 {
-            second_idx = 1;
-            penultimate_idx = 1;
-        } else if len >= 4 {
+        if len > 1 {
             second_idx = 1;
             penultimate_idx = len - 2;
-            last_idx = len - 1;
         }
 
         let first = self.container[first_idx].clone();
