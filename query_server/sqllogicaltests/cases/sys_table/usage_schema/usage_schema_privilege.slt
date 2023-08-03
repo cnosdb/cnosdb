@@ -1,0 +1,14 @@
+statement ok
+create table usage_schema.test_privilege (a bigint);
+
+statement ok
+insert into table usage_schema.test_privilege (time, a)
+values (1, 1);
+
+query T
+select * from usage_schema.test_privilege;
+----
+1970-01-01T00:00:00.000000001 1
+
+statement ok
+drop table usage_schema.test_privilege;
