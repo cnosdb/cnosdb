@@ -22,6 +22,7 @@ pub const GAUGE_AGG_UDAF_NAME: &str = "gauge_agg";
 pub const FIRST_UDAF_NAME: &str = "first";
 pub const LAST_UDAF_NAME: &str = "last";
 pub use gauge::GaugeData;
+pub use state_agg::{DurationStates, StateAggData, StatePeriods, TimePeriod};
 
 pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...
