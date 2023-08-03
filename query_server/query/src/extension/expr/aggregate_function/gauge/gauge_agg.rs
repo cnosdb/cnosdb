@@ -18,7 +18,7 @@ use super::{GaugeData, TSPoint};
 use crate::extension::expr::aggregate_function::{
     scalar_to_points, AggResult, AggState, GAUGE_AGG_UDAF_NAME,
 };
-use crate::extension::expr::expr_utils::CHECK_ARGS_FUNC;
+use crate::extension::expr::expr_utils::check_args;
 
 pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<(), QueryError> {
     func_manager.register_udaf(new())?;
@@ -27,7 +27,7 @@ pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<(
 
 fn new() -> AggregateUDF {
     let return_type_func: ReturnTypeFunction = Arc::new(move |input| {
-        CHECK_ARGS_FUNC(GAUGE_AGG_UDAF_NAME, 2, input)?;
+        check_args(GAUGE_AGG_UDAF_NAME, 2, input)?;
 
         let result = GaugeData::try_new_null(input[0].clone(), input[1].clone())?;
         let date_type = result.to_scalar()?.get_datatype();
@@ -45,7 +45,7 @@ fn new() -> AggregateUDF {
     });
 
     let accumulator: AccumulatorFactoryFunction = Arc::new(|input, output| {
-        CHECK_ARGS_FUNC(GAUGE_AGG_UDAF_NAME, 2, input)?;
+        check_args(GAUGE_AGG_UDAF_NAME, 2, input)?;
 
         let ts_data_type = input[0].clone();
         let value_data_type = input[1].clone();
