@@ -9,9 +9,7 @@ use spi::QueryError;
 
 use super::selector_function::{BOTTOM, TOPK};
 
-type CheckArgsFuncSignature<'a> = &'a dyn Fn(&str, usize, &[DataType]) -> DFResult<()>;
-
-pub const CHECK_ARGS_FUNC: CheckArgsFuncSignature = &|func_name, expects, input| {
+pub fn check_args(func_name: &str, expects: usize, input: &[DataType]) -> DFResult<()> {
     if input.len() != expects {
         return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
             err: format!(
@@ -24,7 +22,7 @@ pub const CHECK_ARGS_FUNC: CheckArgsFuncSignature = &|func_name, expects, input|
     }
 
     Ok(())
-};
+}
 
 pub fn is_time_filter(expr: &Expr) -> bool {
     match expr {
