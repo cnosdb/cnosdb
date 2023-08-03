@@ -121,7 +121,15 @@ impl MetadataProvider {
         }
 
         // process USAGE_SCHEMA
-        if database_name.eq_ignore_ascii_case(self.usage_schema_provider.name()) {
+        // usage_schema records usage information.
+        // Under the cnosdb tenant, the table in usage_schema
+        // corresponds to the actual kv table,
+        // and any operation can be performed with permission.
+        // Under other tenants, the usage_schema table is
+        // a view of the kv table and can only be queried.
+        if !tenant_name.eq(DEFAULT_CATALOG)
+            && database_name.eq_ignore_ascii_case(self.usage_schema_provider.name())
+        {
             let table_provider = self
                 .usage_schema_provider
                 .table(&self.session, table_name)
@@ -183,9 +191,10 @@ impl ContextProviderExtension for MetadataProvider {
     }
 
     fn reset_access_databases(&self) -> DatabaseSet {
-        let result = self.access_databases.read().clone();
-        self.access_databases.write().reset();
-        result
+        let mut access_databases = self.access_databases.write();
+        let res = access_databases.clone();
+        access_databases.reset();
+        res
     }
 
     fn get_db_precision(&self, name: &str) -> Result<Precision, MetaError> {
