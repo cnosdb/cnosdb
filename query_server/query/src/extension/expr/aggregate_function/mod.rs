@@ -2,6 +2,7 @@
 mod example;
 mod first;
 mod gauge;
+mod last;
 mod sample;
 mod state_agg;
 
@@ -19,6 +20,7 @@ pub const SAMPLE_UDAF_NAME: &str = "sample";
 pub const COMPACT_STATE_AGG_UDAF_NAME: &str = "compact_state_agg";
 pub const GAUGE_AGG_UDAF_NAME: &str = "gauge_agg";
 pub const FIRST_UDAF_NAME: &str = "first";
+pub const LAST_UDAF_NAME: &str = "last";
 pub use gauge::GaugeData;
 
 pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
@@ -29,6 +31,7 @@ pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<
     state_agg::register_udafs(func_manager)?;
     gauge::register_udafs(func_manager)?;
     first::register_udaf(func_manager)?;
+    last::register_udaf(func_manager)?;
     Ok(())
 }
 
