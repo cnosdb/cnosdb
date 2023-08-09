@@ -368,6 +368,8 @@ fn star_meta_cluster() -> std::process::Output {
 
 #[cfg(feature = "meta_e2e_test")]
 async fn write_data_to_meta() {
+    use models::oid::UuidGenerator;
+
     let node = NodeInfo {
         id: 111,
         grpc_addr: "".to_string(),
@@ -376,17 +378,17 @@ async fn write_data_to_meta() {
     };
     let req = command::WriteCommand::AddDataNode("cluster_xxx".to_string(), node);
     let cli = client::MetaHttpClient::new("127.0.0.1:8901");
-    let rsp = cli.write::<()>(&req).await.unwrap();
-    println!("=== add nodeinfo : {:?}", rsp);
+    cli.write::<()>(&req).await.unwrap();
     // let req = command::WriteCommand::CreateTenant(“cluster_xxx”.to_string(), (), ())
-    let req = command::WriteCommand::CreateTenant(
-        "cluster_xxx".to_string(),
+    let oid = UuidGenerator::default().next_id();
+    let tenant = Tenant::new(
+        oid,
         "test_add_tenant001".to_string(),
         models::schema::TenantOptions::default(),
     );
+    let req = command::WriteCommand::CreateTenant("cluster_xxx".to_string(), tenant);
     let cli = client::MetaHttpClient::new("127.0.0.1:8901");
-    let rsp = cli.write::<Tenant>(&req).await.unwrap();
-    println!("=== add tenant: {:?}", rsp);
+    cli.write::<()>(&req).await.unwrap();
 }
 #[cfg(feature = "meta_e2e_test")]
 async fn drop_data_from_meta() {
@@ -395,8 +397,7 @@ async fn drop_data_from_meta() {
         "test_add_tenant001".to_string(),
     );
     let cli = client::MetaHttpClient::new("127.0.0.1:8901");
-    let rsp = cli.write::<()>(&req).await.unwrap();
-    println!("=== drop tanant: {:?}", rsp);
+    cli.write::<()>(&req).await.unwrap();
 }
 #[cfg(feature = "meta_e2e_test")]
 fn backup() -> std::process::Output {
