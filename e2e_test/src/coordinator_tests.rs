@@ -11,8 +11,9 @@ use std::{io, thread};
 
 use meta::store::command::WriteCommand;
 use models::meta_data::TenantMetaData;
+use models::oid::UuidGenerator;
 use models::schema::{
-    DatabaseOptions, DatabaseSchema, Duration as CnosDuration, Precision, Tenant,
+    DatabaseOptions, DatabaseSchema, Duration as CnosDuration, Precision, Tenant, TenantOptions,
 };
 use serial_test::serial;
 use sysinfo::{ProcessExt, System, SystemExt};
@@ -37,12 +38,10 @@ impl CnosdbMeta {
     fn prepare_test_data(&self) {
         for i in 0..5 {
             // Create tenant tenant_{i}
-            let tenant = tenant_name(i);
-            let create_tenant_req = WriteCommand::CreateTenant(
-                DEFAULT_CLUSTER.to_string(),
-                tenant.clone(),
-                models::schema::TenantOptions::default(),
-            );
+            let name = tenant_name(i);
+            let oid = UuidGenerator::default().next_id();
+            let tenant = Tenant::new(oid, name.clone(), TenantOptions::default());
+            let create_tenant_req = WriteCommand::CreateTenant(DEFAULT_CLUSTER.to_string(), tenant);
             println!("Creating tenant: {:?}", &create_tenant_req);
             let create_tenant_res = self
                 .runtime
@@ -55,8 +54,8 @@ impl CnosdbMeta {
             let database = database_name(i);
             let create_database_req = WriteCommand::CreateDB(
                 DEFAULT_CLUSTER.to_string(),
-                tenant.clone(),
-                DatabaseSchema::new(&tenant, &database),
+                name.clone(),
+                DatabaseSchema::new(&name, &database),
             );
             println!("Creating database: {:?}", &create_database_req);
             let create_database_res = self.runtime.block_on(

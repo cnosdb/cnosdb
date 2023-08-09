@@ -526,8 +526,8 @@ impl StateMachine {
             WriteCommand::DeleteBucket(cluster, tenant, db, id) => {
                 response_encode(self.process_delete_bucket(cluster, tenant, db, *id))
             }
-            WriteCommand::CreateUser(cluster, name, options, is_admin) => {
-                response_encode(self.process_create_user(cluster, name, options, *is_admin))
+            WriteCommand::CreateUser(cluster, user) => {
+                response_encode(self.process_create_user(cluster, user))
             }
             WriteCommand::AlterUser(cluster, name, options) => {
                 response_encode(self.process_alter_user(cluster, name, options))
@@ -538,8 +538,8 @@ impl StateMachine {
             WriteCommand::DropUser(cluster, name) => {
                 response_encode(self.process_drop_user(cluster, name))
             }
-            WriteCommand::CreateTenant(cluster, name, options) => {
-                response_encode(self.process_create_tenant(cluster, name, options))
+            WriteCommand::CreateTenant(cluster, tenant) => {
+                response_encode(self.process_create_tenant(cluster, tenant))
             }
             WriteCommand::AlterTenant(cluster, name, options) => {
                 response_encode(self.process_alter_tenant(cluster, name, options))
@@ -998,26 +998,17 @@ impl StateMachine {
         Ok(self.remove(&key)?)
     }
 
-    fn process_create_user(
-        &self,
-        cluster: &str,
-        user_name: &str,
-        user_options: &UserOptions,
-        is_admin: bool,
-    ) -> MetaResult<Oid> {
-        let key = KeyPath::user(cluster, user_name);
+    fn process_create_user(&self, cluster: &str, user_desc: &UserDesc) -> MetaResult<()> {
+        let key = KeyPath::user(cluster, user_desc.name());
 
         if self.contains_key(&key)? {
             return Err(MetaError::UserAlreadyExists {
-                user: user_name.to_string(),
+                user: user_desc.name().to_string(),
             });
         }
 
-        let oid = UuidGenerator::default().next_id();
-        let user_desc = UserDesc::new(oid, user_name.to_string(), user_options.clone(), is_admin);
-
         self.insert(&key, &value_encode(&user_desc)?)?;
-        Ok(oid)
+        Ok(())
     }
 
     fn process_alter_user(
@@ -1081,30 +1072,25 @@ impl StateMachine {
         Ok(self.insert(&key, &value_encode(&limiter)?)?)
     }
 
-    fn process_create_tenant(
-        &self,
-        cluster: &str,
-        name: &str,
-        options: &TenantOptions,
-    ) -> MetaResult<Tenant> {
-        let key = KeyPath::tenant(cluster, name);
+    fn process_create_tenant(&self, cluster: &str, tenant: &Tenant) -> MetaResult<()> {
+        let key = KeyPath::tenant(cluster, tenant.name());
 
         if self.contains_key(&key)? {
             return Err(MetaError::TenantAlreadyExists {
-                tenant: name.to_string(),
+                tenant: tenant.name().to_string(),
             });
         }
 
-        let oid = UuidGenerator::default().next_id();
-        let tenant = Tenant::new(oid, name.to_string(), options.clone());
+        let limiter = tenant
+            .options()
+            .request_config()
+            .map(RemoteRequestLimiter::new);
 
-        let limiter = options.request_config().map(RemoteRequestLimiter::new);
-
-        self.set_tenant_limiter(cluster, name, limiter)?;
+        self.set_tenant_limiter(cluster, tenant.name(), limiter)?;
 
         self.insert(&key, &value_encode(&tenant)?)?;
 
-        Ok(tenant)
+        Ok(())
     }
 
     fn process_alter_tenant(
