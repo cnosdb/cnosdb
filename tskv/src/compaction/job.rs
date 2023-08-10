@@ -7,27 +7,33 @@ use flush::run_flush_memtable_job;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{oneshot, RwLock, RwLockWriteGuard, Semaphore};
+use tokio_util::sync::CancellationToken;
 use trace::{error, info};
 
-use crate::compaction::{flush, CompactTask, FlushReq, LevelCompactionPicker, Picker};
+use crate::compaction::{
+    flush, CompactTask, DeltaCompactionPicker, FlushReq, LevelCompactionPicker, Picker,
+};
 use crate::summary::SummaryTask;
 use crate::{TsKvContext, TseriesFamilyId};
 
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
 
 struct CompactProcessor {
-    vnode_ids: HashMap<TseriesFamilyId, bool>,
+    vnode_ids: HashMap<TseriesFamilyId, CompactStrategy>,
 }
 
 impl CompactProcessor {
-    fn insert(&mut self, vnode_id: TseriesFamilyId, should_flush: bool) {
-        let old_should_flush = self.vnode_ids.entry(vnode_id).or_insert(should_flush);
-        if should_flush && !*old_should_flush {
-            *old_should_flush = should_flush
+    fn insert(&mut self, vnode_id: TseriesFamilyId, strategy: CompactStrategy) {
+        let old_strategy = self.vnode_ids.entry(vnode_id).or_default();
+        if strategy.flush_vnode {
+            old_strategy.flush_vnode = true;
+        }
+        if strategy.delta_compaction {
+            old_strategy.delta_compaction = true;
         }
     }
 
-    fn take(&mut self) -> HashMap<TseriesFamilyId, bool> {
+    fn take(&mut self) -> HashMap<TseriesFamilyId, CompactStrategy> {
         std::mem::replace(&mut self.vnode_ids, HashMap::with_capacity(32))
     }
 }
@@ -36,6 +42,21 @@ impl Default for CompactProcessor {
     fn default() -> Self {
         Self {
             vnode_ids: HashMap::with_capacity(32),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct CompactStrategy {
+    flush_vnode: bool,
+    delta_compaction: bool,
+}
+
+impl CompactStrategy {
+    fn new(flush_vnode: bool, delta_compaction: bool) -> Self {
+        Self {
+            flush_vnode,
+            delta_compaction,
         }
     }
 }
@@ -84,6 +105,7 @@ struct CompactJobInner {
     compact_processor: Arc<RwLock<CompactProcessor>>,
     enable_compaction: Arc<AtomicBool>,
     running_compactions: Arc<AtomicUsize>,
+    cancellation_token: CancellationToken,
 }
 
 impl CompactJobInner {
@@ -96,24 +118,42 @@ impl CompactJobInner {
             compact_processor,
             enable_compaction: Arc::new(AtomicBool::new(true)),
             running_compactions: Arc::new(AtomicUsize::new(0)),
+            cancellation_token: CancellationToken::new(),
         }
     }
 
     fn start_merge_compact_task_job(&self, mut compact_task_receiver: Receiver<CompactTask>) {
         info!("Compaction: start merge compact task job");
         let compact_processor = self.compact_processor.clone();
+        let cancellation_token = self.cancellation_token.clone();
         self.runtime.spawn(async move {
             while let Some(compact_task) = compact_task_receiver.recv().await {
-                // Vnode id to compact & whether vnode be flushed before compact
-                let (vnode_id, flush_vnode) = match compact_task {
-                    CompactTask::Vnode(id) => (id, false),
-                    CompactTask::ColdVnode(id) => (id, true),
-                };
-                compact_processor
-                    .write()
-                    .await
-                    .insert(vnode_id, flush_vnode);
+                let mut compact_processor_wlock = compact_processor.write().await;
+                match compact_task {
+                    CompactTask::Normal(id) => compact_processor_wlock.insert(
+                        id,
+                        CompactStrategy {
+                            flush_vnode: false,
+                            delta_compaction: false,
+                        },
+                    ),
+                    CompactTask::Cold(id) => compact_processor_wlock.insert(
+                        id,
+                        CompactStrategy {
+                            flush_vnode: true,
+                            delta_compaction: false,
+                        },
+                    ),
+                    CompactTask::Delta(id) => compact_processor_wlock.insert(
+                        id,
+                        CompactStrategy {
+                            flush_vnode: false,
+                            delta_compaction: true,
+                        },
+                    ),
+                }
             }
+            cancellation_token.cancel();
         });
     }
 
@@ -133,11 +173,12 @@ impl CompactJobInner {
             return;
         }
 
+        let ctx = self.ctx.clone();
         let runtime_inner = self.runtime.clone();
         let compact_processor = Arc::new(RwLock::new(CompactProcessor::default()));
         let enable_compaction = self.enable_compaction.clone();
         let running_compaction = self.running_compactions.clone();
-        let ctx = self.ctx.clone();
+        let cancellation_token = self.cancellation_token.clone();
 
         self.runtime.spawn(async move {
             // TODO: Concurrent compactions should not over argument $cpu.
@@ -148,6 +189,9 @@ impl CompactJobInner {
                 tokio::time::interval(Duration::from_secs(COMPACT_BATCH_CHECKING_SECONDS));
 
             loop {
+                if cancellation_token.is_cancelled() {
+                    break;
+                }
                 check_interval.tick().await;
                 if !enable_compaction.load(atomic::Ordering::SeqCst) {
                     break;
@@ -161,7 +205,18 @@ impl CompactJobInner {
                 let vnode_ids_for_debug = vnode_ids.clone();
                 let now = Instant::now();
                 info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
-                for (vnode_id, flush_vnode) in vnode_ids {
+                for (
+                    vnode_id,
+                    CompactStrategy {
+                        flush_vnode,
+                        delta_compaction,
+                    },
+                ) in vnode_ids
+                {
+                    if cancellation_token.is_cancelled() {
+                        break;
+                    }
+
                     let ts_family = ctx
                         .version_set
                         .read()
@@ -175,11 +230,16 @@ impl CompactJobInner {
                             info!("forbidden compaction on moving vnode {}", vnode_id);
                             return;
                         }
-                        let picker = LevelCompactionPicker::new(ctx.options.storage.clone());
+                        // TODO(zipper): logical here is something clutter.
+                        let picker: Box<dyn Picker> = if delta_compaction {
+                            Box::new(DeltaCompactionPicker::new())
+                        } else {
+                            Box::new(LevelCompactionPicker::new())
+                        };
                         let version = tsf.read().await.version();
                         let compact_req = picker.pick_compaction(version);
                         if let Some(req) = compact_req {
-                            let database = req.database.clone();
+                            let tenant_database = req.tenant_database.clone();
                             let compact_ts_family = req.ts_family_id;
                             let out_level = req.out_level;
 
@@ -194,7 +254,7 @@ impl CompactJobInner {
                                 if !enable_compaction.load(atomic::Ordering::SeqCst) {
                                     return;
                                 }
-                                // Edit running_compation
+                                // Edit running_compaction
                                 running_compaction.fetch_add(1, atomic::Ordering::SeqCst);
                                 let _sub_running_compaction_guard = DeferGuard(Some(|| {
                                     running_compaction.fetch_sub(1, atomic::Ordering::SeqCst);
@@ -230,7 +290,7 @@ impl CompactJobInner {
                                             .await;
 
                                         metrics::sample_tskv_compaction_duration(
-                                            database.as_str(),
+                                            tenant_database.as_str(),
                                             compact_ts_family.to_string().as_str(),
                                             out_level.to_string().as_str(),
                                             start.elapsed().as_secs_f64(),
@@ -335,33 +395,43 @@ impl std::fmt::Debug for FlushJob {
 
 #[cfg(test)]
 mod test {
-    use std::sync::atomic::{self, AtomicI32};
-    use std::sync::Arc;
+    use std::sync::atomic::AtomicI32;
+    use std::sync::{atomic, Arc};
 
     use super::DeferGuard;
-    use crate::compaction::job::CompactProcessor;
+    use crate::compaction::job::{CompactProcessor, CompactStrategy};
     use crate::TseriesFamilyId;
 
     #[test]
     fn test_build_compact_batch() {
         let mut compact_batch_builder = CompactProcessor::default();
-        compact_batch_builder.insert(1, false);
-        compact_batch_builder.insert(2, false);
-        compact_batch_builder.insert(1, true);
-        compact_batch_builder.insert(3, true);
+        compact_batch_builder.insert(1, CompactStrategy::new(false, false));
+        compact_batch_builder.insert(2, CompactStrategy::new(false, false));
+        compact_batch_builder.insert(1, CompactStrategy::new(true, true));
+        compact_batch_builder.insert(3, CompactStrategy::new(true, false));
+        compact_batch_builder.insert(1, CompactStrategy::new(false, false));
         assert_eq!(compact_batch_builder.vnode_ids.len(), 3);
         let mut keys: Vec<TseriesFamilyId> =
             compact_batch_builder.vnode_ids.keys().cloned().collect();
         keys.sort();
         assert_eq!(keys, vec![1, 2, 3]);
-        assert_eq!(compact_batch_builder.vnode_ids.get(&1), Some(&true));
-        assert_eq!(compact_batch_builder.vnode_ids.get(&2), Some(&false));
-        assert_eq!(compact_batch_builder.vnode_ids.get(&3), Some(&true));
+        assert_eq!(
+            compact_batch_builder.vnode_ids.get(&1),
+            Some(&CompactStrategy::new(true, true))
+        );
+        assert_eq!(
+            compact_batch_builder.vnode_ids.get(&2),
+            Some(&CompactStrategy::new(false, false))
+        );
+        assert_eq!(
+            compact_batch_builder.vnode_ids.get(&3),
+            Some(&CompactStrategy::new(true, false))
+        );
         let vnode_ids = compact_batch_builder.take();
         assert_eq!(vnode_ids.len(), 3);
-        assert_eq!(vnode_ids.get(&1), Some(&true));
-        assert_eq!(vnode_ids.get(&2), Some(&false));
-        assert_eq!(vnode_ids.get(&3), Some(&true));
+        assert_eq!(vnode_ids.get(&1), Some(&CompactStrategy::new(true, true)));
+        assert_eq!(vnode_ids.get(&2), Some(&CompactStrategy::new(false, false)));
+        assert_eq!(vnode_ids.get(&3), Some(&CompactStrategy::new(true, false)));
     }
 
     #[test]

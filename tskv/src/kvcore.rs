@@ -1206,7 +1206,7 @@ impl Engine for TsKv {
                     }
                 }
 
-                let picker = LevelCompactionPicker::new(self.ctx.options.storage.clone());
+                let picker = LevelCompactionPicker::new();
                 let version = ts_family.read().await.version();
                 if let Some(req) = picker.pick_compaction(version) {
                     match compaction::run_compaction_job(req, self.ctx.global_ctx.clone()).await {

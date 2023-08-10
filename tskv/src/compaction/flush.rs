@@ -252,7 +252,7 @@ pub async fn run_flush_memtable_job(
         if trigger_compact {
             let _ = ctx
                 .compact_task_sender
-                .send(CompactTask::Vnode(req.ts_family_id))
+                .send(CompactTask::Normal(req.ts_family_id))
                 .await;
         }
     }
@@ -538,15 +538,15 @@ pub mod flush_tests {
         let test_case = flush_test_case_1(&memory_pool, 10);
 
         let ts_family_id = 1;
-        let database = Arc::new("test_db".to_string());
+        let tenant_database = Arc::new("cnosdb.test_db".to_string());
         let global_context = Arc::new(GlobalContext::new());
         let options = Options::from(&config);
         let version = Arc::new(Version::new(
             ts_family_id,
-            database.clone(),
+            tenant_database.clone(),
             options.storage.clone(),
             1,
-            LevelInfo::init_levels(database, 0, options.storage),
+            LevelInfo::init_levels(tenant_database, 0, options.storage),
             test_case.max_level_ts_before,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
