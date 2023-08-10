@@ -4,12 +4,17 @@ use datafusion::arrow::array::{Array, ArrayRef};
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::ScalarValue;
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::{ReturnTypeFunction, ScalarUDF, Signature, Volatility};
+use datafusion::logical_expr::type_coercion::aggregates::TIMESTAMPS;
+use datafusion::logical_expr::{
+    ReturnTypeFunction, ScalarUDF, Signature, TypeSignature, Volatility,
+};
 use datafusion::physical_expr::functions::make_scalar_function;
 use spi::query::function::FunctionMetadataManager;
-use spi::Result;
+use spi::{QueryError, Result};
 
 use crate::extension::expr::aggregate_function::StateAggData;
+use crate::extension::expr::expr_utils::check_args_eq_any;
+use crate::extension::expr::INTERVALS;
 
 pub const DURATION_IN: &str = "duration_in";
 
@@ -21,7 +26,21 @@ pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<Sc
 
 fn new() -> ScalarUDF {
     let return_type_fn: ReturnTypeFunction = Arc::new(|input| {
+        check_args_eq_any(DURATION_IN, &[2, 3, 4], input)?;
+        if input.len() >= 3 && !TIMESTAMPS.iter().any(|t| t.eq(&input[2])) {
+            return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
+                err: format!("Expect Timestamp type, but found {} type.", &input[2]),
+            })));
+        }
+
+        if input.len() == 4 && !INTERVALS.iter().any(|t| t.eq(&input[3])) {
+            return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
+                err: format!("Expect Interval type, but found {} type.", &input[3]),
+            })));
+        }
+
         let error = || DataFusionError::Execution("Get duration_in ReturnTypeFuction error".into());
+
         match &input[0] {
             DataType::Struct(f) => {
                 let a = f.find("state_duration").ok_or_else(error)?.1;
@@ -45,16 +64,15 @@ fn new() -> ScalarUDF {
 
     let duration = make_scalar_function(duration_in_implement);
 
-    // TODO: support state_agg
-    // let signature = vec![
-    //     TypeSignature::Any(2),
-    //     TypeSignature::Any(3),
-    //     TypeSignature::Any(4),
-    // ];
+    let signature = vec![
+        TypeSignature::Any(2),
+        TypeSignature::Any(3),
+        TypeSignature::Any(4),
+    ];
 
     ScalarUDF::new(
         DURATION_IN,
-        &Signature::any(2, Volatility::Immutable),
+        &Signature::one_of(signature, Volatility::Immutable),
         &return_type_fn,
         &duration,
     )
@@ -76,32 +94,37 @@ fn duration_in_implement(input: &[ArrayRef]) -> Result<ArrayRef, DataFusionError
         }
         // duration_in(state_agg, state, start_time)
         3 => {
-            return Err(DataFusionError::NotImplemented(
-                "duration in only support 2 arguments".into(),
-            ));
-            // for i in 0..array_len {
-            //     let state_agg = ScalarValue::try_from_array(input[0].as_ref(), i)?;
-            //     let state = ScalarValue::try_from_array(input[1].as_ref(), i)?;
-            //     let start = ScalarValue::try_from_array(input[2].as_ref(), i)?;
-            //     let state_agg = StateAggData::try_from(state_agg)?;
-            //     let value = state_agg.duration_in(state, start, ScalarValue::Null)?;
-            //     res.push(value)
-            // }
+            for i in 0..array_len {
+                let state_agg = ScalarValue::try_from_array(input[0].as_ref(), i)?;
+                let state = ScalarValue::try_from_array(input[1].as_ref(), i)?;
+                let start = ScalarValue::try_from_array(input[2].as_ref(), i)?;
+                let state_agg = StateAggData::try_from(state_agg)?;
+                if state_agg.is_compact() {
+                    return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
+                        err:
+                            "duration_in(state_agg, state, start_time) doesn't support compact_agg"
+                                .into(),
+                    })));
+                }
+                let value = state_agg.duration_in(state, start, ScalarValue::Null)?;
+                res.push(value)
+            }
         }
         // duration_in(state_agg, state, start_time, interval)
         4 => {
-            return Err(DataFusionError::NotImplemented(
-                "duration in only support 2 arguments".into(),
-            ));
-            // for i in 0..array_len {
-            //     let state_agg = ScalarValue::try_from_array(input[0].as_ref(), i)?;
-            //     let state = ScalarValue::try_from_array(input[1].as_ref(), i)?;
-            //     let start = ScalarValue::try_from_array(input[2].as_ref(), i)?;
-            //     let interval = ScalarValue::try_from_array(input[3].as_ref(), i)?;
-            //     let state_agg = StateAggData::try_from(state_agg)?;
-            //     let value = state_agg.duration_in(state, start, interval)?;
-            //     res.push(value)
-            // }
+            for i in 0..array_len {
+                let state_agg = ScalarValue::try_from_array(input[0].as_ref(), i)?;
+                let state = ScalarValue::try_from_array(input[1].as_ref(), i)?;
+                let start = ScalarValue::try_from_array(input[2].as_ref(), i)?;
+                let interval = ScalarValue::try_from_array(input[3].as_ref(), i)?;
+                let state_agg = StateAggData::try_from(state_agg)?;
+                if state_agg.is_compact() {
+                    return Err(DataFusionError::External(Box::new(QueryError::Analyzer {err:
+                    "duration_in(state_agg, state, start_time, interval) doesn't support compact_agg".into()})));
+                }
+                let value = state_agg.duration_in(state, start, interval)?;
+                res.push(value)
+            }
         }
         _ => {
             return Err(DataFusionError::NotImplemented(
