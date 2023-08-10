@@ -1,0 +1,56 @@
+[package]
+name = "replication"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+config = { path = "../config" }
+models = { path = "../common/models" }
+protos = { path = "../common/protos", features = ["test"] }
+trace = { path = "../common/trace" }
+utils = { path = "../common/utils" }
+tskv = { path = "../tskv" }
+meta = { path = "../meta" } 
+
+actix-web = "4.3.1"
+tempfile = { version = "3.4.0" }
+clap = { version = "4.1.11", features = ["derive", "env"] }
+reqwest = { version = "0.11.9", features = ["json"] }
+openraft = { git = "https://github.com/datafuselabs/openraft", rev = "4b78dd38b9f3b22d87695fb06446dcf0311629c2", features = ["serde"] }
+
+once_cell = { workspace = true }
+protobuf = { workspace = true }
+prost = { workspace = true }
+walkdir = { workspace = true }
+datafusion = { workspace = true }
+snafu = { workspace = true }
+flatbuffers = { workspace = true }
+async-trait = { workspace = true }
+bincode = { workspace = true }
+tracing = { workspace = true }
+tracing-futures = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-stream = { workspace = true, features = ["net"] }
+tokio-util = { workspace = true }
+futures = { workspace = true, features = ["alloc"] }
+tower = { workspace = true }
+tonic = { workspace = true }
+chrono = { workspace = true }
+async-backtrace = { workspace = true }
+md-5 = { workspace = true }
+rand = { workspace = true }
+parking_lot = { workspace = true }
+heed = { workspace = true }
+heed-traits = { workspace = true }
+warp = { workspace = true }
+http = { workspace = true }
+http-body = { workspace = true }
+
+[features]
+
+
+[package.metadata.docs.rs]
+all-features = true
