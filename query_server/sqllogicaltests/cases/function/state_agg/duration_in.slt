@@ -1,22 +1,34 @@
-statement ok
-alter database public set ttl '1000000d';
-
-statement ok
-create table if not exists states(state STRING);
-
-statement ok
-insert into states values
-('2020-01-01 10:00:00', 'starting'),
-('2020-01-01 10:30:00', 'running'),
-('2020-01-03 16:00:00', 'error'),
-('2020-01-03 18:30:00', 'starting'),
-('2020-01-03 19:30:00', 'running'),
-('2020-01-05 12:00:00', 'stopping');
+include ./state_agg.slt
 
 query T
 select duration_in(compact_state_agg(time, state), 'running') from states;
 ----
 0 years 0 mons 3 days 22 hours 0 mins 0.000000000 secs
+
+query T
+select duration_in(state_agg(time, state), 'running') from states;
+----
+0 years 0 mons 3 days 22 hours 0 mins 0.000000000 secs
+
+query T
+select duration_in(state_agg(time, state), 'running', Timestamp '2020-01-01 11:00:00')
+from states;
+----
+0 years 0 mons 3 days 21 hours 30 mins 0.000000000 secs
+
+query T
+select duration_in(state_agg(time, state), 'running', Timestamp '2020-01-01 11:00:00', interval '4 day')
+from states;
+----
+0 years 0 mons 3 days 20 hours 30 mins 0.000000000 secs
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Failed to do analyze\. err: duration_in\(state_agg, state, start_time\) doesn't support compact_agg", .*
+select duration_in(compact_state_agg(time, state), 'running', Timestamp '2020-01-01 11:00:00')
+from states;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Failed to do analyze\. err: duration_in\(state_agg, state, start_time, interval\) doesn't support compact_agg", .*
+select duration_in(compact_state_agg(time, state), 'running', Timestamp '2020-01-01 11:00:00', interval '4 day')
+from states;
 
 statement ok
 drop table if exists states;

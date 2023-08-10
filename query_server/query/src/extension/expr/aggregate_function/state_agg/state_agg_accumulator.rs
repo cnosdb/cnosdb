@@ -1,116 +1,32 @@
-use std::sync::Arc;
-
-use datafusion::arrow::array::{Array, ArrayRef};
-use datafusion::arrow::datatypes::{DataType, Field};
-use datafusion::common::{DataFusionError, Result as DFResult};
-use datafusion::logical_expr::type_coercion::aggregates::{STRINGS, TIMESTAMPS};
-use datafusion::logical_expr::{
-    AccumulatorFactoryFunction, AggregateUDF, ReturnTypeFunction, Signature, StateTypeFunction,
-    TypeSignature, Volatility,
-};
+use datafusion::arrow::array::ArrayRef;
+use datafusion::arrow::datatypes::DataType;
+use datafusion::common::ScalarValue;
+use datafusion::error::DataFusionError;
 use datafusion::physical_plan::Accumulator;
-use datafusion::scalar::ScalarValue;
-use spi::query::function::FunctionMetadataManager;
-use spi::QueryError;
+use spi::{DFResult, QueryError};
 
-use crate::extension::expr::aggregate_function::state_agg::{
-    AggResult, StateAggData, LIST_ELEMENT_NAME,
-};
-use crate::extension::expr::aggregate_function::COMPACT_STATE_AGG_UDAF_NAME;
-use crate::extension::expr::expr_utils::check_args;
-use crate::extension::expr::INTEGERS;
-
-pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<(), QueryError> {
-    func_manager.register_udaf(new())?;
-    Ok(())
-}
-
-fn new() -> AggregateUDF {
-    let return_type_func: ReturnTypeFunction = Arc::new(move |input| {
-        check_args(COMPACT_STATE_AGG_UDAF_NAME, 2, input)?;
-
-        let result = StateAggData::new(input[0].clone(), input[1].clone(), false);
-        let date_type = result.to_scalar()?.get_datatype();
-
-        trace::trace!("return_type: {:?}", date_type);
-
-        Ok(Arc::new(date_type))
-    });
-
-    let state_type_func: StateTypeFunction = Arc::new(move |input, _| {
-        check_args(COMPACT_STATE_AGG_UDAF_NAME, 2, input)?;
-
-        let types = input
-            .iter()
-            .map(|dt| DataType::List(Arc::new(Field::new(LIST_ELEMENT_NAME, dt.clone(), true))))
-            .collect::<Vec<_>>();
-
-        trace::trace!("state_type: {:?}", types);
-
-        Ok(Arc::new(types))
-    });
-
-    let accumulator: AccumulatorFactoryFunction = Arc::new(|input, _| {
-        check_args(COMPACT_STATE_AGG_UDAF_NAME, 2, input)?;
-
-        Ok(Box::new(CompactStateAggAccumulator::try_new(
-            input.to_vec(),
-        )?))
-    });
-
-    // compact_state_agg(
-    //   ts TIMESTAMPTZ,
-    //   value {STRINGS | INTEGERS}
-    // ) RETURNS StateAggData
-    let type_signatures = STRINGS
-        .iter()
-        .chain(INTEGERS.iter())
-        .flat_map(|t| {
-            TIMESTAMPS
-                .iter()
-                .map(|s_t| TypeSignature::Exact(vec![s_t.clone(), t.clone()]))
-        })
-        .collect();
-
-    AggregateUDF::new(
-        COMPACT_STATE_AGG_UDAF_NAME,
-        &Signature::one_of(type_signatures, Volatility::Immutable),
-        &return_type_func,
-        &accumulator,
-        &state_type_func,
-    )
-}
+use crate::extension::expr::aggregate_function::state_agg::StateAggData;
+use crate::extension::expr::aggregate_function::AggResult;
 
 /// An accumulator to compute the average
 #[derive(Debug)]
-struct CompactStateAggAccumulator {
+pub struct StateAggAccumulator {
     state: IntermediateState,
-
     input_type: Vec<DataType>,
+    compact: bool,
 }
 
-impl CompactStateAggAccumulator {
-    pub fn try_new(input_type: Vec<DataType>) -> DFResult<Self> {
+impl StateAggAccumulator {
+    pub fn try_new(input_type: Vec<DataType>, compact: bool) -> DFResult<Self> {
         Ok(Self {
             state: Default::default(),
             input_type,
+            compact,
         })
     }
 }
 
-impl Accumulator for CompactStateAggAccumulator {
-    fn state(&self) -> DFResult<Vec<ScalarValue>> {
-        if self.state.is_empty() {
-            return empty_intermediate_state(&self.input_type);
-        }
-
-        let state = self.state.to_state()?;
-
-        trace::trace!("CompactStateAggAccumulator state: {:?}", state,);
-
-        Ok(state)
-    }
-
+impl Accumulator for StateAggAccumulator {
     fn update_batch(&mut self, values: &[ArrayRef]) -> DFResult<()> {
         trace::trace!("update_batch: {:?}", values);
 
@@ -136,30 +52,14 @@ impl Accumulator for CompactStateAggAccumulator {
         })
     }
 
-    fn merge_batch(&mut self, values: &[ArrayRef]) -> DFResult<()> {
-        trace::trace!("merge_batch: {:?}", values);
-
-        if values.is_empty() {
-            return Ok(());
-        }
-
-        debug_assert!(
-            values.len() == 2,
-            "merge_batch of compact_state_agg can only take 2 param."
-        );
-
-        let state = IntermediateState::from_state(values)?;
-
-        self.state.append(state);
-
-        Ok(())
-    }
-
     fn evaluate(&self) -> DFResult<ScalarValue> {
         let indices = self.state.sort_indices();
 
-        let mut state_agg_data =
-            StateAggData::new(self.input_type[0].clone(), self.input_type[1].clone(), true);
+        let mut state_agg_data = StateAggData::new(
+            self.input_type[0].clone(),
+            self.input_type[1].clone(),
+            self.compact,
+        );
 
         for idx in indices {
             match (
@@ -196,6 +96,37 @@ impl Accumulator for CompactStateAggAccumulator {
 
     fn size(&self) -> usize {
         std::mem::size_of_val(self)
+    }
+
+    fn state(&self) -> DFResult<Vec<ScalarValue>> {
+        if self.state.is_empty() {
+            return empty_intermediate_state(&self.input_type);
+        }
+
+        let state = self.state.to_state()?;
+
+        trace::trace!("CompactStateAggAccumulator state: {:?}", state,);
+
+        Ok(state)
+    }
+
+    fn merge_batch(&mut self, values: &[ArrayRef]) -> DFResult<()> {
+        trace::trace!("merge_batch: {:?}", values);
+
+        if values.is_empty() {
+            return Ok(());
+        }
+
+        debug_assert!(
+            values.len() == 2,
+            "merge_batch of compact_state_agg can only take 2 param."
+        );
+
+        let state = IntermediateState::from_state(values)?;
+
+        self.state.append(state);
+
+        Ok(())
     }
 }
 

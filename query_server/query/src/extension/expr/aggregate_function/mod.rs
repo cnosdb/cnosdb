@@ -18,11 +18,12 @@ use spi::{QueryError, Result};
 
 pub const SAMPLE_UDAF_NAME: &str = "sample";
 pub const COMPACT_STATE_AGG_UDAF_NAME: &str = "compact_state_agg";
+pub const STATE_AGG_UDAF_NAME: &str = "state_agg";
 pub const GAUGE_AGG_UDAF_NAME: &str = "gauge_agg";
 pub const FIRST_UDAF_NAME: &str = "first";
 pub const LAST_UDAF_NAME: &str = "last";
 pub use gauge::GaugeData;
-pub use state_agg::{DurationStates, StateAggData, StatePeriods, TimePeriod};
+pub use state_agg::StateAggData;
 
 pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...

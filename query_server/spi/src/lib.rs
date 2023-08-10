@@ -23,6 +23,7 @@ pub mod service;
 define_result!(QueryError);
 
 pub type GenericError = Box<dyn error::Error + Send + Sync>;
+pub type DFResult<T> = datafusion::common::Result<T>;
 
 #[derive(Debug, Snafu, ErrorCoder)]
 #[snafu(visibility(pub))]
