@@ -26,6 +26,7 @@ members = [
     "tskv",
     "main",
     "client",
+    "replication",
 ]
 
 [workspace.dependencies]
@@ -151,6 +152,9 @@ opentelemetry-jaeger = { version = "0.18.0" }
 opentelemetry_sdk = { version = "0.19.0" }
 opentelemetry_api = { version = "0.19.0" }
 dateparser = "0.1.7"
+heed = "0.11.0"
+heed-traits = "0.8.0"
+http-body = "0.4.5"
 run_script = "0.10.1"
 
 [workspace.package]
