@@ -1,5 +1,6 @@
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -17,7 +18,7 @@ use crate::summary::{CompactMeta, VersionEdit};
 use crate::tseries_family::TseriesFamily;
 use crate::tsm::{
     self, BlockMeta, BlockMetaIterator, DataBlock, EncodedDataBlock, IndexIterator, IndexMeta,
-    TsmReader, TsmWriter,
+    TsmReader, TsmWriter, WriteTsmError, WriteTsmResult,
 };
 use crate::{ColumnFileId, Error, LevelId, TseriesFamilyId};
 
@@ -418,13 +419,14 @@ pub(crate) struct CompactIterator {
     compacting_files: BinaryHeap<Pin<Box<CompactingFile>>>,
     /// Maximum values in generated CompactingBlock
     max_data_block_size: usize,
-    // /// The time range of data to be merged of level-0 data blocks.
-    // /// The level-0 data that out of the thime range will write back to level-0.
-    // level_time_range: TimeRange,
     /// Decode a data block even though it doesn't need to merge with others,
     /// return CompactingBlock::DataBlock rather than CompactingBlock::Raw .
     decode_non_overlap_blocks: bool,
-
+    // /// Whether to enable `out_level_time_range`.
+    // delta_compaction: bool,
+    // /// The time range of data to be merged of level-0 data blocks.
+    // /// The level-0 data that after the time range will write back to level-0.
+    // out_level_time_range: TimeRange,
     tmp_tsm_blk_meta_iters: Vec<BlockMetaIterator>,
     /// Index to mark `Peekable<BlockMetaIterator>` in witch `TsmReader`,
     /// tmp_tsm_blks[i] is in self.tsm_readers[ tmp_tsm_blk_tsm_reader_idx[i] ]
@@ -673,7 +675,6 @@ pub async fn run_compaction_job(
     }
 
     // Buffers all tsm-files and it's indexes for this compaction
-    let tsf_id = request.ts_family_id;
     let mut tsm_readers = Vec::new();
     for col_file in request.files.iter() {
         let tsm_reader = request.version.get_tsm_reader(col_file.file_path()).await?;
@@ -682,15 +683,7 @@ pub async fn run_compaction_job(
 
     let max_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE as usize;
     let mut iter = CompactIterator::new(tsm_readers, max_block_size, false);
-    let tsm_dir = request.storage_opt.tsm_dir(&request.database, tsf_id);
-    let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
-    info!(
-        "Compaction: File: {} been created (level: {}).",
-        tsm_writer.sequence(),
-        request.out_level
-    );
-    let mut version_edit = VersionEdit::new(tsf_id);
-    let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
+    let mut writer_wrapper = WriterWrapper::new(&request, kernel.clone());
 
     let mut previous_merged_block: Option<CompactingBlock> = None;
     let mut fid = iter.curr_fid;
@@ -700,23 +693,7 @@ pub async fn run_compaction_job(
             // Iteration of next field id, write previous merged block.
             if let Some(blk) = previous_merged_block.take() {
                 // Write the small previous merged block.
-                if write_tsm(
-                    &mut tsm_writer,
-                    blk,
-                    &mut file_metas,
-                    &mut version_edit,
-                    &request,
-                )
-                .await?
-                {
-                    tsm_writer =
-                        tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
-                    info!(
-                        "Compaction: File: {} been created (level: {}).",
-                        tsm_writer.sequence(),
-                        request.out_level
-                    );
-                }
+                writer_wrapper.write(blk).await?;
             }
         }
 
@@ -738,45 +715,14 @@ pub async fn run_compaction_job(
                 previous_merged_block = Some(blk);
                 break;
             }
-            if write_tsm(
-                &mut tsm_writer,
-                blk,
-                &mut file_metas,
-                &mut version_edit,
-                &request,
-            )
-            .await?
-            {
-                tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
-                info!(
-                    "Compaction: File: {} been created (level: {}).",
-                    tsm_writer.sequence(),
-                    request.out_level
-                );
-            }
+            writer_wrapper.write(blk).await?;
         }
     }
     if let Some(blk) = previous_merged_block {
-        let _max_file_size_exceed = write_tsm(
-            &mut tsm_writer,
-            blk,
-            &mut file_metas,
-            &mut version_edit,
-            &request,
-        )
-        .await?;
-    }
-    if !tsm_writer.finished() {
-        finish_write_tsm(
-            &mut tsm_writer,
-            &mut file_metas,
-            &mut version_edit,
-            &request,
-            request.version.max_level_ts,
-        )
-        .await?;
+        writer_wrapper.write(blk).await?;
     }
 
+    let (mut version_edit, file_metas) = writer_wrapper.close().await?;
     for file in request.files {
         version_edit.del_file(file.level(), file.file_id(), file.is_delta());
     }
@@ -788,91 +734,459 @@ pub async fn run_compaction_job(
     Ok(Some((version_edit, file_metas)))
 }
 
-async fn write_tsm(
-    tsm_writer: &mut TsmWriter,
-    blk: CompactingBlock,
-    file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-    version_edit: &mut VersionEdit,
-    request: &CompactReq,
-) -> Result<bool> {
-    let write_ret = match blk {
-        CompactingBlock::Decoded {
-            field_id: fid,
-            data_block: b,
-            ..
-        } => tsm_writer.write_block(fid, &b).await,
-        CompactingBlock::Encoded {
-            field_id,
-            data_block,
-            ..
-        } => tsm_writer.write_encoded_block(field_id, &data_block).await,
-        CompactingBlock::Raw { meta, raw, .. } => tsm_writer.write_raw(&meta, &raw).await,
-    };
-    if let Err(e) = write_ret {
-        match e {
-            tsm::WriteTsmError::WriteIO { source } => {
+pub(crate) struct WriterWrapper {
+    // Init values.
+    delta_compaction: bool,
+    ts_family_id: TseriesFamilyId,
+    out_level: LevelId,
+    out_level_max_ts: Timestamp,
+    max_level_ts: Timestamp,
+    max_file_size: u64,
+    tsm_dir: PathBuf,
+    delta_dir: PathBuf,
+    context: Arc<GlobalContext>,
+
+    // Temporary values.
+    tsm_writer_full: bool,
+    tsm_writer: Option<TsmWriter>,
+    delta_writer_full: bool,
+    delta_writer: Option<TsmWriter>,
+
+    // Result values.
+    version_edit: VersionEdit,
+    file_metas: HashMap<ColumnFileId, Arc<BloomFilter>>,
+}
+
+impl WriterWrapper {
+    pub fn new(request: &CompactReq, context: Arc<GlobalContext>) -> Self {
+        Self {
+            delta_compaction: request.in_level == 0,
+            ts_family_id: request.ts_family_id,
+            out_level: request.out_level,
+            out_level_max_ts: request.time_range.max_ts,
+            max_level_ts: request.version.max_level_ts,
+            max_file_size: request
+                .version
+                .storage_opt
+                .level_max_file_size(request.out_level),
+            tsm_dir: request
+                .storage_opt
+                .tsm_dir(&request.database, request.ts_family_id),
+            delta_dir: request
+                .storage_opt
+                .delta_dir(&request.database, request.ts_family_id),
+            context,
+
+            tsm_writer_full: false,
+            tsm_writer: None,
+            delta_writer_full: false,
+            delta_writer: None,
+
+            version_edit: VersionEdit::new(request.ts_family_id),
+            file_metas: HashMap::new(),
+        }
+    }
+
+    pub async fn close(mut self) -> Result<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)> {
+        if let Some(ref mut w) = self.delta_writer {
+            Self::close_writer(
+                w,
+                &mut self.file_metas,
+                &mut self.version_edit,
+                0,
+                self.ts_family_id,
+                self.max_level_ts,
+            )
+            .await?;
+        }
+        if let Some(ref mut w) = self.tsm_writer {
+            Self::close_writer(
+                w,
+                &mut self.file_metas,
+                &mut self.version_edit,
+                self.out_level,
+                self.ts_family_id,
+                self.max_level_ts,
+            )
+            .await?;
+        }
+
+        Ok((self.version_edit, self.file_metas))
+    }
+
+    /// Write CompactingBlock to TsmWriter, fill file_metas and version_edit.
+    pub async fn write(&mut self, blk: CompactingBlock) -> Result<()> {
+        match blk {
+            CompactingBlock::Decoded {
+                priority: _priority,
+                field_id,
+                data_block,
+            } => {
+                if self.delta_compaction {
+                    if let Some(tr) = data_block.time_range() {
+                        if tr.0 < self.out_level_max_ts && tr.1 > self.out_level_max_ts {
+                            // Split block.
+                            let (tsm_blk, delta_blk) = data_block.split(self.out_level_max_ts);
+                            if !tsm_blk.is_empty() {
+                                self.write_tsm_data_block(field_id, &tsm_blk).await?;
+                            }
+                            if !delta_blk.is_empty() {
+                                self.write_delta_data_block(field_id, &delta_blk).await?;
+                            }
+                        } else if tr.0 > self.out_level_max_ts {
+                            self.write_delta_data_block(field_id, &data_block).await?;
+                        } else {
+                            self.write_tsm_data_block(field_id, &data_block).await?;
+                        }
+                    }
+                } else {
+                    self.write_tsm_data_block(field_id, &data_block).await?;
+                }
+            }
+            CompactingBlock::Encoded {
+                priority,
+                field_id,
+                data_block,
+            } => {
+                if self.delta_compaction {
+                    if let Some(tr) = data_block.time_range {
+                        if tr.min_ts < self.out_level_max_ts && tr.max_ts > self.out_level_max_ts {
+                            // Split block.
+                            let decoded_blk =
+                                CompactingBlock::encoded(priority, field_id, data_block)
+                                    .decode()?;
+                            let (tsm_blk, delta_blk) = decoded_blk.split(self.out_level_max_ts);
+                            if !tsm_blk.is_empty() {
+                                self.write_tsm_data_block(field_id, &tsm_blk).await?;
+                            }
+                            if !delta_blk.is_empty() {
+                                self.write_delta_data_block(field_id, &delta_blk).await?;
+                            }
+                        } else if tr.min_ts > self.out_level_max_ts {
+                            self.write_delta_encoded_data_block(field_id, &data_block)
+                                .await?;
+                        } else {
+                            self.write_tsm_encoded_data_block(field_id, &data_block)
+                                .await?;
+                        }
+                    }
+                } else {
+                    self.write_tsm_encoded_data_block(field_id, &data_block)
+                        .await?;
+                }
+            }
+            CompactingBlock::Raw {
+                priority,
+                meta,
+                raw,
+            } => {
+                if self.delta_compaction {
+                    let tr = meta.time_range();
+                    if tr.min_ts < self.out_level_max_ts && tr.max_ts > self.out_level_max_ts {
+                        // Split block.
+                        let field_id = meta.field_id();
+                        let decoded_blk = CompactingBlock::raw(priority, meta, raw).decode()?;
+                        let (tsm_blk, delta_blk) = decoded_blk.split(self.out_level_max_ts);
+                        if !tsm_blk.is_empty() {
+                            self.write_tsm_data_block(field_id, &tsm_blk).await?;
+                        }
+                        if !delta_blk.is_empty() {
+                            self.write_delta_data_block(field_id, &delta_blk).await?;
+                        }
+                    } else if tr.min_ts > self.out_level_max_ts {
+                        self.write_delta_raw_data_block(&meta, &raw).await?;
+                    } else {
+                        self.write_tsm_raw_data_block(&meta, &raw).await?;
+                    }
+                } else {
+                    self.write_tsm_raw_data_block(&meta, &raw).await?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn write_delta_data_block(
+        &mut self,
+        field_id: FieldId,
+        data_block: &DataBlock,
+    ) -> Result<usize> {
+        self.write_block_inner(field_id, data_block, true).await
+    }
+
+    pub async fn write_tsm_data_block(
+        &mut self,
+        field_id: FieldId,
+        data_block: &DataBlock,
+    ) -> Result<usize> {
+        self.write_block_inner(field_id, data_block, false).await
+    }
+
+    async fn write_block_inner(
+        &mut self,
+        field_id: FieldId,
+        data_block: &DataBlock,
+        is_delta: bool,
+    ) -> Result<usize> {
+        let write_ret = if is_delta {
+            let write_ret = self
+                .delta_writer_mut()
+                .await?
+                .write_block(field_id, data_block)
+                .await;
+            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+                self.delta_writer_full = true;
+                return Ok(write_size);
+            }
+            write_ret
+        } else {
+            let write_ret = self
+                .tsm_writer_mut()
+                .await?
+                .write_block(field_id, data_block)
+                .await;
+            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+                self.tsm_writer_full = true;
+                return Ok(write_size);
+            }
+            write_ret
+        };
+        Self::warp_write_tsm_result(write_ret)
+    }
+
+    pub async fn write_delta_encoded_data_block(
+        &mut self,
+        field_id: FieldId,
+        data_block: &EncodedDataBlock,
+    ) -> Result<usize> {
+        self.write_encoded_block_inner(field_id, data_block, true)
+            .await
+    }
+
+    pub async fn write_tsm_encoded_data_block(
+        &mut self,
+        field_id: FieldId,
+        data_block: &EncodedDataBlock,
+    ) -> Result<usize> {
+        self.write_encoded_block_inner(field_id, data_block, false)
+            .await
+    }
+
+    async fn write_encoded_block_inner(
+        &mut self,
+        field_id: FieldId,
+        data_block: &EncodedDataBlock,
+        is_delta: bool,
+    ) -> Result<usize> {
+        let write_ret = if is_delta {
+            let write_ret = self
+                .delta_writer_mut()
+                .await?
+                .write_encoded_block(field_id, data_block)
+                .await;
+            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+                self.delta_writer_full = true;
+                return Ok(write_size);
+            }
+            write_ret
+        } else {
+            let write_ret = self
+                .tsm_writer_mut()
+                .await?
+                .write_encoded_block(field_id, data_block)
+                .await;
+            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+                self.tsm_writer_full = true;
+                return Ok(write_size);
+            }
+            write_ret
+        };
+        Self::warp_write_tsm_result(write_ret)
+    }
+
+    pub async fn write_delta_raw_data_block(
+        &mut self,
+        block_meta: &BlockMeta,
+        data_block: &[u8],
+    ) -> Result<usize> {
+        self.write_raw_inner(block_meta, data_block, true).await
+    }
+
+    pub async fn write_tsm_raw_data_block(
+        &mut self,
+        block_meta: &BlockMeta,
+        data_block: &[u8],
+    ) -> Result<usize> {
+        self.write_raw_inner(block_meta, data_block, false).await
+    }
+
+    async fn write_raw_inner(
+        &mut self,
+        block_meta: &BlockMeta,
+        data_block: &[u8],
+        is_delta: bool,
+    ) -> Result<usize> {
+        let write_ret = if is_delta {
+            let write_ret = self
+                .delta_writer_mut()
+                .await?
+                .write_raw(block_meta, data_block)
+                .await;
+            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+                self.delta_writer_full = true;
+                return Ok(write_size);
+            }
+            write_ret
+        } else {
+            let write_ret = self
+                .tsm_writer_mut()
+                .await?
+                .write_raw(block_meta, data_block)
+                .await;
+            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+                self.tsm_writer_full = true;
+                return Ok(write_size);
+            }
+            write_ret
+        };
+        Self::warp_write_tsm_result(write_ret)
+    }
+
+    async fn tsm_writer_mut(&mut self) -> Result<&mut TsmWriter> {
+        if self.tsm_writer_full {
+            if let Some(ref mut w) = self.tsm_writer {
+                Self::close_writer(
+                    w,
+                    &mut self.file_metas,
+                    &mut self.version_edit,
+                    self.out_level,
+                    self.ts_family_id,
+                    self.out_level_max_ts,
+                )
+                .await?;
+            }
+            self.new_writer(false).await
+        } else {
+            match self.tsm_writer {
+                Some(ref mut w) => Ok(w),
+                None => self.new_writer(false).await,
+            }
+        }
+    }
+
+    async fn delta_writer_mut(&mut self) -> Result<&mut TsmWriter> {
+        if self.delta_writer_full {
+            if let Some(ref mut w) = self.tsm_writer {
+                Self::close_writer(
+                    w,
+                    &mut self.file_metas,
+                    &mut self.version_edit,
+                    0,
+                    self.ts_family_id,
+                    self.out_level_max_ts,
+                )
+                .await?;
+            }
+            self.new_writer(true).await
+        } else {
+            match self.delta_writer {
+                Some(ref mut w) => Ok(w),
+                None => self.new_writer(true).await,
+            }
+        }
+    }
+
+    async fn new_writer(&mut self, is_delta: bool) -> Result<&mut TsmWriter> {
+        let writer_path = if is_delta {
+            &self.delta_dir
+        } else {
+            &self.tsm_dir
+        };
+        let writer = tsm::new_tsm_writer(
+            writer_path,
+            self.context.file_id_next(),
+            is_delta,
+            self.max_file_size,
+        )
+        .await?;
+        info!(
+            "Compaction: File: {} been created (level: {}).",
+            writer.sequence(),
+            if is_delta { 0 } else { self.out_level }
+        );
+
+        if is_delta {
+            self.delta_writer_full = false;
+            Ok(self.delta_writer.insert(writer))
+        } else {
+            self.tsm_writer_full = false;
+            Ok(self.tsm_writer.insert(writer))
+        }
+    }
+
+    async fn close_writer(
+        tsm_writer: &mut TsmWriter,
+        file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
+        version_edit: &mut VersionEdit,
+        out_level: LevelId,
+        ts_family_id: TseriesFamilyId,
+        max_level_ts: Timestamp,
+    ) -> Result<()> {
+        tsm_writer
+            .write_index()
+            .await
+            .context(error::WriteTsmSnafu)?;
+        tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
+        file_metas.insert(
+            tsm_writer.sequence(),
+            Arc::new(tsm_writer.bloom_filter_cloned()),
+        );
+        info!(
+            "Compaction: File: {} write finished (level: {}, {} B).",
+            tsm_writer.sequence(),
+            out_level,
+            tsm_writer.size()
+        );
+
+        let cm = new_compact_meta(tsm_writer, ts_family_id, out_level);
+        version_edit.add_file(cm, max_level_ts);
+
+        Ok(())
+    }
+
+    fn warp_write_tsm_result<T: Default>(write_result: WriteTsmResult<T>) -> Result<T> {
+        match write_result {
+            Ok(size) => Ok(size),
+            Err(tsm::WriteTsmError::WriteIO { source }) => {
                 // TODO try re-run compaction on other time.
                 error!("Failed compaction: IO error when write tsm: {:?}", source);
-                return Err(Error::IO { source });
+                Err(Error::IO { source })
             }
-            tsm::WriteTsmError::Encode { source } => {
+            Err(tsm::WriteTsmError::Encode { source }) => {
                 // TODO try re-run compaction on other time.
                 error!(
                     "Failed compaction: encoding error when write tsm: {:?}",
                     source
                 );
-                return Err(Error::Encode { source });
+                Err(Error::Encode { source })
             }
-            tsm::WriteTsmError::MaxFileSizeExceed { .. } => {
-                finish_write_tsm(
-                    tsm_writer,
-                    file_metas,
-                    version_edit,
-                    request,
-                    request.version.max_level_ts,
-                )
-                .await?;
-                return Ok(true);
-            }
-            tsm::WriteTsmError::Finished { path } => {
+            Err(tsm::WriteTsmError::Finished { path }) => {
                 error!(
-                    "Trying to write by a finished tsm writer: {}",
+                    "Failed compaction: Trying write already finished tsm file: '{}'",
                     path.display()
                 );
+                Err(Error::WriteTsm {
+                    source: tsm::WriteTsmError::Finished { path },
+                })
+            }
+            Err(tsm::WriteTsmError::MaxFileSizeExceed { .. }) => {
+                // This error should be already handled before, ignore.
+                error!("WriteTsmError::MaxFileSizeExceed should be handled before.");
+                Ok(T::default())
             }
         }
     }
-
-    Ok(false)
-}
-
-async fn finish_write_tsm(
-    tsm_writer: &mut TsmWriter,
-    file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-    version_edit: &mut VersionEdit,
-    request: &CompactReq,
-    max_level_ts: Timestamp,
-) -> Result<()> {
-    tsm_writer
-        .write_index()
-        .await
-        .context(error::WriteTsmSnafu)?;
-    tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
-    file_metas.insert(
-        tsm_writer.sequence(),
-        Arc::new(tsm_writer.bloom_filter_cloned()),
-    );
-    info!(
-        "Compaction: File: {} write finished (level: {}, {} B).",
-        tsm_writer.sequence(),
-        request.out_level,
-        tsm_writer.size()
-    );
-
-    let cm = new_compact_meta(tsm_writer, request.ts_family_id, request.out_level);
-    version_edit.add_file(cm, max_level_ts);
-
-    Ok(())
 }
 
 fn new_compact_meta(
@@ -913,7 +1227,7 @@ pub mod test {
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::{self, DataBlock, TsmReader, TsmTombstone};
-    use crate::{file_utils, ColumnFileId};
+    use crate::{file_utils, ColumnFileId, LevelId};
 
     pub(crate) async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
@@ -963,13 +1277,26 @@ pub mod test {
         data
     }
 
-    fn get_result_file_path(dir: impl AsRef<Path>, version_edit: VersionEdit) -> PathBuf {
+    fn get_result_file_path(
+        dir: impl AsRef<Path>,
+        version_edit: VersionEdit,
+        level: LevelId,
+    ) -> PathBuf {
         if version_edit.has_file_id && !version_edit.add_files.is_empty() {
-            let file_id = version_edit.add_files.first().unwrap().file_id;
-            return file_utils::make_tsm_file_name(dir, file_id);
+            if let Some(f) = version_edit
+                .add_files
+                .into_iter()
+                .find(|f| f.level == level)
+            {
+                if level == 0 {
+                    return file_utils::make_delta_file_name(dir, f.file_id);
+                } else {
+                    return file_utils::make_tsm_file_name(dir, f.file_id);
+                }
+            }
+            panic!("VersionEdit::add_files doesn't contain any file matches level-{level}.");
         }
-
-        panic!("VersionEdit doesn't contain any add_files.");
+        panic!("VersionEdit::add_files is empty, no file to read.");
     }
 
     /// Compare DataBlocks in path with the expected_Data using assert_eq.
@@ -977,8 +1304,9 @@ pub mod test {
         dir: impl AsRef<Path>,
         version_edit: VersionEdit,
         expected_data: HashMap<FieldId, Vec<DataBlock>>,
+        expected_data_level: LevelId,
     ) {
-        let path = get_result_file_path(dir, version_edit);
+        let path = get_result_file_path(dir, version_edit, expected_data_level);
         let data = read_data_blocks_from_column_file(path).await;
         let mut data_field_ids = data.keys().copied().collect::<Vec<_>>();
         data_field_ids.sort_unstable();
@@ -1002,16 +1330,17 @@ pub mod test {
 
     pub(crate) fn create_options(base_dir: String) -> Arc<Options> {
         let mut config = config::get_config_for_test();
-        config.storage.path = base_dir;
-        let opt = Options::from(&config);
-        Arc::new(opt)
+        config.storage.path = base_dir.clone();
+        config.log.path = base_dir;
+        Arc::new(Options::from(&config))
     }
 
-    fn prepare_compact_req_and_kernel(
+    fn prepare_compaction(
         database: Arc<String>,
         opt: Arc<Options>,
-        next_file_id: u64,
+        next_file_id: ColumnFileId,
         files: Vec<Arc<ColumnFile>>,
+        max_level_ts: Timestamp,
     ) -> (CompactReq, Arc<GlobalContext>) {
         let version = Arc::new(Version::new(
             1,
@@ -1019,7 +1348,7 @@ pub mod test {
             opt.storage.clone(),
             1,
             LevelInfo::init_levels(database.clone(), 0, opt.storage.clone()),
-            1000,
+            max_level_ts,
             Arc::new(ShardedCache::with_capacity(1)),
         ));
         let compact_req = CompactReq {
@@ -1028,12 +1357,14 @@ pub mod test {
             storage_opt: opt.storage.clone(),
             files,
             version,
+            in_level: 1,
             out_level: 2,
+            time_range: TimeRange::all(),
         };
-        let kernel = Arc::new(GlobalContext::new());
-        kernel.set_file_id(next_file_id);
+        let context = Arc::new(GlobalContext::new());
+        context.set_file_id(next_file_id);
 
-        (compact_req, kernel)
+        (compact_req, context)
     }
 
     fn format_data_blocks(data_blocks: &[DataBlock]) -> String {
@@ -1047,6 +1378,7 @@ pub mod test {
         )
     }
 
+    /// Test compaction with ordered data.
     #[tokio::test]
     async fn test_compaction_fast() {
         #[rustfmt::skip]
@@ -1074,19 +1406,22 @@ pub mod test {
             (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
         ]);
 
-        let dir = "/tmp/test/compaction";
+        let dir = "/tmp/test/compaction/0";
+        let _ = std::fs::remove_dir_all(dir);
         let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
+        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
+            prepare_compaction(database, opt, next_file_id, files, max_level_ts);
+        let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(dir, version_edit, expected_data, out_level).await;
     }
 
     #[tokio::test]
@@ -1117,20 +1452,24 @@ pub mod test {
         ]);
 
         let dir = "/tmp/test/compaction/1";
+        let _ = std::fs::remove_dir_all(dir);
         let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
+        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
+            prepare_compaction(database, opt, next_file_id, files, max_level_ts);
+        let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(dir, version_edit, expected_data, out_level).await;
     }
 
+    /// Test compact with duplicate timestamp.
     #[tokio::test]
     async fn test_compaction_2() {
         #[rustfmt::skip]
@@ -1160,18 +1499,21 @@ pub mod test {
         ]);
 
         let dir = "/tmp/test/compaction/2";
+        let _ = std::fs::remove_dir_all(dir);
         let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
+        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
+            prepare_compaction(database, opt, next_file_id, files, max_level_ts);
+        let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(dir, version_edit, expected_data, out_level).await;
     }
 
     /// Returns a generated `DataBlock` with default value and specified size, `DataBlock::ts`
@@ -1268,10 +1610,57 @@ pub mod test {
         }
     }
 
+    type DataDesc = (
+        ColumnFileId,
+        Vec<(ValueType, FieldId, Timestamp, Timestamp)>,
+        Vec<(FieldId, Timestamp, Timestamp)>,
+    );
+
+    #[allow(clippy::type_complexity)]
+    async fn write_data_block_desc(
+        dir: impl AsRef<Path>,
+        data_desc: &[DataDesc],
+    ) -> Vec<Arc<ColumnFile>> {
+        let mut column_files = Vec::new();
+        for (tsm_sequence, tsm_desc, tombstone_desc) in data_desc.iter() {
+            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0)
+                .await
+                .unwrap();
+            for &(val_type, fid, min_ts, max_ts) in tsm_desc.iter() {
+                tsm_writer
+                    .write_block(fid, &generate_data_block(val_type, vec![(min_ts, max_ts)]))
+                    .await
+                    .unwrap();
+            }
+            tsm_writer.write_index().await.unwrap();
+            tsm_writer.finish().await.unwrap();
+            let mut tsm_tombstone = TsmTombstone::open(&dir, *tsm_sequence).await.unwrap();
+            for (fid, min_ts, max_ts) in tombstone_desc.iter() {
+                tsm_tombstone
+                    .add_range(&[*fid][..], &TimeRange::new(*min_ts, *max_ts))
+                    .await
+                    .unwrap();
+            }
+
+            tsm_tombstone.flush().await.unwrap();
+            column_files.push(Arc::new(ColumnFile::new(
+                *tsm_sequence,
+                2,
+                TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
+                tsm_writer.size(),
+                false,
+                tsm_writer.path(),
+            )));
+        }
+
+        column_files
+    }
+
+    /// Test compaction without tombstones.
     #[tokio::test]
     async fn test_compaction_3() {
         #[rustfmt::skip]
-        let data_desc = [
+        let data_desc: [DataDesc; 3] = [
             // [( tsm_sequence, vec![ (ValueType, FieldId, Timestamp_Begin, Timestamp_end) ] )]
             (1_u64, vec![
                 // 1, 1~2500
@@ -1284,7 +1673,7 @@ pub mod test {
                 // 3, 1~1500
                 (ValueType::Boolean, 3, 1, 1000),
                 (ValueType::Boolean, 3, 1001, 1500),
-            ]),
+            ], vec![]),
             (2, vec![
                 // 1, 2001~4500
                 (ValueType::Unsigned, 1, 2001, 3000),
@@ -1299,7 +1688,7 @@ pub mod test {
                 // 4, 1~1500
                 (ValueType::Float, 4, 1, 1000),
                 (ValueType::Float, 4, 1001, 1500),
-            ]),
+            ], vec![]),
             (3, vec![
                 // 1, 4001~6500
                 (ValueType::Unsigned, 1, 4001, 5000),
@@ -1314,7 +1703,7 @@ pub mod test {
                 // 4. 1001~2500
                 (ValueType::Float, 4, 1001, 2000),
                 (ValueType::Float, 4, 2001, 2500),
-            ]),
+            ], vec![]),
         ];
         #[rustfmt::skip]
         let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from(
@@ -1354,102 +1743,41 @@ pub mod test {
         );
 
         let dir = "/tmp/test/compaction/3";
+        let _ = std::fs::remove_dir_all(dir);
         let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
+        let max_level_ts = 6500;
 
-        let mut column_files = Vec::new();
-        for (tsm_sequence, args) in data_desc.iter() {
-            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0)
-                .await
-                .unwrap();
-            for arg in args.iter() {
-                tsm_writer
-                    .write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
-                    .await
-                    .unwrap();
-            }
-            tsm_writer.write_index().await.unwrap();
-            tsm_writer.finish().await.unwrap();
-            column_files.push(Arc::new(ColumnFile::new(
-                *tsm_sequence,
-                2,
-                TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
-                tsm_writer.size(),
-                false,
-                tsm_writer.path(),
-            )));
-        }
-
+        let column_files = write_data_block_desc(&dir, &data_desc).await;
         let next_file_id = 4_u64;
 
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
-
+            prepare_compaction(database, opt, next_file_id, column_files, max_level_ts);
+        let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
 
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(dir, version_edit, expected_data, out_level).await;
     }
 
-    #[allow(clippy::type_complexity)]
-    async fn write_data_block_desc(
-        dir: impl AsRef<Path>,
-        data_desc: &[(
-            ColumnFileId,
-            Vec<(ValueType, FieldId, Timestamp, Timestamp)>,
-            Vec<(FieldId, Timestamp, Timestamp)>,
-        )],
-    ) -> Vec<Arc<ColumnFile>> {
-        let mut column_files = Vec::new();
-        for (tsm_sequence, tsm_desc, tombstone_desc) in data_desc.iter() {
-            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0)
-                .await
-                .unwrap();
-            for &(val_type, fid, min_ts, max_ts) in tsm_desc.iter() {
-                tsm_writer
-                    .write_block(fid, &generate_data_block(val_type, vec![(min_ts, max_ts)]))
-                    .await
-                    .unwrap();
-            }
-            tsm_writer.write_index().await.unwrap();
-            tsm_writer.finish().await.unwrap();
-            let mut tsm_tombstone = TsmTombstone::open(&dir, *tsm_sequence).await.unwrap();
-            for (fid, min_ts, max_ts) in tombstone_desc.iter() {
-                tsm_tombstone
-                    .add_range(&[*fid][..], &TimeRange::new(*min_ts, *max_ts))
-                    .await
-                    .unwrap();
-            }
-
-            tsm_tombstone.flush().await.unwrap();
-            column_files.push(Arc::new(ColumnFile::new(
-                *tsm_sequence,
-                2,
-                TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
-                tsm_writer.size(),
-                false,
-                tsm_writer.path(),
-            )));
-        }
-
-        column_files
-    }
-
+    /// Test compaction with tombstones
     #[tokio::test]
     async fn test_compaction_4() {
         #[rustfmt::skip]
-        let data_desc = [
-            // [( tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)], vec![Option<(FieldId, MinTimestamp, MaxTimestamp)>] )]
-            (1_u64, vec![
+        let data_desc: [DataDesc; 3] = [
+            // [( tsm_data:  tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)],
+            //    tombstone: vec![(FieldId, MinTimestamp, MaxTimestamp)]
+            // )]
+            (1, vec![
                 // 1, 1~2500
-                (ValueType::Unsigned, 1_u64, 1_i64, 1000_i64), (ValueType::Unsigned, 1, 1001, 2000), (ValueType::Unsigned, 1, 2001, 2500),
-            ], vec![(1_u64, 1_i64, 2_i64), (1, 2001, 2100)]),
+                (ValueType::Unsigned, 1, 1, 1000), (ValueType::Unsigned, 1, 1001, 2000), (ValueType::Unsigned, 1, 2001, 2500),
+            ], vec![(1, 1, 2), (1, 2001, 2100)]),
             (2, vec![
                 // 1, 2001~4500
                 // 2101~3100, 3101~4100, 4101~4499
@@ -1478,40 +1806,45 @@ pub mod test {
         );
 
         let dir = "/tmp/test/compaction/4";
+        let _ = std::fs::remove_dir_all(dir);
         let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
+        let max_level_ts = 6500;
 
         let column_files = write_data_block_desc(&dir, &data_desc).await;
         let next_file_id = 4_u64;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
-
+            prepare_compaction(database, opt, next_file_id, column_files, max_level_ts);
+        let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
 
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(dir, version_edit, expected_data, out_level).await;
     }
 
+    /// Test compaction with multi-field and tombstones.
     #[tokio::test]
     async fn test_compaction_5() {
         #[rustfmt::skip]
-        let data_desc = [
-            // [( tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)], vec![Option<(FieldId, MinTimestamp, MaxTimestamp)>] )]
-            (1_u64, vec![
+        let data_desc: [DataDesc; 3] = [
+            // [( tsm_data:  tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)],
+            //    tombstone: vec![(FieldId, MinTimestamp, MaxTimestamp)]
+            // )]
+            (1, vec![
                 // 1, 1~2500
-                (ValueType::Unsigned, 1_u64, 1_i64, 1000_i64), (ValueType::Unsigned, 1, 1001, 2000),  (ValueType::Unsigned, 1, 2001, 2500),
+                (ValueType::Unsigned, 1, 1, 1000), (ValueType::Unsigned, 1, 1001, 2000),  (ValueType::Unsigned, 1, 2001, 2500),
                 // 2, 1~1500
                 (ValueType::Integer, 2, 1, 1000), (ValueType::Integer, 2, 1001, 1500),
                 // 3, 1~1500
                 (ValueType::Boolean, 3, 1, 1000), (ValueType::Boolean, 3, 1001, 1500),
             ], vec![
-                (1_u64, 1_i64, 2_i64), (1, 2001, 2100),
+                (1, 1, 2), (1, 2001, 2100),
                 (2, 1001, 1002),
                 (3, 1499, 1500),
             ]),
@@ -1587,17 +1920,142 @@ pub mod test {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
+        let max_level_ts = 6500;
 
         let column_files = write_data_block_desc(&dir, &data_desc).await;
         let next_file_id = 4_u64;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
+            prepare_compaction(database, opt, next_file_id, column_files, max_level_ts);
+        let out_level = compact_req.out_level;
+        let (version_edit, _) = run_compaction_job(compact_req, kernel)
+            .await
+            .unwrap()
+            .unwrap();
+
+        check_column_file(dir, version_edit, expected_data, out_level).await;
+    }
+
+    /// Test compaction on level-0 (delta compaction) with multi-field.
+    #[tokio::test]
+    async fn test_compaction_6() {
+        #[rustfmt::skip]
+        let data_desc: [DataDesc; 3] = [
+            // [( tsm_data:  tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)],
+            //    tombstone: vec![(FieldId, MinTimestamp, MaxTimestamp)]
+            // )]
+            (1, vec![
+                // 1, 1~2500
+                (ValueType::Unsigned, 1, 1, 1000), (ValueType::Unsigned, 1, 1001, 2000),  (ValueType::Unsigned, 1, 2001, 2500),
+                // 2, 1~1500
+                (ValueType::Integer, 2, 1, 1000), (ValueType::Integer, 2, 1001, 1500),
+                // 3, 1~1500
+                (ValueType::Boolean, 3, 1, 1000), (ValueType::Boolean, 3, 1001, 1500),
+            ], vec![]),
+            (2, vec![
+                // 1, 2001~4500
+                (ValueType::Unsigned, 1, 2001, 3000), (ValueType::Unsigned, 1, 3001, 4000), (ValueType::Unsigned, 1, 4001, 4500),
+                // 2, 1001~3000
+                (ValueType::Integer, 2, 1001, 2000), (ValueType::Integer, 2, 2001, 3000),
+                // 3, 1001~2500
+                (ValueType::Boolean, 3, 1001, 2000), (ValueType::Boolean, 3, 2001, 2500),
+                // 4, 1~1500
+                (ValueType::Float, 4, 1, 1000), (ValueType::Float, 4, 1001, 1500),
+            ], vec![]),
+            (3, vec![
+                // 1, 4001~6500
+                (ValueType::Unsigned, 1, 4001, 5000), (ValueType::Unsigned, 1, 5001, 6000), (ValueType::Unsigned, 1, 6001, 6500),
+                // 2, 3001~5000
+                (ValueType::Integer, 2, 3001, 4000), (ValueType::Integer, 2, 4001, 5000),
+                // 3, 2001~3500
+                (ValueType::Boolean, 3, 2001, 3000), (ValueType::Boolean, 3, 3001, 3500),
+                // 4. 1001~2500
+                (ValueType::Float, 4, 1001, 2000), (ValueType::Float, 4, 2001, 2500),
+            ], vec![]),
+        ];
+        #[rustfmt::skip]
+        let expected_data_target_level: HashMap<FieldId, Vec<DataBlock>> = HashMap::from(
+            [
+                // 1, 1~6500
+                (1, vec![
+                    generate_data_block(ValueType::Unsigned, vec![(1, 1000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(1001, 2000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(2001, 3000)]),
+                ]),
+                // 2, 1~5000
+                (2, vec![
+                    generate_data_block(ValueType::Integer, vec![(1, 1000)]),
+                    generate_data_block(ValueType::Integer, vec![(1001, 2000)]),
+                    generate_data_block(ValueType::Integer, vec![(2001, 3000)]),
+                ]),
+                // 3, 1~3500
+                (3, vec![
+                    generate_data_block(ValueType::Boolean, vec![(1, 1000)]),
+                    generate_data_block(ValueType::Boolean, vec![(1001, 2000)]),
+                    generate_data_block(ValueType::Boolean, vec![(2001, 3000)]),
+                ]),
+                // 4, 1~2500
+                (4, vec![
+                    generate_data_block(ValueType::Float, vec![(1, 1000)]),
+                    generate_data_block(ValueType::Float, vec![(1001, 2000)]),
+                    generate_data_block(ValueType::Float, vec![(2001, 2500)]),
+                ]),
+            ]
+        );
+        #[rustfmt::skip]
+        let expected_data_delta_level: HashMap<FieldId, Vec<DataBlock>> = HashMap::from(
+            [
+                // 1, 1~6500
+                (1, vec![
+                    generate_data_block(ValueType::Unsigned, vec![(3001, 4000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(4001, 5000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(5001, 6000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(6001, 6500)]),
+                ]),
+                // 2, 1~5000
+                (2, vec![
+                    generate_data_block(ValueType::Integer, vec![(3001, 4000)]),
+                    generate_data_block(ValueType::Integer, vec![(4001, 5000)]),
+                ]),
+                // 3, 1~3500
+                (3, vec![
+                    generate_data_block(ValueType::Boolean, vec![(3001, 3500)]),
+                ]),
+            ]
+        );
+
+        let dir = "/tmp/test/compaction/6";
+        let database = Arc::new("dba".to_string());
+        let opt = create_options(dir.to_string());
+        let tsm_dir = opt.storage.tsm_dir(&database, 1);
+        if !file_manager::try_exists(&tsm_dir) {
+            std::fs::create_dir_all(&tsm_dir).unwrap();
+        }
+        let delta_dir = opt.storage.delta_dir(&database, 1);
+        if !file_manager::try_exists(&delta_dir) {
+            std::fs::create_dir_all(&delta_dir).unwrap();
+        }
+        let max_level_ts = 9000;
+
+        let column_files = write_data_block_desc(&delta_dir, &data_desc).await;
+        let next_file_id = 4_u64;
+        let (mut compact_req, kernel) =
+            prepare_compaction(database, opt, next_file_id, column_files, max_level_ts);
+        compact_req.in_level = 0;
+        compact_req.out_level = 2;
+        compact_req.time_range = TimeRange::new(1, 3000);
 
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
 
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(
+            &delta_dir,
+            version_edit.clone(),
+            expected_data_delta_level,
+            0,
+        )
+        .await;
+        check_column_file(tsm_dir, version_edit, expected_data_target_level, 2).await;
     }
 }

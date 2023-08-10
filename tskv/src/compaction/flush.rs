@@ -234,7 +234,7 @@ pub async fn run_flush_memtable_job(
         tsf.read().await.update_last_modified().await;
 
         if let Some(sender) = compact_task_sender.as_ref() {
-            let _ = sender.send(CompactTask::Vnode(req.ts_family_id)).await;
+            let _ = sender.send(CompactTask::Normal(req.ts_family_id)).await;
         }
     }
 

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -15,6 +16,7 @@ use models::{FieldId, SchemaId, SeriesId, Timestamp};
 use parking_lot::RwLock;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::RwLock as AsyncRwLock;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use trace::{debug, error, info, warn};
@@ -163,6 +165,25 @@ impl Drop for ColumnFile {
             }
             info!("Removed file {} at '{}", self.file_id, path.display());
         }
+    }
+}
+
+impl Display for ColumnFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ level:{}, file_id:{}, compacting:{}, time_range:{}-{}, file size:{} }}",
+            self.level,
+            self.file_id,
+            if self.is_compacting() {
+                "True"
+            } else {
+                "False"
+            },
+            self.time_range.min_ts,
+            self.time_range.max_ts,
+            self.size,
+        )
     }
 }
 
@@ -338,6 +359,19 @@ impl LevelInfo {
 
     pub fn level(&self) -> u32 {
         self.level
+    }
+}
+
+impl Display for LevelInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ L:{}, files: [ ", self.level)?;
+        for (i, file) in self.files.iter().enumerate() {
+            write!(f, "{}", file.as_ref())?;
+            if i < self.files.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "] }}")
     }
 }
 
@@ -881,37 +915,6 @@ impl TseriesFamily {
         }
     }
 
-    pub fn schedule_compaction(&self, runtime: Arc<Runtime>) {
-        let tsf_id = self.tf_id;
-        let compact_trigger_cold_duration = self.storage_opt.compact_trigger_cold_duration;
-        let last_modified = self.last_modified.clone();
-        let compact_task_sender = self.compact_task_sender.clone();
-        let cancellation_token = self.cancellation_token.clone();
-        let _jh = runtime.spawn(async move {
-            if compact_trigger_cold_duration == Duration::ZERO {} else {
-                let mut cold_check_interval = tokio::time::interval(Duration::from_secs(10));
-                cold_check_interval.tick().await;
-                loop {
-                    tokio::select! {
-                        _ = cold_check_interval.tick() => {
-                            let last_modified = last_modified.read().await;
-                            if let Some(t) = *last_modified {
-                                if t.elapsed() >= compact_trigger_cold_duration {
-                                    if let Err(e) = compact_task_sender.send(CompactTask::ColdVnode(tsf_id)).await {
-                                        warn!("failed to send compact task({}), {}", tsf_id, e);
-                                    }
-                                }
-                            }
-                        }
-                        _ = cancellation_token.cancelled() => {
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-    }
-
     pub fn close(&self) {
         self.cancellation_token.cancel();
     }
@@ -1003,8 +1006,64 @@ impl TseriesFamily {
 
 impl Drop for TseriesFamily {
     fn drop(&mut self) {
-        self.cancellation_token.cancel();
+        if !self.cancellation_token.is_cancelled() {
+            self.cancellation_token.cancel();
+        }
     }
+}
+
+pub fn schedule_vnode_compaction(runtime: Arc<Runtime>, vnode: Arc<AsyncRwLock<TseriesFamily>>) {
+    let _jh = runtime.spawn(async move {
+        let vnode_rlock = vnode.read().await;
+        let tsf_id = vnode_rlock.tf_id;
+        let compact_trigger_cold_duration = vnode_rlock.storage_opt.compact_trigger_cold_duration;
+        let last_modified = vnode_rlock.last_modified.clone();
+        let compact_trigger_file_num = vnode_rlock.storage_opt.compact_trigger_file_num as usize;
+        let compact_task_sender = vnode_rlock.compact_task_sender.clone();
+        let cancellation_token = vnode_rlock.cancellation_token.clone();
+        drop(vnode_rlock);
+
+        if compact_trigger_cold_duration == Duration::ZERO {} else {
+            let mut check_interval = tokio::time::interval(Duration::from_secs(10));
+            check_interval.tick().await;
+
+            loop {
+                tokio::select! {
+                    _ = check_interval.tick() => {
+                        // Check if vnode is cold.
+                        let ts_rlock = last_modified.read().await;
+                        if let Some(t) = *ts_rlock {
+                            if t.elapsed() >= compact_trigger_cold_duration {
+                                drop(ts_rlock);
+                                let mut ts_wlock = last_modified.write().await;
+                                *ts_wlock = Some(Instant::now());
+                                if let Err(e) = compact_task_sender.send(CompactTask::Cold(tsf_id)).await {
+                                    warn!("failed to send compact task({}), {}", tsf_id, e);
+                                }
+                            }
+                        }
+
+                        // Check if level-0 files is more than DEFAULT_COMPACT_TRIGGER_DETLA_FILE_NUM
+                        let version = vnode.read().await.super_version().version.clone();
+                        let mut level0_files = 0_usize;
+                        for file in version.levels_info()[0].files.iter() {
+                            if !file.is_compacting() {
+                                level0_files += 1;
+                            }
+                        }
+                        if level0_files >= compact_trigger_file_num {
+                            if let Err(e) = compact_task_sender.send(CompactTask::Delta(tsf_id)).await {
+                                warn!("failed to send compact task({}), {}", tsf_id, e);
+                            }
+                        }
+                    }
+                    _ = cancellation_token.cancelled() => {
+                        break;
+                    }
+                }
+            }
+        }
+    });
 }
 
 #[cfg(test)]

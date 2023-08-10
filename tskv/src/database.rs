@@ -25,7 +25,7 @@ use crate::kv_option::{Options, INDEX_PATH};
 use crate::memcache::{MemCache, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
-use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
+use crate::tseries_family::{schedule_vnode_compaction, LevelInfo, TseriesFamily, Version};
 use crate::Error::{self, InvalidPoint};
 use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
@@ -44,6 +44,17 @@ pub struct Database {
     runtime: Arc<Runtime>,
     memory_pool: MemoryPoolRef,
     metrics_register: Arc<MetricsRegister>,
+}
+
+impl Drop for Database {
+    fn drop(&mut self) {
+        let vnodes: Vec<Arc<RwLock<TseriesFamily>>> = self.ts_families.values().cloned().collect();
+        self.runtime.spawn(async move {
+            for vnode in vnodes {
+                vnode.write().await.close();
+            }
+        });
+    }
 }
 
 impl Database {
@@ -75,7 +86,7 @@ impl Database {
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
     ) {
-        let tf = TseriesFamily::new(
+        let vnode = TseriesFamily::new(
             ver.tf_id(),
             ver.database(),
             MemCache::new(
@@ -93,10 +104,10 @@ impl Database {
             self.memory_pool.clone(),
             &self.metrics_register,
         );
-        tf.schedule_compaction(self.runtime.clone());
+        let vnode_ref = Arc::new(RwLock::new(vnode));
+        schedule_vnode_compaction(self.runtime.clone(), vnode_ref.clone());
 
-        self.ts_families
-            .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
+        self.ts_families.insert(ver.tf_id(), vnode_ref);
     }
 
     // todo: Maybe TseriesFamily::new() should be refactored.
