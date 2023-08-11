@@ -52,23 +52,23 @@ jobs:
       - name: test
         run: make test
 
-  #integration-test:
-  #  name: "Integration Test"
-  #  runs-on: ubuntu-latest
-  #  steps:
-  #    - uses: actions/checkout@v3
-  #      with:
-  #        submodules: true
-  #    - name: Prepare Rust Builder
-  #      uses: ./.github/actions/setup-builder
-  #    - name: start meta
-  #      shell: bash
-  #      run: |
-  #        bash ./meta/singleton.sh
-  #    - name: Test
-  #      shell: bash
-  #      run: |
-  #        bash ./query_server/test/script/start_and_test.sh
+  integration-test:
+    name: "Integration Test"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+      - name: start meta
+        shell: bash
+        run: |
+          bash ./meta/singleton.sh
+      - name: Test
+        shell: bash
+        run: |
+          bash ./query_server/test/script/start_and_test.sh
 
   integration-test-singleton:
     name: "Integration Test Singleton"
