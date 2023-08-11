@@ -16,7 +16,7 @@ use crate::apply_store::ApplyStorageRef;
 use crate::entry_store::EntryStorageRef;
 use crate::errors::ReplicationResult;
 use crate::state_store::{Key, StateStorage};
-use crate::{RaftNodeId, RaftNodeInfo, Request, Response, TypeConfig};
+use crate::{RaftNodeId, RaftNodeInfo, Response, TypeConfig};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SerializableSnapshot {
@@ -318,20 +318,19 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
                 .map_err(|e| StorageIOError::write(&e))?;
 
             match entry.payload {
-                EntryPayload::Blank => res.push(Response { value: None }),
+                EntryPayload::Blank => {
+                    res.push(Response { value: None });
+                }
 
-                EntryPayload::Normal(ref req) => match req {
-                    Request::Set { key, value } => {
-                        self.engine
-                            .test_set_kv(key, value)
-                            .await
-                            .map_err(|e| StorageIOError::write(&e))?;
+                EntryPayload::Normal(ref req) => {
+                    let rsp = self
+                        .engine
+                        .apply(req)
+                        .await
+                        .map_err(|e| StorageIOError::write(&e))?;
 
-                        res.push(Response {
-                            value: Some(value.clone()),
-                        })
-                    }
-                },
+                    res.push(rsp);
+                }
 
                 EntryPayload::Membership(ref mem) => {
                     self.state
@@ -341,7 +340,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
                         )
                         .map_err(|e| StorageIOError::write(&e))?;
 
-                    res.push(Response { value: None })
+                    res.push(Response { value: None });
                 }
             };
         }

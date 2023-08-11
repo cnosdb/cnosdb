@@ -8,41 +8,19 @@ use heed::types::*;
 use heed::{Database, Env};
 use serde::{Deserialize, Serialize};
 
-use crate::errors::ReplicationResult;
+use crate::errors::{ReplicationError, ReplicationResult};
+use crate::{Request, Response};
 
 #[async_trait]
 pub trait ApplyStorage: Send + Sync {
-    async fn apply(&self, message: &[u8]) -> ReplicationResult<()>;
+    async fn apply(&self, req: &Request) -> ReplicationResult<Response>;
     async fn snapshot(&self) -> ReplicationResult<Vec<u8>>;
     async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()>;
 
-    async fn test_get_kv(&self, key: &str) -> ReplicationResult<Option<String>>;
-    async fn test_set_kv(&self, key: &str, val: &str) -> ReplicationResult<()>;
+    async fn test_get_value(&self, key: &str) -> ReplicationResult<Option<String>>;
 }
 
 pub type ApplyStorageRef = Arc<dyn ApplyStorage>;
-
-//-------------------------Example-----------------------------
-struct ExampleRequestMessage {
-    pub key: String,
-    pub val: String,
-}
-
-impl ExampleRequestMessage {
-    pub fn encode(&self) -> String {
-        format!("{} {}", self.key, self.val)
-    }
-
-    pub fn decode(data: &[u8]) -> Self {
-        let data_str = String::from_utf8_lossy(data).to_string();
-        let strs: Vec<&str> = data_str.split(' ').collect();
-
-        Self {
-            key: strs[0].to_owned(),
-            val: strs[1].to_owned(),
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize)]
 struct ExampleSnapshotData {
@@ -81,13 +59,22 @@ impl ExampleApplyStorage {
 
 #[async_trait]
 impl ApplyStorage for ExampleApplyStorage {
-    async fn apply(&self, message: &[u8]) -> ReplicationResult<()> {
-        let request = ExampleRequestMessage::decode(message);
-        let mut writer = self.env.write_txn()?;
-        self.db.put(&mut writer, &request.key, &request.val)?;
-        writer.commit()?;
+    async fn apply(&self, req: &Request) -> ReplicationResult<Response> {
+        match req {
+            Request::Set { key, value } => {
+                let mut writer = self.env.write_txn()?;
+                self.db.put(&mut writer, key, value)?;
+                writer.commit()?;
 
-        Ok(())
+                Ok(Response {
+                    value: Some(value.to_string()),
+                })
+            }
+
+            _ => Err(ReplicationError::MsgInvalid {
+                msg: format!("Unknow apply message: {:?}", req),
+            }),
+        }
     }
 
     async fn snapshot(&self) -> ReplicationResult<Vec<u8>> {
@@ -119,15 +106,7 @@ impl ApplyStorage for ExampleApplyStorage {
         Ok(())
     }
 
-    async fn test_set_kv(&self, key: &str, val: &str) -> ReplicationResult<()> {
-        let mut writer = self.env.write_txn()?;
-        self.db.put(&mut writer, key, val)?;
-        writer.commit()?;
-
-        Ok(())
-    }
-
-    async fn test_get_kv(&self, key: &str) -> ReplicationResult<Option<String>> {
+    async fn test_get_value(&self, key: &str) -> ReplicationResult<Option<String>> {
         let reader = self.env.read_txn()?;
         if let Some(data) = self.db.get(&reader, key)? {
             return Ok(Some(data.to_string()));

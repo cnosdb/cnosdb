@@ -11,9 +11,9 @@ use tracing::info;
 
 use crate::{RaftNodeId, RaftNodeInfo, TypeConfig};
 
-pub struct Network {}
+pub struct NetworkClient {}
 
-impl Network {
+impl NetworkClient {
     pub async fn send_rpc<Req, Resp, Err>(
         &self,
         target: RaftNodeId,
@@ -55,12 +55,12 @@ impl Network {
 // NOTE: This could be implemented also on `Arc<ExampleNetwork>`, but since it's empty, implemented
 // directly.
 #[async_trait]
-impl RaftNetworkFactory<TypeConfig> for Network {
+impl RaftNetworkFactory<TypeConfig> for NetworkClient {
     type Network = NetworkConnection;
 
     async fn new_client(&mut self, target: RaftNodeId, node: &RaftNodeInfo) -> Self::Network {
         NetworkConnection {
-            owner: Network {},
+            owner: NetworkClient {},
             target,
             target_node: node.clone(),
         }
@@ -68,7 +68,7 @@ impl RaftNetworkFactory<TypeConfig> for Network {
 }
 
 pub struct NetworkConnection {
-    owner: Network,
+    owner: NetworkClient,
     target: RaftNodeId,
     target_node: RaftNodeInfo,
 }
