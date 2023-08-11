@@ -42,6 +42,16 @@ fn criterion_benchmark(c: &mut Criterion) {
             b.iter(|| data_utils::query(ctx.clone(), "select gauge_agg(ts, f64) FROM t"))
         });
     group.finish();
+
+    c.bench_function("aggregate_query_no_group_by_first", |b| {
+        b.iter(|| {
+            data_utils::query(
+                ctx.clone(),
+                "SELECT first(ts, f64) \
+                 FROM t",
+            )
+        })
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

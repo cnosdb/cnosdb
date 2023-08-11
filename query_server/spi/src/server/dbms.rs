@@ -53,7 +53,7 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
     async fn authenticate(&self, user_info: &UserInfo, _tenant_name: Option<&str>) -> Result<User> {
         let options = unsafe {
             UserOptionsBuilder::default()
-                .password(user_info.password.to_string())
+                .password(user_info.password.clone())
                 .build()
                 .unwrap_unchecked()
         };

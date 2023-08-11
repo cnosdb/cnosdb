@@ -25,7 +25,7 @@ statement ok
 DROP TABLE IF EXISTS TskvTable;
 
 # field not found
-statement error  .*Unable to get field named \\"time_x\\".*
+statement error .*Unable to get field named \\"time_x\\".*
 CREATE STREAM TABLE TskvTable (
   time_x TIMESTAMP,
   name STRING,

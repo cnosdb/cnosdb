@@ -1,0 +1,37 @@
+include ./setup.slt
+
+##########
+## Query
+##########
+
+query 
+select time, t0, t1, t2, f0, f1 from func_tbl order by time, t0, t1;
+----
+1999-12-31T00:00:00 tag11 tag21 NULL 111 444
+1999-12-31T00:00:00.005 tag12 tag22 NULL 222 444
+1999-12-31T00:00:00.010 tag12 tag23 NULL 333 222
+1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
+1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
+1999-12-31T00:10:00.025 tag11 tag22 NULL 333 555
+1999-12-31T00:10:00.030 tag11 tag23 NULL 444 333
+1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+
+query 
+select last(time, f1) from func_tbl;
+----
+222
+
+query 
+select last(time, f0) from func_tbl;
+----
+555
+
+query 
+select last(time, f0), t0 from func_tbl group by t0 order by t0;
+----
+444 tag11
+333 tag12
+555 tag14
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'last\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlast\(Timestamp\(Second, None\), Utf8\)\\n\\tlast\(Timestamp\(Millisecond, None\), Utf8\)\\n\\tlast\(Timestamp\(Microsecond, None\), Utf8\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Utf8\)\\n\\tlast\(Timestamp\(Second, None\), LargeUtf8\)\\n\\tlast\(Timestamp\(Millisecond, None\), LargeUtf8\)\\n\\tlast\(Timestamp\(Microsecond, None\), LargeUtf8\)\\n\\tlast\(Timestamp\(Nanosecond, None\), LargeUtf8\)\\n\\tlast\(Timestamp\(Second, None\), Int8\)\\n\\tlast\(Timestamp\(Millisecond, None\), Int8\)\\n\\tlast\(Timestamp\(Microsecond, None\), Int8\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Int8\)\\n\\tlast\(Timestamp\(Second, None\), Int16\)\\n\\tlast\(Timestamp\(Millisecond, None\), Int16\)\\n\\tlast\(Timestamp\(Microsecond, None\), Int16\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Int16\)\\n\\tlast\(Timestamp\(Second, None\), Int32\)\\n\\tlast\(Timestamp\(Millisecond, None\), Int32\)\\n\\tlast\(Timestamp\(Microsecond, None\), Int32\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Int32\)\\n\\tlast\(Timestamp\(Second, None\), Int64\)\\n\\tlast\(Timestamp\(Millisecond, None\), Int64\)\\n\\tlast\(Timestamp\(Microsecond, None\), Int64\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Int64\)\\n\\tlast\(Timestamp\(Second, None\), UInt8\)\\n\\tlast\(Timestamp\(Millisecond, None\), UInt8\)\\n\\tlast\(Timestamp\(Microsecond, None\), UInt8\)\\n\\tlast\(Timestamp\(Nanosecond, None\), UInt8\)\\n\\tlast\(Timestamp\(Second, None\), UInt16\)\\n\\tlast\(Timestamp\(Millisecond, None\), UInt16\)\\n\\tlast\(Timestamp\(Microsecond, None\), UInt16\)\\n\\tlast\(Timestamp\(Nanosecond, None\), UInt16\)\\n\\tlast\(Timestamp\(Second, None\), UInt32\)\\n\\tlast\(Timestamp\(Millisecond, None\), UInt32\)\\n\\tlast\(Timestamp\(Microsecond, None\), UInt32\)\\n\\tlast\(Timestamp\(Nanosecond, None\), UInt32\)\\n\\tlast\(Timestamp\(Second, None\), UInt64\)\\n\\tlast\(Timestamp\(Millisecond, None\), UInt64\)\\n\\tlast\(Timestamp\(Microsecond, None\), UInt64\)\\n\\tlast\(Timestamp\(Nanosecond, None\), UInt64\)\\n\\tlast\(Timestamp\(Second, None\), Float32\)\\n\\tlast\(Timestamp\(Millisecond, None\), Float32\)\\n\\tlast\(Timestamp\(Microsecond, None\), Float32\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Float32\)\\n\\tlast\(Timestamp\(Second, None\), Float64\)\\n\\tlast\(Timestamp\(Millisecond, None\), Float64\)\\n\\tlast\(Timestamp\(Microsecond, None\), Float64\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Float64\)\\n\\tlast\(Timestamp\(Second, None\), Timestamp\(Second, None\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Timestamp\(Second, None\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Timestamp\(Second, None\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Timestamp\(Second, None\)\)\\n\\tlast\(Timestamp\(Second, None\), Timestamp\(Millisecond, None\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Timestamp\(Millisecond, None\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Timestamp\(Millisecond, None\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Timestamp\(Millisecond, None\)\)\\n\\tlast\(Timestamp\(Second, None\), Timestamp\(Microsecond, None\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Timestamp\(Microsecond, None\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Timestamp\(Microsecond, None\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Timestamp\(Microsecond, None\)\)\\n\\tlast\(Timestamp\(Second, None\), Timestamp\(Nanosecond, None\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tlast\(Timestamp\(Second, None\), Date32\)\\n\\tlast\(Timestamp\(Millisecond, None\), Date32\)\\n\\tlast\(Timestamp\(Microsecond, None\), Date32\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Date32\)\\n\\tlast\(Timestamp\(Second, None\), Date64\)\\n\\tlast\(Timestamp\(Millisecond, None\), Date64\)\\n\\tlast\(Timestamp\(Microsecond, None\), Date64\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Date64\)\\n\\tlast\(Timestamp\(Second, None\), Binary\)\\n\\tlast\(Timestamp\(Millisecond, None\), Binary\)\\n\\tlast\(Timestamp\(Microsecond, None\), Binary\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Binary\)\\n\\tlast\(Timestamp\(Second, None\), LargeBinary\)\\n\\tlast\(Timestamp\(Millisecond, None\), LargeBinary\)\\n\\tlast\(Timestamp\(Microsecond, None\), LargeBinary\)\\n\\tlast\(Timestamp\(Nanosecond, None\), LargeBinary\)\\n\\tlast\(Timestamp\(Second, None\), FixedSizeBinary\(2147483647\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), FixedSizeBinary\(2147483647\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), FixedSizeBinary\(2147483647\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), FixedSizeBinary\(2147483647\)\)\\n\\tlast\(Timestamp\(Second, None\), Time32\(Second\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Time32\(Second\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Time32\(Second\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Time32\(Second\)\)\\n\\tlast\(Timestamp\(Second, None\), Time32\(Millisecond\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Time32\(Millisecond\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Time32\(Millisecond\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Time32\(Millisecond\)\)\\n\\tlast\(Timestamp\(Second, None\), Time64\(Microsecond\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Time64\(Microsecond\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Time64\(Microsecond\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Time64\(Microsecond\)\)\\n\\tlast\(Timestamp\(Second, None\), Time64\(Nanosecond\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Time64\(Nanosecond\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Time64\(Nanosecond\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Time64\(Nanosecond\)\)", .*
+select last(time) from func_tbl;

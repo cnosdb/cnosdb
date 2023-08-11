@@ -14,5 +14,5 @@ select gauge_agg(time, f0 order by time) from func_tbl;
 ----
 {first: {ts: 1999-12-31T00:00:00, val: 111.0}, second: {ts: 1999-12-31T00:00:00.005, val: 222.0}, penultimate: {ts: 1999-12-31T00:10:00.030, val: 444.0}, last: {ts: 1999-12-31T01:00:00.035, val: 555.0}, num_elements: 8}
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: type_coercion\\ncaused by\\nError during planning: Coercion from \[Timestamp\(Nanosecond, None\), Utf8\] to the signature OneOf\(\[Exact\(\[Timestamp\(Second, None\), Float64\]\), Exact\(\[Timestamp\(Millisecond, None\), Float64\]\), Exact\(\[Timestamp\(Microsecond, None\), Float64\]\), Exact\(\[Timestamp\(Nanosecond, None\), Float64\]\)\]\) failed\.", .*
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'gauge_agg\(Timestamp\(Nanosecond, None\), Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tgauge_agg\(Timestamp\(Second, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Millisecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Microsecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Nanosecond, None\), Float64\)", .*
 select gauge_agg(time, t0 order by time) from func_tbl;
