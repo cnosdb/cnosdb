@@ -37,6 +37,8 @@ const VECTOR_LOG_HOST_TAG: &str = "host";
 const VECTOR_LOG_MESSAGE_FIELD: &str = "message";
 const VECTOR_LOG_TIMESTAMP: &str = "timestamp";
 
+const INVALID_FIELD_OR_TAG: &str = "time";
+
 const VECTOR_TYPE_TAG_KEY: &str = "metric_type";
 const VECTOR_LOG_TYPE_TAG_VALUE: &str = "logs";
 
@@ -343,6 +345,11 @@ fn handle_vector_metric(mut metric: Metric) -> server::Result<String> {
     metric.tags_v1.remove(PASSWORD_FIELD);
 
     for (key, value) in metric.tags_v1.iter() {
+        let key = if key.as_str() == INVALID_FIELD_OR_TAG {
+            format!("{}_metric", key)
+        } else {
+            key.to_string()
+        };
         line.push_str(&format!("{}={},", key, value.replace(' ', "_")));
     }
 
@@ -532,16 +539,15 @@ fn handle_vector_log_trace(mut log: Log) -> server::Result<String> {
         .remove(VECTOR_LOG_HOST_TAG)
         .map(vector_value_to_string)
         .unwrap_or_default();
-    let message = log
-        .fields
-        .remove(VECTOR_LOG_MESSAGE_FIELD)
-        .map(vector_value_to_string)
-        .unwrap_or_default();
     let timestamp = log
         .fields
         .remove(VECTOR_LOG_TIMESTAMP)
         .map(vector_value_timestamp)
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            let now = Utc::now();
+            now.timestamp_nanos().to_string()
+        });
+
     log.fields.remove(TENANT_FIELD);
     log.fields.remove(DATABASE_FIELD);
     log.fields.remove(USERNAME_FIELD);
@@ -550,9 +556,16 @@ fn handle_vector_log_trace(mut log: Log) -> server::Result<String> {
         "{}={},{}={} ",
         VECTOR_LOG_HOST_TAG, host, VECTOR_TYPE_TAG_KEY, VECTOR_LOG_TYPE_TAG_VALUE
     ));
-    line.push_str(&format!("{}={}", VECTOR_LOG_MESSAGE_FIELD, message));
     for (key, value) in log.fields {
-        line.push_str(&format!(",{}={}", key, vector_value_to_string(value)));
+        let key = if key.as_str() == INVALID_FIELD_OR_TAG {
+            format!("{}_log", key)
+        } else {
+            key
+        };
+        line.push_str(&format!("{}={},", key, vector_value_to_string(value)));
+    }
+    if line.ends_with(',') {
+        line.pop();
     }
     line.push(' ');
     line.push_str(&timestamp);
@@ -798,8 +811,8 @@ fn vector_value_to_string(value: Value) -> String {
             Kind::Integer(v) => v.to_string() + "i",
             Kind::Float(v) => v.to_string(),
             Kind::Boolean(v) => v.to_string(),
-            Kind::Map(_) => "Not support map".to_string(),
-            Kind::Array(_) => "Not support array".to_string(),
+            Kind::Map(_) => "\"Not support map\"".to_string(),
+            Kind::Array(_) => "\"Not support array\"".to_string(),
             Kind::Null(_) => String::new(),
         },
     }

@@ -249,9 +249,9 @@ mod test {
     }
 
     #[test]
-    fn test_unicode() {
+    fn test_unicode0() {
         let parser = Parser::new(-1);
-        let lp = parser.parse("m,t1=中,t2=发,t3=majh f=\"白\"").unwrap();
+        let lp = parser.parse("m,t1=中,t2=发,t3=majh f=\"白\n\"").unwrap();
         assert_eq!(lp.len(), 1);
         assert_eq!(lp[0].table, "m");
         assert_eq!(lp[0].tags.len(), 3);
@@ -261,7 +261,30 @@ mod test {
         assert_eq!(lp[0].fields.len(), 1);
         assert_eq!(
             lp[0].fields[0],
-            ("f", FieldValue::Str("白".to_string().into_bytes().to_vec()))
+            (
+                "f",
+                FieldValue::Str("白\n".to_string().into_bytes().to_vec())
+            )
+        );
+    }
+
+    #[test]
+    fn test_unicode2() {
+        let parser = Parser::new(-1);
+        let lp = parser.parse("m,t1=中,t2=发,t3=majh f=\"白\n1\"").unwrap();
+        assert_eq!(lp.len(), 1);
+        assert_eq!(lp[0].table, "m");
+        assert_eq!(lp[0].tags.len(), 3);
+        assert_eq!(lp[0].tags[0], ("t1", "中"));
+        assert_eq!(lp[0].tags[1], ("t2", "发"));
+        assert_eq!(lp[0].tags[2], ("t3", "majh"));
+        assert_eq!(lp[0].fields.len(), 1);
+        assert_eq!(
+            lp[0].fields[0],
+            (
+                "f",
+                FieldValue::Str("白\n1".to_string().into_bytes().to_vec())
+            )
         );
     }
 }

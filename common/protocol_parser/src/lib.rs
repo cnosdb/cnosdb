@@ -321,7 +321,7 @@ fn next_field_set(buf: &str) -> Result<Option<(FieldSet, usize)>> {
             }
 
             // FieldSet end character
-            if !quoted && c == ' ' || c == '\n' {
+            if !quoted && (c == ' ' || c == '\n') {
                 tok_end = i;
                 break;
             }
