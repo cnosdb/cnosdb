@@ -79,8 +79,8 @@ PID=$(start_cnosdb)
 
 echo "Wait for CnosDB Server(pid=${PID}) startup to complete"
 trap "echo 'Received Ctrl+C, stopping.'" SIGINT
-
-(wait_start && test) || EXIT_CODE=$?
+# sleep 10 to wait for the data node to register to meta
+(wait_start && sleep 10 && test) || EXIT_CODE=$?
 
 echo "Test complete, killing CnosDB Server(pid=${PID})"
 

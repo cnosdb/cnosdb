@@ -4,10 +4,10 @@ use std::collections::{HashMap, HashSet};
 
 use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
-use models::auth::user::UserOptions;
+use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
 use models::oid::Oid;
-use models::schema::{DatabaseSchema, TableSchema, TenantOptions};
+use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -69,7 +69,7 @@ pub enum WriteCommand {
     DropTable(String, String, String, String),
 
     // cluster, user_name, user_options, is_admin
-    CreateUser(String, String, UserOptions, bool),
+    CreateUser(String, UserDesc),
     // cluster, user_id, user_options
     AlterUser(String, String, UserOptions),
     // cluster, old_name, new_name
@@ -78,7 +78,7 @@ pub enum WriteCommand {
     DropUser(String, String),
 
     // cluster, tenant_name, tenant_options
-    CreateTenant(String, String, TenantOptions),
+    CreateTenant(String, Tenant),
     // cluster, tenant_name, tenant_options
     AlterTenant(String, String, TenantOptions),
     // cluster, old_name, new_name

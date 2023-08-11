@@ -1,8 +1,8 @@
 use actix_web::web::Data;
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder};
-use models::oid::Identifier;
-use models::schema::TenantOptionsBuilder;
+use models::oid::{Identifier, UuidGenerator};
+use models::schema::{Tenant, TenantOptionsBuilder};
 use tracing::error;
 
 use crate::error::MetaResult;
@@ -30,12 +30,9 @@ pub async fn init_meta(app: &Data<MetaApp>) {
     } else {
         user_opt_res.unwrap()
     };
-    let req = WriteCommand::CreateUser(
-        app.meta_init.cluster_name.clone(),
-        app.meta_init.admin_user.clone(),
-        user_opt,
-        true,
-    );
+    let oid = UuidGenerator::default().next_id();
+    let user_desc = UserDesc::new(oid, app.meta_init.admin_user.clone(), user_opt, true);
+    let req = WriteCommand::CreateUser(app.meta_init.cluster_name.clone(), user_desc);
     if app.raft.client_write(req).await.is_err() {
         error!(
             "failed init admin user {}, exit init meta",
@@ -49,11 +46,9 @@ pub async fn init_meta(app: &Data<MetaApp>) {
         .comment("system tenant")
         .build()
         .expect("failed to init system tenant.");
-    let req = WriteCommand::CreateTenant(
-        app.meta_init.cluster_name.clone(),
-        app.meta_init.system_tenant.clone(),
-        tenant_opt,
-    );
+    let oid = UuidGenerator::default().next_id();
+    let tenant = Tenant::new(oid, app.meta_init.system_tenant.clone(), tenant_opt);
+    let req = WriteCommand::CreateTenant(app.meta_init.cluster_name.clone(), tenant);
     if app.raft.client_write(req).await.is_err() {
         error!(
             "failed init system tenant {}, exit init meta",

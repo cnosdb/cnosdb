@@ -12,8 +12,10 @@ use meta::store::state_machine::{response_encode, CommandResp, StateMachine};
 use meta::{ClusterNode, ClusterNodeId, TypeConfig};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder, ROOT};
-use models::oid::Identifier;
-use models::schema::{TenantOptionsBuilder, DEFAULT_CATALOG, DEFAULT_DATABASE, USAGE_SCHEMA};
+use models::oid::{Identifier, UuidGenerator};
+use models::schema::{
+    Tenant, TenantOptionsBuilder, DEFAULT_CATALOG, DEFAULT_DATABASE, USAGE_SCHEMA,
+};
 use openraft::error::ClientWriteError;
 use openraft::raft::ClientWriteResponse;
 use trace::{debug, error};
@@ -180,7 +182,9 @@ pub async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
     } else {
         user_opt_res.unwrap()
     };
-    let req = WriteCommand::CreateUser(opt.cluster.name.clone(), ROOT.to_string(), user_opt, true);
+    let oid = UuidGenerator::default().next_id();
+    let user_desc = UserDesc::new(oid, ROOT.to_string(), user_opt, true);
+    let req = WriteCommand::CreateUser(opt.cluster.name.clone(), user_desc);
     app.store.process_write_command(&req);
 
     // init tenant
@@ -188,11 +192,9 @@ pub async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
         .comment("system tenant")
         .build()
         .expect("failed to init system tenant.");
-    let req = WriteCommand::CreateTenant(
-        opt.cluster.name.clone(),
-        DEFAULT_CATALOG.to_string(),
-        tenant_opt,
-    );
+    let oid = UuidGenerator::default().next_id();
+    let tenant = Tenant::new(oid, DEFAULT_CATALOG.to_string(), tenant_opt);
+    let req = WriteCommand::CreateTenant(opt.cluster.name.clone(), tenant);
     app.store.process_write_command(&req);
 
     // init role

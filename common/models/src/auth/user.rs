@@ -9,6 +9,7 @@ use super::privilege::{
 };
 use super::role::UserRole;
 use super::{rsa_utils, AuthError, Result};
+use crate::auth::{bcrypt_hash, bcrypt_verify};
 use crate::oid::{Identifier, Oid};
 
 pub const ROOT: &str = "root";
@@ -120,9 +121,9 @@ impl Identifier<Oid> for UserDesc {
 }
 
 #[derive(Debug, Default, Clone, Builder, Serialize, Deserialize)]
-#[builder(setter(into, strip_option), default)]
+#[builder(setter(into, strip_option), default, build_fn(name = "final_build"))]
 pub struct UserOptions {
-    password: Option<String>,
+    hash_password: Option<String>,
     #[builder(default = "Some(false)")]
     must_change_password: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,8 +135,8 @@ pub struct UserOptions {
 }
 
 impl UserOptions {
-    pub fn password(&self) -> Option<&str> {
-        self.password.as_deref()
+    pub fn hash_password(&self) -> Option<&str> {
+        self.hash_password.as_deref()
     }
     pub fn must_change_password(&self) -> Option<bool> {
         self.must_change_password
@@ -152,7 +153,7 @@ impl UserOptions {
 
     pub fn merge(self, other: Self) -> Self {
         Self {
-            password: self.password.or(other.password),
+            hash_password: self.hash_password.or(other.hash_password),
             must_change_password: self.must_change_password.or(other.must_change_password),
             rsa_public_key: self.rsa_public_key.or(other.rsa_public_key),
             comment: self.comment.or(other.comment),
@@ -160,7 +161,23 @@ impl UserOptions {
         }
     }
     pub fn hidden_password(&mut self) {
-        self.password.replace("*****".to_string());
+        self.hash_password.replace("*****".to_string());
+    }
+}
+
+impl UserOptionsBuilder {
+    pub fn build(&mut self) -> Result<UserOptions, UserOptionsBuilderError> {
+        if let Some(Some(p)) = self.hash_password.as_ref() {
+            let hash_password =
+                bcrypt_hash(p).map_err(|e| UserOptionsBuilderError::from(e.to_string()))?;
+            self.hash_password(hash_password);
+        }
+        self.final_build()
+    }
+
+    pub fn password(&mut self, password: impl Into<String>) -> &mut Self {
+        self.hash_password(password.into());
+        self
     }
 }
 
@@ -183,7 +200,7 @@ impl Display for UserOptions {
 }
 
 pub enum AuthType<'a> {
-    Password(Option<&'a str>),
+    HashPassword(Option<&'a str>),
     Rsa(&'a str),
 }
 
@@ -193,7 +210,7 @@ impl<'a> From<&'a UserOptions> for AuthType<'a> {
             return Self::Rsa(key);
         }
 
-        Self::Password(options.password())
+        Self::HashPassword(options.hash_password())
     }
 }
 
@@ -203,13 +220,13 @@ impl<'a> AuthType<'a> {
         let password = user_info.password.as_str();
 
         match self {
-            Self::Password(e) => {
-                let password = e.ok_or_else(|| AuthError::PasswordNotSet)?;
-                if password != user_info.password {
+            Self::HashPassword(hash_password) => {
+                let hash_password = hash_password.ok_or_else(|| AuthError::PasswordNotSet)?;
+                if bcrypt_verify(&user_info.password, hash_password)? {
                     return Err(AuthError::AccessDenied {
                         user_name: user_name.to_string(),
                         auth_type: "password".to_string(),
-                        err: Default::default(),
+                        err: "incorrect password attempt.".into(),
                     });
                 }
 
