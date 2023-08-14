@@ -2,6 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+pub use builder::columns::{
+    COLUMNS_COLUMN_NAME, COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME,
+    COLUMNS_DATA_TYPE, COLUMNS_TABLE_NAME,
+};
 pub use builder::databases::{
     DATABASES_DATABASE_NAME, DATABASES_PRECISION, DATABASES_REPLICA, DATABASES_SHARD,
     DATABASES_TENANT_NAME, DATABASES_TTL, DATABASES_VNODE_DURATION,
@@ -10,15 +14,10 @@ pub use builder::tables::{
     TABLES_TABLE_DATABASE, TABLES_TABLE_ENGINE, TABLES_TABLE_NAME, TABLES_TABLE_OPTIONS,
     TABLES_TABLE_TENANT, TABLES_TABLE_TYPE,
 };
-pub use builder::columns::{
-    COLUMNS_DATABASE_NAME, COLUMNS_TABLE_NAME, COLUMNS_COLUMN_NAME, COLUMNS_COLUMN_TYPE,
-    COLUMNS_DATA_TYPE,COLUMNS_COMPRESSION_CODEC,
-};
-
 use datafusion::datasource::TableProvider;
+pub use factory::columns::INFORMATION_SCHEMA_COLUMNS;
 pub use factory::databases::INFORMATION_SCHEMA_DATABASES;
 pub use factory::tables::INFORMATION_SCHEMA_TABLES;
-pub use factory::columns::INFORMATION_SCHEMA_COLUMNS;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::auth::user::User;

@@ -12,11 +12,12 @@ use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource, WindowUDF};
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::TableReference;
 pub use information_schema_provider::{
-    DATABASES_DATABASE_NAME, DATABASES_PRECISION, DATABASES_REPLICA, DATABASES_SHARD,
-    DATABASES_TENANT_NAME, DATABASES_TTL, DATABASES_VNODE_DURATION, INFORMATION_SCHEMA_DATABASES,
-    INFORMATION_SCHEMA_TABLES, INFORMATION_SCHEMA_COLUMNS, TABLES_TABLE_DATABASE, TABLES_TABLE_ENGINE,
-    TABLES_TABLE_NAME, TABLES_TABLE_OPTIONS, TABLES_TABLE_TENANT, TABLES_TABLE_TYPE, COLUMNS_DATABASE_NAME, 
-    COLUMNS_TABLE_NAME, COLUMNS_COLUMN_NAME, COLUMNS_COLUMN_TYPE, COLUMNS_DATA_TYPE,COLUMNS_COMPRESSION_CODEC,
+    COLUMNS_COLUMN_NAME, COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME,
+    COLUMNS_DATA_TYPE, COLUMNS_TABLE_NAME, DATABASES_DATABASE_NAME, DATABASES_PRECISION,
+    DATABASES_REPLICA, DATABASES_SHARD, DATABASES_TENANT_NAME, DATABASES_TTL,
+    DATABASES_VNODE_DURATION, INFORMATION_SCHEMA_COLUMNS, INFORMATION_SCHEMA_DATABASES,
+    INFORMATION_SCHEMA_TABLES, TABLES_TABLE_DATABASE, TABLES_TABLE_ENGINE, TABLES_TABLE_NAME,
+    TABLES_TABLE_OPTIONS, TABLES_TABLE_TENANT, TABLES_TABLE_TYPE,
 };
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
@@ -57,7 +58,11 @@ pub trait ContextProviderExtension: ContextProvider {
         &self,
         name: TableReference,
     ) -> datafusion::common::Result<Arc<TableSourceAdapter>>;
-    fn database_table_exist(&self, _database: &str, _table: Option<&ResolvedTable>) -> Result<(), MetaError> {
+    fn database_table_exist(
+        &self,
+        _database: &str,
+        _table: Option<&ResolvedTable>,
+    ) -> Result<(), MetaError> {
         Ok(())
     }
 }
@@ -247,17 +252,26 @@ impl ContextProviderExtension for MetadataProvider {
             table_handle,
         )?))
     }
-    
-    fn database_table_exist(&self, database: &str, table: Option<&ResolvedTable>) -> Result<(), MetaError>{
-        let data_info = self.meta_client.get_db_info(database)?
-            .ok_or(MetaError::DatabaseNotFound { 
-                database: database.to_string() 
-        })?;
+
+    fn database_table_exist(
+        &self,
+        database: &str,
+        table: Option<&ResolvedTable>,
+    ) -> Result<(), MetaError> {
+        let data_info =
+            self.meta_client
+                .get_db_info(database)?
+                .ok_or(MetaError::DatabaseNotFound {
+                    database: database.to_string(),
+                })?;
 
         if let Some(table) = table {
-            data_info.tables.get( table.table()).ok_or(MetaError::TableNotFound {
-                table: table.to_string(), 
-            })?;
+            data_info
+                .tables
+                .get(table.table())
+                .ok_or(MetaError::TableNotFound {
+                    table: table.to_string(),
+                })?;
         }
 
         Ok(())
