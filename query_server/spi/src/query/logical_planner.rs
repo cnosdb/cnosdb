@@ -126,10 +126,6 @@ pub enum DDLPlan {
 
     CreateRole(CreateRole),
 
-    DescribeTable(DescribeTable),
-
-    DescribeDatabase(DescribeDatabase),
-
     AlterDatabase(AlterDatabase),
 
     AlterTable(AlterTable),
@@ -154,19 +150,6 @@ pub enum DDLPlan {
 impl DDLPlan {
     pub fn schema(&self) -> SchemaRef {
         match self {
-            DDLPlan::DescribeTable(_) => Arc::new(Schema::new(vec![
-                Field::new("COLUMN_NAME", DataType::Utf8, false),
-                Field::new("DATA_TYPE", DataType::Utf8, false),
-                Field::new("COLUMN_TYPE", DataType::Utf8, false),
-                Field::new("COMPRESSION_CODEC", DataType::Utf8, false),
-            ])),
-            DDLPlan::DescribeDatabase(_) => Arc::new(Schema::new(vec![
-                Field::new("TTL", DataType::Utf8, false),
-                Field::new("SHARD", DataType::Utf8, false),
-                Field::new("VNODE_DURATION", DataType::Utf8, false),
-                Field::new("REPLICA", DataType::Utf8, false),
-                Field::new("PRECISION", DataType::Utf8, false),
-            ])),
             DDLPlan::ChecksumGroup(_) => Arc::new(Schema::new(vec![
                 Field::new("VNODE_ID", DataType::UInt32, false),
                 Field::new("CHECK_SUM", DataType::Utf8, false),
@@ -462,16 +445,6 @@ pub struct CreateRole {
     pub name: String,
     pub if_not_exists: bool,
     pub inherit_tenant_role: SystemTenantRole,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DescribeDatabase {
-    pub database_name: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DescribeTable {
-    pub table_name: ResolvedTable,
 }
 
 #[derive(Debug, Clone)]
