@@ -76,10 +76,9 @@ use spi::query::logical_planner::{
     AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction,
     ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder, CopyVnode, CreateDatabase,
     CreateRole, CreateStreamTable, CreateTable, CreateTenant, CreateUser, DDLPlan,
-    DatabaseObjectType, DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject,
-    DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
-    GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan,
-    TenantObjectType,
+    DatabaseObjectType, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode,
+    FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType, GrantRevoke, LogicalPlanner,
+    MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan, TenantObjectType,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -91,8 +90,11 @@ use crate::data_source::stream::{get_event_time_column, get_watermark_delay};
 use crate::data_source::table_source::{TableHandle, TableSourceAdapter, TEMP_LOCATION_TABLE_NAME};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::metadata::{
-    ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, DATABASES_DATABASE_NAME,
-    INFORMATION_SCHEMA, INFORMATION_SCHEMA_DATABASES, INFORMATION_SCHEMA_TABLES,
+    ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, COLUMNS_COLUMN_NAME,
+    COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME, COLUMNS_DATA_TYPE,
+    COLUMNS_TABLE_NAME, DATABASES_DATABASE_NAME, DATABASES_PRECISION, DATABASES_REPLICA,
+    DATABASES_SHARD, DATABASES_TTL, DATABASES_VNODE_DURATION, INFORMATION_SCHEMA,
+    INFORMATION_SCHEMA_COLUMNS, INFORMATION_SCHEMA_DATABASES, INFORMATION_SCHEMA_TABLES,
     TABLES_TABLE_DATABASE, TABLES_TABLE_NAME,
 };
 
@@ -152,8 +154,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::DropDatabaseObject(s) => self.drop_database_object_to_plan(s, session),
             ExtStatement::DropTenantObject(s) => self.drop_tenant_object_to_plan(s, session),
             ExtStatement::DropGlobalObject(s) => self.drop_global_object_to_plan(s),
-            ExtStatement::DescribeTable(stmt) => self.table_to_describe(stmt, session),
-            ExtStatement::DescribeDatabase(stmt) => self.database_to_describe(stmt, session),
+            ExtStatement::DescribeTable(stmt) => self.describe_table_to_plan(stmt, session),
+            ExtStatement::DescribeDatabase(stmt) => self.describe_databases_to_plan(stmt, session),
             ExtStatement::ShowDatabases() => self.show_databases_to_plan(session),
             ExtStatement::ShowTables(stmt) => self.show_tables_to_plan(stmt, session),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
@@ -651,21 +653,39 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         Ok(col)
     }
 
-    fn database_to_describe(
+    fn describe_databases_to_plan(
         &self,
         statement: DescribeDatabaseOptions,
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
-        // get the current tenant id from the session
+        let projections = vec![
+            col(DATABASES_TTL).alias(DATABASES_TTL.to_uppercase()),
+            col(DATABASES_SHARD).alias(DATABASES_SHARD.to_uppercase()),
+            col(DATABASES_VNODE_DURATION).alias(DATABASES_VNODE_DURATION.to_uppercase()),
+            col(DATABASES_REPLICA).alias(DATABASES_REPLICA.to_uppercase()),
+            col(DATABASES_PRECISION).alias(DATABASES_PRECISION.to_uppercase()),
+        ];
+
         let database_name = normalize_ident(statement.database_name);
 
-        let plan = Plan::DDL(DDLPlan::DescribeDatabase(DescribeDatabase {
-            database_name: database_name.clone(),
-        }));
+        self.schema_provider
+            .database_table_exist(database_name.as_str(), None)?;
+
+        let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_DATABASES);
+
+        let table_source = self.get_table_source(table_ref.clone())?;
+
+        let df_plan = LogicalPlanBuilder::scan(table_ref, table_source, None)?
+            .filter(col(DATABASES_DATABASE_NAME).eq(lit(database_name)))?
+            .project(projections)?
+            .build()?;
+
+        let plan = Plan::Query(QueryPlan { df_plan });
+
         // privileges
         let tenant_id = *session.tenant_id();
         let privilege = Privilege::TenantObject(
-            TenantObjectPrivilege::Database(DatabasePrivilege::Read, Some(database_name)),
+            TenantObjectPrivilege::Database(DatabasePrivilege::Read, None),
             Some(tenant_id),
         );
         Ok(PlanWithPrivileges {
@@ -674,7 +694,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn table_to_describe(
+    fn describe_table_to_plan(
         &self,
         opts: DescribeTableOptions,
         session: &SessionCtx,
@@ -682,7 +702,30 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let table_name = object_name_to_resolved_table(session, opts.table_name)?;
         let database_name = table_name.database().to_string();
 
-        let plan = Plan::DDL(DDLPlan::DescribeTable(DescribeTable { table_name }));
+        self.schema_provider
+            .database_table_exist(database_name.as_str(), Some(&table_name))?;
+
+        let projections = vec![
+            col(COLUMNS_COLUMN_NAME).alias(COLUMNS_COLUMN_NAME.to_uppercase()),
+            col(COLUMNS_DATA_TYPE).alias(COLUMNS_DATA_TYPE.to_uppercase()),
+            col(COLUMNS_COLUMN_TYPE).alias(COLUMNS_COLUMN_TYPE.to_uppercase()),
+            col(COLUMNS_COMPRESSION_CODEC).alias(COLUMNS_COMPRESSION_CODEC.to_uppercase()),
+        ];
+
+        let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_COLUMNS);
+        let table_source = self.get_table_source(table_ref.clone())?;
+
+        let df_plan = LogicalPlanBuilder::scan(table_ref, table_source, None)?
+            .filter(
+                col(COLUMNS_DATABASE_NAME)
+                    .eq(lit(&database_name))
+                    .and(col(COLUMNS_TABLE_NAME).eq(lit(table_name.table()))),
+            )?
+            .project(projections)?
+            .build()?;
+
+        let plan = Plan::Query(QueryPlan { df_plan });
+
         // privileges
         Ok(PlanWithPrivileges {
             plan,
@@ -804,7 +847,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     }
 
     fn show_databases_to_plan(&self, session: &SessionCtx) -> Result<PlanWithPrivileges> {
-        let projections = vec![col(DATABASES_DATABASE_NAME)];
+        let projections =
+            vec![col(DATABASES_DATABASE_NAME).alias(DATABASES_DATABASE_NAME.to_uppercase())];
         let sorts = vec![col(DATABASES_DATABASE_NAME).sort(true, true)];
 
         let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_DATABASES);
@@ -838,7 +882,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let database_name = session.default_database();
         let db_name = database.map(normalize_ident);
 
-        let projections = vec![col(TABLES_TABLE_NAME)];
+        let projections = vec![col(TABLES_TABLE_NAME).alias(TABLES_TABLE_NAME.to_uppercase())];
         let sorts = vec![col(TABLES_TABLE_NAME).sort(true, true)];
 
         let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_TABLES);
