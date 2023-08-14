@@ -428,8 +428,8 @@ mod test {
     use std::sync::Arc;
 
     use super::NodeStorage;
-    use crate::apply_store::{ApplyStorageRef, ExampleApplyStorage};
-    use crate::entry_store::{EntryStorageRef, ExampleEntryStorage};
+    use crate::apply_store::{ApplyStorageRef, HeedApplyStorage};
+    use crate::entry_store::{EntryStorageRef, HeedEntryStorage};
     use crate::state_store::StateStorage;
     use crate::RaftNodeInfo;
 
@@ -447,8 +447,8 @@ mod test {
         let path = tempfile::tempdir_in("/tmp/cnosdb/test_raft_store").unwrap();
 
         let state = StateStorage::open(path.path().join("state")).unwrap();
-        let entry = ExampleEntryStorage::open(path.path().join("entry")).unwrap();
-        let engine = ExampleApplyStorage::open(path.path().join("engine")).unwrap();
+        let entry = HeedEntryStorage::open(path.path().join("entry")).unwrap();
+        let engine = HeedApplyStorage::open(path.path().join("engine")).unwrap();
 
         let state = Arc::new(state);
         let entry: EntryStorageRef = Arc::new(entry);

@@ -6,8 +6,8 @@ use actix_web::{get, post, Responder};
 use clap::Parser;
 use openraft::error::Infallible;
 use openraft::raft::{AppendEntriesRequest, InstallSnapshotRequest, VoteRequest};
-use replication::apply_store::{ApplyStorageRef, ExampleApplyStorage};
-use replication::entry_store::{EntryStorageRef, ExampleEntryStorage};
+use replication::apply_store::{ApplyStorageRef, HeedApplyStorage};
+use replication::entry_store::{EntryStorageRef, HeedEntryStorage};
 use replication::errors::ReplicationResult;
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
@@ -45,8 +45,8 @@ async fn start_raft_node(id: RaftNodeId, http_addr: String) -> ReplicationResult
     let path = format!("/tmp/cnosdb/{}", id);
 
     let state = StateStorage::open(format!("{}-state", path))?;
-    let entry = ExampleEntryStorage::open(format!("{}-entry", path))?;
-    let engine = ExampleApplyStorage::open(format!("{}-engine", path))?;
+    let entry = HeedEntryStorage::open(format!("{}-entry", path))?;
+    let engine = HeedApplyStorage::open(format!("{}-engine", path))?;
 
     let state = Arc::new(state);
     let entry: EntryStorageRef = Arc::new(entry);

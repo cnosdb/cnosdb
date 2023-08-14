@@ -23,16 +23,16 @@ pub trait ApplyStorage: Send + Sync {
 pub type ApplyStorageRef = Arc<dyn ApplyStorage>;
 
 #[derive(Serialize, Deserialize)]
-struct ExampleSnapshotData {
+struct MapSnapshotData {
     pub map: HashMap<String, String>,
 }
 
-pub struct ExampleApplyStorage {
+pub struct HeedApplyStorage {
     env: Env,
     db: Database<Str, Str>,
 }
 
-impl ExampleApplyStorage {
+impl HeedApplyStorage {
     pub fn open(path: impl AsRef<Path>) -> ReplicationResult<Self> {
         fs::create_dir_all(&path)?;
 
@@ -58,7 +58,7 @@ impl ExampleApplyStorage {
 }
 
 #[async_trait]
-impl ApplyStorage for ExampleApplyStorage {
+impl ApplyStorage for HeedApplyStorage {
     async fn apply(&self, req: &Request) -> ReplicationResult<Response> {
         match req {
             Request::Set { key, value } => {
@@ -87,14 +87,14 @@ impl ApplyStorage for ExampleApplyStorage {
             hash_map.insert(key.to_string(), val.to_string());
         }
 
-        let data = ExampleSnapshotData { map: hash_map };
+        let data = MapSnapshotData { map: hash_map };
         let json_str = serde_json::to_string(&data).unwrap();
 
         Ok(json_str.as_bytes().to_vec())
     }
 
     async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()> {
-        let data: ExampleSnapshotData = serde_json::from_slice(snapshot).unwrap();
+        let data: MapSnapshotData = serde_json::from_slice(snapshot).unwrap();
 
         let mut writer = self.env.write_txn()?;
         self.db.clear(&mut writer)?;

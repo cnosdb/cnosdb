@@ -34,12 +34,12 @@ pub trait EntryStorage: Send + Sync {
 pub type EntryStorageRef = Arc<dyn EntryStorage>;
 
 //-------------------------Example-----------------------------
-pub struct ExampleEntryStorage {
+pub struct HeedEntryStorage {
     env: Env,
     db: Database<OwnedType<u64>, OwnedSlice<u8>>,
 }
 
-impl ExampleEntryStorage {
+impl HeedEntryStorage {
     pub fn open(path: impl AsRef<Path>) -> ReplicationResult<Self> {
         fs::create_dir_all(&path)?;
 
@@ -64,7 +64,7 @@ impl ExampleEntryStorage {
 }
 
 #[async_trait]
-impl EntryStorage for ExampleEntryStorage {
+impl EntryStorage for HeedEntryStorage {
     async fn append(&self, ents: &[Entry<TypeConfig>]) -> ReplicationResult<()> {
         if ents.is_empty() {
             return Ok(());
