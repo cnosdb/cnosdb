@@ -306,7 +306,7 @@ pub struct DatabaseOptions {
     pub vnode_duration: Option<String>,
 
     pub replica: Option<u64>,
-    // timestamp percision
+    // timestamp precision
     pub precision: Option<String>,
 }
 

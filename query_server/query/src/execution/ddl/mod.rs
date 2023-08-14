@@ -23,8 +23,6 @@ use crate::execution::ddl::checksum_group::ChecksumGroupTask;
 use crate::execution::ddl::compact_vnode::CompactVnodeTask;
 use crate::execution::ddl::copy_vnode::CopyVnodeTask;
 use crate::execution::ddl::create_database::CreateDatabaseTask;
-use crate::execution::ddl::describe_database::DescribeDatabaseTask;
-use crate::execution::ddl::describe_table::DescribeTableTask;
 use crate::execution::ddl::drop_vnode::DropVnodeTask;
 use crate::execution::ddl::move_node::MoveVnodeTask;
 
@@ -42,8 +40,6 @@ mod create_stream_table;
 mod create_table;
 mod create_tenant;
 mod create_user;
-mod describe_database;
-mod describe_table;
 mod drop_database_object;
 mod drop_global_object;
 mod drop_tenant_object;
@@ -156,13 +152,6 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::CreateTenant(sub_plan) => Box::new(CreateTenantTask::new(*sub_plan.clone())),
             DDLPlan::CreateUser(sub_plan) => Box::new(CreateUserTask::new(sub_plan.clone())),
             DDLPlan::CreateRole(sub_plan) => Box::new(CreateRoleTask::new(sub_plan.clone())),
-            DDLPlan::DescribeDatabase(sub_plan) => Box::new(DescribeDatabaseTask::new(
-                sub_plan.clone(),
-                self.plan.schema(),
-            )),
-            DDLPlan::DescribeTable(sub_plan) => {
-                Box::new(DescribeTableTask::new(sub_plan.clone(), self.plan.schema()))
-            }
             DDLPlan::AlterDatabase(sub_plan) => Box::new(AlterDatabaseTask::new(sub_plan.clone())),
             DDLPlan::AlterTable(sub_plan) => Box::new(AlterTableTask::new(sub_plan.clone())),
             DDLPlan::AlterTenant(sub_plan) => Box::new(AlterTenantTask::new(sub_plan.clone())),
