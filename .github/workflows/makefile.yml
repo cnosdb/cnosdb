@@ -2,9 +2,9 @@ name: Makefile CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "LTS/2.3" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "LTS/2.3" ]
   workflow_dispatch:
 
 env:
