@@ -1,21 +1,32 @@
+#![allow(dead_code)]
+#![allow(unused)]
+#![feature(trait_upcasting)]
+
+use std::any::Any;
 use std::collections::BTreeSet;
+use std::convert::Infallible as StdInfallible;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use actix_web::web::{Data, Json};
-use actix_web::{get, post, Responder};
+use actix_web::web;
 use clap::Parser;
-use openraft::error::Infallible;
+use futures::future::TryFutureExt;
+use openraft::error::Infallible as OpenRaftInfallible;
 use openraft::raft::{AppendEntriesRequest, InstallSnapshotRequest, VoteRequest};
-use replication::apply_store::{ApplyStorageRef, HeedApplyStorage};
+use protos::raft_service::raft_service_server::RaftServiceServer;
+use replication::apply_store::{ApplyStorage, ApplyStorageRef, HeedApplyStorage};
 use replication::entry_store::{EntryStorageRef, HeedEntryStorage};
-use replication::errors::ReplicationResult;
+use replication::errors::{ReplicationError, ReplicationResult};
+use replication::network_server::{EitherBody, RaftCBServer, RaftHttpAdmin, SyncSendError};
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
 use replication::{RaftNodeId, RaftNodeInfo, Request, TypeConfig};
+use tower::Service;
 use tracing::info;
+use warp::{hyper, Filter};
 
-#[derive(Parser, Clone, Debug)]
+#[derive(clap::Parser, Clone, Debug)]
 #[clap(author, version, about, long_about = None)]
 pub struct Opt {
     #[clap(long)]
@@ -32,7 +43,7 @@ async fn main() -> std::io::Result<()> {
     let subscriber = tracing_subscriber::FmtSubscriber::new();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    info!("Service Start Option: {:?}", options);
+    info!("service start option: {:?}", options);
 
     start_raft_node(options.id, options.http_addr)
         .await
@@ -61,7 +72,140 @@ async fn start_raft_node(id: RaftNodeId, http_addr: String) -> ReplicationResult
     let storage = Arc::new(storage);
 
     let node = RaftNode::new(id, info, storage, engine).await.unwrap();
-    let app_data = actix_web::web::Data::new(node);
+
+    start_warp_grpc_server(http_addr, node).await?;
+    //start_actix_web_server(http_addr, node).await?;
+
+    Ok(())
+}
+
+// **************************** http and grpc server ************************************** //
+async fn start_warp_grpc_server(addr: String, node: RaftNode) -> ReplicationResult<()> {
+    let node = Arc::new(node);
+    let raft_admin = RaftHttpAdmin::new(node.clone());
+    let http_server = HttpServer {
+        node: node.clone(),
+        raft_admin: Arc::new(raft_admin),
+    };
+
+    let addr = addr.parse().unwrap();
+    hyper::Server::bind(&addr)
+        .serve(hyper::service::make_service_fn(move |_| {
+            let mut http_service = warp::service(http_server.routes());
+            let raft_service = RaftServiceServer::new(RaftCBServer::new(node.clone()));
+
+            let mut grpc_service = tonic::transport::Server::builder()
+                .add_service(raft_service)
+                .into_service();
+
+            futures::future::ok::<_, StdInfallible>(tower::service_fn(
+                move |req: hyper::Request<hyper::Body>| {
+                    if req.uri().path().starts_with("/raft_service.RaftService/") {
+                        futures::future::Either::Right(
+                            grpc_service
+                                .call(req)
+                                .map_ok(|res| res.map(EitherBody::Right))
+                                .map_err(SyncSendError::from),
+                        )
+                    } else {
+                        futures::future::Either::Left(
+                            http_service
+                                .call(req)
+                                .map_ok(|res| res.map(EitherBody::Left))
+                                .map_err(SyncSendError::from),
+                        )
+                    }
+                },
+            ))
+        }))
+        .await
+        .map_err(|err| ReplicationError::IOErrors {
+            msg: err.to_string(),
+        })?;
+
+    Ok(())
+}
+
+struct HttpServer {
+    node: Arc<RaftNode>,
+    raft_admin: Arc<RaftHttpAdmin>,
+}
+
+//  let res: Result<String, warp::Rejection> = Ok(data);
+//  warp::reply::Response::new(hyper::Body::from(data))
+impl HttpServer {
+    fn routes(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        self.raft_admin.routes().or(self.read()).or(self.write())
+    }
+
+    async fn start(&self, addr: String) {
+        info!("http server start addr: {}", addr);
+
+        let addr: SocketAddr = addr.parse().unwrap();
+        warp::serve(self.routes()).run(addr).await;
+    }
+
+    fn with_raft_node(
+        &self,
+    ) -> impl Filter<Extract = (Arc<RaftNode>,), Error = StdInfallible> + Clone {
+        let node = self.node.clone();
+
+        warp::any().map(move || node.clone())
+    }
+
+    fn handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, StdInfallible> {
+        let reason = format!("{:?}", err);
+
+        Ok(warp::Reply::into_response(reason))
+    }
+
+    fn read(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("read")
+            .and(warp::body::bytes())
+            .and(self.with_raft_node())
+            .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
+                let req: String = serde_json::from_slice(&req)
+                    .map_err(ReplicationError::from)
+                    .map_err(warp::reject::custom)?;
+
+                let engine = node.apply_store();
+                let engine = Arc::downcast::<HeedApplyStorage>(engine).unwrap();
+                let rsp = engine
+                    .get(&req)
+                    .map_or_else(|err| Some(err.to_string()), |v| v)
+                    .unwrap_or("not found value by key".to_string());
+
+                let res: Result<String, warp::Rejection> = Ok(rsp);
+
+                res
+            })
+    }
+
+    fn write(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("write")
+            .and(warp::body::bytes())
+            .and(self.with_raft_node())
+            .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
+                let req: Request = serde_json::from_slice(&req)
+                    .map_err(ReplicationError::from)
+                    .map_err(warp::reject::custom)?;
+
+                let rsp = node.raw_raft().client_write(req).await;
+                let data = serde_json::to_string(&rsp)
+                    .map_err(ReplicationError::from)
+                    .map_err(warp::reject::custom)?;
+                let res: Result<String, warp::Rejection> = Ok(data);
+
+                res
+            })
+    }
+}
+
+// **************************** http server use actix-web ************************************** //
+async fn start_actix_web_server(addr: String, node: RaftNode) -> ReplicationResult<()> {
+    let app_data = web::Data::new(node);
 
     // Start the actix-web server.
     let server = actix_web::HttpServer::new(move || {
@@ -84,39 +228,15 @@ async fn start_raft_node(id: RaftNodeId, http_addr: String) -> ReplicationResult
             .service(read)
     });
 
-    let x = server.bind(http_addr)?;
+    let x = server.bind(addr)?;
 
     x.run().await.unwrap();
 
     Ok(())
 }
 
-// -----------------------------------------------------------------------------//
-#[post("/write")]
-pub async fn write(app: Data<RaftNode>, req: Json<Request>) -> actix_web::Result<impl Responder> {
-    info!("Received request write: {:?}", req);
-    let response = app.raw_raft().client_write(req.0).await;
-
-    Ok(Json(response))
-}
-
-#[post("/read")]
-pub async fn read(app: Data<RaftNode>, req: Json<String>) -> actix_web::Result<impl Responder> {
-    info!("Received request read: {:?}", req);
-    let rsp = app
-        .test_read_data(&req.0)
-        .await
-        .map_or_else(|err| Some(err.to_string()), |v| v)
-        .unwrap_or("not found value by key".to_string());
-
-    Ok(rsp)
-    // let res: Result<String, Infallible> = Ok(rsp);
-    // Ok(Json(res))
-}
-
-// -----------------------------------------------------------------------------//
-#[post("/init")]
-pub async fn init(app: Data<RaftNode>) -> actix_web::Result<impl Responder> {
+#[actix_web::post("/init")]
+pub async fn init(app: web::Data<RaftNode>) -> actix_web::Result<impl actix_web::Responder> {
     info!("Received request init");
     let rsp = app
         .raft_init()
@@ -126,11 +246,11 @@ pub async fn init(app: Data<RaftNode>) -> actix_web::Result<impl Responder> {
     Ok(rsp)
 }
 
-#[post("/add-learner")]
+#[actix_web::post("/add-learner")]
 pub async fn add_learner(
-    app: Data<RaftNode>,
-    req: Json<(RaftNodeId, String)>,
-) -> actix_web::Result<impl Responder> {
+    app: web::Data<RaftNode>,
+    req: web::Json<(RaftNodeId, String)>,
+) -> actix_web::Result<impl actix_web::Responder> {
     info!("Received request add-learner: {:?}", req);
     let id = req.0 .0;
     let addr = req.0 .1;
@@ -148,11 +268,11 @@ pub async fn add_learner(
 }
 
 /// Changes specified learners to members, or remove members.
-#[post("/change-membership")]
+#[actix_web::post("/change-membership")]
 pub async fn change_membership(
-    app: Data<RaftNode>,
-    req: Json<BTreeSet<RaftNodeId>>,
-) -> actix_web::Result<impl Responder> {
+    app: web::Data<RaftNode>,
+    req: web::Json<BTreeSet<RaftNodeId>>,
+) -> actix_web::Result<impl actix_web::Responder> {
     info!("Received request change-membership: {:?}", req);
     let rsp = app
         .raft_change_membership(req.0)
@@ -163,44 +283,75 @@ pub async fn change_membership(
 }
 
 /// Get the latest metrics of the cluster
-#[get("/metrics")]
-pub async fn metrics(app: Data<RaftNode>) -> actix_web::Result<impl Responder> {
+#[actix_web::get("/metrics")]
+pub async fn metrics(app: web::Data<RaftNode>) -> actix_web::Result<impl actix_web::Responder> {
     let metrics = app.raft_metrics();
 
-    let res: Result<openraft::RaftMetrics<RaftNodeId, RaftNodeInfo>, Infallible> = Ok(metrics);
-    Ok(Json(res))
+    let res: Result<openraft::RaftMetrics<RaftNodeId, RaftNodeInfo>, OpenRaftInfallible> =
+        Ok(metrics);
+
+    Ok(web::Json(res))
 }
 
-// -----------------------------------------------------------------------------//
-#[post("/raft-vote")]
+#[actix_web::post("/write")]
+pub async fn write(
+    app: web::Data<RaftNode>,
+    req: web::Json<Request>,
+) -> actix_web::Result<impl actix_web::Responder> {
+    info!("Received request write: {:?}", req);
+    let response = app.raw_raft().client_write(req.0).await;
+
+    Ok(web::Json(response))
+}
+
+#[actix_web::post("/read")]
+pub async fn read(
+    app: web::Data<RaftNode>,
+    req: web::Json<String>,
+) -> actix_web::Result<impl actix_web::Responder> {
+    info!("Received request read: {:?}", req);
+
+    let engine = app.apply_store();
+    let engine = Arc::downcast::<HeedApplyStorage>(engine).unwrap();
+    let rsp = engine
+        .get(&req.0)
+        .map_or_else(|err| Some(err.to_string()), |v| v)
+        .unwrap_or("not found value by key".to_string());
+
+    Ok(rsp)
+    // let res: Result<String, OpenRaftInfallible> = Ok(rsp);
+    // Ok(web::Json(res))
+}
+
+#[actix_web::post("/raft-vote")]
 pub async fn vote(
-    app: Data<RaftNode>,
-    req: Json<VoteRequest<RaftNodeId>>,
-) -> actix_web::Result<impl Responder> {
+    app: web::Data<RaftNode>,
+    req: web::Json<VoteRequest<RaftNodeId>>,
+) -> actix_web::Result<impl actix_web::Responder> {
     info!("Received request raft-vote: {:?}", req);
     let res = app.raw_raft().vote(req.0).await;
 
-    Ok(Json(res))
+    Ok(web::Json(res))
 }
 
-#[post("/raft-append")]
+#[actix_web::post("/raft-append")]
 pub async fn append(
-    app: Data<RaftNode>,
-    req: Json<AppendEntriesRequest<TypeConfig>>,
-) -> actix_web::Result<impl Responder> {
+    app: web::Data<RaftNode>,
+    req: web::Json<AppendEntriesRequest<TypeConfig>>,
+) -> actix_web::Result<impl actix_web::Responder> {
     info!("Received request raft-append: {:?}", req);
     let res = app.raw_raft().append_entries(req.0).await;
 
-    Ok(Json(res))
+    Ok(web::Json(res))
 }
 
-#[post("/raft-snapshot")]
+#[actix_web::post("/raft-snapshot")]
 pub async fn snapshot(
-    app: Data<RaftNode>,
-    req: Json<InstallSnapshotRequest<TypeConfig>>,
-) -> actix_web::Result<impl Responder> {
+    app: web::Data<RaftNode>,
+    req: web::Json<InstallSnapshotRequest<TypeConfig>>,
+) -> actix_web::Result<impl actix_web::Responder> {
     info!("Received request raft-snapshot: {:?}", req);
     let res = app.raw_raft().install_snapshot(req.0).await;
 
-    Ok(Json(res))
+    Ok(web::Json(res))
 }

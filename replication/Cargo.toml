@@ -12,8 +12,8 @@ utils = { path = "../common/utils" }
 tskv = { path = "../tskv" }
 meta = { path = "../meta" } 
 
+actix-web = "4.3.1"
 tempfile = { version = "3.4.0" }
-actix-web = "4.0.0-rc.2"
 clap = { version = "4.1.11", features = ["derive", "env"] }
 reqwest = { version = "0.11.9", features = ["json"] }
 openraft = { git = "https://github.com/datafuselabs/openraft", rev = "4b78dd38b9f3b22d87695fb06446dcf0311629c2", features = ["serde"] }
@@ -39,14 +39,18 @@ futures = { workspace = true, features = ["alloc"] }
 tower = { workspace = true }
 tonic = { workspace = true }
 chrono = { workspace = true }
-async-backtrace = { workspace = true, optional = true }
+async-backtrace = { workspace = true }
 md-5 = { workspace = true }
 rand = { workspace = true }
 parking_lot = { workspace = true }
 heed = { workspace = true }
 heed-traits = { workspace = true }
+warp = { workspace = true }
+http = { workspace = true }
+http-body = { workspace = true }
 
 [features]
+
 
 [package.metadata.docs.rs]
 all-features = true

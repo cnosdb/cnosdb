@@ -15,7 +15,7 @@ use tracing::info;
 use crate::apply_store::ApplyStorageRef;
 use crate::entry_store::EntryStorageRef;
 use crate::errors::ReplicationResult;
-use crate::state_store::{Key, StateStorage};
+use crate::state_store::StateStorage;
 use crate::{RaftNodeId, RaftNodeInfo, Response, TypeConfig};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -35,7 +35,7 @@ pub struct StoredSnapshot {
     pub data: Vec<u8>,
 }
 
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct NodeStorage {
     id: RaftNodeId,
     info: RaftNodeInfo,

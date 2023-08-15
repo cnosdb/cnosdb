@@ -6,7 +6,7 @@ use openraft::{Config, RaftMetrics};
 
 use crate::apply_store::ApplyStorageRef;
 use crate::errors::{ReplicationError, ReplicationResult};
-use crate::network_client::NetworkClient;
+use crate::network_client::NetworkConn;
 use crate::node_store::NodeStorage;
 use crate::{OpenRaftNode, RaftNodeId, RaftNodeInfo};
 
@@ -38,7 +38,7 @@ impl RaftNode {
 
         let (log_store, state_machine) = Adaptor::new(storage.clone());
 
-        let network = NetworkClient {};
+        let network = NetworkConn::new();
         let raft = openraft::Raft::new(id, config.clone(), network, log_store, state_machine)
             .await
             .map_err(|err| ReplicationError::RaftInternalErr {
@@ -109,8 +109,8 @@ impl RaftNode {
         self.raft.metrics().borrow().clone()
     }
 
-    pub async fn test_read_data(&self, key: &str) -> ReplicationResult<Option<String>> {
-        self.engine.test_get_value(key).await
+    pub fn apply_store(&self) -> ApplyStorageRef {
+        self.engine.clone()
     }
 
     // pub async fn raft_vote(

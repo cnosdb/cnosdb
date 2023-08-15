@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -12,16 +13,15 @@ use crate::errors::{ReplicationError, ReplicationResult};
 use crate::{Request, Response};
 
 #[async_trait]
-pub trait ApplyStorage: Send + Sync {
+pub trait ApplyStorage: Send + Sync + Any {
     async fn apply(&self, req: &Request) -> ReplicationResult<Response>;
     async fn snapshot(&self) -> ReplicationResult<Vec<u8>>;
     async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()>;
-
-    async fn test_get_value(&self, key: &str) -> ReplicationResult<Option<String>>;
 }
 
-pub type ApplyStorageRef = Arc<dyn ApplyStorage>;
+pub type ApplyStorageRef = Arc<dyn ApplyStorage + Send + Sync>;
 
+// --------------------------------------------------------------------------- //
 #[derive(Serialize, Deserialize)]
 struct MapSnapshotData {
     pub map: HashMap<String, String>,
@@ -104,14 +104,5 @@ impl ApplyStorage for HeedApplyStorage {
         writer.commit()?;
 
         Ok(())
-    }
-
-    async fn test_get_value(&self, key: &str) -> ReplicationResult<Option<String>> {
-        let reader = self.env.read_txn()?;
-        if let Some(data) = self.db.get(&reader, key)? {
-            return Ok(Some(data.to_string()));
-        } else {
-            Ok(None)
-        }
     }
 }

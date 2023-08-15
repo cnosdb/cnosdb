@@ -143,6 +143,7 @@ opentelemetry_api = { version = "0.19.0" }
 dateparser = "0.1.7"
 heed = "0.11.0"
 heed-traits = "0.8.0"
+http-body = "0.4.5"
 
 [workspace.package]
 edition = "2021"

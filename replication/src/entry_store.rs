@@ -33,7 +33,7 @@ pub trait EntryStorage: Send + Sync {
 
 pub type EntryStorageRef = Arc<dyn EntryStorage>;
 
-//-------------------------Example-----------------------------
+// --------------------------------------------------------------------------- //
 pub struct HeedEntryStorage {
     env: Env,
     db: Database<OwnedType<u64>, OwnedSlice<u8>>,

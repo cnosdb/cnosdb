@@ -9,20 +9,17 @@ message RaftResponse {
 
 
 message RaftVoteReq {
-    uint32 vnode_id = 1;
-    uint32 group_id = 2
+    uint32 group_id = 2;
     string data = 3;
 }
 
 message RaftSnapshotReq {
-    uint32 vnode_id = 1;
-    uint32 group_id = 2
+    uint32 group_id = 2;
     bytes data = 3;
 }
 
 message RaftAppendEntriesReq {
-    uint32 vnode_id = 1;
-    uint32 group_id = 2
+    uint32 group_id = 2;
     bytes data = 3;
 }
 

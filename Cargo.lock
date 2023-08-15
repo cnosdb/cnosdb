@@ -4596,6 +4596,8 @@ dependencies = [
  "futures",
  "heed",
  "heed-traits",
+ "http",
+ "http-body",
  "md-5",
  "meta",
  "models",
@@ -4623,6 +4625,7 @@ dependencies = [
  "tskv",
  "utils",
  "walkdir",
+ "warp",
 ]
 
 [[package]]

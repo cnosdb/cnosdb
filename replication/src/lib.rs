@@ -4,17 +4,17 @@ use std::fmt::{Debug, Display};
 use std::io::Cursor;
 use std::sync::Arc;
 
-use network_client::NetworkClient;
+use network_client::NetworkConn;
 use node_store::NodeStorage;
 use openraft::storage::Adaptor;
-use openraft::{AppData, AppDataResponse, Config, RaftNetworkFactory, TokioRuntime};
-use serde::{Deserialize, Serialize};
+use openraft::{AppData, AppDataResponse, RaftNetworkFactory, TokioRuntime};
 
 pub mod apply_store;
 pub mod entry_store;
 pub mod errors;
 
 pub mod network_client;
+pub mod network_server;
 pub mod node_store;
 pub mod raft_node;
 pub mod state_store;
@@ -54,7 +54,7 @@ openraft::declare_raft_types!(
 type LocalLogStore = Adaptor<TypeConfig, Arc<NodeStorage>>;
 type LocalStateMachineStore = Adaptor<TypeConfig, Arc<NodeStorage>>;
 pub type OpenRaftNode =
-    openraft::Raft<TypeConfig, NetworkClient, LocalLogStore, LocalStateMachineStore>;
+    openraft::Raft<TypeConfig, NetworkConn, LocalLogStore, LocalStateMachineStore>;
 
 //-----------------------------------------------------------------//
 

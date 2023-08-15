@@ -183,4 +183,6 @@ impl From<serde_json::Error> for ReplicationError {
 unsafe impl Send for ReplicationError {}
 unsafe impl Sync for ReplicationError {}
 
+impl warp::reject::Reject for ReplicationError {}
+
 pub type ReplicationResult<T> = Result<T, ReplicationError>;
