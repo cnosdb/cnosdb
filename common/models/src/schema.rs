@@ -514,6 +514,10 @@ pub enum ColumnType {
 }
 
 impl ColumnType {
+    pub fn default_time() -> Self {
+        Self::Time(TimeUnit::Nanosecond)
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Tag => "TAG",

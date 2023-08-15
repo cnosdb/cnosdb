@@ -93,7 +93,7 @@ impl BucketInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ReplicationSet {
     pub id: ReplicationSetId,
     pub vnodes: Vec<VnodeInfo>,
@@ -105,7 +105,7 @@ impl ReplicationSet {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct VnodeInfo {
     pub id: VnodeId,
     pub node_id: NodeId,
@@ -123,7 +123,7 @@ impl VnodeInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VnodeStatus {
     #[default]
     Running,

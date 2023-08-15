@@ -5,12 +5,9 @@ use coordinator::service::CoordinatorRef;
 use dateparser;
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
 use models::auth::user::{UserInfo, ROOT, ROOT_PWD};
-use models::consistency_level::ConsistencyLevel::Any;
 use models::oid::Identifier;
 use models::schema::{Precision, DEFAULT_CATALOG, DEFAULT_DATABASE};
 use protocol_parser::line_protocol::parser::Parser;
-use protocol_parser::lines_convert::parse_lines_to_points;
-use protos::kv_service::WritePointsRequest;
 use protos::vector::event_wrapper::Event;
 use protos::vector::metric::Value as MetricValue;
 use protos::vector::sketch::{AgentDdSketch, Sketch};
@@ -186,17 +183,10 @@ impl Vector for VectorService {
         let lines = parser
             .parse(lines.as_str())
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
-        let points = parse_lines_to_points(db.as_str(), &lines);
-        let req = WritePointsRequest {
-            version: 1,
-            meta: None,
-            points,
-        };
         self.coord
-            .write_points(tenant, Any, Precision::NS, req, None)
+            .write_lines(&tenant, &db, Precision::NS, lines, None)
             .await
-            .map_err(|e| Status::internal(e.to_string()))?;
-
+            .map_err(|e| Status::internal(format!("failed to write lines to database {}", e)))?;
         Ok(Response::new(response))
     }
 
