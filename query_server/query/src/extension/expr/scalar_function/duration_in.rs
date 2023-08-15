@@ -14,9 +14,8 @@ use spi::{QueryError, Result};
 
 use crate::extension::expr::aggregate_function::StateAggData;
 use crate::extension::expr::expr_utils::check_args_eq_any;
+use crate::extension::expr::scalar_function::DURATION_IN;
 use crate::extension::expr::INTERVALS;
-
-pub const DURATION_IN: &str = "duration_in";
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
     let udf = new();
@@ -39,7 +38,8 @@ fn new() -> ScalarUDF {
             })));
         }
 
-        let error = || DataFusionError::Execution("Get duration_in ReturnTypeFuction error".into());
+        let error =
+            || DataFusionError::Execution("Get duration_in ReturnTypeFunction error".into());
 
         match &input[0] {
             DataType::Struct(f) => {
