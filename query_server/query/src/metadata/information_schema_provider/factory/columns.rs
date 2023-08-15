@@ -23,7 +23,7 @@ use crate::metadata::information_schema_provider::builder::columns::{
 };
 use crate::metadata::information_schema_provider::InformationSchemaTableFactory;
 
-const INFORMATION_SCHEMA_COLUMNS: &str = "COLUMNS";
+pub const INFORMATION_SCHEMA_COLUMNS: &str = "COLUMNS";
 
 /// This view only displays the column information of tables under the database that the current user has Read permission or higher.
 pub struct ColumnsFactory {}

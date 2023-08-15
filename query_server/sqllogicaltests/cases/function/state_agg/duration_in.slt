@@ -1,0 +1,34 @@
+include ./state_agg.slt
+
+query T
+select duration_in(compact_state_agg(time, state), 'running') from states;
+----
+0 years 0 mons 3 days 22 hours 0 mins 0.000000000 secs
+
+query T
+select duration_in(state_agg(time, state), 'running') from states;
+----
+0 years 0 mons 3 days 22 hours 0 mins 0.000000000 secs
+
+query T
+select duration_in(state_agg(time, state), 'running', Timestamp '2020-01-01 11:00:00')
+from states;
+----
+0 years 0 mons 3 days 21 hours 30 mins 0.000000000 secs
+
+query T
+select duration_in(state_agg(time, state), 'running', Timestamp '2020-01-01 11:00:00', interval '4 day')
+from states;
+----
+0 years 0 mons 3 days 20 hours 30 mins 0.000000000 secs
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Failed to do analyze\. err: duration_in\(state_agg, state, start_time\) doesn't support compact_agg", .*
+select duration_in(compact_state_agg(time, state), 'running', Timestamp '2020-01-01 11:00:00')
+from states;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Failed to do analyze\. err: duration_in\(state_agg, state, start_time, interval\) doesn't support compact_agg", .*
+select duration_in(compact_state_agg(time, state), 'running', Timestamp '2020-01-01 11:00:00', interval '4 day')
+from states;
+
+statement ok
+drop table if exists states;

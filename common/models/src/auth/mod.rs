@@ -1,9 +1,12 @@
+use bcrypt::BcryptError;
 use openssl::error::ErrorStack;
+pub use password::{bcrypt_hash, bcrypt_verify};
 use snafu::Snafu;
 
 use crate::auth::privilege::DatabasePrivilege;
 use crate::define_result;
 
+mod password;
 pub mod privilege;
 pub mod role;
 pub mod rsa_utils;
@@ -66,10 +69,19 @@ pub enum AuthError {
     #[snafu(display("{}", err))]
     Metadata { err: String },
 
+    #[snafu(display("Bcrypt Error:{}", source))]
+    Bcrypt { source: BcryptError },
+
     #[snafu(display(
         "Internal error: {}. This was likely caused by a bug in Cnosdb's \
     code and we would welcome that you file an bug report in our issue tracker",
         err
     ))]
     Internal { err: String },
+}
+
+impl From<BcryptError> for AuthError {
+    fn from(value: BcryptError) -> Self {
+        Self::Bcrypt { source: value }
+    }
 }

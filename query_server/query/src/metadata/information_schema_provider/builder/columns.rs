@@ -6,18 +6,29 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
+pub const COLUMNS_TENANT_NAME: &str = "tenant_name";
+pub const COLUMNS_DATABASE_NAME: &str = "database_name";
+pub const COLUMNS_TABLE_NAME: &str = "table_name";
+pub const COLUMNS_COLUMN_NAME: &str = "column_name";
+pub const COLUMNS_COLUMN_TYPE: &str = "column_type";
+pub const COLUMNS_ORDINAL_POSITION: &str = "ordinal_position";
+pub const COLUMNS_COLUMN_DEFAULT: &str = "column_default";
+pub const COLUMNS_IS_NULLABLE: &str = "is_nullable";
+pub const COLUMNS_DATA_TYPE: &str = "data_type";
+pub const COLUMNS_COMPRESSION_CODEC: &str = "compression_codec";
+
 lazy_static! {
     pub static ref COLUMN_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
-        Field::new("tenant_name", DataType::Utf8, false),
-        Field::new("database_name", DataType::Utf8, false),
-        Field::new("table_name", DataType::Utf8, false),
-        Field::new("column_name", DataType::Utf8, false),
-        Field::new("column_type", DataType::Utf8, false),
-        Field::new("ordinal_position", DataType::UInt64, false),
-        Field::new("column_default", DataType::Utf8, false),
-        Field::new("is_nullable", DataType::Boolean, false),
-        Field::new("data_type", DataType::Utf8, false),
-        Field::new("compression_codec", DataType::Utf8, true),
+        Field::new(COLUMNS_TENANT_NAME, DataType::Utf8, false),
+        Field::new(COLUMNS_DATABASE_NAME, DataType::Utf8, false),
+        Field::new(COLUMNS_TABLE_NAME, DataType::Utf8, false),
+        Field::new(COLUMNS_COLUMN_NAME, DataType::Utf8, false),
+        Field::new(COLUMNS_COLUMN_TYPE, DataType::Utf8, false),
+        Field::new(COLUMNS_ORDINAL_POSITION, DataType::UInt64, false),
+        Field::new(COLUMNS_COLUMN_DEFAULT, DataType::Utf8, false),
+        Field::new(COLUMNS_IS_NULLABLE, DataType::Boolean, false),
+        Field::new(COLUMNS_DATA_TYPE, DataType::Utf8, false),
+        Field::new(COLUMNS_COMPRESSION_CODEC, DataType::Utf8, true),
     ]));
 }
 

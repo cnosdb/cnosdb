@@ -2,8 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+pub use builder::columns::{
+    COLUMNS_COLUMN_NAME, COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME,
+    COLUMNS_DATA_TYPE, COLUMNS_TABLE_NAME,
+};
 pub use builder::databases::{
-    DATABASES_DATABASE_NAME, DATABASES_PERCISION, DATABASES_REPLICA, DATABASES_SHARD,
+    DATABASES_DATABASE_NAME, DATABASES_PRECISION, DATABASES_REPLICA, DATABASES_SHARD,
     DATABASES_TENANT_NAME, DATABASES_TTL, DATABASES_VNODE_DURATION,
 };
 pub use builder::tables::{
@@ -11,6 +15,7 @@ pub use builder::tables::{
     TABLES_TABLE_TENANT, TABLES_TABLE_TYPE,
 };
 use datafusion::datasource::TableProvider;
+pub use factory::columns::INFORMATION_SCHEMA_COLUMNS;
 pub use factory::databases::INFORMATION_SCHEMA_DATABASES;
 pub use factory::tables::INFORMATION_SCHEMA_TABLES;
 use meta::error::MetaError;

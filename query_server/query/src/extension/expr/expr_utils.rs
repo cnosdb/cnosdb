@@ -24,6 +24,21 @@ pub fn check_args(func_name: &str, expects: usize, input: &[DataType]) -> DFResu
     Ok(())
 }
 
+pub fn check_args_eq_any(func_name: &str, expects: &[usize], input: &[DataType]) -> DFResult<()> {
+    let len = input.len();
+    if !expects.iter().any(|e| e.eq(&len)) {
+        return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
+            err: format!(
+                "The function {:?} expects {:?} arguments, but {} were provided",
+                func_name,
+                expects,
+                input.len()
+            ),
+        })));
+    }
+    Ok(())
+}
+
 pub fn is_time_filter(expr: &Expr) -> bool {
     match expr {
         Expr::BinaryExpr(BinaryExpr { left, op, right }) => {

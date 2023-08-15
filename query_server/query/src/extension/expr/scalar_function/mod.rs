@@ -1,3 +1,4 @@
+mod duration_in;
 #[cfg(test)]
 mod example;
 mod gapfill;
@@ -25,6 +26,7 @@ pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<(
     locf::register_udf(func_manager)?;
     interpolate::register_udf(func_manager)?;
     gauge::register_udfs(func_manager)?;
+    duration_in::register_udf(func_manager)?;
     Ok(())
 }
 

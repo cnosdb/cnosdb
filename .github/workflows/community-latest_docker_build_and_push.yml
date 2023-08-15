@@ -2,7 +2,7 @@ name: community-latest docker build and push
 
 on:
   schedule:
-    - cron: "00 22 * * 0"
+    - cron: "00 10 * * 1-5"
   workflow_dispatch:
 
 jobs:

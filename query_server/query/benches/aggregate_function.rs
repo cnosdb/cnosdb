@@ -35,13 +35,31 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     }
 
-    let mut group = c.benchmark_group("gauge_agg");
-    group
+    let mut gauge_agg_group = c.benchmark_group("gauge_agg");
+    gauge_agg_group
         .sample_size(10)
         .bench_function("aggregate_query_gauge_agg", |b| {
             b.iter(|| data_utils::query(ctx.clone(), "select gauge_agg(ts, f64) FROM t"))
         });
-    group.finish();
+    gauge_agg_group.finish();
+
+    let mut state_agg_group = c.benchmark_group("state_agg");
+    state_agg_group
+        .sample_size(10)
+        .bench_function("aggregate_query_state_agg", |b| {
+            b.iter(|| data_utils::query(ctx.clone(), "select state_agg(ts, f64) from t"))
+        });
+    state_agg_group.finish();
+
+    c.bench_function("aggregate_query_no_group_by_first", |b| {
+        b.iter(|| {
+            data_utils::query(
+                ctx.clone(),
+                "SELECT first(ts, f64) \
+                 FROM t",
+            )
+        })
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

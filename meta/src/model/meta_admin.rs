@@ -9,7 +9,7 @@ use config::Config;
 use models::auth::user::{admin_user, User, UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
-use models::oid::{Identifier, Oid};
+use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{Tenant, TenantOptions};
 use models::utils::{build_address, now_timestamp_secs};
 use parking_lot::RwLock;
@@ -460,9 +460,13 @@ impl AdminMeta {
         options: UserOptions,
         is_admin: bool,
     ) -> MetaResult<Oid> {
-        let req = command::WriteCommand::CreateUser(self.cluster(), name, options, is_admin);
+        let oid = UuidGenerator::default().next_id();
+        let user_desc = UserDesc::new(oid, name.clone(), options.clone(), is_admin);
+        let req = command::WriteCommand::CreateUser(self.cluster(), user_desc);
 
-        self.client.write::<Oid>(&req).await
+        self.client.write::<()>(&req).await?;
+
+        Ok(oid)
     }
 
     pub async fn user(&self, name: &str) -> MetaResult<Option<UserDesc>> {
@@ -585,9 +589,12 @@ impl AdminMeta {
         options: TenantOptions,
     ) -> MetaResult<MetaClientRef> {
         let limiter = self.new_limiter(&self.cluster(), &name, &options);
-        let req = command::WriteCommand::CreateTenant(self.cluster(), name.clone(), options);
 
-        let tenant = self.client.write::<Tenant>(&req).await?;
+        let oid = UuidGenerator::default().next_id();
+        let tenant = Tenant::new(oid, name.to_string(), options.clone());
+        let req = command::WriteCommand::CreateTenant(self.cluster(), tenant.clone());
+
+        self.client.write::<()>(&req).await?;
         let meta_client = self.create_tenant_meta(tenant).await?;
         self.limiters.write().insert(name.to_string(), limiter);
         Ok(meta_client)
