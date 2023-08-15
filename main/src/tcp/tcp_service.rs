@@ -1,11 +1,8 @@
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
-use models::consistency_level::ConsistencyLevel::Any;
 use models::schema::{Precision, DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_millis;
-use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::open_tsdb::parser::Parser;
-use protos::kv_service::WritePointsRequest;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -76,18 +73,12 @@ impl Service for TcpService {
                                     bit = line.timestamp / MILLISECOND_TIMESTAMP;
                                 }
                             });
-                            let points = parse_lines_to_points(DEFAULT_DATABASE, &lines);
-                            let req = WritePointsRequest {
-                                version: 1,
-                                meta: None,
-                                points,
-                            };
                             coord
-                                .write_points(
-                                    DEFAULT_CATALOG.to_string(),
-                                    Any,
-                                    Precision::MS,
-                                    req,
+                                .write_lines(
+                                    DEFAULT_CATALOG,
+                                    DEFAULT_DATABASE,
+                                    Precision::NS,
+                                    lines,
                                     None,
                                 )
                                 .await

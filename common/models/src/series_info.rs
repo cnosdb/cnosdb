@@ -1,4 +1,5 @@
-use protos::models as fb_models;
+use flatbuffers::{ForwardsUOffset, Vector};
+use protos::models::Column;
 use serde::{Deserialize, Serialize};
 use utils::bitset::ImmutBitSet;
 use utils::BkdrHasher;
@@ -91,35 +92,36 @@ impl SeriesKey {
     pub fn build_series_key(
         db_name: &str,
         tab_name: &str,
-        tag_names: &[&str],
-        point: &fb_models::Point,
+        columns: &Vector<ForwardsUOffset<Column>>,
+        tag_idx: &[usize],
+        row_count: usize,
     ) -> Result<Self> {
-        let tag_nullbit_buffer = point.tags_nullbit().ok_or(Error::InvalidTag {
-            err: "point tag null bit".to_string(),
-        })?;
-        let len = tag_names.len();
-        let tag_nullbit = ImmutBitSet::new_without_check(len, tag_nullbit_buffer.bytes());
         let mut tags = Vec::new();
-        for (idx, (tag_key, tag_value)) in tag_names
-            .iter()
-            .zip(point.tags().ok_or(Error::InvalidTag {
-                err: "point tag value".to_string(),
-            })?)
-            .enumerate()
-        {
-            if !tag_nullbit.get(idx) {
+        for idx in tag_idx {
+            let column = columns.get(*idx);
+
+            let tag_nullbit_buffer = column.nullbits().ok_or(Error::InvalidTag {
+                err: "missing column null bit".to_string(),
+            })?;
+            let len = column
+                .string_values_len()
+                .map_err(|e| Error::InvalidPoint { err: e.to_string() })?;
+            let column_nullbit = ImmutBitSet::new_without_check(len, tag_nullbit_buffer.bytes());
+            if !column_nullbit.get(row_count) {
                 continue;
             }
+
+            let tags_value = column
+                .string_values()
+                .map_err(|e| Error::InvalidPoint { err: e.to_string() })?;
+            let tag_value = tags_value.get(row_count);
+            let tag_key = column.name().ok_or(Error::InvalidTag {
+                err: "missing column name".to_string(),
+            })?;
             tags.push(Tag::new(
                 tag_key.as_bytes().to_vec(),
-                tag_value
-                    .value()
-                    .ok_or(Error::InvalidTag {
-                        err: "tag missing value".to_string(),
-                    })?
-                    .bytes()
-                    .into(),
-            ))
+                tag_value.as_bytes().to_vec(),
+            ));
         }
 
         tag::sort_tags(&mut tags);

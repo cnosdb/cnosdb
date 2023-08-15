@@ -246,7 +246,7 @@ impl HintedOffManager {
                     all_info.node_id,
                     &block.tenant,
                     block.precision,
-                    block.data.clone(),
+                    Arc::new(block.data.clone()),
                     // not record trace
                     None,
                 )

@@ -44,99 +44,13 @@ where
 }
 
 #[cfg(feature = "test")]
-mod test {
-    use crate::{build_fb_schema_offset, init_fields, init_tags, FbSchema};
+pub mod test {
     use chrono::prelude::*;
-    use flatbuffers::{self, ForwardsUOffset, Vector, WIPOffset};
+    use flatbuffers::{self, WIPOffset};
     use std::collections::HashMap;
     use utils::bitset::BitSet;
 
     use crate::models::*;
-
-    pub fn create_tags<'a>(
-        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        tags_raw: &[(&str, &str)],
-        schema: &FbSchema,
-    ) -> (
-        WIPOffset<Vector<'a, ForwardsUOffset<Tag<'a>>>>,
-        WIPOffset<Vector<'a, u8>>,
-    ) {
-        let mut tags = Vec::with_capacity(schema.tag_names().len());
-        init_tags(fbb, &mut tags, schema.tag_names().len());
-
-        let mut tags_nullbit = BitSet::with_size(schema.tag_names().len());
-
-        for (k, v) in tags_raw {
-            let fbv = fbb.create_vector(v.as_bytes());
-
-            let idx = match schema.tag_names().get(k) {
-                None => continue,
-                Some(v) => *v,
-            };
-
-            let mut tag_builder = TagBuilder::new(fbb);
-            tag_builder.add_value(fbv);
-
-            tags[idx] = tag_builder.finish();
-            tags_nullbit.set(idx);
-        }
-
-        let tags = fbb.create_vector(&tags);
-        let tags_nullbit = fbb.create_vector(tags_nullbit.bytes());
-
-        (tags, tags_nullbit)
-    }
-
-    pub fn create_fields<'a>(
-        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        fields_raw: &[(&str, &[u8])],
-        schema: &FbSchema,
-    ) -> (
-        WIPOffset<Vector<'a, ForwardsUOffset<Field<'a>>>>,
-        WIPOffset<Vector<'a, u8>>,
-    ) {
-        let mut fields = Vec::with_capacity(schema.field().len());
-        init_fields(fbb, &mut fields, schema.field_len());
-
-        let mut fields_nullbits = BitSet::with_size(schema.field_len());
-
-        for (name, value) in fields_raw {
-            let idx = match schema.field().get(name) {
-                None => continue,
-                Some(v) => *v,
-            };
-
-            let fbv = fbb.create_vector(value);
-
-            let mut field_builder = FieldBuilder::new(fbb);
-            field_builder.add_value(fbv);
-
-            fields[idx] = field_builder.finish();
-            fields_nullbits.set(idx)
-        }
-
-        let fields = fbb.create_vector(&fields);
-        let fields_nullbits = fbb.create_vector(fields_nullbits.bytes());
-
-        (fields, fields_nullbits)
-    }
-
-    pub fn create_point<'a>(
-        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        timestamp: i64,
-        tags: WIPOffset<Vector<ForwardsUOffset<Tag<'a>>>>,
-        tags_nullbit: WIPOffset<Vector<'a, u8>>,
-        fields: WIPOffset<Vector<ForwardsUOffset<Field<'a>>>>,
-        fields_nullbit: WIPOffset<Vector<'a, u8>>,
-    ) -> WIPOffset<Point<'a>> {
-        let mut point_builder = PointBuilder::new(fbb);
-        point_builder.add_timestamp(timestamp);
-        point_builder.add_tags(tags);
-        point_builder.add_tags_nullbit(tags_nullbit);
-        point_builder.add_fields(fields);
-        point_builder.add_fields_nullbit(fields_nullbit);
-        point_builder.finish()
-    }
 
     /// Generate `num` points, tags and fields are always the same value.
     ///
@@ -145,63 +59,180 @@ mod test {
     /// - table,ta=a,tb=b fa=100i,fb=1000 2
     /// - ...
     /// - table,ta=a,tb=b fa=100i,fb=1000 num-1
-    #[allow(clippy::too_many_arguments)]
     pub fn create_const_points<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        schema: FbSchema,
         database: &str,
         table: &str,
         tags: Vec<(&str, &str)>,
         fields: Vec<(&str, &[u8])>,
+        fields_type: HashMap<&str, FieldType>,
         start_timestamp: i64,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
-        let db = fbb.create_vector(database.as_bytes());
+        let nullbits = BitSet::with_size_all_set(num);
+        let fb_nullbits = fbb.create_vector(nullbits.bytes());
+        let db = fbb.create_string(database);
+        let table = fbb.create_string(table);
+        let mut columns = vec![];
 
-        let mut points = vec![];
-        for timestamp in start_timestamp..start_timestamp + num as i64 {
-            let (tags, tags_bullbit) = create_tags(fbb, &tags, &schema);
-
-            let (fields, field_bullbits) = create_fields(fbb, &fields, &schema);
-
-            points.push(create_point(
-                fbb,
-                timestamp,
-                tags,
-                tags_bullbit,
-                fields,
-                field_bullbits,
-            ))
+        for (tag_key, tag_value) in tags {
+            let col_name = fbb.create_string(tag_key);
+            let mut col_values = vec![];
+            for _ in 0..num {
+                col_values.push(fbb.create_string(tag_value));
+            }
+            let values = fbb.create_vector(&col_values);
+            let mut values_builder = ValuesBuilder::new(fbb);
+            values_builder.add_string_value(values);
+            let values = values_builder.finish();
+            let mut col_builder = ColumnBuilder::new(fbb);
+            col_builder.add_field_type(FieldType::String);
+            col_builder.add_column_type(ColumnType::Tag);
+            col_builder.add_name(col_name);
+            col_builder.add_col_values(values);
+            col_builder.add_nullbits(fb_nullbits);
+            let col = col_builder.finish();
+            columns.push(col);
         }
-        let fb_schema = build_fb_schema_offset(fbb, &schema);
 
-        let point = fbb.create_vector(&points);
-        let tab = fbb.create_vector(table.as_bytes());
+        for (field_name, field_value) in fields.iter() {
+            let col_name = fbb.create_string(field_name);
+            match *fields_type.get(field_name).unwrap() {
+                FieldType::Float => {
+                    let mut col_values = vec![];
+                    for _ in 0..num {
+                        col_values.push(f64::from_be_bytes((*field_value).try_into().unwrap()));
+                    }
+                    let values = fbb.create_vector(&col_values);
+                    let mut values_builder = ValuesBuilder::new(fbb);
+                    values_builder.add_float_value(values);
+                    let values = values_builder.finish();
+                    let mut col_builder = ColumnBuilder::new(fbb);
+                    col_builder.add_field_type(FieldType::Float);
+                    col_builder.add_column_type(ColumnType::Field);
+                    col_builder.add_name(col_name);
+                    col_builder.add_col_values(values);
+                    col_builder.add_nullbits(fb_nullbits);
+                    let col = col_builder.finish();
+                    columns.push(col);
+                }
+                FieldType::Integer => {
+                    let mut col_values = vec![];
+                    for _ in 0..num {
+                        col_values.push(i64::from_be_bytes((*field_value).try_into().unwrap()));
+                    }
+                    let values = fbb.create_vector(&col_values);
+                    let mut values_builder = ValuesBuilder::new(fbb);
+                    values_builder.add_int_value(values);
+                    let values = values_builder.finish();
+                    let mut col_builder = ColumnBuilder::new(fbb);
+                    col_builder.add_field_type(FieldType::Integer);
+                    col_builder.add_column_type(ColumnType::Field);
+                    col_builder.add_name(col_name);
+                    col_builder.add_col_values(values);
+                    col_builder.add_nullbits(fb_nullbits);
+                    let col = col_builder.finish();
+                    columns.push(col);
+                }
+                FieldType::String => {
+                    let mut col_values = vec![];
+                    for _ in 0..num {
+                        col_values
+                            .push(fbb.create_string(std::str::from_utf8(field_value).unwrap()));
+                    }
+                    let values = fbb.create_vector(&col_values);
+                    let mut values_builder = ValuesBuilder::new(fbb);
+                    values_builder.add_string_value(values);
+                    let values = values_builder.finish();
+                    let mut col_builder = ColumnBuilder::new(fbb);
+                    col_builder.add_field_type(FieldType::String);
+                    col_builder.add_column_type(ColumnType::Field);
+                    col_builder.add_name(col_name);
+                    col_builder.add_col_values(values);
+                    col_builder.add_nullbits(fb_nullbits);
+                    let col = col_builder.finish();
+                    columns.push(col);
+                }
+                FieldType::Unsigned => {
+                    let mut col_values = vec![];
+                    for _ in 0..num {
+                        col_values.push(u64::from_be_bytes((*field_value).try_into().unwrap()));
+                    }
+                    let values = fbb.create_vector(&col_values);
+                    let mut values_builder = ValuesBuilder::new(fbb);
+                    values_builder.add_uint_value(values);
+                    let values = values_builder.finish();
+                    let mut col_builder = ColumnBuilder::new(fbb);
+                    col_builder.add_field_type(FieldType::Unsigned);
+                    col_builder.add_column_type(ColumnType::Field);
+                    col_builder.add_name(col_name);
+                    col_builder.add_col_values(values);
+                    col_builder.add_nullbits(fb_nullbits);
+                    let col = col_builder.finish();
+                    columns.push(col);
+                }
+                FieldType::Boolean => {
+                    let mut col_values = vec![];
+                    for _ in 0..num {
+                        col_values.push(field_value[0] != 0);
+                    }
+                    let values = fbb.create_vector(&col_values);
+                    let mut values_builder = ValuesBuilder::new(fbb);
+                    values_builder.add_bool_value(values);
+                    let values = values_builder.finish();
+                    let mut col_builder = ColumnBuilder::new(fbb);
+                    col_builder.add_field_type(FieldType::Boolean);
+                    col_builder.add_column_type(ColumnType::Field);
+                    col_builder.add_name(col_name);
+                    col_builder.add_col_values(values);
+                    col_builder.add_nullbits(fb_nullbits);
+                    let col = col_builder.finish();
+                    columns.push(col);
+                }
+                _ => {
+                    panic!("not support field type:{:?}", fields_type[field_name])
+                }
+            }
+        }
+        let mut time_col_values = vec![];
 
+        for _ in 0..num {
+            time_col_values.push(start_timestamp + num as i64);
+        }
+        let values = fbb.create_vector(&time_col_values);
+        let mut values_builder = ValuesBuilder::new(fbb);
+        values_builder.add_int_value(values);
+        let values = values_builder.finish();
+        let name = fbb.create_string("time");
+        let mut col_builder = ColumnBuilder::new(fbb);
+        col_builder.add_field_type(FieldType::Boolean);
+        col_builder.add_column_type(ColumnType::Field);
+        col_builder.add_name(name);
+        col_builder.add_col_values(values);
+        col_builder.add_nullbits(fb_nullbits);
+        let col = col_builder.finish();
+        columns.push(col);
+
+        let columns = fbb.create_vector(&columns);
         let mut table_builder = TableBuilder::new(fbb);
-
-        table_builder.add_points(point);
-        table_builder.add_schema(fb_schema);
-        table_builder.add_tab(tab);
+        table_builder.add_tab(table);
+        table_builder.add_columns(columns);
         table_builder.add_num_rows(num as u64);
-
         let table = table_builder.finish();
-        let table_offsets = fbb.create_vector(&[table]);
+        let tables = vec![table];
+        let tables = fbb.create_vector(&tables);
 
-        Points::create(
-            fbb,
-            &PointsArgs {
-                db: Some(db),
-                tables: Some(table_offsets),
-            },
-        )
+        let mut points_builder = PointsBuilder::new(fbb);
+        points_builder.add_db(db);
+        points_builder.add_tables(tables);
+
+        points_builder.finish()
     }
 
     pub fn create_random_points_with_delta<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
-        let db = fbb.create_vector("db".as_bytes());
         let mut tags_names: HashMap<&str, usize> = HashMap::new();
         tags_names.insert("ta", 0);
         tags_names.insert("tb", 1);
@@ -210,71 +241,49 @@ mod test {
         fields.insert("fa", 0);
         fields.insert("fb", 1);
 
-        let schema = FbSchema {
-            tag_name: tags_names,
-            field: fields,
-            field_type: vec![FieldType::Integer, FieldType::Float],
-        };
+        let fields_type = HashMap::from([("fa", FieldType::Integer), ("fb", FieldType::Float)]);
+
+        let mut time_values = Vec::new();
+        let mut tags_values = HashMap::new();
+        let mut fields_values = HashMap::new();
 
         let area = ["a".to_string(), "b".to_string(), "c".to_string()];
-        let mut points = vec![];
         for i in 0..num {
             let timestamp = if i <= num / 2 {
                 Local::now().timestamp_nanos()
             } else {
                 1
             };
+            time_values.push(timestamp);
+
             let tav = area[rand::random::<usize>() % 3].clone();
             let tbv = area[rand::random::<usize>() % 3].clone();
-            let (tags, tags_nullbit) = create_tags(
-                fbb,
-                vec![
-                    ("ta", ("a".to_string() + &tav).as_str()),
-                    ("tb", ("b".to_string() + &tbv).as_str()),
-                ]
-                .as_slice(),
-                &schema,
-            );
+            let entry = tags_values.entry("ta").or_insert(vec![]);
+            entry.push("a".to_string() + &tav);
+            let entry = tags_values.entry("tb").or_insert(vec![]);
+            entry.push("b".to_string() + &tbv);
 
-            let fav = rand::random::<i64>().to_be_bytes();
-            let fbv = rand::random::<i64>().to_be_bytes();
-            let (fields, fields_nullbits) = create_fields(
-                fbb,
-                vec![("fa", fav.as_slice()), ("fb", fbv.as_slice())].as_slice(),
-                &schema,
-            );
-
-            points.push(create_point(
-                fbb,
-                timestamp,
-                tags,
-                tags_nullbit,
-                fields,
-                fields_nullbits,
-            ))
+            let entry = fields_values.entry("fa").or_insert(vec![]);
+            entry.push(rand::random::<i64>().to_be_bytes());
+            let entry = fields_values.entry("fb").or_insert(vec![]);
+            entry.push(rand::random::<f64>().to_be_bytes());
         }
 
-        let fb_schema = build_fb_schema_offset(fbb, &schema);
-
-        let point = fbb.create_vector(&points);
-        let tab = fbb.create_vector("table".as_bytes());
-
-        let mut table_builder = TableBuilder::new(fbb);
-
-        table_builder.add_points(point);
-        table_builder.add_schema(fb_schema);
-        table_builder.add_tab(tab);
-        table_builder.add_num_rows(num as u64);
-
-        let table = table_builder.finish();
-        let table_offsets = fbb.create_vector(&[table]);
-
-        Points::create(
+        create_points(
             fbb,
-            &PointsArgs {
-                db: Some(db),
-                tables: Some(table_offsets),
-            },
+            "db",
+            "table",
+            tags_values
+                .iter()
+                .map(|(k, v)| (*k, v.iter().map(|v| v.as_str()).collect()))
+                .collect(),
+            fields_values
+                .iter()
+                .map(|(k, v)| (*k, v.iter().map(|v| v.as_slice()).collect()))
+                .collect(),
+            fields_type,
+            &time_values,
+            num,
         )
     }
 
@@ -284,7 +293,6 @@ mod test {
         table: &str,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
-        let db = fbb.create_vector(database.as_bytes());
         let mut tags_names: HashMap<&str, usize> = HashMap::new();
         tags_names.insert("ta", 0);
         tags_names.insert("tb", 1);
@@ -294,105 +302,85 @@ mod test {
         fields.insert("fb", 1);
         fields.insert("fc", 2);
 
-        let schema = FbSchema {
-            tag_name: tags_names,
-            field: fields,
-            field_type: vec![FieldType::Integer, FieldType::Float, FieldType::Float],
-        };
+        let fields_type = HashMap::from([
+            ("fa", FieldType::Integer),
+            ("fb", FieldType::Float),
+            ("fc", FieldType::Float),
+        ]);
+
+        let mut time_values = Vec::new();
+        let mut tags_values = HashMap::new();
+        let mut fields_values = HashMap::new();
 
         let area = ["a".to_string(), "b".to_string(), "c".to_string()];
-        let mut points = vec![];
         for i in 0..num {
             let timestamp = if i % 2 == 0 {
                 Local::now().timestamp_nanos()
             } else {
                 i64::MIN
             };
+            time_values.push(timestamp);
             let tav = area[rand::random::<usize>() % 3].clone();
             let tbv = area[rand::random::<usize>() % 3].clone();
-            let (tags, tags_nullbit) = if rand::random::<i64>() % 2 == 0 {
-                create_tags(
-                    fbb,
-                    vec![
-                        ("ta", ("a".to_string() + &tav).as_str()),
-                        ("tb", ("b".to_string() + &tbv).as_str()),
-                    ]
-                    .as_slice(),
-                    &schema,
-                )
+            if rand::random::<i64>() % 2 == 0 {
+                let entry = tags_values.entry("ta").or_insert(vec![]);
+                entry.push("a".to_string() + &tav);
+                let entry = tags_values.entry("tb").or_insert(vec![]);
+                entry.push("b".to_string() + &tbv);
+                let entry = tags_values.entry("tc").or_insert(vec![]);
+                entry.push("".to_string());
             } else {
-                create_tags(
-                    fbb,
-                    vec![
-                        ("ta", ("a".to_string() + &tav).as_str()),
-                        ("tb", ("b".to_string() + &tbv).as_str()),
-                        ("tc", ("c".to_string() + &tbv).as_str()),
-                    ]
-                    .as_slice(),
-                    &schema,
-                )
-            };
+                let entry = tags_values.entry("ta").or_insert(vec![]);
+                entry.push("a".to_string() + &tav);
+                let entry = tags_values.entry("tb").or_insert(vec![]);
+                entry.push("b".to_string() + &tbv);
+                let entry = tags_values.entry("tc").or_insert(vec![]);
+                entry.push("c".to_string() + &tbv);
+            }
 
             let fav = rand::random::<f64>().to_be_bytes();
             let fbv = rand::random::<i64>().to_be_bytes();
-            let (fields, fields_nullbit) = if rand::random::<i64>() % 2 == 0 {
-                create_fields(
-                    fbb,
-                    vec![("fa", fav.as_slice()), ("fb", fbv.as_slice())].as_slice(),
-                    &schema,
-                )
+
+            if rand::random::<i64>() % 2 == 0 {
+                let entry = fields_values.entry("fa").or_insert(vec![]);
+                entry.push(fbv);
+                let entry = fields_values.entry("fb").or_insert(vec![]);
+                entry.push(fav);
+                let entry = fields_values.entry("fc").or_insert(vec![]);
+                entry.push(0.0_f64.to_be_bytes());
             } else {
-                create_fields(
-                    fbb,
-                    vec![
-                        ("fa", fav.as_slice()),
-                        ("fb", fbv.as_slice()),
-                        ("fc", fbv.as_slice()),
-                    ]
-                    .as_slice(),
-                    &schema,
-                )
-            };
-
-            points.push(create_point(
-                fbb,
-                timestamp,
-                tags,
-                tags_nullbit,
-                fields,
-                fields_nullbit,
-            ))
+                let entry = fields_values.entry("fa").or_insert(vec![]);
+                entry.push(fbv);
+                let entry = fields_values.entry("fb").or_insert(vec![]);
+                entry.push(fav);
+                let entry = fields_values.entry("fc").or_insert(vec![]);
+                entry.push(fav);
+            }
         }
-        let fb_schema = build_fb_schema_offset(fbb, &schema);
-
-        let point = fbb.create_vector(&points);
-        let tab = fbb.create_vector(table.as_bytes());
-
-        let mut table_builder = TableBuilder::new(fbb);
-
-        table_builder.add_points(point);
-        table_builder.add_schema(fb_schema);
-        table_builder.add_tab(tab);
-        table_builder.add_num_rows(num as u64);
-
-        let table = table_builder.finish();
-        let table_offsets = fbb.create_vector(&[table]);
-
-        Points::create(
+        create_points(
             fbb,
-            &PointsArgs {
-                db: Some(db),
-                tables: Some(table_offsets),
-            },
+            database,
+            table,
+            tags_values
+                .iter()
+                .map(|(k, v)| (*k, v.iter().map(|v| v.as_str()).collect()))
+                .collect(),
+            fields_values
+                .iter()
+                .map(|(k, v)| (*k, v.iter().map(|v| v.as_slice()).collect()))
+                .collect(),
+            fields_type,
+            &time_values,
+            num,
         )
     }
 
     pub fn create_big_random_points<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        table: &str,
+        _table: &str,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
-        let db = fbb.create_vector("db".as_bytes());
+        let _db = fbb.create_vector("db".as_bytes());
         let mut tags_names: HashMap<&str, usize> = HashMap::new();
         tags_names.insert("tag", 0);
 
@@ -400,141 +388,213 @@ mod test {
         fields.insert("field_integer", 0);
         fields.insert("field_float", 1);
 
-        let schema = FbSchema {
-            tag_name: tags_names,
-            field: fields,
-            field_type: vec![FieldType::Integer, FieldType::Float],
-        };
+        let fields_type = HashMap::from([
+            ("field_integer", FieldType::Integer),
+            ("field_float", FieldType::Float),
+        ]);
 
-        let mut points = vec![];
+        let mut time_values = Vec::new();
+        let mut tags_values = HashMap::new();
+        let mut fields_values = HashMap::new();
+        let tav = rand::random::<u8>().to_string();
+        let fav = rand::random::<i64>().to_be_bytes();
+        let fbv = rand::random::<f64>().to_be_bytes();
+
         for _ in 0..num {
             let timestamp = Local::now().timestamp_nanos();
-            let mut tags = vec![];
-            let tav = rand::random::<u8>().to_string();
+            time_values.push(timestamp);
+            let entry = tags_values.entry("tag").or_insert(vec![]);
             for _ in 0..19999 {
-                tags.push(("tag", tav.as_str()));
+                entry.push(tav.as_str());
             }
-            let (tags, tags_nullbit) = create_tags(fbb, &tags, &schema);
 
-            let mut fields = vec![];
-            let fav = rand::random::<i64>().to_be_bytes();
-            let fbv = rand::random::<f64>().to_be_bytes();
+            let entry = fields_values.entry("field_integer").or_insert(vec![]);
             for _ in 0..19999 {
-                fields.push(("field_integer", fav.as_slice()));
-                fields.push(("field_float", fbv.as_slice()));
+                entry.push(fav.as_slice());
             }
-            let (fields, fields_nullbit) = create_fields(fbb, &fields, &schema);
-
-            points.push(create_point(
-                fbb,
-                timestamp,
-                tags,
-                tags_nullbit,
-                fields,
-                fields_nullbit,
-            ))
+            let entry = fields_values.entry("field_float").or_insert(vec![]);
+            for _ in 0..19999 {
+                entry.push(fbv.as_slice());
+            }
         }
-        let fb_schema = build_fb_schema_offset(fbb, &schema);
-
-        let point = fbb.create_vector(&points);
-        let tab = fbb.create_vector(table.as_bytes());
-
-        let mut table_builder = TableBuilder::new(fbb);
-
-        table_builder.add_points(point);
-        table_builder.add_schema(fb_schema);
-        table_builder.add_tab(tab);
-        table_builder.add_num_rows(num as u64);
-
-        let table = table_builder.finish();
-        let table_offsets = fbb.create_vector(&[table]);
-
-        Points::create(
+        create_points(
             fbb,
-            &PointsArgs {
-                db: Some(db),
-                tables: Some(table_offsets),
-            },
+            "db",
+            "table",
+            tags_values,
+            fields_values,
+            fields_type,
+            &time_values,
+            num,
         )
     }
 
-    pub fn create_dev_ops_points<'a>(
+    pub fn create_points<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        num: usize,
         database: &str,
         table: &str,
+        tags: HashMap<&str, Vec<&str>>,
+        fields: HashMap<&str, Vec<&[u8]>>,
+        fields_type: HashMap<&str, FieldType>,
+        time: &[i64],
+        num: usize,
     ) -> WIPOffset<Points<'a>> {
-        let db = fbb.create_vector(database.as_bytes());
+        let nullbits = BitSet::with_size_all_set(num);
+        let fb_nullbits = fbb.create_vector(nullbits.bytes());
+        let db = fbb.create_string(database);
+        let table = fbb.create_string(table);
+        let mut columns = vec![];
 
-        let mut tags_names: HashMap<&str, usize> = HashMap::new();
-        tags_names.insert("region", 0);
-        tags_names.insert("host", 1);
-
-        let mut fields: HashMap<&str, usize> = HashMap::new();
-        fields.insert("cpu", 0);
-        fields.insert("mem", 1);
-
-        let schema = FbSchema {
-            tag_name: tags_names,
-            field: fields,
-            field_type: vec![FieldType::Float, FieldType::Float],
-        };
-
-        #[rustfmt::skip]
-            let tag_key_values = [
-                ("region", vec!["rg_1", "rg_2", "rg_3", "rg_4", "rg_5", "rg_6"]),
-                ("host", vec!["192.168.0.1", "192.168.0.2", "192.168.0.3", "192.168.0.4", "192.168.0.5", "192.168.0.6"]),
-            ];
-        let field_keys = ["cpu", "mem"];
-
-        let now = Local::now().timestamp_nanos();
-        let mut points = vec![];
-        for i in 0..num as i64 {
-            let timestamp = now + i;
-
-            #[rustfmt::skip]
-                let (tags, tags_nullbit) = create_tags(fbb, vec![
-                    (tag_key_values[0].0, tag_key_values[0].1[i as usize / tag_key_values[0].1.len() % tag_key_values[0].1.len()]),
-                    (tag_key_values[1].0, tag_key_values[1].1[i as usize % tag_key_values[1].1.len()]),
-                ].as_slice(), &schema);
-
-            let mut fields = vec![];
-            let fv = rand::random::<f64>().to_be_bytes();
-            for fk in field_keys {
-                fields.push((fk, fv.as_slice()));
+        for (tag_key, tag_value) in tags.iter() {
+            let col_name = fbb.create_string(tag_key);
+            let mut col_values = vec![];
+            for value in tag_value {
+                col_values.push(fbb.create_string(value));
             }
-            let (fields, fields_nullbit) = create_fields(fbb, &fields, &schema);
-
-            points.push(create_point(
-                fbb,
-                timestamp,
-                tags,
-                tags_nullbit,
-                fields,
-                fields_nullbit,
-            ))
+            let values = fbb.create_vector(&col_values);
+            let mut values_builder = ValuesBuilder::new(fbb);
+            values_builder.add_string_value(values);
+            let values = values_builder.finish();
+            let mut col_builder = ColumnBuilder::new(fbb);
+            col_builder.add_field_type(FieldType::String);
+            col_builder.add_column_type(ColumnType::Tag);
+            col_builder.add_name(col_name);
+            col_builder.add_col_values(values);
+            col_builder.add_nullbits(fb_nullbits);
+            let col = col_builder.finish();
+            columns.push(col);
         }
-        let fb_schema = build_fb_schema_offset(fbb, &schema);
 
-        let point = fbb.create_vector(&points);
-        let tab = fbb.create_vector(table.as_bytes());
+        for (field_name, field_value) in fields.iter() {
+            let col_name = fbb.create_string(field_name);
+            match *fields_type.get(field_name).unwrap() {
+                FieldType::Float => {
+                    let mut col_values = vec![];
+                    for value in field_value {
+                        col_values.push(f64::from_be_bytes((*value).try_into().unwrap()));
+                    }
+                    let values = fbb.create_vector(&col_values);
+                    let mut values_builder = ValuesBuilder::new(fbb);
+                    values_builder.add_float_value(values);
+                    let values = values_builder.finish();
+                    let mut col_builder = ColumnBuilder::new(fbb);
+                    col_builder.add_field_type(FieldType::Float);
+                    col_builder.add_column_type(ColumnType::Field);
+                    col_builder.add_name(col_name);
+                    col_builder.add_col_values(values);
+                    col_builder.add_nullbits(fb_nullbits);
+                    let col = col_builder.finish();
+                    columns.push(col);
+                }
+                FieldType::Integer => {
+                    let mut col_values = vec![];
+                    for value in field_value {
+                        col_values.push(i64::from_be_bytes((*value).try_into().unwrap()));
+                    }
+                    let values = fbb.create_vector(&col_values);
+                    let mut values_builder = ValuesBuilder::new(fbb);
+                    values_builder.add_int_value(values);
+                    let values = values_builder.finish();
+                    let mut col_builder = ColumnBuilder::new(fbb);
+                    col_builder.add_field_type(FieldType::Integer);
+                    col_builder.add_column_type(ColumnType::Field);
+                    col_builder.add_name(col_name);
+                    col_builder.add_col_values(values);
+                    col_builder.add_nullbits(fb_nullbits);
+                    let col = col_builder.finish();
+                    columns.push(col);
+                }
+                FieldType::String => {
+                    let mut col_values = vec![];
+                    for value in field_value {
+                        col_values.push(fbb.create_string(std::str::from_utf8(value).unwrap()));
+                    }
+                    let values = fbb.create_vector(&col_values);
+                    let mut values_builder = ValuesBuilder::new(fbb);
+                    values_builder.add_string_value(values);
+                    let values = values_builder.finish();
+                    let mut col_builder = ColumnBuilder::new(fbb);
+                    col_builder.add_field_type(FieldType::String);
+                    col_builder.add_column_type(ColumnType::Field);
+                    col_builder.add_name(col_name);
+                    col_builder.add_col_values(values);
+                    col_builder.add_nullbits(fb_nullbits);
+                    let col = col_builder.finish();
+                    columns.push(col);
+                }
+                FieldType::Unsigned => {
+                    let mut col_values = vec![];
+                    for value in field_value {
+                        col_values.push(u64::from_be_bytes((*value).try_into().unwrap()));
+                    }
+                    let values = fbb.create_vector(&col_values);
+                    let mut values_builder = ValuesBuilder::new(fbb);
+                    values_builder.add_uint_value(values);
+                    let values = values_builder.finish();
+                    let mut col_builder = ColumnBuilder::new(fbb);
+                    col_builder.add_field_type(FieldType::Unsigned);
+                    col_builder.add_column_type(ColumnType::Field);
+                    col_builder.add_name(col_name);
+                    col_builder.add_col_values(values);
+                    col_builder.add_nullbits(fb_nullbits);
+                    let col = col_builder.finish();
+                    columns.push(col);
+                }
+                FieldType::Boolean => {
+                    let mut col_values = vec![];
+                    for value in field_value {
+                        col_values.push(value[0] != 0);
+                    }
+                    let values = fbb.create_vector(&col_values);
+                    let mut values_builder = ValuesBuilder::new(fbb);
+                    values_builder.add_bool_value(values);
+                    let values = values_builder.finish();
+                    let mut col_builder = ColumnBuilder::new(fbb);
+                    col_builder.add_field_type(FieldType::Boolean);
+                    col_builder.add_column_type(ColumnType::Field);
+                    col_builder.add_name(col_name);
+                    col_builder.add_col_values(values);
+                    col_builder.add_nullbits(fb_nullbits);
+                    let col = col_builder.finish();
+                    columns.push(col);
+                }
+                _ => {
+                    panic!("Unsupported field type");
+                }
+            }
+        }
+        let mut time_col_values = vec![];
+        for value in time {
+            time_col_values.push(value);
+        }
 
+        let values = fbb.create_vector(&time_col_values);
+        let mut values_builder = ValuesBuilder::new(fbb);
+        values_builder.add_int_value(values);
+        let values = values_builder.finish();
+        let name = fbb.create_string("time");
+        let mut col_builder = ColumnBuilder::new(fbb);
+        col_builder.add_field_type(FieldType::Integer);
+        col_builder.add_column_type(ColumnType::Time);
+        col_builder.add_name(name);
+        col_builder.add_col_values(values);
+        col_builder.add_nullbits(fb_nullbits);
+        let col = col_builder.finish();
+        columns.push(col);
+
+        let columns = fbb.create_vector(&columns);
         let mut table_builder = TableBuilder::new(fbb);
-
-        table_builder.add_points(point);
-        table_builder.add_schema(fb_schema);
-        table_builder.add_tab(tab);
+        table_builder.add_tab(table);
+        table_builder.add_columns(columns);
         table_builder.add_num_rows(num as u64);
-
         let table = table_builder.finish();
-        let table_offsets = fbb.create_vector(&[table]);
+        let tables = vec![table];
+        let tables = fbb.create_vector(&tables);
 
-        Points::create(
-            fbb,
-            &PointsArgs {
-                db: Some(db),
-                tables: Some(table_offsets),
-            },
-        )
+        let mut points_builder = PointsBuilder::new(fbb);
+        points_builder.add_db(db);
+        points_builder.add_tables(tables);
+
+        points_builder.finish()
     }
 }

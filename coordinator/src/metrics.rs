@@ -4,12 +4,11 @@ use metrics::label::Labels;
 use metrics::metric_type::MetricType;
 use metrics::metric_value::MetricValue;
 use metrics::reporter::Reporter;
-use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::Line;
 use protos::FieldValue;
 
-#[derive(Debug)]
-struct LPLine {
+#[derive(Debug, Clone)]
+pub struct LPLine {
     measure: &'static str,
     labels: Labels,
     value: FieldValue,
@@ -34,18 +33,20 @@ impl LPLine {
 
 #[derive(Debug)]
 pub struct LPReporter<'a> {
-    db: &'a str,
     current_measure: Option<(Vec<LPLine>, &'static str, MetricType)>,
-    points_buffer: &'a mut Vec<Vec<u8>>,
+    points_buffer: &'a mut Vec<Vec<LPLine>>,
 }
 
 impl<'a> LPReporter<'a> {
-    pub fn new(db: &'a str, points_buffer: &'a mut Vec<Vec<u8>>) -> Self {
+    pub fn new(points_buffer: &'a mut Vec<Vec<LPLine>>) -> Self {
         Self {
-            db,
             current_measure: None,
             points_buffer,
         }
+    }
+
+    pub fn current_measure(&self) -> Option<&(Vec<LPLine>, &'static str, MetricType)> {
+        self.current_measure.as_ref()
     }
 }
 
@@ -87,9 +88,7 @@ impl<'a> Reporter for LPReporter<'a> {
 
     fn stop(&mut self) {
         if let Some((lines, _name, _metrics_type)) = &self.current_measure {
-            let lines = lines.iter().map(|l| l.to_line()).collect::<Vec<_>>();
-            let points = parse_lines_to_points(self.db, &lines);
-            self.points_buffer.push(points);
+            self.points_buffer.push(lines.clone());
         }
     }
 }
