@@ -5,6 +5,7 @@ mod gauge;
 mod last;
 mod sample;
 mod state_agg;
+mod stats_agg;
 
 use std::sync::Arc;
 
@@ -22,6 +23,7 @@ pub const STATE_AGG_UDAF_NAME: &str = "state_agg";
 pub const GAUGE_AGG_UDAF_NAME: &str = "gauge_agg";
 pub const FIRST_UDAF_NAME: &str = "first";
 pub const LAST_UDAF_NAME: &str = "last";
+pub const STATS_AGG_UDAF_NAME: &str = "stats_agg";
 pub use gauge::GaugeData;
 pub use state_agg::StateAggData;
 
@@ -34,6 +36,7 @@ pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<
     gauge::register_udafs(func_manager)?;
     first::register_udaf(func_manager)?;
     last::register_udaf(func_manager)?;
+    stats_agg::register_udafs(func_manager)?;
     Ok(())
 }
 
