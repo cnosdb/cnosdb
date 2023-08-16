@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use heed::byteorder::BigEndian;
 use heed::types::*;
 use heed::{Database, Env};
 use openraft::Entry;
@@ -34,9 +35,10 @@ pub trait EntryStorage: Send + Sync {
 pub type EntryStorageRef = Arc<dyn EntryStorage>;
 
 // --------------------------------------------------------------------------- //
+type BEU64 = U64<BigEndian>;
 pub struct HeedEntryStorage {
     env: Env,
-    db: Database<OwnedType<u64>, OwnedSlice<u8>>,
+    db: Database<OwnedType<BEU64>, OwnedSlice<u8>>,
 }
 
 impl HeedEntryStorage {
@@ -48,7 +50,8 @@ impl HeedEntryStorage {
             .max_dbs(128)
             .open(path)?;
 
-        let db: Database<OwnedType<u64>, OwnedSlice<u8>> = env.create_database(Some("entries"))?;
+        let db: Database<OwnedType<BEU64>, OwnedSlice<u8>> =
+            env.create_database(Some("entries"))?;
         let storage = Self { env, db };
 
         Ok(storage)
@@ -79,7 +82,7 @@ impl EntryStorage for HeedEntryStorage {
             let index = entry.log_id.index;
 
             let data = bincode::serialize(entry)?;
-            self.db.put(&mut writer, &index, &data)?;
+            self.db.put(&mut writer, &BEU64::new(index), &data)?;
         }
         writer.commit()?;
 
@@ -98,7 +101,7 @@ impl EntryStorage for HeedEntryStorage {
 
     async fn entry(&self, index: u64) -> ReplicationResult<Option<Entry<TypeConfig>>> {
         let reader = self.env.read_txn()?;
-        if let Some(data) = self.db.get(&reader, &index)? {
+        if let Some(data) = self.db.get(&reader, &BEU64::new(index))? {
             let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)?;
             Ok(Some(entry))
         } else {
@@ -110,7 +113,8 @@ impl EntryStorage for HeedEntryStorage {
         let mut ents = vec![];
 
         let reader = self.env.read_txn()?;
-        let iter = self.db.range(&reader, &(low..high))?;
+        let range = BEU64::new(low)..BEU64::new(high);
+        let iter = self.db.range(&reader, &range)?;
         for pair in iter {
             let (_, data) = pair?;
             ents.push(bincode::deserialize::<Entry<TypeConfig>>(&data)?);
@@ -121,7 +125,8 @@ impl EntryStorage for HeedEntryStorage {
 
     async fn del_after(&self, index: u64) -> ReplicationResult<()> {
         let mut writer = self.env.write_txn()?;
-        self.db.delete_range(&mut writer, &(index..))?;
+        let range = BEU64::new(index)..;
+        self.db.delete_range(&mut writer, &range)?;
         writer.commit()?;
 
         Ok(())
@@ -129,7 +134,8 @@ impl EntryStorage for HeedEntryStorage {
 
     async fn del_before(&self, index: u64) -> ReplicationResult<()> {
         let mut writer = self.env.write_txn()?;
-        self.db.delete_range(&mut writer, &(..index))?;
+        let range = ..BEU64::new(index);
+        self.db.delete_range(&mut writer, &range)?;
         writer.commit()?;
 
         Ok(())

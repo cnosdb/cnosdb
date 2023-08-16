@@ -23,7 +23,7 @@ use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
 use replication::{RaftNodeId, RaftNodeInfo, Request, TypeConfig};
 use tower::Service;
-use tracing::info;
+use trace::info;
 use warp::{hyper, Filter};
 
 #[derive(clap::Parser, Clone, Debug)]
