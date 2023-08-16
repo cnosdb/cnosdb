@@ -105,7 +105,11 @@ impl StateStorage {
 
     pub fn is_already_init(&self, group_id: u32) -> ReplicationResult<bool> {
         let reader = self.env.read_txn()?;
-        if let Some(_) = self.db.get(&reader, &Key::already_init_key(group_id))? {
+        if self
+            .db
+            .get(&reader, &Key::already_init_key(group_id))?
+            .is_some()
+        {
             Ok(true)
         } else {
             Ok(false)
@@ -119,7 +123,7 @@ impl StateStorage {
         let reader = self.reader_txn()?;
         let mem_ship: StoredMembership<RaftNodeId, RaftNodeInfo> = self
             .get(&reader, &Key::membership(group_id))?
-            .unwrap_or_else(|| StoredMembership::default());
+            .unwrap_or_default();
 
         Ok(mem_ship)
     }

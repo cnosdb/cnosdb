@@ -117,7 +117,7 @@ impl StateMachine {
     }
 
     fn contains_key(&self, key: &str) -> MetaResult<bool> {
-        if let Some(_) = self.get(key)? {
+        if self.get(key)?.is_some() {
             Ok(true)
         } else {
             Ok(false)
@@ -566,7 +566,7 @@ impl StateMachine {
     }
 
     fn process_write_set(&self, key: &str, val: &str) -> MetaResult<()> {
-        Ok(self.insert(key, val)?)
+        self.insert(key, val)
     }
 
     fn process_update_vnode(&self, args: &UpdateVnodeArgs) -> MetaResult<()> {
@@ -666,7 +666,7 @@ impl StateMachine {
         }
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = value_encode(node)?;
-        Ok(self.insert(&key, &value)?)
+        self.insert(&key, &value)
     }
 
     fn process_add_node_metrics(
@@ -676,7 +676,7 @@ impl StateMachine {
     ) -> MetaResult<()> {
         let key = KeyPath::data_node_metrics(cluster, node_metrics.id);
         let value = value_encode(node_metrics)?;
-        Ok(self.insert(&key, &value)?)
+        self.insert(&key, &value)
     }
 
     fn process_drop_db(&self, cluster: &str, tenant: &str, db_name: &str) -> MetaResult<()> {
@@ -710,7 +710,7 @@ impl StateMachine {
             });
         }
 
-        Ok(self.remove(&key)?)
+        self.remove(&key)
     }
 
     fn process_create_db(
@@ -941,7 +941,7 @@ impl StateMachine {
         id: u32,
     ) -> MetaResult<()> {
         let key = KeyPath::tenant_bucket_id(cluster, tenant, db, id);
-        Ok(self.remove(&key)?)
+        self.remove(&key)
     }
 
     fn process_create_user(&self, cluster: &str, user_desc: &UserDesc) -> MetaResult<()> {
@@ -997,7 +997,7 @@ impl StateMachine {
     fn process_drop_user(&self, cluster: &str, user_name: &str) -> MetaResult<()> {
         let key = KeyPath::user(cluster, user_name);
 
-        Ok(self.remove(&key)?)
+        self.remove(&key)
     }
 
     fn set_tenant_limiter(
@@ -1011,11 +1011,11 @@ impl StateMachine {
         let limiter = match limiter {
             Some(limiter) => limiter,
             None => {
-                return Ok(self.remove(&key)?);
+                return self.remove(&key);
             }
         };
 
-        Ok(self.insert(&key, &value_encode(&limiter)?)?)
+        self.insert(&key, &value_encode(&limiter)?)
     }
 
     fn process_create_tenant(&self, cluster: &str, tenant: &Tenant) -> MetaResult<()> {
@@ -1098,7 +1098,7 @@ impl StateMachine {
             });
         }
 
-        Ok(self.insert(&key, &value_encode(&role)?)?)
+        self.insert(&key, &value_encode(&role)?)
     }
 
     fn process_remove_member_to_tenant(
@@ -1135,7 +1135,7 @@ impl StateMachine {
             });
         }
 
-        Ok(self.insert(&key, &value_encode(&role)?)?)
+        self.insert(&key, &value_encode(&role)?)
     }
 
     fn process_create_role(
@@ -1162,7 +1162,7 @@ impl StateMachine {
             privileges.clone(),
         );
 
-        Ok(self.insert(&key, &value_encode(&role)?)?)
+        self.insert(&key, &value_encode(&role)?)
     }
 
     fn process_drop_role(

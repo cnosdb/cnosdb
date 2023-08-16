@@ -25,15 +25,17 @@ use crate::store::storage::StateMachine;
 use crate::store::{self};
 
 fn openraft_config() -> openraft::Config {
-    let mut config = openraft::Config::default();
-    config.enable_tick = true;
-    config.enable_elect = true;
-    config.enable_heartbeat = true;
-    config.heartbeat_interval = 1000;
-    config.election_timeout_min = 3000;
-    config.election_timeout_max = 4000;
-    config.install_snapshot_timeout = 100000;
-    config.cluster_name = "cnosdb".to_string();
+    let config = openraft::Config {
+        enable_tick: true,
+        enable_elect: true,
+        enable_heartbeat: true,
+        heartbeat_interval: 1000,
+        election_timeout_min: 3000,
+        election_timeout_max: 4000,
+        install_snapshot_timeout: 100000,
+        cluster_name: "cnosdb".to_string(),
+        ..Default::default()
+    };
 
     config.validate().unwrap()
 }

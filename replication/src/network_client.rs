@@ -22,6 +22,12 @@ pub struct NetworkConn {
     conn_map: Arc<RwLock<HashMap<String, Channel>>>,
 }
 
+impl Default for NetworkConn {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NetworkConn {
     pub fn new() -> Self {
         Self {
