@@ -2,89 +2,49 @@ use std::sync::Arc;
 
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder};
-use models::oid::{Identifier, UuidGenerator};
+use models::oid::Identifier;
 use models::schema::{Tenant, TenantOptionsBuilder};
-use replication::raft_node::RaftNode;
-use tracing::error;
+use replication::apply_store::ApplyStorage;
 
-use crate::error::MetaResult;
-use crate::store::command::{ReadCommand, WriteCommand};
+use crate::store::command::WriteCommand;
 use crate::store::config::MetaInit;
 use crate::store::key_path::KeyPath;
 use crate::store::storage::StateMachine;
 
-pub async fn init_meta(node: Arc<RaftNode>, storage: Arc<StateMachine>, init_data: Arc<MetaInit>) {
-    // init user
-    let user_opt_res = UserOptionsBuilder::default()
-        .must_change_password(true)
-        .comment("system admin")
-        .build();
-    let user_opt = if user_opt_res.is_err() {
-        error!(
-            "failed init admin user {}, exit init meta",
-            init_data.admin_user
-        );
-        return;
-    } else {
-        user_opt_res.unwrap()
-    };
-    let oid = UuidGenerator::default().next_id();
-    let user_desc = UserDesc::new(oid, init_data.admin_user.clone(), user_opt, true);
-    let req = WriteCommand::CreateUser(init_data.cluster_name.clone(), user_desc);
-    let data = serde_json::to_vec(&req).unwrap();
-    if node.raw_raft().client_write(data).await.is_err() {
-        error!(
-            "failed init admin user {}, exit init meta",
-            init_data.admin_user
-        );
-        return;
-    }
-
+pub async fn init_meta(storage: Arc<StateMachine>, init_data: MetaInit) {
     // init tenant
     let tenant_opt = TenantOptionsBuilder::default()
         .comment("system tenant")
         .build()
         .expect("failed to init system tenant.");
-    let oid = UuidGenerator::default().next_id();
+    let oid = 78322384368497284380257291774744000001;
     let tenant = Tenant::new(oid, init_data.system_tenant.clone(), tenant_opt);
     let req = WriteCommand::CreateTenant(init_data.cluster_name.clone(), tenant);
     let data = serde_json::to_vec(&req).unwrap();
-    if node.raw_raft().client_write(data).await.is_err() {
-        error!(
-            "failed init system tenant {}, exit init meta",
-            init_data.system_tenant
-        );
-        return;
-    }
+    storage.apply(&data).await.expect("init expect success");
+
+    // init user
+    let user_opt = UserOptionsBuilder::default()
+        .must_change_password(true)
+        .comment("system admin")
+        .build()
+        .expect("failed to init user option.");
+    let oid = 78322384368497284380257291774744000002;
+    let user_desc = UserDesc::new(oid, init_data.admin_user.clone(), user_opt, true);
+    let req = WriteCommand::CreateUser(init_data.cluster_name.clone(), user_desc.clone());
+    let data = serde_json::to_vec(&req).unwrap();
+    storage.apply(&data).await.expect("init expect success");
 
     // init role
-    let req = ReadCommand::User(
+    let role = TenantRoleIdentifier::System(SystemTenantRole::Owner);
+    let req = WriteCommand::AddMemberToTenant(
         init_data.cluster_name.clone(),
-        init_data.admin_user.to_string(),
+        *user_desc.id(),
+        role,
+        init_data.system_tenant.to_string(),
     );
-
-    let user =
-        serde_json::from_str::<MetaResult<Option<UserDesc>>>(&storage.process_read_command(&req))
-            .unwrap()
-            .unwrap();
-
-    if let Some(user_desc) = user {
-        let role = TenantRoleIdentifier::System(SystemTenantRole::Owner);
-        let req = WriteCommand::AddMemberToTenant(
-            init_data.cluster_name.clone(),
-            *user_desc.id(),
-            role,
-            init_data.system_tenant.to_string(),
-        );
-        let data = serde_json::to_vec(&req).unwrap();
-        if node.raw_raft().client_write(data).await.is_err() {
-            error!(
-                "failed add admin user {} to system tenant {}, exist init meta",
-                init_data.admin_user, init_data.system_tenant
-            );
-            return;
-        }
-    }
+    let data = serde_json::to_vec(&req).unwrap();
+    storage.apply(&data).await.expect("init expect success");
 
     // init database
     for db in init_data.default_database.iter() {
@@ -94,8 +54,6 @@ pub async fn init_meta(node: Arc<RaftNode>, storage: Arc<StateMachine>, init_dat
         };
 
         let data = serde_json::to_vec(&req).unwrap();
-        if node.raw_raft().client_write(data).await.is_err() {
-            error!("failed create default database {}, exist init meta", db);
-        }
+        storage.apply(&data).await.expect("init expect success");
     }
 }

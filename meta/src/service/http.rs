@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::convert::Infallible as StdInfallible;
 use std::sync::Arc;
+use std::time::Duration;
 
 use replication::apply_store::{ApplyStorage, HashMapSnapshotData};
 use replication::network_server::RaftHttpAdmin;
@@ -7,7 +9,7 @@ use replication::raft_node::RaftNode;
 use trace::info;
 use warp::{hyper, Filter};
 
-use crate::error::MetaError;
+use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
 use crate::store::storage::StateMachine;
 
@@ -25,6 +27,7 @@ impl HttpServer {
             .routes()
             .or(self.read())
             .or(self.write())
+            .or(self.watch())
             .or(self.dump())
             .or(self.restore())
             .or(self.debug())
@@ -104,6 +107,22 @@ impl HttpServer {
             })
     }
 
+    fn watch(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("watch")
+            .and(warp::body::bytes())
+            .and(self.with_storage())
+            .and_then(
+                |req: hyper::body::Bytes, storage: Arc<StateMachine>| async move {
+                    let data = Self::process_watch(req, storage)
+                        .await
+                        .map_err(warp::reject::custom)?;
+
+                    let res: Result<String, warp::Rejection> = Ok(data);
+                    res
+                },
+            )
+    }
+
     // curl -XPOST http://127.0.0.1:8901/dump --o ./meta_dump.data
     // curl -XPOST http://127.0.0.1:8901/restore --data-binary "@./meta_dump.data"
     fn dump(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -174,23 +193,11 @@ impl HttpServer {
     fn debug(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("debug").and(self.with_storage()).and_then(
             |storage: Arc<StateMachine>| async move {
-                let data = storage
-                    .snapshot()
+                let data = Self::process_debug(storage)
                     .await
-                    .map_err(MetaError::from)
                     .map_err(warp::reject::custom)?;
 
-                let data: HashMapSnapshotData = serde_json::from_slice(&data)
-                    .map_err(MetaError::from)
-                    .map_err(warp::reject::custom)?;
-
-                let mut rsp = "****** ------------------------------------- ******\n".to_string();
-                for (key, val) in data.map.iter() {
-                    rsp = rsp + &format!("* {}: {}\n", key, val);
-                }
-                rsp += "****** ------------------------------------- ******\n";
-
-                let res: Result<String, warp::Rejection> = Ok(rsp);
+                let res: Result<String, warp::Rejection> = Ok(data);
                 res
             },
         )
@@ -200,25 +207,11 @@ impl HttpServer {
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("debug" / "pprof").and_then(|| async move {
-            let rsp = Self::cpu_pprof().await;
+            let rsp = Self::process_cpu_pprof().await;
 
             let res: Result<String, warp::Rejection> = Ok(rsp);
             res
         })
-    }
-
-    async fn cpu_pprof() -> String {
-        #[cfg(unix)]
-        {
-            match utils::pprof_tools::gernate_pprof().await {
-                Ok(v) => v,
-                Err(v) => v,
-            }
-        }
-        #[cfg(not(unix))]
-        {
-            "/debug/pprof only supported on *unix systems.".to_string()
-        }
     }
 
     fn debug_backtrace(
@@ -231,54 +224,67 @@ impl HttpServer {
             res
         })
     }
+
+    pub async fn process_debug(storage: Arc<StateMachine>) -> MetaResult<String> {
+        let data = storage.snapshot().await.map_err(MetaError::from)?;
+
+        let data: HashMapSnapshotData = serde_json::from_slice(&data).map_err(MetaError::from)?;
+
+        let mut rsp = "****** ------------------------------------- ******\n".to_string();
+        for (key, val) in data.map.iter() {
+            rsp = rsp + &format!("* {}: {}\n", key, val);
+        }
+        rsp += "****** ------------------------------------- ******\n";
+
+        Ok(rsp)
+    }
+
+    pub async fn process_watch(
+        req: hyper::body::Bytes,
+        storage: Arc<StateMachine>,
+    ) -> MetaResult<String> {
+        let req: (String, String, HashSet<String>, u64) = serde_json::from_slice(&req)?;
+
+        info!("watch all  args: {:?}", req);
+        let (client, cluster, tenants, base_ver) = req;
+        let mut follow_ver = base_ver;
+
+        let mut notify = {
+            let watch_data = storage.read_change_logs(&cluster, &tenants, follow_ver);
+            if watch_data.need_return(base_ver) {
+                return Ok(crate::store::storage::response_encode(Ok(watch_data)));
+            }
+
+            storage.watch.subscribe()
+        };
+
+        let now = std::time::Instant::now();
+        loop {
+            let _ = tokio::time::timeout(Duration::from_secs(20), notify.recv()).await;
+
+            let watch_data = storage.read_change_logs(&cluster, &tenants, follow_ver);
+            info!("watch notify {} {}.{}", client, base_ver, follow_ver);
+            if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
+                return Ok(crate::store::storage::response_encode(Ok(watch_data)));
+            }
+
+            if follow_ver < watch_data.max_ver {
+                follow_ver = watch_data.max_ver;
+            }
+        }
+    }
+
+    async fn process_cpu_pprof() -> String {
+        #[cfg(unix)]
+        {
+            match utils::pprof_tools::gernate_pprof().await {
+                Ok(v) => v,
+                Err(v) => v,
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            "/debug/pprof only supported on *unix systems.".to_string()
+        }
+    }
 }
-
-// pub async fn watch(
-//     app: Data<MetaApp>,
-//     req: Json<(String, String, HashSet<String>, u64)>, //client id, cluster,version
-// ) -> actix_web::Result<impl Responder> {
-//     info!("watch all  args: {:?}", req);
-//     let client = req.0 .0;
-//     let cluster = req.0 .1;
-//     let tenants = req.0 .2;
-//     let base_ver = req.0 .3;
-//     let mut follow_ver = base_ver;
-
-//     let mut notify = {
-//         let sm = app.store.state_machine.read().await;
-//         let watch_data = sm.read_change_logs(&cluster, &tenants, follow_ver);
-//         info!(
-//             "{} {}.{}: change logs: {:?} ",
-//             client, base_ver, follow_ver, watch_data
-//         );
-
-//         if watch_data.need_return(base_ver) {
-//             let data = response_encode(Ok(watch_data));
-//             let response: Result<CommandResp, Infallible> = Ok(data);
-//             return Ok(Json(response));
-//         }
-
-//         sm.watch.subscribe()
-//     };
-
-//     let now = std::time::Instant::now();
-//     loop {
-//         let _ = tokio::time::timeout(tokio::time::Duration::from_secs(20), notify.recv()).await;
-
-//         let sm = app.store.state_machine.read().await;
-//         let watch_data = sm.read_change_logs(&cluster, &tenants, follow_ver);
-//         info!(
-//             "{} {}.{}: change logs: {:?} ",
-//             client, base_ver, follow_ver, watch_data
-//         );
-//         if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
-//             let data = response_encode(Ok(watch_data));
-//             let response: Result<CommandResp, Infallible> = Ok(data);
-//             return Ok(Json(response));
-//         }
-
-//         if follow_ver < watch_data.max_ver {
-//             follow_ver = watch_data.max_ver;
-//         }
-//     }
-// }
