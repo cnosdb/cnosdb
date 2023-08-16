@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use openraft::storage::Adaptor;
-use openraft::{Config, RaftMetrics};
+use openraft::RaftMetrics;
 
 use crate::apply_store::ApplyStorageRef;
 use crate::errors::{ReplicationError, ReplicationResult};
@@ -18,22 +18,17 @@ pub struct RaftNode {
     engine: ApplyStorageRef,
 
     raft: OpenRaftNode,
-    config: Arc<Config>,
+    config: Arc<openraft::Config>,
 }
 
 impl RaftNode {
     pub async fn new(
         id: RaftNodeId,
         info: RaftNodeInfo,
+        config: openraft::Config,
         storage: Arc<NodeStorage>,
         engine: ApplyStorageRef,
     ) -> ReplicationResult<Self> {
-        let config = Config {
-            heartbeat_interval: 500,
-            election_timeout_min: 1500,
-            election_timeout_max: 3000,
-            ..Default::default()
-        };
         let config = Arc::new(config.validate().unwrap());
 
         let (log_store, state_machine) = Adaptor::new(storage.clone());

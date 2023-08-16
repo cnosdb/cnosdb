@@ -1,4 +1,6 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 
 use models::auth::privilege::DatabasePrivilege;
@@ -8,30 +10,30 @@ use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
-use openraft::{EffectiveMembership, LogId};
+use replication::apply_store::{ApplyStorage, HashMapSnapshotData};
+use replication::errors::ReplicationResult;
+use replication::{Request, Response};
 use serde::{Deserialize, Serialize};
-use serde_json::{from_slice, from_str};
 use trace::{debug, error, info};
 
 use super::command::*;
 use super::key_path;
-use crate::error::{l_r_err, sm_r_err, sm_w_err, MetaError, MetaResult, StorageIOResult};
+use crate::error::{MetaError, MetaResult};
 use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
 use crate::limiter::remote_request_limiter::RemoteRequestLimiter;
 use crate::store::key_path::KeyPath;
-use crate::{ClusterNode, ClusterNodeId};
 
 pub type CommandResp = String;
 
 pub fn value_encode<T: Serialize>(d: &T) -> MetaResult<String> {
-    serde_json::to_string(d).map_err(|e| MetaError::SerdeMsgEncode { err: e.to_string() })
+    serde_json::to_string(d).map_err(|e| MetaError::SerdeMsgInvalid { err: e.to_string() })
 }
 
 pub fn response_encode<T: Serialize>(d: MetaResult<T>) -> String {
     match serde_json::to_string(&d) {
         Ok(val) => val,
         Err(err) => {
-            let err_rsp = MetaError::SerdeMsgEncode {
+            let err_rsp = MetaError::SerdeMsgInvalid {
                 err: err.to_string(),
             };
 
@@ -40,137 +42,119 @@ pub fn response_encode<T: Serialize>(d: MetaResult<T>) -> String {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct StateMachineContent {
-    pub last_applied_log: Option<LogId<ClusterNodeId>>,
-    pub last_membership: EffectiveMembership<ClusterNodeId, ClusterNode>,
-    pub data: BTreeMap<String, String>,
-}
-
-impl From<&StateMachine> for StateMachineContent {
-    fn from(state: &StateMachine) -> Self {
-        let mut data_tree = BTreeMap::new();
-        for entry_res in state.data_tree.iter() {
-            let entry = entry_res.expect("read db failed");
-
-            let key: &[u8] = &entry.0;
-            let value: &[u8] = &entry.1;
-            data_tree.insert(
-                String::from_utf8(key.to_vec()).expect("invalid key"),
-                String::from_utf8(value.to_vec()).expect("invalid data"),
-            );
-        }
-        Self {
-            last_applied_log: state.get_last_applied_log().expect("last_applied_log"),
-            last_membership: state.get_last_membership().expect("last_membership"),
-            data: data_tree,
-        }
-    }
-}
-
 pub struct StateMachine {
-    pub db: Arc<sled::Db>,
-    pub data_tree: sled::Tree,
-    pub state_machine: sled::Tree,
+    env: heed::Env,
+    db: heed::Database<heed::types::Str, heed::types::Str>,
     pub watch: Arc<Watch>,
 }
 
+#[async_trait::async_trait]
+impl ApplyStorage for StateMachine {
+    async fn apply(&self, req: &Request) -> ReplicationResult<Response> {
+        let req: WriteCommand = serde_json::from_slice(req)?;
+
+        Ok(self.process_write_command(&req).into())
+    }
+
+    async fn snapshot(&self) -> ReplicationResult<Vec<u8>> {
+        let mut hash_map = HashMap::new();
+
+        let reader = self.env.read_txn()?;
+        let iter = self.db.iter(&reader)?;
+        for pair in iter {
+            let (key, val) = pair?;
+            hash_map.insert(key.to_string(), val.to_string());
+        }
+
+        let data = HashMapSnapshotData { map: hash_map };
+        let json_str = serde_json::to_string(&data).unwrap();
+
+        Ok(json_str.as_bytes().to_vec())
+    }
+
+    async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()> {
+        let data: HashMapSnapshotData = serde_json::from_slice(snapshot).unwrap();
+
+        let mut writer = self.env.write_txn()?;
+        self.db.clear(&mut writer)?;
+        for (key, val) in data.map.iter() {
+            self.db.put(&mut writer, key, val)?;
+        }
+        writer.commit()?;
+
+        Ok(())
+    }
+}
+
 impl StateMachine {
-    pub fn new(db: Arc<sled::Db>) -> StateMachine {
-        Self {
-            db: db.clone(),
-            data_tree: db.open_tree("data").expect("data open failed"),
-            state_machine: db
-                .open_tree("state_machine")
-                .expect("state_machine open failed"),
+    pub fn open(path: impl AsRef<Path>) -> MetaResult<Self> {
+        fs::create_dir_all(&path)?;
 
+        let env = heed::EnvOpenOptions::new()
+            .map_size(1024 * 1024 * 1024)
+            .max_dbs(16)
+            .open(path)?;
+
+        let db: heed::Database<heed::types::Str, heed::types::Str> =
+            env.create_database(Some("data"))?;
+        let storage = Self {
+            env,
+            db,
             watch: Arc::new(Watch::new()),
-        }
-    }
+        };
 
-    pub(crate) fn get_last_membership(
-        &self,
-    ) -> StorageIOResult<EffectiveMembership<ClusterNodeId, ClusterNode>> {
-        self.state_machine
-            .get(b"last_membership")
-            .map_err(sm_r_err)
-            .and_then(|value| {
-                value
-                    .map(|v| serde_json::from_slice(&v).map_err(sm_r_err))
-                    .unwrap_or_else(|| Ok(EffectiveMembership::default()))
-            })
-    }
-    pub(crate) async fn set_last_membership(
-        &self,
-        membership: EffectiveMembership<ClusterNodeId, ClusterNode>,
-    ) -> StorageIOResult<()> {
-        let value = serde_json::to_vec(&membership).map_err(sm_w_err)?;
-        self.state_machine
-            .insert(b"last_membership", value)
-            .map_err(sm_w_err)?;
-
-        Ok(())
-    }
-
-    pub(crate) fn get_last_applied_log(&self) -> StorageIOResult<Option<LogId<ClusterNodeId>>> {
-        self.state_machine
-            .get(b"last_applied_log")
-            .map_err(l_r_err)
-            .and_then(|value| {
-                value
-                    .map(|v| serde_json::from_slice(&v).map_err(sm_r_err))
-                    .transpose()
-            })
-    }
-    pub(crate) async fn set_last_applied_log(
-        &self,
-        log_id: LogId<ClusterNodeId>,
-    ) -> StorageIOResult<()> {
-        let value = serde_json::to_vec(&log_id).map_err(sm_w_err)?;
-        self.state_machine
-            .insert(b"last_applied_log", value)
-            .map_err(l_r_err)?;
-
-        Ok(())
-    }
-
-    pub(crate) async fn from_serializable(
-        sm: StateMachineContent,
-        db: Arc<sled::Db>,
-    ) -> StorageIOResult<Self> {
-        let data_tree = db.open_tree("data").expect("store open failed");
-        let mut batch = sled::Batch::default();
-        for (key, value) in sm.data {
-            batch.insert(key.as_bytes(), value.as_bytes())
-        }
-        data_tree.apply_batch(batch).map_err(sm_w_err)?;
-
-        let r = StateMachine::new(db);
-
-        if let Some(log_id) = sm.last_applied_log {
-            r.set_last_applied_log(log_id).await?;
-        }
-        r.set_last_membership(sm.last_membership).await?;
-
-        Ok(r)
+        Ok(storage)
     }
 
     //********************************************************************************* */
-    fn get(&self, key: &str) -> StorageIOResult<Option<sled::IVec>> {
-        let val = self.db.get(key).map_err(sm_r_err)?;
-
-        Ok(val)
+    pub fn get(&self, key: &str) -> MetaResult<Option<String>> {
+        let reader = self.env.read_txn()?;
+        if let Some(data) = self.db.get(&reader, key)? {
+            Ok(Some(data.to_owned()))
+        } else {
+            Ok(None)
+        }
     }
 
-    fn contains_key(&self, key: &str) -> StorageIOResult<bool> {
-        let exist = self.db.contains_key(key).map_err(sm_r_err)?;
-
-        Ok(exist)
+    fn contains_key(&self, key: &str) -> MetaResult<bool> {
+        if let Some(_) = self.get(key)? {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
-    fn insert(&self, key: &str, val: &str) -> StorageIOResult<()> {
-        let version = self.update_version()?;
-        self.db.insert(key, val).map_err(l_r_err)?;
+    fn version(&self) -> MetaResult<u64> {
+        let key = KeyPath::version();
+        if let Some(data) = self.get(&key)? {
+            Ok(data.parse::<u64>().unwrap_or(0))
+        } else {
+            Ok(0)
+        }
+    }
+
+    fn fetch_and_add_incr_id(&self, cluster: &str, count: u32) -> MetaResult<u32> {
+        let key = KeyPath::incr_id(cluster);
+
+        let mut writer = self.env.write_txn()?;
+        let data = self.db.get(&writer, &key)?.unwrap_or("1");
+        let id = data.parse::<u32>().unwrap_or(1);
+
+        self.db.put(&mut writer, &key, &(id + count).to_string())?;
+        writer.commit()?;
+
+        Ok(id)
+    }
+
+    fn insert(&self, key: &str, val: &str) -> MetaResult<()> {
+        let version = self.version()? + 1;
+
+        let mut writer = self.env.write_txn()?;
+        self.db.put(&mut writer, key, val)?;
+        self.db
+            .put(&mut writer, &KeyPath::version(), &version.to_string())?;
+        writer.commit()?;
+
         info!("METADATA WRITE: {} :{}", key, val);
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_SET,
@@ -184,9 +168,15 @@ impl StateMachine {
         Ok(())
     }
 
-    fn remove(&self, key: &str) -> StorageIOResult<()> {
-        let version = self.update_version()?;
-        self.db.remove(key).map_err(l_r_err)?;
+    fn remove(&self, key: &str) -> MetaResult<()> {
+        let version = self.version()? + 1;
+
+        let mut writer = self.env.write_txn()?;
+        self.db.delete(&mut writer, key)?;
+        self.db
+            .put(&mut writer, &KeyPath::version(), &version.to_string())?;
+        writer.commit()?;
+
         info!("METADATA REMOVE: {}", key);
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_DEL,
@@ -200,54 +190,13 @@ impl StateMachine {
         Ok(())
     }
 
-    fn version(&self) -> StorageIOResult<u64> {
-        let key = KeyPath::version();
-        let mut ver_str = "0".to_string();
-        if let Some(val) = self.get(&key)? {
-            unsafe { ver_str = String::from_utf8_unchecked((*val).to_owned()) };
-        }
-
-        let ver = from_str::<u64>(&ver_str).unwrap_or(0);
-
-        Ok(ver)
-    }
-
-    fn update_version(&self) -> StorageIOResult<u64> {
-        let key = KeyPath::version();
-        let mut ver_str = "0".to_string();
-        if let Some(val) = self.get(&key)? {
-            unsafe { ver_str = String::from_utf8_unchecked((*val).to_owned()) };
-        }
-        let ver = from_str::<u64>(&ver_str).unwrap_or(0) + 1;
-        let val = &*(ver.to_string());
-        self.db.insert(&key, val).map_err(l_r_err)?;
-        info!("METADATA WRITE: {} :{}", &key, val);
-        Ok(ver)
-    }
-
-    fn fetch_and_add_incr_id(&self, cluster: &str, count: u32) -> StorageIOResult<u32> {
-        let id_key = KeyPath::incr_id(cluster);
-
-        let mut id_str = "1".to_string();
-        if let Some(val) = self.get(&id_key)? {
-            unsafe { id_str = String::from_utf8_unchecked((*val).to_owned()) };
-        }
-        let id_num = from_str::<u32>(&id_str).unwrap_or(1);
-
-        let val = &*(id_num + count).to_string();
-        self.db.insert(&id_key, val).map_err(sm_w_err)?;
-        info!("METADATA WRITE: {} :{}", &id_key, val);
-
-        Ok(id_num)
-    }
-
     pub fn get_struct<T>(&self, key: &str) -> MetaResult<Option<T>>
     where
         for<'a> T: Deserialize<'a>,
     {
         let val = self.get(key)?;
         if let Some(data) = val {
-            let info: T = from_slice(&data).map_err(sm_r_err)?;
+            let info: T = serde_json::from_str(&data)?;
             Ok(Some(info))
         } else {
             Ok(None)
@@ -261,33 +210,26 @@ impl StateMachine {
         }
 
         let mut list = vec![];
-        for res in self.db.scan_prefix(path.as_bytes()) {
-            match res {
-                Err(err) => {
-                    return Err(crate::error::MetaError::MetaStoreIO {
-                        err: err.to_string(),
-                    })
-                }
-                Ok(val) => {
-                    let key;
-                    unsafe { key = String::from_utf8_unchecked((*val.0).to_owned()) };
-                    match key.strip_prefix(path.as_str()) {
-                        Some(val) => {
-                            if val.find('/').is_some() {
-                                continue;
-                            }
-                            if val.is_empty() {
-                                continue;
-                            }
-
-                            list.push(key.clone());
-                        }
-
-                        None => break,
+        let reader = self.env.read_txn()?;
+        let iter = self.db.prefix_iter(&reader, &path)?;
+        for pair in iter {
+            let (key, _) = pair?;
+            match key.strip_prefix(path.as_str()) {
+                Some(val) => {
+                    if val.find('/').is_some() {
+                        continue;
                     }
+                    if val.is_empty() {
+                        continue;
+                    }
+
+                    list.push(key.to_string());
                 }
+
+                None => break,
             }
         }
+
         Ok(list)
     }
 
@@ -299,16 +241,26 @@ impl StateMachine {
         if !path.ends_with('/') {
             path.push('/');
         }
+
         let mut result = HashMap::new();
-        let keys = self.children_fullpath(&path)?;
-        for it in keys.iter() {
-            let val = self.get(it)?;
-            if let Some(data) = val {
-                if let Ok(info) = from_slice(&data) {
-                    if let Some(key) = it.strip_prefix(path.as_str()) {
-                        result.insert(key.to_string(), info);
+        let reader = self.env.read_txn()?;
+        let iter = self.db.prefix_iter(&reader, &path)?;
+        for pair in iter {
+            let (key, val) = pair?;
+            match key.strip_prefix(path.as_str()) {
+                Some(sub_key) => {
+                    if sub_key.find('/').is_some() {
+                        continue;
                     }
+                    if sub_key.is_empty() {
+                        continue;
+                    }
+
+                    let info: T = serde_json::from_str(val)?;
+                    result.insert(sub_key.to_string(), info);
                 }
+
+                None => break,
             }
         }
 
@@ -931,17 +883,11 @@ impl StateMachine {
                 return self.to_tenant_meta_data(cluster, tenant);
             }
         }
-        let res = self
-            .get(&db_path)?
-            .and_then(|v| from_slice::<DatabaseSchema>(&v).ok());
-        let db_schema = match res {
-            Some(info) => info,
-            None => {
-                return Err(MetaError::DatabaseNotFound {
+        let db_schema =
+            self.get_struct::<DatabaseSchema>(&db_path)?
+                .ok_or(MetaError::DatabaseNotFound {
                     database: db.to_string(),
-                });
-            }
-        };
+                })?;
 
         let node_list = self.get_valid_node_list(cluster)?;
         if node_list.is_empty()
@@ -1358,8 +1304,21 @@ mod test {
         Test1(Command1),
     }
 
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    struct RequestCommand {
+        key: String,
+        value: String,
+    }
+
     #[test]
     fn test_json() {
+        let command = RequestCommand {
+            key: "xxxxxxxk".to_string(),
+            value: "xxxxxxxv".to_string(),
+        };
+        let data = serde_json::to_string(&command).unwrap();
+        println!("{}", data);
+
         let cmd = Command::Test1(Command1 {
             id: 100,
             name: "test".to_string(),
