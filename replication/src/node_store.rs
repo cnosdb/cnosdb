@@ -10,7 +10,7 @@ use openraft::{
     SnapshotMeta, StorageError, StorageIOError, StoredMembership, Vote,
 };
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use trace::info;
 
 use crate::apply_store::ApplyStorageRef;
 use crate::entry_store::EntryStorageRef;

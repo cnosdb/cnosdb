@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
-use replication::apply_store::{ApplyStorage, HashMapSnapshotData};
+use replication::apply_store::ApplyStorage;
 use replication::errors::ReplicationResult;
 use replication::{Request, Response};
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,10 @@ pub fn response_encode<T: Serialize>(d: MetaResult<T>) -> String {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct BtreeMapSnapshotData {
+    pub map: BTreeMap<String, String>,
+}
 pub struct StateMachine {
     env: heed::Env,
     db: heed::Database<heed::types::Str, heed::types::Str>,
@@ -57,7 +61,7 @@ impl ApplyStorage for StateMachine {
     }
 
     async fn snapshot(&self) -> ReplicationResult<Vec<u8>> {
-        let mut hash_map = HashMap::new();
+        let mut hash_map = BTreeMap::new();
 
         let reader = self.env.read_txn()?;
         let iter = self.db.iter(&reader)?;
@@ -66,14 +70,14 @@ impl ApplyStorage for StateMachine {
             hash_map.insert(key.to_string(), val.to_string());
         }
 
-        let data = HashMapSnapshotData { map: hash_map };
+        let data = BtreeMapSnapshotData { map: hash_map };
         let json_str = serde_json::to_string(&data).unwrap();
 
         Ok(json_str.as_bytes().to_vec())
     }
 
     async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()> {
-        let data: HashMapSnapshotData = serde_json::from_slice(snapshot).unwrap();
+        let data: BtreeMapSnapshotData = serde_json::from_slice(snapshot).unwrap();
 
         let mut writer = self.env.write_txn()?;
         self.db.clear(&mut writer)?;

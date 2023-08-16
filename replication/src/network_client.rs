@@ -11,7 +11,7 @@ use protos::raft_service::raft_service_client::RaftServiceClient;
 use protos::raft_service::*;
 use tonic::transport::{Channel, Endpoint};
 use tower::timeout::Timeout;
-use tracing::info;
+use trace::info;
 
 use crate::errors::{ReplicationError, ReplicationResult};
 use crate::{RaftNodeId, RaftNodeInfo, TypeConfig};
