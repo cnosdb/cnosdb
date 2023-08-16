@@ -77,9 +77,7 @@ impl NodeStorage {
     }
 
     async fn apply_snapshot(&self, sm: SerializableSnapshot) -> ReplicationResult<()> {
-        let log_id = sm
-            .last_applied_log
-            .unwrap_or_else(|| LogId::<u64>::default());
+        let log_id = sm.last_applied_log.unwrap_or_default();
         self.state.set_last_applied_log(self.group_id(), log_id)?;
         self.state
             .set_last_membership(self.group_id(), sm.last_membership)?;
@@ -183,7 +181,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
             .last_entry()
             .await
             .map_err(|e| StorageIOError::read_logs(&e))?
-            .and_then(|ent| Some(ent.log_id));
+            .map(|ent| ent.log_id);
 
         let last_purged_log_id = self
             .state
@@ -459,7 +457,7 @@ mod test {
             address: "127.0.0.1:1234".to_string(),
         };
 
-        let storage = NodeStorage::open(1000, info.clone(), state, engine.clone(), entry).unwrap();
+        let storage = NodeStorage::open(1000, info, state, engine, entry).unwrap();
 
         Arc::new(storage)
     }
