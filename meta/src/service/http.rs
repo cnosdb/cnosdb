@@ -76,7 +76,7 @@ impl HttpServer {
                         let resp = warp::reply::with_status(rsp.data, http::StatusCode::OK);
                         let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
                             Ok(resp);
-                        return res;
+                        res
                     }
 
                     Err(err) => {
@@ -92,7 +92,7 @@ impl HttpServer {
                             );
                             let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
                                 Ok(resp);
-                            return res;
+                            res
                         } else {
                             let resp = warp::reply::with_status(
                                 err.to_string().into_bytes(),
@@ -100,7 +100,7 @@ impl HttpServer {
                             );
                             let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
                                 Ok(resp);
-                            return res;
+                            res
                         }
                     }
                 }

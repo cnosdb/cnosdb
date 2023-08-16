@@ -82,7 +82,7 @@ impl MetaHttpClient {
         let mut n_retry = 3;
         loop {
             let res = self.send_rpc_to_leader(uri, req).await;
-            if let Ok(_) = res {
+            if res.is_ok() {
                 return res;
             }
 
@@ -102,7 +102,8 @@ impl MetaHttpClient {
         let ttl = tokio::time::Duration::from_secs(60);
         match tokio::time::timeout(ttl, self.do_send_rpc_to_leader(uri, req)).await {
             Ok(res) => match res {
-                Ok(data) => return Ok(data),
+                Ok(data) => Ok(data),
+
                 Err(err) => {
                     if let MetaError::ChangeLeader { new_leader } = &err {
                         let mut t = self.leader.write();
@@ -111,16 +112,16 @@ impl MetaHttpClient {
                         self.switch_leader().await;
                     }
 
-                    return Err(err);
+                    Err(err)
                 }
             },
 
             Err(_) => {
                 self.switch_leader().await;
 
-                return Err(MetaError::MetaClientErr {
+                Err(MetaError::MetaClientErr {
                     msg: "Request timeout...".to_string(),
-                });
+                })
             }
         }
     }
@@ -145,13 +146,13 @@ impl MetaHttpClient {
         })?;
 
         if resp_code == http::StatusCode::OK {
-            return Ok(data);
+            Ok(data)
         } else if resp_code == http::StatusCode::PERMANENT_REDIRECT {
-            return Err(MetaError::ChangeLeader { new_leader: data });
+            Err(MetaError::ChangeLeader { new_leader: data })
         } else {
-            return Err(MetaError::MetaClientErr {
+            Err(MetaError::MetaClientErr {
                 msg: format!("httpcode: {}, response:{}", resp_code, data),
-            });
+            })
         }
     }
 
