@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
