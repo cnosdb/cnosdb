@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use clap::Parser;
-use meta::store::config::Opt;
 use meta::store::{self};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;

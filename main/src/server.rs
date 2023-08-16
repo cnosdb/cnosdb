@@ -21,7 +21,6 @@ use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
 use crate::http::http_service::{HttpService, ServerMode};
-use crate::meta_single::meta_service::MetaService;
 use crate::rpc::grpc_service::GrpcService;
 use crate::spi::service::ServiceRef;
 use crate::tcp::tcp_service::TcpService;
@@ -218,8 +217,13 @@ impl ServiceBuilder {
     }
 
     pub async fn build_singleton(&self, server: &mut Server) -> Option<EngineRef> {
-        let meta_service = MetaService::new(self.cpu, self.config.clone());
-        meta_service.start().await.unwrap();
+        meta::service::single::start_singe_meta_server(
+            self.config.storage.path.clone(),
+            self.config.cluster.name.clone(),
+            self.config.cluster.meta_service_addr[0].clone(),
+        )
+        .await;
+
         self.build_query_storage(server).await
     }
 

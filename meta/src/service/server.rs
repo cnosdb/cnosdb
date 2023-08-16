@@ -16,6 +16,7 @@ use tower::Service;
 use tracing::warn;
 use warp::hyper;
 
+use super::init::init_meta;
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
 use crate::store::config::{HeartBeatConfig, MetaInit};
@@ -62,6 +63,7 @@ pub async fn start_raft_node(opt: store::config::Opt) -> MetaResult<()> {
         .await
         .unwrap();
 
+    init_meta(engine.clone(), opt.meta_init.clone()).await;
     tokio::spawn(detect_node_heartbeat(
         node.clone(),
         engine.clone(),
