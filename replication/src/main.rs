@@ -71,7 +71,15 @@ async fn start_raft_node(id: RaftNodeId, http_addr: String) -> ReplicationResult
     let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry)?;
     let storage = Arc::new(storage);
 
-    let node = RaftNode::new(id, info, storage, engine).await.unwrap();
+    let config = openraft::Config {
+        heartbeat_interval: 500,
+        election_timeout_min: 1500,
+        election_timeout_max: 3000,
+        ..Default::default()
+    };
+    let node = RaftNode::new(id, info, config, storage, engine)
+        .await
+        .unwrap();
 
     start_warp_grpc_server(http_addr, node).await?;
     //start_actix_web_server(http_addr, node).await?;
@@ -188,11 +196,7 @@ impl HttpServer {
             .and(warp::body::bytes())
             .and(self.with_raft_node())
             .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
-                let req: Request = serde_json::from_slice(&req)
-                    .map_err(ReplicationError::from)
-                    .map_err(warp::reject::custom)?;
-
-                let rsp = node.raw_raft().client_write(req).await;
+                let rsp = node.raw_raft().client_write(req.to_vec()).await;
                 let data = serde_json::to_string(&rsp)
                     .map_err(ReplicationError::from)
                     .map_err(warp::reject::custom)?;

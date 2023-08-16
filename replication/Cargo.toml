@@ -9,14 +9,13 @@ models = { path = "../common/models" }
 protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
-tskv = { path = "../tskv" }
-meta = { path = "../meta" } 
+
 
 actix-web = "4.3.1"
 tempfile = { version = "3.4.0" }
 clap = { version = "4.1.11", features = ["derive", "env"] }
 reqwest = { version = "0.11.9", features = ["json"] }
-openraft = { git = "https://github.com/datafuselabs/openraft", rev = "4b78dd38b9f3b22d87695fb06446dcf0311629c2", features = ["serde"] }
+openraft = { workspace = true, features = ["serde"] }
 
 once_cell = { workspace = true }
 protobuf = { workspace = true }

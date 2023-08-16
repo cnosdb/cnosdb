@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 
 use flatbuffers::InvalidFlatbuffer;
-use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
 use protos::PointsError;
 use snafu::Snafu;
@@ -11,14 +10,6 @@ use tonic::Status;
 #[snafu(visibility(pub))]
 #[error_code(mod_code = "06")]
 pub enum ReplicationError {
-    TskvError {
-        source: tskv::Error,
-    },
-
-    Meta {
-        source: MetaError,
-    },
-
     StateStorageErr {
         source: heed::Error,
     },
@@ -88,16 +79,6 @@ impl From<std::io::Error> for ReplicationError {
     fn from(err: std::io::Error) -> Self {
         ReplicationError::IOErrors {
             msg: err.to_string(),
-        }
-    }
-}
-
-impl From<tskv::Error> for ReplicationError {
-    fn from(err: tskv::Error) -> Self {
-        match err {
-            tskv::Error::Meta { source } => ReplicationError::Meta { source },
-
-            other => ReplicationError::TskvError { source: other },
         }
     }
 }

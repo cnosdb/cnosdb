@@ -27,12 +27,6 @@ pub struct RaftNodeInfo {
     pub address: String, // server address
 }
 
-pub trait AppTypeConfig {
-    type Request: AppData;
-    type Response: AppDataResponse;
-    type RaftNetwork: RaftNetworkFactory<TypeConfig>;
-}
-
 // #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd)]
 // #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 // pub struct TypeConfig {}
@@ -56,14 +50,16 @@ type LocalStateMachineStore = Adaptor<TypeConfig, Arc<NodeStorage>>;
 pub type OpenRaftNode =
     openraft::Raft<TypeConfig, NetworkConn, LocalLogStore, LocalStateMachineStore>;
 
+pub type Request = Vec<u8>;
+pub type Response = Vec<u8>;
 //-----------------------------------------------------------------//
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-pub enum Request {
-    Set { key: String, value: String },
-}
+// #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+// pub enum Request {
+//     Set { key: String, value: String },
+// }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-pub struct Response {
-    pub value: Option<String>,
-}
+// #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+// pub struct Response {
+//     pub value: Option<String>,
+// }
