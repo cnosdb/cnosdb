@@ -3,7 +3,7 @@ use std::convert::Infallible as StdInfallible;
 use std::sync::Arc;
 use std::time::Duration;
 
-use replication::apply_store::{ApplyStorage, HashMapSnapshotData};
+use replication::apply_store::ApplyStorage;
 use replication::network_server::RaftHttpAdmin;
 use replication::raft_node::RaftNode;
 use trace::info;
@@ -11,7 +11,7 @@ use warp::{hyper, Filter};
 
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
-use crate::store::storage::StateMachine;
+use crate::store::storage::{BtreeMapSnapshotData, StateMachine};
 
 pub struct HttpServer {
     pub node: Arc<RaftNode>,
@@ -134,7 +134,7 @@ impl HttpServer {
                     .map_err(MetaError::from)
                     .map_err(warp::reject::custom)?;
 
-                let data: HashMapSnapshotData = serde_json::from_slice(&data)
+                let data: BtreeMapSnapshotData = serde_json::from_slice(&data)
                     .map_err(MetaError::from)
                     .map_err(warp::reject::custom)?;
 
@@ -228,7 +228,7 @@ impl HttpServer {
     pub async fn process_debug(storage: Arc<StateMachine>) -> MetaResult<String> {
         let data = storage.snapshot().await.map_err(MetaError::from)?;
 
-        let data: HashMapSnapshotData = serde_json::from_slice(&data).map_err(MetaError::from)?;
+        let data: BtreeMapSnapshotData = serde_json::from_slice(&data).map_err(MetaError::from)?;
 
         let mut rsp = "****** ------------------------------------- ******\n".to_string();
         for (key, val) in data.map.iter() {

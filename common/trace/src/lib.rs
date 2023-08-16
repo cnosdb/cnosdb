@@ -73,6 +73,7 @@ pub fn targets_filter(level: LevelFilter, defined_tokio_trace: bool) -> filter::
             ("trace", level),
             ("tskv", level),
             ("utils", level),
+            ("replication", level),
         ])
         .with_targets(vec![
             // Third-party crates

@@ -243,6 +243,7 @@ mod test {
     use std::fs;
     use std::path::Path;
 
+    use heed::byteorder::BigEndian;
     use heed::types::*;
     use heed::Database;
 
@@ -277,5 +278,39 @@ mod test {
         }
 
         fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    #[ignore]
+    fn test_heed_range() {
+        type BEU64 = U64<BigEndian>;
+
+        let path = "/tmp/cnosdb/meta/1_entry";
+        let env = heed::EnvOpenOptions::new()
+            .map_size(1024 * 1024 * 1024)
+            .max_dbs(128)
+            .open(path)
+            .unwrap();
+
+        let db: Database<OwnedType<BEU64>, OwnedSlice<u8>> =
+            env.create_database(Some("ttttt")).unwrap();
+
+        let mut wtxn = env.write_txn().unwrap();
+        let range = ..BEU64::new(80);
+        db.delete_range(&mut wtxn, &range).unwrap();
+        wtxn.commit().unwrap();
+
+        let mut wtxn = env.write_txn().unwrap();
+        let range = BEU64::new(110)..;
+        db.delete_range(&mut wtxn, &range).unwrap();
+        wtxn.commit().unwrap();
+
+        let reader = env.read_txn().unwrap();
+        let range = BEU64::new(0)..BEU64::new(1000000);
+        let iter = db.range(&reader, &range).unwrap();
+        for pair in iter {
+            let (index, _) = pair.unwrap();
+            println!("--- {}", index);
+        }
     }
 }
