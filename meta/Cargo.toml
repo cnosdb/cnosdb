@@ -16,6 +16,8 @@ limiter_bucket = { path = "../common/limiter_bucket" }
 models = { path = "../common/models" }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
+protos = { path = "../common/protos", features = ["test"] }
+replication = { path = "../replication" }
 
 actix-web = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
@@ -42,6 +44,15 @@ uuid = { workspace = true }
 walkdir = { workspace = true }
 psutil = { workspace = true, optional = true }
 sysinfo = { workspace = true, optional = true }
+
+
+futures = { workspace = true, features = ["alloc"] }
+tower = { workspace = true }
+heed = { workspace = true }
+heed-traits = { workspace = true }
+warp = { workspace = true }
+http = { workspace = true }
+http-body = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-pointer"] }

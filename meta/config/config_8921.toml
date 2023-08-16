@@ -1,10 +1,7 @@
 id = 3
 host = "127.0.0.1"
 port = 8921
-
-snapshot_path = "/tmp/cnosdb/meta/snapshot"
-journal_path = "/tmp/cnosdb/meta/journal"
-snapshot_per_events = 500
+data_path = "/tmp/cnosdb/meta"
 
 [log]
 level = "info"

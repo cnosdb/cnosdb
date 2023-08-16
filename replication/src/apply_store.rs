@@ -23,7 +23,7 @@ pub type ApplyStorageRef = Arc<dyn ApplyStorage + Send + Sync>;
 
 // --------------------------------------------------------------------------- //
 #[derive(Serialize, Deserialize)]
-struct MapSnapshotData {
+pub struct HashMapSnapshotData {
     pub map: HashMap<String, String>,
 }
 
@@ -60,21 +60,18 @@ impl HeedApplyStorage {
 #[async_trait]
 impl ApplyStorage for HeedApplyStorage {
     async fn apply(&self, req: &Request) -> ReplicationResult<Response> {
-        match req {
-            Request::Set { key, value } => {
-                let mut writer = self.env.write_txn()?;
-                self.db.put(&mut writer, key, value)?;
-                writer.commit()?;
-
-                Ok(Response {
-                    value: Some(value.to_string()),
-                })
-            }
-
-            _ => Err(ReplicationError::MsgInvalid {
-                msg: format!("Unknow apply message: {:?}", req),
-            }),
+        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+        struct RequestCommand {
+            key: String,
+            value: String,
         }
+
+        let req: RequestCommand = serde_json::from_slice(req)?;
+        let mut writer = self.env.write_txn()?;
+        self.db.put(&mut writer, &req.key, &req.value)?;
+        writer.commit()?;
+
+        Ok(req.value.into())
     }
 
     async fn snapshot(&self) -> ReplicationResult<Vec<u8>> {
@@ -87,14 +84,14 @@ impl ApplyStorage for HeedApplyStorage {
             hash_map.insert(key.to_string(), val.to_string());
         }
 
-        let data = MapSnapshotData { map: hash_map };
+        let data = HashMapSnapshotData { map: hash_map };
         let json_str = serde_json::to_string(&data).unwrap();
 
         Ok(json_str.as_bytes().to_vec())
     }
 
     async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()> {
-        let data: MapSnapshotData = serde_json::from_slice(snapshot).unwrap();
+        let data: HashMapSnapshotData = serde_json::from_slice(snapshot).unwrap();
 
         let mut writer = self.env.write_txn()?;
         self.db.clear(&mut writer)?;

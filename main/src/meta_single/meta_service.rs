@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::middleware::Logger;
@@ -8,8 +7,7 @@ use actix_web::{get, middleware, post, web, App, HttpServer, Responder};
 use config::Config;
 use meta::error::MetaResult;
 use meta::store::command::*;
-use meta::store::state_machine::{response_encode, CommandResp, StateMachine};
-use meta::{ClusterNode, ClusterNodeId, TypeConfig};
+use meta::store::storage::{response_encode, CommandResp, StateMachine};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder, ROOT};
 use models::oid::{Identifier, UuidGenerator};
@@ -18,6 +16,8 @@ use models::schema::{
 };
 use openraft::error::ClientWriteError;
 use openraft::raft::ClientWriteResponse;
+use replication::apply_store::{ApplyStorage, HashMapSnapshotData};
+use replication::{RaftNodeId, RaftNodeInfo, TypeConfig};
 use trace::{debug, error};
 use web::Json;
 
@@ -43,30 +43,30 @@ pub async fn write(
 ) -> actix_web::Result<impl Responder> {
     let res = app.store.process_write_command(&req.0);
 
-    let resp: Result<
-        ClientWriteResponse<TypeConfig>,
-        ClientWriteError<ClusterNodeId, ClusterNode>,
-    > = Ok(ClientWriteResponse::<TypeConfig> {
-        log_id: Default::default(),
-        data: res,
-        membership: None,
-    });
+    let resp: Result<ClientWriteResponse<TypeConfig>, ClientWriteError<RaftNodeId, RaftNodeInfo>> =
+        Ok(ClientWriteResponse::<TypeConfig> {
+            log_id: Default::default(),
+            data: res.into(),
+            membership: None,
+        });
 
     Ok(Json(resp))
 }
 
 #[get("/debug")]
 pub async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
-    let mut response = "******---------------------------******\n".to_string();
-    for res in app.store.db.iter() {
-        let (k, v) = res.unwrap();
-        let k = String::from_utf8((*k).to_owned()).unwrap();
-        let v = String::from_utf8((*v).to_owned()).unwrap();
-        response = response + &format!("* {}: {}\n", k, v);
-    }
-    response += "******----------------------------------------------******\n";
+    if let Ok(data) = app.store.snapshot().await {
+        let data: HashMapSnapshotData = serde_json::from_slice(&data)?;
+        let mut rsp = "******---------------------------******\n".to_string();
+        for (key, val) in data.map.iter() {
+            rsp = rsp + &format!("* {}: {}\n", key, val);
+        }
+        rsp += "******----------------------------------------------******\n";
 
-    Ok(response)
+        Ok(rsp)
+    } else {
+        Ok("get snapshot data failed".to_string())
+    }
 }
 
 #[post("/watch")]
@@ -133,9 +133,8 @@ impl MetaService {
 }
 
 pub async fn run_service(cpu: usize, opt: &Config) -> std::io::Result<()> {
-    let db_path = format!("{}/meta/{}.binlog", opt.storage.path, 0);
-    let db = Arc::new(sled::open(db_path.clone()).unwrap());
-    let state_machine = StateMachine::new(db);
+    let db_path = format!("{}/meta/{}.data", opt.storage.path, 0);
+    let state_machine = StateMachine::open(db_path).unwrap();
 
     let meta_service_addr = opt.cluster.meta_service_addr.clone();
     if meta_service_addr.len() > 1 {

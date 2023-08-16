@@ -319,7 +319,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
 
             match entry.payload {
                 EntryPayload::Blank => {
-                    res.push(Response { value: None });
+                    res.push(vec![]);
                 }
 
                 EntryPayload::Normal(ref req) => {
@@ -340,7 +340,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
                         )
                         .map_err(|e| StorageIOError::write(&e))?;
 
-                    res.push(Response { value: None });
+                    res.push(vec![]);
                 }
             };
         }
