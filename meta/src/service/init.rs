@@ -12,6 +12,10 @@ use crate::store::key_path::KeyPath;
 use crate::store::storage::StateMachine;
 
 pub async fn init_meta(storage: Arc<StateMachine>, init_data: MetaInit) {
+    if storage.is_already_init().unwrap() {
+        return;
+    }
+
     // init tenant
     let tenant_opt = TenantOptionsBuilder::default()
         .comment("system tenant")
@@ -56,4 +60,6 @@ pub async fn init_meta(storage: Arc<StateMachine>, init_data: MetaInit) {
         let data = serde_json::to_vec(&req).unwrap();
         storage.apply(&data).await.expect("init expect success");
     }
+
+    storage.set_already_init().unwrap();
 }
