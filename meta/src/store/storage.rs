@@ -110,6 +110,18 @@ impl StateMachine {
         Ok(storage)
     }
 
+    pub fn is_already_init(&self) -> MetaResult<bool> {
+        self.contains_key(&KeyPath::already_init())
+    }
+
+    pub fn set_already_init(&self) -> MetaResult<()> {
+        let mut writer = self.env.write_txn()?;
+        self.db.put(&mut writer, &KeyPath::already_init(), "true")?;
+        writer.commit()?;
+
+        Ok(())
+    }
+
     //********************************************************************************* */
     pub fn get(&self, key: &str) -> MetaResult<Option<String>> {
         let reader = self.env.read_txn()?;
