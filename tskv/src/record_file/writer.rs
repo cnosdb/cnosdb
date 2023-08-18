@@ -65,13 +65,18 @@ impl Writer {
     }
 
     // Writes record data and returns the written data size.
-    pub async fn write_record(
+    pub async fn write_record<R, D>(
         &mut self,
         data_version: u8,
         data_type: u8,
-        data: &[&[u8]],
-    ) -> Result<usize> {
-        let data_len: usize = data.iter().map(|d| (*d).len()).sum();
+        data: R,
+    ) -> Result<usize>
+    where
+        D: AsRef<[u8]>,
+        R: AsRef<[D]>,
+    {
+        let data = data.as_ref();
+        let data_len: usize = data.iter().map(|d| d.as_ref().len()).sum();
         let data_len = match data_len.to_u32() {
             Some(v) => v,
             None => {
@@ -92,7 +97,7 @@ impl Writer {
         let data_len = data_len.to_be_bytes();
         hasher.update(&data_len);
         for d in data.iter() {
-            hasher.update(d);
+            hasher.update(d.as_ref());
         }
         let data_crc = hasher.finalize().to_be_bytes();
 
@@ -103,7 +108,7 @@ impl Writer {
         write_buf.push(IoSlice::new(&data_len));
         write_buf.push(IoSlice::new(&data_crc));
         for d in data {
-            write_buf.push(IoSlice::new(d));
+            write_buf.push(IoSlice::new(d.as_ref()));
         }
 
         // Write record header and record data.
@@ -119,7 +124,7 @@ impl Writer {
         Ok(written_size)
     }
 
-    pub async fn write_footer(&mut self, mut footer: [u8; FILE_FOOTER_LEN]) -> Result<usize> {
+    pub async fn write_footer(&mut self, footer: &mut [u8; FILE_FOOTER_LEN]) -> Result<usize> {
         self.sync().await?;
 
         // Get file crc
@@ -135,10 +140,10 @@ impl Writer {
 
         // Set file crc to footer
         footer[4..8].copy_from_slice(&crc.to_be_bytes());
-        self.footer = Some(footer);
+        self.footer = Some(*footer);
 
         self.cursor
-            .write(&footer)
+            .write(footer)
             .await
             .map_err(|e| Error::WriteFile {
                 path: self.path.clone(),
@@ -168,59 +173,58 @@ impl Writer {
 }
 
 #[cfg(test)]
-mod test {
-
-    use serial_test::serial;
+pub(crate) mod test {
+    use std::path::PathBuf;
 
     use super::Writer;
-    use crate::error::Result;
-    use crate::file_system::file_manager;
-    use crate::record_file::reader::test::{test_reader, test_reader_read_one};
-    use crate::record_file::{RecordDataType, FILE_FOOTER_LEN};
+    use crate::record_file::reader::test::assert_record_file_data_eq;
+    use crate::record_file::{
+        RecordDataType, FILE_FOOTER_LEN, RECORD_CRC32_NUMBER_LEN, RECORD_DATA_SIZE_LEN,
+        RECORD_DATA_TYPE_LEN, RECORD_DATA_VERSION_LEN, RECORD_MAGIC_NUMBER_LEN,
+    };
 
-    #[tokio::test]
-    #[serial]
-    async fn test_writer() -> Result<()> {
-        let path = "/tmp/test/record_file/1/test.log";
-        if file_manager::try_exists(path) {
-            std::fs::remove_file(path).unwrap();
-        }
-        let mut w = Writer::open(&path, RecordDataType::Summary).await.unwrap();
-        let data_vec = vec![b"hello".to_vec(); 10];
-        for d in data_vec.iter() {
-            let size = w.write_record(1, 1, &[d.as_slice()]).await?;
-            println!("Writed new record(1, 1, {:?}) {} bytes", d, size);
-        }
-        w.write_footer([0_u8; FILE_FOOTER_LEN]).await?;
-        w.close().await?;
-
-        println!("Testing read one record.");
-        test_reader_read_one(&path, 23, b"hello").await;
-        println!("Testing read all record.");
-        test_reader(&path, &data_vec).await;
-        Ok(())
+    pub(crate) fn record_length(data_len: usize) -> usize {
+        RECORD_MAGIC_NUMBER_LEN
+            + RECORD_DATA_VERSION_LEN
+            + RECORD_DATA_TYPE_LEN
+            + RECORD_DATA_SIZE_LEN
+            + RECORD_CRC32_NUMBER_LEN
+            + data_len
     }
 
     #[tokio::test]
-    #[serial]
-    async fn test_writer_truncated() -> Result<()> {
-        let path = "/tmp/test/record_file/2/test.log";
-        if file_manager::try_exists(path) {
-            std::fs::remove_file(path).unwrap();
-        }
-        let mut w = Writer::open(&path, RecordDataType::Summary).await.unwrap();
-        let data_vec = vec![b"hello".to_vec(); 10];
-        for d in data_vec.iter() {
-            let size = w.write_record(1, 1, &[d.as_slice()]).await?;
-            println!("Writed new record(1, 1, {:?}) {} bytes", d, size);
-        }
-        // Do not write footer.
-        w.close().await?;
+    async fn test_record_writer() {
+        let dir = PathBuf::from("/tmp/test/record_file/writer/1");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
 
-        println!("Testing read one record.");
-        test_reader_read_one(&path, 23, b"hello").await;
-        println!("Testing read all record.");
-        test_reader(&path, &data_vec).await;
-        Ok(())
+        let records = vec![[b"hello".to_vec(), b" ".to_vec(), b"world".to_vec()]; 10];
+        let mut footer = [0_u8; FILE_FOOTER_LEN];
+        {
+            // Test write a record file with footer.
+            let path = dir.join("has_footer.log");
+
+            let mut writer = Writer::open(&path, RecordDataType::Summary).await.unwrap();
+            for data in records.iter() {
+                let data_size = writer.write_record(1, 1, data).await.unwrap();
+                assert_eq!(data_size, record_length(11));
+            }
+            let footer_size = writer.write_footer(&mut footer).await.unwrap();
+            assert_eq!(footer_size, FILE_FOOTER_LEN);
+            writer.close().await.unwrap();
+            assert_record_file_data_eq(&path, &records, true).await;
+        }
+        {
+            // Test write a record file that has no footer.
+            let path = dir.join("no_footer.log");
+
+            let mut writer = Writer::open(&path, RecordDataType::Summary).await.unwrap();
+            for data in records.iter() {
+                let data_size = writer.write_record(1, 1, data).await.unwrap();
+                assert_eq!(data_size, record_length(11));
+            }
+            writer.close().await.unwrap();
+            assert_record_file_data_eq(&path, &records, false).await;
+        }
     }
 }

@@ -21,7 +21,6 @@ pub fn ts_without_compress_encode(
     src: &[i64],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear();
     if src.is_empty() {
         return Ok(());
     }
@@ -37,7 +36,6 @@ pub fn ts_q_compress_encode(
     src: &[i64],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear();
     if src.is_empty() {
         return Ok(());
     }
@@ -59,7 +57,6 @@ pub fn ts_zigzag_simple8b_encode(
     src: &[i64],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear(); // reset buffer.
     if src.is_empty() {
         return Ok(());
     }
