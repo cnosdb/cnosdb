@@ -7,7 +7,7 @@ use crate::criterion::Criterion;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let partitions_len = 8;
-    let array_len = 32768000 * 2;
+    let array_len = 3276800 * 2;
     let batch_size = 2048; // 2^11
     let ctx = data_utils::create_context(partitions_len, array_len, batch_size).unwrap();
 
@@ -56,6 +56,16 @@ fn criterion_benchmark(c: &mut Criterion) {
             data_utils::query(
                 ctx.clone(),
                 "SELECT first(ts, f64) \
+                 FROM t",
+            )
+        })
+    });
+
+    c.bench_function("aggregate_query_no_group_by_mode", |b| {
+        b.iter(|| {
+            data_utils::query(
+                ctx.clone(),
+                "SELECT mode(f64) \
                  FROM t",
             )
         })
