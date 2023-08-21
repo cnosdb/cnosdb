@@ -45,7 +45,7 @@ openssl x509 -req \
     -out $DIR/server.crt \
     -CA $DIR/ca.crt \
     -CAkey $DIR/ca.key \
-    -sha256 \
+    -sha256 -days 3650 \
     -set_serial 22 \
     -extensions v3_server -extfile generate_tls_x509.cnf
 
@@ -56,7 +56,7 @@ openssl x509 -req \
     -out $DIR/client.crt \
     -CA $DIR/ca.crt \
     -CAkey $DIR/ca.key \
-    -sha256 \
+    -sha256 -days 3650 \
     -set_serial 33 \
     -extensions v3_client -extfile generate_tls_x509.cnf
 
