@@ -459,7 +459,11 @@ impl FieldFileLocation {
             // Check if the time range of the BlockMeta intersected with the given time ranges.
             if let Some(intersected_tr) = self.time_ranges.intersect(&time_range) {
                 // Load a DataBlock from reader by BlockMeta.
-                self.data_block = self.reader.get_data_block(&meta).await?;
+                self.data_block = self
+                    .reader
+                    .get_data_block(&meta)
+                    .await
+                    .map_err(|err| Error::ReadTsm { source: err })?;
                 self.intersected_time_ranges = intersected_tr;
                 self.intersected_time_ranges_i = 0;
                 if self.next_intersected_index_range() {
@@ -1211,7 +1215,7 @@ impl SeriesGroupRowIterator {
                 );
 
                 if !path.is_file() {
-                    return Err(Error::TsmFileBroken {
+                    return Err(Error::ReadTsm {
                         source: crate::tsm::ReadTsmError::FileNotFound {
                             reason: format!("File Not Found: {}", path.display()),
                         },
