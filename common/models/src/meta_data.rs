@@ -103,6 +103,10 @@ impl ReplicationSet {
     pub fn new(id: ReplicationSetId, vnodes: Vec<VnodeInfo>) -> Self {
         Self { id, vnodes }
     }
+
+    pub fn leader_node_id(&self) -> NodeId {
+        todo!()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]

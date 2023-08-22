@@ -24,6 +24,7 @@ pub mod errors;
 pub mod file_info;
 pub mod hh_queue;
 pub mod metrics;
+pub mod raft_writer;
 pub mod reader;
 pub mod service;
 pub mod service_mock;
