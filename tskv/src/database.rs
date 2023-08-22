@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, LinkedList};
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -371,7 +371,7 @@ impl Database {
         let schema_id = table_schema.schema_id;
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
             schema: Arc::new(TskvTableSchema::default()),
-            rows: vec![],
+            rows: LinkedList::new(),
             range: TimeRange {
                 min_ts: i64::MAX,
                 max_ts: i64::MIN,
@@ -386,7 +386,7 @@ impl Database {
         });
         entry.size += row.size();
         //todo: remove this copy
-        entry.rows.push(row);
+        entry.rows.push_back(row);
         Ok(())
     }
 
