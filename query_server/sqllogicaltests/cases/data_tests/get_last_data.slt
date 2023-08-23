@@ -1,0 +1,39 @@
+statement ok
+drop table if exists get_last_data;
+
+statement ok
+CREATE TABLE get_last_data(f1 BIGINT, f2 BIGINT UNSIGNED, f3 DOUBLE, f4 BOOLEAN, TAGS(t1, t2, t3));
+
+statement ok
+INSERT INTO get_last_data(time, t1, t2, t3, f1, f2, f3, f4) VALUES('2023-05-01 00:00:00', 't11', 't12', 't13', -1, 1, 0.1, true);
+
+statement ok
+INSERT INTO get_last_data(time, t1, t2, t3, f1, f2, f3, f4) VALUES('2023-05-01 00:00:05', 't11', 't12', 't13', -2, 2, 0.2, false);
+
+statement ok
+INSERT INTO get_last_data(time, t1, t2, t3, f1, f2, f3, f4) VALUES('2023-05-01 00:00:10', 't11', 't12', 't13', -3, 3, 0.3, false);
+
+statement ok
+INSERT INTO get_last_data(time, t1, t2, t3, f1, f2, f3, f4) VALUES('2023-05-01 00:00:15', 't11', 't12', 't13', -4, 4, 0.4, true);
+
+statement ok
+INSERT INTO get_last_data(time, t1, t2, t3, f1, f2, f3, f4) VALUES('2023-05-01 00:00:20', 't11', 't12', 't13', -5, 5, 0.5, false);
+
+query I
+SELECT * FROM get_last_data ORDER BY time DESC LIMIT 1;
+----
+2023-05-01T00:00:20 t11 t12 t13 -5 5 0.5 false
+
+statement ok
+INSERT INTO get_last_data(time, t1, t2, t3, f1, f2, f3, f4) VALUES('2023-05-01 00:00:25', 't11', 't12', 't13', -7, 7, 0.7, true);
+
+statement ok
+INSERT INTO get_last_data(time, t1, t2, t3, f1, f2, f3, f4) VALUES('2023-05-01 00:00:30', 't11', 't12', 't13', -8, 8, 0.8, false);
+
+query I
+SELECT * FROM get_last_data ORDER BY time DESC LIMIT 1;
+----
+2023-05-01T00:00:30 t11 t12 t13 -8 8 0.8 false
+
+statement ok
+drop database if exists get_last_data;

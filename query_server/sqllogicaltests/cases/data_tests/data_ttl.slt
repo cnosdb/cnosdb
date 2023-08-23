@@ -1,0 +1,41 @@
+statement ok
+drop database if exists data_ttl;
+
+statement ok
+CREATE DATABASE data_ttl WITH TTL '1m' VNODE_DURATION '1m';
+
+statement ok
+CREATE TABLE data_ttl.test(f1 BIGINT, f2 BIGINT UNSIGNED, f3 DOUBLE, f4 BOOLEAN, TAGS(t1, t2, t3));
+
+statement ok
+INSERT INTO data_ttl.test(time, t1, t2, t3, f1, f2, f3, f4) VALUES(NOW(), 't11', 't12', 't13', -1, 1, 0.1, true);
+
+statement ok
+INSERT INTO data_ttl.test(time, t1, t2, t3, f1, f2, f3, f4) VALUES(NOW(), 't21', 't22', 't23', -2, 2, 0.2, false);
+
+statement ok
+INSERT INTO data_ttl.test(time, t1, t2, t3, f1, f2, f3, f4) VALUES(NOW(), 't31', 't32', 't33', -3, 3, 0.3, false);
+
+statement ok
+INSERT INTO data_ttl.test(time, t1, t2, t3, f1, f2, f3, f4) VALUES(NOW(), 't41', 't42', 't43', -4, 4, 0.4, true);
+
+statement ok
+INSERT INTO data_ttl.test(time, t1, t2, t3, f1, f2, f3, f4) VALUES(NOW(), 't51', 't52', 't53', -5, 5, 0.5, false);
+
+statement ok
+INSERT INTO data_ttl.test(time, t1, t2, t3, f1, f2, f3, f4) VALUES(NOW(), 't61', 't62', 't63', -6, 6, 0.6, true);
+
+query 
+SELECT COUNT(*) FROM data_ttl.test;
+----
+6
+
+sleep 3m
+
+query 
+SELECT COUNT(*) FROM data_ttl.test;
+----
+NULL
+
+statement ok
+drop database if exists data_ttl;
