@@ -17,7 +17,6 @@ utils = { path = "../common/utils" }
 http_protocol = { path = "../common/http_protocol" }
 
 async-backtrace = { workspace = true, optional = true }
-async-recursion = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 blake3 = { workspace = true }

@@ -1,0 +1,24 @@
+include ./state_agg.slt
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Failed to do analyze\. err: duration_in\(state_agg, state, start_time, interval\) doesn't support compact_agg",.*
+select state_at(compact_state_agg(time, state), Timestamp '2020-01-01 10:30:00') from states;
+
+query T
+select state_at(state_agg(time, state), Timestamp '2020-01-01 10:30:00') from states;
+----
+running
+
+query T
+select state_at(state_agg(time, state), Timestamp '2020-01-01 11:00:00') from states;
+----
+running
+
+query T
+select state_at(state_agg(time, state), Timestamp '2020-01-03 16:00:00') from states;
+----
+error
+
+query T
+select state_at(state_agg(time, state), Timestamp '2020-01-05 12:00:00') from states;
+----
+NULL

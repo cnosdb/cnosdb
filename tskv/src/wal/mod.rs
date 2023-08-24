@@ -504,7 +504,7 @@ mod test {
     use models::schema::Precision;
     use models::Timestamp;
     use protos::models::FieldType;
-    use protos::{models as fb_models, models_helper, FbSchema};
+    use protos::{models as fb_models, models_helper};
     use serial_test::serial;
     use trace::init_default_global_tracing;
 
@@ -538,28 +538,14 @@ mod test {
         }
         let map = HashMap::from([("fa".to_string(), fa_data), ("fb".to_string(), fb_data)]);
 
-        let mut tags_names: HashMap<&str, usize> = HashMap::new();
-        tags_names.insert("ta", 0);
-        tags_names.insert("tb", 1);
-
-        let mut fields: HashMap<&str, usize> = HashMap::new();
-        fields.insert("fa", 0);
-        fields.insert("fb", 1);
-
-        let schema = FbSchema::new(
-            tags_names,
-            fields,
-            vec![FieldType::Integer, FieldType::String],
-        );
-
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let ptr = models_helper::create_const_points(
             &mut fbb,
-            schema,
             "dba",
             "tba",
             vec![("ta", "a"), ("tb", "b")],
             vec![("fa", &100_u64.to_be_bytes()), ("fb", b"b")],
+            HashMap::from([("fa", FieldType::Unsigned), ("fb", FieldType::String)]),
             start_timestamp,
             num,
         );

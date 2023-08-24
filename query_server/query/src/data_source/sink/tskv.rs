@@ -5,14 +5,11 @@ use coordinator::service::CoordinatorRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::metrics::{self, Count, ExecutionPlanMetricsSet, MetricBuilder};
-use models::consistency_level::ConsistencyLevel;
 use models::schema::TskvTableSchemaRef;
-use protos::kv_service::WritePointsRequest;
 use spi::Result;
-use trace::{debug, SpanContext, SpanExt, SpanRecorder};
+use trace::{SpanContext, SpanExt, SpanRecorder};
 
 use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata};
-use crate::utils::point_util::record_batch_to_points_flat_buffer;
 
 pub struct TskvRecordBatchSink {
     coord: CoordinatorRef,
@@ -39,40 +36,16 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         let rows_writed = record_batch.num_rows();
 
-        // record batchs to points
-        let timer = self.metrics.elapsed_record_batch_to_point().timer();
-        let _span_recorder = span_recorder.child("record batch to points");
-        let (points, time_unit) =
-            record_batch_to_points_flat_buffer(&record_batch, self.schema.clone())?;
-        drop(_span_recorder);
-        timer.done();
-        let bytes_writed = points.len();
-
-        // points write request
-        let timer = self.metrics.elapsed_point_write().timer();
-        let req = WritePointsRequest {
-            version: 0,
-            meta: None,
-            points,
-        };
+        let timer = self.metrics.elapsed_record_batch_write().timer();
         let record_batch_size = record_batch.get_array_memory_size() as u64;
 
-        debug!(
-            "record_batch_sink, rows_written: {}, record_batch_written: {}, points_written: {}",
-            rows_writed, record_batch_size, bytes_writed
-        );
-
-        self.coord
-            .write_points(
-                self.schema.tenant.clone(),
-                ConsistencyLevel::Any,
-                time_unit.into(),
-                req,
-                span_recorder.span_ctx(),
-            )
+        let write_bytes = self
+            .coord
+            .write_record_batch(self.schema.clone(), record_batch, span_recorder.span_ctx())
             .await
-            .map(|_| {
+            .map(|write_bytes| {
                 span_recorder.set_metadata("output_rows", rows_writed);
+                write_bytes
             })
             .map_err(|err| {
                 span_recorder.error(err.to_string());
@@ -88,7 +61,7 @@ impl RecordBatchSink for TskvRecordBatchSink {
         // Record the number of `RecordBatch` that has been written
         self.metrics.record_output_batches(1);
 
-        Ok(SinkMetadata::new(rows_writed, bytes_writed))
+        Ok(SinkMetadata::new(rows_writed, write_bytes))
     }
 }
 
@@ -128,35 +101,26 @@ impl RecordBatchSinkProvider for TskvRecordBatchSinkProvider {
 /// Stores metrics about the tskv sink execution.
 #[derive(Debug)]
 pub struct TskvSinkMetrics {
-    elapsed_record_batch_to_point: metrics::Time,
-    elapsed_point_write: metrics::Time,
+    elapsed_record_batch_write: metrics::Time,
     output_batches: Count,
 }
 
 impl TskvSinkMetrics {
     /// Create new metrics
     pub fn new(metrics: &ExecutionPlanMetricsSet, partition: usize) -> Self {
-        let elapsed_record_batch_to_point =
-            MetricBuilder::new(metrics).subset_time("elapsed_record_batch_to_point", partition);
-
-        let elapsed_point_write =
-            MetricBuilder::new(metrics).subset_time("elapsed_point_write", partition);
+        let elapsed_record_batch_write =
+            MetricBuilder::new(metrics).subset_time("elapsed_record_batch_write", partition);
 
         let output_batches = MetricBuilder::new(metrics).counter("output_batches", partition);
 
         Self {
-            elapsed_record_batch_to_point,
-            elapsed_point_write,
+            elapsed_record_batch_write,
             output_batches,
         }
     }
 
-    pub fn elapsed_record_batch_to_point(&self) -> &metrics::Time {
-        &self.elapsed_record_batch_to_point
-    }
-
-    pub fn elapsed_point_write(&self) -> &metrics::Time {
-        &self.elapsed_point_write
+    pub fn elapsed_record_batch_write(&self) -> &metrics::Time {
+        &self.elapsed_record_batch_write
     }
 
     pub fn record_output_batches(&self, num: usize) {

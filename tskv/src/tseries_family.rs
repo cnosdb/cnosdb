@@ -1009,7 +1009,7 @@ impl Drop for TseriesFamily {
 
 #[cfg(test)]
 pub mod test_tseries_family {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, LinkedList};
     use std::mem::size_of;
     use std::sync::Arc;
 
@@ -1328,14 +1328,14 @@ pub mod test_tseries_family {
                 min_ts: 1,
                 max_ts: 100,
             },
-            rows: vec![RowData {
+            rows: LinkedList::from([RowData {
                 ts: 10,
                 fields: vec![
                     Some(FieldVal::Integer(11)),
                     Some(FieldVal::Integer(12)),
                     Some(FieldVal::Integer(13)),
                 ],
-            }],
+            }]),
             size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         let mut points = HashMap::new();
@@ -1420,14 +1420,14 @@ pub mod test_tseries_family {
                 min_ts: 1,
                 max_ts: 100,
             },
-            rows: vec![RowData {
+            rows: LinkedList::from([RowData {
                 ts: 10,
                 fields: vec![
                     Some(FieldVal::Integer(11)),
                     Some(FieldVal::Integer(12)),
                     Some(FieldVal::Integer(13)),
                 ],
-            }],
+            }]),
             size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         mem.write_group(1, 0, row_group).unwrap();

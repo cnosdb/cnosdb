@@ -44,5 +44,5 @@ INF,1,365 Days,1,NS
 -- EXECUTE SQL: insert describe_database.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (100, -1234, 'hello', 1234, false, 1.2, 'beijing', 'shanghai'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"050014","error_message":"write expired time data not permit"}
+{"error_code":"050001","error_message":"Meta request error: Operation not support: create expired bucket"}
 -- ERROR:  --

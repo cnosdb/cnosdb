@@ -134,6 +134,22 @@ impl StateAggData {
             Ok(ScalarValue::new_zero(&interval_datatype)?)
         }
     }
+
+    pub fn state_at(&self, timestamp: &ScalarValue) -> DFResult<ScalarValue> {
+        for (state, time_periods) in self.state_periods.states.iter() {
+            if time_periods
+                .iter()
+                .filter(|p| p.start_time.le(timestamp) && timestamp.lt(&p.end_time))
+                .peekable()
+                .peek()
+                .is_some()
+            {
+                return Ok(state.clone());
+            }
+        }
+        let value = self.state_periods.state_data_type.clone().try_into()?;
+        Ok(value)
+    }
 }
 
 impl AggResult for StateAggData {

@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use protos::kv_service::WritePointsRequest;
+use protocol_parser::Line;
+use protos::prompb::remote::WriteRequest;
 use trace::SpanContext;
 
 use crate::service::protocol::Context;
@@ -18,5 +19,8 @@ pub trait PromRemoteServer {
         req: Bytes,
         span_ctx: Option<&SpanContext>,
     ) -> Result<Vec<u8>>;
-    fn remote_write(&self, ctx: &Context, req: Bytes) -> Result<WritePointsRequest>;
+
+    fn remote_write(&self, req: Bytes) -> Result<WriteRequest>;
+
+    fn prom_write_request_to_lines<'a>(&self, req: &'a WriteRequest) -> Result<Vec<Line<'a>>>;
 }

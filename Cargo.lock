@@ -4218,8 +4218,11 @@ version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "bytes",
+ "datafusion",
  "flatbuffers 22.12.6",
+ "lazy_static",
  "models",
+ "parking_lot 0.12.1",
  "protos",
  "serde",
  "snafu",
@@ -5120,6 +5123,7 @@ dependencies = [
  "meta",
  "models",
  "object_store",
+ "protocol_parser",
  "protos",
  "rand",
  "serde",
@@ -5945,7 +5949,6 @@ name = "tskv"
 version = "2.3.2"
 dependencies = [
  "async-backtrace",
- "async-recursion",
  "async-trait",
  "bincode",
  "blake3",

@@ -19,15 +19,12 @@ use metrics::metric_register::MetricsRegister;
 use metrics::prom_reporter::PromReporter;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
-use models::consistency_level::ConsistencyLevel;
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
 use models::schema::{Precision, DEFAULT_CATALOG};
 use protocol_parser::line_protocol::line_protocol_to_lines;
-use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::open_tsdb::open_tsdb_to_lines;
 use protocol_parser::{DataPoint, Line};
-use protos::kv_service::WritePointsRequest;
 use query::prom::remote_server::PromRemoteSqlServer;
 use snafu::ResultExt;
 use spi::query::config::StreamTriggerInterval;
@@ -378,21 +375,19 @@ impl HttpService {
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
                     let req_len = req.len() as u64;
-                    let write_points_req = {
-                        let mut span_recorder = SpanRecorder::new(
-                            span_context.child_span("construct write lines points request"),
-                        );
+                    let write_points_lines = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("try parse req to lines"));
                         span_recorder.set_metadata("bytes", req.len());
-                        construct_write_lines_points_request(req, ctx.database())
-                            .map_err(reject::custom)?
+                        try_parse_req_to_lines(&req).map_err(reject::custom)?
                     };
 
                     let resp = coord_write_points_with_span_recorder(
                         &coord,
-                        ctx.tenant().to_string(),
-                        ConsistencyLevel::Any,
+                        ctx.tenant(),
+                        ctx.database(),
                         precision,
-                        write_points_req,
+                        write_points_lines,
                         span_context,
                     )
                     .await;
@@ -468,12 +463,12 @@ impl HttpService {
                             span_context.child_span("construct write tsdb points request"),
                         );
                         span_recorder.set_metadata("bytes", req.len());
-                        construct_write_tsdb_points_request(req, &ctx).map_err(reject::custom)?
+                        construct_write_tsdb_points_request(&req).map_err(reject::custom)?
                     };
                     let resp = coord_write_points_with_span_recorder(
                         &coord,
-                        ctx.tenant().to_string(),
-                        ConsistencyLevel::Any,
+                        ctx.tenant(),
+                        ctx.database(),
                         precision,
                         write_points_req,
                         span_context,
@@ -551,13 +546,12 @@ impl HttpService {
                             span_context.child_span("construct write tsdb points json request"),
                         );
                         span_recorder.set_metadata("bytes", req.len());
-                        construct_write_tsdb_points_json_request(req, &ctx)
-                            .map_err(reject::custom)?
+                        construct_write_tsdb_points_json_request(&req).map_err(reject::custom)?
                     };
                     let resp = coord_write_points_with_span_recorder(
                         &coord,
-                        ctx.tenant().to_string(),
-                        ConsistencyLevel::Any,
+                        ctx.tenant(),
+                        ctx.database(),
                         precision,
                         write_points_req,
                         span_context,
@@ -794,21 +788,28 @@ impl HttpService {
                     };
 
                     let req_len = req.len() as u64;
-                    let write_points_req = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("remote write"));
-                        prs.remote_write(&ctx, req).map_err(|e| {
+
+                    let mut span_recorder =
+                        SpanRecorder::new(span_context.child_span("remote write"));
+                    let prom_write_request = prs.remote_write(req).map_err(|e| {
+                        span_recorder.error(e.to_string());
+                        error!("Failed to handle prom remote write request, err: {}", e);
+                        reject::custom(HttpError::from(e))
+                    })?;
+                    let write_request = prs
+                        .prom_write_request_to_lines(&prom_write_request)
+                        .map_err(|e| {
                             span_recorder.error(e.to_string());
-                            trace::error!("Failed to handle prom remote write request, err: {}", e);
+                            error!("Failed to handle prom remote write request, err: {}", e);
                             reject::custom(HttpError::from(e))
-                        })?
-                    };
+                        })?;
+
                     let resp = coord_write_points_with_span_recorder(
                         &coord,
-                        ctx.tenant().to_string(),
-                        ConsistencyLevel::Any,
+                        ctx.tenant(),
+                        ctx.database(),
                         Precision::NS,
-                        write_points_req,
+                        write_request,
                         span_context,
                     )
                     .await;
@@ -1029,50 +1030,28 @@ async fn construct_write_context_and_check_privilege(
     Ok(context)
 }
 
-fn construct_write_lines_points_request(
-    req: Bytes,
-    db: &str,
-) -> Result<WritePointsRequest, HttpError> {
-    let lines = String::from_utf8_lossy(req.as_ref());
-    let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
+fn try_parse_req_to_lines(req: &Bytes) -> Result<Vec<Line>, HttpError> {
+    let lines = unsafe { std::str::from_utf8_unchecked(req.as_ref()) };
+    let line_protocol_lines = line_protocol_to_lines(lines, Local::now().timestamp_nanos())
         .map_err(|e| HttpError::ParseLineProtocol { source: e })?;
 
-    let points = parse_lines_to_points(db, &line_protocol_lines);
-
-    let req = WritePointsRequest {
-        version: 1,
-        meta: None,
-        points,
-    };
-    Ok(req)
+    Ok(line_protocol_lines)
 }
 
-fn construct_write_tsdb_points_request(
-    req: Bytes,
-    ctx: &Context,
-) -> Result<WritePointsRequest, HttpError> {
-    let lines = String::from_utf8_lossy(req.as_ref());
-    let tsdb_protocol_lines = open_tsdb_to_lines(&lines, Local::now().timestamp_nanos())
+fn construct_write_tsdb_points_request(req: &Bytes) -> Result<Vec<Line>, HttpError> {
+    let lines = unsafe { std::str::from_utf8_unchecked(req.as_ref()) };
+
+    let tsdb_protocol_lines = open_tsdb_to_lines(lines, Local::now().timestamp_nanos())
         .map_err(|e| HttpError::ParseOpentsdbProtocol { source: e })?;
 
-    let points = parse_lines_to_points(ctx.database(), &tsdb_protocol_lines);
-
-    let req = WritePointsRequest {
-        version: 1,
-        meta: None,
-        points,
-    };
-    Ok(req)
+    Ok(tsdb_protocol_lines)
 }
 
-fn construct_write_tsdb_points_json_request(
-    req: Bytes,
-    ctx: &Context,
-) -> Result<WritePointsRequest, HttpError> {
-    let lines = String::from_utf8_lossy(req.as_ref());
-    let tsdb_datapoints = match serde_json::from_str::<DataPoint>(&lines) {
+fn construct_write_tsdb_points_json_request(req: &Bytes) -> Result<Vec<Line>, HttpError> {
+    let lines = unsafe { std::str::from_utf8_unchecked(req.as_ref()) };
+    let tsdb_datapoints = match serde_json::from_str::<DataPoint>(lines) {
         Ok(datapoint) => vec![datapoint],
-        Err(_) => match serde_json::from_str::<Vec<DataPoint>>(&lines) {
+        Err(_) => match serde_json::from_str::<Vec<DataPoint>>(lines) {
             Ok(datapoints) => datapoints,
             Err(e) => {
                 error!("{}", e);
@@ -1084,31 +1063,24 @@ fn construct_write_tsdb_points_json_request(
     .map(Line::from)
     .collect::<Vec<Line>>();
 
-    let points = parse_lines_to_points(ctx.database(), &tsdb_datapoints);
-
-    let req = WritePointsRequest {
-        version: 1,
-        meta: None,
-        points,
-    };
-    Ok(req)
+    Ok(tsdb_datapoints)
 }
 
 async fn coord_write_points_with_span_recorder(
     coord: &CoordinatorRef,
-    tenant: String,
-    consistency_level: ConsistencyLevel,
+    tenant: &str,
+    db: &str,
     precision: Precision,
-    write_points_req: WritePointsRequest,
+    write_points_lines: Vec<Line<'_>>,
     span_context: Option<&SpanContext>,
-) -> Result<(), HttpError> {
+) -> Result<usize, HttpError> {
     let mut span_recorder = SpanRecorder::new(span_context.child_span("write points"));
     coord
-        .write_points(
+        .write_lines(
             tenant,
-            consistency_level,
+            db,
             precision,
-            write_points_req,
+            write_points_lines,
             span_recorder.span_ctx(),
         )
         .await

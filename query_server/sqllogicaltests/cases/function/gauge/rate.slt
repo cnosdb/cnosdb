@@ -1,0 +1,53 @@
+##########
+## DDL
+##########
+
+statement ok
+alter database public set ttl '1000000d';
+
+statement ok
+drop table if exists func_rate_tbl;
+
+statement ok
+CREATE TABLE IF NOT EXISTS func_rate_tbl(f0 BIGINT , f1 bigint , TAGS(t0, t1, t2) );
+
+statement ok
+INSERT func_rate_tbl(TIME, f0, f1, t0, t1)
+VALUES
+    ('1999-12-31 00:00:00.000', 111, 444, 'tag11', 'tag21'),
+    ('1999-12-31 00:00:00.000', 222, 444, 'tag12', 'tag22');
+
+query 
+select rate(gauge_agg(time, f1)), delta(gauge_agg(time, f1)), time_delta(gauge_agg(time, f1)) from func_rate_tbl;
+----
+NULL 0.0 0 years 0 mons 0 days 0 hours 0 mins 0.000000000 secs
+
+statement ok
+INSERT func_rate_tbl(TIME, f0, f1, t0, t1)
+VALUES
+    ('1999-12-31 00:00:00.010', 222, 444, 'tag12', 'tag22');
+
+query 
+select rate(gauge_agg(time, f1)), delta(gauge_agg(time, f1)), time_delta(gauge_agg(time, f1)) from func_rate_tbl;
+----
+0.0 0.0 0 years 0 mons 0 days 0 hours 0 mins 0.010000000 secs
+
+statement ok
+INSERT func_rate_tbl(TIME, f0, f1, t0, t1)
+VALUES
+    ('1999-12-31 00:10:00.025', 333, 555, 'tag11', 'tag22'),
+    ('1999-12-31 00:10:00.030', 444, 333, 'tag11', 'tag23'),
+    ('1999-12-31 01:00:00.035', 555, 222, 'tag14', 'tag24');
+
+query 
+select rate(gauge_agg(time, f1)), delta(gauge_agg(time, f1)), time_delta(gauge_agg(time, f1)) from func_rate_tbl;
+----
+-6.16660671354584e-11 -222.0 0 years 0 mons 0 days 1 hours 0 mins 0.035000000 secs
+
+query 
+select rate(gauge_agg(time, f0)), delta(gauge_agg(time, f0)), time_delta(gauge_agg(time, f0)) from func_rate_tbl;
+----
+1.233321342709168e-10 444.0 0 years 0 mons 0 days 1 hours 0 mins 0.035000000 secs
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got TimestampNanosecond\(NULL, None\)", .*
+select rate(time) from func_rate_tbl;

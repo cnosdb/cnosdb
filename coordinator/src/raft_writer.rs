@@ -14,16 +14,13 @@ use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
 use replication::{RaftNodeId, RaftNodeInfo};
-use snafu::ResultExt;
 use tokio::sync::RwLock;
 use tonic::transport;
 use tower::timeout::Timeout;
-use trace::{debug, info, SpanContext, SpanExt, SpanRecorder};
+use trace::{debug, info, SpanContext, SpanRecorder};
 use tskv::EngineRef;
 
 use crate::errors::*;
-use crate::writer::VnodeMapping;
-use crate::{status_response_to_result, WriteRequest};
 
 pub struct RaftWriteRequest {
     pub points: WritePointsRequest,
@@ -176,84 +173,10 @@ impl RaftWriter {
         }
     }
 
-    pub async fn write_points(
+    pub async fn write_to_replica(
         &self,
-        req: &WriteRequest,
-        span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<()> {
-        let meta_client =
-            self.meta
-                .tenant_meta(&req.tenant)
-                .await
-                .ok_or(CoordinatorError::TenantNotFound {
-                    name: req.tenant.clone(),
-                })?;
-
-        let mut mapping = VnodeMapping::new();
-        {
-            let _ = SpanRecorder::new(span_ctx.child_span("map point"));
-            let fb_points = flatbuffers::root::<protos::models::Points>(&req.request.points)
-                .context(InvalidFlatbufferSnafu)?;
-            let db_name = fb_points.db_ext()?.to_string();
-            for table in fb_points.tables_iter_ext()? {
-                let schema = table.schema_ext()?;
-                let tab_name = table.tab_ext()?.to_string();
-                for item in table.points_iter_ext()? {
-                    mapping
-                        .map_point(
-                            meta_client.clone(),
-                            &db_name,
-                            &tab_name,
-                            req.precision,
-                            schema,
-                            item,
-                        )
-                        .await?;
-                }
-            }
-        }
-
-        let now = tokio::time::Instant::now();
-        let mut requests = vec![];
-        {
-            let _ = SpanRecorder::new(span_ctx.child_span("build requests"));
-            for (_id, points) in mapping.points.iter_mut() {
-                points.finish()?;
-                if points.repl_set.vnodes.is_empty() {
-                    let err_msg = "no available vnode in replication set".to_string();
-                    return Err(CoordinatorError::CommonError { msg: err_msg });
-                }
-
-                let span_name = format!("write to raplica {}", points.repl_set.id);
-                let span_recorder = SpanRecorder::new(span_ctx.child_span(span_name));
-                let request = self.write_to_replica(
-                    points.data.clone(),
-                    &req.tenant,
-                    req.precision,
-                    &points.repl_set,
-                    span_recorder,
-                );
-                requests.push(request);
-            }
-        }
-
-        let duration = now.elapsed().as_millis();
-        for res in futures::future::join_all(requests).await {
-            info!(
-                "write points start at: {:?}, elapsed: {}ms, result: {:?}",
-                now, duration, res
-            );
-
-            res?
-        }
-
-        Ok(())
-    }
-
-    async fn write_to_replica(
-        &self,
-        data: Vec<u8>,
         tenant: &str,
+        data: Arc<Vec<u8>>,
         precision: Precision,
         replica: &ReplicationSet,
         span_recorder: SpanRecorder,
@@ -263,7 +186,7 @@ impl RaftWriter {
             let span_recorder = span_recorder.child("write to local node or forward");
             let result = self
                 .write_to_local_or_forward(
-                    data,
+                    data.clone(),
                     tenant,
                     precision,
                     replica.id,
@@ -295,7 +218,7 @@ impl RaftWriter {
 
     pub async fn write_to_local_or_forward(
         &self,
-        data: Vec<u8>,
+        data: Arc<Vec<u8>>,
         tenant: &str,
         precision: Precision,
         replica_id: ReplicationSetId,
@@ -314,7 +237,7 @@ impl RaftWriter {
                 user: None,
                 password: None,
             }),
-            points: data.clone(),
+            points: Arc::unwrap_or_clone(data.clone()),
         };
 
         let raft_data = protos::models_helper::to_prost_bytes(request);
@@ -336,7 +259,7 @@ impl RaftWriter {
         replica_id: u32,
         leader_id: u64,
         tenant: &str,
-        data: Vec<u8>,
+        data: Arc<Vec<u8>>,
         precision: Precision,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
@@ -345,8 +268,8 @@ impl RaftWriter {
         let mut client = TskvServiceClient::<Timeout<transport::Channel>>::new(timeout_channel);
 
         let mut cmd = tonic::Request::new(WriteVnodeRequest {
-            data,
             id: replica_id,
+            data: Arc::unwrap_or_clone(data),
             precision: precision as u32,
             tenant: tenant.to_string(),
         });
@@ -372,7 +295,7 @@ impl RaftWriter {
             )
         }
 
-        status_response_to_result(&response)
+        crate::status_response_to_result(&response)
     }
 
     async fn write_to_raft(&self, raft: Arc<RaftNode>, data: Vec<u8>) -> CoordinatorResult<()> {

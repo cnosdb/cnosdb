@@ -5,6 +5,7 @@ mod gapfill;
 mod gauge;
 mod interpolate;
 mod locf;
+mod state_at;
 mod utils;
 
 use std::sync::Arc;
@@ -17,6 +18,8 @@ use spi::Result;
 pub const TIME_WINDOW_GAPFILL: &str = "time_window_gapfill";
 pub const LOCF: &str = "locf";
 pub const INTERPOLATE: &str = "interpolate";
+pub const DURATION_IN: &str = "duration_in";
+pub const STATE_AT: &str = "state_at";
 
 pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...
@@ -27,6 +30,7 @@ pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<(
     interpolate::register_udf(func_manager)?;
     gauge::register_udfs(func_manager)?;
     duration_in::register_udf(func_manager)?;
+    state_at::register_udf(func_manager)?;
     Ok(())
 }
 

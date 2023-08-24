@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, LinkedList};
 use std::mem::size_of;
 use std::sync::Arc;
 
+use flatbuffers::{ForwardsUOffset, Vector};
 use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
@@ -9,7 +10,7 @@ use metrics::metric_register::MetricsRegister;
 use models::predicate::domain::TimeRange;
 use models::schema::{DatabaseSchema, Precision, TskvTableSchema};
 use models::{SchemaId, SeriesId, SeriesKey};
-use protos::models::{FieldType, Point, Table};
+use protos::models::{Column, ColumnType, FieldType, Table};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
@@ -26,10 +27,9 @@ use crate::memcache::{MemCache, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
-use crate::Error::{self, InvalidPoint};
+use crate::Error::{self};
 use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
-pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>;
 pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>;
 
 #[derive(Debug)]
@@ -238,33 +238,34 @@ impl Database {
         let mut map = HashMap::new();
         for table in tables {
             let table_name = table.tab_ext()?;
-
-            let points = table.points().ok_or(Error::CommonError {
-                reason: "table missing points".to_string(),
+            let columns = table.columns().ok_or(Error::CommonError {
+                reason: "table missing columns".to_string(),
             })?;
+            let fb_schema = FbSchema::from_fb_column(columns)?;
+            let num_rows = table.num_rows() as usize;
 
-            for point in points {
-                let schema = table.schema().ok_or(Error::CommonError {
-                    reason: "table missing schema in point".to_string(),
-                })?;
-                let field_type = schema.field_type_ext();
-                let field_names = schema.field_name_ext();
-                let tag_names = schema.tag_name_ext();
-
-                let sid =
-                    Self::build_index(db_name, table_name, &point, &tag_names, ts_index.clone())
-                        .await?;
+            for i in 0..num_rows {
+                let sid = Self::build_index(
+                    db_name,
+                    table_name,
+                    &columns,
+                    &fb_schema.tag_indexes,
+                    i,
+                    ts_index.clone(),
+                )
+                .await?;
                 self.build_row_data(
                     &mut map,
                     table_name,
                     precision,
-                    point,
-                    &field_names,
-                    &field_type,
+                    &columns,
+                    &fb_schema.field_indexes,
+                    fb_schema.time_index,
+                    i,
                     sid,
                     false,
                 )
-                .await?
+                .await?;
             }
         }
         Ok(map)
@@ -280,26 +281,32 @@ impl Database {
         let mut map = HashMap::new();
         for table in tables {
             let table_name = table.tab_ext()?;
-
-            let points = table.points().ok_or(Error::CommonError {
-                reason: "table missing points".to_string(),
+            let columns = table.columns().ok_or(Error::CommonError {
+                reason: "table missing columns".to_string(),
             })?;
+            let fb_schema = FbSchema::from_fb_column(columns)?;
+            let num_rows = table.num_rows() as usize;
 
-            for point in points {
-                let schema = table.schema().ok_or(Error::CommonError {
-                    reason: "table missing schema in point".to_string(),
-                })?;
-                let tag_names = schema.tag_name_ext();
-                let field_names = schema.field_name_ext();
-                let field_type = schema.field_type_ext();
+            for i in 0..num_rows {
+                let sid = Self::build_index(
+                    db_name,
+                    table_name,
+                    &columns,
+                    &fb_schema.tag_indexes,
+                    i,
+                    ts_index.clone(),
+                )
+                .await?;
 
-                let sid =
-                    Self::build_index(db_name, table_name, &point, &tag_names, ts_index.clone())
-                        .await?;
                 let mut schema_change_or_create = false;
                 if self
                     .schemas
-                    .check_field_type_from_cache(table_name, &tag_names, &field_names, &field_type)
+                    .check_field_type_from_cache(
+                        table_name,
+                        &fb_schema.tag_names,
+                        &fb_schema.field_names,
+                        &fb_schema.field_types,
+                    )
                     .is_err()
                 {
                     schema_change_or_create = self
@@ -307,24 +314,24 @@ impl Database {
                         .check_field_type_or_else_add(
                             db_name,
                             table_name,
-                            &tag_names,
-                            &field_names,
-                            &field_type,
+                            &fb_schema.tag_names,
+                            &fb_schema.field_names,
+                            &fb_schema.field_types,
                         )
                         .await?;
                 }
-
                 self.build_row_data(
                     &mut map,
                     table_name,
                     precision,
-                    point,
-                    &field_names,
-                    &field_type,
+                    &columns,
+                    &fb_schema.field_indexes,
+                    fb_schema.time_index,
+                    i,
                     sid,
                     schema_change_or_create,
                 )
-                .await?
+                .await?;
             }
         }
         Ok(map)
@@ -335,9 +342,10 @@ impl Database {
         map: &mut HashMap<(SeriesId, SchemaId), RowGroup>,
         table_name: &str,
         precision: Precision,
-        point: Point<'_>,
-        field_names: &[&str],
-        field_type: &[FieldType],
+        columns: &Vector<'_, ForwardsUOffset<Column<'_>>>,
+        fields_idx: &[usize],
+        ts_idx: usize,
+        row_count: usize,
         sid: u32,
         schema_change_or_create: bool,
     ) -> Result<()> {
@@ -351,13 +359,19 @@ impl Database {
             None => return Ok(()),
         };
 
-        let row =
-            RowData::point_to_row_data(point, &table_schema, precision, field_names, field_type)?;
+        let row = RowData::point_to_row_data(
+            &table_schema,
+            precision,
+            columns,
+            fields_idx,
+            ts_idx,
+            row_count,
+        )?;
         let schema_size = table_schema.size();
         let schema_id = table_schema.schema_id;
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
             schema: Arc::new(TskvTableSchema::default()),
-            rows: vec![],
+            rows: LinkedList::new(),
             range: TimeRange {
                 min_ts: i64::MAX,
                 max_ts: i64::MIN,
@@ -372,28 +386,24 @@ impl Database {
         });
         entry.size += row.size();
         //todo: remove this copy
-        entry.rows.push(row);
+        entry.rows.push_back(row);
         Ok(())
     }
 
     async fn build_index(
         db_name: &str,
         tab_name: &str,
-        info: &Point<'_>,
-        tag_names: &[&str],
+        columns: &Vector<'_, ForwardsUOffset<Column<'_>>>,
+        tag_idx: &[usize],
+        row_count: usize,
         ts_index: Arc<index::ts_index::TSIndex>,
     ) -> Result<u32> {
-        let nullbits = info.fields_nullbit().ok_or(InvalidPoint)?.bytes();
-        if !nullbits.iter().any(|x| *x != 0) {
-            return Err(InvalidPoint);
-        }
-
-        let series_key =
-            SeriesKey::build_series_key(db_name, tab_name, tag_names, info).map_err(|e| {
-                Error::CommonError {
-                    reason: e.to_string(),
-                }
-            })?;
+        let series_key = SeriesKey::build_series_key(
+            db_name, tab_name, columns, tag_idx, row_count,
+        )
+        .map_err(|e| Error::CommonError {
+            reason: e.to_string(),
+        })?;
 
         if let Some(id) = ts_index.get_series_id(&series_key).await? {
             return Ok(id);
@@ -511,5 +521,70 @@ impl Database {
 impl Database {
     pub fn tsf_num(&self) -> usize {
         self.ts_families.len()
+    }
+}
+
+struct FbSchema<'a> {
+    time_index: usize,
+    tag_indexes: Vec<usize>,
+    tag_names: Vec<&'a str>,
+    field_indexes: Vec<usize>,
+    field_names: Vec<&'a str>,
+    field_types: Vec<FieldType>,
+}
+
+impl<'a> FbSchema<'a> {
+    pub fn from_fb_column(
+        columns: Vector<'a, ForwardsUOffset<Column<'a>>>,
+    ) -> Result<FbSchema<'a>> {
+        let mut time_index = usize::MAX;
+        let mut tag_indexes = vec![];
+        let mut tag_names = vec![];
+        let mut field_indexes = vec![];
+        let mut field_names = vec![];
+        let mut field_types = vec![];
+
+        for (index, column) in columns.iter().enumerate() {
+            match column.column_type() {
+                ColumnType::Time => {
+                    time_index = index;
+                }
+                ColumnType::Tag => {
+                    tag_indexes.push(index);
+                    tag_names.push(column.name().ok_or(Error::CommonError {
+                        reason: "Tag column name not found in flatbuffer columns".to_string(),
+                    })?);
+                }
+                ColumnType::Field => {
+                    field_indexes.push(index);
+                    field_names.push(column.name().ok_or(Error::CommonError {
+                        reason: "Field column name not found in flatbuffer columns".to_string(),
+                    })?);
+                    field_types.push(column.field_type());
+                }
+                _ => {}
+            }
+        }
+
+        if time_index == usize::MAX {
+            return Err(Error::CommonError {
+                reason: "Time column not found in flatbuffer columns".to_string(),
+            });
+        }
+
+        if field_indexes.is_empty() {
+            return Err(Error::CommonError {
+                reason: "Field column not found in flatbuffer columns".to_string(),
+            });
+        }
+
+        Ok(Self {
+            time_index,
+            tag_indexes,
+            tag_names,
+            field_indexes,
+            field_names,
+            field_types,
+        })
     }
 }

@@ -15,6 +15,9 @@ serde = { workspace = true }
 snafu = { workspace = true }
 flatbuffers = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
+lazy_static = { workspace = true }
+parking_lot = { workspace = true }
+datafusion = { workspace = true }
 
 [features]
 default = []

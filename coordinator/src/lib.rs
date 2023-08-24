@@ -1,4 +1,7 @@
 #![feature(stmt_expr_attributes)]
+#![feature(arc_unwrap_or_clone)]
+#![feature(allocator_api)]
+
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -7,12 +10,12 @@ use datafusion::arrow::record_batch::RecordBatch;
 use errors::CoordinatorError;
 use futures::Stream;
 use meta::model::{MetaClientRef, MetaRef};
-use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{ReplicationSet, VnodeAllInfo};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
-use models::schema::Precision;
-use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
+use models::schema::{Precision, TskvTableSchemaRef};
+use protocol_parser::Line;
+use protos::kv_service::AdminCommandRequest;
 use trace::SpanContext;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
@@ -90,14 +93,21 @@ pub trait Coordinator: Send + Sync {
         predicate: ResolvedPredicateRef,
     ) -> CoordinatorResult<Vec<ReplicationSet>>;
 
-    async fn write_points(
+    async fn write_lines<'a>(
         &self,
-        tenant: String,
-        level: ConsistencyLevel,
+        tenant: &str,
+        db: &str,
         precision: Precision,
-        request: WritePointsRequest,
+        lines: Vec<Line<'a>>,
         span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<()>;
+    ) -> CoordinatorResult<usize>;
+
+    async fn write_record_batch<'a>(
+        &self,
+        table_schema: TskvTableSchemaRef,
+        record_batch: RecordBatch,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<usize>;
 
     fn table_scan(
         &self,
