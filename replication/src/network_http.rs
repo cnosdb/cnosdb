@@ -5,83 +5,12 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use openraft::raft::*;
-use protos::raft_service::raft_service_server::RaftService;
-use protos::raft_service::*;
 use warp::{hyper, Filter};
 
 use crate::errors::ReplicationError;
 use crate::raft_node::RaftNode;
-use crate::{RaftNodeId, RaftNodeInfo, Request, TypeConfig};
+use crate::{RaftNodeId, RaftNodeInfo};
 
-// ------------------------------------------------------------------------- //
-#[derive(Clone)]
-pub struct RaftCBServer {
-    node: Arc<RaftNode>,
-}
-
-impl RaftCBServer {
-    pub fn new(node: Arc<RaftNode>) -> Self {
-        Self { node }
-    }
-}
-
-#[tonic::async_trait]
-impl RaftService for RaftCBServer {
-    async fn raft_vote(
-        &self,
-        request: tonic::Request<RaftVoteReq>,
-    ) -> std::result::Result<tonic::Response<RaftResponse>, tonic::Status> {
-        let inner = request.into_inner();
-
-        let vote = match serde_json::from_str::<VoteRequest<RaftNodeId>>(&inner.data) {
-            Ok(val) => val,
-            Err(err) => return Err(tonic::Status::new(tonic::Code::Internal, err.to_string())),
-        };
-
-        let res = self.node.raw_raft().vote(vote).await;
-        let data = serde_json::to_string(&res).unwrap_or("encode vote rsp failed".to_string());
-
-        Ok(tonic::Response::new(RaftResponse { code: 0, data }))
-    }
-
-    async fn raft_snapshot(
-        &self,
-        request: tonic::Request<RaftSnapshotReq>,
-    ) -> std::result::Result<tonic::Response<RaftResponse>, tonic::Status> {
-        let inner = request.into_inner();
-
-        let snapshot = match bincode::deserialize::<InstallSnapshotRequest<TypeConfig>>(&inner.data)
-        {
-            Ok(val) => val,
-            Err(err) => return Err(tonic::Status::new(tonic::Code::Internal, err.to_string())),
-        };
-
-        let res = self.node.raw_raft().install_snapshot(snapshot).await;
-        let data = serde_json::to_string(&res).unwrap_or("encode vote rsp failed".to_string());
-
-        Ok(tonic::Response::new(RaftResponse { code: 0, data }))
-    }
-
-    async fn raft_append_entries(
-        &self,
-        request: tonic::Request<RaftAppendEntriesReq>,
-    ) -> std::result::Result<tonic::Response<RaftResponse>, tonic::Status> {
-        let inner = request.into_inner();
-
-        let entries = match bincode::deserialize::<AppendEntriesRequest<TypeConfig>>(&inner.data) {
-            Ok(val) => val,
-            Err(err) => return Err(tonic::Status::new(tonic::Code::Internal, err.to_string())),
-        };
-
-        let res = self.node.raw_raft().append_entries(entries).await;
-        let data = serde_json::to_string(&res).unwrap_or("encode vote rsp failed".to_string());
-
-        Ok(tonic::Response::new(RaftResponse { code: 0, data }))
-    }
-}
-
-// ------------------------------------------------------------------------- //
 async fn handle_rejection(
     err: warp::Rejection,
 ) -> Result<impl warp::Reply, std::convert::Infallible> {

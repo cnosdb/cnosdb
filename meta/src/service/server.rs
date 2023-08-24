@@ -7,11 +7,14 @@ use models::meta_data::NodeMetrics;
 use models::node_info::NodeStatus;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::entry_store::{EntryStorageRef, HeedEntryStorage};
-use replication::network_server::{EitherBody, RaftCBServer, RaftHttpAdmin, SyncSendError};
+use replication::multi_raft::MultiRaft;
+use replication::network_grpc::RaftCBServer;
+use replication::network_http::{EitherBody, RaftHttpAdmin, SyncSendError};
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
 use replication::RaftNodeInfo;
+use tokio::sync::RwLock;
 use tower::Service;
 use tracing::warn;
 use warp::hyper;
@@ -140,11 +143,15 @@ async fn start_warp_grpc_server(
         raft_admin: Arc::new(raft_admin),
     };
 
+    let mut multi_raft = MultiRaft::new();
+    multi_raft.add_node(node);
+    let nodes = Arc::new(RwLock::new(multi_raft));
+
     let addr = addr.parse().unwrap();
     hyper::Server::bind(&addr)
         .serve(hyper::service::make_service_fn(move |_| {
             let mut http_service = warp::service(http_server.routes());
-            let raft_service = RaftServiceServer::new(RaftCBServer::new(node.clone()));
+            let raft_service = RaftServiceServer::new(RaftCBServer::new(nodes.clone()));
 
             let mut grpc_service = tonic::transport::Server::builder()
                 .add_service(raft_service)

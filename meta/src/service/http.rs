@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use replication::apply_store::ApplyStorage;
-use replication::network_server::RaftHttpAdmin;
+use replication::network_http::RaftHttpAdmin;
 use replication::raft_node::RaftNode;
 use trace::info;
 use warp::{hyper, Filter};

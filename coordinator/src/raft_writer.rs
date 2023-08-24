@@ -254,7 +254,7 @@ impl RaftWriter {
         }
     }
 
-    pub async fn write_to_remote(
+    async fn write_to_remote(
         &self,
         replica_id: u32,
         leader_id: u64,
