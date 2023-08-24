@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 use chrono::Utc;
 use coordinator::service::CoordinatorRef;
@@ -798,8 +799,25 @@ fn vector_value_to_string(value: Value) -> String {
             Kind::Integer(v) => v.to_string() + "i",
             Kind::Float(v) => v.to_string(),
             Kind::Boolean(v) => v.to_string(),
-            Kind::Map(_) => "Not support map".to_string(),
-            Kind::Array(_) => "Not support array".to_string(),
+            Kind::Map(map) => {
+                let values = map
+                    .fields
+                    .iter()
+                    .map(|(k, v)| {
+                        let k = k.replace('"', "\\\"");
+                        (k, vector_value_to_string(v.clone()))
+                    })
+                    .collect::<HashMap<_, _>>();
+                format!("\"{:?}\"", values)
+            }
+            Kind::Array(array) => {
+                let values = array
+                    .items
+                    .iter()
+                    .map(|v| vector_value_to_string(v.clone()))
+                    .collect::<Vec<_>>();
+                format!("\"{:?}\"", values)
+            }
             Kind::Null(_) => String::new(),
         },
     }
@@ -837,7 +855,7 @@ mod test {
         sketch, AggregatedHistogram1, AggregatedHistogram2, AggregatedHistogram3,
         AggregatedSummary1, AggregatedSummary2, AggregatedSummary3, Counter, Distribution1,
         Distribution2, DistributionSample, Gauge, HistogramBucket, HistogramBucket3, Log, Metric,
-        Set, Sketch, SummaryQuantile, Timestamp, Value,
+        Set, Sketch, SummaryQuantile, Timestamp, Value, ValueArray, ValueMap,
     };
 
     use crate::vector::vector_server::{
@@ -885,6 +903,44 @@ mod test {
             kind: Some(Kind::Boolean(true)),
         };
         assert_eq!(vector_value_to_string(value), "true");
+    }
+
+    #[test]
+    fn test_vector_value_to_string_map() {
+        let value = Value {
+            kind: Some(Kind::Map(ValueMap {
+                fields: HashMap::from([(
+                    "key1".to_string(),
+                    Value {
+                        kind: Some(Kind::RawBytes("value1".as_bytes().to_vec())),
+                    },
+                )]),
+            })),
+        };
+        assert_eq!(
+            vector_value_to_string(value),
+            "\"{\"key1\": \"\\\"value1\\\"\"}\""
+        );
+    }
+
+    #[test]
+    fn test_vector_value_to_string_array() {
+        let value = Value {
+            kind: Some(Kind::Array(ValueArray {
+                items: vec![
+                    Value {
+                        kind: Some(Kind::RawBytes("value1".as_bytes().to_vec())),
+                    },
+                    Value {
+                        kind: Some(Kind::RawBytes("value2".as_bytes().to_vec())),
+                    },
+                ],
+            })),
+        };
+        assert_eq!(
+            vector_value_to_string(value),
+            "\"[\"\\\"value1\\\"\", \"\\\"value2\\\"\"]\""
+        );
     }
 
     #[test]
