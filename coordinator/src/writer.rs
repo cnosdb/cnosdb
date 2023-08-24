@@ -477,10 +477,10 @@ impl PointWriter {
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
 
         let mut cmd = tonic::Request::new(WriteVnodeRequest {
-            vnode_id,
+            data,
+            id: vnode_id,
             precision: precision as u32,
             tenant: tenant.to_string(),
-            data,
         });
 
         // 将当前的trace span信息写入到请求的metadata中

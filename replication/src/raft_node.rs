@@ -50,6 +50,10 @@ impl RaftNode {
         })
     }
 
+    pub fn group_id(&self) -> u32 {
+        self.info.group_id
+    }
+
     pub fn raw_raft(&self) -> OpenRaftNode {
         self.raft.clone()
     }

@@ -337,13 +337,20 @@ impl TskvService for TskvServiceImpl {
             .kv_inst
             .write(
                 span_recorder.span_ctx(),
-                inner.vnode_id,
+                inner.id,
                 Precision::from(inner.precision as u8),
                 request,
             )
             .await?;
 
         self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+    }
+
+    async fn exec_open_raft_node(
+        &self,
+        request: tonic::Request<OpenRaftNodeRequest>,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        todo!()
     }
 
     async fn exec_admin_command(

@@ -12,9 +12,11 @@ trace_http = { path = "../common/trace_http" }
 utils = { path = "../common/utils" }
 tskv = { path = "../tskv" }
 meta = { path = "../meta" }
+replication = { path = "../replication" }
 metrics = { path = "../common/metrics" }
 protocol_parser = { path = "../common/protocol_parser" }
 
+openraft = { workspace = true, features = ["serde"] }
 walkdir = { workspace = true }
 datafusion = { workspace = true }
 snafu = { workspace = true }

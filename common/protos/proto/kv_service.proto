@@ -53,13 +53,6 @@ message StatusResponse {
   string data = 2;
 }
 
-message WriteVnodeRequest {
-    uint32 vnode_id = 1;
-    string tenant =2;
-    uint32 precision = 3;
-    bytes data = 4;
-}
-
 message DropDBRequest {
     string db = 1;
 }
@@ -157,12 +150,26 @@ message QueryRecordBatchRequest {
     bytes aggs = 3;
 }
 
+message OpenRaftNodeRequest {
+    uint32 vnode_id = 1;
+    uint32 replica_id = 2;
+}
+
+message WriteVnodeRequest {
+    uint32 id = 1;
+    string tenant = 2;
+    uint32 precision = 3;
+    bytes data = 4;
+}
+
+
 /* -------------------------------------------------------------------- */
 service TSKVService {
   rpc Ping(PingRequest) returns (PingResponse) {};
   rpc WritePoints(stream WritePointsRequest) returns (stream WritePointsResponse) {};
 
   rpc WriteVnodePoints(WriteVnodeRequest) returns (StatusResponse) {};
+  rpc ExecOpenRaftNode(OpenRaftNodeRequest) returns (StatusResponse) {};
   rpc QueryRecordBatch(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
   rpc ExecAdminCommand(AdminCommandRequest) returns (StatusResponse) {};
   rpc ExecAdminFetchCommand(AdminFetchCommandRequest) returns (BatchBytesResponse) {};

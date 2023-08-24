@@ -107,6 +107,10 @@ impl ReplicationSet {
     pub fn leader_node_id(&self) -> NodeId {
         todo!()
     }
+
+    pub fn leader_vnode_id(&self) -> VnodeId {
+        todo!()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]

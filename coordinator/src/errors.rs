@@ -27,6 +27,10 @@ pub enum CoordinatorError {
         source: ArrowError,
     },
 
+    ReplicatError {
+        source: replication::errors::ReplicationError,
+    },
+
     #[snafu(display("Meta request error: {}", msg))]
     #[error_code(code = 1)]
     MetaRequest {
@@ -172,6 +176,25 @@ pub enum CoordinatorError {
         database_min_ts: Timestamp,
         point_ts: Timestamp,
     },
+
+    #[snafu(display("The Replication Set Leader is Wrong ({})", msg))]
+    #[error_code(code = 26)]
+    LeaderIsWrong {
+        msg: String,
+    },
+
+    #[snafu(display("Write to Raft Node Wrong ({})", msg))]
+    #[error_code(code = 27)]
+    RaftWriteError {
+        msg: String,
+    },
+
+    #[snafu(display("Forward to Leader (replcia id: {replica_id} leader id: {leader_id})"))]
+    #[error_code(code = 28)]
+    ForwardToLeader {
+        leader_id: u64,
+        replica_id: u32,
+    },
 }
 
 impl From<PointsError> for CoordinatorError {
@@ -203,6 +226,12 @@ impl From<tskv::Error> for CoordinatorError {
 
             other => CoordinatorError::TskvError { source: other },
         }
+    }
+}
+
+impl From<replication::errors::ReplicationError> for CoordinatorError {
+    fn from(err: replication::errors::ReplicationError) -> Self {
+        CoordinatorError::ReplicatError { source: err }
     }
 }
 

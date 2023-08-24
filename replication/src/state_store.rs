@@ -116,6 +116,15 @@ impl StateStorage {
         }
     }
 
+    pub fn set_init_flag(&self, group_id: u32) -> ReplicationResult<()> {
+        let mut writer = self.writer_txn()?;
+        self.db
+            .put(&mut writer, &Key::already_init_key(group_id), b"true")?;
+        writer.commit()?;
+
+        Ok(())
+    }
+
     pub fn get_last_membership(
         &self,
         group_id: u32,
