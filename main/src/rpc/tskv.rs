@@ -321,29 +321,40 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: tonic::Request<WriteVnodeRequest>,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let span_recorder = get_span_recorder(request.extensions(), "grpc write_vnode_points");
+        let span = get_span_recorder(request.extensions(), "grpc write_vnode_points");
         let inner = request.into_inner();
-        let request = WritePointsRequest {
-            version: 1,
-            meta: Some(Meta {
-                tenant: inner.tenant.clone(),
-                user: None,
-                password: None,
-            }),
-            points: inner.data,
-        };
 
-        let _ = self
-            .kv_inst
-            .write(
-                span_recorder.span_ctx(),
-                inner.id,
+        let client = self
+            .coord
+            .tenant_meta(&inner.tenant)
+            .await
+            .ok_or(tonic::Status::new(
+                tonic::Code::Internal,
+                format!("Not Found tenant({}) meta", inner.tenant),
+            ))?;
+
+        let replica = client
+            .get_replication_set(inner.id)
+            .ok_or(tonic::Status::new(
+                tonic::Code::Internal,
+                format!("Not Found Replica Set({})", inner.id),
+            ))?;
+
+        if let Err(err) = self
+            .coord
+            .write_replica(
+                &inner.tenant,
+                Arc::new(inner.data),
                 Precision::from(inner.precision as u8),
-                request,
+                replica,
+                span.span_ctx(),
             )
-            .await?;
-
-        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
     }
 
     async fn exec_open_raft_node(

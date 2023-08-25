@@ -75,8 +75,8 @@ pub fn status_response_to_result(
     if status.code == SUCCESS_RESPONSE_CODE {
         Ok(())
     } else {
-        Err(errors::CoordinatorError::CommonError {
-            msg: "Unreachable".to_string(),
+        Err(errors::CoordinatorError::GRPCRequest {
+            msg: status.data.clone(),
         })
     }
 }

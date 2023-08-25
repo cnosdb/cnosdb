@@ -11,6 +11,12 @@ pub struct MultiRaft {
     raft_nodes: HashMap<ReplicationSetId, Arc<RaftNode>>,
 }
 
+impl Default for MultiRaft {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MultiRaft {
     pub fn new() -> Self {
         Self {
@@ -19,7 +25,7 @@ impl MultiRaft {
     }
 
     pub fn get_node(&self, id: ReplicationSetId) -> Option<Arc<RaftNode>> {
-        self.raft_nodes.get(&id).map(|v| v.clone())
+        self.raft_nodes.get(&id).cloned()
     }
 
     pub fn exist(&self, id: ReplicationSetId) -> bool {

@@ -56,7 +56,7 @@ impl RaftWriter {
                     data.clone(),
                     tenant,
                     precision,
-                    replica.id,
+                    replica,
                     span_recorder.span_ctx(),
                 )
                 .await;
@@ -88,14 +88,10 @@ impl RaftWriter {
         data: Arc<Vec<u8>>,
         tenant: &str,
         precision: Precision,
-        replica_id: ReplicationSetId,
+        replica: &ReplicationSet,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
-        let raft = self.raft_manager.raft_node_by_id(replica_id).await.ok_or(
-            CoordinatorError::LeaderIsWrong {
-                msg: format!("not found raft node for write: {}", replica_id),
-            },
-        )?;
+        let raft = self.raft_manager.get_node_or_build(replica).await?;
 
         let request = WritePointsRequest {
             version: 1,

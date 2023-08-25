@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use meta::model::MetaRef;
 use models::meta_data::*;
 use models::schema::Precision;
-use protos::kv_service::WritePointsRequest;
+use protos::kv_service::tskv_service_client::TskvServiceClient;
+use protos::kv_service::{OpenRaftNodeRequest, WritePointsRequest};
 use replication::apply_store::{ApplyStorageRef, HeedApplyStorage};
 use replication::entry_store::{EntryStorageRef, HeedEntryStorage};
 use replication::multi_raft::MultiRaft;
@@ -13,6 +15,9 @@ use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
 use replication::{RaftNodeId, RaftNodeInfo};
 use tokio::sync::RwLock;
+use tonic::transport;
+use tower::timeout::Timeout;
+use tracing::info;
 
 use crate::errors::*;
 
@@ -42,11 +47,25 @@ impl RaftNodesManager {
         }
     }
 
-    pub async fn raft_node_by_id(&self, id: ReplicationSetId) -> Option<Arc<RaftNode>> {
-        self.raft_nodes.read().await.get_node(id).map(|v| v.clone())
+    pub fn multi_raft(&self) -> Arc<RwLock<MultiRaft>> {
+        self.raft_nodes.clone()
     }
 
-    pub async fn build_replica_group(&self, replica: &ReplicationSet) -> CoordinatorResult<()> {
+    pub async fn get_node_or_build(
+        &self,
+        replica: &ReplicationSet,
+    ) -> CoordinatorResult<Arc<RaftNode>> {
+        if let Some(node) = self.raft_nodes.read().await.get_node(replica.id) {
+            return Ok(node);
+        }
+
+        self.build_replica_group(replica).await
+    }
+
+    async fn build_replica_group(
+        &self,
+        replica: &ReplicationSet,
+    ) -> CoordinatorResult<Arc<RaftNode>> {
         if replica.leader_node_id() != self.node_id {
             return Err(CoordinatorError::LeaderIsWrong {
                 msg: format!(
@@ -57,20 +76,17 @@ impl RaftNodesManager {
         }
 
         let mut nodes = self.raft_nodes.write().await;
-
-        if nodes.exist(replica.id) {
-            return Ok(());
+        if let Some(node) = nodes.get_node(replica.id) {
+            return Ok(node);
         }
 
         let is_init = self.raft_state.is_already_init(replica.id)?;
         let leader_vid = replica.leader_vnode_id();
         let raft_node = self.open_raft_node(leader_vid, replica.id).await?;
-        let raft_node = Arc::new(raft_node);
         if is_init {
             nodes.add_node(raft_node.clone());
-            return Ok(());
+            return Ok(raft_node);
         }
-
         raft_node.raft_init().await?;
 
         let mut followers = BTreeSet::new();
@@ -86,23 +102,32 @@ impl RaftNodesManager {
                 address: self.meta.node_info_by_id(vnode.node_id).await?.grpc_addr,
             };
 
+            self.open_remote_raft_node(vnode.node_id, vnode.id, replica.id)
+                .await?;
+
             raft_node.raft_add_learner(raft_id, info).await?;
         }
 
+        info!("build raft group: {}.{:?}", replica.id, followers);
         if followers.len() > 1 {
             raft_node.raft_change_membership(followers).await?;
         }
 
         nodes.add_node(raft_node.clone());
 
-        Ok(())
+        Ok(raft_node)
     }
 
     pub async fn open_raft_node(
         &self,
         id: VnodeId,
         group_id: ReplicationSetId,
-    ) -> CoordinatorResult<RaftNode> {
+    ) -> CoordinatorResult<Arc<RaftNode>> {
+        info!("open local raft node: {}.{}", id, group_id);
+        let mut nodes = self.raft_nodes.write().await;
+        if let Some(node) = nodes.get_node(group_id) {
+            return Ok(node);
+        }
         let id = id as u64;
         let path = format!("/tmp/cnosdb/{}/{}", self.node_id, id);
 
@@ -133,10 +158,40 @@ impl RaftNodesManager {
             ..Default::default()
         };
 
-        let node = RaftNode::new(id, info, config, storage, engine)
-            .await
-            .unwrap();
+        let node = RaftNode::new(id, info, config, storage, engine).await?;
+        let node = Arc::new(node);
+        nodes.add_node(node.clone());
 
         Ok(node)
+    }
+
+    async fn open_remote_raft_node(
+        &self,
+        node_id: NodeId,
+        vnode_id: VnodeId,
+        replica_id: ReplicationSetId,
+    ) -> CoordinatorResult<()> {
+        info!(
+            "open remote raft node: {}.{}.{}",
+            node_id, vnode_id, replica_id
+        );
+
+        let channel = self.meta.get_node_conn(node_id).await?;
+        let timeout_channel = Timeout::new(channel, Duration::from_millis(5 * 1000));
+        let mut client = TskvServiceClient::<Timeout<transport::Channel>>::new(timeout_channel);
+        let cmd = tonic::Request::new(OpenRaftNodeRequest {
+            vnode_id,
+            replica_id,
+        });
+
+        let response = client
+            .exec_open_raft_node(cmd)
+            .await
+            .map_err(|err| CoordinatorError::GRPCRequest {
+                msg: err.to_string(),
+            })?
+            .into_inner();
+
+        crate::status_response_to_result(&response)
     }
 }

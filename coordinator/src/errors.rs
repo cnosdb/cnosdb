@@ -189,8 +189,14 @@ pub enum CoordinatorError {
         msg: String,
     },
 
-    #[snafu(display("Forward to Leader (replcia id: {replica_id} leader id: {leader_id})"))]
+    #[snafu(display("Raft Group has Error ({})", msg))]
     #[error_code(code = 28)]
+    RaftGroupError {
+        msg: String,
+    },
+
+    #[snafu(display("Forward to Leader (replcia id: {replica_id} leader id: {leader_id})"))]
+    #[error_code(code = 29)]
     ForwardToLeader {
         leader_id: u64,
         replica_id: u32,
