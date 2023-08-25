@@ -16,6 +16,7 @@ use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::{Precision, TskvTableSchemaRef};
 use protocol_parser::Line;
 use protos::kv_service::AdminCommandRequest;
+use raft_manager::RaftNodesManager;
 use trace::SpanContext;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
@@ -27,6 +28,7 @@ pub mod errors;
 pub mod file_info;
 pub mod hh_queue;
 pub mod metrics;
+pub mod raft_manager;
 pub mod raft_writer;
 pub mod reader;
 pub mod service;
@@ -84,6 +86,7 @@ pub trait Coordinator: Send + Sync {
     fn node_id(&self) -> u64;
     fn meta_manager(&self) -> MetaRef;
     fn store_engine(&self) -> Option<EngineRef>;
+    fn raft_manager(&self) -> Arc<RaftNodesManager>;
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
 
     /// get all vnodes of a table to quering
@@ -92,6 +95,15 @@ pub trait Coordinator: Send + Sync {
         table: &ResolvedTable,
         predicate: ResolvedPredicateRef,
     ) -> CoordinatorResult<Vec<ReplicationSet>>;
+
+    async fn write_replica(
+        &self,
+        tenant: &str,
+        data: Arc<Vec<u8>>,
+        precision: Precision,
+        replica: ReplicationSet,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<()>;
 
     async fn write_lines<'a>(
         &self,

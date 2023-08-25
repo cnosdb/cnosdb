@@ -350,7 +350,18 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: tonic::Request<OpenRaftNodeRequest>,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        todo!()
+        let inner = request.into_inner();
+
+        if let Err(err) = self
+            .coord
+            .raft_manager()
+            .open_raft_node(inner.vnode_id, inner.replica_id)
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
     }
 
     async fn exec_admin_command(

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::vec;
 
-use config::{Config, HintedOffConfig};
+use config::Config;
 use datafusion::arrow::array::{
     Array, ArrayRef, Int64Array, StringArray, TimestampMicrosecondArray, TimestampMillisecondArray,
     TimestampNanosecondArray, UInt32Array,
@@ -19,13 +19,14 @@ use metrics::count::U64Counter;
 use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
-use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId, VnodeStatus};
+use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicateRef, TimeRanges};
 use models::record_batch_decode;
 use models::schema::{
     timestamp_convert, ColumnType, Precision, TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
 };
+use models::utils::build_address;
 use protocol_parser::lines_convert::{
     arrow_array_to_points, line_to_batches, mutable_batches_to_point,
 };
@@ -34,7 +35,6 @@ use protos::kv_service::admin_command_request::Command::*;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::*;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
@@ -42,13 +42,13 @@ use tskv::EngineRef;
 use utils::BkdrHasher;
 
 use crate::errors::*;
-use crate::hh_queue::HintedOffManager;
 use crate::metrics::LPReporter;
+use crate::raft_manager::RaftNodesManager;
+use crate::raft_writer::RaftWriter;
 use crate::reader::replica_selection::{DynamicReplicaSelectioner, DynamicReplicaSelectionerRef};
 use crate::reader::table_scan::opener::TemporaryTableScanOpener;
 use crate::reader::tag_scan::opener::TemporaryTagScanOpener;
 use crate::reader::{CheckFuture, CheckedCoordinatorRecordBatchStream};
-use crate::writer::PointWriter;
 use crate::{
     status_response_to_result, Coordinator, QueryOption, SendableCoordinatorRecordBatchStream,
     VnodeManagerCmdType, VnodeSummarizerCmdType,
@@ -65,8 +65,9 @@ pub struct CoordService {
     config: Config,
     runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
-    writer: Arc<PointWriter>,
+    writer: Arc<RaftWriter>,
     metrics: Arc<CoordServiceMetrics>,
+    raft_manager: Arc<RaftNodesManager>,
 
     replica_selectioner: DynamicReplicaSelectionerRef,
 }
@@ -125,35 +126,33 @@ impl CoordService {
     pub async fn new(
         runtime: Arc<Runtime>,
         kv_inst: Option<EngineRef>,
-        meta_manager: MetaRef,
+        meta: MetaRef,
         config: Config,
-        handoff_cfg: HintedOffConfig,
         metrics_register: Arc<MetricsRegister>,
     ) -> Arc<Self> {
-        let (hh_sender, hh_receiver) = mpsc::channel(1024);
-        let point_writer = Arc::new(PointWriter::new(
-            config.node_basic.node_id,
+        let node_id = config.node_basic.node_id;
+        let grp_addr = build_address(config.host.clone(), config.cluster.grpc_listen_port);
+
+        let raft_manager = Arc::new(RaftNodesManager::new(node_id, grp_addr, meta.clone()));
+        let writer = Arc::new(RaftWriter::new(
+            node_id,
+            meta.clone(),
             config.query.write_timeout_ms,
             kv_inst.clone(),
-            meta_manager.clone(),
-            hh_sender,
+            raft_manager.clone(),
         ));
 
-        let hh_manager = Arc::new(
-            HintedOffManager::new(handoff_cfg, meta_manager.clone(), point_writer.clone()).await,
-        );
-        tokio::spawn(HintedOffManager::write_handoff_job(hh_manager, hh_receiver));
-
-        let replica_selectioner = Arc::new(DynamicReplicaSelectioner::new(meta_manager.clone()));
         let coord = Arc::new(Self {
             runtime,
             kv_inst,
+            node_id,
+            writer,
+            raft_manager,
+            meta: meta.clone(),
             config: config.clone(),
-            node_id: config.node_basic.node_id,
-            meta: meta_manager,
-            writer: point_writer,
+
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
-            replica_selectioner,
+            replica_selectioner: Arc::new(DynamicReplicaSelectioner::new(meta)),
         });
 
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
@@ -360,31 +359,9 @@ impl CoordService {
         }
 
         let mut requests = Vec::new();
-        for vnode in info.vnodes.iter() {
-            let now = tokio::time::Instant::now();
-            debug!(
-                "Preparing write points on vnode {:?}, start at {:?}",
-                vnode, now
-            );
-            if vnode.status == VnodeStatus::Copying {
-                return Err(CoordinatorError::CommonError {
-                    msg: "vnode is moving write forbidden ".to_string(),
-                });
-            }
+        let request = self.write_replica(tenant, points, precision, info, span_ctx);
+        requests.push(request);
 
-            let request = self.writer.write_to_node(
-                vnode.id,
-                tenant,
-                vnode.node_id,
-                precision,
-                points.clone(),
-                SpanRecorder::new(span_ctx.child_span(format!(
-                    "write to vnode {} on node {}",
-                    vnode.id, vnode.node_id
-                ))),
-            );
-            requests.push(request);
-        }
         Ok(requests)
     }
 }
@@ -404,6 +381,10 @@ impl Coordinator for CoordService {
         self.kv_inst.clone()
     }
 
+    fn raft_manager(&self) -> Arc<RaftNodesManager> {
+        self.raft_manager.clone()
+    }
+
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
         self.meta.tenant_meta(tenant).await
     }
@@ -421,6 +402,28 @@ impl Coordinator for CoordService {
         let optimal_shards = self.replica_selectioner.select(shards)?;
 
         Ok(optimal_shards)
+    }
+
+    async fn write_replica(
+        &self,
+        tenant: &str,
+        data: Arc<Vec<u8>>,
+        precision: Precision,
+        replica: ReplicationSet,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<()> {
+        self.writer
+            .write_to_replica(
+                tenant,
+                data,
+                precision,
+                &replica,
+                SpanRecorder::new(span_ctx.child_span(format!(
+                    "write to replica {} on node {}",
+                    replica.id, self.node_id
+                ))),
+            )
+            .await
     }
 
     async fn write_lines<'a>(

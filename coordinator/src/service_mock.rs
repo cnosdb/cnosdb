@@ -20,6 +20,7 @@ use tskv::reader::QueryOption;
 use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
+use crate::raft_manager::RaftNodesManager;
 use crate::service::CoordServiceMetrics;
 use crate::{
     Coordinator, SendableCoordinatorRecordBatchStream, VnodeManagerCmdType, VnodeSummarizerCmdType,
@@ -42,6 +43,10 @@ impl Coordinator for MockCoordinator {
 
     fn store_engine(&self) -> Option<EngineRef> {
         Some(Arc::new(MockEngine::default()))
+    }
+
+    fn raft_manager(&self) -> Arc<RaftNodesManager> {
+        todo!()
     }
 
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
@@ -122,6 +127,17 @@ impl Coordinator for MockCoordinator {
             ]);
         }
         Ok(vec![])
+    }
+
+    async fn write_replica(
+        &self,
+        tenant: &str,
+        data: Arc<Vec<u8>>,
+        precision: Precision,
+        replica: ReplicationSet,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<()> {
+        todo!()
     }
 
     async fn write_lines<'a>(
