@@ -1,6 +1,5 @@
 --#SORT=true
 --#SLEEP=100
---#DATABASE=describe_database
 DROP DATABASE IF EXISTS test1;
 
 DESCRIBE DATABASE test1;
@@ -20,7 +19,7 @@ DROP DATABASE IF EXISTS test1;
 DROP DATABASE IF EXISTS describe_database;
 
 CREATE DATABASE IF NOT EXISTS describe_database with ttl '10d';
-
+--#DATABASE=describe_database
 CREATE TABLE test0(
                       column1 BIGINT CODEC(DELTA),
                       column2 STRING CODEC(GZIP),

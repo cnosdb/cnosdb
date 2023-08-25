@@ -2,6 +2,10 @@
 200 OK
 
 
+-- EXECUTE SQL: alter database public set ttl '1000000d'; --
+200 OK
+
+
 -- WRITE LINE PROTOCOL --
 test_double_conv,ta=a1,tb=b1 fa=1,fb=2 3
 -- LINE PROTOCOL END --

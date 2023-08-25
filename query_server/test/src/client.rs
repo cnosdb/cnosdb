@@ -4,7 +4,7 @@ use reqwest::{Method, Request, Response, Url};
 use tokio::time::timeout;
 
 use crate::db_request::{
-    DBRequest, Instruction, LineProtocol, OpenTSDBJson, OpenTSDBProtocol, Query,
+    DBRequest, Instruction, LineProtocol, OpenTSDBJson, OpenTSDBProtocol, Query, ShellScript,
 };
 
 pub struct Client {
@@ -223,6 +223,20 @@ impl Client {
         }
     }
 
+    pub async fn execute_shell_script(&self, shell_script: &ShellScript, _: &mut String) {
+        println!("-- Start executing shell script\n");
+        if let Some(sleep) = shell_script.instruction().sleep() {
+            if sleep != 0 {
+                tokio::time::sleep(Duration::from_millis(sleep)).await;
+            }
+        }
+        let (code, output, error) =
+            run_script::run_script!(shell_script.as_str()).expect("run shell script failed");
+        println!("Exit Code: {}", code);
+        println!("Output: {}", output);
+        println!("Error: {}", error);
+    }
+
     pub async fn execute_db_request(
         &self,
         case_name: &str,
@@ -259,6 +273,9 @@ impl Client {
                 DBRequest::OpenTSDBJson(open_tsdb_json) => {
                     self.execute_opentsdb_json_write(open_tsdb_json, &mut buffer)
                         .await;
+                }
+                DBRequest::ShellScript(shell_script) => {
+                    self.execute_shell_script(shell_script, &mut buffer).await;
                 }
             }
         }
