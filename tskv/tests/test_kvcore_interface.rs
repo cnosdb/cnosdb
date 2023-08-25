@@ -34,7 +34,7 @@ mod tests {
             Some(rt) => rt,
             None => Arc::new(runtime::Runtime::new().unwrap()),
         };
-        let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let memory = Arc::new(GreedyMemoryPool::default());
         let meta_manager: MetaRef = rt.block_on(AdminMeta::new(global_config));
 
         rt.block_on(meta_manager.add_data_node()).unwrap();

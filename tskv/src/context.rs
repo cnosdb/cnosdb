@@ -119,6 +119,15 @@ impl GlobalSequenceContext {
     pub fn cloned(&self) -> HashMap<TseriesFamilyId, u64> {
         self.inner.read().tsf_seq_map.clone()
     }
+
+    pub fn vnode_min_seq(&self, vnode_id: TseriesFamilyId) -> u64 {
+        self.inner
+            .read()
+            .tsf_seq_map
+            .get(&vnode_id)
+            .copied()
+            .unwrap_or(0)
+    }
 }
 
 #[cfg(test)]

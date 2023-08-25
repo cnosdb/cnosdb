@@ -186,7 +186,7 @@ impl WalWriter {
         self.inner.sync().await
     }
 
-    pub async fn close(mut self) -> Result<usize> {
+    pub async fn close(&mut self) -> Result<usize> {
         trace::info!(
             "Closing wal with sequence: [{}, {})",
             self.min_sequence,

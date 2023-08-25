@@ -566,7 +566,7 @@ mod test {
             parse_nanos("2023-01-01 00:06:00"),
         ];
         #[rustfmt::skip]
-        let data_blocks = vec![
+            let data_blocks = vec![
             DataBlock::U64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::I64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::Str {
@@ -836,7 +836,7 @@ mod test {
             meta_manager,
             options.clone(),
             runtime.clone(),
-            Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024)),
+            Arc::new(GreedyMemoryPool::default()),
             Arc::new(MetricsRegister::default()),
         )
         .await

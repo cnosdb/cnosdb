@@ -19,6 +19,11 @@ pub struct GreedyMemoryPool {
     last_log_time: RwLock<Instant>,
 }
 
+impl Default for GreedyMemoryPool {
+    fn default() -> Self {
+        Self::new(1024 * 1024 * 1024)
+    }
+}
 impl GreedyMemoryPool {
     /// Allocate up to `limit` bytes
     pub fn new(pool_size: usize) -> Self {
