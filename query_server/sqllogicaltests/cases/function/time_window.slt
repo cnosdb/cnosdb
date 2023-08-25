@@ -77,13 +77,13 @@ statement error .*Coordinator: Meta request error: Error: create bucket unknown 
 INSERT time_window.err(TIME, f0, f1, t0, t1) VALUES('2262-04-11 23:47:16.854775807', 111, 444, 'tag11', 'tag21');
 
 # insert min timestamp
-statement error .*Coordinator: write expired time data not permit.*
+statement error .*create expired bucket.*
 INSERT time_window.err(TIME, f0, f1, t0, t1) VALUES('1677-09-21 00:12:44.0', 111, 444, 'tag11', 'tag21');
 
-statement error .*Coordinator: write expired time data not permit.*
+statement error .*create expired bucket.*
 INSERT time_window.err(TIME, f0, f1, t0, t1) VALUES('1688-09-21 00:12:44.0', 111, 444, 'tag11', 'tag21');
 
-statement error .*Coordinator: write expired time data not permit".*
+statement error .*create expired bucket".*
 INSERT time_window.err(TIME, f0, f1, t0, t1)
 VALUES
     ('1970-01-01T00:00:00', 111, 444, 'tag11', 'tag21'),

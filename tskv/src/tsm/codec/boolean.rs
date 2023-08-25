@@ -24,7 +24,6 @@ pub fn bool_bitpack_encode(
     src: &[bool],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear();
     if src.is_empty() {
         return Ok(());
     }

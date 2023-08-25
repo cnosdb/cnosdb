@@ -17,7 +17,7 @@ impl Parser {
         let mut ret: Vec<Line> = Vec::new();
         let mut pos = 0_usize;
         while let Some((mut line, offset)) = self.next_line(lines, pos)? {
-            line.sort_and_dedup();
+            line.sort_dedup_and_hash();
             ret.push(line);
             pos += offset;
         }
@@ -208,7 +208,7 @@ mod test {
         assert_eq!(
             *data_1,
             Line {
-                hash_id: 0,
+                hash_id: 15452971135245776244,
                 table: "ma",
                 tags: vec![("ta", "2\\\\"), ("tb", "1")],
                 fields: vec![
@@ -221,16 +221,15 @@ mod test {
         );
 
         let data_2 = data.get(1).unwrap();
-        assert_eq!(
-            *data_2,
-            Line {
-                hash_id: 0,
-                table: "mb",
-                tags: vec![("tb", "2"), ("tc", "abc")],
-                fields: vec![("fa", FieldValue::F64(1.3)), ("fc", FieldValue::F64(0.9))],
-                timestamp: -1
-            }
-        );
+        let mut line = Line {
+            hash_id: 0,
+            table: "mb",
+            tags: vec![("tb", "2"), ("tc", "abc")],
+            fields: vec![("fa", FieldValue::F64(1.3)), ("fc", FieldValue::F64(0.9))],
+            timestamp: -1,
+        };
+        line.init_hash_id();
+        assert_eq!(*data_2, line);
     }
 
     #[test]

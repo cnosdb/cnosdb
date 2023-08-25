@@ -434,6 +434,7 @@ impl Summary {
                     }
                 }
                 Err(Error::Eof) => break,
+                Err(Error::RecordFileHashCheckFailed { .. }) => continue,
                 Err(e) => {
                     return Err(e);
                 }
@@ -706,10 +707,9 @@ pub async fn print_summary_statistics(path: impl AsRef<Path>) {
                     }
                 }
             }
-            Err(err) => match err {
-                Error::Eof => break,
-                _ => panic!("Errors when read summary file: {}", err),
-            },
+            Err(Error::Eof) => break,
+            Err(Error::RecordFileHashCheckFailed { .. }) => continue,
+            Err(err) => panic!("Errors when read summary file: {}", err),
         }
         println!("============================================================");
     }

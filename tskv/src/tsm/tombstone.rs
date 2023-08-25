@@ -91,6 +91,7 @@ impl TsmTombstone {
             let data = match reader.read_record().await {
                 Ok(r) => r.data,
                 Err(Error::Eof) => break,
+                Err(Error::RecordFileHashCheckFailed { .. }) => continue,
                 Err(e) => return Err(e),
             };
             if data.len() < ENTRY_LEN {

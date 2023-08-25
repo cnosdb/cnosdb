@@ -19,7 +19,7 @@ impl Parser {
         let mut ret: Vec<Line> = Vec::new();
         let mut pos = 0_usize;
         while let Some((mut line, offset)) = self.next_line(lines, pos)? {
-            line.sort_and_dedup();
+            line.sort_dedup_and_hash();
             ret.push(line);
             pos += offset;
         }
@@ -111,7 +111,7 @@ impl Parser {
         let lines = lines.split("\r\n").collect::<Vec<&str>>();
         for line_raw in lines {
             if let Some(mut line) = self.next_tcp_line(line_raw)? {
-                line.sort_and_dedup();
+                line.sort_dedup_and_hash();
                 ret.push(line);
                 pos += line_raw.len() + 2;
             }

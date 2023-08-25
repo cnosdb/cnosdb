@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, LinkedList};
 use std::fmt::Display;
 use std::mem::size_of_val;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
+use flatbuffers::{ForwardsUOffset, Vector};
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
 use models::predicate::domain::TimeRange;
@@ -11,12 +12,11 @@ use models::schema::{timestamp_convert, Precision, TableColumn, TskvTableSchema}
 use models::utils::split_id;
 use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
 use parking_lot::RwLock;
-use protos::models as fb_models;
-use protos::models::FieldType;
+use protos::models::{Column, FieldType};
+use trace::error;
 use utils::bitset::ImmutBitSet;
 
 use crate::error::Result;
-use crate::Error::CommonError;
 use crate::{byte_utils, Error, TseriesFamilyId};
 
 #[derive(Debug, Clone)]
@@ -119,68 +119,138 @@ pub struct RowData {
 
 impl RowData {
     pub fn point_to_row_data(
-        p: fb_models::Point,
         schema: &TskvTableSchema,
         from_precision: Precision,
-        field_names: &[&str],
-        field_type: &[FieldType],
+        columns: &Vector<ForwardsUOffset<Column>>,
+        fields_idx: &[usize],
+        ts_idx: usize,
+        row_count: usize,
     ) -> Result<RowData> {
-        let fields = match p.fields() {
-            None => {
-                let mut fields = Vec::with_capacity(schema.field_num());
-                for _i in 0..fields.capacity() {
-                    fields.push(None);
-                }
-                fields
-            }
-            Some(fields_inner) => {
-                let field_nullbit_buffer = p.fields_nullbit().ok_or(Error::CommonError {
-                    reason: "field nullbit missing in point".to_string(),
-                })?;
-                let len = fields_inner.len();
-                let field_nullbit =
-                    ImmutBitSet::new_without_check(len, field_nullbit_buffer.bytes());
-                let fields_id = schema.fields_id();
-                let mut fields: Vec<Option<FieldVal>> = Vec::with_capacity(fields_id.len());
-                for _i in 0..fields.capacity() {
-                    fields.push(None);
-                }
-                for (idx, ((field, field_name), field_type)) in fields_inner
-                    .into_iter()
-                    .zip(field_names)
-                    .zip(field_type)
-                    .enumerate()
-                {
-                    let val = MiniVec::from(
-                        field
-                            .value()
-                            .ok_or(CommonError {
-                                reason: "field missing value".to_string(),
-                            })?
-                            .bytes(),
-                    );
-                    match schema.column(field_name) {
-                        None => {}
-                        Some(field) => match fields_id.get(&field.id) {
-                            None => {}
-                            Some(index) => {
-                                if !field_nullbit.get(idx) {
-                                    continue;
-                                }
-                                fields[*index] = Some(FieldVal::new(val, (*field_type).into()));
-                            }
-                        },
+        let mut has_fields = false;
+        let mut fields = vec![None; schema.field_num()];
+        let fields_id = schema.fields_id();
+        for field_id in fields_idx {
+            let column = columns.get(*field_id);
+            let column_name = column.name_ext()?;
+            let column_nullbit = column.nullbit_ext()?;
+            match column.field_type() {
+                FieldType::Integer => {
+                    let len = column.int_values_len()?;
+                    let column_nullbits =
+                        ImmutBitSet::new_without_check(len, column_nullbit.bytes());
+                    if !column_nullbits.get(row_count) {
+                        continue;
+                    }
+                    let val = column.int_values()?.get(row_count);
+                    match schema.column(column_name) {
+                        None => {
+                            error!("column {} not found in schema", column_name);
+                        }
+                        Some(column) => {
+                            let field_id = column.id;
+                            let field_idx = fields_id.get(&field_id).unwrap();
+                            fields[*field_idx] = Some(FieldVal::Integer(val));
+                            has_fields = true;
+                        }
                     }
                 }
-                fields
+                FieldType::Float => {
+                    let len = column.float_values_len()?;
+                    let column_nullbits =
+                        ImmutBitSet::new_without_check(len, column_nullbit.bytes());
+                    if !column_nullbits.get(row_count) {
+                        continue;
+                    }
+                    let val = column.float_values()?.get(row_count);
+                    match schema.column(column_name) {
+                        None => {
+                            error!("column {} not found in schema", column_name);
+                        }
+                        Some(column) => {
+                            let field_id = column.id;
+                            let field_idx = fields_id.get(&field_id).unwrap();
+                            fields[*field_idx] = Some(FieldVal::Float(val));
+                            has_fields = true;
+                        }
+                    }
+                }
+                FieldType::Unsigned => {
+                    let len = column.uint_values_len()?;
+                    let column_nullbits =
+                        ImmutBitSet::new_without_check(len, column_nullbit.bytes());
+                    if !column_nullbits.get(row_count) {
+                        continue;
+                    }
+                    let val = column.uint_values()?.get(row_count);
+                    match schema.column(column_name) {
+                        None => {
+                            error!("column {} not found in schema", column_name);
+                        }
+                        Some(column) => {
+                            let field_id = column.id;
+                            let field_idx = fields_id.get(&field_id).unwrap();
+                            fields[*field_idx] = Some(FieldVal::Unsigned(val));
+                            has_fields = true;
+                        }
+                    }
+                }
+                FieldType::Boolean => {
+                    let len = column.bool_values_len()?;
+                    let column_nullbits =
+                        ImmutBitSet::new_without_check(len, column_nullbit.bytes());
+                    if !column_nullbits.get(row_count) {
+                        continue;
+                    }
+                    let val = column.bool_values()?.get(row_count);
+                    match schema.column(column_name) {
+                        None => {
+                            error!("column {} not found in schema", column_name);
+                        }
+                        Some(column) => {
+                            let field_id = column.id;
+                            let field_idx = fields_id.get(&field_id).unwrap();
+                            fields[*field_idx] = Some(FieldVal::Boolean(val));
+                            has_fields = true;
+                        }
+                    }
+                }
+                FieldType::String => {
+                    let len = column.string_values_len()?;
+                    let column_nullbits =
+                        ImmutBitSet::new_without_check(len, column_nullbit.bytes());
+                    if !column_nullbits.get(row_count) {
+                        continue;
+                    }
+                    let val = column.string_values()?.get(row_count);
+                    match schema.column(column_name) {
+                        None => {
+                            error!("column {} not found in schema", column_name);
+                        }
+                        Some(column) => {
+                            let field_id = column.id;
+                            let field_idx = fields_id.get(&field_id).unwrap();
+                            fields[*field_idx] =
+                                Some(FieldVal::Bytes(MiniVec::from(val.as_bytes())));
+                            has_fields = true;
+                        }
+                    }
+                }
+                _ => {
+                    error!("unsupported field type");
+                }
             }
-        };
+        }
+
+        if !has_fields {
+            return Err(Error::InvalidPoint);
+        }
+
+        let ts_column = columns.get(ts_idx);
+        let ts = ts_column.int_values()?.get(row_count);
         let to_precision = schema.time_column_precision();
-        let ts = timestamp_convert(from_precision, to_precision, p.timestamp()).ok_or(
-            Error::CommonError {
-                reason: "timestamp overflow".to_string(),
-            },
-        )?;
+        let ts = timestamp_convert(from_precision, to_precision, ts).ok_or(Error::CommonError {
+            reason: "timestamp overflow".to_string(),
+        })?;
 
         Ok(RowData { ts, fields })
     }
@@ -207,7 +277,7 @@ impl RowData {
 pub struct RowGroup {
     pub schema: Arc<TskvTableSchema>,
     pub range: TimeRange,
-    pub rows: Vec<RowData>,
+    pub rows: LinkedList<RowData>,
     /// total size in stack and heap
     pub size: usize,
 }
@@ -216,7 +286,7 @@ pub struct RowGroup {
 pub struct SeriesData {
     pub series_id: SeriesId,
     pub range: TimeRange,
-    pub groups: Vec<RowGroup>,
+    pub groups: LinkedList<RowGroup>,
 }
 
 impl SeriesData {
@@ -227,7 +297,7 @@ impl SeriesData {
                 min_ts: i64::MAX,
                 max_ts: i64::MIN,
             },
-            groups: Vec::with_capacity(4),
+            groups: LinkedList::new(),
         }
     }
 
@@ -243,7 +313,7 @@ impl SeriesData {
             }
         }
 
-        self.groups.push(group);
+        self.groups.push_back(group);
     }
 
     pub fn delete_column(&mut self, column_id: ColumnId) {
@@ -290,8 +360,12 @@ impl SeriesData {
         }
 
         for item in self.groups.iter_mut() {
-            item.rows
-                .retain(|row| row.ts < range.min_ts || row.ts > range.max_ts);
+            item.rows = item
+                .rows
+                .iter()
+                .filter(|row| row.ts < range.min_ts || row.ts > range.max_ts)
+                .cloned()
+                .collect();
         }
     }
 
@@ -336,7 +410,7 @@ impl SeriesData {
         }
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, Arc<TskvTableSchema>, &Vec<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(SchemaId, Arc<TskvTableSchema>, &LinkedList<RowData>)> {
         self.groups
             .iter()
             .map(|g| (g.schema.schema_id, g.schema.clone(), &g.rows))
@@ -634,7 +708,7 @@ impl Display for DataType {
 }
 
 pub(crate) mod test {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, LinkedList};
     use std::mem::size_of;
     use std::sync::Arc;
 
@@ -653,7 +727,7 @@ pub(crate) mod test {
         time_range: (Timestamp, Timestamp),
         put_none: bool,
     ) {
-        let mut rows = Vec::new();
+        let mut rows = LinkedList::new();
         let mut size: usize = schema.size();
         for ts in time_range.0..=time_range.1 {
             let mut fields = Vec::new();
@@ -667,7 +741,7 @@ pub(crate) mod test {
                 }
             }
             size += 8;
-            rows.push(RowData { ts, fields });
+            rows.push_back(RowData { ts, fields });
         }
 
         schema.schema_id = schema_id;
@@ -713,6 +787,7 @@ pub(crate) mod test {
 
 #[cfg(test)]
 mod test_memcache {
+    use std::collections::LinkedList;
     use std::sync::Arc;
 
     use datafusion::arrow::datatypes::TimeUnit;
@@ -750,10 +825,10 @@ mod test_memcache {
         let row_group_1 = RowGroup {
             schema: Arc::new(schema_1),
             range: TimeRange::new(1, 3),
-            rows: vec![
+            rows: LinkedList::from([
                 RowData { ts: 1, fields: vec![Some(FieldVal::Float(1.0))] },
                 RowData { ts: 3, fields: vec![Some(FieldVal::Float(3.0))] },
-            ],
+            ]),
             size: 10,
         };
         mem_cache.write_group(sid, 1, row_group_1.clone()).unwrap();
@@ -765,7 +840,7 @@ mod test_memcache {
             assert_eq!(sid, series_data.series_id);
             assert_eq!(TimeRange::new(1, 3), series_data.range);
             assert_eq!(1, series_data.groups.len());
-            assert_eq!(row_group_1, series_data.groups[0]);
+            assert_eq!(row_group_1, series_data.groups.front().unwrap().clone());
         }
 
         #[rustfmt::skip]
@@ -784,10 +859,10 @@ mod test_memcache {
         let row_group_2 = RowGroup {
             schema: Arc::new(schema_2),
             range: TimeRange::new(3, 5),
-            rows: vec![
+            rows: LinkedList::from([
                 RowData { ts: 3, fields: vec![None, Some(FieldVal::Integer(3))] },
                 RowData { ts: 5, fields: vec![Some(FieldVal::Float(5.0)), Some(FieldVal::Integer(5))] }
-            ],
+            ]),
             size: 10,
         };
         mem_cache.write_group(sid, 2, row_group_2.clone()).unwrap();
@@ -799,7 +874,7 @@ mod test_memcache {
             assert_eq!(sid, series_data.series_id);
             assert_eq!(TimeRange::new(1, 5), series_data.range);
             assert_eq!(2, series_data.groups.len());
-            assert_eq!(row_group_2, series_data.groups[1]);
+            assert_eq!(row_group_2, series_data.groups.back().unwrap().clone());
         }
     }
 }
