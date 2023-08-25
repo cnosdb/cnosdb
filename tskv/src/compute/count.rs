@@ -419,7 +419,7 @@ mod test {
         let (_, files) = runtime.block_on(write_data_blocks_to_column_file(&dir, data));
         let version =
             build_version_by_column_files(opt.storage.clone(), database, ts_family_id, files);
-        let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         let test_helper = TestHelper {
             runtime,
             super_version: Arc::new(SuperVersion::new(
@@ -464,7 +464,7 @@ mod test {
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
 
-        let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         #[rustfmt::skip]
         let cache_group = {
             let caches = vec![MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool)];
@@ -552,7 +552,7 @@ mod test {
             ]),
         ];
 
-        let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         #[rustfmt::skip]
         let cache_group = {
             let caches = vec![MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool)];

@@ -6022,6 +6022,7 @@ name = "utils"
 version = "2.3.2"
 dependencies = [
  "async-backtrace",
+ "futures",
  "libc",
  "pprof",
  "rand",
