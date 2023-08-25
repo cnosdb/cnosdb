@@ -1,3 +1,7 @@
+-- EXECUTE SQL: drop table if exists test_double_conv; --
+200 OK
+
+
 -- WRITE LINE PROTOCOL --
 test_double_conv,ta=a1,tb=b1 fa=1,fb=2 3
 -- LINE PROTOCOL END --

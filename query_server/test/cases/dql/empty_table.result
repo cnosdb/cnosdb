@@ -1,4 +1,12 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS empty_table; --
+200 OK
+
+
 -- EXECUTE SQL: CREATE DATABASE empty_table; --
+200 OK
+
+
+-- EXECUTE SQL: DROP TABLE IF EXISTS empty; --
 200 OK
 
 
@@ -8,5 +16,4 @@
 
 -- EXECUTE SQL: SELECT * FROM empty; --
 200 OK
-
 

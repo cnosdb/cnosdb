@@ -17,6 +17,8 @@ DROP DATABASE IF EXISTS describetest2;
 
 DROP DATABASE IF EXISTS test1;
 
+DROP DATABASE IF EXISTS describe_database;
+
 CREATE DATABASE IF NOT EXISTS describe_database with ttl '10d';
 
 CREATE TABLE test0(
