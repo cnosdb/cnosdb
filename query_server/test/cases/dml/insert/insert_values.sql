@@ -2,6 +2,8 @@
 --#SLEEP=100
 -- normal
 -- public.test(time i64, ta utf8, tb utf8, fa , fb)
+
+drop table if exists public.test;
 -- insert all columns with single record
 --#LP_BEGIN
 test,ta=a1,tb=b1 fa=1,fb=2 3
@@ -48,6 +50,8 @@ select fa from public.test order by fa, fb;
 -- error
 -- query duplicate column
 select time, ta, fa, * from public.test order by fa, fb;
+
+drop table if exists air;
 
 CREATE TABLE air (
      visibility DOUBLE,

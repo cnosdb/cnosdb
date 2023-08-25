@@ -39,6 +39,9 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     println!("{db_options:?}");
 
     for (path, relative_path) in read_test_files(&options) {
+        if !relative_path.to_string_lossy().ends_with("slt") {
+            continue;
+        }
         if options.complete_mode {
             os::run_complete_file(&path, relative_path, db_options.clone()).await?;
         } else {
