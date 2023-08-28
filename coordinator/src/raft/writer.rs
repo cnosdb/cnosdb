@@ -17,25 +17,22 @@ use crate::errors::*;
 
 pub struct RaftWriter {
     meta: MetaRef,
-    node_id: u64,
-    timeout_ms: u64,
+    config: config::Config,
     kv_inst: Option<EngineRef>,
     raft_manager: Arc<RaftNodesManager>,
 }
 
 impl RaftWriter {
     pub fn new(
-        node_id: u64,
         meta: MetaRef,
-        timeout_ms: u64,
+        config: config::Config,
         kv_inst: Option<EngineRef>,
         raft_manager: Arc<RaftNodesManager>,
     ) -> Self {
         Self {
             meta,
-            node_id,
+            config,
             kv_inst,
-            timeout_ms,
             raft_manager,
         }
     }
@@ -48,8 +45,9 @@ impl RaftWriter {
         replica: &ReplicationSet,
         span_recorder: SpanRecorder,
     ) -> CoordinatorResult<()> {
+        let node_id = self.config.node_basic.node_id;
         let leader_id = replica.leader_node_id();
-        if leader_id == self.node_id && self.kv_inst.is_some() {
+        if leader_id == node_id && self.kv_inst.is_some() {
             let span_recorder = span_recorder.child("write to local node or forward");
             let result = self
                 .write_to_local_or_forward(
@@ -61,7 +59,7 @@ impl RaftWriter {
                 )
                 .await;
 
-            info!("write to local {} {:?} {:?}", self.node_id, replica, result);
+            info!("write to local {} {:?} {:?}", node_id, replica, result);
 
             result
         } else {
@@ -127,7 +125,8 @@ impl RaftWriter {
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         let channel = self.meta.get_node_conn(leader_id).await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_millis(self.timeout_ms));
+        let timeout = self.config.query.write_timeout_ms;
+        let timeout_channel = Timeout::new(channel, Duration::from_millis(timeout));
         let mut client = TskvServiceClient::<Timeout<transport::Channel>>::new(timeout_channel);
 
         let mut cmd = tonic::Request::new(WriteVnodeRequest {

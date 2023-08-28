@@ -133,9 +133,8 @@ impl CoordService {
 
         let raft_manager = Arc::new(RaftNodesManager::new(config.clone(), meta.clone()));
         let writer = Arc::new(RaftWriter::new(
-            node_id,
             meta.clone(),
-            config.query.write_timeout_ms,
+            config.clone(),
             kv_inst.clone(),
             raft_manager.clone(),
         ));
