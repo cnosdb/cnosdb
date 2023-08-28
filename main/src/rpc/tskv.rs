@@ -366,7 +366,7 @@ impl TskvService for TskvServiceImpl {
         if let Err(err) = self
             .coord
             .raft_manager()
-            .open_raft_node(inner.vnode_id, inner.replica_id)
+            .exec_open_raft_node(inner.vnode_id, inner.replica_id)
             .await
         {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())

@@ -26,7 +26,6 @@ use models::record_batch_decode;
 use models::schema::{
     timestamp_convert, ColumnType, Precision, TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
 };
-use models::utils::build_address;
 use protocol_parser::lines_convert::{
     arrow_array_to_points, line_to_batches, mutable_batches_to_point,
 };
@@ -131,9 +130,8 @@ impl CoordService {
         metrics_register: Arc<MetricsRegister>,
     ) -> Arc<Self> {
         let node_id = config.node_basic.node_id;
-        let grp_addr = build_address(config.host.clone(), config.cluster.grpc_listen_port);
 
-        let raft_manager = Arc::new(RaftNodesManager::new(node_id, grp_addr, meta.clone()));
+        let raft_manager = Arc::new(RaftNodesManager::new(config.clone(), meta.clone()));
         let writer = Arc::new(RaftWriter::new(
             node_id,
             meta.clone(),

@@ -53,7 +53,8 @@ impl DynamicReplicaSelectioner {
 
         let mut selected_replicas = Vec::new();
         for (i, replicas) in selected_shards.into_iter().enumerate() {
-            selected_replicas.push(ReplicationSet::new(ids[i], replicas));
+            selected_replicas.push(ReplicationSet::new(ids[i], 0, 0, replicas));
+            //todo! fix leader info
         }
 
         Ok(selected_replicas)

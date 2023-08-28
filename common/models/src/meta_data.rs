@@ -96,20 +96,32 @@ impl BucketInfo {
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ReplicationSet {
     pub id: ReplicationSetId,
+    pub leader_node_id: NodeId,
+    pub leader_vnode_id: VnodeId,
     pub vnodes: Vec<VnodeInfo>,
 }
 
 impl ReplicationSet {
-    pub fn new(id: ReplicationSetId, vnodes: Vec<VnodeInfo>) -> Self {
-        Self { id, vnodes }
+    pub fn new(
+        id: ReplicationSetId,
+        leader_node_id: NodeId,
+        leader_vnode_id: VnodeId,
+        vnodes: Vec<VnodeInfo>,
+    ) -> Self {
+        Self {
+            id,
+            vnodes,
+            leader_node_id,
+            leader_vnode_id,
+        }
     }
 
     pub fn leader_node_id(&self) -> NodeId {
-        todo!()
+        self.leader_node_id
     }
 
     pub fn leader_vnode_id(&self) -> VnodeId {
-        todo!()
+        self.leader_vnode_id
     }
 }
 
@@ -314,6 +326,8 @@ pub fn allocation_replication_set(
         let mut repl_set = ReplicationSet {
             id: incr_id,
             vnodes: vec![],
+            leader_node_id: 0,
+            leader_vnode_id: 0,
         };
         incr_id += 1;
 
@@ -325,6 +339,8 @@ pub fn allocation_replication_set(
             incr_id += 1;
             index += 1;
         }
+        repl_set.leader_vnode_id = repl_set.vnodes[0].id;
+        repl_set.leader_node_id = repl_set.vnodes[0].node_id;
 
         group.push(repl_set);
     }

@@ -62,6 +62,8 @@ impl Coordinator for MockCoordinator {
             return Ok(vec![
                 ReplicationSet::new(
                     0,
+                    0,
+                    0,
                     vec![VnodeInfo {
                         id: 0,
                         node_id: 0,
@@ -69,6 +71,8 @@ impl Coordinator for MockCoordinator {
                     }],
                 ),
                 ReplicationSet::new(
+                    1,
+                    0,
                     1,
                     vec![VnodeInfo {
                         id: 1,
@@ -78,6 +82,8 @@ impl Coordinator for MockCoordinator {
                 ),
                 ReplicationSet::new(
                     2,
+                    0,
+                    2,
                     vec![VnodeInfo {
                         id: 2,
                         node_id: 0,
@@ -85,6 +91,8 @@ impl Coordinator for MockCoordinator {
                     }],
                 ),
                 ReplicationSet::new(
+                    3,
+                    0,
                     3,
                     vec![VnodeInfo {
                         id: 3,
@@ -94,6 +102,8 @@ impl Coordinator for MockCoordinator {
                 ),
                 ReplicationSet::new(
                     4,
+                    0,
+                    4,
                     vec![VnodeInfo {
                         id: 4,
                         node_id: 0,
@@ -101,6 +111,8 @@ impl Coordinator for MockCoordinator {
                     }],
                 ),
                 ReplicationSet::new(
+                    5,
+                    0,
                     5,
                     vec![VnodeInfo {
                         id: 5,
@@ -110,6 +122,8 @@ impl Coordinator for MockCoordinator {
                 ),
                 ReplicationSet::new(
                     6,
+                    0,
+                    6,
                     vec![VnodeInfo {
                         id: 6,
                         node_id: 0,
@@ -117,6 +131,8 @@ impl Coordinator for MockCoordinator {
                     }],
                 ),
                 ReplicationSet::new(
+                    7,
+                    0,
                     7,
                     vec![VnodeInfo {
                         id: 7,
