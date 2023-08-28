@@ -12,8 +12,8 @@ use tower::timeout::Timeout;
 use trace::{debug, info, SpanContext, SpanRecorder};
 use tskv::EngineRef;
 
+use super::manager::RaftNodesManager;
 use crate::errors::*;
-use crate::raft_manager::RaftNodesManager;
 
 pub struct RaftWriter {
     meta: MetaRef,

@@ -20,7 +20,7 @@ use tskv::reader::QueryOption;
 use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
-use crate::raft_manager::RaftNodesManager;
+use crate::raft::manager::RaftNodesManager;
 use crate::service::CoordServiceMetrics;
 use crate::{
     Coordinator, SendableCoordinatorRecordBatchStream, VnodeManagerCmdType, VnodeSummarizerCmdType,

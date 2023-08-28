@@ -42,8 +42,8 @@ use utils::BkdrHasher;
 
 use crate::errors::*;
 use crate::metrics::LPReporter;
-use crate::raft_manager::RaftNodesManager;
-use crate::raft_writer::RaftWriter;
+use crate::raft::manager::RaftNodesManager;
+use crate::raft::writer::RaftWriter;
 use crate::reader::replica_selection::{DynamicReplicaSelectioner, DynamicReplicaSelectionerRef};
 use crate::reader::table_scan::opener::TemporaryTableScanOpener;
 use crate::reader::tag_scan::opener::TemporaryTagScanOpener;
