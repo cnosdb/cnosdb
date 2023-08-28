@@ -4,6 +4,7 @@ mod first;
 mod gauge;
 mod last;
 mod mode;
+mod max_n;
 mod sample;
 mod state_agg;
 
@@ -26,6 +27,7 @@ pub const LAST_UDAF_NAME: &str = "last";
 pub const MODE_UDAF_NAME: &str = "mode";
 pub use gauge::GaugeData;
 pub use state_agg::StateAggData;
+pub const MAX_N_UDAF_NAME: &str = "max_n";
 
 pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...
@@ -37,6 +39,7 @@ pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<
     first::register_udaf(func_manager)?;
     last::register_udaf(func_manager)?;
     mode::register_udaf(func_manager)?;
+    max_n::register_udafs(func_manager)?;
     Ok(())
 }
 

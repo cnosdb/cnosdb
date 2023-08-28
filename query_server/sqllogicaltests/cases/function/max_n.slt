@@ -1,0 +1,30 @@
+include ./setup.slt
+
+##########
+## Query
+##########
+
+query T
+select max_n(time, 3) from func_tbl;
+----
+[1999-12-31T01:00:00.035, 1999-12-31T00:10:00.030, 1999-12-31T00:10:00.025]
+
+query T
+select max_n(f0, 3) from func_tbl;
+----
+[555, 444, 444]
+
+query T
+select max_n(f1, 3) from func_tbl;
+----
+[555, 555, 444]
+
+query T
+select max_n(f2, 4) from func_tbl;
+----
+[555, 444, 444, 333]
+
+query T
+select max_n(f3, 5) from func_tbl;
+----
+[5.4, 5.3, 5.3, 4.3, 3.4]

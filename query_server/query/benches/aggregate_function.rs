@@ -34,6 +34,17 @@ fn criterion_benchmark(c: &mut Criterion) {
             })
         });
     }
+    
+    for i in [10, 1000, 100000] {
+        c.bench_function(&format!("aggregate_query_no_group_by_max_n_{i}"), |b| {
+            b.iter(|| {
+                data_utils::query(ctx.clone(), &format!(
+                    "SELECT max_n(f64, {i}) \
+                        FROM t"
+                ))
+            })
+        });
+    }
 
     let mut gauge_agg_group = c.benchmark_group("gauge_agg");
     gauge_agg_group
