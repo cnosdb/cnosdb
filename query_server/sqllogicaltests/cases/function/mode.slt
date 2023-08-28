@@ -1,0 +1,52 @@
+include ./setup.slt
+
+# prepare data
+statement ok
+INSERT func_tbl(TIME, f0, f1, t0, t1)
+VALUES
+    ('1999-12-31 01:10:00.025', 111, null, 'tag11', 'tag22'),
+    ('1999-12-31 01:10:00.030', 333, null, 'tag12', 'tag23'),
+    ('1999-12-31 01:10:00.031', 555, 555, 'tag14', 'tag23'),
+    ('1999-12-31 02:00:00.035', null, 555, 'tag14', 'tag24');
+
+##########
+## Query
+##########
+
+query 
+select * from func_tbl order by time;
+----
+1999-12-31T00:00:00 tag11 tag21 NULL 111 444
+1999-12-31T00:00:00.005 tag12 tag22 NULL 222 444
+1999-12-31T00:00:00.010 tag12 tag23 NULL 333 222
+1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
+1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
+1999-12-31T00:10:00.025 tag11 tag22 NULL 333 555
+1999-12-31T00:10:00.030 tag11 tag23 NULL 444 333
+1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+1999-12-31T01:10:00.025 tag11 tag22 NULL 111 NULL
+1999-12-31T01:10:00.030 tag12 tag23 NULL 333 NULL
+1999-12-31T01:10:00.031 tag14 tag23 NULL 555 555
+1999-12-31T02:00:00.035 tag14 tag24 NULL NULL 555
+
+query 
+select mode(f1) from func_tbl;
+----
+555
+
+query 
+select mode(f0) from func_tbl;
+----
+333
+
+query 
+select mode(f0) from func_tbl group by t0 order by t0;
+----
+111
+333
+555
+
+query 
+select mode(null);
+----
+NULL

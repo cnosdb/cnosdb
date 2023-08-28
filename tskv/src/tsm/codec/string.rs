@@ -31,7 +31,6 @@ pub fn str_snappy_encode(
     src: &[&[u8]],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear(); // reset buffer
     if src.is_empty() {
         return Ok(());
     }
@@ -93,7 +92,6 @@ pub fn str_zstd_encode(
     src: &[&[u8]],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear(); // reset buffer
     if src.is_empty() {
         return Ok(());
     }
@@ -114,7 +112,6 @@ pub fn str_gzip_encode(
     src: &[&[u8]],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear(); // reset buffer
     if src.is_empty() {
         return Ok(());
     }
@@ -138,7 +135,6 @@ pub fn str_bzip_encode(
     src: &[&[u8]],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear(); // reset buffer
     if src.is_empty() {
         return Ok(());
     }
@@ -162,7 +158,6 @@ pub fn str_zlib_encode(
     src: &[&[u8]],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear(); // reset buffer
     if src.is_empty() {
         return Ok(());
     }
@@ -184,7 +179,6 @@ pub fn str_without_compress_encode(
     src: &[&[u8]],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear(); // reset buffer
     if src.is_empty() {
         return Ok(());
     }

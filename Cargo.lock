@@ -1860,6 +1860,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
+name = "dunce"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56ce8c6da7551ec6c462cbaf3bfbc75131ebbfa1c944aeaa9dab51ca1c5f0c3b"
+
+[[package]]
 name = "duration-str"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2143,6 +2149,16 @@ checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
 dependencies = [
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "fsio"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dad0ce30be0cc441b325c5d705c8b613a0ca0d92b6a8953d41bd236dc09a36d0"
+dependencies = [
+ "dunce",
+ "rand",
 ]
 
 [[package]]
@@ -4216,8 +4232,11 @@ version = "2.3.2"
 dependencies = [
  "async-backtrace",
  "bytes",
+ "datafusion",
  "flatbuffers 22.12.6",
+ "lazy_static",
  "models",
+ "parking_lot 0.12.1",
  "protos",
  "serde",
  "snafu",
@@ -4670,6 +4689,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "run_script"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "829f98fdc58d78989dd9af83be28bc15c94a7d77f9ecdb54abbbc0b1829ba9c7"
+dependencies = [
+ "fsio",
+]
+
+[[package]]
 name = "rust_decimal"
 version = "1.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5118,6 +5146,7 @@ dependencies = [
  "meta",
  "models",
  "object_store",
+ "protocol_parser",
  "protos",
  "rand",
  "serde",
@@ -5405,6 +5434,7 @@ dependencies = [
  "lazy_static",
  "nom",
  "reqwest",
+ "run_script",
  "serde",
  "snafu",
  "tokio",
@@ -5943,7 +5973,6 @@ name = "tskv"
 version = "2.3.2"
 dependencies = [
  "async-backtrace",
- "async-recursion",
  "async-trait",
  "bincode",
  "blake3",

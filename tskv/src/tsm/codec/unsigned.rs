@@ -42,7 +42,6 @@ pub fn u64_zigzag_simple8b_decode(
     }
     let mut signed_results = vec![];
     super::integer::i64_zigzag_simple8b_decode(src, &mut signed_results)?;
-    dst.clear();
     dst.reserve_exact(signed_results.len() - dst.capacity());
     for s in signed_results {
         dst.push(s as u64);
@@ -59,7 +58,6 @@ pub fn u64_q_compress_decode(
     }
     let mut signed_results = vec![];
     super::integer::i64_q_compress_decode(src, &mut signed_results)?;
-    dst.clear();
     dst.reserve_exact(signed_results.len() - dst.capacity());
     for s in signed_results {
         dst.push(s as u64);
@@ -76,7 +74,6 @@ pub fn u64_without_compress_decode(
     }
     let mut signed_results = vec![];
     super::integer::i64_without_compress_decode(src, &mut signed_results)?;
-    dst.clear();
     dst.reserve_exact(signed_results.len() - dst.capacity());
     for s in signed_results {
         dst.push(s as u64);

@@ -1,9 +1,10 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
+use models::oid::Identifier;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropGlobalObject, GlobalObjectType};
 use spi::{QueryError, Result};
-use trace::debug;
+use trace::{debug, warn};
 
 use super::DDLDefinitionTask;
 
@@ -55,18 +56,41 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 //     name: &str
                 // ) -> Result<bool>;
                 debug!("Drop tenant {}", name);
-                let success = meta.drop_tenant(name).await?;
-                // .context(MetaSnafu)?;
 
-                if let (false, false) = (if_exist, success) {
-                    return Err(QueryError::Meta {
-                        source: MetaError::TenantNotFound {
-                            tenant: name.to_string(),
-                        },
-                    });
+                match meta.tenant_meta(name).await {
+                    Some(tm) => {
+                        // drop role in the tenant
+                        let all_roles = tm.custom_roles().await?;
+                        for role in all_roles {
+                            if !tm.drop_custom_role(role.name()).await? {
+                                warn!("drop role {} failed.", role.name());
+                            }
+                        }
+
+                        // drop database in the tenant
+                        let all_dbs = tm.list_databases()?;
+                        for db_name in all_dbs {
+                            if !tm.drop_db(&db_name).await? {
+                                warn!("drop database {} failed.", db_name);
+                            }
+                        }
+
+                        // drop tenant metadata
+                        meta.drop_tenant(name).await?;
+                        Ok(Output::Nil(()))
+                    }
+                    None => {
+                        if !if_exist {
+                            return Err(QueryError::Meta {
+                                source: MetaError::TenantNotFound {
+                                    tenant: name.to_string(),
+                                },
+                            });
+                        } else {
+                            Ok(Output::Nil(()))
+                        }
+                    }
                 }
-
-                Ok(Output::Nil(()))
             }
         }
     }

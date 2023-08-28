@@ -304,11 +304,55 @@ impl OpenTSDBJson {
 }
 
 #[derive(Clone, Debug)]
+pub struct ShellScript {
+    instruction: Instruction,
+    lines: String,
+}
+
+impl ShellScript {
+    pub fn as_str(&self) -> &str {
+        self.lines.as_str()
+    }
+    pub fn instruction(&self) -> &Instruction {
+        &self.instruction
+    }
+}
+
+pub struct ShellScriptBuild {
+    lines: String,
+}
+
+impl ShellScriptBuild {
+    pub fn finish(self, instruction: Instruction) -> ShellScript {
+        ShellScript {
+            instruction,
+            lines: self.lines,
+        }
+    }
+
+    pub fn new() -> ShellScriptBuild {
+        ShellScriptBuild {
+            lines: String::new(),
+        }
+    }
+
+    pub fn push(&mut self, line: &str) {
+        self.lines.push_str(line);
+        self.lines.push('\n');
+    }
+
+    pub fn finished(&self) -> bool {
+        self.lines.is_empty()
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum DBRequest {
     Query(Query),
     LineProtocol(LineProtocol),
     OpenTSDBProtocol(OpenTSDBProtocol),
     OpenTSDBJson(OpenTSDBJson),
+    ShellScript(ShellScript),
 }
 
 impl DBRequest {
@@ -320,10 +364,12 @@ impl DBRequest {
         let mut parsing_line_protocol = false;
         let mut parsing_opentsdb_protocol = false;
         let mut parsing_opentsdb_json = false;
+        let mut parsing_shell_script = false;
 
         let mut line_protocol_build = LineProtocolBuild::new();
         let mut open_tsdb_protocol_build = OpenTSDBProtocolBuild::new();
         let mut open_tsdb_json_build = OpenTSDBJsonBuild::new();
+        let mut shell_script_build = ShellScriptBuild::new();
 
         for line in lines.lines() {
             let line = line.trim();
@@ -371,6 +417,20 @@ impl DBRequest {
                 continue;
             }
 
+            if line.starts_with("--#SHELL_SCRIPT_BEGIN") {
+                parsing_shell_script = true;
+                continue;
+            }
+
+            if line.starts_with("--#SHELL_SCRIPT_END") {
+                parsing_shell_script = false;
+                requests.push(DBRequest::ShellScript(
+                    shell_script_build.finish(instruction.clone()),
+                ));
+                shell_script_build = ShellScriptBuild::new();
+                continue;
+            }
+
             if line.starts_with("--") {
                 instruction.parse_and_change(line);
                 continue;
@@ -382,6 +442,8 @@ impl DBRequest {
                 open_tsdb_protocol_build.push(line);
             } else if parsing_opentsdb_json {
                 open_tsdb_json_build.push(line);
+            } else if parsing_shell_script {
+                shell_script_build.push(line);
             } else {
                 query_build.push_str(line);
                 if line.ends_with(';') {
@@ -409,6 +471,11 @@ impl DBRequest {
         if !open_tsdb_json_build.finished() {
             let open_tsdb_json = open_tsdb_json_build.finish(instruction.clone());
             requests.push(DBRequest::OpenTSDBJson(open_tsdb_json));
+        }
+
+        if !shell_script_build.finished() {
+            let shell_script = shell_script_build.finish(instruction.clone());
+            requests.push(DBRequest::ShellScript(shell_script));
         }
 
         requests

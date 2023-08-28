@@ -192,8 +192,8 @@ impl WalWriter {
             self.min_sequence,
             self.max_sequence
         );
-        let footer = build_footer(self.min_sequence, self.max_sequence);
-        let size = self.inner.write_footer(footer).await?;
+        let mut footer = build_footer(self.min_sequence, self.max_sequence);
+        let size = self.inner.write_footer(&mut footer).await?;
         self.inner.close().await?;
         Ok(size)
     }

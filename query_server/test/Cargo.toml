@@ -17,6 +17,7 @@ tokio = { workspace = true, features = ["full", "tracing"] }
 toml = { workspace = true }
 walkdir = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
+run_script = { workspace = true }
 
 [features]
 default = []

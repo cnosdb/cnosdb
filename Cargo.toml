@@ -87,7 +87,11 @@ os_info = { version = "3" }
 parking_lot = { version = "0.12" }
 paste = "1.0"
 pin-project = "1.0"
-pprof = { version = "0.11.0", features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
+pprof = { version = "0.11.0", features = [
+    "flamegraph",
+    "protobuf-codec",
+    "frame-pointer",
+] }
 prost = "0.11.0"
 prost-build = "0.11.0"
 prost-types = { version = "0.11.2" }
@@ -112,7 +116,11 @@ sys-info = "0.9.1"
 sysinfo = "0.29.4"
 tempfile = "3"
 tikv-jemalloc-ctl = "0.5"
-tikv-jemalloc-sys = { version = "0.5", features = ["stats", "profiling", "unprefixed_malloc_on_supported_platforms"] }
+tikv-jemalloc-sys = { version = "0.5", features = [
+    "stats",
+    "profiling",
+    "unprefixed_malloc_on_supported_platforms",
+] }
 tikv-jemallocator = "0.5.0"
 time = { version = "0.3.7" }
 tokio = { version = "1.21" }
@@ -145,6 +153,7 @@ dateparser = "0.1.7"
 heed = "0.11.0"
 heed-traits = "0.8.0"
 http-body = "0.4.5"
+run_script = "0.10.1"
 
 [workspace.package]
 edition = "2021"

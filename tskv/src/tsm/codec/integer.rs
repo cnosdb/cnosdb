@@ -44,7 +44,6 @@ pub fn i64_zigzag_simple8b_encode(
     src: &[i64],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear(); // reset buffer.
     if src.is_empty() {
         return Ok(());
     }
