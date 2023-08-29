@@ -1,11 +1,11 @@
 -- EXECUTE SQL: DESCRIBE DATABASE usage_schema; --
 200 OK
-TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
+ttl,shard,vnode_duration,replica,precision
 INF,1,365 Days,1,NS
 
 -- EXECUTE SQL: DESCRIBE TABLE vnode_disk_storage; --
 200 OK
-COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,COMPRESSION_CODEC
+column_name,data_type,column_type,compression_codec
 time,TIMESTAMP(NANOSECOND),TIME,DEFAULT
 database,STRING,TAG,DEFAULT
 node_id,STRING,TAG,DEFAULT
