@@ -13,7 +13,7 @@
 
 -- EXECUTE SQL: DESCRIBE DATABASE test1; --
 200 OK
-TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
+ttl,shard,vnode_duration,replica,precision
 INF,1,365 Days,1,NS
 
 -- EXECUTE SQL: CREATE DATABASE IF NOT EXISTS describetest2; --
@@ -22,7 +22,7 @@ INF,1,365 Days,1,NS
 
 -- EXECUTE SQL: DESCRIBE DATABASE describetest2; --
 200 OK
-TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
+ttl,shard,vnode_duration,replica,precision
 INF,1,365 Days,1,NS
 
 -- EXECUTE SQL: DROP DATABASE IF EXISTS describetest2; --
