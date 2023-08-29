@@ -660,11 +660,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let projections = vec![
-            col(DATABASES_TTL).alias(DATABASES_TTL.to_uppercase()),
-            col(DATABASES_SHARD).alias(DATABASES_SHARD.to_uppercase()),
-            col(DATABASES_VNODE_DURATION).alias(DATABASES_VNODE_DURATION.to_uppercase()),
-            col(DATABASES_REPLICA).alias(DATABASES_REPLICA.to_uppercase()),
-            col(DATABASES_PRECISION).alias(DATABASES_PRECISION.to_uppercase()),
+            col(DATABASES_TTL),
+            col(DATABASES_SHARD),
+            col(DATABASES_VNODE_DURATION),
+            col(DATABASES_REPLICA),
+            col(DATABASES_PRECISION),
         ];
 
         let database_name = normalize_ident(statement.database_name);
@@ -707,10 +707,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             .database_table_exist(database_name.as_str(), Some(&table_name))?;
 
         let projections = vec![
-            col(COLUMNS_COLUMN_NAME).alias(COLUMNS_COLUMN_NAME.to_uppercase()),
-            col(COLUMNS_DATA_TYPE).alias(COLUMNS_DATA_TYPE.to_uppercase()),
-            col(COLUMNS_COLUMN_TYPE).alias(COLUMNS_COLUMN_TYPE.to_uppercase()),
-            col(COLUMNS_COMPRESSION_CODEC).alias(COLUMNS_COMPRESSION_CODEC.to_uppercase()),
+            col(COLUMNS_COLUMN_NAME),
+            col(COLUMNS_DATA_TYPE),
+            col(COLUMNS_COLUMN_TYPE),
+            col(COLUMNS_COMPRESSION_CODEC),
         ];
 
         let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_COLUMNS);
@@ -848,8 +848,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     }
 
     fn show_databases_to_plan(&self, session: &SessionCtx) -> Result<PlanWithPrivileges> {
-        let projections =
-            vec![col(DATABASES_DATABASE_NAME).alias(DATABASES_DATABASE_NAME.to_uppercase())];
+        let projections = vec![col(DATABASES_DATABASE_NAME)];
         let sorts = vec![col(DATABASES_DATABASE_NAME).sort(true, true)];
 
         let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_DATABASES);
@@ -883,7 +882,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let database_name = session.default_database();
         let db_name = database.map(normalize_ident);
 
-        let projections = vec![col(TABLES_TABLE_NAME).alias(TABLES_TABLE_NAME.to_uppercase())];
+        let projections = vec![col(TABLES_TABLE_NAME)];
         let sorts = vec![col(TABLES_TABLE_NAME).sort(true, true)];
 
         let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_TABLES);
