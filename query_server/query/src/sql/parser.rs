@@ -1506,7 +1506,7 @@ impl<'a> ExtParser<'a> {
     // parse: ident data_type [CODEC(encoding_type)]
     fn parse_cnos_field(&mut self) -> Result<ColumnOption, ParserError> {
         let name = self.parser.parse_identifier()?;
-        let column_type = self.parse_column_type()?;
+        let column_type = self.parser.parse_data_type()?;
         let encoding = if self.parse_cnos_keyword(CnosKeyWord::CODEC) {
             Some(self.parse_codec_type()?)
         } else {
@@ -1552,26 +1552,6 @@ impl<'a> ExtParser<'a> {
         all_columns.append(&mut field_columns);
 
         Ok(all_columns)
-    }
-    fn parse_column_type(&mut self) -> Result<DataType> {
-        let TokenWithLocation { token, location: _ } = self.parser.next_token();
-        match token {
-            Token::Word(w) => match w.keyword {
-                Keyword::TIMESTAMP => parser_err!(format!("already have timestamp column")),
-                Keyword::BIGINT => {
-                    if self.parser.parse_keyword(Keyword::UNSIGNED) {
-                        Ok(DataType::UnsignedBigInt(None))
-                    } else {
-                        Ok(DataType::BigInt(None))
-                    }
-                }
-                Keyword::DOUBLE => Ok(DataType::Double),
-                Keyword::STRING => Ok(DataType::String),
-                Keyword::BOOLEAN => Ok(DataType::Boolean),
-                _ => parser_err!(format!("{} is not a supported type", w)),
-            },
-            unexpected => parser_err!(format!("{} is not a type", unexpected)),
-        }
     }
 
     fn parse_codec_encoding(&mut self) -> Result<Encoding, String> {

@@ -135,7 +135,9 @@ impl DBschemas {
 
             match schema.column(&field.name) {
                 Some(v) => {
-                    if field.column_type != v.column_type {
+                    let meta_dt = v.column_type.to_physical_type();
+                    let kv_dt = field.column_type.to_physical_type();
+                    if meta_dt != kv_dt {
                         trace::debug!(
                             "type mismatch, point: {}, schema: {}",
                             &field.column_type,

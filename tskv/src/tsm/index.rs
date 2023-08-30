@@ -3,7 +3,7 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use models::predicate::domain::{TimeRange, TimeRanges};
-use models::{FieldId, Timestamp, ValueType};
+use models::{FieldId, PhysicalDType as ValueType, Timestamp};
 use utils::BloomFilter;
 
 use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64};

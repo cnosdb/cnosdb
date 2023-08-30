@@ -6,8 +6,8 @@ use datafusion::arrow::array::{
 };
 use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
-use models::schema::{ColumnType, TskvTableSchemaRef};
-use models::ValueType;
+use models::schema::{PhysicalCType as ColumnType, TskvTableSchemaRef};
+use models::PhysicalDType as ValueType;
 use protos::models::{
     Column as FbColumn, ColumnBuilder, ColumnType as FbColumnType, FieldType, PointsBuilder,
     TableBuilder, ValuesBuilder,
@@ -368,7 +368,7 @@ pub fn arrow_array_to_points(
         let column_schema = table_schema.column(col_name).ok_or_else(|| Error::Common {
             content: format!("column {} not found in table {}", col_name, table_name),
         })?;
-        let fb_column = match column_schema.column_type {
+        let fb_column = match column_schema.column_type.to_physical_type() {
             ColumnType::Tag => build_string_column(column, col_name, FbColumnType::Tag, &mut fbb)?,
             ColumnType::Time(ref time_unit) => {
                 build_timestamp_column(column, col_name, time_unit, &mut fbb)?

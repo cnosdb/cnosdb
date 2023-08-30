@@ -15,9 +15,9 @@ use minivec::MiniVec;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
 use models::predicate::PlacedSplit;
-use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+use models::schema::{PhysicalCType as ColumnType, TableColumn, TskvTableSchema};
 use models::utils::{min_num, unite_id};
-use models::{FieldId, SeriesId, Timestamp, ValueType};
+use models::{FieldId, PhysicalDType as ValueType, SeriesId, Timestamp};
 use protos::kv_service::QueryRecordBatchRequest;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -868,9 +868,9 @@ impl RowIterator {
                 "Building record builder: schema info {:02X} {}",
                 item.id, item.name
             );
-            let builder_item =
-                Self::new_column_builder(&item.column_type, query_option.batch_size)?;
-            builders.push(ArrayBuilderPtr::new(builder_item, item.column_type.clone()))
+            let kv_dt = item.column_type.to_physical_type();
+            let builder_item = Self::new_column_builder(&kv_dt, query_option.batch_size)?;
+            builders.push(ArrayBuilderPtr::new(builder_item, kv_dt))
         }
         Ok(builders)
     }
@@ -1113,7 +1113,8 @@ impl SeriesGroupRowIterator {
                     "Building series columns: sid={:02X}, column={:?}",
                     series_id, item
                 );
-                let column_cursor: CursorPtr = match item.column_type {
+                let kv_dt = item.column_type.to_physical_type();
+                let column_cursor: CursorPtr = match kv_dt {
                     ColumnType::Time(ref unit) => {
                         Box::new(TimeCursor::new(0, item.name.clone(), unit.clone()))
                     }
@@ -1330,7 +1331,8 @@ impl SeriesGroupRowIterator {
         ) {
             (Some(version), Some(aggregates)) => {
                 for (i, item) in aggregates.iter().enumerate() {
-                    match item.column_type {
+                    let kv_dt = item.column_type.to_physical_type();
+                    match kv_dt {
                         ColumnType::Tag => todo!("collect count for tag"),
                         ColumnType::Time(_) => {
                             let agg_ret = count_column_non_null_values(

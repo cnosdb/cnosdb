@@ -288,11 +288,17 @@ pub enum QueryError {
     #[error_code(code = 40)]
     LimitConstant,
 
-    #[snafu(display("Semantic error: Unexpected data type {} of {}", data_type, column))]
+    #[snafu(display(
+        "Semantic error: Unexpected data type {} of {}, {}",
+        data_type,
+        column,
+        promot
+    ))]
     #[error_code(code = 41)]
     DataType {
         data_type: String,
         column: String,
+        promot: String,
     },
 
     #[snafu(display(
