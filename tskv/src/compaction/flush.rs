@@ -4,7 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use models::codec::Encoding;
-use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp, ValueType};
+use models::{
+    utils as model_utils, ColumnId, FieldId, PhysicalDType as ValueType, SeriesId, Timestamp,
+};
 use parking_lot::RwLock;
 use snafu::ResultExt;
 use tokio::sync::mpsc::Sender;

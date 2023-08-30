@@ -159,7 +159,7 @@ time,column6,column7,column1,column3,column4,column5,column8
 
 -- EXECUTE SQL: CREATE TABLE test1( column0 TIMESTAMP CODEC(DELTA), column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: already have timestamp column"}
+{"error_code":"010028","error_message":"Semantic error:  column time already exists in table cnosdb.createtable.test1"}
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE TABLE test2( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA)); --
@@ -185,7 +185,7 @@ time,column6,column7,column1,column3,column4,column5,column8
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test5( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLE, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: BOOLE is not a supported type"}
+{"error_code":"010041","error_message":"Semantic error: Unexpected data type BOOLE of column4, "}
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test6( column1 BIGINT CODEC(delta), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(null), column4 BOOLEAN CODEC(BITPACK), column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --

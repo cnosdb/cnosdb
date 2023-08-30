@@ -10,7 +10,9 @@ use minivec::{mini_vec, MiniVec};
 use models::predicate::domain::TimeRange;
 use models::schema::{timestamp_convert, Precision, TableColumn, TskvTableSchema};
 use models::utils::split_id;
-use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
+use models::{
+    ColumnId, FieldId, PhysicalDType as ValueType, RwLockRef, SchemaId, SeriesId, Timestamp,
+};
 use parking_lot::RwLock;
 use protos::models::{Column, FieldType};
 use trace::error;

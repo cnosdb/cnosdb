@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 
 use minivec::MiniVec;
 use models::predicate::domain::TimeRange;
-use models::{Timestamp, ValueType};
+use models::{PhysicalDType as ValueType, Timestamp};
 use trace::error;
 
 use crate::memcache::DataType;

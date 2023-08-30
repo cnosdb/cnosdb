@@ -7,6 +7,7 @@
 //!         - Column #3
 //!         - Column #4
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::mem::size_of_val;
@@ -33,12 +34,14 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use crate::codec::Encoding;
+use crate::gis::data_type::Geometry;
 use crate::oid::{Identifier, Oid};
 use crate::utils::{
     DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS, MINUTES_MICROS,
     MINUTES_MILLS, MINUTES_NANOS,
 };
-use crate::{ColumnId, Error, SchemaId, Timestamp, ValueType};
+use crate::value_type::ValueType;
+use crate::{ColumnId, Error, PhysicalDType, SchemaId, Timestamp};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
@@ -171,11 +174,7 @@ impl Default for TskvTableSchema {
 
 impl TskvTableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
-        let fields: Vec<ArrowField> = self
-            .columns
-            .iter()
-            .map(|field| field.to_arrow_field())
-            .collect();
+        let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
         Arc::new(Schema::new(fields))
     }
 
@@ -373,15 +372,29 @@ pub struct TableColumn {
     pub encoding: Encoding,
 }
 
-impl From<TableColumn> for ArrowField {
-    fn from(column: TableColumn) -> Self {
+pub const SRID_META_KEY: &str = "srid";
+
+impl From<&TableColumn> for ArrowField {
+    fn from(column: &TableColumn) -> Self {
         let mut map = HashMap::new();
         map.insert(FIELD_ID.to_string(), column.id.to_string());
         map.insert(TAG.to_string(), column.column_type.is_tag().to_string());
+
+        // 通过 SRID_META_KEY 标记 Geometry 类型的列
+        if let ColumnType::Field(ValueType::Geometry(Geometry { srid, .. })) = column.column_type {
+            map.insert(SRID_META_KEY.to_string(), srid.to_string());
+        }
+
         let nullable = column.nullable();
-        let mut f = ArrowField::new(&column.name, column.column_type.into(), nullable);
+        let mut f = ArrowField::new(&column.name, column.column_type.clone().into(), nullable);
         f.set_metadata(map);
         f
+    }
+}
+
+impl From<TableColumn> for ArrowField {
+    fn from(column: TableColumn) -> Self {
+        Self::from(&column)
     }
 }
 
@@ -446,15 +459,6 @@ impl TableColumn {
         Ok(column)
     }
 
-    pub fn to_arrow_field(&self) -> ArrowField {
-        let mut f = ArrowField::new(&self.name, self.column_type.clone().into(), self.nullable());
-        let mut map = HashMap::new();
-        map.insert(FIELD_ID.to_string(), self.id.to_string());
-        map.insert(TAG.to_string(), self.column_type.is_tag().to_string());
-        f.set_metadata(map);
-        f
-    }
-
     pub fn encoding_valid(&self) -> bool {
         if let ColumnType::Field(ValueType::Float) = self.column_type {
             return self.encoding.is_double_encoding();
@@ -486,22 +490,8 @@ impl From<ColumnType> for ArrowDataType {
             ColumnType::Field(ValueType::Unsigned) => ArrowDataType::UInt64,
             ColumnType::Field(ValueType::String) => ArrowDataType::Utf8,
             ColumnType::Field(ValueType::Boolean) => ArrowDataType::Boolean,
+            ColumnType::Field(ValueType::Geometry(_)) => ArrowDataType::Utf8,
             _ => ArrowDataType::Null,
-        }
-    }
-}
-
-impl TryFrom<ArrowDataType> for ColumnType {
-    type Error = &'static str;
-
-    fn try_from(value: ArrowDataType) -> Result<Self, Self::Error> {
-        match value {
-            ArrowDataType::Float64 => Ok(Self::Field(ValueType::Float)),
-            ArrowDataType::Int64 => Ok(Self::Field(ValueType::Integer)),
-            ArrowDataType::UInt64 => Ok(Self::Field(ValueType::Unsigned)),
-            ArrowDataType::Utf8 => Ok(Self::Field(ValueType::String)),
-            ArrowDataType::Boolean => Ok(Self::Field(ValueType::Boolean)),
-            _ => Err("Error field type not supported"),
         }
     }
 }
@@ -514,10 +504,6 @@ pub enum ColumnType {
 }
 
 impl ColumnType {
-    pub fn default_time() -> Self {
-        Self::Time(TimeUnit::Nanosecond)
-    }
-
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Tag => "TAG",
@@ -566,22 +552,23 @@ impl ColumnType {
         }
     }
 
-    pub fn to_sql_type_str(&self) -> &'static str {
+    pub fn to_sql_type_str(&self) -> Cow<'static, str> {
         match self {
-            Self::Tag => "STRING",
+            Self::Tag => "STRING".into(),
             Self::Time(unit) => match unit {
-                TimeUnit::Second => "TIMESTAMP(SECOND)",
-                TimeUnit::Millisecond => "TIMESTAMP(MILLISECOND)",
-                TimeUnit::Microsecond => "TIMESTAMP(MICROSECOND)",
-                TimeUnit::Nanosecond => "TIMESTAMP(NANOSECOND)",
+                TimeUnit::Second => "TIMESTAMP(SECOND)".into(),
+                TimeUnit::Millisecond => "TIMESTAMP(MILLISECOND)".into(),
+                TimeUnit::Microsecond => "TIMESTAMP(MICROSECOND)".into(),
+                TimeUnit::Nanosecond => "TIMESTAMP(NANOSECOND)".into(),
             },
             Self::Field(value_type) => match value_type {
-                ValueType::String => "STRING",
-                ValueType::Integer => "BIGINT",
-                ValueType::Unsigned => "BIGINT UNSIGNED",
-                ValueType::Float => "DOUBLE",
-                ValueType::Boolean => "BOOLEAN",
-                ValueType::Unknown => "UNKNOWN",
+                ValueType::String => "STRING".into(),
+                ValueType::Integer => "BIGINT".into(),
+                ValueType::Unsigned => "BIGINT UNSIGNED".into(),
+                ValueType::Float => "DOUBLE".into(),
+                ValueType::Boolean => "BOOLEAN".into(),
+                ValueType::Unknown => "UNKNOWN".into(),
+                ValueType::Geometry(geo) => geo.to_string().into(),
             },
         }
     }
@@ -1244,5 +1231,29 @@ impl From<ScalarValue> for ScalarValueForkDF {
 impl From<ScalarValueForkDF> for ScalarValue {
     fn from(value: ScalarValueForkDF) -> Self {
         unsafe { std::mem::transmute::<ScalarValueForkDF, Self>(value) }
+    }
+}
+
+/// column type for tskv
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PhysicalCType {
+    Tag,
+    Time(TimeUnit),
+    Field(PhysicalDType),
+}
+
+impl PhysicalCType {
+    pub fn default_time() -> Self {
+        Self::Time(TimeUnit::Nanosecond)
+    }
+}
+
+impl ColumnType {
+    pub fn to_physical_type(&self) -> PhysicalCType {
+        match self {
+            Self::Tag => PhysicalCType::Tag,
+            Self::Time(unit) => PhysicalCType::Time(unit.clone()),
+            Self::Field(value_type) => PhysicalCType::Field(value_type.to_physical_type()),
+        }
     }
 }

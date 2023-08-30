@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use models::predicate::domain::{TimeRange, TimeRanges};
-use models::{FieldId, ValueType};
+use models::{FieldId, PhysicalDType as ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
 use utils::BloomFilter;
