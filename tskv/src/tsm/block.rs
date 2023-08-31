@@ -1,9 +1,9 @@
 use std::cmp::min;
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
 use minivec::MiniVec;
-use models::predicate::domain::TimeRange;
+use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{Timestamp, ValueType};
 use trace::error;
 
@@ -834,6 +834,116 @@ fn exclude_slow(v: &mut Vec<MiniVec<u8>>, min_idx: usize, max_idx: usize) {
         v[i] = v[max_idx - min_idx + i].clone();
     }
     v.truncate(len);
+}
+
+pub struct DataBlockReader {
+    data_block: DataBlock,
+    idx: usize,
+    end_idx: usize,
+    intersected_time_ranges: TimeRanges,
+    intersected_time_ranges_i: usize,
+}
+
+impl Debug for DataBlockReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataBlockReader")
+            .field("data_block_range", &self.data_block.time_range())
+            .field("idx", &self.idx)
+            .field("end_idx", &self.end_idx)
+            .field("intersected_time_ranges", &self.intersected_time_ranges)
+            .field("intersected_time_ranges_i", &self.intersected_time_ranges_i)
+            .finish()
+    }
+}
+
+impl Default for DataBlockReader {
+    fn default() -> Self {
+        Self {
+            data_block: DataBlock::Bool {
+                ts: vec![],
+                val: vec![],
+                enc: Default::default(),
+            },
+            idx: 1,
+            end_idx: 0,
+            intersected_time_ranges: TimeRanges::empty(),
+            intersected_time_ranges_i: 0,
+        }
+    }
+}
+
+impl DataBlockReader {
+    pub fn new_uninit(value_type: ValueType) -> Self {
+        let data_block = DataBlock::new(0, value_type);
+        Self {
+            data_block,
+            idx: 1,
+            end_idx: 0,
+            intersected_time_ranges: TimeRanges::empty(),
+            intersected_time_ranges_i: 0,
+        }
+    }
+
+    pub fn new(data_block: DataBlock, time_ranges: TimeRanges) -> Self {
+        let mut res = Self {
+            data_block,
+            idx: 1,
+            end_idx: 0,
+            intersected_time_ranges: time_ranges,
+            intersected_time_ranges_i: 0,
+        };
+        if res.set_index_from_time_ranges() {
+            res
+        } else {
+            res.idx = usize::MAX;
+            res
+        }
+    }
+
+    /// Iterates the ramaining TimeRange in `intersected_time_ranges`, if there are no remaning TimeRange's.
+    /// then return false.
+    ///
+    /// If there are overlaped time range of DataBlock and TimeRanges, set iteration range of `data_block`
+    /// and return true, otherwise set the iteration range a zero-length range `[1, 0]` and return false.
+    ///
+    fn set_index_from_time_ranges(&mut self) -> bool {
+        if self.intersected_time_ranges.is_empty()
+            || self.intersected_time_ranges_i >= self.intersected_time_ranges.len()
+        {
+            false
+        } else {
+            let tr_idx_start = self.intersected_time_ranges_i;
+            for tr in self.intersected_time_ranges.time_ranges()[tr_idx_start..].iter() {
+                self.intersected_time_ranges_i += 1;
+                // Check if the DataBlock matches one of the intersected time ranges.
+                // TODO: sometimes the comparison in loop can stop earily.
+                if let Some((min, max)) = self.data_block.index_range(tr) {
+                    self.idx = min;
+                    self.end_idx = max;
+                    return true;
+                }
+            }
+            false
+        }
+    }
+    pub fn has_next(&mut self) -> bool {
+        if self.idx > self.end_idx {
+            self.set_index_from_time_ranges();
+        }
+        self.idx < self.data_block.len()
+    }
+}
+
+impl Iterator for DataBlockReader {
+    type Item = DataType;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx > self.end_idx {
+            self.set_index_from_time_ranges();
+        }
+        let res = self.data_block.get(self.idx);
+        self.idx += 1;
+        res
+    }
 }
 
 #[derive(Debug, Clone)]
