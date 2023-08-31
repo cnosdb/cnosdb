@@ -292,13 +292,13 @@ pub enum QueryError {
         "Semantic error: Unexpected data type {} of {}, {}",
         data_type,
         column,
-        promot
+        prompt
     ))]
     #[error_code(code = 41)]
     DataType {
         data_type: String,
         column: String,
-        promot: String,
+        prompt: String,
     },
 
     #[snafu(display(
