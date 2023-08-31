@@ -110,7 +110,7 @@ impl StateMachine {
         Ok(storage)
     }
 
-    pub fn is_already_init(&self) -> MetaResult<bool> {
+    pub fn is_meta_init(&self) -> MetaResult<bool> {
         self.contains_key(&KeyPath::already_init())
     }
 

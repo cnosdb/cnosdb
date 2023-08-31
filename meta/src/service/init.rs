@@ -12,7 +12,7 @@ use crate::store::key_path::KeyPath;
 use crate::store::storage::StateMachine;
 
 pub async fn init_meta(storage: Arc<StateMachine>, init_data: MetaInit) {
-    if storage.is_already_init().unwrap() {
+    if storage.is_meta_init().unwrap() {
         return;
     }
 

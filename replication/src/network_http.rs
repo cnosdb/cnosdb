@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -42,7 +42,7 @@ impl RaftHttpAdmin {
             .and(self.with_raft_node())
             .and_then(|node: Arc<RaftNode>| async move {
                 let rsp = node
-                    .raft_init()
+                    .raft_init(BTreeMap::new())
                     .await
                     .map_or_else(|err| err.to_string(), |_| "Success".to_string());
 

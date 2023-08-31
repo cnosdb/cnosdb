@@ -5,6 +5,7 @@ use std::time::Duration;
 use futures::TryFutureExt;
 use models::meta_data::NodeMetrics;
 use models::node_info::NodeStatus;
+use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::entry_store::{EntryStorageRef, HeedEntryStorage};
 use replication::multi_raft::MultiRaft;
@@ -28,15 +29,19 @@ use crate::store::storage::StateMachine;
 use crate::store::{self};
 
 fn openraft_config() -> openraft::Config {
+    let hb: u64 = 1000;
     let config = openraft::Config {
         enable_tick: true,
         enable_elect: true,
         enable_heartbeat: true,
-        heartbeat_interval: 1000,
-        election_timeout_min: 3000,
-        election_timeout_max: 4000,
-        install_snapshot_timeout: 100000,
-        cluster_name: "cnosdb".to_string(),
+        heartbeat_interval: hb,
+        election_timeout_min: 6 * hb,
+        election_timeout_max: 8 * hb,
+        install_snapshot_timeout: 300 * 1000,
+        replication_lag_threshold: 10000,
+        snapshot_policy: SnapshotPolicy::LogsSinceLast(10000),
+        max_in_snapshot_log_to_keep: 10000,
+        cluster_name: "cnosdb_meta".to_string(),
         ..Default::default()
     };
 

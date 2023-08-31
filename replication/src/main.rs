@@ -3,7 +3,7 @@
 #![feature(trait_upcasting)]
 
 use std::any::Any;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible as StdInfallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -13,6 +13,7 @@ use clap::Parser;
 use futures::future::TryFutureExt;
 use openraft::error::Infallible as OpenRaftInfallible;
 use openraft::raft::{AppendEntriesRequest, InstallSnapshotRequest, VoteRequest};
+use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::apply_store::{ApplyStorage, ApplyStorageRef, HeedApplyStorage};
 use replication::entry_store::{EntryStorageRef, HeedEntryStorage};
@@ -74,10 +75,19 @@ async fn start_raft_node(id: RaftNodeId, http_addr: String) -> ReplicationResult
     let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry)?;
     let storage = Arc::new(storage);
 
+    let hb: u64 = 1000;
     let config = openraft::Config {
-        heartbeat_interval: 500,
-        election_timeout_min: 1500,
-        election_timeout_max: 3000,
+        enable_tick: true,
+        enable_elect: true,
+        enable_heartbeat: true,
+        heartbeat_interval: hb,
+        election_timeout_min: 3 * hb,
+        election_timeout_max: 5 * hb,
+        install_snapshot_timeout: 300 * 1000,
+        replication_lag_threshold: 5,
+        snapshot_policy: SnapshotPolicy::LogsSinceLast(5),
+        max_in_snapshot_log_to_keep: 5,
+        cluster_name: "raft_test".to_string(),
         ..Default::default()
     };
     let node = RaftNode::new(id, info, config, storage, engine)
@@ -250,7 +260,7 @@ async fn start_actix_web_server(addr: String, node: RaftNode) -> ReplicationResu
 pub async fn init(app: web::Data<RaftNode>) -> actix_web::Result<impl actix_web::Responder> {
     info!("Received request init");
     let rsp = app
-        .raft_init()
+        .raft_init(BTreeMap::new())
         .await
         .map_or_else(|err| err.to_string(), |_| "Success".to_string());
 

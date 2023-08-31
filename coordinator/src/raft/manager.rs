@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -77,59 +77,34 @@ impl RaftNodesManager {
         &self,
         replica: &ReplicationSet,
     ) -> CoordinatorResult<Arc<RaftNode>> {
-        if replica.leader_node_id() != self.node_id() {
-            return Err(CoordinatorError::LeaderIsWrong {
-                msg: format!(
-                    "build replica group node_id: {}, replica:{:?}",
-                    self.node_id(),
-                    replica
-                ),
-            });
-        }
-
         let mut nodes = self.raft_nodes.write().await;
         if let Some(node) = nodes.get_node(replica.id) {
             return Ok(node);
         }
 
-        let is_init = self.raft_state.is_already_init(replica.id)?;
-        let leader_vid = replica.leader_vnode_id();
-        let raft_node = self.open_raft_node(leader_vid, replica.id).await?;
-        if is_init {
+        let leader_id = replica.leader_vnode_id();
+        let raft_node = self.open_raft_node(leader_id, replica.id).await?;
+        if self.raft_state.is_already_init(replica.id)? {
             info!("raft group already init: {:?}", replica);
             nodes.add_node(raft_node.clone());
             return Ok(raft_node);
         }
-        raft_node.raft_init().await?;
 
-        info!("raft group after init: {:?}", replica);
-        let mut followers = BTreeSet::new();
+        let mut cluster_nodes = BTreeMap::new();
         for vnode in &replica.vnodes {
-            let raft_id = vnode.id as RaftNodeId;
-            followers.insert(raft_id);
-            if vnode.id == leader_vid {
-                continue;
-            }
+            self.open_remote_raft_node(vnode.node_id, vnode.id, replica.id)
+                .await?;
+            info!("success open remote raft: {}", vnode.node_id,);
 
+            let raft_id = vnode.id as RaftNodeId;
             let info = RaftNodeInfo {
                 group_id: replica.id,
                 address: self.meta.node_info_by_id(vnode.node_id).await?.grpc_addr,
             };
-
-            self.open_remote_raft_node(vnode.node_id, vnode.id, replica.id)
-                .await?;
-
-            info!("after open remote raft: {}", raft_id);
-
-            raft_node.raft_add_learner(raft_id, info).await?;
-            info!("after raft add learner: {}", raft_id);
+            cluster_nodes.insert(raft_id, info);
         }
-
-        info!("build raft group: {}.{:?}", replica.id, followers);
-        if followers.len() > 1 {
-            raft_node.raft_change_membership(followers).await?;
-        }
-        info!("after raft change membership");
+        raft_node.raft_init(cluster_nodes).await?;
+        self.raft_state.set_init_flag(replica.id)?;
 
         nodes.add_node(raft_node.clone());
 
@@ -148,6 +123,7 @@ impl RaftNodesManager {
         }
 
         let node = self.open_raft_node(id, group_id).await?;
+        self.raft_state.set_init_flag(group_id)?;
         nodes.add_node(node.clone());
 
         Ok(node)
@@ -194,7 +170,6 @@ impl RaftNodesManager {
         };
 
         let node = RaftNode::new(id, info, config, storage, engine).await?;
-        self.raft_state.set_init_flag(group_id)?;
 
         Ok(Arc::new(node))
     }
