@@ -198,7 +198,7 @@ overflow-checks = true
 panic = 'unwind'
 
 [profile.test-ci]
-debug-assertions = false
+debug-assertions = true
 incremental = true
 inherits = "test"
 overflow-checks = false
