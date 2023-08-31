@@ -3,7 +3,9 @@ use std::sync::Arc;
 use meta::error::{MetaError, MetaResult};
 use meta::model::{MetaClientRef, MetaRef};
 use models::codec::Encoding;
-use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
+use models::schema::{
+    ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema, TskvTableSchemaRef,
+};
 use models::ColumnId;
 use protos::models::FieldType;
 use trace::error;
@@ -120,9 +122,9 @@ impl DBschemas {
                 schema.db = db_name.to_string();
                 schema.name = table_name.to_string();
                 new_schema = true;
-                Arc::new(schema)
+                schema
             }
-            Some(schema) => schema,
+            Some(schema) => schema.as_ref().clone(),
         };
 
         let mut schema_change = false;
@@ -150,9 +152,7 @@ impl DBschemas {
                 None => {
                     schema_change = true;
                     field.id = schema.columns().len() as ColumnId;
-                    let mut schema_t = schema.as_ref().clone();
-                    schema_t.add_column(field.clone());
-                    schema = Arc::new(schema_t)
+                    schema.add_column(field.clone());
                 }
             }
             Ok(())
@@ -181,19 +181,17 @@ impl DBschemas {
 
         //schema changed store it
         if new_schema {
-            let mut schema = schema.as_ref().clone();
             schema.schema_id = 0;
-            let schema = Arc::new(schema);
+            let schema: TskvTableSchemaRef = schema.into();
             let res = self
                 .client
                 .create_table(&TableSchema::TsKvTableSchema(schema.clone()))
                 .await;
             self.check_create_table_res(res, schema).await?;
         } else if schema_change {
-            let mut schema = schema.as_ref().clone();
             schema.schema_id += 1;
             self.client
-                .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
+                .update_table(&TableSchema::TsKvTableSchema(schema.into()))
                 .await?;
         }
         Ok(new_schema || schema_change)
@@ -202,7 +200,7 @@ impl DBschemas {
     async fn check_create_table_res(
         &self,
         res: MetaResult<()>,
-        schema: Arc<TskvTableSchema>,
+        schema: TskvTableSchemaRef,
     ) -> Result<()> {
         match res {
             Ok(_) => Ok(()),
@@ -268,7 +266,7 @@ impl DBschemas {
         }
     }
 
-    pub fn get_table_schema(&self, tab: &str) -> Result<Option<Arc<TskvTableSchema>>> {
+    pub fn get_table_schema(&self, tab: &str) -> Result<Option<TskvTableSchemaRef>> {
         let schema = self
             .client
             .get_tskv_table_schema(&self.database_name, tab)?;
@@ -276,10 +274,7 @@ impl DBschemas {
         Ok(schema)
     }
 
-    pub async fn get_table_schema_by_meta(
-        &self,
-        tab: &str,
-    ) -> Result<Option<Arc<TskvTableSchema>>> {
+    pub async fn get_table_schema_by_meta(&self, tab: &str) -> Result<Option<TskvTableSchemaRef>> {
         let schema = self
             .client
             .get_tskv_table_schema_by_meta(&self.database_name, tab)

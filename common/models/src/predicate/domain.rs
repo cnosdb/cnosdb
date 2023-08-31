@@ -1447,7 +1447,7 @@ impl QueryArgs {
 pub struct QueryExpr {
     pub split: PlacedSplit,
     pub df_schema: Schema,
-    pub table_schema: TskvTableSchema,
+    pub table_schema: TskvTableSchemaRef,
 }
 
 impl QueryExpr {
