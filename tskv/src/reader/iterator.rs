@@ -553,12 +553,15 @@ impl Cursor for TimeCursor {
 //-----------Tag Cursor----------------
 pub struct TagCursor {
     name: String,
-    value: Option<Vec<u8>>,
+    value: Option<DataType>,
 }
 
 impl TagCursor {
     pub fn new(name: String, value: Option<Vec<u8>>) -> Self {
-        Self { name, value }
+        Self {
+            name,
+            value: value.map(|v| DataType::Str(0, MiniVec::from(v.as_slice()))),
+        }
     }
 }
 
@@ -575,16 +578,13 @@ impl Cursor for TagCursor {
     async fn next(&mut self, _ts: i64) {}
 
     async fn peek(&mut self) -> Result<Option<DataType>> {
-        match &self.value {
-            Some(value) => Ok(Some(DataType::Str(0, MiniVec::from(value.as_slice())))),
-            None => Ok(None),
-        }
+        Ok(self.value.clone())
     }
 }
 
 //-----------Field Cursor----------------
 pub struct FieldCursor {
-    name: String,
+    name: Arc<String>,
     value_type: ValueType,
 
     cache_index: usize,
@@ -593,7 +593,7 @@ pub struct FieldCursor {
 }
 
 impl FieldCursor {
-    pub fn empty(value_type: ValueType, name: String) -> Self {
+    pub fn empty(value_type: ValueType, name: Arc<String>) -> Self {
         Self {
             name,
             value_type,
@@ -1132,7 +1132,7 @@ impl SeriesGroupRowIterator {
                             let cursor = self
                                 .build_field_cursor(
                                     unite_id(item.id, series_id),
-                                    item.name.clone(),
+                                    Arc::new(item.name.clone()),
                                     vtype,
                                 )
                                 .await?;
@@ -1157,7 +1157,7 @@ impl SeriesGroupRowIterator {
     async fn build_field_cursor(
         &self,
         field_id: FieldId,
-        field_name: String,
+        field_name: Arc<String>,
         field_type: ValueType,
     ) -> Result<FieldCursor> {
         let super_version = match self.super_version {
@@ -1242,7 +1242,7 @@ impl SeriesGroupRowIterator {
         })
     }
 
-    async fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
+    async fn collect_row_data(&mut self, builders: &mut [ArrayBuilderPtr]) -> Result<Option<()>> {
         trace::trace!("======collect_row_data=========");
         // Record elapsed_field_scan
         let timer = self.metrics.elapsed_field_scan().timer();
@@ -1299,13 +1299,13 @@ impl SeriesGroupRowIterator {
         for (i, value) in row_cols.into_iter().enumerate() {
             match self.columns[i].column_type() {
                 ColumnType::Time(unit) => {
-                    builder[i].append_timestamp(&unit, min_time);
+                    builders[i].append_timestamp(&unit, min_time);
                 }
                 ColumnType::Tag => {
-                    builder[i].append_value(ValueType::String, value, self.columns[i].name())?;
+                    builders[i].append_value(ValueType::String, value, self.columns[i].name())?;
                 }
                 ColumnType::Field(value_type) => {
-                    builder[i].append_value(value_type, value, self.columns[i].name())?;
+                    builders[i].append_value(value_type, value, self.columns[i].name())?;
                 }
             }
         }
