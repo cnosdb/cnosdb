@@ -24,6 +24,5 @@ pub trait Cursor: Send + Sync {
         matches!(self.column_type(), PhysicalCType::Field(_))
     }
     fn column_type(&self) -> PhysicalCType;
-    async fn next(&mut self, ts: i64);
-    async fn peek(&mut self) -> Result<Option<DataType>, Error>;
+    async fn next(&mut self) -> Result<Option<DataType>, Error>;
 }
