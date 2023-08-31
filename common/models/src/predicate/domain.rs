@@ -242,12 +242,8 @@ impl TimeRanges {
     }
 
     pub fn overlaps(&self, time_range: &TimeRange) -> bool {
-        for tr in self.inner.iter() {
-            if tr.overlaps(time_range) {
-                return true;
-            }
-        }
-        false
+        self.max_time_range().overlaps(time_range)
+            && self.inner.iter().any(|tr| tr.overlaps(time_range))
     }
 
     pub fn includes(&self, time_range: &TimeRange) -> bool {
@@ -323,6 +319,10 @@ impl TimeRanges {
         }
 
         None
+    }
+
+    pub fn max_time_range(&self) -> TimeRange {
+        TimeRange::new(self.min_ts, self.max_ts)
     }
 }
 
