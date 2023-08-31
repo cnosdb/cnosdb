@@ -536,7 +536,7 @@ impl ColumnType {
             Self::Field(ValueType::Integer) => 1,
             Self::Field(ValueType::Unsigned) => 2,
             Self::Field(ValueType::Boolean) => 3,
-            Self::Field(ValueType::String) => 4,
+            Self::Field(ValueType::String) | Self::Field(ValueType::Geometry(_)) => 4,
             _ => 0,
         }
     }
