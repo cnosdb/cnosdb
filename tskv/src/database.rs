@@ -8,7 +8,7 @@ use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::predicate::domain::TimeRange;
-use models::schema::{DatabaseSchema, Precision, TskvTableSchema};
+use models::schema::{DatabaseSchema, Precision, TskvTableSchema, TskvTableSchemaRef};
 use models::{SchemaId, SeriesId, SeriesKey};
 use protos::models::{Column, ColumnType, FieldType, Table};
 use snafu::ResultExt;
@@ -463,7 +463,7 @@ impl Database {
         Ok(None)
     }
 
-    pub fn get_table_schema(&self, table_name: &str) -> Result<Option<Arc<TskvTableSchema>>> {
+    pub fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchemaRef>> {
         Ok(self.schemas.get_table_schema(table_name)?)
     }
 

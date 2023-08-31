@@ -8,7 +8,9 @@ use flatbuffers::{ForwardsUOffset, Vector};
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
 use models::predicate::domain::TimeRange;
-use models::schema::{timestamp_convert, Precision, TableColumn, TskvTableSchema};
+use models::schema::{
+    timestamp_convert, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
+};
 use models::utils::split_id;
 use models::{
     ColumnId, FieldId, PhysicalDType as ValueType, RwLockRef, SchemaId, SeriesId, Timestamp,
@@ -412,7 +414,7 @@ impl SeriesData {
         }
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, Arc<TskvTableSchema>, &LinkedList<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(SchemaId, TskvTableSchemaRef, &LinkedList<RowData>)> {
         self.groups
             .iter()
             .map(|g| (g.schema.schema_id, g.schema.clone(), &g.rows))
