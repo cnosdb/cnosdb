@@ -1217,10 +1217,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         data_type: &SQLDataType,
         time_unit: TimeUnit,
     ) -> Result<ColumnType> {
-        let unsupport_type_err = &|promot: String| QueryError::DataType {
+        let unsupport_type_err = &|prompt: String| QueryError::DataType {
             column: column_name.to_string(),
             data_type: data_type.to_string(),
-            promot,
+            prompt,
         };
 
         match data_type {
