@@ -1,0 +1,35 @@
+include ./setup.slt
+
+##########
+## Query
+##########
+
+query 
+SELECT time, loc, st_AsBinary(loc) FROM gis_loc order by time, loc;
+----
+1999-12-31T00:00:00 POINT(0 0) 010100000000000000000000000000000000000000
+1999-12-31T00:00:00.005 POINT(0 1) 01010000000000000000000000000000000000f03f
+1999-12-31T00:00:00.010 POINT(0 2) 010100000000000000000000000000000000000040
+1999-12-31T00:00:10.015 POINT(0 3) 010100000000000000000000000000000000000840
+1999-12-31T00:00:10.020 POINT(0 4) 010100000000000000000000000000000000001040
+1999-12-31T00:10:00.025 POINT(0 5) 010100000000000000000000000000000000001440
+1999-12-31T00:10:00.030 POINT(0 6) 010100000000000000000000000000000000001840
+1999-12-31T01:00:00.035 POINT(0 7) 010100000000000000000000000000000000001c40
+
+query 
+select st_AsBinary(null);
+----
+NULL
+
+query 
+select st_AsBinary('POINT(0 0)');
+----
+010100000000000000000000000000000000000000
+
+query 
+select st_AsBinary('POINT(0, 0)');
+----
+NULL
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_AsBinary\(Utf8, Null\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_AsBinary\(Utf8\)", .*
+select st_AsBinary('POINT(0, 0)', null);

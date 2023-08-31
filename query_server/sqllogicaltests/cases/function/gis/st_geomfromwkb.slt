@@ -1,0 +1,22 @@
+query 
+select ST_GeomFromWKB(st_AsBinary('POINT(0 0)'));
+----
+POINT(0 0)
+
+query 
+select ST_GeomFromWKB(st_AsBinary('MULTIPOINT (10 40, 40 30, 20 20, 30 10)'));
+----
+MULTIPOINT(10 40,40 30,20 20,30 10)
+
+query 
+select ST_GeomFromWKB(st_AsBinary('MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))'));
+----
+MULTIPOLYGON(((30 20,45 40,10 40,30 20)),((15 5,40 10,10 20,5 10,15 5)))
+
+query 
+select ST_GeomFromWKB(st_AsBinary('MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))'));
+----
+MULTIPOLYGON(((40 40,20 45,45 30,40 40)),((20 35,10 30,10 10,30 5,45 20,20 35),(30 20,20 15,20 25,30 20)))
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", .*
+select ST_GeomFromWKB('invalid');

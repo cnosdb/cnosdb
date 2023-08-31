@@ -1,10 +1,14 @@
+mod st_asbinary;
 mod st_distance;
+mod st_geomfromwkb;
 
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
 pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     st_distance::register_udf(func_manager)?;
+    st_geomfromwkb::register_udf(func_manager)?;
+    st_asbinary::register_udf(func_manager)?;
     Ok(())
 }
 
