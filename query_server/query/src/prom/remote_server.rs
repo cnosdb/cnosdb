@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -7,7 +6,7 @@ use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
-use models::schema::{TskvTableSchema, TIME_FIELD_NAME};
+use models::schema::{TskvTableSchemaRef, TIME_FIELD_NAME};
 use models::snappy::SnappyCodec;
 use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::Line;
@@ -353,7 +352,7 @@ async fn transform_time_series(
 #[derive(Debug)]
 struct SqlWithTable {
     pub sql: String,
-    pub table: Arc<TskvTableSchema>,
+    pub table: TskvTableSchemaRef,
 }
 
 #[cfg(test)]

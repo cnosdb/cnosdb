@@ -55,7 +55,7 @@ pub const DEFAULT_PRECISION: &str = "NS";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TableSchema {
-    TsKvTableSchema(Arc<TskvTableSchema>),
+    TsKvTableSchema(TskvTableSchemaRef),
     ExternalTableSchema(Arc<ExternalTableSchema>),
     StreamTableSchema(Arc<StreamTable>),
 }

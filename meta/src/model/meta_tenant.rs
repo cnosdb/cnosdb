@@ -11,7 +11,9 @@ use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifie
 use models::auth::user::UserDesc;
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
-use models::schema::{DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TskvTableSchema};
+use models::schema::{
+    DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TskvTableSchemaRef,
+};
 use parking_lot::RwLock;
 use store::command;
 use trace::info;
@@ -461,7 +463,7 @@ impl TenantMeta {
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
+    ) -> MetaResult<Option<TskvTableSchemaRef>> {
         if let Some(TableSchema::TsKvTableSchema(val)) = self.data.read().table_schema(db, table) {
             return Ok(Some(val));
         }
@@ -472,7 +474,7 @@ impl TenantMeta {
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
+    ) -> MetaResult<Option<TskvTableSchemaRef>> {
         let req = ReadCommand::TableSchema(
             self.cluster.clone(),
             self.tenant.name().to_string(),

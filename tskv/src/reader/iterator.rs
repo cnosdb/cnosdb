@@ -15,7 +15,7 @@ use minivec::MiniVec;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
 use models::predicate::PlacedSplit;
-use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+use models::schema::{ColumnType, TableColumn, TskvTableSchemaRef};
 use models::utils::{min_num, unite_id};
 use models::{FieldId, SeriesId, Timestamp, ValueType};
 use protos::kv_service::QueryRecordBatchRequest;
@@ -338,7 +338,7 @@ pub struct QueryOption {
     pub batch_size: usize,
     pub split: PlacedSplit,
     pub df_schema: SchemaRef,
-    pub table_schema: TskvTableSchema,
+    pub table_schema: TskvTableSchemaRef,
     pub aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
 }
 
@@ -349,7 +349,7 @@ impl QueryOption {
         split: PlacedSplit,
         aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
         df_schema: SchemaRef,
-        table_schema: TskvTableSchema,
+        table_schema: TskvTableSchemaRef,
     ) -> Self {
         Self {
             batch_size,
