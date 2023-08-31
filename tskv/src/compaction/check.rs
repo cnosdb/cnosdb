@@ -228,7 +228,7 @@ pub(crate) async fn vnode_hash_tree(
         (vnode_rlock.version(), vnode_rlock.tf_id())
     };
     let mut readers: Vec<Arc<TsmReader>> = Vec::new();
-    let tsm_paths: Vec<PathBuf> = version
+    let tsm_paths: Vec<&PathBuf> = version
         .levels_info()
         .iter()
         .flat_map(|l| l.files.iter().map(|f| f.file_path()))
