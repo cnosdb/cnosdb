@@ -8,7 +8,7 @@ use tokio::sync::{oneshot, RwLock, Semaphore};
 use trace::{error, info};
 
 use crate::compaction::{flush, CompactTask, LevelCompactionPicker, Picker};
-use crate::context::{GlobalContext, GlobalSequenceContext};
+use crate::context::GlobalContext;
 use crate::kv_option::StorageOptions;
 use crate::summary::SummaryTask;
 use crate::version_set::VersionSet;
@@ -46,7 +46,6 @@ pub fn run(
     runtime: Arc<Runtime>,
     mut receiver: Receiver<CompactTask>,
     ctx: Arc<GlobalContext>,
-    seq_ctx: Arc<GlobalSequenceContext>,
     version_set: Arc<RwLock<VersionSet>>,
     summary_task_sender: Sender<SummaryTask>,
 ) {
@@ -94,7 +93,6 @@ pub fn run(
                         let out_level = req.out_level;
 
                         let ctx_inner = ctx.clone();
-                        let seq_ctx_inner = seq_ctx.clone();
                         let version_set_inner = version_set.clone();
                         let summary_task_sender_inner = summary_task_sender.clone();
 
@@ -110,7 +108,6 @@ pub fn run(
                                     if let Err(e) = flush::run_flush_memtable_job(
                                         req,
                                         ctx_inner.clone(),
-                                        seq_ctx_inner.clone(),
                                         version_set_inner,
                                         summary_task_sender_inner.clone(),
                                         None,

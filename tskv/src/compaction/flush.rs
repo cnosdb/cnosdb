@@ -16,7 +16,7 @@ use trace::{error, info, warn};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
-use crate::context::{GlobalContext, GlobalSequenceContext};
+use crate::context::GlobalContext;
 use crate::error::{self, Result};
 use crate::memcache::{FieldVal, MemCache, SeriesData};
 use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
@@ -187,7 +187,6 @@ impl FlushTask {
 pub async fn run_flush_memtable_job(
     req: FlushReq,
     global_context: Arc<GlobalContext>,
-    global_sequence_context: Arc<GlobalSequenceContext>,
     version_set: Arc<tokio::sync::RwLock<VersionSet>>,
     summary_task_sender: Sender<SummaryTask>,
     compact_task_sender: Option<Sender<CompactTask>>,
@@ -245,7 +244,7 @@ pub async fn run_flush_memtable_job(
     if version_edits.is_empty() && req.force_flush {
         let mut ve = VersionEdit::new(req.ts_family_id);
         ve.has_seq_no = true;
-        ve.seq_no = global_sequence_context.max_seq();
+        ve.seq_no = 0; // Fixme
         version_edits.push(ve);
     }
 

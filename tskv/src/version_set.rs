@@ -12,7 +12,6 @@ use tokio::sync::RwLock;
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
-use crate::context::GlobalSequenceContext;
 use crate::database::Database;
 use crate::error::{MetaSnafu, Result};
 use crate::summary::VersionEdit;
@@ -222,33 +221,16 @@ impl VersionSet {
         (version_edits, file_metas)
     }
 
-    /// Try to build and send `FlushReq`s to flush job for all ts_families.
-    pub async fn send_flush_req(&self) {
+    pub async fn get_tsfamily_seq_no_map(&self) -> HashMap<TseriesFamilyId, u64> {
+        let mut r = HashMap::with_capacity(self.dbs.len());
         for db in self.dbs.values() {
-            for tsf in db.read().await.ts_families().values() {
-                let tsf_inner = tsf.clone();
-                self.runtime.spawn(async move {
-                    let mut tsf = tsf_inner.write().await;
-                    tsf.switch_to_immutable();
-                    tsf.send_flush_req(true).await;
-                });
+            let db = db.read().await;
+            for tsf in db.ts_families().values() {
+                let tsf = tsf.read().await;
+                r.insert(tsf.tf_id(), tsf.super_version().version.last_seq);
             }
         }
-    }
-
-    /// **Please call this function after system recovered.**
-    ///
-    /// Get GlobalSequenceContext to store current minimum sequence number of all TseriesFamilies,
-    /// one use is fetching wal files which could be deleted.
-    pub async fn get_global_sequence_context(&self) -> GlobalSequenceContext {
-        let mut tsf_seq_map: HashMap<TseriesFamilyId, u64> = HashMap::new();
-        for (_, database) in self.dbs.iter() {
-            for (tsf_id, tsf) in database.read().await.ts_families().iter() {
-                tsf_seq_map.insert(*tsf_id, tsf.read().await.seq_no());
-            }
-        }
-
-        GlobalSequenceContext::new(tsf_seq_map)
+        r
     }
 }
 

@@ -873,7 +873,6 @@ mod test {
         let tsf = db
             .add_tsfamily(
                 vnode_id,
-                1,
                 None,
                 engine.summary_task_sender(),
                 engine.flush_task_sender(),
@@ -912,7 +911,7 @@ mod test {
             vnode.build_flush_req(true).unwrap()
         };
         flush::run_flush_memtable_job(
-            flush_req, engine.global_ctx(), engine.global_sql_ctx(),
+            flush_req, engine.global_ctx(),
             engine.version_set(), engine.summary_task_sender(), None,
         ).await.unwrap();
 

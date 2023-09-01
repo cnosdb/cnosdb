@@ -1064,7 +1064,7 @@ pub mod test_tseries_family {
     use super::{ColumnFile, LevelInfo};
     use crate::compaction::flush_tests::default_table_schema;
     use crate::compaction::{run_flush_memtable_job, FlushReq};
-    use crate::context::{GlobalContext, GlobalSequenceContext};
+    use crate::context::GlobalContext;
     use crate::file_utils::make_tsm_file_name;
     use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
@@ -1487,7 +1487,6 @@ pub mod test_tseries_family {
         let tenant = "cnosdb".to_string();
         let database = "test_db".to_string();
         let global_ctx = Arc::new(GlobalContext::new());
-        let global_seq_ctx = GlobalSequenceContext::empty();
         let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
         let (compact_task_sender, _compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
@@ -1528,7 +1527,6 @@ pub mod test_tseries_family {
                 .await
                 .add_tsfamily(
                     0,
-                    0,
                     None,
                     summary_task_sender.clone(),
                     flush_task_sender.clone(),
@@ -1544,7 +1542,6 @@ pub mod test_tseries_family {
             run_flush_memtable_job(
                 flush_seq,
                 global_ctx,
-                global_seq_ctx,
                 version_set.clone(),
                 summary_task_sender,
                 Some(compact_task_sender),
