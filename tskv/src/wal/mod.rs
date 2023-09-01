@@ -35,6 +35,10 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
+mod raft;
+mod reader;
+mod writer;
+
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::PathBuf;
@@ -50,32 +54,30 @@ use tokio::sync::{oneshot, RwLock};
 use tokio::time::timeout;
 
 use self::reader::WalReader;
+use self::writer::{DeleteTableTask, DeleteVnodeTask, WriteTask};
 use crate::context::GlobalSequenceContext;
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::tsm::codec::{get_str_codec, StringCodec};
 use crate::version_set::VersionSet;
 pub use crate::wal::reader::{
-    print_wal_statistics, DeleteTableBlock, DeleteVnodeBlock, WalEntry, WriteBlock,
+    print_wal_statistics, Block, DeleteTableBlock, DeleteVnodeBlock, WriteBlock,
 };
 use crate::{error, file_utils, Result, TseriesFamilyId};
 
-mod reader;
-mod writer;
-
-const ENTRY_TYPE_LEN: usize = 1;
-const ENTRY_SEQUENCE_LEN: usize = 8;
+const WAL_TYPE_LEN: usize = 1;
+const WAL_SEQUENCE_LEN: usize = 8;
 /// 9 = type(1) + sequence(8)
-const ENTRY_HEADER_LEN: usize = 9;
+const WAL_HEADER_LEN: usize = 9;
 
-const ENTRY_VNODE_ID_LEN: usize = 4;
-const ENTRY_PRECISION_LEN: usize = 1;
-const ENTRY_TENANT_SIZE_LEN: usize = 8;
-const ENTRY_DATABASE_SIZE_LEN: usize = 4;
-const ENTRY_TABLE_SIZE_LEN: usize = 4;
+const WAL_VNODE_ID_LEN: usize = 4;
+const WAL_PRECISION_LEN: usize = 1;
+const WAL_TENANT_SIZE_LEN: usize = 8;
+const WAL_DATABASE_SIZE_LEN: usize = 4;
+const WAL_TABLE_SIZE_LEN: usize = 4;
 
-const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'w', b'a', b'l', b'o']);
-const FOOTER_MAGIC_NUMBER_LEN: usize = 4;
+const WAL_FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'w', b'a', b'l', b'o']);
+const WAL_FOOTER_MAGIC_NUMBER_LEN: usize = 4;
 
 const SEGMENT_MAGIC: [u8; 4] = [0x57, 0x47, 0x4c, 0x00];
 
@@ -85,56 +87,38 @@ type WriteResultReceiver = oneshot::Receiver<crate::Result<(u64, usize)>>;
 
 #[repr(u8)]
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
-pub enum WalEntryType {
+pub enum WalType {
     Write = 1,
     DeleteVnode = 11,
     DeleteTable = 21,
     Unknown = 127,
 }
 
-impl From<u8> for WalEntryType {
+impl From<u8> for WalType {
     fn from(typ: u8) -> Self {
         match typ {
-            1 => WalEntryType::Write,
-            11 => WalEntryType::DeleteVnode,
-            21 => WalEntryType::DeleteTable,
-            _ => WalEntryType::Unknown,
+            1 => WalType::Write,
+            11 => WalType::DeleteVnode,
+            21 => WalType::DeleteTable,
+            _ => WalType::Unknown,
         }
     }
 }
 
-impl Display for WalEntryType {
+impl Display for WalType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WalEntryType::Write => write!(f, "write"),
-            WalEntryType::DeleteVnode => write!(f, "delete_vnode"),
-            WalEntryType::DeleteTable => write!(f, "delete_table"),
-            WalEntryType::Unknown => write!(f, "unknown"),
+            WalType::Write => write!(f, "write"),
+            WalType::DeleteVnode => write!(f, "delete_vnode"),
+            WalType::DeleteTable => write!(f, "delete_table"),
+            WalType::Unknown => write!(f, "unknown"),
         }
     }
 }
 
-pub enum WalTask {
-    Write {
-        tenant: String,
-        database: String,
-        vnode_id: VnodeId,
-        precision: Precision,
-        points: Vec<u8>,
-        cb: WriteResultSender,
-    },
-    DeleteVnode {
-        tenant: String,
-        database: String,
-        vnode_id: VnodeId,
-        cb: WriteResultSender,
-    },
-    DeleteTable {
-        tenant: String,
-        database: String,
-        table: String,
-        cb: WriteResultSender,
-    },
+pub struct WalTask {
+    pub task: writer::Task,
+    pub result_sender: WriteResultSender,
 }
 
 impl WalTask {
@@ -147,13 +131,9 @@ impl WalTask {
     ) -> (WalTask, WriteResultReceiver) {
         let (cb, rx) = oneshot::channel();
         (
-            WalTask::Write {
-                tenant,
-                database,
-                vnode_id,
-                precision,
-                points,
-                cb,
+            Self {
+                task: writer::Task::new_write(tenant, database, vnode_id, precision, points),
+                result_sender: cb,
             },
             rx,
         )
@@ -166,11 +146,9 @@ impl WalTask {
     ) -> (WalTask, WriteResultReceiver) {
         let (cb, rx) = oneshot::channel();
         (
-            WalTask::DeleteVnode {
-                tenant,
-                database,
-                vnode_id,
-                cb,
+            Self {
+                task: writer::Task::new_delete_vnode(tenant, database, vnode_id),
+                result_sender: cb,
             },
             rx,
         )
@@ -183,72 +161,31 @@ impl WalTask {
     ) -> (WalTask, WriteResultReceiver) {
         let (cb, rx) = oneshot::channel();
         (
-            WalTask::DeleteTable {
-                tenant,
-                database,
-                table,
-                cb,
+            Self {
+                task: writer::Task::new_delete_table(tenant, database, table),
+                result_sender: cb,
             },
             rx,
         )
     }
 
     pub fn new_from(wal_task: &WalTask, cb: WriteResultSender) -> WalTask {
-        match wal_task {
-            WalTask::Write {
-                tenant,
-                database,
-                vnode_id,
-                precision,
-                points,
-                ..
-            } => WalTask::Write {
-                tenant: tenant.clone(),
-                database: database.clone(),
-                vnode_id: *vnode_id,
-                precision: *precision,
-                points: points.clone(),
-                cb,
-            },
-            WalTask::DeleteVnode {
-                tenant,
-                database,
-                vnode_id,
-                ..
-            } => WalTask::DeleteVnode {
-                tenant: tenant.clone(),
-                database: database.clone(),
-                vnode_id: *vnode_id,
-                cb,
-            },
-            WalTask::DeleteTable {
-                tenant,
-                database,
-                table,
-                ..
-            } => WalTask::DeleteTable {
-                tenant: tenant.clone(),
-                database: database.clone(),
-                table: table.clone(),
-                cb,
-            },
+        WalTask {
+            task: wal_task.task.clone(),
+            result_sender: cb,
         }
     }
 
-    pub fn wal_entry_type(&self) -> WalEntryType {
-        match self {
-            WalTask::Write { .. } => WalEntryType::Write,
-            WalTask::DeleteVnode { .. } => WalEntryType::DeleteVnode,
-            WalTask::DeleteTable { .. } => WalEntryType::DeleteTable,
+    pub fn wal_entry_type(&self) -> WalType {
+        match self.task {
+            writer::Task::Write { .. } => WalType::Write,
+            writer::Task::DeleteVnode { .. } => WalType::DeleteVnode,
+            writer::Task::DeleteTable { .. } => WalType::DeleteTable,
         }
     }
 
     fn write_wal_result_sender(self) -> WriteResultSender {
-        match self {
-            WalTask::Write { cb, .. } => cb,
-            WalTask::DeleteVnode { cb, .. } => cb,
-            WalTask::DeleteTable { cb, .. } => cb,
-        }
+        self.result_sender
     }
 
     pub fn fail(self, e: crate::Error) -> crate::Result<()> {
@@ -258,36 +195,41 @@ impl WalTask {
                 source: crate::error::ChannelSendError::WalTask,
             })
     }
+
     pub fn owner(&self) -> String {
-        match self {
-            WalTask::Write {
+        match &self.task {
+            writer::Task::Write(WriteTask {
                 tenant, database, ..
-            } => make_owner(tenant, database),
-            WalTask::DeleteVnode {
+            }) => make_owner(tenant, database),
+            writer::Task::DeleteVnode(DeleteVnodeTask {
                 tenant, database, ..
-            } => make_owner(tenant, database),
-            WalTask::DeleteTable {
+            }) => make_owner(tenant, database),
+            writer::Task::DeleteTable(DeleteTableTask {
                 tenant, database, ..
-            } => make_owner(tenant, database),
+            }) => make_owner(tenant, database),
         }
     }
+
     pub fn vnode_id(&self) -> Option<TseriesFamilyId> {
-        match self {
-            WalTask::Write { vnode_id, .. } => Some(*vnode_id),
-            WalTask::DeleteVnode { vnode_id, .. } => Some(*vnode_id),
+        match self.task {
+            writer::Task::Write(WriteTask { vnode_id, .. }) => Some(vnode_id),
+            writer::Task::DeleteVnode(DeleteVnodeTask { vnode_id, .. }) => Some(vnode_id),
             //todo: change delete table to delete time series;
-            WalTask::DeleteTable { .. } => None,
+            writer::Task::DeleteTable(DeleteTableTask { .. }) => None,
         }
     }
 }
 
 pub struct VnodeWal {
+    tenant_database: Arc<String>,
     vnode_id: TseriesFamilyId,
     wal_dir: PathBuf,
     current_wal: writer::WalWriter,
     total_file_size: u64,
     old_file_max_sequence: HashMap<u64, u64>,
     config: Arc<WalOptions>,
+    /// Stores opened wal ids and wal readers when call read(wal_id, pos).
+    opened_wals: HashMap<u64, WalReader>,
 }
 
 impl VnodeWal {
@@ -304,14 +246,17 @@ impl VnodeWal {
                     reason: format!("Failed to open wal file: {}", e),
                 })?;
         Ok(Self {
+            tenant_database: Arc::new(owner),
             vnode_id,
             wal_dir,
             current_wal: current_file,
             total_file_size: 0,
             old_file_max_sequence: HashMap::new(),
             config,
+            opened_wals: HashMap::new(),
         })
     }
+
     async fn roll_wal_file(&mut self, max_file_size: u64, seq: u64) -> Result<()> {
         if self.current_wal.size() > max_file_size {
             trace::info!(
@@ -390,58 +335,79 @@ impl VnodeWal {
 
     /// Checks if wal file is full then writes data. Return data sequence and data size.
     pub async fn write(&mut self, wal_task: WalTask, seq: u64) {
+        match self.write_inner_task(seq, &wal_task.task).await {
+            Ok((seq, size)) => {
+                if let Err(e) = wal_task.result_sender.send(Ok((seq, size))) {
+                    // WAL job closed, leaving this write request.
+                    trace::warn!("send WAL write result failed: {:?}", e);
+                }
+            }
+            Err(e) => {
+                if wal_task.fail(e).is_err() {
+                    trace::error!("Failed to send roll WAL error to tskv");
+                }
+            }
+        }
+    }
+
+    async fn write_inner_task(&mut self, seq: u64, task: &writer::Task) -> Result<(u64, usize)> {
         if let Err(e) = self.roll_wal_file(self.config.max_file_size, seq).await {
             trace::error!("Failed to roll WAL file: {}", e);
-            if wal_task.fail(e).is_err() {
-                trace::error!("Failed to send roll WAL error to tskv");
-            }
-            return;
+            return Err(e);
         }
-        let (write_ret, cb) = match wal_task {
-            WalTask::Write {
+        let write_ret = match task {
+            writer::Task::Write(WriteTask {
                 tenant,
-                database: _,
                 vnode_id,
                 precision,
                 points,
-                cb,
-            } => (
+                ..
+            }) => {
                 self.current_wal
-                    .write(tenant, vnode_id, precision, points)
-                    .await,
-                cb,
-            ),
-            WalTask::DeleteVnode {
+                    .write(tenant, *vnode_id, *precision, points)
+                    .await
+            }
+            writer::Task::DeleteVnode(DeleteVnodeTask {
                 tenant,
                 database,
                 vnode_id,
-                cb,
-            } => (
+            }) => {
                 self.current_wal
-                    .delete_vnode(tenant, database, vnode_id)
-                    .await,
-                cb,
-            ),
-            WalTask::DeleteTable {
+                    .delete_vnode(tenant, database, *vnode_id)
+                    .await
+            }
+            writer::Task::DeleteTable(DeleteTableTask {
                 tenant,
                 database,
                 table,
-                cb,
-            } => (
-                self.current_wal.delete_table(tenant, database, table).await,
-                cb,
-            ),
+            }) => self.current_wal.delete_table(tenant, database, table).await,
         };
-        let send_ret = match write_ret {
+        match write_ret {
             Ok((seq, size)) => {
                 self.total_file_size += size as u64;
-                cb.send(Ok((seq, size)))
+                Ok((seq, size))
             }
-            Err(e) => cb.send(Err(e)),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub async fn read(&mut self, wal_id: u64, pos: usize) -> Result<Option<reader::Block>> {
+        let reader = match self.opened_wals.get_mut(&wal_id) {
+            Some(r) => r,
+            None => {
+                let wal_dir = self
+                    .config
+                    .wal_dir(&self.tenant_database, &self.vnode_id.to_string());
+                let wal_path = file_utils::make_wal_file(wal_dir, wal_id);
+                let reader = WalReader::open(wal_path).await?;
+                self.opened_wals.insert(wal_id, reader);
+                self.opened_wals.get_mut(&wal_id).unwrap()
+            }
         };
-        if let Err(e) = send_ret {
-            // WAL job closed, leaving this write request.
-            trace::warn!("send WAL write result failed: {:?}", e);
+
+        match reader.read_wal_record_data(pos).await? {
+            Some(data) => Ok(Some(data.block)),
+            None => Ok(None),
         }
     }
 
@@ -480,6 +446,10 @@ impl VnodeWal {
         self.current_wal.max_sequence()
     }
 
+    pub fn current_wal_id(&self) -> u64 {
+        self.current_wal.id()
+    }
+
     pub fn sync_interval(&self) -> std::time::Duration {
         self.config.sync_interval
     }
@@ -511,6 +481,7 @@ impl WalManager {
     ) -> Result<Self> {
         let mut wal_set = HashMap::new();
         for (db_name, database) in version_set.read().await.get_all_db() {
+            let tenant_database = database.read().await.owner();
             for vnode_id in database.read().await.ts_families().keys() {
                 let wal_dir = config.wal_dir(db_name, &vnode_id.to_string());
                 let mut total_file_size = 0_u64;
@@ -563,12 +534,14 @@ impl WalManager {
                 total_file_size += current_file.size();
                 trace::info!("WAL '{}' starts write", current_file.id());
                 let vnode_wal = VnodeWal {
+                    tenant_database: tenant_database.clone(),
                     vnode_id: *vnode_id,
                     wal_dir: wal_dir.clone(),
                     current_wal: current_file,
                     total_file_size,
                     old_file_max_sequence,
                     config: config.clone(),
+                    opened_wals: HashMap::new(),
                 };
                 wal_set.insert(*vnode_id, vnode_wal);
             }
@@ -733,7 +706,7 @@ mod test {
     use crate::memcache::FieldVal;
     use crate::tsm::codec::{get_str_codec, StringCodec};
     use crate::version_set::VersionSet;
-    use crate::wal::reader::{WalEntry, WalReader};
+    use crate::wal::reader::{Block, WalReader};
     use crate::wal::{WalManager, WalTask};
     use crate::{error, Error, Result};
 
@@ -791,8 +764,8 @@ mod test {
                 match reader.next_wal_entry().await {
                     Ok(Some(entry_block)) => {
                         println!("Reading entry from wal file '{}'", path.display());
-                        match entry_block.entry {
-                            WalEntry::Write(entry) => {
+                        match entry_block.block {
+                            Block::Write(entry) => {
                                 let ety_data = entry.points();
                                 let ori_data = match data_iter.next() {
                                     Some(d) => d,
@@ -817,9 +790,9 @@ mod test {
                                     assert_eq!(ety_data, ori_data.as_slice());
                                 }
                             }
-                            WalEntry::DeleteVnode(_) => todo!(),
-                            WalEntry::DeleteTable(_) => todo!(),
-                            WalEntry::Unknown => todo!(),
+                            Block::DeleteVnode(_) => todo!(),
+                            Block::DeleteTable(_) => todo!(),
+                            Block::Unknown => todo!(),
                         }
                     }
                     Ok(None) => {

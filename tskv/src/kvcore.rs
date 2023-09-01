@@ -36,7 +36,7 @@ use crate::summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
-use crate::wal::{self, WalDecoder, WalEntry, WalManager, WalTask};
+use crate::wal::{self, Block, WalDecoder, WalManager, WalTask};
 use crate::{file_utils, tenant_name_from_request, Engine, Error, TseriesFamilyId};
 
 // TODO: A small summay channel capacity can cause a block
@@ -216,8 +216,8 @@ impl TsKv {
                             if seq < min_log_seq {
                                 continue;
                             }
-                            match wal_entry_blk.entry {
-                                WalEntry::Write(blk) => {
+                            match wal_entry_blk.block {
+                                Block::Write(blk) => {
                                     let vnode_id = blk.vnode_id();
                                     if vnode_last_seq_map.vnode_min_seq(vnode_id) >= seq {
                                         // If `seq_no` of TsFamily is greater than or equal to `seq`,
@@ -230,13 +230,13 @@ impl TsKv {
                                         .unwrap();
                                 }
 
-                                WalEntry::DeleteVnode(blk) => {
+                                Block::DeleteVnode(blk) => {
                                     if let Err(e) = self.remove_tsfamily_from_wal(&blk).await {
                                         // Ignore delete vnode error.
                                         trace::error!("Recover: failed to delete vnode: {e}");
                                     }
                                 }
-                                WalEntry::DeleteTable(blk) => {
+                                Block::DeleteTable(blk) => {
                                     if let Err(e) = self.drop_table_from_wal(&blk).await {
                                         // Ignore delete table error.
                                         trace::error!("Recover: failed to delete table: {e}");

@@ -7,8 +7,8 @@ use protos::models_helper::print_points;
 use snafu::ResultExt;
 
 use super::{
-    WalEntryType, ENTRY_DATABASE_SIZE_LEN, ENTRY_HEADER_LEN, ENTRY_PRECISION_LEN,
-    ENTRY_TENANT_SIZE_LEN, ENTRY_VNODE_ID_LEN, FOOTER_MAGIC_NUMBER,
+    WalType, WAL_DATABASE_SIZE_LEN, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN, WAL_PRECISION_LEN,
+    WAL_TENANT_SIZE_LEN, WAL_VNODE_ID_LEN,
 };
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::file_system::file_manager;
@@ -23,6 +23,18 @@ pub async fn read_footer(path: impl AsRef<Path>) -> Result<Option<(u64, u64)>> {
     } else {
         Ok(None)
     }
+}
+
+/// Parses wal footer, returns sequence range.
+pub fn parse_footer(footer: [u8; record_file::FILE_FOOTER_LEN]) -> Option<(u64, u64)> {
+    let magic_number = decode_be_u32(&footer[0..4]);
+    if magic_number != WAL_FOOTER_MAGIC_NUMBER {
+        // There is no footer in wal file.
+        return None;
+    }
+    let min_sequence = decode_be_u64(&footer[16..24]);
+    let max_sequence = decode_be_u64(&footer[24..32]);
+    Some((min_sequence, max_sequence))
 }
 
 pub struct WalReader {
@@ -42,7 +54,7 @@ impl WalReader {
 
         let mut has_footer = true;
         let (min_sequence, max_sequence) = match reader.footer() {
-            Some(footer) => Self::parse_footer(footer).unwrap_or((0_u64, 0_u64)),
+            Some(footer) => parse_footer(footer).unwrap_or((0_u64, 0_u64)),
             None => {
                 has_footer = false;
                 (0_u64, 0_u64)
@@ -61,19 +73,7 @@ impl WalReader {
         self.has_footer
     }
 
-    /// Parses wal footer, returns sequence range.
-    pub fn parse_footer(footer: [u8; record_file::FILE_FOOTER_LEN]) -> Option<(u64, u64)> {
-        let magic_number = decode_be_u32(&footer[0..4]);
-        if magic_number != FOOTER_MAGIC_NUMBER {
-            // There is no footer in wal file.
-            return None;
-        }
-        let min_sequence = decode_be_u64(&footer[16..24]);
-        let max_sequence = decode_be_u64(&footer[24..32]);
-        Some((min_sequence, max_sequence))
-    }
-
-    pub async fn next_wal_entry(&mut self) -> Result<Option<WalEntryBlock>> {
+    pub async fn next_wal_entry(&mut self) -> Result<Option<WalRecordData>> {
         loop {
             let data = match self.inner.read_record().await {
                 Ok(r) => r.data,
@@ -86,7 +86,19 @@ impl WalReader {
                     return Err(Error::WalTruncated);
                 }
             };
-            return Ok(Some(WalEntryBlock::new(data)));
+            return Ok(Some(WalRecordData::new(data)));
+        }
+    }
+
+    pub async fn read_wal_record_data(&mut self, pos: usize) -> Result<Option<WalRecordData>> {
+        match self.inner.read_record_at(pos).await {
+            Ok(r) => Ok(Some(WalRecordData::new(r.data))),
+            Err(Error::Eof) => Ok(None),
+            Err(e @ Error::RecordFileHashCheckFailed { .. }) => Err(e),
+            Err(e) => {
+                trace::error!("Error reading wal: {:?}", e);
+                Err(Error::WalTruncated)
+            }
         }
     }
 
@@ -122,39 +134,39 @@ impl WalReader {
     }
 }
 
-pub struct WalEntryBlock {
-    pub typ: WalEntryType,
+pub struct WalRecordData {
+    pub typ: WalType,
     pub seq: u64,
-    pub entry: WalEntry,
+    pub block: Block,
 }
 
-impl WalEntryBlock {
-    pub fn new(buf: Vec<u8>) -> WalEntryBlock {
-        if buf.len() < ENTRY_HEADER_LEN {
+impl WalRecordData {
+    pub fn new(buf: Vec<u8>) -> WalRecordData {
+        if buf.len() < WAL_HEADER_LEN {
             return Self {
-                typ: WalEntryType::Unknown,
+                typ: WalType::Unknown,
                 seq: 0,
-                entry: WalEntry::Unknown,
+                block: Block::Unknown,
             };
         }
         let seq = decode_be_u64(&buf[1..9]);
-        let entry_type: WalEntryType = buf[0].into();
-        let entry: WalEntry = match entry_type {
-            WalEntryType::Write => WalEntry::Write(WriteBlock::new(buf)),
-            WalEntryType::DeleteVnode => WalEntry::DeleteVnode(DeleteVnodeBlock::new(buf)),
-            WalEntryType::DeleteTable => WalEntry::DeleteTable(DeleteTableBlock::new(buf)),
-            WalEntryType::Unknown => WalEntry::Unknown,
+        let entry_type: WalType = buf[0].into();
+        let block = match entry_type {
+            WalType::Write => Block::Write(WriteBlock::new(buf)),
+            WalType::DeleteVnode => Block::DeleteVnode(DeleteVnodeBlock::new(buf)),
+            WalType::DeleteTable => Block::DeleteTable(DeleteTableBlock::new(buf)),
+            WalType::Unknown => Block::Unknown,
         };
         Self {
             typ: entry_type,
             seq,
-            entry,
+            block,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum WalEntry {
+pub enum Block {
     Write(WriteBlock),
     DeleteVnode(DeleteVnodeBlock),
     DeleteTable(DeleteTableBlock),
@@ -162,10 +174,10 @@ pub enum WalEntry {
 }
 
 /// buf:
-/// - header: ENTRY_HEADER_LEN
-/// - vnode_id: ENTRY_VNODE_ID_LEN
-/// - precision: ENTRY_PRECISION_LEN
-/// - tenant_size: ENTRY_TENANT_SIZE_LEN
+/// - header: WAL_HEADER_LEN
+/// - vnode_id: WAL_VNODE_ID_LEN
+/// - precision: WAL_PRECISION_LEN
+/// - tenant_size: WAL_TENANT_SIZE_LEN
 /// - tenant: tenant_size
 /// - data: ..
 #[derive(Debug, Clone, PartialEq)]
@@ -176,27 +188,27 @@ pub struct WriteBlock {
 
 impl WriteBlock {
     pub fn new(buf: Vec<u8>) -> WriteBlock {
-        let tenatn_size_pos = ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN + ENTRY_PRECISION_LEN;
+        let tenatn_size_pos = WAL_HEADER_LEN + WAL_VNODE_ID_LEN + WAL_PRECISION_LEN;
         let tenant_size =
-            decode_be_u64(&buf[tenatn_size_pos..tenatn_size_pos + ENTRY_TENANT_SIZE_LEN]) as usize;
+            decode_be_u64(&buf[tenatn_size_pos..tenatn_size_pos + WAL_TENANT_SIZE_LEN]) as usize;
         Self { buf, tenant_size }
     }
 
     pub fn check_buf_size(size: usize) -> bool {
-        size >= ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN + ENTRY_PRECISION_LEN + ENTRY_TENANT_SIZE_LEN
+        size >= WAL_HEADER_LEN + WAL_VNODE_ID_LEN + WAL_PRECISION_LEN + WAL_TENANT_SIZE_LEN
     }
 
     pub fn vnode_id(&self) -> VnodeId {
-        decode_be_u32(&self.buf[ENTRY_HEADER_LEN..ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN])
+        decode_be_u32(&self.buf[WAL_HEADER_LEN..WAL_HEADER_LEN + WAL_VNODE_ID_LEN])
     }
 
     pub fn precision(&self) -> Precision {
-        Precision::from(self.buf[ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN])
+        Precision::from(self.buf[WAL_HEADER_LEN + WAL_VNODE_ID_LEN])
     }
 
     pub fn tenant(&self) -> &[u8] {
         let tenant_pos =
-            ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN + ENTRY_PRECISION_LEN + ENTRY_TENANT_SIZE_LEN;
+            WAL_HEADER_LEN + WAL_VNODE_ID_LEN + WAL_PRECISION_LEN + WAL_TENANT_SIZE_LEN;
         &self.buf[tenant_pos..tenant_pos + self.tenant_size]
     }
 
@@ -207,19 +219,19 @@ impl WriteBlock {
     }
 
     pub fn points(&self) -> &[u8] {
-        let points_pos = ENTRY_HEADER_LEN
-            + ENTRY_VNODE_ID_LEN
-            + ENTRY_PRECISION_LEN
-            + ENTRY_TENANT_SIZE_LEN
+        let points_pos = WAL_HEADER_LEN
+            + WAL_VNODE_ID_LEN
+            + WAL_PRECISION_LEN
+            + WAL_TENANT_SIZE_LEN
             + self.tenant_size;
         &self.buf[points_pos..]
     }
 }
 
 /// buf:
-/// - header: ENTRY_HEADER_LEN
-/// - vnode_id: ENTRY_VNODE_ID_LEN
-/// - tenant_size: ENTRY_TENANT_SIZE_LEN
+/// - header: WAL_HEADER_LEN
+/// - vnode_id: WAL_VNODE_ID_LEN
+/// - tenant_size: WAL_TENANT_SIZE_LEN
 /// - tenant: tenant_size
 /// - database: ..
 #[derive(Debug, Clone, PartialEq)]
@@ -231,8 +243,8 @@ pub struct DeleteVnodeBlock {
 impl DeleteVnodeBlock {
     pub fn new(buf: Vec<u8>) -> Self {
         let tenant_len = decode_be_u64(
-            &buf[ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN
-                ..ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN + ENTRY_TENANT_SIZE_LEN],
+            &buf[WAL_HEADER_LEN + WAL_VNODE_ID_LEN
+                ..WAL_HEADER_LEN + WAL_VNODE_ID_LEN + WAL_TENANT_SIZE_LEN],
         ) as usize;
         Self {
             buf,
@@ -241,15 +253,15 @@ impl DeleteVnodeBlock {
     }
 
     pub fn check_buf_size(size: usize) -> bool {
-        size > ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN + ENTRY_TENANT_SIZE_LEN
+        size > WAL_HEADER_LEN + WAL_VNODE_ID_LEN + WAL_TENANT_SIZE_LEN
     }
 
     pub fn vnode_id(&self) -> VnodeId {
-        decode_be_u32(&self.buf[ENTRY_HEADER_LEN..ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN])
+        decode_be_u32(&self.buf[WAL_HEADER_LEN..WAL_HEADER_LEN + WAL_VNODE_ID_LEN])
     }
 
     pub fn tenant(&self) -> &[u8] {
-        let tenant_pos = ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN + ENTRY_TENANT_SIZE_LEN;
+        let tenant_pos = WAL_HEADER_LEN + WAL_VNODE_ID_LEN + WAL_TENANT_SIZE_LEN;
         &self.buf[tenant_pos..tenant_pos + self.tenant_size]
     }
 
@@ -261,7 +273,7 @@ impl DeleteVnodeBlock {
 
     pub fn database(&self) -> &[u8] {
         let database_pos =
-            ENTRY_HEADER_LEN + ENTRY_VNODE_ID_LEN + ENTRY_TENANT_SIZE_LEN + self.tenant_size;
+            WAL_HEADER_LEN + WAL_VNODE_ID_LEN + WAL_TENANT_SIZE_LEN + self.tenant_size;
         &self.buf[database_pos..]
     }
 
@@ -273,9 +285,9 @@ impl DeleteVnodeBlock {
 }
 
 /// buf:
-/// - header: ENTRY_HEADER_LEN
-/// - tenant_size: ENTRY_TENANT_SIZE_LEN
-/// - database_size: ENTRY_DATABASE_SIZE_LEN
+/// - header: WAL_HEADER_LEN
+/// - tenant_size: WAL_TENANT_SIZE_LEN
+/// - database_size: WAL_DATABASE_SIZE_LEN
 /// - tenant: tenant_size
 /// - database: database_size
 /// - table: ..
@@ -289,11 +301,10 @@ pub struct DeleteTableBlock {
 impl DeleteTableBlock {
     pub fn new(buf: Vec<u8>) -> DeleteTableBlock {
         let tenant_len =
-            decode_be_u64(&buf[ENTRY_HEADER_LEN..ENTRY_HEADER_LEN + ENTRY_TENANT_SIZE_LEN])
-                as usize;
-        let database_len_pos = ENTRY_HEADER_LEN + ENTRY_TENANT_SIZE_LEN;
+            decode_be_u64(&buf[WAL_HEADER_LEN..WAL_HEADER_LEN + WAL_TENANT_SIZE_LEN]) as usize;
+        let database_len_pos = WAL_HEADER_LEN + WAL_TENANT_SIZE_LEN;
         let database_len =
-            decode_be_u32(&buf[database_len_pos..database_len_pos + ENTRY_DATABASE_SIZE_LEN])
+            decode_be_u32(&buf[database_len_pos..database_len_pos + WAL_DATABASE_SIZE_LEN])
                 as usize;
         Self {
             buf,
@@ -303,11 +314,11 @@ impl DeleteTableBlock {
     }
 
     pub fn check_buf_size(size: usize) -> bool {
-        size >= ENTRY_HEADER_LEN + ENTRY_TENANT_SIZE_LEN + ENTRY_DATABASE_SIZE_LEN
+        size >= WAL_HEADER_LEN + WAL_TENANT_SIZE_LEN + WAL_DATABASE_SIZE_LEN
     }
 
     pub fn tenant(&self) -> &[u8] {
-        let tenant_pos = ENTRY_HEADER_LEN + ENTRY_TENANT_SIZE_LEN + ENTRY_DATABASE_SIZE_LEN;
+        let tenant_pos = WAL_HEADER_LEN + WAL_TENANT_SIZE_LEN + WAL_DATABASE_SIZE_LEN;
         &self.buf[tenant_pos..tenant_pos + self.tenant_len]
     }
 
@@ -319,7 +330,7 @@ impl DeleteTableBlock {
 
     pub fn database(&self) -> &[u8] {
         let database_pos =
-            ENTRY_HEADER_LEN + ENTRY_TENANT_SIZE_LEN + ENTRY_DATABASE_SIZE_LEN + self.tenant_len;
+            WAL_HEADER_LEN + WAL_TENANT_SIZE_LEN + WAL_DATABASE_SIZE_LEN + self.tenant_len;
         &self.buf[database_pos..database_pos + self.database_len]
     }
 
@@ -330,9 +341,9 @@ impl DeleteTableBlock {
     }
 
     pub fn table(&self) -> &[u8] {
-        let table_pos = ENTRY_HEADER_LEN
-            + ENTRY_TENANT_SIZE_LEN
-            + ENTRY_DATABASE_SIZE_LEN
+        let table_pos = WAL_HEADER_LEN
+            + WAL_TENANT_SIZE_LEN
+            + WAL_DATABASE_SIZE_LEN
             + self.tenant_len
             + self.database_len;
         &self.buf[table_pos..]
@@ -355,8 +366,8 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
             Ok(Some(entry_block)) => {
                 println!("============================================================");
                 println!("Seq: {}, Typ: {}", entry_block.seq, entry_block.typ);
-                match entry_block.entry {
-                    WalEntry::Write(blk) => {
+                match entry_block.block {
+                    Block::Write(blk) => {
                         println!(
                             "Tenant: {}, VnodeId: {}, Precision: {}",
                             std::str::from_utf8(blk.tenant()).unwrap(),
@@ -373,7 +384,7 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                             Err(e) => panic!("unexpected data: '{:?}'", e),
                         }
                     }
-                    WalEntry::DeleteVnode(blk) => {
+                    Block::DeleteVnode(blk) => {
                         println!(
                             "Tenant: {}, Database: {}, VnodeId: {}",
                             std::str::from_utf8(blk.tenant()).unwrap(),
@@ -381,7 +392,7 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                             blk.vnode_id(),
                         );
                     }
-                    WalEntry::DeleteTable(blk) => {
+                    Block::DeleteTable(blk) => {
                         println!(
                             "Tenant: {}, VnodeId: {}, Precision: {}",
                             std::str::from_utf8(blk.tenant()).unwrap(),
@@ -389,7 +400,7 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                             std::str::from_utf8(blk.table()).unwrap(),
                         );
                     }
-                    WalEntry::Unknown => {
+                    Block::Unknown => {
                         println!("Unknown WAL entry type.");
                     }
                 }
@@ -416,7 +427,7 @@ mod test {
     use models::schema::Precision;
 
     use crate::wal::reader::{DeleteTableBlock, DeleteVnodeBlock, WriteBlock};
-    use crate::wal::WalEntryType;
+    use crate::wal::WalType;
 
     impl WriteBlock {
         pub fn build(
@@ -427,7 +438,7 @@ mod test {
             points: Vec<u8>,
         ) -> Self {
             let mut buf = Vec::new();
-            buf.push(WalEntryType::Write as u8);
+            buf.push(WalType::Write as u8);
             buf.extend_from_slice(&seq.to_be_bytes());
             buf.extend_from_slice(&vnode_id.to_be_bytes());
             buf.push(precision as u8);
@@ -446,7 +457,7 @@ mod test {
         pub fn build(seq: u64, tenant: &str, database: &str, vnode_id: VnodeId) -> Self {
             let mut buf = Vec::new();
             let tenant_bytes = tenant.as_bytes();
-            buf.push(WalEntryType::DeleteVnode as u8);
+            buf.push(WalType::DeleteVnode as u8);
             buf.extend_from_slice(&seq.to_be_bytes());
             buf.extend_from_slice(&vnode_id.to_be_bytes());
             buf.extend_from_slice(&(tenant_bytes.len() as u64).to_be_bytes());
@@ -466,7 +477,7 @@ mod test {
             let tenant_bytes = tenant.as_bytes();
             let database_bytes = database.as_bytes();
             let table_bytes = table.as_bytes();
-            buf.push(WalEntryType::DeleteTable as u8);
+            buf.push(WalType::DeleteTable as u8);
             buf.extend_from_slice(&seq.to_be_bytes());
             buf.extend_from_slice(&(tenant_bytes.len() as u64).to_be_bytes());
             buf.extend_from_slice(&(database_bytes.len() as u32).to_be_bytes());
