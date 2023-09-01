@@ -243,17 +243,17 @@ impl Database {
             })?;
             let fb_schema = FbSchema::from_fb_column(columns)?;
             let num_rows = table.num_rows() as usize;
+            let sids = Self::build_index(
+                db_name,
+                table_name,
+                &columns,
+                &fb_schema.tag_indexes,
+                num_rows,
+                ts_index.clone(),
+            )
+            .await?;
 
             for i in 0..num_rows {
-                let sid = Self::build_index(
-                    db_name,
-                    table_name,
-                    &columns,
-                    &fb_schema.tag_indexes,
-                    i,
-                    ts_index.clone(),
-                )
-                .await?;
                 self.build_row_data(
                     &mut map,
                     table_name,
@@ -262,7 +262,7 @@ impl Database {
                     &fb_schema.field_indexes,
                     fb_schema.time_index,
                     i,
-                    sid,
+                    &sids,
                     false,
                 )
                 .await?;
@@ -286,18 +286,17 @@ impl Database {
             })?;
             let fb_schema = FbSchema::from_fb_column(columns)?;
             let num_rows = table.num_rows() as usize;
+            let sids = Self::build_index(
+                db_name,
+                table_name,
+                &columns,
+                &fb_schema.tag_indexes,
+                num_rows,
+                ts_index.clone(),
+            )
+            .await?;
 
             for i in 0..num_rows {
-                let sid = Self::build_index(
-                    db_name,
-                    table_name,
-                    &columns,
-                    &fb_schema.tag_indexes,
-                    i,
-                    ts_index.clone(),
-                )
-                .await?;
-
                 let mut schema_change_or_create = false;
                 if self
                     .schemas
@@ -328,7 +327,7 @@ impl Database {
                     &fb_schema.field_indexes,
                     fb_schema.time_index,
                     i,
-                    sid,
+                    &sids,
                     schema_change_or_create,
                 )
                 .await?;
@@ -346,7 +345,7 @@ impl Database {
         fields_idx: &[usize],
         ts_idx: usize,
         row_count: usize,
-        sid: u32,
+        sids: &[u32],
         schema_change_or_create: bool,
     ) -> Result<()> {
         let table_schema = if schema_change_or_create {
@@ -369,7 +368,7 @@ impl Database {
         )?;
         let schema_size = table_schema.size();
         let schema_id = table_schema.schema_id;
-        let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
+        let entry = map.entry((sids[row_count], schema_id)).or_insert(RowGroup {
             schema: Arc::new(TskvTableSchema::default()),
             rows: LinkedList::new(),
             range: TimeRange {
@@ -385,7 +384,6 @@ impl Database {
             max_ts: row.ts,
         });
         entry.size += row.size();
-        //todo: remove this copy
         entry.rows.push_back(row);
         Ok(())
     }
@@ -395,24 +393,39 @@ impl Database {
         tab_name: &str,
         columns: &Vector<'_, ForwardsUOffset<Column<'_>>>,
         tag_idx: &[usize],
-        row_count: usize,
+        row_num: usize,
         ts_index: Arc<index::ts_index::TSIndex>,
-    ) -> Result<u32> {
-        let series_key = SeriesKey::build_series_key(
-            db_name, tab_name, columns, tag_idx, row_count,
-        )
-        .map_err(|e| Error::CommonError {
-            reason: e.to_string(),
-        })?;
-
-        if let Some(id) = ts_index.get_series_id(&series_key).await? {
-            return Ok(id);
+    ) -> Result<Vec<u32>> {
+        let mut res_sids = Vec::with_capacity(row_num);
+        let mut series_keys = Vec::with_capacity(row_num);
+        for row_count in 0..row_num {
+            let series_key =
+                SeriesKey::build_series_key(db_name, tab_name, columns, tag_idx, row_count)
+                    .map_err(|e| Error::CommonError {
+                        reason: e.to_string(),
+                    })?;
+            if let Some(id) = ts_index.get_series_id(&series_key).await? {
+                res_sids.push(Some(id));
+            } else {
+                res_sids.push(None);
+                series_keys.push(series_key);
+            }
         }
 
-        let id = ts_index.add_series_if_not_exists(&series_key).await?;
-        trace::trace!("Database '{db_name}' add series, id: {id}, series: '{series_key}'");
+        let mut ids = ts_index
+            .add_series_if_not_exists(series_keys)
+            .await?
+            .into_iter();
+        for item in res_sids.iter_mut() {
+            if item.is_none() {
+                *item = Some(ids.next().ok_or(Error::CommonError {
+                    reason: "add series failed, new series id is missing".to_string(),
+                })?);
+            }
+        }
+        let res_sids = res_sids.into_iter().flatten().collect::<Vec<_>>();
 
-        Ok(id)
+        Ok(res_sids)
     }
 
     /// Snashots last version before `last_seq` of this database's all vnodes
@@ -497,7 +510,6 @@ impl Database {
         let path = self.opt.storage.index_dir(&self.owner, id);
 
         let idx = index::ts_index::TSIndex::new(path).await?;
-        let idx = Arc::new(idx);
 
         self.ts_indexes.insert(id, idx.clone());
 

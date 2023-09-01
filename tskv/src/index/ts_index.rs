@@ -4,6 +4,7 @@ use std::ops::{BitAnd, BitOr, Bound, RangeBounds};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::BufMut;
 use datafusion::arrow::datatypes::DataType;
@@ -11,12 +12,14 @@ use datafusion::scalar::ScalarValue;
 use models::predicate::domain::{utf8_from, Domain, Range};
 use models::tag::TagFromParts;
 use models::{utils, SeriesKey, Tag};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
-use trace::{debug, info};
+use trace::{debug, error, info};
 
 use super::binlog::{IndexBinlog, SeriesKeyBlock};
 use super::cache::{ForwardIndexCache, SeriesKeyInfo};
 use super::{IndexEngine, IndexError, IndexResult};
+use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 use crate::index::binlog::{BinlogReader, BinlogWriter};
 use crate::index::ts_index::fmt::Debug;
@@ -34,10 +37,11 @@ pub struct TSIndex {
     binlog: Arc<RwLock<IndexBinlog>>,
     storage: Arc<RwLock<IndexEngine>>,
     forward_cache: ForwardIndexCache,
+    binlog_change_sender: UnboundedSender<()>,
 }
 
 impl TSIndex {
-    pub async fn new(path: impl AsRef<Path>) -> IndexResult<Self> {
+    pub async fn new(path: impl AsRef<Path>) -> IndexResult<Arc<Self>> {
         let path = path.as_ref();
 
         let binlog = IndexBinlog::new(path).await?;
@@ -48,6 +52,8 @@ impl TSIndex {
             None => 0,
         };
 
+        let (binlog_change_sender, binlog_change_reciver) = unbounded_channel();
+
         let mut ts_index = Self {
             binlog: Arc::new(RwLock::new(binlog)),
             storage: Arc::new(RwLock::new(storage)),
@@ -55,9 +61,12 @@ impl TSIndex {
             write_count: AtomicU32::new(0),
             path: path.into(),
             forward_cache: ForwardIndexCache::new(1_000_000),
+            binlog_change_sender,
         };
 
         ts_index.recover().await?;
+        let ts_index = Arc::new(ts_index);
+        run_index_job(ts_index.clone(), binlog_change_reciver);
         info!(
             "Recovered index dir '{}', incr_id start at: {incr_id}",
             path.display()
@@ -73,7 +82,7 @@ impl TSIndex {
             if let Ok(file_id) = file_utils::get_index_binlog_file_id(filename) {
                 let file_path = path.join(filename);
                 info!("Recovering index binlog: '{}'", file_path.display());
-                let tmp_file = BinlogWriter::open(file_id, file_path).await?;
+                let tmp_file = BinlogWriter::open(file_id, &file_path).await?;
                 let mut reader_file = BinlogReader::new(file_id, tmp_file.file.into()).await?;
                 self.recover_from_file(&mut reader_file).await?;
             }
@@ -170,45 +179,42 @@ impl TSIndex {
         Ok(None)
     }
 
-    pub async fn add_series_if_not_exists(&self, series_key: &SeriesKey) -> IndexResult<u32> {
-        // generate series id; prepare data
-        let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
-        let key_buf = encode_series_key(series_key.table(), series_key.tags());
-        let encode = series_key.encode();
-        let block = SeriesKeyBlock {
-            ts: utils::now_timestamp_nanos(),
-            series_id: id,
-            data_len: encode.len() as u32,
-            data: encode,
-        };
-
-        let block_encode = block.encode();
-        self.binlog.write().await.write(&block_encode).await?;
-
-        // is already exist and store forward index
-        {
-            let mut storage_w = self.storage.write().await;
-            if let Some(val) = storage_w.get(&key_buf)? {
-                return Ok(byte_utils::decode_be_u32(&val));
+    pub async fn add_series_if_not_exists(
+        &self,
+        series_keys: Vec<SeriesKey>,
+    ) -> IndexResult<Vec<u32>> {
+        let mut ids = Vec::with_capacity(series_keys.len());
+        let mut blocks_data = Vec::new();
+        for mut series_key in series_keys.into_iter() {
+            let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
+            series_key.id = id;
+            let encode = series_key.encode();
+            let key_buf = encode_series_key(series_key.table(), series_key.tags());
+            let block = SeriesKeyBlock {
+                ts: utils::now_timestamp_nanos(),
+                series_id: id,
+                data_len: encode.len() as u32,
+                data: encode,
+            };
+            {
+                let mut storage_w = self.storage.write().await;
+                if let Some(val) = storage_w.get(&key_buf)? {
+                    ids.push(byte_utils::decode_be_u32(&val));
+                    continue;
+                }
+                storage_w.set(&key_buf, &id.to_be_bytes())?;
+                ids.push(id);
             }
-
-            storage_w.set(&key_buf, &id.to_be_bytes())?;
-            storage_w.set(&encode_series_id_key(id), &block.data)?;
+            blocks_data.extend_from_slice(&block.encode());
         }
+        self.binlog.write().await.write(&blocks_data).await?;
+        self.binlog_change_sender
+            .send(())
+            .map_err(|e| IndexError::IndexStroage {
+                msg: format!("Send binlog change failed, err: {}", e),
+            })?;
 
-        // then inverted index
-        for tag in series_key.tags() {
-            let key = encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
-            self.storage.write().await.modify(&key, id, true)?;
-        }
-        if series_key.tags().is_empty() {
-            let key = encode_inverted_index_key(series_key.table(), &[], &[]);
-            self.storage.write().await.modify(&key, id, true)?;
-        }
-
-        let _ = self.check_to_flush(false).await;
-
-        Ok(id)
+        Ok(ids)
     }
 
     async fn check_to_flush(&self, force: bool) -> IndexResult<()> {
@@ -577,8 +583,121 @@ pub fn encode_series_id_list(list: &[u32]) -> Vec<u8> {
     data
 }
 
+pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: UnboundedReceiver<()>) {
+    tokio::spawn(async move {
+        let path = ts_index.path.clone();
+        let mut handle_file = HashMap::new();
+        while (binlog_change_reciver.recv().await).is_some() {
+            let files = file_manager::list_file_names(&path);
+            for filename in files.iter() {
+                if let Ok(file_id) = file_utils::get_index_binlog_file_id(filename) {
+                    let file_path = path.join(filename);
+                    let file = match file_manager::open_file(&file_path).await {
+                        Ok(f) => f,
+                        Err(e) => {
+                            error!(
+                                "Open index binlog file '{}' failed, err: {}",
+                                file_path.display(),
+                                e
+                            );
+                            continue;
+                        }
+                    };
+
+                    if file.len() <= *handle_file.get(&file_id).unwrap_or(&0) {
+                        continue;
+                    }
+
+                    let mut reader_file = match BinlogReader::new(file_id, file.into()).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            error!(
+                                "Open index binlog file '{}' failed, err: {}",
+                                file_path.display(),
+                                e
+                            );
+                            continue;
+                        }
+                    };
+                    while let Ok(Some(block)) = reader_file.next_block().await {
+                        if reader_file.pos() <= *handle_file.get(&file_id).unwrap_or(&0) {
+                            continue;
+                        }
+                        if block.data_len > 0 {
+                            let series_key = match SeriesKey::decode(&block.data) {
+                                Ok(key) => key,
+                                Err(e) => {
+                                    error!("Decode series key failed, err: {}", e);
+                                    continue;
+                                }
+                            };
+                            // is already exist and store forward index
+                            {
+                                let mut storage_w;
+                                loop {
+                                    match ts_index.storage.try_write() {
+                                        Ok(stroage) => {
+                                            storage_w = stroage;
+                                            break;
+                                        }
+                                        Err(_) => {
+                                            info!("Waiting for index storage write lock");
+                                            tokio::time::sleep(Duration::from_secs(5)).await;
+                                        }
+                                    }
+                                }
+                                if let Err(e) = storage_w
+                                    .set(&encode_series_id_key(block.series_id), &block.data)
+                                {
+                                    error!("Set series key failed, err: {}", e);
+                                }
+                            }
+
+                            // then inverted index
+                            for tag in series_key.tags() {
+                                let key = encode_inverted_index_key(
+                                    series_key.table(),
+                                    &tag.key,
+                                    &tag.value,
+                                );
+                                if let Err(e) = ts_index.storage.write().await.modify(
+                                    &key,
+                                    block.series_id,
+                                    true,
+                                ) {
+                                    error!("Modify inverted index failed, err: {}", e);
+                                }
+                            }
+                            if series_key.tags().is_empty() {
+                                let key = encode_inverted_index_key(series_key.table(), &[], &[]);
+                                if let Err(e) = ts_index.storage.write().await.modify(
+                                    &key,
+                                    block.series_id,
+                                    true,
+                                ) {
+                                    error!("Modify inverted index failed, err: {}", e);
+                                }
+                            }
+
+                            let _ = ts_index.check_to_flush(false).await;
+                            handle_file.insert(file_id, reader_file.pos());
+                        } else {
+                            // delete series
+                            let _ = ts_index.del_series_id_from_engine(block.series_id).await;
+                            let _ = ts_index.check_to_flush(false).await;
+                            handle_file.insert(file_id, reader_file.pos());
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
     use models::schema::ExternalTableSchema;
     use models::{SeriesId, SeriesKey, Tag};
@@ -643,13 +762,17 @@ mod test {
             // Insert series into index.
             let mut series_keys_sids = Vec::with_capacity(series_keys_desc.len());
             for (i, series_key) in series_keys.iter().enumerate() {
-                let sid = ts_index.add_series_if_not_exists(series_key).await.unwrap();
-                let last_key = ts_index.get_series_key(sid).await.unwrap().unwrap();
+                let sid = ts_index
+                    .add_series_if_not_exists(vec![series_key.clone()])
+                    .await
+                    .unwrap();
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                let last_key = ts_index.get_series_key(sid[0]).await.unwrap().unwrap();
                 assert_eq!(series_key.to_string(), last_key.to_string());
 
-                max_sid = max_sid.max(sid);
-                println!("test_index#1: series {i} - '{series_key}' - id: {sid}");
-                series_keys_sids.push(sid);
+                max_sid = max_sid.max(sid[0]);
+                println!("test_index#1: series {i} - '{series_key}' - id: {:?}", sid);
+                series_keys_sids.push(sid[0]);
             }
 
             // Test get series from index
@@ -717,13 +840,17 @@ mod test {
             // Test insert after re-open.
             let prev_max_sid = max_sid;
             for (i, series_key) in series_keys.iter().enumerate() {
-                let sid = ts_index.add_series_if_not_exists(series_key).await.unwrap();
-                let last_key = ts_index.get_series_key(sid).await.unwrap().unwrap();
+                let sid = ts_index
+                    .add_series_if_not_exists(vec![series_key.clone()])
+                    .await
+                    .unwrap();
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                let last_key = ts_index.get_series_key(sid[0]).await.unwrap().unwrap();
                 assert_eq!(series_key.to_string(), last_key.to_string());
 
-                assert!(sid > prev_max_sid);
-                max_sid = max_sid.max(sid);
-                println!("test_index#2: series {i} - '{series_key}' - id: {sid}");
+                assert!(sid[0] > prev_max_sid);
+                max_sid = max_sid.max(sid[0]);
+                println!("test_index#2: series {i} - '{series_key}' - id: {:?}", sid);
             }
         }
 
@@ -741,12 +868,16 @@ mod test {
         let series_keys = build_series_keys(&series_keys_desc);
         let prev_max_sid = max_sid;
         for (i, series_key) in series_keys.iter().enumerate() {
-            let sid = ts_index.add_series_if_not_exists(series_key).await.unwrap();
-            let last_key = ts_index.get_series_key(sid).await.unwrap().unwrap();
+            let sid = ts_index
+                .add_series_if_not_exists(vec![series_key.clone()])
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let last_key = ts_index.get_series_key(sid[0]).await.unwrap().unwrap();
             assert_eq!(series_key.to_string(), last_key.to_string());
 
-            assert!(sid > prev_max_sid);
-            println!("test_index#3: series {i} - '{series_key}' - id: {sid}");
+            assert!(sid[0] > prev_max_sid);
+            println!("test_index#3: series {i} - '{series_key}' - id: {:?}", sid);
         }
     }
 
