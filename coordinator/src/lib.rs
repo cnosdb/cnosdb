@@ -28,6 +28,7 @@ pub mod file_info;
 pub mod hh_queue;
 pub mod metrics;
 pub mod reader;
+pub mod resource_manager;
 pub mod service;
 pub mod service_mock;
 pub mod vnode_mgr;

@@ -7,7 +7,7 @@ use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
 use models::oid::Oid;
-use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
+use models::schema::{DatabaseSchema, ResourceInfo, TableSchema, Tenant, TenantOptions};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -118,6 +118,8 @@ pub enum WriteCommand {
         tenant: String,
         request: LocalBucketRequest,
     },
+    // cluster, [tenant, db, table,...], ResourceInfo
+    ResourceInfo(String, Vec<String>, ResourceInfo),
 }
 
 /******************* read command *************************/
@@ -146,6 +148,8 @@ pub enum ReadCommand {
     Tenants(String),
     // cluster, tenant, db, table
     TableSchema(String, String, String, String),
+    // cluster, [tenant, db, table,...]
+    ResourceInfos(String, Vec<String>),
 }
 
 pub const ENTRY_LOG_TYPE_SET: i32 = 1;

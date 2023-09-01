@@ -37,8 +37,8 @@ use crate::codec::Encoding;
 use crate::gis::data_type::Geometry;
 use crate::oid::{Identifier, Oid};
 use crate::utils::{
-    DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS, MINUTES_MICROS,
-    MINUTES_MILLS, MINUTES_NANOS,
+    now_timestamp_nanos, DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS,
+    MINUTES_MICROS, MINUTES_MILLS, MINUTES_NANOS,
 };
 use crate::value_type::ValueType;
 use crate::{ColumnId, Error, PhysicalDType, SchemaId, Timestamp};
@@ -55,6 +55,114 @@ pub const DEFAULT_DATABASE: &str = "public";
 pub const USAGE_SCHEMA: &str = "usage_schema";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
 pub const DEFAULT_PRECISION: &str = "NS";
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub enum ResourceType {
+    #[default]
+    Tenant,
+    Database,
+    Table,
+    Tagname,
+    Tagvalue,
+}
+impl fmt::Display for ResourceType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceType::Tenant => write!(f, "Tenant"),
+            ResourceType::Database => write!(f, "Database"),
+            ResourceType::Table => write!(f, "Table"),
+            ResourceType::Tagname => write!(f, "Tagname"),
+            ResourceType::Tagvalue => write!(f, "Tagvalue"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub enum ResourceOperator {
+    #[default]
+    Drop,
+    Update,
+}
+impl fmt::Display for ResourceOperator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceOperator::Drop => write!(f, "Drop"),
+            ResourceOperator::Update => write!(f, "Update"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+pub enum ResourceStatus {
+    #[default]
+    Schedule,
+    Executing,
+    Successed,
+    Failed,
+    Cancel,
+}
+impl fmt::Display for ResourceStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceStatus::Schedule => write!(f, "Schedule"),
+            ResourceStatus::Executing => write!(f, "Executing"),
+            ResourceStatus::Successed => write!(f, "Successed"),
+            ResourceStatus::Failed => write!(f, "Failed"),
+            ResourceStatus::Cancel => write!(f, "Cancel"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct ResourceInfo {
+    pub time: i64,
+    tenant_id: Oid,
+    names: Vec<String>,
+    pub res_type: ResourceType,
+    pub operator: ResourceOperator,
+    pub after: Option<Duration>, // None means now
+    pub status: ResourceStatus,
+    pub comment: String,
+}
+impl ResourceInfo {
+    pub fn new(
+        tenant_id: Oid,
+        names: Vec<String>,
+        res_type: ResourceType,
+        operator: ResourceOperator,
+        after: &Option<Duration>,
+    ) -> Option<Self> {
+        if names.is_empty() {
+            return None;
+        }
+        let mut res_info = ResourceInfo {
+            time: now_timestamp_nanos(),
+            tenant_id,
+            names,
+            res_type,
+            operator,
+            after: after.clone(),
+            status: ResourceStatus::Executing,
+            comment: String::default(),
+        };
+        if after.is_some() {
+            let after_nanos = after.clone().unwrap().to_nanoseconds();
+            if after_nanos > 0 {
+                res_info.status = ResourceStatus::Schedule;
+                res_info.time += after_nanos;
+            }
+        }
+        Some(res_info)
+    }
+
+    pub fn names(&self) -> &[String] {
+        &self.names
+    }
+
+    pub fn tenant_id(&self) -> Oid {
+        self.tenant_id
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TableSchema {

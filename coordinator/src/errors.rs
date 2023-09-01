@@ -172,6 +172,12 @@ pub enum CoordinatorError {
         database_min_ts: Timestamp,
         point_ts: Timestamp,
     },
+
+    #[snafu(display("name {names} is illegality"))]
+    #[error_code(code = 26)]
+    ResNamesIllegality {
+        names: String,
+    },
 }
 
 impl From<PointsError> for CoordinatorError {

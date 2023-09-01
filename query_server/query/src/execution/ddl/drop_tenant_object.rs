@@ -1,7 +1,8 @@
 use async_trait::async_trait;
+use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
-use protos::kv_service::admin_command_request::Command::DropDb;
-use protos::kv_service::{AdminCommandRequest, DropDbRequest};
+use models::oid::Identifier;
+use models::schema::{ResourceInfo, ResourceOperator, ResourceType};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropTenantObject, TenantObjectType};
 use spi::{QueryError, Result};
@@ -28,6 +29,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
             ref name,
             ref if_exist,
             ref obj_type,
+            ref after,
         } = self.stmt;
 
         let meta = query_state_machine
@@ -68,26 +70,35 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 // 删除租户下的database
                 // tenant_id
                 // database_name
-
-                let req = AdminCommandRequest {
-                    tenant: tenant_name.to_string(),
-                    command: Some(DropDb(DropDbRequest { db: name.clone() })),
-                };
-
-                query_state_machine.coord.broadcast_command(req).await?;
-
-                debug!("Drop database {} of tenant {}", name, tenant_name);
-                let success = meta.drop_db(name).await?;
-
-                if let (false, false) = (if_exist, success) {
-                    return Err(QueryError::Meta {
-                        source: MetaError::DatabaseNotFound {
-                            database: name.to_string(),
-                        },
-                    });
+                match meta.get_db_info(name) {
+                    Ok(_) => {
+                        let resourceinfo = ResourceInfo::new(
+                            *meta.tenant().id(),
+                            vec![tenant_name.clone(), name.clone()],
+                            ResourceType::Database,
+                            ResourceOperator::Drop,
+                            after,
+                        )
+                        .unwrap();
+                        ResourceManager::add_resource_task(
+                            query_state_machine.coord.clone(),
+                            resourceinfo,
+                        )
+                        .await?;
+                        Ok(Output::Nil(()))
+                    }
+                    Err(_) => {
+                        if !if_exist {
+                            return Err(QueryError::Meta {
+                                source: MetaError::DatabaseNotFound {
+                                    database: name.to_string(),
+                                },
+                            });
+                        } else {
+                            Ok(Output::Nil(()))
+                        }
+                    }
                 }
-
-                Ok(Output::Nil(()))
             }
         }
     }

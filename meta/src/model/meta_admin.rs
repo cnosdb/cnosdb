@@ -10,7 +10,7 @@ use models::auth::user::{admin_user, User, UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
-use models::schema::{Tenant, TenantOptions};
+use models::schema::{ResourceInfo, Tenant, TenantOptions};
 use models::utils::{build_address, now_timestamp_secs};
 use parking_lot::RwLock;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -678,4 +678,22 @@ impl AdminMeta {
     }
 
     /******************** Tenant Limiter Operation End *********************/
+
+    pub async fn write_resourceinfo(
+        &self,
+        names: &[String],
+        res_info: ResourceInfo,
+    ) -> MetaResult<()> {
+        let req = command::WriteCommand::ResourceInfo(self.cluster(), names.to_owned(), res_info);
+
+        self.client.write::<()>(&req).await?;
+
+        Ok(())
+    }
+
+    pub async fn read_resourceinfos(&self, names: &[String]) -> MetaResult<Vec<ResourceInfo>> {
+        let req = command::ReadCommand::ResourceInfos(self.cluster(), names.to_owned());
+
+        self.client.read::<Vec<ResourceInfo>>(&req).await
+    }
 }

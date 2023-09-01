@@ -21,8 +21,8 @@ use spi::query::ast::{
     CopyIntoLocation, CopyIntoTable, CopyTarget, CopyVnode, CreateDatabase, CreateRole,
     CreateStream, CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase,
     DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode, Explain,
-    ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege, ShowSeries, ShowTagBody,
-    ShowTagValues, Trigger, UriLocation, With,
+    ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege, RecoverDatabase, RecoverTable,
+    RecoverTenant, ShowSeries, ShowTagBody, ShowTagValues, Trigger, UriLocation, With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -108,6 +108,10 @@ enum CnosKeyWord {
     APPEND,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     UNSET,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    AFTER,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    RECOVER,
 }
 
 impl FromStr for CnosKeyWord {
@@ -149,6 +153,8 @@ impl FromStr for CnosKeyWord {
             "COMPLETE" => Ok(CnosKeyWord::COMPLETE),
             "APPEND" => Ok(CnosKeyWord::APPEND),
             "UNSET" => Ok(CnosKeyWord::UNSET),
+            "AFTER" => Ok(CnosKeyWord::AFTER),
+            "RECOVER" => Ok(CnosKeyWord::RECOVER),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
                 s
@@ -286,6 +292,10 @@ impl<'a> ExtParser<'a> {
                             CnosKeyWord::CHECKSUM => {
                                 self.parser.next_token();
                                 self.parse_checksum()
+                            }
+                            CnosKeyWord::RECOVER => {
+                                self.parser.next_token();
+                                self.parse_recover()
                             }
                             _ => Ok(ExtStatement::SqlStatement(Box::new(
                                 self.parser.parse_statement()?,
@@ -1356,31 +1366,78 @@ impl<'a> ExtParser<'a> {
         Ok(options)
     }
 
+    fn parse_recover(&mut self) -> Result<ExtStatement> {
+        let ast = if self.parser.parse_keyword(Keyword::TABLE) {
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let object_name = self.parser.parse_object_name()?;
+            ExtStatement::RecoverTable(RecoverTable {
+                object_name,
+                if_exist,
+            })
+        } else if self.parser.parse_keyword(Keyword::DATABASE) {
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let object_name = self.parser.parse_identifier()?;
+            ExtStatement::RecoverDatabase(RecoverDatabase {
+                object_name,
+                if_exist,
+            })
+        } else if self.parse_cnos_keyword(CnosKeyWord::TENANT) {
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let object_name = self.parser.parse_identifier()?;
+            ExtStatement::RecoverTenant(RecoverTenant {
+                object_name,
+                if_exist,
+            })
+        } else {
+            return self.expected(
+                "TABLE,DATABASE,TENANT after RECOVER",
+                self.parser.peek_token(),
+            );
+        };
+
+        Ok(ast)
+    }
+
     /// Parse a SQL DROP statement
     fn parse_drop(&mut self) -> Result<ExtStatement> {
         let ast = if self.parser.parse_keyword(Keyword::TABLE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_object_name()?;
+            let mut after = None;
+            if self.parse_cnos_keyword(CnosKeyWord::AFTER) {
+                after = Some(self.parse_string_value()?);
+            }
             ExtStatement::DropDatabaseObject(DropDatabaseObject {
                 object_name,
                 if_exist,
                 obj_type: DatabaseObjectType::Table,
+                after,
             })
         } else if self.parser.parse_keyword(Keyword::DATABASE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_identifier()?;
+            let mut after = None;
+            if self.parse_cnos_keyword(CnosKeyWord::AFTER) {
+                after = Some(self.parse_string_value()?);
+            }
             ExtStatement::DropTenantObject(DropTenantObject {
                 object_name,
                 if_exist,
                 obj_type: TenantObjectType::Database,
+                after,
             })
         } else if self.parse_cnos_keyword(CnosKeyWord::TENANT) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_identifier()?;
+            let mut after = None;
+            if self.parse_cnos_keyword(CnosKeyWord::AFTER) {
+                after = Some(self.parse_string_value()?);
+            }
             ExtStatement::DropGlobalObject(DropGlobalObject {
                 object_name,
                 if_exist,
                 obj_type: GlobalObjectType::Tenant,
+                after,
             })
         } else if self.parser.parse_keyword(Keyword::USER) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
@@ -1389,6 +1446,7 @@ impl<'a> ExtParser<'a> {
                 object_name,
                 if_exist,
                 obj_type: GlobalObjectType::User,
+                after: None,
             })
         } else if self.parser.parse_keyword(Keyword::ROLE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
@@ -1397,6 +1455,7 @@ impl<'a> ExtParser<'a> {
                 object_name,
                 if_exist,
                 obj_type: TenantObjectType::Role,
+                after: None,
             })
         } else if self.parse_cnos_keyword(CnosKeyWord::VNODE) {
             let vnode_id = self.parse_number::<VnodeId>()?;
@@ -1626,6 +1685,7 @@ mod tests {
                 object_name,
                 if_exist,
                 obj_type,
+                after: None,
             }) => {
                 assert_eq!(object_name.to_string(), "test_tb".to_string());
                 assert_eq!(if_exist.to_string(), "false".to_string());
@@ -1642,6 +1702,7 @@ mod tests {
                 object_name,
                 if_exist,
                 obj_type,
+                after: None,
             }) => {
                 assert_eq!(object_name.to_string(), "test_tb".to_string());
                 assert_eq!(if_exist.to_string(), "true".to_string());
@@ -1658,6 +1719,7 @@ mod tests {
                 object_name,
                 if_exist,
                 obj_type,
+                after: None,
             }) => {
                 assert_eq!(object_name.to_string(), "test_db".to_string());
                 assert_eq!(if_exist.to_string(), "true".to_string());
@@ -1674,6 +1736,7 @@ mod tests {
                 object_name,
                 if_exist,
                 obj_type,
+                after: None,
             }) => {
                 assert_eq!(object_name.to_string(), "test_db".to_string());
                 assert_eq!(if_exist.to_string(), "false".to_string());

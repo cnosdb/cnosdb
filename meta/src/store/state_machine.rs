@@ -7,7 +7,7 @@ use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
-use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
+use models::schema::{DatabaseSchema, ResourceInfo, TableSchema, Tenant, TenantOptions};
 use openraft::{EffectiveMembership, LogId};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, from_str};
@@ -410,6 +410,9 @@ impl StateMachine {
                 let path = KeyPath::tenant_schema_name(cluster, tenant_name, db_name, table_name);
                 response_encode(self.get_struct::<TableSchema>(&path))
             }
+            ReadCommand::ResourceInfos(cluster, names) => {
+                response_encode(self.process_read_resourceinfos(cluster, names))
+            }
         }
     }
 
@@ -489,6 +492,20 @@ impl StateMachine {
         debug!("returned members of path {}: {:?}", path, members);
 
         Ok(members)
+    }
+
+    pub fn process_read_resourceinfos(
+        &self,
+        cluster: &str,
+        names: &[String],
+    ) -> MetaResult<Vec<ResourceInfo>> {
+        let path = KeyPath::resourceinfo(cluster, names);
+        let resourceinfos: Vec<ResourceInfo> = self
+            .children_data::<ResourceInfo>(&path)?
+            .into_values()
+            .collect();
+
+        Ok(resourceinfos)
     }
 
     pub fn process_write_command(&self, req: &WriteCommand) -> CommandResp {
@@ -610,6 +627,9 @@ impl StateMachine {
                 tenant,
                 request,
             } => response_encode(self.process_limiter_request(cluster, tenant, request)),
+            WriteCommand::ResourceInfo(cluster, names, res_info) => {
+                response_encode(self.process_write_resourceinfo(cluster, names, res_info))
+            }
         }
     }
 
@@ -1310,6 +1330,16 @@ impl StateMachine {
         rsp.alloc = alloc as i64;
 
         Ok(rsp)
+    }
+
+    fn process_write_resourceinfo(
+        &self,
+        cluster: &str,
+        names: &[String],
+        res_info: &ResourceInfo,
+    ) -> MetaResult<()> {
+        let key = KeyPath::resourceinfo(cluster, names);
+        Ok(self.insert(&key, &value_encode(&res_info)?)?)
     }
 }
 
