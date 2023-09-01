@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use config::Config;
+use models::meta_data::VnodeId;
 
 use crate::TseriesFamilyId;
 
@@ -171,8 +172,8 @@ impl From<&Config> for WalOptions {
 
 /// database/data/ts_family_id/
 impl WalOptions {
-    pub fn wal_dir(&self, owner: &str, ts_family_id: &str) -> PathBuf {
-        self.path.join(owner).join(ts_family_id)
+    pub fn wal_dir(&self, owner: &str, vnode_id: VnodeId) -> PathBuf {
+        self.path.join(owner).join(vnode_id.to_string())
     }
 }
 
