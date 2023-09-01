@@ -624,19 +624,30 @@ impl Range {
         Self { low, high }
     }
     /// TODO Constructs a range of values not equal to scalar_value [scalar_value, scalar_value].
-    pub fn ne(data_type: &DataType, _scalar_value: &ScalarValue) -> Range {
-        let low = Marker {
+    pub fn ne(data_type: &DataType, scalar_value: &ScalarValue) -> Vec<Range> {
+        let low_1 = Marker::lower_unbound(data_type.clone());
+        let high_1 = Marker {
             data_type: data_type.clone(),
-            value: None,
+            value: Some(scalar_value.clone()),
             bound: Bound::Below,
         };
-        let high = Marker {
+        let low_2 = Marker {
             data_type: data_type.clone(),
-            value: None,
+            value: Some(scalar_value.clone()),
             bound: Bound::Above,
         };
+        let high_2 = Marker::upper_unbound(data_type.clone());
 
-        Self { low, high }
+        vec![
+            Self {
+                low: low_1,
+                high: high_1,
+            },
+            Self {
+                low: low_2,
+                high: high_2,
+            },
+        ]
     }
     /// Construct a range of values greater than scalar_value (scalar_value, +∞).
     pub fn gt(data_type: &DataType, scalar_value: &ScalarValue) -> Range {
@@ -692,6 +703,13 @@ impl Range {
     fn overlaps(&self, other: &Self) -> Result<bool> {
         self.check_type_compatibility(other)?;
         if self.low <= other.high && other.low <= self.high {
+            // like (-∞, 2) and (2, +∞) is not overlap
+            if self.high == other.low
+                && self.high.bound == Bound::Below
+                && other.low.bound == Bound::Above
+            {
+                return Ok(false);
+            }
             return Ok(true);
         }
         Ok(false)
