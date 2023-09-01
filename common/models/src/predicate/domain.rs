@@ -1718,9 +1718,11 @@ mod tests {
             &DataType::Float64,
             &ScalarValue::Float64(Some(3333333333333333.3)),
         );
+        let f4 = Range::ne(&DataType::Float64, &ScalarValue::Float64(Some(4.4)));
 
         let domain_1 = Domain::of_ranges(&[f1]).unwrap();
         let domain_2 = Domain::of_ranges(&[f2, f3]).unwrap();
+        let domain_3 = Domain::of_ranges(&f4).unwrap();
 
         assert!(matches!(domain_1, Domain::Range(_)));
 
@@ -1731,6 +1733,13 @@ mod tests {
             }
             _ => false,
         });
+
+        assert!(match domain_3 {
+            Domain::Range(val_set) => {
+                val_set.low_indexed_ranges.len() == 2
+            }
+            _ => false,
+        })
     }
 
     #[test]
