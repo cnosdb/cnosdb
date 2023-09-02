@@ -152,6 +152,10 @@ pub enum MetaError {
     #[snafu(display("Operation request need to send to new address: {}", new_leader))]
     #[error_code(code = 35)]
     ChangeLeader { new_leader: String },
+
+    #[snafu(display("The vnode {} not found", id))]
+    #[error_code(code = 36)]
+    VnodeNotFound { id: u32 },
 }
 impl MetaError {
     pub fn error_code(&self) -> &dyn ErrorCode {

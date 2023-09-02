@@ -104,12 +104,47 @@ impl RaftWriter {
         let raft_data = protos::models_helper::to_prost_bytes(request);
         let result = self.write_to_raft(raft, raft_data).await;
         if let Err(CoordinatorError::ForwardToLeader {
-            leader_id,
             replica_id,
+            leader_vnode_id,
         }) = result
         {
-            self.write_to_remote(replica_id, leader_id, tenant, data, precision, span_ctx)
-                .await
+            let client =
+                self.meta
+                    .tenant_meta(tenant)
+                    .await
+                    .ok_or(CoordinatorError::TenantNotFound {
+                        name: tenant.to_owned(),
+                    })?;
+
+            let vnode_info = client.get_vnode_all_info(leader_vnode_id).ok_or(
+                CoordinatorError::VnodeNotFound {
+                    id: leader_vnode_id,
+                },
+            )?;
+
+            let rsp = client
+                .change_repl_set_leader(
+                    &vnode_info.db_name,
+                    vnode_info.bucket_id,
+                    replica.id,
+                    vnode_info.node_id,
+                    leader_vnode_id,
+                )
+                .await;
+
+            info!(
+                "change replica({}) set leader to: {}; {:?}",
+                replica.id, leader_vnode_id, rsp
+            );
+            self.write_to_remote(
+                replica_id,
+                vnode_info.node_id,
+                tenant,
+                data,
+                precision,
+                span_ctx,
+            )
+            .await
         } else {
             result
         }
@@ -168,7 +203,7 @@ impl RaftWriter {
             }) = err.forward_to_leader()
             {
                 Err(CoordinatorError::ForwardToLeader {
-                    leader_id: *leader_id,
+                    leader_vnode_id: (*leader_id) as u32,
                     replica_id: leader_node.group_id,
                 })
             } else {

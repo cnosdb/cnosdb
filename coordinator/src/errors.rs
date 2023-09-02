@@ -195,11 +195,13 @@ pub enum CoordinatorError {
         msg: String,
     },
 
-    #[snafu(display("Forward to Leader (replcia id: {replica_id} leader id: {leader_id})"))]
+    #[snafu(display(
+        "Forward to Leader (replcia id: {replica_id} leader vnode id: {leader_vnode_id})"
+    ))]
     #[error_code(code = 29)]
     ForwardToLeader {
-        leader_id: u64,
         replica_id: u32,
+        leader_vnode_id: u32,
     },
 }
 

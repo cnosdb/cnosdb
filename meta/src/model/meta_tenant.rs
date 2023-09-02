@@ -726,6 +726,28 @@ impl TenantMeta {
         self.client.write::<()>(&req).await
     }
 
+    pub async fn change_repl_set_leader(
+        &self,
+        db_name: &str,
+        bucket_id: u32,
+        repl_id: ReplicationSetId,
+        leader_node_id: NodeId,
+        leader_vnode_id: VnodeId,
+    ) -> MetaResult<()> {
+        let args = command::ChangeReplSetLeaderArgs {
+            repl_id,
+            bucket_id,
+            leader_node_id,
+            leader_vnode_id,
+            db_name: db_name.to_string(),
+            cluster: self.cluster.clone(),
+            tenant: self.tenant_name(),
+        };
+
+        let req = command::WriteCommand::ChangeReplSetLeader(args);
+        self.client.write::<()>(&req).await
+    }
+
     pub async fn version(&self) -> u64 {
         self.data.read().version
     }

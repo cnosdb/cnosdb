@@ -60,7 +60,10 @@ impl RaftNode {
     }
 
     /// Initialize a single-node cluster.
-    pub async fn raft_init(&self, nodes: BTreeMap<u64, RaftNodeInfo>) -> ReplicationResult<()> {
+    pub async fn raft_init(
+        &self,
+        nodes: BTreeMap<RaftNodeId, RaftNodeInfo>,
+    ) -> ReplicationResult<()> {
         let mut nodes = nodes.clone();
         nodes.insert(self.id, self.info.clone());
 

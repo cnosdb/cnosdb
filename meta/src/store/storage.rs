@@ -572,6 +572,9 @@ impl StateMachine {
             WriteCommand::UpdateVnodeReplSet(args) => {
                 response_encode(self.process_update_vnode_repl_set(args))
             }
+            WriteCommand::ChangeReplSetLeader(args) => {
+                response_encode(self.process_change_repl_set_leader(args))
+            }
             WriteCommand::UpdateVnode(args) => response_encode(self.process_update_vnode(args)),
             WriteCommand::LimiterRequest {
                 cluster,
@@ -643,6 +646,31 @@ impl StateMachine {
 
             for info in args.add_info.iter() {
                 set.vnodes.push(info.clone());
+            }
+        }
+
+        self.insert(&key, &value_encode(&bucket)?)?;
+        Ok(())
+    }
+
+    fn process_change_repl_set_leader(&self, args: &ChangeReplSetLeaderArgs) -> MetaResult<()> {
+        let key = key_path::KeyPath::tenant_bucket_id(
+            &args.cluster,
+            &args.tenant,
+            &args.db_name,
+            args.bucket_id,
+        );
+        let mut bucket = match self.get_struct::<BucketInfo>(&key)? {
+            Some(b) => b,
+            None => {
+                return Err(MetaError::BucketNotFound { id: args.bucket_id });
+            }
+        };
+
+        for repl in bucket.shard_group.iter_mut() {
+            if repl.id == args.repl_id {
+                repl.leader_node_id = args.leader_node_id;
+                repl.leader_vnode_id = args.leader_vnode_id;
             }
         }
 
