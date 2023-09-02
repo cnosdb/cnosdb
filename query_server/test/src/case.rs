@@ -187,7 +187,7 @@ pub fn search_cases(path: &PathBuf, pattern: Option<String>) -> Result<Vec<Case>
     for entry in WalkDir::new(path) {
         let entry = entry?;
         let path = entry.path();
-        if path.is_dir() {
+        if path.is_dir() || path.extension().is_none() {
             continue;
         }
         if let Some(ref pat) = pattern {

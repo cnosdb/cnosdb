@@ -33,6 +33,10 @@ INF,1,365 Days,1,NS
 200 OK
 
 
+-- EXECUTE SQL: DROP DATABASE IF EXISTS describe_database; --
+200 OK
+
+
 -- EXECUTE SQL: CREATE DATABASE IF NOT EXISTS describe_database with ttl '10d'; --
 200 OK
 

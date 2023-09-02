@@ -1297,7 +1297,7 @@ pub mod test_tseries_family {
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
         let (compact_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let database = Arc::new("db".to_string());
@@ -1412,7 +1412,7 @@ pub mod test_tseries_family {
                 .await;
             meta_manager
         });
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         let mem = MemCache::new(0, 1000, 2, 0, &memory_pool);
         let row_group = RowGroup {
             schema: default_table_schema(vec![0, 1, 2]).into(),

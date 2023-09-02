@@ -199,6 +199,11 @@ impl Reader {
         })
     }
 
+    pub async fn read_record_at(&mut self, pos: usize) -> Result<Record> {
+        self.set_pos(pos).await?;
+        self.read_record().await
+    }
+
     /// Returns footer position and footer data.
     pub async fn read_footer(path: impl AsRef<Path>) -> Result<(u64, [u8; FILE_FOOTER_LEN])> {
         let path = path.as_ref();

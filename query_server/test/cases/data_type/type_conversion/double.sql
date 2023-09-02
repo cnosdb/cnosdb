@@ -1,6 +1,8 @@
 -- normal
 --#SLEEP=100
 -- public.test(time timestamp(ns), ta string, tb string, fa double, fb double)
+drop table if exists test_double_conv;
+alter database public set ttl '1000000d';
 --#LP_BEGIN
 test_double_conv,ta=a1,tb=b1 fa=1,fb=2 3
 --#LP_END

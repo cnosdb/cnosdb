@@ -513,7 +513,7 @@ pub mod flush_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let tsm_dir = dir.join("tsm");
         let delta_dir = dir.join("delta");
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         let test_case = flush_test_case_1(&memory_pool, 10);
 
         let ts_family_id = 1;

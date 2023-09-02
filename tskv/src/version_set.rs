@@ -30,6 +30,10 @@ pub struct VersionSet {
 }
 
 impl VersionSet {
+    pub fn runtime(&self) -> Arc<Runtime> {
+        self.runtime.clone()
+    }
+
     pub fn empty(
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
@@ -42,6 +46,16 @@ impl VersionSet {
             runtime,
             memory_pool,
             metrics_register,
+        }
+    }
+
+    pub fn build_empty_test(runtime: Arc<Runtime>) -> Self {
+        Self {
+            dbs: HashMap::new(),
+            opt: Arc::new(Options::from(&config::Config::default())),
+            metrics_register: Arc::new(MetricsRegister::default()),
+            memory_pool: Arc::new(memory_pool::GreedyMemoryPool::default()),
+            runtime,
         }
     }
 
