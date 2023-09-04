@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use models::error_code::ErrorCode;
+use error_code::ErrorCode;
 pub use reqwest::Response;
 use serde::{Deserialize, Serialize};
 
