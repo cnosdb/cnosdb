@@ -73,6 +73,12 @@ pub enum ReplicationError {
     ProcessTimeout {
         msg: String,
     },
+
+    #[snafu(display("Apply engine failed: {}", msg))]
+    #[error_code(code = 11)]
+    ApplyEngineFailed {
+        msg: String,
+    },
 }
 
 impl From<std::io::Error> for ReplicationError {

@@ -10,7 +10,7 @@ use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
-use replication::apply_store::ApplyStorage;
+use replication::apply_store::{ApplyContext, ApplyStorage};
 use replication::errors::ReplicationResult;
 use replication::{Request, Response};
 use serde::{Deserialize, Serialize};
@@ -54,7 +54,7 @@ pub struct StateMachine {
 
 #[async_trait::async_trait]
 impl ApplyStorage for StateMachine {
-    async fn apply(&self, req: &Request) -> ReplicationResult<Response> {
+    async fn apply(&self, _ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
         let req: WriteCommand = serde_json::from_slice(req)?;
 
         Ok(self.process_write_command(&req).into())

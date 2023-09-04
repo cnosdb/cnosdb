@@ -5,7 +5,7 @@ use meta::model::MetaRef;
 use models::meta_data::*;
 use models::schema::Precision;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
-use protos::kv_service::{Meta, WritePointsRequest, WriteVnodeRequest};
+use protos::kv_service::WriteReplicaRequest;
 use replication::raft_node::RaftNode;
 use tonic::transport;
 use tower::timeout::Timeout;
@@ -40,6 +40,7 @@ impl RaftWriter {
     pub async fn write_to_replica(
         &self,
         tenant: &str,
+        db_name: &str,
         data: Arc<Vec<u8>>,
         precision: Precision,
         replica: &ReplicationSet,
@@ -53,6 +54,7 @@ impl RaftWriter {
                 .write_to_local_or_forward(
                     data.clone(),
                     tenant,
+                    db_name,
                     precision,
                     replica,
                     span_recorder.span_ctx(),
@@ -64,15 +66,15 @@ impl RaftWriter {
             result
         } else {
             let span_recorder = span_recorder.child("write to remote node");
+            let request = WriteReplicaRequest {
+                replica_id: replica.id,
+                db_name: db_name.to_string(),
+                data: Arc::unwrap_or_clone(data),
+                precision: precision as u32,
+                tenant: tenant.to_string(),
+            };
             let result = self
-                .write_to_remote(
-                    replica.id,
-                    leader_id,
-                    tenant,
-                    data.clone(),
-                    precision,
-                    span_recorder.span_ctx(),
-                )
+                .write_to_remote(leader_id, request, span_recorder.span_ctx())
                 .await;
 
             info!("write to remote {} {:?} {:?}", leader_id, replica, result);
@@ -85,78 +87,86 @@ impl RaftWriter {
         &self,
         data: Arc<Vec<u8>>,
         tenant: &str,
+        db_name: &str,
         precision: Precision,
         replica: &ReplicationSet,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
-        let raft = self.raft_manager.get_node_or_build(replica).await?;
+        let raft = self.raft_manager.get_node_or_build(tenant, replica).await?;
 
-        let request = WritePointsRequest {
-            version: 1,
-            meta: Some(Meta {
-                tenant: tenant.to_string(),
-                user: None,
-                password: None,
-            }),
-            points: Arc::unwrap_or_clone(data.clone()),
-        };
+        let task = tskv::wal::writer::Task::new_write(
+            tenant.to_string(),
+            db_name.to_string(),
+            777777777,
+            precision,
+            Arc::unwrap_or_clone(data.clone()),
+        );
 
-        let raft_data = protos::models_helper::to_prost_bytes(request);
+        let raft_data = bincode::serialize(&task).map_err(|err| CoordinatorError::CommonError {
+            msg: err.to_string(),
+        })?;
         let result = self.write_to_raft(raft, raft_data).await;
+        println!("------ debugxxxx write_to_local_or_forward: {:?}", result);
+
         if let Err(CoordinatorError::ForwardToLeader {
-            replica_id,
+            replica_id: _,
             leader_vnode_id,
         }) = result
         {
-            let client =
-                self.meta
-                    .tenant_meta(tenant)
-                    .await
-                    .ok_or(CoordinatorError::TenantNotFound {
-                        name: tenant.to_owned(),
-                    })?;
+            let request = WriteReplicaRequest {
+                replica_id: replica.id,
+                db_name: db_name.to_string(),
+                data: Arc::unwrap_or_clone(data),
+                precision: precision as u32,
+                tenant: tenant.to_string(),
+            };
 
-            let vnode_info = client.get_vnode_all_info(leader_vnode_id).ok_or(
-                CoordinatorError::VnodeNotFound {
-                    id: leader_vnode_id,
-                },
-            )?;
-
-            let rsp = client
-                .change_repl_set_leader(
-                    &vnode_info.db_name,
-                    vnode_info.bucket_id,
-                    replica.id,
-                    vnode_info.node_id,
-                    leader_vnode_id,
-                )
-                .await;
-
-            info!(
-                "change replica({}) set leader to: {}; {:?}",
-                replica.id, leader_vnode_id, rsp
-            );
-            self.write_to_remote(
-                replica_id,
-                vnode_info.node_id,
-                tenant,
-                data,
-                precision,
-                span_ctx,
-            )
-            .await
+            self.process_leader_change(tenant, leader_vnode_id, request, span_ctx)
+                .await
         } else {
             result
         }
     }
 
+    async fn process_leader_change(
+        &self,
+        tenant: &str,
+        leader_vnode_id: VnodeId,
+        request: WriteReplicaRequest,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<()> {
+        let vnode_id = leader_vnode_id;
+        let all_info = crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
+
+        let rsp = self
+            .meta
+            .tenant_meta(tenant)
+            .await
+            .ok_or(CoordinatorError::TenantNotFound {
+                name: tenant.to_owned(),
+            })?
+            .change_repl_set_leader(
+                &all_info.db_name,
+                all_info.bucket_id,
+                request.replica_id,
+                all_info.node_id,
+                vnode_id,
+            )
+            .await;
+
+        info!(
+            "change replica({}) set leader to: {}; {:?}",
+            request.replica_id, vnode_id, rsp
+        );
+
+        self.write_to_remote(all_info.node_id, request, span_ctx)
+            .await
+    }
+
     async fn write_to_remote(
         &self,
-        replica_id: u32,
         leader_id: u64,
-        tenant: &str,
-        data: Arc<Vec<u8>>,
-        precision: Precision,
+        request: WriteReplicaRequest,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         let channel = self.meta.get_node_conn(leader_id).await?;
@@ -164,13 +174,7 @@ impl RaftWriter {
         let timeout_channel = Timeout::new(channel, Duration::from_millis(timeout));
         let mut client = TskvServiceClient::<Timeout<transport::Channel>>::new(timeout_channel);
 
-        let mut cmd = tonic::Request::new(WriteVnodeRequest {
-            id: replica_id,
-            data: Arc::unwrap_or_clone(data),
-            precision: precision as u32,
-            tenant: tenant.to_string(),
-        });
-
+        let mut cmd = tonic::Request::new(request);
         trace_http::ctx::append_trace_context(span_ctx, cmd.metadata_mut()).map_err(|_| {
             CoordinatorError::CommonError {
                 msg: "Parse trace_id, this maybe a bug".to_string(),
@@ -179,7 +183,7 @@ impl RaftWriter {
 
         let begin_time = models::utils::now_timestamp_millis();
         let response = client
-            .write_vnode_points(cmd)
+            .write_replica_points(cmd)
             .await
             .map_err(|err| CoordinatorError::TskvError { source: err.into() })?
             .into_inner();

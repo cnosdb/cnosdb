@@ -181,3 +181,61 @@ impl WalRaftEntryStorageInner {
         }
     }
 }
+
+mod test {
+    use std::sync::Arc;
+
+    use replication::apply_store::{ApplyStorageRef, HeedApplyStorage};
+    use replication::entry_store::EntryStorageRef;
+    use replication::node_store::NodeStorage;
+    use replication::state_store::StateStorage;
+    use replication::RaftNodeInfo;
+
+    use crate::wal;
+
+    #[test]
+    pub fn test_wal_raft_storage() {
+        let path = "/tmp/cnosdb/test_raft_store".to_string();
+        std::fs::remove_dir_all(path.clone());
+        std::fs::create_dir_all(path.clone()).unwrap();
+
+        openraft::testing::Suite::test_all(get_wal_raft_node_store).unwrap();
+        std::fs::remove_dir_all(path);
+    }
+
+    pub async fn get_wal_raft_node_store() -> Arc<NodeStorage> {
+        let path = tempfile::tempdir_in("/tmp/cnosdb/test_raft_store").unwrap();
+
+        let owner = models::schema::make_owner("cnosdb", "test_db");
+        let wal_option = crate::kv_option::WalOptions {
+            enabled: true,
+            path: path.path().to_path_buf(),
+            wal_req_channel_cap: 1024,
+            max_file_size: 1024 * 1024,
+            flush_trigger_total_file_size: 1024 * 1024,
+            sync: false,
+            sync_interval: std::time::Duration::from_secs(3600),
+        };
+
+        let wal = wal::VnodeWal::init(1234, owner, Arc::new(wal_option))
+            .await
+            .unwrap();
+        let entry = wal::raft::WalRaftEntryStorage::new(wal);
+        let entry: EntryStorageRef = Arc::new(entry);
+
+        let state = StateStorage::open(path.path().join("state")).unwrap();
+        let engine = HeedApplyStorage::open(path.path().join("engine")).unwrap();
+
+        let state = Arc::new(state);
+        let engine: ApplyStorageRef = Arc::new(engine);
+
+        let info = RaftNodeInfo {
+            group_id: 2222,
+            address: "127.0.0.1:1234".to_string(),
+        };
+
+        let storage = NodeStorage::open(1000, info, state, engine, entry).unwrap();
+
+        Arc::new(storage)
+    }
+}

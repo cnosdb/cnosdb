@@ -35,9 +35,9 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
-mod raft;
+pub mod raft;
 mod reader;
-mod writer;
+pub mod writer;
 
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -665,6 +665,12 @@ impl WalManager {
 pub struct WalDecoder {
     buffer: Vec<MiniVec<u8>>,
     decoder: Box<dyn StringCodec + Send + Sync>,
+}
+
+impl Default for WalDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WalDecoder {

@@ -131,7 +131,11 @@ impl CoordService {
     ) -> Arc<Self> {
         let node_id = config.node_basic.node_id;
 
-        let raft_manager = Arc::new(RaftNodesManager::new(config.clone(), meta.clone()));
+        let raft_manager = Arc::new(RaftNodesManager::new(
+            config.clone(),
+            meta.clone(),
+            kv_inst.clone(),
+        ));
         let writer = Arc::new(RaftWriter::new(
             meta.clone(),
             config.clone(),
@@ -356,7 +360,7 @@ impl CoordService {
         }
 
         let mut requests = Vec::new();
-        let request = self.write_replica(tenant, points, precision, info, span_ctx);
+        let request = self.write_replica(tenant, db, points, precision, info, span_ctx);
         requests.push(request);
 
         Ok(requests)
@@ -404,14 +408,17 @@ impl Coordinator for CoordService {
     async fn write_replica(
         &self,
         tenant: &str,
+        db_name: &str,
         data: Arc<Vec<u8>>,
         precision: Precision,
         replica: ReplicationSet,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
-        self.writer
+        let result = self
+            .writer
             .write_to_replica(
                 tenant,
+                db_name,
                 data,
                 precision,
                 &replica,
@@ -420,7 +427,11 @@ impl Coordinator for CoordService {
                     replica.id, self.node_id
                 ))),
             )
-            .await
+            .await;
+
+        println!("------ debugxxxx write_replica: {:?}", result);
+
+        result
     }
 
     async fn write_lines<'a>(

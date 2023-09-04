@@ -150,16 +150,25 @@ message QueryRecordBatchRequest {
     bytes aggs = 3;
 }
 
-message OpenRaftNodeRequest {
-    uint32 vnode_id = 1;
-    uint32 replica_id = 2;
-}
-
 message WriteVnodeRequest {
-    uint32 id = 1;
-    string tenant = 2;
+    uint32 vnode_id = 1;
+    string tenant =2;
     uint32 precision = 3;
     bytes data = 4;
+}
+
+message OpenRaftNodeRequest {
+    string tenant = 1;
+    uint32 vnode_id = 2;
+    uint32 replica_id = 3;
+}
+
+message WriteReplicaRequest {
+    uint32 replica_id = 1;
+    string tenant = 2;
+    string db_name = 3;
+    uint32 precision = 4;
+    bytes data = 5;
 }
 
 
@@ -169,6 +178,7 @@ service TSKVService {
   rpc WritePoints(stream WritePointsRequest) returns (stream WritePointsResponse) {};
 
   rpc WriteVnodePoints(WriteVnodeRequest) returns (StatusResponse) {};
+  rpc WriteReplicaPoints(WriteReplicaRequest) returns (StatusResponse) {};
   rpc ExecOpenRaftNode(OpenRaftNodeRequest) returns (StatusResponse) {};
   rpc QueryRecordBatch(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
   rpc ExecAdminCommand(AdminCommandRequest) returns (StatusResponse) {};

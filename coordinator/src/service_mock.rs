@@ -148,6 +148,7 @@ impl Coordinator for MockCoordinator {
     async fn write_replica(
         &self,
         tenant: &str,
+        db_name: &str,
         data: Arc<Vec<u8>>,
         precision: Precision,
         replica: ReplicationSet,

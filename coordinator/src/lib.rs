@@ -98,6 +98,7 @@ pub trait Coordinator: Send + Sync {
     async fn write_replica(
         &self,
         tenant: &str,
+        db_name: &str,
         data: Arc<Vec<u8>>,
         precision: Precision,
         replica: ReplicationSet,
@@ -151,7 +152,7 @@ pub trait Coordinator: Send + Sync {
     fn metrics(&self) -> &Arc<CoordServiceMetrics>;
 }
 
-async fn get_vnode_all_info(
+pub async fn get_vnode_all_info(
     meta: MetaRef,
     tenant: &str,
     vnode_id: u32,

@@ -321,7 +321,36 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: tonic::Request<WriteVnodeRequest>,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let span = get_span_recorder(request.extensions(), "grpc write_vnode_points");
+        let span_recorder = get_span_recorder(request.extensions(), "grpc write_vnode_points");
+        let inner = request.into_inner();
+        let request = WritePointsRequest {
+            version: 1,
+            meta: Some(Meta {
+                tenant: inner.tenant.clone(),
+                user: None,
+                password: None,
+            }),
+            points: inner.data,
+        };
+
+        let _ = self
+            .kv_inst
+            .write(
+                span_recorder.span_ctx(),
+                inner.vnode_id,
+                Precision::from(inner.precision as u8),
+                request,
+            )
+            .await?;
+
+        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+    }
+
+    async fn write_replica_points(
+        &self,
+        request: tonic::Request<WriteReplicaRequest>,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let span = get_span_recorder(request.extensions(), "grpc write_replica_points");
         let inner = request.into_inner();
 
         let client = self
@@ -334,16 +363,17 @@ impl TskvService for TskvServiceImpl {
             ))?;
 
         let replica = client
-            .get_replication_set(inner.id)
+            .get_replication_set(inner.replica_id)
             .ok_or(tonic::Status::new(
                 tonic::Code::Internal,
-                format!("Not Found Replica Set({})", inner.id),
+                format!("Not Found Replica Set({})", inner.replica_id),
             ))?;
 
         if let Err(err) = self
             .coord
             .write_replica(
                 &inner.tenant,
+                &inner.db_name,
                 Arc::new(inner.data),
                 Precision::from(inner.precision as u8),
                 replica,
@@ -366,7 +396,7 @@ impl TskvService for TskvServiceImpl {
         if let Err(err) = self
             .coord
             .raft_manager()
-            .exec_open_raft_node(inner.vnode_id, inner.replica_id)
+            .exec_open_raft_node(&inner.tenant, inner.vnode_id, inner.replica_id)
             .await
         {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())

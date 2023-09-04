@@ -40,6 +40,18 @@ impl Engine for MockEngine {
         Ok(WritePointsResponse { points_number: 0 })
     }
 
+    async fn write_memcache(
+        &self,
+        index: u64,
+        tenant: &str,
+        points: Vec<u8>,
+        vnode_id: VnodeId,
+        precision: Precision,
+        span_ctx: Option<&SpanContext>,
+    ) -> Result<WritePointsResponse> {
+        todo!()
+    }
+
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
         Ok(())
     }

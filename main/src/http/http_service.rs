@@ -12,7 +12,7 @@ use chrono::Local;
 use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION, PRIVATE_KEY};
-use http_protocol::parameter::{SqlParam, WriteParam};
+use http_protocol::parameter::{DebugParam, SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
 use metrics::metric_register::MetricsRegister;
@@ -204,6 +204,7 @@ impl HttpService {
             .or(self.backtrace())
             .or(self.write_open_tsdb())
             .or(self.put_open_tsdb())
+            .or(self.print_raft())
     }
 
     fn routes_query(
@@ -217,6 +218,7 @@ impl HttpService {
             .or(self.debug_jeprof())
             .or(self.prom_remote_read())
             .or(self.backtrace())
+            .or(self.print_raft())
     }
 
     fn routes_store(
@@ -232,6 +234,7 @@ impl HttpService {
             .or(self.write_open_tsdb())
             .or(self.put_open_tsdb())
             .or(self.backtrace())
+            .or(self.print_raft())
     }
 
     fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -599,6 +602,22 @@ impl HttpService {
                 let data = meta_client.print_data();
 
                 Ok(data)
+            })
+    }
+
+    fn print_raft(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "raft")
+            .and(warp::query::<DebugParam>())
+            .and(self.with_coord())
+            .and_then(|param: DebugParam, coord: CoordinatorRef| async move {
+                let raft_manager = coord.raft_manager();
+                let data = raft_manager.metrics(param.id.unwrap_or(0)).await;
+                println!("{:?}| {}", param, data);
+
+                let res: Result<String, warp::Rejection> = Ok(data);
+                res
             })
     }
 

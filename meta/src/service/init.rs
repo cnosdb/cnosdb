@@ -4,7 +4,7 @@ use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder};
 use models::oid::Identifier;
 use models::schema::{Tenant, TenantOptionsBuilder};
-use replication::apply_store::ApplyStorage;
+use replication::apply_store::{ApplyContext, ApplyStorage};
 
 use crate::store::command::WriteCommand;
 use crate::store::config::MetaInit;
@@ -16,6 +16,11 @@ pub async fn init_meta(storage: Arc<StateMachine>, init_data: MetaInit) {
         return;
     }
 
+    let ctx = ApplyContext {
+        index: 0,
+        raft_id: 0,
+    };
+
     // init tenant
     let tenant_opt = TenantOptionsBuilder::default()
         .comment("system tenant")
@@ -25,7 +30,7 @@ pub async fn init_meta(storage: Arc<StateMachine>, init_data: MetaInit) {
     let tenant = Tenant::new(oid, init_data.system_tenant.clone(), tenant_opt);
     let req = WriteCommand::CreateTenant(init_data.cluster_name.clone(), tenant);
     let data = serde_json::to_vec(&req).unwrap();
-    storage.apply(&data).await.expect("init expect success");
+    storage.apply(&ctx, &data).await.expect("expect success");
 
     // init user
     let user_opt = UserOptionsBuilder::default()
@@ -37,7 +42,7 @@ pub async fn init_meta(storage: Arc<StateMachine>, init_data: MetaInit) {
     let user_desc = UserDesc::new(oid, init_data.admin_user.clone(), user_opt, true);
     let req = WriteCommand::CreateUser(init_data.cluster_name.clone(), user_desc.clone());
     let data = serde_json::to_vec(&req).unwrap();
-    storage.apply(&data).await.expect("init expect success");
+    storage.apply(&ctx, &data).await.expect("expect success");
 
     // init role
     let role = TenantRoleIdentifier::System(SystemTenantRole::Owner);
@@ -48,7 +53,7 @@ pub async fn init_meta(storage: Arc<StateMachine>, init_data: MetaInit) {
         init_data.system_tenant.to_string(),
     );
     let data = serde_json::to_vec(&req).unwrap();
-    storage.apply(&data).await.expect("init expect success");
+    storage.apply(&ctx, &data).await.expect("expect success");
 
     // init database
     for db in init_data.default_database.iter() {
@@ -58,7 +63,7 @@ pub async fn init_meta(storage: Arc<StateMachine>, init_data: MetaInit) {
         };
 
         let data = serde_json::to_vec(&req).unwrap();
-        storage.apply(&data).await.expect("init expect success");
+        storage.apply(&ctx, &data).await.expect("expect success");
     }
 
     storage.set_already_init().unwrap();

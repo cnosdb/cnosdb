@@ -12,7 +12,7 @@ use openraft::{
 use serde::{Deserialize, Serialize};
 use trace::info;
 
-use crate::apply_store::ApplyStorageRef;
+use crate::apply_store::{ApplyContext, ApplyStorageRef};
 use crate::entry_store::EntryStorageRef;
 use crate::errors::ReplicationResult;
 use crate::state_store::StateStorage;
@@ -229,13 +229,15 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
     where
         I: IntoIterator<Item = Entry<TypeConfig>> + Send,
     {
-        info!("Storage callback append_to_log entires...");
+        info!("Storage callback append_to_log entires...1");
 
         let entries: Vec<Entry<TypeConfig>> = entries.into_iter().collect();
         self.raft_logs
             .append(&entries)
             .await
             .map_err(|e| StorageIOError::write_logs(&e))?;
+
+        info!("Storage callback append_to_log entires...2");
 
         Ok(())
     }
@@ -321,9 +323,13 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
                 }
 
                 EntryPayload::Normal(ref req) => {
+                    let ctx = ApplyContext {
+                        index: entry.log_id.index,
+                        raft_id: self.id,
+                    };
                     let rsp = self
                         .engine
-                        .apply(req)
+                        .apply(&ctx, req)
                         .await
                         .map_err(|e| StorageIOError::write(&e))?;
 

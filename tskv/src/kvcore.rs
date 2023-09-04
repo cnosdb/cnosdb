@@ -816,6 +816,60 @@ impl Engine for TsKv {
         res
     }
 
+    async fn write_memcache(
+        &self,
+        index: u64,
+        tenant: &str,
+        points: Vec<u8>,
+        vnode_id: VnodeId,
+        precision: Precision,
+        span_ctx: Option<&SpanContext>,
+    ) -> Result<WritePointsResponse> {
+        let span_recorder = SpanRecorder::new(span_ctx.child_span("tskv engine write cache"));
+
+        let fb_points = flatbuffers::root::<fb_models::Points>(&points)
+            .context(error::InvalidFlatbufferSnafu)?;
+
+        let db_name = fb_points.db_ext()?;
+        let db = self.get_db_or_else_create(tenant, db_name).await?;
+        let ts_index = self
+            .get_ts_index_or_else_create(db.clone(), vnode_id)
+            .await?;
+
+        let tables = fb_points.tables().ok_or(Error::CommonError {
+            reason: "points missing table".to_string(),
+        })?;
+
+        let write_group = {
+            let mut span_recorder = span_recorder.child("build write group");
+            db.read()
+                .await
+                .build_write_group(db_name, precision, tables, ts_index)
+                .await
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
+
+        let tsf = self
+            .get_tsfamily_or_else_create(index, vnode_id, None, db.clone())
+            .await?;
+
+        let res = {
+            let mut span_recorder = span_recorder.child("put points");
+            match tsf.read().await.put_points(index, write_group) {
+                Ok(points_number) => Ok(WritePointsResponse { points_number }),
+                Err(err) => {
+                    span_recorder.error(err.to_string());
+                    Err(err)
+                }
+            }
+        };
+        tsf.write().await.check_to_flush().await;
+        res
+    }
+
     async fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
         if let Some(db) = self.version_set.write().await.delete_db(tenant, database) {
             let mut db_wlock = db.write().await;
