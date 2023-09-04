@@ -502,6 +502,12 @@ pub enum QueryError {
     AnalyzePushedFilter {
         reason: String,
     },
+
+    #[snafu(display("Invalid geometry type, error: {}", reason))]
+    #[error_code(code = 73)]
+    InvalidGeometryType {
+        reason: String,
+    },
 }
 
 impl From<ParserError> for QueryError {

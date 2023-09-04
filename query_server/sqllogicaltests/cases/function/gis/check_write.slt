@@ -1,0 +1,426 @@
+##########
+## DDL
+##########
+
+statement ok
+alter database public set ttl '1000000d';
+
+statement ok
+drop table if exists check_write_point;
+
+statement ok
+CREATE TABLE IF NOT EXISTS check_write_point(loc geometry(point, 0));
+
+statement ok
+drop table if exists check_write_LINESTRING;
+
+statement ok
+CREATE TABLE IF NOT EXISTS check_write_LINESTRING(loc geometry(LINESTRING, 0));
+
+statement ok
+drop table if exists check_write_POLYGON;
+
+statement ok
+CREATE TABLE IF NOT EXISTS check_write_POLYGON(loc geometry(POLYGON, 0));
+
+statement ok
+drop table if exists check_write_MULTIPOINT;
+
+statement ok
+CREATE TABLE IF NOT EXISTS check_write_MULTIPOINT(loc geometry(MULTIPOINT, 0));
+
+statement ok
+drop table if exists check_write_MULTILINESTRING;
+
+statement ok
+CREATE TABLE IF NOT EXISTS check_write_MULTILINESTRING(loc geometry(MULTILINESTRING, 0));
+
+statement ok
+drop table if exists check_write_MULTIPOLYGON;
+
+statement ok
+CREATE TABLE IF NOT EXISTS check_write_MULTIPOLYGON(loc geometry(MULTIPOLYGON, 0));
+
+statement ok
+drop table if exists check_write_GEOMETRYCOLLECTION;
+
+statement ok
+CREATE TABLE IF NOT EXISTS check_write_GEOMETRYCOLLECTION(loc geometry(GEOMETRYCOLLECTION, 0));
+
+##########
+## insert point
+##########
+
+statement ok
+INSERT check_write_point(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POINT(0 0)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Point, got LineString\(LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\)\)", .*
+INSERT check_write_point(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'LINESTRING (30 10, 10 30, 40 40)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Point, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\), interiors: \[\] \}\)", .*
+INSERT check_write_point(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Point, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 35\.0, y: 10\.0 \}, Coord \{ x: 45\.0, y: 45\.0 \}, Coord \{ x: 15\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 35\.0, y: 10\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 20\.0, y: 30\.0 \}, Coord \{ x: 35\.0, y: 35\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 30\.0 \}\]\)\] \}\)", .*
+INSERT check_write_point(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((35 10, 45 45, 15 40, 10 20, 35 10),(20 30, 35 35, 30 20, 20 30))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Point, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_point(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Point, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_point(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Point, got MultiLineString\(MultiLineString\(\[LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\), LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\)\]\)\)", .*
+INSERT check_write_point(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Point, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 45\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 15\.0, y: 5\.0 \}, Coord \{ x: 40\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 5\.0, y: 10\.0 \}, Coord \{ x: 15\.0, y: 5\.0 \}\]\), interiors: \[\] \}\]\)\)", .*
+INSERT check_write_point(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Point, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\)", .*
+INSERT check_write_point(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Point, got GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\)", .*
+INSERT check_write_point(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
+
+##########
+## insert LINESTRING
+##########
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect LineString, got Point\(Point\(Coord \{ x: 0\.0, y: 0\.0 \}\)\)", .*
+INSERT check_write_LINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POINT(0 0)');
+
+statement ok
+INSERT check_write_LINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'LINESTRING (30 10, 10 30, 40 40)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect LineString, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\), interiors: \[\] \}\)", .*
+INSERT check_write_LINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect LineString, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 35\.0, y: 10\.0 \}, Coord \{ x: 45\.0, y: 45\.0 \}, Coord \{ x: 15\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 35\.0, y: 10\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 20\.0, y: 30\.0 \}, Coord \{ x: 35\.0, y: 35\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 30\.0 \}\]\)\] \}\)", .*
+INSERT check_write_LINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((35 10, 45 45, 15 40, 10 20, 35 10),(20 30, 35 35, 30 20, 20 30))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect LineString, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_LINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect LineString, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_LINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect LineString, got MultiLineString\(MultiLineString\(\[LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\), LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\)\]\)\)", .*
+INSERT check_write_LINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect LineString, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 45\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 15\.0, y: 5\.0 \}, Coord \{ x: 40\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 5\.0, y: 10\.0 \}, Coord \{ x: 15\.0, y: 5\.0 \}\]\), interiors: \[\] \}\]\)\)", .*
+INSERT check_write_LINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect LineString, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\)", .*
+INSERT check_write_LINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect LineString, got GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\)", .*
+INSERT check_write_LINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
+
+##########
+## insert POLYGON
+##########
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Polygon, got Point\(Point\(Coord \{ x: 0\.0, y: 0\.0 \}\)\)", .*
+INSERT check_write_POLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POINT(0 0)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Polygon, got LineString\(LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\)\)", .*
+INSERT check_write_POLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'LINESTRING (30 10, 10 30, 40 40)');
+
+statement ok
+INSERT check_write_POLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))');
+
+statement ok
+INSERT check_write_POLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((35 10, 45 45, 15 40, 10 20, 35 10),(20 30, 35 35, 30 20, 20 30))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Polygon, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_POLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Polygon, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_POLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Polygon, got MultiLineString\(MultiLineString\(\[LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\), LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\)\]\)\)", .*
+INSERT check_write_POLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Polygon, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 45\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 15\.0, y: 5\.0 \}, Coord \{ x: 40\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 5\.0, y: 10\.0 \}, Coord \{ x: 15\.0, y: 5\.0 \}\]\), interiors: \[\] \}\]\)\)", .*
+INSERT check_write_POLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Polygon, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\)", .*
+INSERT check_write_POLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect Polygon, got GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\)", .*
+INSERT check_write_POLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
+
+##########
+## insert MULTIPOINT
+##########
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPoint, got Point\(Point\(Coord \{ x: 0\.0, y: 0\.0 \}\)\)", .*
+INSERT check_write_MULTIPOINT(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POINT(0 0)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPoint, got LineString\(LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\)\)", .*
+INSERT check_write_MULTIPOINT(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'LINESTRING (30 10, 10 30, 40 40)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPoint, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\), interiors: \[\] \}\)", .*
+INSERT check_write_MULTIPOINT(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPoint, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 35\.0, y: 10\.0 \}, Coord \{ x: 45\.0, y: 45\.0 \}, Coord \{ x: 15\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 35\.0, y: 10\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 20\.0, y: 30\.0 \}, Coord \{ x: 35\.0, y: 35\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 30\.0 \}\]\)\] \}\)", .*
+INSERT check_write_MULTIPOINT(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((35 10, 45 45, 15 40, 10 20, 35 10),(20 30, 35 35, 30 20, 20 30))');
+
+statement ok
+INSERT check_write_MULTIPOINT(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))');
+
+statement ok
+INSERT check_write_MULTIPOINT(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPoint, got MultiLineString\(MultiLineString\(\[LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\), LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\)\]\)\)", .*
+INSERT check_write_MULTIPOINT(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPoint, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 45\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 15\.0, y: 5\.0 \}, Coord \{ x: 40\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 5\.0, y: 10\.0 \}, Coord \{ x: 15\.0, y: 5\.0 \}\]\), interiors: \[\] \}\]\)\)", .*
+INSERT check_write_MULTIPOINT(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPoint, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\)", .*
+INSERT check_write_MULTIPOINT(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPoint, got GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\)", .*
+INSERT check_write_MULTIPOINT(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
+
+##########
+## insert MULTILINESTRING
+##########
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiLineString, got Point\(Point\(Coord \{ x: 0\.0, y: 0\.0 \}\)\)", .*
+INSERT check_write_MULTILINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POINT(0 0)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiLineString, got LineString\(LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\)\)", .*
+INSERT check_write_MULTILINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'LINESTRING (30 10, 10 30, 40 40)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiLineString, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\), interiors: \[\] \}\)", .*
+INSERT check_write_MULTILINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiLineString, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 35\.0, y: 10\.0 \}, Coord \{ x: 45\.0, y: 45\.0 \}, Coord \{ x: 15\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 35\.0, y: 10\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 20\.0, y: 30\.0 \}, Coord \{ x: 35\.0, y: 35\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 30\.0 \}\]\)\] \}\)", .*
+INSERT check_write_MULTILINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((35 10, 45 45, 15 40, 10 20, 35 10),(20 30, 35 35, 30 20, 20 30))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiLineString, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_MULTILINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiLineString, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_MULTILINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)');
+
+statement ok
+INSERT check_write_MULTILINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiLineString, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 45\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 15\.0, y: 5\.0 \}, Coord \{ x: 40\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 5\.0, y: 10\.0 \}, Coord \{ x: 15\.0, y: 5\.0 \}\]\), interiors: \[\] \}\]\)\)", .*
+INSERT check_write_MULTILINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiLineString, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\)", .*
+INSERT check_write_MULTILINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiLineString, got GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\)", .*
+INSERT check_write_MULTILINESTRING(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
+
+##########
+## insert MULTIPOLYGON
+##########
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPolygon, got Point\(Point\(Coord \{ x: 0\.0, y: 0\.0 \}\)\)", .*
+INSERT check_write_MULTIPOLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POINT(0 0)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPolygon, got LineString\(LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\)\)", .*
+INSERT check_write_MULTIPOLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'LINESTRING (30 10, 10 30, 40 40)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPolygon, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\), interiors: \[\] \}\)", .*
+INSERT check_write_MULTIPOLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPolygon, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 35\.0, y: 10\.0 \}, Coord \{ x: 45\.0, y: 45\.0 \}, Coord \{ x: 15\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 35\.0, y: 10\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 20\.0, y: 30\.0 \}, Coord \{ x: 35\.0, y: 35\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 30\.0 \}\]\)\] \}\)", .*
+INSERT check_write_MULTIPOLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((35 10, 45 45, 15 40, 10 20, 35 10),(20 30, 35 35, 30 20, 20 30))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPolygon, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_MULTIPOLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPolygon, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_MULTIPOLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPolygon, got MultiLineString\(MultiLineString\(\[LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\), LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\)\]\)\)", .*
+INSERT check_write_MULTIPOLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
+
+statement ok
+INSERT check_write_MULTIPOLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
+
+statement ok
+INSERT check_write_MULTIPOLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect MultiPolygon, got GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\)", .*
+INSERT check_write_MULTIPOLYGON(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
+
+##########
+## insert GEOMETRYCOLLECTION
+##########
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect GeometryCollection, got Point\(Point\(Coord \{ x: 0\.0, y: 0\.0 \}\)\)", .*
+INSERT check_write_GEOMETRYCOLLECTION(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POINT(0 0)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect GeometryCollection, got LineString\(LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\)\)", .*
+INSERT check_write_GEOMETRYCOLLECTION(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'LINESTRING (30 10, 10 30, 40 40)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect GeometryCollection, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 10\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\), interiors: \[\] \}\)", .*
+INSERT check_write_GEOMETRYCOLLECTION(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect GeometryCollection, got Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 35\.0, y: 10\.0 \}, Coord \{ x: 45\.0, y: 45\.0 \}, Coord \{ x: 15\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 35\.0, y: 10\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 20\.0, y: 30\.0 \}, Coord \{ x: 35\.0, y: 35\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 30\.0 \}\]\)\] \}\)", .*
+INSERT check_write_GEOMETRYCOLLECTION(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POLYGON ((35 10, 45 45, 15 40, 10 20, 35 10),(20 30, 35 35, 30 20, 20 30))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect GeometryCollection, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_GEOMETRYCOLLECTION(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect GeometryCollection, got MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\)", .*
+INSERT check_write_GEOMETRYCOLLECTION(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect GeometryCollection, got MultiLineString\(MultiLineString\(\[LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\), LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\)\]\)\)", .*
+INSERT check_write_GEOMETRYCOLLECTION(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect GeometryCollection, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 45\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 15\.0, y: 5\.0 \}, Coord \{ x: 40\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 5\.0, y: 10\.0 \}, Coord \{ x: 15\.0, y: 5\.0 \}\]\), interiors: \[\] \}\]\)\)", .*
+INSERT check_write_GEOMETRYCOLLECTION(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Invalid geometry type, error: expect GeometryCollection, got MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\)", .*
+INSERT check_write_GEOMETRYCOLLECTION(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
+
+statement ok
+INSERT check_write_GEOMETRYCOLLECTION(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');

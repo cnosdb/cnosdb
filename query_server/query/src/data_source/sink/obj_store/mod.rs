@@ -62,6 +62,7 @@ pub struct ObjectStoreSinkProvider {
     object_store: Arc<DynObjectStore>,
     serializer: Arc<DynRecordBatchSerializer>,
     file_extension: String,
+    schema: SchemaRef,
 }
 
 impl ObjectStoreSinkProvider {
@@ -70,17 +71,23 @@ impl ObjectStoreSinkProvider {
         object_store: Arc<DynObjectStore>,
         serializer: Arc<DynRecordBatchSerializer>,
         file_extension: String,
+        schema: SchemaRef,
     ) -> Self {
         Self {
             location,
             object_store,
             serializer,
             file_extension,
+            schema,
         }
     }
 }
 
 impl RecordBatchSinkProvider for ObjectStoreSinkProvider {
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+
     fn create_batch_sink(
         &self,
         context: Arc<TaskContext>,
