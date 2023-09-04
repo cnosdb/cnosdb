@@ -24,15 +24,19 @@ impl MultiRaft {
         }
     }
 
+    pub fn add_node(&mut self, node: Arc<RaftNode>) {
+        self.raft_nodes.insert(node.group_id(), node);
+    }
+
+    pub fn rm_node(&mut self, id: ReplicationSetId) {
+        self.raft_nodes.remove(&id);
+    }
+
     pub fn get_node(&self, id: ReplicationSetId) -> Option<Arc<RaftNode>> {
         self.raft_nodes.get(&id).cloned()
     }
 
     pub fn exist(&self, id: ReplicationSetId) -> bool {
         self.raft_nodes.contains_key(&id)
-    }
-
-    pub fn add_node(&mut self, node: Arc<RaftNode>) {
-        self.raft_nodes.insert(node.group_id(), node);
     }
 }

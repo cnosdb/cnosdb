@@ -276,6 +276,16 @@ pub struct OpenRaftNodeRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DropRaftNodeRequest {
+    #[prost(string, tag = "1")]
+    pub tenant: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub vnode_id: u32,
+    #[prost(uint32, tag = "3")]
+    pub replica_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WriteReplicaRequest {
     #[prost(uint32, tag = "1")]
     pub replica_id: u32,
@@ -467,28 +477,6 @@ pub mod tskv_service_client {
                 .insert(GrpcMethod::new("kv_service.TSKVService", "WriteReplicaPoints"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn exec_open_raft_node(
-            &mut self,
-            request: impl tonic::IntoRequest<super::OpenRaftNodeRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/ExecOpenRaftNode",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("kv_service.TSKVService", "ExecOpenRaftNode"));
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn query_record_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::QueryRecordBatchRequest>,
@@ -561,6 +549,50 @@ pub mod tskv_service_client {
                 .insert(
                     GrpcMethod::new("kv_service.TSKVService", "ExecAdminFetchCommand"),
                 );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn exec_open_raft_node(
+            &mut self,
+            request: impl tonic::IntoRequest<super::OpenRaftNodeRequest>,
+        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/kv_service.TSKVService/ExecOpenRaftNode",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "ExecOpenRaftNode"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn exec_drop_raft_node(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DropRaftNodeRequest>,
+        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/kv_service.TSKVService/ExecDropRaftNode",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "ExecDropRaftNode"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn download_file(
@@ -697,10 +729,6 @@ pub mod tskv_service_server {
             &self,
             request: tonic::Request<super::WriteReplicaRequest>,
         ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
-        async fn exec_open_raft_node(
-            &self,
-            request: tonic::Request<super::OpenRaftNodeRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
         /// Server streaming response type for the QueryRecordBatch method.
         type QueryRecordBatchStream: futures_core::Stream<
                 Item = std::result::Result<super::BatchBytesResponse, tonic::Status>,
@@ -725,6 +753,14 @@ pub mod tskv_service_server {
             tonic::Response<super::BatchBytesResponse>,
             tonic::Status,
         >;
+        async fn exec_open_raft_node(
+            &self,
+            request: tonic::Request<super::OpenRaftNodeRequest>,
+        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
+        async fn exec_drop_raft_node(
+            &self,
+            request: tonic::Request<super::DropRaftNodeRequest>,
+        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
         /// Server streaming response type for the DownloadFile method.
         type DownloadFileStream: futures_core::Stream<
                 Item = std::result::Result<super::BatchBytesResponse, tonic::Status>,
@@ -1026,52 +1062,6 @@ pub mod tskv_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/kv_service.TSKVService/ExecOpenRaftNode" => {
-                    #[allow(non_camel_case_types)]
-                    struct ExecOpenRaftNodeSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::UnaryService<super::OpenRaftNodeRequest>
-                    for ExecOpenRaftNodeSvc<T> {
-                        type Response = super::StatusResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::OpenRaftNodeRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).exec_open_raft_node(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ExecOpenRaftNodeSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
                 "/kv_service.TSKVService/QueryRecordBatch" => {
                     #[allow(non_camel_case_types)]
                     struct QueryRecordBatchSvc<T: TskvService>(pub Arc<T>);
@@ -1197,6 +1187,98 @@ pub mod tskv_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = ExecAdminFetchCommandSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/kv_service.TSKVService/ExecOpenRaftNode" => {
+                    #[allow(non_camel_case_types)]
+                    struct ExecOpenRaftNodeSvc<T: TskvService>(pub Arc<T>);
+                    impl<
+                        T: TskvService,
+                    > tonic::server::UnaryService<super::OpenRaftNodeRequest>
+                    for ExecOpenRaftNodeSvc<T> {
+                        type Response = super::StatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::OpenRaftNodeRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).exec_open_raft_node(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ExecOpenRaftNodeSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/kv_service.TSKVService/ExecDropRaftNode" => {
+                    #[allow(non_camel_case_types)]
+                    struct ExecDropRaftNodeSvc<T: TskvService>(pub Arc<T>);
+                    impl<
+                        T: TskvService,
+                    > tonic::server::UnaryService<super::DropRaftNodeRequest>
+                    for ExecDropRaftNodeSvc<T> {
+                        type Response = super::StatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DropRaftNodeRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).exec_drop_raft_node(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ExecDropRaftNodeSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -163,6 +163,12 @@ message OpenRaftNodeRequest {
     uint32 replica_id = 3;
 }
 
+message DropRaftNodeRequest {
+    string tenant = 1;
+    uint32 vnode_id = 2;
+    uint32 replica_id = 3;
+}
+
 message WriteReplicaRequest {
     uint32 replica_id = 1;
     string tenant = 2;
@@ -179,10 +185,11 @@ service TSKVService {
 
   rpc WriteVnodePoints(WriteVnodeRequest) returns (StatusResponse) {};
   rpc WriteReplicaPoints(WriteReplicaRequest) returns (StatusResponse) {};
-  rpc ExecOpenRaftNode(OpenRaftNodeRequest) returns (StatusResponse) {};
   rpc QueryRecordBatch(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
   rpc ExecAdminCommand(AdminCommandRequest) returns (StatusResponse) {};
   rpc ExecAdminFetchCommand(AdminFetchCommandRequest) returns (BatchBytesResponse) {};
+  rpc ExecOpenRaftNode(OpenRaftNodeRequest) returns (StatusResponse) {};
+  rpc ExecDropRaftNode(DropRaftNodeRequest) returns (StatusResponse) {};
 
   rpc DownloadFile(DownloadFileRequest) returns (stream BatchBytesResponse) {};
   rpc GetVnodeFilesMeta(GetVnodeFilesMetaRequest) returns (GetVnodeFilesMetaResponse) {};

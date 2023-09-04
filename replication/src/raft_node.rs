@@ -51,6 +51,10 @@ impl RaftNode {
         })
     }
 
+    pub fn raft_id(&self) -> RaftNodeId {
+        self.id
+    }
+
     pub fn group_id(&self) -> u32 {
         self.info.group_id
     }
@@ -120,6 +124,15 @@ impl RaftNode {
             })?;
 
         Ok(())
+    }
+
+    pub async fn shutdown(&self) -> ReplicationResult<()> {
+        self.raft
+            .shutdown()
+            .await
+            .map_err(|err| ReplicationError::RaftInternalErr {
+                msg: err.to_string(),
+            })
     }
 
     /// Get the latest metrics of the cluster

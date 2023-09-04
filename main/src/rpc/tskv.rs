@@ -405,6 +405,24 @@ impl TskvService for TskvServiceImpl {
         }
     }
 
+    async fn exec_drop_raft_node(
+        &self,
+        request: tonic::Request<DropRaftNodeRequest>,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let inner = request.into_inner();
+
+        if let Err(err) = self
+            .coord
+            .raft_manager()
+            .exec_drop_raft_node(&inner.tenant, inner.vnode_id, inner.replica_id)
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
+
     async fn exec_admin_command(
         &self,
         request: tonic::Request<AdminCommandRequest>,
