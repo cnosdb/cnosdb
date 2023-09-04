@@ -35,7 +35,7 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -636,12 +636,12 @@ impl WalManager {
         }
         Ok(())
     }
-    pub async fn recover(&self) -> Vec<WalReader> {
-        let mut recover_task = vec![];
+    pub async fn recover(&self) -> BTreeMap<VnodeId, Vec<WalReader>> {
+        let mut recover_task = BTreeMap::new();
         for (vnode_id, vnode_wal) in self.wal_set.iter() {
             let min_seq = self.global_seq_ctx.vnode_min_seq(*vnode_id);
             if let Ok(readers) = vnode_wal.recover(min_seq).await {
-                recover_task.extend(readers);
+                recover_task.insert(*vnode_id, readers);
             } else {
                 panic!("Failed to recover wal for vnode '{}'", vnode_id)
             }
