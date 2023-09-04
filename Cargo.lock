@@ -2479,7 +2479,7 @@ name = "http_protocol"
 version = "2.3.2"
 dependencies = [
  "async-backtrace",
- "models",
+ "error_code",
  "reqwest",
  "serde",
  "snafu",
