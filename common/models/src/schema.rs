@@ -372,7 +372,8 @@ pub struct TableColumn {
     pub encoding: Encoding,
 }
 
-pub const SRID_META_KEY: &str = "srid";
+pub const GIS_SRID_META_KEY: &str = "gis.srid";
+pub const GIS_SUB_TYPE_META_KEY: &str = "gis.sub_type";
 
 impl From<&TableColumn> for ArrowField {
     fn from(column: &TableColumn) -> Self {
@@ -381,8 +382,11 @@ impl From<&TableColumn> for ArrowField {
         map.insert(TAG.to_string(), column.column_type.is_tag().to_string());
 
         // 通过 SRID_META_KEY 标记 Geometry 类型的列
-        if let ColumnType::Field(ValueType::Geometry(Geometry { srid, .. })) = column.column_type {
-            map.insert(SRID_META_KEY.to_string(), srid.to_string());
+        if let ColumnType::Field(ValueType::Geometry(Geometry { srid, sub_type })) =
+            column.column_type
+        {
+            map.insert(GIS_SUB_TYPE_META_KEY.to_string(), sub_type.to_string());
+            map.insert(GIS_SRID_META_KEY.to_string(), srid.to_string());
         }
 
         let nullable = column.nullable();

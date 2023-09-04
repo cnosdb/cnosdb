@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -24,24 +25,43 @@ impl Display for Geometry {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash)]
 pub enum GeometryType {
     Point,
-    Linestring,
+    LineString,
     Polygon,
-    Multipoint,
-    Multilinestring,
-    Multipolygon,
-    Geometrycollection,
+    MultiPoint,
+    MultiLineString,
+    MultiPolygon,
+    GeometryCollection,
 }
 
 impl Display for GeometryType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Point => write!(f, "POINT"),
-            Self::Linestring => write!(f, "LINESTRING"),
+            Self::LineString => write!(f, "LINESTRING"),
             Self::Polygon => write!(f, "POLYGON"),
-            Self::Multipoint => write!(f, "MULTIPOINT"),
-            Self::Multilinestring => write!(f, "MULTILINESTRING"),
-            Self::Multipolygon => write!(f, "MULTIPOLYGON"),
-            Self::Geometrycollection => write!(f, "GEOMETRYCOLLECTION"),
+            Self::MultiPoint => write!(f, "MULTIPOINT"),
+            Self::MultiLineString => write!(f, "MULTILINESTRING"),
+            Self::MultiPolygon => write!(f, "MULTIPOLYGON"),
+            Self::GeometryCollection => write!(f, "GEOMETRYCOLLECTION"),
+        }
+    }
+}
+
+impl FromStr for GeometryType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "POINT" => Ok(Self::Point),
+            "LINESTRING" => Ok(Self::LineString),
+            "POLYGON" => Ok(Self::Polygon),
+            "MULTIPOINT" => Ok(Self::MultiPoint),
+            "MULTILINESTRING" => Ok(Self::MultiLineString),
+            "MULTIPOLYGON" => Ok(Self::MultiPolygon),
+            "GEOMETRYCOLLECTION" => Ok(Self::GeometryCollection),
+            other => {
+                Err(format!("Invalid geometry type: {}, excepted: POINT | LINESTRING | POLYGON | MULTIPOINT | MULTILINESTRING | MULTIPOLYGON | GEOMETRYCOLLECTION", other))
+            }
         }
     }
 }
