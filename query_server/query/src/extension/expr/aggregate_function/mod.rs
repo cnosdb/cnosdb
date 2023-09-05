@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod example;
 mod gauge;
+mod increase;
 mod sample;
 mod state_agg;
 
@@ -17,6 +18,7 @@ use spi::{QueryError, Result};
 pub const SAMPLE_UDAF_NAME: &str = "sample";
 pub const COMPACT_STATE_AGG_UDAF_NAME: &str = "compact_state_agg";
 pub const GAUGE_AGG_UDAF_NAME: &str = "gauge_agg";
+pub const INCREASE_NAME: &str = "increase";
 
 pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...
@@ -25,6 +27,7 @@ pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<
     sample::register_udaf(func_manager)?;
     state_agg::register_udafs(func_manager)?;
     gauge::register_udafs(func_manager)?;
+    increase::register_udaf(func_manager)?;
     Ok(())
 }
 
