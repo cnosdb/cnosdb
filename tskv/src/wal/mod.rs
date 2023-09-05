@@ -42,7 +42,7 @@ mod writer;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -423,6 +423,10 @@ impl VnodeWal {
     /// Close current record file, return count of bytes appended as footer.
     pub async fn close(&mut self) -> Result<usize> {
         self.current_wal.close().await
+    }
+
+    pub fn wal_dir(&self) -> &Path {
+        &self.wal_dir
     }
 
     pub fn current_seq_no(&self) -> u64 {

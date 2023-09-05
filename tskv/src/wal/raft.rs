@@ -8,9 +8,11 @@ use replication::errors::{ReplicationError, ReplicationResult};
 use replication::{RaftNodeId, RaftNodeInfo, TypeConfig};
 use tokio::sync::Mutex;
 
-use crate::wal::reader::Block;
+use crate::byte_utils::decode_be_u64;
+use crate::file_system::file_manager;
+use crate::wal::reader::{Block, WalReader};
 use crate::wal::{writer, VnodeWal};
-use crate::{Error, Result};
+use crate::{file_utils, Error, Result};
 
 // https://datafuselabs.github.io/openraft/getting-started.html
 
@@ -46,6 +48,12 @@ impl RaftEntryStorage {
                 wal_ref_count_index: HashMap::new(),
             })),
         }
+    }
+
+    /// Read WAL files to recover
+    pub async fn recover(&self) -> Result<()> {
+        let mut inner = self.inner.lock().await;
+        inner.recover().await
     }
 }
 
@@ -229,6 +237,47 @@ impl RaftEntryStorageInner {
         wal_ids
     }
 
+    /// Read WAL files to recover `Self::seq_wal_pos_index`.
+    pub async fn recover(&mut self) -> Result<()> {
+        let wal_files = file_manager::list_file_names(self.wal.wal_dir());
+        for file_name in wal_files {
+            // If file name cannot be parsed to wal id, skip that file.
+            let wal_id = match file_utils::get_wal_file_id(&file_name) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            let path = self.wal.wal_dir().join(&file_name);
+            if !file_manager::try_exists(&path) {
+                continue;
+            }
+            let reader = WalReader::open(&path).await?;
+            let mut reader = reader.take_record_reader();
+            loop {
+                let (pos, seq) = match reader.read_record().await {
+                    Ok(r) => {
+                        if r.data.len() < 9 {
+                            continue;
+                        }
+                        let seq = decode_be_u64(&r.data[1..9]);
+                        (r.pos, seq)
+                    }
+                    Err(Error::Eof) => {
+                        break;
+                    }
+                    Err(Error::RecordFileHashCheckFailed { .. }) => continue,
+                    Err(e) => {
+                        trace::error!("Error reading wal: {:?}", e);
+                        return Err(Error::WalTruncated);
+                    }
+                };
+                println!("{pos}, {seq}");
+                self.mark_write_wal(seq, wal_id, pos);
+            }
+        }
+
+        Ok(())
+    }
+
     fn format_seq_wal_pos_index(&self) -> String {
         let mut buf = String::new();
         if self.seq_wal_pos_index.is_empty() {
@@ -263,9 +312,9 @@ mod test {
 
     use crate::wal::raft::RaftEntryStorage;
     use crate::wal::VnodeWal;
+    use crate::Result;
 
-    pub async fn get_node_store(dir: impl AsRef<Path>) -> Arc<NodeStorage> {
-        trace::debug!("----------------------------------------");
+    pub async fn get_vnode_wal(dir: impl AsRef<Path>) -> Result<VnodeWal> {
         let dir = dir.as_ref();
         let owner = make_owner("cnosdb", "test_db");
         let owner = Arc::new(owner);
@@ -279,9 +328,13 @@ mod test {
             sync_interval: std::time::Duration::from_secs(3600),
         };
 
-        let wal = VnodeWal::new(Arc::new(wal_option), owner, 1234)
-            .await
-            .unwrap();
+        VnodeWal::new(Arc::new(wal_option), owner, 1234).await
+    }
+
+    pub async fn get_node_store(dir: impl AsRef<Path>) -> Arc<NodeStorage> {
+        trace::debug!("----------------------------------------");
+        let dir = dir.as_ref();
+        let wal = get_vnode_wal(dir).await.unwrap();
         let entry = RaftEntryStorage::new(wal);
         let entry: EntryStorageRef = Arc::new(entry);
 
@@ -302,12 +355,16 @@ mod test {
     }
 
     #[test]
-    pub fn test_wal_raft_storage() {
+    fn test_wal_raft_storage_with_openraft_cases() {
         let dir = PathBuf::from("/tmp/test/wal/raft/1");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        trace::init_default_global_tracing(&dir, "test_wal_raft_storage", "debug");
+        trace::init_default_global_tracing(
+            &dir,
+            "test_wal_raft_storage_with_openraft_cases",
+            "debug",
+        );
 
         let case_id = AtomicUsize::new(0);
         if let Err(e) = openraft::testing::Suite::test_all(|| {
@@ -317,5 +374,20 @@ mod test {
             trace::error!("{e}");
             panic!("{e:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn test_wal_raft_storage() {
+        let dir = PathBuf::from("/tmp/test/wal/raft/2");
+        // let _ = std::fs::remove_dir_all(&dir);
+        // std::fs::create_dir_all(&dir).unwrap();
+
+        trace::init_default_global_tracing(&dir, "test_wal_raft_storage", "debug");
+
+        let wal = get_vnode_wal(&dir).await.unwrap();
+        let storage = RaftEntryStorage::new(wal);
+        storage.recover().await.unwrap();
+        let inner = storage.inner.lock().await;
+        println!("recover finished: {}", inner.format_seq_wal_pos_index());
     }
 }
