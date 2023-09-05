@@ -1,0 +1,42 @@
+statement ok
+create database if not exists test_increase;
+
+statement ok
+alter database test_increase set ttl '100000d';
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_increase.test_increase(f0 BIGINT, tags(t0));
+
+statement ok
+INSERT INTO test_increase.test_increase(TIME, t0, f0)
+VALUES
+    ('1999-12-31 00:00:00.000', 'a', 1),
+    ('1999-12-31 00:00:00.005', 'a', 2),
+    ('1999-12-31 00:00:00.010', 'a', 3),
+    ('1999-12-31 00:00:00.015', 'a', 4),
+    ('1999-12-31 00:00:00.020', 'a', 5),
+    ('1999-12-31 00:00:00.025', 'a', 6),
+    ('1999-12-31 00:00:00.030', 'a', 7),
+    ('1999-12-31 00:00:00.035', 'a', 8);
+
+statement ok
+INSERT INTO test_increase.test_increase(TIME, t0, f0)
+VALUES
+    ('1999-12-31 00:00:00.000', 'b', 1),
+    ('1999-12-31 00:00:00.005', 'b', 2),
+    ('1999-12-31 00:00:00.010', 'b', 3),
+    ('1999-12-31 00:00:00.015', 'b', 4),
+    ('1999-12-31 00:00:00.020', 'b', 1),
+    ('1999-12-31 00:00:00.025', 'b', 2),
+    ('1999-12-31 00:00:00.030', 'b', 3),
+    ('1999-12-31 00:00:00.035', 'b', 4);
+
+query T
+select t0, increase(time, f0 order by time) as increase
+from test_increase.test_increase group by t0 order by t0, increase;
+----
+a 7
+b 7
+
+statement ok
+drop database test_increase;

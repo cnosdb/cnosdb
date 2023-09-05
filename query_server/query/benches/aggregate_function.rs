@@ -42,6 +42,9 @@ fn criterion_benchmark(c: &mut Criterion) {
             b.iter(|| data_utils::query(ctx.clone(), "select gauge_agg(ts, f64) FROM t"))
         });
     group.finish();
+    c.bench_function("aggregate_query_no_group_by_increase", |b| {
+        b.iter(|| data_utils::query(ctx.clone(), "SELECT increase(ts, f64 order by ts) FROM t"))
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);
