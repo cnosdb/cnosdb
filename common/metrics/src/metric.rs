@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -11,8 +12,8 @@ use crate::MetricRecorder;
 
 #[derive(Debug, Clone)]
 pub struct Metric<T: MetricRecorder> {
-    pub name: &'static str,
-    pub description: &'static str,
+    pub name: Cow<'static, str>,
+    pub description: Cow<'static, str>,
     pub labels: Labels,
     pub metric_type: MetricType,
     pub shard: Arc<MetricShared<T>>,
@@ -48,10 +49,14 @@ unsafe impl<T: Clone + Default + MetricRecorder> Send for Metric<T> {}
 unsafe impl<T: Clone + Default + MetricRecorder> Sync for Metric<T> {}
 
 impl<T: MetricRecorder> Metric<T> {
-    pub fn new(name: &'static str, description: &'static str, options: T::Options) -> Metric<T> {
+    pub fn new(
+        name: impl Into<Cow<'static, str>>,
+        description: impl Into<Cow<'static, str>>,
+        options: T::Options,
+    ) -> Metric<T> {
         Self {
-            name,
-            description,
+            name: name.into(),
+            description: description.into(),
             labels: Labels::default(),
             metric_type: T::metric_type(),
             shard: Arc::new(MetricShared::new(options)),
@@ -59,14 +64,14 @@ impl<T: MetricRecorder> Metric<T> {
     }
 
     pub fn new_with_labels(
-        name: &'static str,
-        description: &'static str,
+        name: impl Into<Cow<'static, str>>,
+        description: impl Into<Cow<'static, str>>,
         labels: impl Into<Labels>,
         options: T::Options,
     ) -> Metric<T> {
         Self {
-            name,
-            description,
+            name: name.into(),
+            description: description.into(),
             labels: labels.into(),
             metric_type: T::metric_type(),
             shard: Arc::new(MetricShared::new(options)),
