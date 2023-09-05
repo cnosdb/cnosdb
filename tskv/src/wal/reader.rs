@@ -3,12 +3,13 @@ use std::path::{Path, PathBuf};
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
 use models::schema::Precision;
+use openraft::EntryPayload;
 use protos::models_helper::print_points;
 use snafu::ResultExt;
 
 use super::{
-    WalType, WAL_DATABASE_SIZE_LEN, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN, WAL_PRECISION_LEN,
-    WAL_TENANT_SIZE_LEN, WAL_VNODE_ID_LEN,
+    raft, WalType, WAL_DATABASE_SIZE_LEN, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN,
+    WAL_PRECISION_LEN, WAL_TENANT_SIZE_LEN, WAL_VNODE_ID_LEN,
 };
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::file_system::file_manager;
@@ -90,8 +91,9 @@ impl WalReader {
         }
     }
 
-    pub async fn read_wal_record_data(&mut self, pos: usize) -> Result<Option<WalRecordData>> {
-        match self.inner.read_record_at(pos).await {
+    pub async fn read_wal_record_data(&mut self, pos: u64) -> Result<Option<WalRecordData>> {
+        self.inner.reload_metadata().await?;
+        match self.inner.read_record_at(pos as usize).await {
             Ok(r) => Ok(Some(WalRecordData::new(r.data))),
             Err(Error::Eof) => Ok(None),
             Err(e @ Error::RecordFileHashCheckFailed { .. }) => Err(e),
@@ -155,6 +157,19 @@ impl WalRecordData {
             WalType::Write => Block::Write(WriteBlock::new(buf)),
             WalType::DeleteVnode => Block::DeleteVnode(DeleteVnodeBlock::new(buf)),
             WalType::DeleteTable => Block::DeleteTable(DeleteTableBlock::new(buf)),
+            WalType::RaftBlankLog | WalType::RaftNormalLog | WalType::RaftMembershipLog => {
+                match raft::new_raft_entry(&buf[WAL_HEADER_LEN..]) {
+                    Ok(e) => Block::RaftLog(e),
+                    Err(e) => {
+                        trace::error!("Failed to decode raft entry from wal: {e}");
+                        return Self {
+                            typ: WalType::Unknown,
+                            seq: 0,
+                            block: Block::Unknown,
+                        };
+                    }
+                }
+            }
             WalType::Unknown => Block::Unknown,
         };
         Self {
@@ -170,6 +185,7 @@ pub enum Block {
     Write(WriteBlock),
     DeleteVnode(DeleteVnodeBlock),
     DeleteTable(DeleteTableBlock),
+    RaftLog(raft::RaftEntry),
     Unknown,
 }
 
@@ -400,6 +416,17 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                             std::str::from_utf8(blk.table()).unwrap(),
                         );
                     }
+                    Block::RaftLog(entry) => match entry.payload {
+                        EntryPayload::Blank => {
+                            println!("Raft log: empty");
+                        }
+                        EntryPayload::Normal(_data) => {
+                            println!("Raft log: normal");
+                        }
+                        EntryPayload::Membership(_data) => {
+                            println!("Raft log: membership");
+                        }
+                    },
                     Block::Unknown => {
                         println!("Unknown WAL entry type.");
                     }

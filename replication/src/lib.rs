@@ -43,8 +43,14 @@ pub struct RaftNodeInfo {
 // }
 openraft::declare_raft_types!(
     /// Declare the type configuration.
-    pub TypeConfig: D = Request, R = Response, NodeId = RaftNodeId, Node = RaftNodeInfo,
-    Entry = openraft::Entry<TypeConfig>, SnapshotData = Cursor<Vec<u8>>, AsyncRuntime = TokioRuntime
+    pub TypeConfig:
+        D = Request,
+        R = Response,
+        NodeId = RaftNodeId,
+        Node = RaftNodeInfo,
+        Entry = openraft::Entry<TypeConfig>,
+        SnapshotData = Cursor<Vec<u8>>,
+        AsyncRuntime = TokioRuntime
 );
 
 type LocalLogStore = Adaptor<TypeConfig, Arc<NodeStorage>>;

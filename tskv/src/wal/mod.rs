@@ -37,9 +37,10 @@
 
 pub mod raft;
 mod reader;
+mod vnode;
 pub mod writer;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -48,14 +49,13 @@ use std::time::Duration;
 use minivec::MiniVec;
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
-use models::schema::{make_owner, Precision};
+use models::schema::Precision;
 use snafu::ResultExt;
 use tokio::sync::{oneshot, RwLock};
 use tokio::time::timeout;
 
 use self::reader::WalReader;
-use self::writer::{DeleteTableTask, DeleteVnodeTask, WriteTask};
-use crate::context::GlobalSequenceContext;
+use self::writer::{DeleteTableTask, DeleteVnodeTask, WalWriter, WriteTask};
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::tsm::codec::{get_str_codec, StringCodec};
@@ -63,7 +63,7 @@ use crate::version_set::VersionSet;
 pub use crate::wal::reader::{
     print_wal_statistics, Block, DeleteTableBlock, DeleteVnodeBlock, WriteBlock,
 };
-use crate::{error, file_utils, Result, TseriesFamilyId};
+use crate::{error, file_utils, Result};
 
 const WAL_TYPE_LEN: usize = 1;
 const WAL_SEQUENCE_LEN: usize = 8;
@@ -91,6 +91,9 @@ pub enum WalType {
     Write = 1,
     DeleteVnode = 11,
     DeleteTable = 21,
+    RaftBlankLog = 101,
+    RaftNormalLog = 102,
+    RaftMembershipLog = 103,
     Unknown = 127,
 }
 
@@ -100,6 +103,9 @@ impl From<u8> for WalType {
             1 => WalType::Write,
             11 => WalType::DeleteVnode,
             21 => WalType::DeleteTable,
+            101 => WalType::RaftBlankLog,
+            102 => WalType::RaftNormalLog,
+            103 => WalType::RaftMembershipLog,
             _ => WalType::Unknown,
         }
     }
@@ -111,12 +117,16 @@ impl Display for WalType {
             WalType::Write => write!(f, "write"),
             WalType::DeleteVnode => write!(f, "delete_vnode"),
             WalType::DeleteTable => write!(f, "delete_table"),
+            WalType::RaftBlankLog => write!(f, "raft_log_blank"),
+            WalType::RaftNormalLog => write!(f, "raft_log_normal"),
+            WalType::RaftMembershipLog => write!(f, "raft_log_membership"),
             WalType::Unknown => write!(f, "unknown"),
         }
     }
 }
 
 pub struct WalTask {
+    pub seq: u64,
     pub task: writer::Task,
     pub result_sender: WriteResultSender,
 }
@@ -132,6 +142,7 @@ impl WalTask {
         let (cb, rx) = oneshot::channel();
         (
             Self {
+                seq: 0,
                 task: writer::Task::new_write(tenant, database, vnode_id, precision, points),
                 result_sender: cb,
             },
@@ -147,6 +158,7 @@ impl WalTask {
         let (cb, rx) = oneshot::channel();
         (
             Self {
+                seq: 0,
                 task: writer::Task::new_delete_vnode(tenant, database, vnode_id),
                 result_sender: cb,
             },
@@ -162,6 +174,7 @@ impl WalTask {
         let (cb, rx) = oneshot::channel();
         (
             Self {
+                seq: 0,
                 task: writer::Task::new_delete_table(tenant, database, table),
                 result_sender: cb,
             },
@@ -171,6 +184,7 @@ impl WalTask {
 
     pub fn new_from(wal_task: &WalTask, cb: WriteResultSender) -> WalTask {
         WalTask {
+            seq: wal_task.seq,
             task: wal_task.task.clone(),
             result_sender: cb,
         }
@@ -197,48 +211,54 @@ impl WalTask {
     }
 
     pub fn owner(&self) -> String {
-        match &self.task {
-            writer::Task::Write(WriteTask {
-                tenant, database, ..
-            }) => make_owner(tenant, database),
-            writer::Task::DeleteVnode(DeleteVnodeTask {
-                tenant, database, ..
-            }) => make_owner(tenant, database),
-            writer::Task::DeleteTable(DeleteTableTask {
-                tenant, database, ..
-            }) => make_owner(tenant, database),
-        }
+        self.task.tenant_database()
     }
 
-    pub fn vnode_id(&self) -> Option<TseriesFamilyId> {
-        match self.task {
-            writer::Task::Write(WriteTask { vnode_id, .. }) => Some(vnode_id),
-            writer::Task::DeleteVnode(DeleteVnodeTask { vnode_id, .. }) => Some(vnode_id),
-            //todo: change delete table to delete time series;
-            writer::Task::DeleteTable(DeleteTableTask { .. }) => None,
-        }
+    pub fn vnode_id(&self) -> Option<VnodeId> {
+        self.task.vnode_id()
     }
+}
+
+#[async_trait::async_trait]
+pub trait Wal {
+    type Task;
+    type Block;
+
+    async fn write_at_seq_no(&mut self, seq_no: u64, task: WriteTask) -> Result<usize>;
+
+    async fn read_at_seq_no(&self, seq_no: u64) -> Result<Option<Block>>;
+
+    async fn check_to_delete(&mut self, min_seq_no: u64) -> Result<()>;
+
+    async fn flush(&mut self) -> Result<()>;
+
+    async fn close(&mut self) -> Result<()>;
+
+    fn current_wal_id(&self) -> u64;
+
+    fn current_seq_no(&self) -> u64;
 }
 
 pub struct VnodeWal {
-    tenant_database: Arc<String>,
-    vnode_id: TseriesFamilyId,
-    wal_dir: PathBuf,
-    current_wal: writer::WalWriter,
-    total_file_size: u64,
-    old_file_max_sequence: HashMap<u64, u64>,
     config: Arc<WalOptions>,
-    /// Stores opened wal ids and wal readers when call read(wal_id, pos).
-    opened_wals: HashMap<u64, WalReader>,
+    wal_dir: PathBuf,
+    tenant_database: Arc<String>,
+    vnode_id: VnodeId,
+    current_wal: WalWriter,
+
+    /// Stores wal_id-wal_reader entry when a `WalReader` opened by `read(wal_id, pos)`.
+    wal_reader_index: HashMap<u64, WalReader>,
+    /// Maps seq_no to (WAL id, position).
+    wal_location_index: BTreeMap<u64, (u64, usize)>,
 }
 
 impl VnodeWal {
-    pub async fn init(
-        vnode_id: TseriesFamilyId,
-        owner: String,
+    pub async fn new(
         config: Arc<WalOptions>,
+        tenant_database: Arc<String>,
+        vnode_id: VnodeId,
     ) -> Result<Self> {
-        let wal_dir = config.wal_dir(&owner, &vnode_id.to_string());
+        let wal_dir = config.wal_dir(&tenant_database, vnode_id);
         let current_file =
             writer::WalWriter::open(config.clone(), 0, file_utils::make_wal_file(&wal_dir, 0), 1)
                 .await
@@ -246,18 +266,17 @@ impl VnodeWal {
                     reason: format!("Failed to open wal file: {}", e),
                 })?;
         Ok(Self {
-            tenant_database: Arc::new(owner),
-            vnode_id,
-            wal_dir,
-            current_wal: current_file,
-            total_file_size: 0,
-            old_file_max_sequence: HashMap::new(),
             config,
-            opened_wals: HashMap::new(),
+            wal_dir,
+            tenant_database,
+            vnode_id,
+            current_wal: current_file,
+            wal_reader_index: HashMap::new(),
+            wal_location_index: BTreeMap::new(),
         })
     }
 
-    async fn roll_wal_file(&mut self, max_file_size: u64, seq: u64) -> Result<()> {
+    async fn roll_wal_file(&mut self, max_file_size: u64) -> Result<()> {
         if self.current_wal.size() > max_file_size {
             trace::info!(
                 "WAL '{}' is full at seq '{}', begin rolling.",
@@ -275,8 +294,6 @@ impl VnodeWal {
                 self.current_wal.max_sequence(),
             )
             .await?;
-            // Total WALs size add WAL header size.
-            self.total_file_size += new_file.size();
 
             let mut old_file = std::mem::replace(&mut self.current_wal, new_file);
             if old_file.max_sequence() <= old_file.min_sequence() {
@@ -284,58 +301,29 @@ impl VnodeWal {
             } else {
                 old_file.set_max_sequence(old_file.max_sequence() - 1);
             }
-            self.old_file_max_sequence
-                .insert(old_file.id(), old_file.max_sequence());
-            // Total WALs size add WAL footer size.
-            self.total_file_size += old_file.close().await? as u64;
 
             trace::info!(
                 "WAL '{}' starts write at seq {}",
                 self.current_wal.id(),
                 self.current_wal.max_sequence()
             );
-            self.check_to_delete(seq).await;
         }
         Ok(())
     }
 
-    pub async fn check_to_delete(&mut self, min_seq: u64) {
-        let mut old_files_to_delete: Vec<u64> = Vec::new();
-        for (old_file_id, old_file_max_seq) in self.old_file_max_sequence.iter() {
-            if *old_file_max_seq < min_seq {
-                old_files_to_delete.push(*old_file_id);
-            }
-        }
-
-        if !old_files_to_delete.is_empty() {
-            for file_id in old_files_to_delete {
-                let file_path = file_utils::make_wal_file(&self.config.path, file_id);
-                trace::debug!("Removing wal file '{}'", file_path.display());
-                let file_size = match tokio::fs::metadata(&file_path).await {
-                    Ok(m) => m.len(),
-                    Err(e) => {
-                        trace::error!(
-                            "Failed to get WAL file metadata for '{}': {:?}",
-                            file_path.display(),
-                            e
-                        );
-                        0
-                    }
-                };
-                if let Err(e) = tokio::fs::remove_file(&file_path).await {
-                    trace::error!("Failed to remove file '{}': {:?}", file_path.display(), e);
-                }
-                // Remove max_sequence record for deleted file.
-                self.old_file_max_sequence.remove(&file_id);
-                // Subtract deleted file size.
-                self.total_file_size -= file_size;
+    pub async fn delete_wal_files(&mut self, wal_ids: &[u64]) {
+        for file_id in wal_ids {
+            let file_path = file_utils::make_wal_file(&self.config.path, *file_id);
+            trace::debug!("Removing wal file '{}'", file_path.display());
+            if let Err(e) = tokio::fs::remove_file(&file_path).await {
+                trace::error!("Failed to remove file '{}': {:?}", file_path.display(), e);
             }
         }
     }
 
     /// Checks if wal file is full then writes data. Return data sequence and data size.
-    pub async fn write(&mut self, wal_task: WalTask, seq: u64) {
-        match self.write_inner_task(seq, &wal_task.task).await {
+    pub async fn write(&mut self, wal_task: WalTask) {
+        match self.write_inner_task(&wal_task.task).await {
             Ok((seq, size)) => {
                 if let Err(e) = wal_task.result_sender.send(Ok((seq, size))) {
                     // WAL job closed, leaving this write request.
@@ -350,12 +338,12 @@ impl VnodeWal {
         }
     }
 
-    async fn write_inner_task(&mut self, seq: u64, task: &writer::Task) -> Result<(u64, usize)> {
-        if let Err(e) = self.roll_wal_file(self.config.max_file_size, seq).await {
+    async fn write_inner_task(&mut self, task: &writer::Task) -> Result<(u64, usize)> {
+        if let Err(e) = self.roll_wal_file(self.config.max_file_size).await {
             trace::error!("Failed to roll WAL file: {}", e);
             return Err(e);
         }
-        let write_ret = match task {
+        match task {
             writer::Task::Write(WriteTask {
                 tenant,
                 vnode_id,
@@ -381,27 +369,22 @@ impl VnodeWal {
                 database,
                 table,
             }) => self.current_wal.delete_table(tenant, database, table).await,
-        };
-        match write_ret {
-            Ok((seq, size)) => {
-                self.total_file_size += size as u64;
-                Ok((seq, size))
-            }
-            Err(e) => Err(e),
         }
     }
 
-    pub async fn read(&mut self, wal_id: u64, pos: usize) -> Result<Option<reader::Block>> {
-        let reader = match self.opened_wals.get_mut(&wal_id) {
+    async fn write_raft_entry(&mut self, raft_entry: &raft::RaftEntry) -> Result<(u64, usize)> {
+        self.current_wal.append_raft_entry(raft_entry).await
+    }
+
+    pub async fn read(&mut self, wal_id: u64, pos: u64) -> Result<Option<reader::Block>> {
+        let reader = match self.wal_reader_index.get_mut(&wal_id) {
             Some(r) => r,
             None => {
-                let wal_dir = self
-                    .config
-                    .wal_dir(&self.tenant_database, &self.vnode_id.to_string());
+                let wal_dir = self.config.wal_dir(&self.tenant_database, self.vnode_id);
                 let wal_path = file_utils::make_wal_file(wal_dir, wal_id);
                 let reader = WalReader::open(wal_path).await?;
-                self.opened_wals.insert(wal_id, reader);
-                self.opened_wals.get_mut(&wal_id).unwrap()
+                self.wal_reader_index.insert(wal_id, reader);
+                self.wal_reader_index.get_mut(&wal_id).unwrap()
             }
         };
 
@@ -450,23 +433,18 @@ impl VnodeWal {
         self.current_wal.id()
     }
 
+    pub fn current_wal_size(&self) -> u64 {
+        self.current_wal.size()
+    }
+
     pub fn sync_interval(&self) -> std::time::Duration {
         self.config.sync_interval
-    }
-
-    pub fn is_total_file_size_exceed(&self) -> bool {
-        self.total_file_size >= self.config.flush_trigger_total_file_size
-    }
-
-    pub fn total_file_size(&self) -> u64 {
-        self.total_file_size
     }
 }
 
 pub struct WalManager {
     config: Arc<WalOptions>,
-    global_seq_ctx: Arc<GlobalSequenceContext>,
-    wal_set: HashMap<TseriesFamilyId, VnodeWal>,
+    vnode_wal_map: HashMap<VnodeId, VnodeWal>,
 }
 
 unsafe impl Send for WalManager {}
@@ -476,39 +454,31 @@ unsafe impl Sync for WalManager {}
 impl WalManager {
     pub async fn open(
         config: Arc<WalOptions>,
-        global_seq_ctx: Arc<GlobalSequenceContext>,
         version_set: Arc<RwLock<VersionSet>>,
     ) -> Result<Self> {
-        let mut wal_set = HashMap::new();
+        let mut vnode_wal_map = HashMap::new();
         for (db_name, database) in version_set.read().await.get_all_db() {
             let tenant_database = database.read().await.owner();
-            for vnode_id in database.read().await.ts_families().keys() {
-                let wal_dir = config.wal_dir(db_name, &vnode_id.to_string());
-                let mut total_file_size = 0_u64;
-                let mut old_file_max_sequence: HashMap<u64, u64> = HashMap::new();
+            for vnode_id in database.read().await.ts_families().keys().copied() {
+                let wal_dir = config.wal_dir(db_name, vnode_id);
                 let file_names = file_manager::list_file_names(wal_dir.clone());
                 for f in file_names {
                     let file_path = wal_dir.join(&f);
-                    match tokio::fs::metadata(&file_path).await {
-                        Ok(m) => {
-                            total_file_size += m.len();
-                        }
-                        Err(e) => {
-                            trace::error!("Failed to get WAL file metadata for '{}': {:?}", &f, e)
-                        }
-                    }
-                    match reader::read_footer(file_path).await {
-                        Ok(Some((_, max_seq))) => match file_utils::get_wal_file_id(&f) {
+                    match reader::read_footer(&file_path).await {
+                        Ok(Some((min_seq, max_seq))) => match file_utils::get_wal_file_id(&f) {
                             Ok(file_id) => {
-                                old_file_max_sequence.insert(file_id, max_seq);
+                                trace::debug!(
+                                    "Open WAL file({file_id}) '{}' with sequence from {min_seq} to {max_seq}",
+                                    file_path.display(),
+                                );
                             }
                             Err(e) => {
-                                trace::error!("Failed to parse WAL file name for '{}': {:?}", &f, e)
+                                trace::error!("Failed to parse WAL file name for '{}': {e}", &f)
                             }
                         },
                         Ok(None) => trace::warn!("Failed to parse WAL file footer for '{}'", &f),
                         Err(e) => {
-                            trace::warn!("Failed to parse WAL file footer for '{}': {:?}", &f, e)
+                            trace::warn!("Failed to parse WAL file footer for '{}': {e}", &f)
                         }
                     }
                 }
@@ -531,26 +501,23 @@ impl WalManager {
                 let current_file =
                     writer::WalWriter::open(config.clone(), next_file_id, new_wal, pre_max_seq)
                         .await?;
-                total_file_size += current_file.size();
                 trace::info!("WAL '{}' starts write", current_file.id());
                 let vnode_wal = VnodeWal {
-                    tenant_database: tenant_database.clone(),
-                    vnode_id: *vnode_id,
-                    wal_dir: wal_dir.clone(),
-                    current_wal: current_file,
-                    total_file_size,
-                    old_file_max_sequence,
                     config: config.clone(),
-                    opened_wals: HashMap::new(),
+                    wal_dir,
+                    tenant_database: tenant_database.clone(),
+                    vnode_id,
+                    current_wal: current_file,
+                    wal_reader_index: HashMap::new(),
+                    wal_location_index: BTreeMap::new(),
                 };
-                wal_set.insert(*vnode_id, vnode_wal);
+                vnode_wal_map.insert(vnode_id, vnode_wal);
             }
         }
 
         Ok(Self {
             config,
-            global_seq_ctx,
-            wal_set,
+            vnode_wal_map,
         })
     }
 
@@ -558,14 +525,12 @@ impl WalManager {
         let vnode_id = wal_task.vnode_id();
         match vnode_id {
             None => {
-                let mut rxs = Vec::with_capacity(self.wal_set.len());
-                for (_, vnode_wal) in self.wal_set.iter_mut() {
+                let mut rxs = Vec::with_capacity(self.vnode_wal_map.len());
+                for (_, vnode_wal) in self.vnode_wal_map.iter_mut() {
                     let (tx, rx) = oneshot::channel();
                     let new_task = WalTask::new_from(&wal_task, tx);
                     rxs.push((rx, vnode_wal.vnode_id));
-                    vnode_wal
-                        .write(new_task, self.global_seq_ctx.min_seq())
-                        .await;
+                    vnode_wal.write(new_task).await;
                 }
 
                 let mut ok = true;
@@ -574,11 +539,11 @@ impl WalManager {
                         continue;
                     }
                     ok = false;
-                    trace::error!("Failed to write wal delete table in vnode {}", vnode_id);
+                    trace::error!("Failed to write wal delete table in vnode {vnode_id}");
                 }
                 if ok {
                     if let Err(e) = wal_task.write_wal_result_sender().send(Ok((0, 0))) {
-                        trace::error!("Failed to send wal delete table result: {:?}", e);
+                        trace::error!("Failed to send wal delete table result: {e:?}");
                     }
                 } else if let Err(e) =
                     wal_task
@@ -589,32 +554,33 @@ impl WalManager {
                                 .to_string(),
                     }))
                 {
-                    trace::error!("Failed to send wal delete table result: {:?}", e);
+                    trace::error!("Failed to send wal delete table result: {e:?}");
                 }
             }
             Some(vnode_id) => {
-                if let Some(vnode_wal) = self.wal_set.get_mut(&vnode_id) {
-                    vnode_wal
-                        .write(wal_task, self.global_seq_ctx.min_seq())
-                        .await;
+                if let Some(vnode_wal) = self.vnode_wal_map.get_mut(&vnode_id) {
+                    vnode_wal.write(wal_task).await;
                 } else {
+                    let tenant_database = Arc::new(wal_task.owner());
                     let mut vnode_wal =
-                        VnodeWal::init(vnode_id, wal_task.owner(), self.config.clone()).await?;
-                    vnode_wal
-                        .write(wal_task, self.global_seq_ctx.min_seq())
-                        .await;
-                    self.wal_set.insert(vnode_id, vnode_wal);
+                        VnodeWal::new(self.config.clone(), tenant_database, vnode_id).await?;
+                    vnode_wal.write(wal_task).await;
+                    self.vnode_wal_map.insert(vnode_id, vnode_wal);
                 };
             }
         }
         Ok(())
     }
-    pub async fn recover(&self) -> Vec<WalReader> {
+
+    pub async fn recover(
+        &self,
+        vnode_min_seq_map: &HashMap<VnodeId, u64>,
+    ) -> Vec<(VnodeId, Vec<WalReader>)> {
         let mut recover_task = vec![];
-        for (vnode_id, vnode_wal) in self.wal_set.iter() {
-            let min_seq = self.global_seq_ctx.vnode_min_seq(*vnode_id);
+        for (vnode_id, vnode_wal) in self.vnode_wal_map.iter() {
+            let min_seq = vnode_min_seq_map.get(vnode_id).copied().unwrap_or(0);
             if let Ok(readers) = vnode_wal.recover(min_seq).await {
-                recover_task.extend(readers);
+                recover_task.push((*vnode_id, readers));
             } else {
                 panic!("Failed to recover wal for vnode '{}'", vnode_id)
             }
@@ -624,7 +590,7 @@ impl WalManager {
 
     pub async fn sync(&self) -> Result<()> {
         let mut sync_task = vec![];
-        for (_, vnode_wal) in self.wal_set.iter() {
+        for (_, vnode_wal) in self.vnode_wal_map.iter() {
             sync_task.push(vnode_wal.sync());
         }
         for res in futures::future::join_all(sync_task).await {
@@ -638,7 +604,7 @@ impl WalManager {
 
     pub async fn close(&mut self) -> Result<()> {
         let mut close_task = vec![];
-        for (_, vnode_wal) in self.wal_set.iter_mut() {
+        for (_, vnode_wal) in self.vnode_wal_map.iter_mut() {
             close_task.push(vnode_wal.close());
         }
         for res in futures::future::join_all(close_task).await {
@@ -651,14 +617,6 @@ impl WalManager {
     }
     pub fn sync_interval(&self) -> std::time::Duration {
         self.config.sync_interval
-    }
-
-    pub fn wal_set(&mut self) -> &mut HashMap<TseriesFamilyId, VnodeWal> {
-        &mut self.wal_set
-    }
-
-    pub fn global_seq_ctx(&self) -> Arc<GlobalSequenceContext> {
-        self.global_seq_ctx.clone()
     }
 }
 
@@ -706,7 +664,6 @@ mod test {
     use tokio::sync::RwLock;
     use trace::init_default_global_tracing;
 
-    use crate::context::GlobalSequenceContext;
     use crate::file_system::file_manager::list_file_names;
     use crate::kv_option::WalOptions;
     use crate::memcache::FieldVal;
@@ -798,6 +755,7 @@ mod test {
                             }
                             Block::DeleteVnode(_) => todo!(),
                             Block::DeleteTable(_) => todo!(),
+                            Block::RaftLog(_) => todo!(),
                             Block::Unknown => todo!(),
                         }
                     }
@@ -829,17 +787,13 @@ mod test {
         let database = "test";
         let vnode_id = 0;
         let owner = make_owner(tenant, database);
-        let dest_dir = wal_config.wal_dir(&owner, &vnode_id.to_string());
+        let dest_dir = wal_config.wal_dir(&owner, vnode_id);
         let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
         let vs = Arc::new(RwLock::new(VersionSet::build_empty_test(runtime.clone())));
         let feature = async {
-            let mut mgr = WalManager::open(
-                Arc::new(wal_config),
-                GlobalSequenceContext::empty(),
-                vs.clone(),
-            )
-            .await
-            .unwrap();
+            let mut mgr = WalManager::open(Arc::new(wal_config), vs.clone())
+                .await
+                .unwrap();
             let mut data_vec = Vec::new();
             for i in 1..=10_u64 {
                 let data = b"hello".to_vec();
@@ -881,16 +835,12 @@ mod test {
         let database = "test";
         let vnode_id = 0;
         let owner = make_owner(tenant, database);
-        let dest_dir = wal_config.wal_dir(&owner, &vnode_id.to_string());
-        let min_seq_no = 6;
+        let dest_dir = wal_config.wal_dir(&owner, vnode_id);
 
-        let gcs = GlobalSequenceContext::empty();
-        gcs.set_min_seq(min_seq_no);
         let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
         let feature = async {
             let mut mgr = WalManager::open(
                 Arc::new(wal_config),
-                gcs,
                 Arc::new(RwLock::new(VersionSet::build_empty_test(runtime.clone()))),
             )
             .await
@@ -938,7 +888,6 @@ mod test {
         let feature = async {
             let mut mgr = WalManager::open(
                 Arc::new(wal_config),
-                GlobalSequenceContext::empty(),
                 Arc::new(RwLock::new(VersionSet::build_empty_test(runtime.clone()))),
             )
             .await

@@ -317,8 +317,8 @@ impl RaftNodesManager {
         let owner = models::schema::make_owner(tenant, &all_info.db_name);
         let wal_option = tskv::kv_option::WalOptions::from(&self.config);
 
-        let wal = wal::VnodeWal::init(vnode_id, owner, Arc::new(wal_option)).await?;
-        let raft_logs = wal::raft::WalRaftEntryStorage::new(wal);
+        let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id).await?;
+        let raft_logs = wal::raft::RaftEntryStorage::new(wal);
         Ok(Arc::new(raft_logs))
 
         // let path = format!("/tmp/cnosdb/{}/{}-entry", self.node_id(), vnode_id);

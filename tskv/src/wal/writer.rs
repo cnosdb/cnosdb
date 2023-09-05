@@ -2,14 +2,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use models::meta_data::VnodeId;
-use models::schema::Precision;
+use models::schema::{make_owner, Precision};
 use serde::{Deserialize, Serialize};
 
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion};
-use crate::wal::{reader, WalType, WAL_FOOTER_MAGIC_NUMBER};
-use crate::{record_file, Result};
+use crate::wal::{raft, reader, WalType, WAL_FOOTER_MAGIC_NUMBER};
+use crate::{record_file, Error, Result};
 
 fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_FOOTER_LEN] {
     let mut footer = [0_u8; record_file::FILE_FOOTER_LEN];
@@ -182,6 +182,38 @@ impl WalWriter {
         Ok((seq, written_size))
     }
 
+    pub async fn append_raft_entry(
+        &mut self,
+        raft_entry: &raft::RaftEntry,
+    ) -> Result<(u64, usize)> {
+        let wal_type = match raft_entry.payload {
+            openraft::EntryPayload::Blank => WalType::RaftNormalLog,
+            openraft::EntryPayload::Normal(_) => WalType::RaftNormalLog,
+            openraft::EntryPayload::Membership(_) => WalType::RaftMembershipLog,
+        };
+
+        let seq = raft_entry.log_id.index;
+        let raft_entry_bytes =
+            bincode::serialize(raft_entry).map_err(|e| Error::Encode { source: e })?;
+
+        let written_size = self
+            .inner
+            .write_record(
+                RecordDataVersion::V1 as u8,
+                RecordDataType::Wal as u8,
+                [&[wal_type as u8][..], &seq.to_be_bytes(), &raft_entry_bytes].as_slice(),
+            )
+            .await?;
+
+        if self.config.sync {
+            self.inner.sync().await?;
+        }
+        // write & fsync succeed
+        self.max_sequence = seq + 1;
+        self.size += written_size as u64;
+        Ok((seq, written_size))
+    }
+
     pub async fn sync(&self) -> Result<()> {
         self.inner.sync().await
     }
@@ -258,6 +290,29 @@ impl Task {
             database,
             table,
         })
+    }
+
+    pub fn tenant_database(&self) -> String {
+        match self {
+            Self::Write(WriteTask {
+                tenant, database, ..
+            }) => make_owner(tenant, database),
+            Self::DeleteVnode(DeleteVnodeTask {
+                tenant, database, ..
+            }) => make_owner(tenant, database),
+            Self::DeleteTable(DeleteTableTask {
+                tenant, database, ..
+            }) => make_owner(tenant, database),
+        }
+    }
+
+    pub fn vnode_id(&self) -> Option<VnodeId> {
+        match self {
+            Self::Write(WriteTask { vnode_id, .. }) => Some(*vnode_id),
+            Self::DeleteVnode(DeleteVnodeTask { vnode_id, .. }) => Some(*vnode_id),
+            //todo: change delete table to delete time series;
+            Self::DeleteTable(DeleteTableTask { .. }) => None,
+        }
     }
 }
 
@@ -398,6 +453,9 @@ mod test {
                             .delete_table(&tenant, &database, &table)
                             .await
                             .unwrap();
+                    }
+                    Block::RaftLog(e) => {
+                        writer.append_raft_entry(e).await.unwrap();
                     }
                     Block::Unknown => {
                         // ignore

@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
+use snafu::ResultExt;
+
 use super::{
     file_crc_source_len, Record, FILE_FOOTER_CRC32_NUMBER_LEN, FILE_FOOTER_LEN,
     FILE_FOOTER_MAGIC_NUMBER_LEN, FILE_MAGIC_NUMBER_LEN, READER_BUF_SIZE, RECORD_CRC32_NUMBER_LEN,
@@ -8,7 +10,7 @@ use super::{
     RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
 };
 use crate::byte_utils::decode_be_u32;
-use crate::error::{Error, Result};
+use crate::error::{self, Error, Result};
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
@@ -16,6 +18,7 @@ use crate::file_system::file_manager;
 pub struct Reader {
     path: PathBuf,
     file: AsyncFile,
+    file_len: u64,
     pos: usize,
     buf: Vec<u8>,
     buf_len: usize,
@@ -39,16 +42,18 @@ impl Reader {
                 return Err(e);
             }
         };
-        let records_len = if footer_pos == file.len() {
+        let file_len = file.len();
+        let records_len = if footer_pos == file_len {
             // If there is no footer
-            file.len() - FILE_MAGIC_NUMBER_LEN as u64
+            file_len - FILE_MAGIC_NUMBER_LEN as u64
         } else {
-            file.len() - FILE_FOOTER_LEN as u64 - FILE_MAGIC_NUMBER_LEN as u64
+            file_len - FILE_FOOTER_LEN as u64 - FILE_MAGIC_NUMBER_LEN as u64
         };
         let buf_size = records_len.min(READER_BUF_SIZE as u64) as usize;
         Ok(Reader {
             path: path.to_path_buf(),
             file,
+            file_len,
             pos: FILE_MAGIC_NUMBER_LEN,
             buf: vec![0_u8; buf_size],
             buf_len: 0,
@@ -65,7 +70,7 @@ impl Reader {
             self.buf_use = 0;
             return Ok(());
         }
-        if pos as u64 > self.file.len() {
+        if pos as u64 > self.file_len {
             return Err(Error::Eof);
         }
 
@@ -278,12 +283,23 @@ impl Reader {
         Ok(&self.buf[self.buf_use..right_bound])
     }
 
+    pub async fn reload_metadata(&mut self) -> Result<()> {
+        let meta = tokio::fs::metadata(&self.path)
+            .await
+            .context(error::IOSnafu)?;
+        self.file_len = meta.len();
+        if self.footer.is_none() {
+            self.footer_pos = self.file_len;
+        }
+        Ok(())
+    }
+
     pub fn path(&self) -> PathBuf {
         self.path.clone()
     }
 
     pub fn len(&self) -> u64 {
-        self.file.len()
+        self.file_len
     }
 
     pub fn is_empty(&self) -> bool {
