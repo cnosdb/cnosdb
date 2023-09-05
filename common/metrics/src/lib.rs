@@ -70,7 +70,11 @@ pub trait MetricRecorder: CreateMetricRecorder + Clone + Debug {
 
 impl<T: MetricRecorder + 'static> Measure for Metric<T> {
     fn report(&self, reporter: &mut dyn Reporter) {
-        reporter.start(self.name, self.description, self.metric_type);
+        reporter.start(
+            self.name.clone(),
+            self.description.clone(),
+            self.metric_type,
+        );
         self.shard.report(&self.labels, reporter);
         reporter.stop()
     }
