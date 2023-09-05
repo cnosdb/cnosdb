@@ -275,6 +275,55 @@ impl Reader {
         Ok(())
     }
 
+    // /// Load buf from self.pos, reset self.buf_len and self.buf_use.
+    // async fn load_buf(&mut self) -> Result<()> {
+    //     use std::io;
+    //
+    //     trace::trace!(
+    //         "Record file: Trying load buf at {} for {} bytes",
+    //         self.pos,
+    //         self.buf.len()
+    //     );
+
+    //     let mut buf_len = 0;
+    //     let mut retry_num = 1;
+    //     loop {
+    //         match self.file.read_at(self.pos as u64, &mut self.buf[buf_len..]).await {
+    //             Ok(l) => {
+    //                 buf_len += l;
+    //                 if retry_num <= 3 && buf_len < self.buf.len() {
+    //                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    //                     retry_num += 1;
+    //                     trace::debug!("Read record file not read enough bytes(only {l} bytes), trying the {retry_num} times later.");
+    //                     continue;
+    //                 }
+
+    //                 self.buf_len = buf_len;
+    //                 break;
+    //             }
+    //             Err(e) => {
+    //                 match e.kind() {
+    //                     io::ErrorKind::Interrupted | io::ErrorKind::UnexpectedEof if retry_num <= 3 => {
+    //                         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    //                         retry_num += 1;
+    //                         trace::debug!("Read record file Interrupted&UnexpectedEof, trying the {retry_num} times later.");
+    //                         continue;
+    //                     }
+    //                     _ => {
+    //                         return Err(Error::ReadFile {
+    //                             path: self.path.clone(),
+    //                             source: e,
+    //                         });
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     self.buf_use = 0;
+    //     Ok(())
+    // }
+
     async fn read_buf(&mut self, size: usize) -> Result<&[u8]> {
         if self.buf_len - self.buf_use < size {
             self.load_buf().await?;
@@ -457,7 +506,7 @@ pub(crate) mod test {
                 Err(Error::Eof) => {}
                 Err(e) => panic!("Unexpected error: {e}, Error::EOF was expected."),
                 Ok((header_pos, _)) => {
-                    panic!("Unexpected Ok((header_pos, header)) at {header_pos}, Error::EOF was expected.",)
+                    panic!("Unexpected Ok((header_pos, header)) at {header_pos}, Error::EOF was expected.", )
                 }
             }
         }
