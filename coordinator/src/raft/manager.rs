@@ -219,6 +219,11 @@ impl RaftNodesManager {
             })?
             .get_replication_set(group_id)
             .ok_or(CoordinatorError::ReplicationSetNotFound { id: group_id })?;
+        if replica.leader_node_id != self.node_id() {
+            return Err(CoordinatorError::LeaderIsWrong {
+                replica: replica.clone(),
+            });
+        }
 
         let raft_node = self.get_node_or_build(tenant, &replica).await?;
         raft_node.raft_add_learner(id.into(), info).await?;

@@ -95,7 +95,7 @@ pub trait Coordinator: Send + Sync {
         predicate: ResolvedPredicateRef,
     ) -> CoordinatorResult<Vec<ReplicationSet>>;
 
-    async fn write_replica(
+    async fn write_replica_raft(
         &self,
         tenant: &str,
         db_name: &str,

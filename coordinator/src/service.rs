@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused)]
+
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::future::Future;
@@ -19,7 +22,7 @@ use metrics::count::U64Counter;
 use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
-use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId};
+use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId, VnodeStatus};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicateRef, TimeRanges};
 use models::record_batch_decode;
@@ -34,6 +37,7 @@ use protos::kv_service::admin_command_request::Command::*;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::*;
 use tokio::runtime::Runtime;
+use tokio::sync::mpsc;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
@@ -41,6 +45,7 @@ use tskv::EngineRef;
 use utils::BkdrHasher;
 
 use crate::errors::*;
+use crate::hh_queue::HintedOffManager;
 use crate::metrics::LPReporter;
 use crate::raft::manager::RaftNodesManager;
 use crate::raft::writer::RaftWriter;
@@ -48,6 +53,7 @@ use crate::reader::replica_selection::{DynamicReplicaSelectioner, DynamicReplica
 use crate::reader::table_scan::opener::TemporaryTableScanOpener;
 use crate::reader::tag_scan::opener::TemporaryTagScanOpener;
 use crate::reader::{CheckFuture, CheckedCoordinatorRecordBatchStream};
+use crate::writer::PointWriter;
 use crate::{
     status_response_to_result, Coordinator, QueryOption, SendableCoordinatorRecordBatchStream,
     VnodeManagerCmdType, VnodeSummarizerCmdType,
@@ -64,7 +70,8 @@ pub struct CoordService {
     config: Config,
     runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
-    writer: Arc<RaftWriter>,
+    raft_writer: Arc<RaftWriter>,
+    point_writer: Arc<PointWriter>,
     metrics: Arc<CoordServiceMetrics>,
     raft_manager: Arc<RaftNodesManager>,
 
@@ -131,12 +138,31 @@ impl CoordService {
     ) -> Arc<Self> {
         let node_id = config.node_basic.node_id;
 
+        let (hh_sender, hh_receiver) = mpsc::channel(1024);
+        let point_writer = Arc::new(PointWriter::new(
+            node_id,
+            config.query.write_timeout_ms,
+            kv_inst.clone(),
+            meta.clone(),
+            hh_sender,
+        ));
+
+        let hh_manager = Arc::new(
+            HintedOffManager::new(
+                config.hinted_off.clone(),
+                meta.clone(),
+                point_writer.clone(),
+            )
+            .await,
+        );
+        tokio::spawn(HintedOffManager::write_handoff_job(hh_manager, hh_receiver));
+
         let raft_manager = Arc::new(RaftNodesManager::new(
             config.clone(),
             meta.clone(),
             kv_inst.clone(),
         ));
-        let writer = Arc::new(RaftWriter::new(
+        let raft_writer = Arc::new(RaftWriter::new(
             meta.clone(),
             config.clone(),
             kv_inst.clone(),
@@ -147,7 +173,8 @@ impl CoordService {
             runtime,
             kv_inst,
             node_id,
-            writer,
+            raft_writer,
+            point_writer,
             raft_manager,
             meta: meta.clone(),
             config: config.clone(),
@@ -333,6 +360,44 @@ impl CoordService {
         }
     }
 
+    fn multi_write_vnodes<'a>(
+        &'a self,
+        tenant: &'a str,
+        precision: Precision,
+        info: ReplicationSet,
+        points: Arc<Vec<u8>>,
+        span_ctx: Option<&'a SpanContext>,
+    ) -> CoordinatorResult<Vec<impl Future<Output = CoordinatorResult<()>> + Sized + 'a>> {
+        let mut requests = Vec::new();
+        for vnode in info.vnodes.iter() {
+            let now = tokio::time::Instant::now();
+            debug!(
+                "Preparing write points on vnode {:?}, start at {:?}",
+                vnode, now
+            );
+            if vnode.status == VnodeStatus::Copying {
+                return Err(CoordinatorError::CommonError {
+                    msg: "vnode is moving write forbidden ".to_string(),
+                });
+            }
+
+            let request = self.point_writer.write_to_node(
+                vnode.id,
+                tenant,
+                vnode.node_id,
+                precision,
+                points.clone(),
+                SpanRecorder::new(span_ctx.child_span(format!(
+                    "write to vnode {} on node {}",
+                    vnode.id, vnode.node_id
+                ))),
+            );
+            requests.push(request);
+        }
+
+        Ok(requests)
+    }
+
     async fn push_points_to_requests<'a>(
         &'a self,
         tenant: &'a str,
@@ -360,8 +425,18 @@ impl CoordService {
         }
 
         let mut requests = Vec::new();
-        let request = self.write_replica(tenant, db, points, precision, info, span_ctx);
+        let request = self.write_replica_raft(
+            tenant,
+            db,
+            points.clone(),
+            precision,
+            info.clone(),
+            span_ctx,
+        );
         requests.push(request);
+
+        // let mut tasks = self.multi_write_vnodes(tenant, precision, info, points, span_ctx)?;
+        // requests.append(&mut tasks);
 
         Ok(requests)
     }
@@ -405,7 +480,7 @@ impl Coordinator for CoordService {
         Ok(optimal_shards)
     }
 
-    async fn write_replica(
+    async fn write_replica_raft(
         &self,
         tenant: &str,
         db_name: &str,
@@ -415,7 +490,7 @@ impl Coordinator for CoordService {
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         let result = self
-            .writer
+            .raft_writer
             .write_to_replica(
                 tenant,
                 db_name,
@@ -429,7 +504,7 @@ impl Coordinator for CoordService {
             )
             .await;
 
-        println!("------ debugxxxx write_replica: {:?}", result);
+        println!("------ debugxxxx write_replica_raft: {:?}", result);
 
         result
     }
