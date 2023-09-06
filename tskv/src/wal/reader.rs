@@ -70,6 +70,20 @@ impl WalReader {
         })
     }
 
+    pub(super) fn new(
+        record_reader: record_file::Reader,
+        min_sequence: u64,
+        max_sequence: u64,
+        has_footer: bool,
+    ) -> Self {
+        Self {
+            inner: record_reader,
+            min_sequence,
+            max_sequence,
+            has_footer,
+        }
+    }
+
     pub fn has_footer(&self) -> bool {
         self.has_footer
     }

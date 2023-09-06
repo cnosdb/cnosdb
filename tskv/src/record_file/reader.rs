@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use snafu::ResultExt;
 
@@ -15,9 +16,59 @@ use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 
+/// Returns footer position and footer data.
+pub async fn read_footer(path: impl AsRef<Path>) -> Result<(u64, [u8; FILE_FOOTER_LEN])> {
+    let path = path.as_ref();
+    let file = file_manager::open_file(&path).await?;
+    read_footer_from(&file, path).await
+}
+
+/// Returns footer position and footer data.
+pub async fn read_footer_from(
+    file: &AsyncFile,
+    file_path: impl AsRef<Path>,
+) -> Result<(u64, [u8; FILE_FOOTER_LEN])> {
+    if file.len() < (FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN) as u64 {
+        return Err(Error::NoFooter);
+    }
+
+    // Get file crc
+    let mut buf = vec![0_u8; file_crc_source_len(file.len(), FILE_FOOTER_LEN)];
+    if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf).await {
+        return Err(Error::ReadFile {
+            path: file_path.as_ref().to_path_buf(),
+            source: e,
+        });
+    }
+    let crc = crc32fast::hash(&buf);
+
+    // Read footer
+    let footer_pos = file.len() - FILE_FOOTER_LEN as u64;
+    let mut footer = [0_u8; FILE_FOOTER_LEN];
+    if let Err(e) = file.read_at(footer_pos, &mut footer[..]).await {
+        return Err(Error::ReadFile {
+            path: file_path.as_ref().to_path_buf(),
+            source: e,
+        });
+    }
+
+    // Check file crc
+    let footer_crc = decode_be_u32(
+        &footer[FILE_FOOTER_MAGIC_NUMBER_LEN
+            ..FILE_FOOTER_MAGIC_NUMBER_LEN + FILE_FOOTER_CRC32_NUMBER_LEN],
+    );
+
+    // If crc doesn't match, this file may not contain a footer.
+    if crc != footer_crc {
+        Err(Error::NoFooter)
+    } else {
+        Ok((footer_pos, footer))
+    }
+}
+
 pub struct Reader {
     path: PathBuf,
-    file: AsyncFile,
+    file: Arc<AsyncFile>,
     file_len: u64,
     pos: usize,
     buf: Vec<u8>,
@@ -31,7 +82,7 @@ impl Reader {
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let file = file_manager::open_file(path).await?;
-        let (footer_pos, footer) = match Self::read_footer(&path).await {
+        let (footer_pos, footer) = match read_footer_from(&file, path).await {
             Ok((p, f)) => (p, Some(f)),
             Err(Error::NoFooter) => (file.len(), None),
             Err(e) => {
@@ -50,9 +101,9 @@ impl Reader {
             file_len - FILE_FOOTER_LEN as u64 - FILE_MAGIC_NUMBER_LEN as u64
         };
         let buf_size = records_len.min(READER_BUF_SIZE as u64) as usize;
-        Ok(Reader {
+        Ok(Self {
             path: path.to_path_buf(),
-            file,
+            file: Arc::new(file),
             file_len,
             pos: FILE_MAGIC_NUMBER_LEN,
             buf: vec![0_u8; buf_size],
@@ -61,6 +112,32 @@ impl Reader {
             footer,
             footer_pos,
         })
+    }
+
+    pub(super) fn new(
+        file: Arc<AsyncFile>,
+        path: PathBuf,
+        len: u64,
+        footer: Option<[u8; FILE_FOOTER_LEN]>,
+    ) -> Self {
+        let records_len = if footer.is_none() {
+            // If there is no footer
+            len - FILE_MAGIC_NUMBER_LEN as u64
+        } else {
+            len - FILE_FOOTER_LEN as u64 - FILE_MAGIC_NUMBER_LEN as u64
+        };
+        let buf_size = records_len.min(READER_BUF_SIZE as u64) as usize;
+        Self {
+            path,
+            file,
+            file_len: len,
+            pos: FILE_MAGIC_NUMBER_LEN,
+            buf: vec![0_u8; buf_size],
+            buf_len: 0,
+            buf_use: 0,
+            footer,
+            footer_pos: len,
+        }
     }
 
     /// Set self.pos, load buffer if needed.
@@ -209,48 +286,6 @@ impl Reader {
         self.read_record().await
     }
 
-    /// Returns footer position and footer data.
-    pub async fn read_footer(path: impl AsRef<Path>) -> Result<(u64, [u8; FILE_FOOTER_LEN])> {
-        let path = path.as_ref();
-        let file = file_manager::open_file(&path).await?;
-        if file.len() < (FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN) as u64 {
-            return Err(Error::NoFooter);
-        }
-
-        // Get file crc
-        let mut buf = vec![0_u8; file_crc_source_len(file.len(), FILE_FOOTER_LEN)];
-        if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf).await {
-            return Err(Error::ReadFile {
-                path: path.to_path_buf(),
-                source: e,
-            });
-        }
-        let crc = crc32fast::hash(&buf);
-
-        // Read footer
-        let footer_pos = file.len() - FILE_FOOTER_LEN as u64;
-        let mut footer = [0_u8; FILE_FOOTER_LEN];
-        if let Err(e) = file.read_at(footer_pos, &mut footer[..]).await {
-            return Err(Error::ReadFile {
-                path: path.to_path_buf(),
-                source: e,
-            });
-        }
-
-        // Check file crc
-        let footer_crc = decode_be_u32(
-            &footer[FILE_FOOTER_MAGIC_NUMBER_LEN
-                ..FILE_FOOTER_MAGIC_NUMBER_LEN + FILE_FOOTER_CRC32_NUMBER_LEN],
-        );
-
-        // If crc doesn't match, this file may not contain a footer.
-        if crc != footer_crc {
-            Err(Error::NoFooter)
-        } else {
-            Ok((footer_pos, footer))
-        }
-    }
-
     /// Returns a clone of file footer.
     pub fn footer(&self) -> Option<[u8; FILE_FOOTER_LEN]> {
         self.footer
@@ -275,56 +310,10 @@ impl Reader {
         Ok(())
     }
 
-    // /// Load buf from self.pos, reset self.buf_len and self.buf_use.
-    // async fn load_buf(&mut self) -> Result<()> {
-    //     use std::io;
-    //
-    //     trace::trace!(
-    //         "Record file: Trying load buf at {} for {} bytes",
-    //         self.pos,
-    //         self.buf.len()
-    //     );
-
-    //     let mut buf_len = 0;
-    //     let mut retry_num = 1;
-    //     loop {
-    //         match self.file.read_at(self.pos as u64, &mut self.buf[buf_len..]).await {
-    //             Ok(l) => {
-    //                 buf_len += l;
-    //                 if retry_num <= 3 && buf_len < self.buf.len() {
-    //                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    //                     retry_num += 1;
-    //                     trace::debug!("Read record file not read enough bytes(only {l} bytes), trying the {retry_num} times later.");
-    //                     continue;
-    //                 }
-
-    //                 self.buf_len = buf_len;
-    //                 break;
-    //             }
-    //             Err(e) => {
-    //                 match e.kind() {
-    //                     io::ErrorKind::Interrupted | io::ErrorKind::UnexpectedEof if retry_num <= 3 => {
-    //                         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    //                         retry_num += 1;
-    //                         trace::debug!("Read record file Interrupted&UnexpectedEof, trying the {retry_num} times later.");
-    //                         continue;
-    //                     }
-    //                     _ => {
-    //                         return Err(Error::ReadFile {
-    //                             path: self.path.clone(),
-    //                             source: e,
-    //                         });
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     self.buf_use = 0;
-    //     Ok(())
-    // }
-
     async fn read_buf(&mut self, size: usize) -> Result<&[u8]> {
+        if self.buf.capacity() < size {
+            self.buf.resize(size, 0_u8);
+        }
         if self.buf_len - self.buf_use < size {
             self.load_buf().await?;
         }

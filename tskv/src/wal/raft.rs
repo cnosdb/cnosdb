@@ -72,7 +72,7 @@ impl EntryStorage for RaftEntryStorage {
     async fn del_before(&self, seq_no: u64) -> ReplicationResult<()> {
         let mut inner = self.inner.lock().await;
         inner.mark_delete_before(seq_no);
-        let wal_ids_can_delete = inner.get_empty_old_wals();
+        let wal_ids_can_delete = inner.get_empty_old_wal_ids();
         inner.wal.delete_wal_files(&wal_ids_can_delete).await;
         Ok(())
     }
@@ -89,7 +89,7 @@ impl EntryStorage for RaftEntryStorage {
         }
         let first_seq_no = entries[0].log_id.index;
         let mut inner = self.inner.lock().await;
-        inner.seq_wal_pos_index.retain(|x, _| *x <= first_seq_no);
+        inner.mark_delete_after(first_seq_no);
         for ent in entries {
             let seq = ent.log_id.index;
             let wal_id = inner.wal.current_wal_id();
@@ -149,6 +149,7 @@ struct RaftEntryStorageInner {
     wal: VnodeWal,
     /// Maps seq to (WAL id, position).
     seq_wal_pos_index: BTreeMap<u64, (u64, u64)>,
+    /// Maps WAL id to it's record count.
     wal_ref_count_index: HashMap<u64, u64>,
 }
 
@@ -223,11 +224,12 @@ impl RaftEntryStorageInner {
         });
     }
 
-    fn get_empty_old_wals(&self) -> Vec<u64> {
-        let new_wal_id = self.wal.current_wal_id();
+    /// Get id list of old WALs that don't needed.
+    fn get_empty_old_wal_ids(&self) -> Vec<u64> {
+        let current_wal_id = self.wal.current_wal_id();
         let mut wal_ids = Vec::new();
         for (wal_id, ref_count) in self.wal_ref_count_index.iter() {
-            if *wal_id == new_wal_id {
+            if *wal_id == current_wal_id {
                 continue;
             }
             if *ref_count == 0 {

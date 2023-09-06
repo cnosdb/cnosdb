@@ -312,8 +312,14 @@ impl VnodeWal {
     }
 
     pub async fn delete_wal_files(&mut self, wal_ids: &[u64]) {
-        for file_id in wal_ids {
-            let file_path = file_utils::make_wal_file(&self.config.path, *file_id);
+        for wal_id in wal_ids {
+            if *wal_id == self.current_wal.id() {
+                continue;
+            }
+            self.wal_reader_index.remove(wal_id);
+            self.wal_location_index.remove(wal_id);
+
+            let file_path = file_utils::make_wal_file(&self.config.path, *wal_id);
             trace::debug!("Removing wal file '{}'", file_path.display());
             if let Err(e) = tokio::fs::remove_file(&file_path).await {
                 trace::error!("Failed to remove file '{}': {:?}", file_path.display(), e);
@@ -380,9 +386,15 @@ impl VnodeWal {
         let reader = match self.wal_reader_index.get_mut(&wal_id) {
             Some(r) => r,
             None => {
-                let wal_dir = self.config.wal_dir(&self.tenant_database, self.vnode_id);
-                let wal_path = file_utils::make_wal_file(wal_dir, wal_id);
-                let reader = WalReader::open(wal_path).await?;
+                let reader = if wal_id == self.current_wal_id() {
+                    // Use the same wal as the writer.
+                    self.current_wal.new_reader()
+                } else {
+                    let wal_dir = self.config.wal_dir(&self.tenant_database, self.vnode_id);
+                    let wal_path = file_utils::make_wal_file(wal_dir, wal_id);
+                    WalReader::open(wal_path).await?
+                };
+
                 self.wal_reader_index.insert(wal_id, reader);
                 self.wal_reader_index.get_mut(&wal_id).unwrap()
             }
