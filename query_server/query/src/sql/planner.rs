@@ -213,7 +213,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         match stmt {
-            Statement::Query(_) => {
+            Statement::Query(_) | Statement::Update { .. } => {
                 let df_plan = self.df_planner.sql_statement_to_plan(stmt)?;
                 let plan = Plan::Query(QueryPlan { df_plan });
 

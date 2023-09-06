@@ -272,6 +272,11 @@ impl<'a> ExtParser<'a> {
                     self.parser.next_token();
                     self.parse_explain()
                 }
+                Keyword::UPDATE => {
+                    self.parser.next_token();
+                    let update_ast = self.parser.parse_update()?;
+                    Ok(ExtStatement::SqlStatement(Box::new(update_ast)))
+                }
                 _ => {
                     if let Ok(word) = CnosKeyWord::from_str(&w.to_string()) {
                         return match word {
@@ -2290,6 +2295,37 @@ mod tests {
                 assert_eq!(Ident::from("tag1"), old_column_name);
                 assert_eq!(Ident::from("tag2"), new_column_name);
             }
+            _ => panic!("expect RenameColumn"),
+        }
+    }
+
+    #[test]
+    fn test_update() {
+        let statement = parse_sql("UPDATE TskvTable SET tag1 = '1' WHERE tag2 = '2';");
+
+        match statement {
+            ExtStatement::SqlStatement(ast) => match ast.as_ref() {
+                Statement::Update {
+                    table,
+                    assignments,
+                    from,
+                    returning,
+                    ..
+                } => {
+                    assert_eq!("TskvTable", &table.to_string());
+                    assert_eq!(1, assignments.len());
+                    assert_eq!(Ident::from("tag1"), assignments[0].id[0]);
+                    assert_eq!(
+                        Expr::Value(Value::SingleQuotedString("1".into())),
+                        assignments[0].value
+                    );
+                    assert!(from.is_none());
+                    assert!(returning.is_none());
+                }
+                _ => {
+                    panic!("expect Update")
+                }
+            },
             _ => panic!("expect RenameColumn"),
         }
     }
