@@ -544,8 +544,11 @@ impl<'a> ExtParser<'a> {
             self.parse_alter_table_alter_column(table_name)
         } else if self.parser.parse_keyword(Keyword::DROP) {
             self.parse_alter_table_drop_column(table_name)
+        } else if self.parser.parse_keyword(Keyword::RENAME) {
+            let alter_tbl = self.parse_alter_table_rename(table_name)?;
+            Ok(ExtStatement::AlterTable(alter_tbl))
         } else {
-            self.expected("ADD or ALTER or DROP", self.parser.peek_token())
+            self.expected("ADD or ALTER or DROP or RENAME", self.parser.peek_token())
         }
     }
 
@@ -574,6 +577,23 @@ impl<'a> ExtParser<'a> {
             table_name,
             alter_action: AlterTableAction::DropColumn { column_name },
         }))
+    }
+
+    fn parse_alter_table_rename(&mut self, table_name: ObjectName) -> Result<AlterTable> {
+        if self.parser.parse_keyword(Keyword::COLUMN) {
+            let old_column_name = self.parser.parse_identifier()?;
+            self.parser.expect_keyword(Keyword::TO)?;
+            let new_column_name = self.parser.parse_identifier()?;
+            Ok(AlterTable {
+                table_name,
+                alter_action: AlterTableAction::RenameColumn {
+                    old_column_name,
+                    new_column_name,
+                },
+            })
+        } else {
+            self.expected("COLUMN", self.parser.peek_token())?
+        }
     }
 
     fn parse_alter_table_alter_column(&mut self, table_name: ObjectName) -> Result<ExtStatement> {
@@ -2250,6 +2270,27 @@ mod tests {
                 panic!("expect CreateStreamTable")
             }
             _ => panic!("expect CreateStream"),
+        }
+    }
+
+    #[test]
+    fn test_alter_table_rename_column() {
+        let statement = parse_sql("ALTER TABLE TskvTable RENAME COLUMN tag1 to tag2;");
+
+        match statement {
+            ExtStatement::AlterTable(AlterTable {
+                table_name,
+                alter_action:
+                    AlterTableAction::RenameColumn {
+                        old_column_name,
+                        new_column_name,
+                    },
+            }) => {
+                assert_eq!("TskvTable", &table_name.to_string());
+                assert_eq!(Ident::from("tag1"), old_column_name);
+                assert_eq!(Ident::from("tag2"), new_column_name);
+            }
+            _ => panic!("expect RenameColumn"),
         }
     }
 }

@@ -146,6 +146,11 @@ pub enum AlterTableAction {
     DropColumn {
         column_name: Ident,
     },
+    /// `RENAME COLUMN <old_column_name> TO <new_column_name>`
+    RenameColumn {
+        old_column_name: Ident,
+        new_column_name: Ident,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -172,7 +172,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 .await
             }
             ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt, session),
-            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt, session),
+            ExtStatement::AlterTable(stmt) => self.alter_table_to_plan(stmt, session),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt).await,
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt).await,
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
@@ -745,7 +745,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn table_to_alter(
+    fn alter_table_to_plan(
         &self,
         statement: ASTAlterTable,
         session: &SessionCtx,
@@ -835,6 +835,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     column_name,
                     new_column,
                 }
+            }
+            ASTAlterTableAction::RenameColumn { .. } => {
+                // TODO
+                return Err(QueryError::NotImplemented {
+                    err: "RenameColumn".to_string(),
+                });
             }
         };
         let plan = Plan::DDL(DDLPlan::AlterTable(AlterTable {
