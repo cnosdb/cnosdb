@@ -90,6 +90,12 @@ impl DDLDefinitionTask for AlterTableTask {
                     })),
                 }
             }
+            AlterTableAction::RenameColumn { .. } => {
+                // TODO
+                return Err(QueryError::NotImplemented {
+                    err: "RenameColumn".to_string(),
+                });
+            }
         };
         schema.schema_id += 1;
 
