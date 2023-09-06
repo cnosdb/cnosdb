@@ -6,6 +6,7 @@ use models::meta_data::*;
 use models::schema::Precision;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::WriteReplicaRequest;
+use protos::models_helper::to_prost_bytes;
 use replication::raft_node::RaftNode;
 use tonic::transport;
 use tower::timeout::Timeout;
@@ -93,18 +94,26 @@ impl RaftWriter {
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         let raft = self.raft_manager.get_node_or_build(tenant, replica).await?;
+        let request = WriteReplicaRequest {
+            replica_id: replica.id,
+            tenant: tenant.to_string(),
+            db_name: db_name.to_string(),
+            precision: precision as u32,
+            data: Arc::unwrap_or_clone(data.clone()),
+        };
 
-        let task = tskv::wal::writer::Task::new_write(
-            tenant.to_string(),
-            db_name.to_string(),
-            777777777,
-            precision,
-            Arc::unwrap_or_clone(data.clone()),
-        );
+        // let task = tskv::wal::writer::Task::new_write(
+        //     tenant.to_string(),
+        //     db_name.to_string(),
+        //     777777777,
+        //     precision,
+        //     Arc::unwrap_or_clone(data.clone()),
+        // );
+        // let raft_data = bincode::serialize(&task).map_err(|err| CoordinatorError::CommonError {
+        //     msg: err.to_string(),
+        // })?;
 
-        let raft_data = bincode::serialize(&task).map_err(|err| CoordinatorError::CommonError {
-            msg: err.to_string(),
-        })?;
+        let raft_data = to_prost_bytes(request);
         let result = self.write_to_raft(raft, raft_data).await;
         println!("------ debugxxxx write_to_local_or_forward: {:?}", result);
 

@@ -94,7 +94,7 @@ impl RaftNodesManager {
     ) -> CoordinatorResult<()> {
         info!("exec open raft node: {}.{}", group_id, id);
         let mut nodes = self.raft_nodes.write().await;
-        if let Some(_) = nodes.get_node(group_id) {
+        if nodes.get_node(group_id).is_some() {
             return Ok(());
         }
 
@@ -184,7 +184,7 @@ impl RaftNodesManager {
             });
         }
 
-        let raft_node = self.get_node_or_build(tenant, &replica).await?;
+        let raft_node = self.get_node_or_build(tenant, replica).await?;
         let mut members = BTreeSet::new();
         members.insert(raft_node.raft_id());
         raft_node.raft_change_membership(members).await?;
@@ -250,7 +250,7 @@ impl RaftNodesManager {
             });
         }
 
-        let raft_node = self.get_node_or_build(tenant, &replica).await?;
+        let raft_node = self.get_node_or_build(tenant, replica).await?;
         let mut members = BTreeSet::new();
         for vnode in replica.vnodes.iter() {
             members.insert(vnode.id as RaftNodeId);

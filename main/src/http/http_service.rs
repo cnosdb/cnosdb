@@ -614,7 +614,6 @@ impl HttpService {
             .and_then(|param: DebugParam, coord: CoordinatorRef| async move {
                 let raft_manager = coord.raft_manager();
                 let data = raft_manager.metrics(param.id.unwrap_or(0)).await;
-                println!("{:?}| {}", param, data);
 
                 let res: Result<String, warp::Rejection> = Ok(data);
                 res

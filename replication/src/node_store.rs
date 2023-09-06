@@ -133,7 +133,7 @@ impl RaftSnapshotBuilder<TypeConfig> for Arc<NodeStorage> {
             .await
             .map_err(|e| StorageIOError::read_state_machine(&e))?;
         let snap_data =
-            serde_json::to_vec(&snapshot).map_err(|e| StorageIOError::read_state_machine(&e))?;
+            bincode::serialize(&snapshot).map_err(|e| StorageIOError::read_state_machine(&e))?;
 
         let snapshot_idx = self
             .state
@@ -229,15 +229,19 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
     where
         I: IntoIterator<Item = Entry<TypeConfig>> + Send,
     {
-        info!("Storage callback append_to_log entires...1");
-
         let entries: Vec<Entry<TypeConfig>> = entries.into_iter().collect();
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let begin = entries.first().map_or(0, |ent| ent.log_id.index);
+        let end = entries.last().map_or(0, |ent| ent.log_id.index);
+        info!("Storage callback append_to_log entires:[{}~{}]", begin, end);
+
         self.raft_logs
             .append(&entries)
             .await
             .map_err(|e| StorageIOError::write_logs(&e))?;
-
-        info!("Storage callback append_to_log entires...2");
 
         Ok(())
     }
@@ -379,7 +383,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
 
         // Update the state machine.
 
-        let updated_snapshot: SerializableSnapshot = serde_json::from_slice(&new_snapshot.data)
+        let updated_snapshot: SerializableSnapshot = bincode::deserialize(&new_snapshot.data)
             .map_err(|e| StorageIOError::read_snapshot(Some(new_snapshot.meta.signature()), &e))?;
 
         self.apply_snapshot(updated_snapshot)
