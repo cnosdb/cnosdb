@@ -185,27 +185,26 @@ impl TSIndex {
     ) -> IndexResult<Vec<u32>> {
         let mut ids = Vec::with_capacity(series_keys.len());
         let mut blocks_data = Vec::new();
-        for mut series_key in series_keys.into_iter() {
-            let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
-            series_key.id = id;
+        for series_key in series_keys.into_iter() {
             let encode = series_key.encode();
             let key_buf = encode_series_key(series_key.table(), series_key.tags());
-            let block = SeriesKeyBlock {
-                ts: utils::now_timestamp_nanos(),
-                series_id: id,
-                data_len: encode.len() as u32,
-                data: encode,
-            };
             {
                 let mut storage_w = self.storage.write().await;
                 if let Some(val) = storage_w.get(&key_buf)? {
                     ids.push(byte_utils::decode_be_u32(&val));
                     continue;
                 }
+                let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
                 storage_w.set(&key_buf, &id.to_be_bytes())?;
+                let block = SeriesKeyBlock {
+                    ts: utils::now_timestamp_nanos(),
+                    series_id: id,
+                    data_len: encode.len() as u32,
+                    data: encode,
+                };
                 ids.push(id);
+                blocks_data.extend_from_slice(&block.encode());
             }
-            blocks_data.extend_from_slice(&block.encode());
         }
         self.binlog.write().await.write(&blocks_data).await?;
         self.binlog_change_sender
