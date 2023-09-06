@@ -515,6 +515,16 @@ pub enum AlterTableAction {
     DropColumn {
         column_name: String,
     },
+    RenameColumn {
+        old_column_name: String,
+        new_column_name: RenameColumnAction,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenameColumnAction {
+    RenameTag(String),
+    RenameField(String),
 }
 
 #[async_trait]

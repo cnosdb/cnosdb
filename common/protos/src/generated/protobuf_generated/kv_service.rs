@@ -167,6 +167,18 @@ pub struct AlterColumnRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RenameColumnRequest {
+    #[prost(string, tag = "1")]
+    pub db: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub table: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub old_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub new_name: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddRaftFollowerRequest {
     #[prost(string, tag = "1")]
     pub db_name: ::prost::alloc::string::String,
@@ -200,7 +212,7 @@ pub struct AdminCommandRequest {
     pub tenant: ::prost::alloc::string::String,
     #[prost(
         oneof = "admin_command_request::Command",
-        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13"
+        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14"
     )]
     pub command: ::core::option::Option<admin_command_request::Command>,
 }
@@ -228,10 +240,12 @@ pub mod admin_command_request {
         #[prost(message, tag = "10")]
         AlterColumn(super::AlterColumnRequest),
         #[prost(message, tag = "11")]
-        AddRaftFollower(super::AddRaftFollowerRequest),
+        RenameColumn(super::RenameColumnRequest),
         #[prost(message, tag = "12")]
-        RemoveRaftNode(super::RemoveRaftNodeRequest),
+        AddRaftFollower(super::AddRaftFollowerRequest),
         #[prost(message, tag = "13")]
+        RemoveRaftNode(super::RemoveRaftNodeRequest),
+        #[prost(message, tag = "14")]
         DestoryRaftGroup(super::DestoryRaftGroupRequest),
     }
 }

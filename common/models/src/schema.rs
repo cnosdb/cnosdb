@@ -237,6 +237,7 @@ impl TskvTableSchema {
             None => return,
             Some(id) => *id,
         };
+        self.columns_index.remove(col_name);
         self.columns_index.insert(new_column.name.clone(), id);
         self.columns[id] = new_column;
     }

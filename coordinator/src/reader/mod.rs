@@ -5,12 +5,12 @@ pub mod tag_scan;
 
 use std::mem;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
 use futures::{ready, FutureExt, Stream, StreamExt, TryFutureExt};
-use meta::limiter::LimiterRef;
 use meta::model::MetaRef;
 use metrics::count::U64Counter;
 use models::meta_data::{VnodeId, VnodeInfo, VnodeStatus};
@@ -36,12 +36,12 @@ pub trait VnodeOpener: Unpin {
 pub struct CheckedCoordinatorRecordBatchStream<O: VnodeOpener> {
     opener: O,
     meta: MetaRef,
+    tenant: Arc<String>,
     vnode: VnodeInfo,
     option: QueryOption,
     state: StreamState,
 
-    data_out: U64Counter,
-    limiter: LimiterRef,
+    coord_data_out: U64Counter,
 }
 
 impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
@@ -52,20 +52,19 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
         checker: CheckFuture,
         metrics: &CoordServiceMetrics,
     ) -> Self {
-        let data_out = metrics.data_out(
-            option.table_schema.tenant.as_str(),
-            option.table_schema.db.as_str(),
-        );
-        let limiter = meta.limiter(option.tenant_name());
+        let tenant: Arc<String> = option.table_schema.tenant.clone().into();
+        let db = option.table_schema.db.as_str();
 
+        let coord_data_out = metrics.coord_data_out(tenant.as_str(), db);
+        metrics.coord_queries(tenant.as_str(), db).inc_one();
         Self {
             option,
             opener,
             meta,
+            tenant,
             vnode: VnodeInfo::default(),
             state: StreamState::Check(checker),
-            data_out,
-            limiter,
+            coord_data_out,
         }
     }
 
@@ -123,10 +122,12 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                         Some(res) => match res {
                             Ok(batch) => {
                                 let batch_memory = batch.get_array_memory_size();
-                                let limiter = self.limiter.clone();
+                                let meta = self.meta.clone();
+                                let tenant_name = self.tenant.clone();
                                 let future = async move {
-                                    limiter
-                                        .check_data_out(batch_memory)
+                                    meta.limiter(&tenant_name)
+                                        .await?
+                                        .check_coord_data_out(batch_memory)
                                         .await
                                         .map_err(CoordinatorError::from)
                                 };
@@ -187,7 +188,8 @@ impl<O: VnodeOpener> Stream for CheckedCoordinatorRecordBatchStream<O> {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let poll = self.poll_inner(cx);
         if let Poll::Ready(Some(Ok(batch))) = &poll {
-            self.data_out.inc(batch.get_array_memory_size() as u64)
+            self.coord_data_out
+                .inc(batch.get_array_memory_size() as u64)
         }
         poll
     }

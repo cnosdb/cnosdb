@@ -383,11 +383,18 @@ impl TenantMeta {
 
     // tenant role end
 
-    pub async fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
-        let req =
-            command::WriteCommand::AlterDB(self.cluster.clone(), self.tenant_name(), info.clone());
+    pub async fn alter_db_schema(&self, schema: DatabaseSchema) -> MetaResult<()> {
+        let req = command::WriteCommand::AlterDB(
+            self.cluster.clone(),
+            self.tenant_name(),
+            schema.clone(),
+        );
 
-        self.client.write::<()>(&req).await
+        self.client.write::<()>(&req).await?;
+        if let Some(info) = self.data.write().dbs.get_mut(schema.database_name()) {
+            info.schema = schema.clone()
+        }
+        Ok(())
     }
 
     pub fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
@@ -829,10 +836,7 @@ impl TenantMeta {
             let mut data = self.data.write();
             if entry.tye == command::ENTRY_LOG_TYPE_SET {
                 if let Ok(info) = serde_json::from_str::<DatabaseSchema>(&entry.val) {
-                    let db = data
-                        .dbs
-                        .entry(db_name.to_string())
-                        .or_insert_with(DatabaseInfo::default);
+                    let db = data.dbs.entry(db_name.to_string()).or_default();
 
                     db.schema = info;
                 }

@@ -32,15 +32,20 @@ impl UsageSchemaProvider {
                 provider.register_table_factory(Box::new($STRUCT_NAME {}));
             };
         }
+
+        register_table_factory!("http_data_in", HttpDataIn);
+        register_table_factory!("http_data_out", HttpDataOut);
+        register_table_factory!("http_queries", HttpQueries);
+        register_table_factory!("http_writes", HttpWrites);
+
         register_table_factory!("coord_data_in", CoordDataIn);
+        register_table_factory!("coord_data_out", CoordDataOut);
+        register_table_factory!("coord_queries", CoordQueries);
+        register_table_factory!("coord_writes", CoordWrites);
+
         register_table_factory!("sql_data_in", SQLDataIn);
-        register_table_factory!("write_data_in", WriteDataIn);
         register_table_factory!("sql_write_row", SQLWriteRow);
         register_table_factory!("sql_points_data_in", SQLPointsDataIn);
-        register_table_factory!("coord_data_out", CoordDataOut);
-        register_table_factory!("http_data_out", HttpDataOut);
-        register_table_factory!("user_queries", UserQueries);
-        register_table_factory!("user_writes", UserWrites);
         register_table_factory!("vnode_cache_size", VnodeCacheSize);
         register_table_factory!("vnode_disk_storage", VnodeDiskStorage);
         provider

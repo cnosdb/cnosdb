@@ -111,7 +111,9 @@ impl<'a> Reporter for LPReporter<'a> {
                 for bucket in histogram.buckets {
                     let mut labels = labels.clone();
                     labels.insert(("le", bucket.le.as_secs_f64().to_string().into()));
-                    let value = FieldValue::U64(bucket.count);
+                    // sum type must be same as count type
+                    // so this is f64
+                    let value = FieldValue::F64(bucket.count as f64);
                     lines.push(LPLine::new(name.clone(), labels, value));
                 }
                 let value = FieldValue::F64(histogram.total.as_secs_f64());

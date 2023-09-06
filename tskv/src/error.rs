@@ -69,12 +69,6 @@ pub enum Error {
         source: ReadTsmError,
     },
 
-    #[snafu(display("found damaged tsm file error: {}", source))]
-    #[error_code(code = 8)]
-    TsmFileBroken {
-        source: ReadTsmError,
-    },
-
     #[snafu(display("write tsm block file error: {}", source))]
     #[error_code(code = 9)]
     WriteTsm {
@@ -277,6 +271,12 @@ impl From<MetaError> for Error {
 impl From<ArrowError> for Error {
     fn from(source: ArrowError) -> Self {
         Error::Arrow { source }
+    }
+}
+
+impl From<ReadTsmError> for Error {
+    fn from(source: ReadTsmError) -> Self {
+        Error::ReadTsm { source }
     }
 }
 

@@ -480,7 +480,7 @@ impl TsKv {
         Ok(())
     }
 
-    async fn delete_columns(
+    async fn drop_columns(
         &self,
         database: Arc<RwLock<Database>>,
         table: &str,
@@ -494,10 +494,10 @@ impl TsKv {
         if let Some(fields) = schemas.get_table_schema(table)? {
             let table_column_ids: HashSet<ColumnId> =
                 fields.columns().iter().map(|f| f.id).collect();
-            let mut to_delete_column_ids = Vec::with_capacity(column_ids.len());
+            let mut to_drop_column_ids = Vec::with_capacity(column_ids.len());
             for cid in column_ids {
                 if table_column_ids.contains(cid) {
-                    to_delete_column_ids.push(*cid);
+                    to_drop_column_ids.push(*cid);
                 }
             }
 
@@ -517,7 +517,7 @@ impl TsKv {
 
                     let field_ids: Vec<u64> = series_ids
                         .iter()
-                        .flat_map(|sid| to_delete_column_ids.iter().map(|fid| unite_id(*fid, *sid)))
+                        .flat_map(|sid| to_drop_column_ids.iter().map(|fid| unite_id(*fid, *sid)))
                         .collect();
                     info!(
                         "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}", field_ids.len()
@@ -990,7 +990,7 @@ impl Engine for TsKv {
                 field: column_name.to_string(),
             })?
             .id;
-        self.delete_columns(db, table, &[column_id]).await?;
+        self.drop_columns(db, table, &[column_id]).await?;
         Ok(())
     }
 
@@ -1012,6 +1012,36 @@ impl Engine for TsKv {
         //         .await
         //         .change_column(&sids, column_name, &new_column);
         // }
+        Ok(())
+    }
+
+    async fn rename_tag(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        tag_name: &str,
+        new_tag_name: &str,
+    ) -> Result<()> {
+        let tag_name = tag_name.as_bytes().to_vec();
+        let new_tag_name = new_tag_name.as_bytes().to_vec();
+
+        let db = self.get_db(tenant, database).await?;
+
+        for ts_index in db.read().await.ts_indexes().values() {
+            ts_index
+                .rename_tag(table, &tag_name, &new_tag_name)
+                .await
+                .map_err(|err| {
+                    error!(
+                        "Rename tag of TSIndex({}): {}",
+                        ts_index.path().display(),
+                        err
+                    );
+                    err
+                })?;
+        }
+
         Ok(())
     }
 

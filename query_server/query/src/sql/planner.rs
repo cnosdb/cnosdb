@@ -79,8 +79,8 @@ use spi::query::logical_planner::{
     CopyVnode, CreateDatabase, CreateRole, CreateStreamTable, CreateTable, CreateTenant,
     CreateUser, DDLPlan, DatabaseObjectType, DropDatabaseObject, DropGlobalObject,
     DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
-    GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan,
-    TenantObjectType,
+    GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan,
+    RenameColumnAction, SYSPlan, TenantObjectType,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -172,7 +172,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 .await
             }
             ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt, session),
-            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt, session),
+            ExtStatement::AlterTable(stmt) => self.alter_table_to_plan(stmt, session),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt).await,
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt).await,
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
@@ -745,7 +745,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn table_to_alter(
+    fn alter_table_to_plan(
         &self,
         statement: ASTAlterTable,
         session: &SessionCtx,
@@ -834,6 +834,40 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 AlterTableAction::AlterColumn {
                     column_name,
                     new_column,
+                }
+            }
+            ASTAlterTableAction::RenameColumn {
+                old_column_name,
+                new_column_name,
+            } => {
+                let old_column_name = normalize_ident(old_column_name);
+                let new_column_name = normalize_ident(new_column_name);
+                let column = table_schema.column(&old_column_name).ok_or_else(|| {
+                    QueryError::ColumnNotExists {
+                        column: old_column_name.clone(),
+                        table: table_schema.name.to_string(),
+                    }
+                })?;
+                if table_schema.column(&new_column_name).is_some() {
+                    return Err(QueryError::ColumnAlreadyExists {
+                        column: new_column_name,
+                        table: table_schema.name.to_string(),
+                    });
+                }
+
+                let new_column_name = match column.column_type {
+                    ColumnType::Time(_) => {
+                        return Err(QueryError::NotImplemented {
+                            err: "rename time column".to_string(),
+                        })
+                    }
+                    ColumnType::Tag => RenameColumnAction::RenameTag(new_column_name),
+                    ColumnType::Field(_) => RenameColumnAction::RenameField(new_column_name),
+                };
+
+                AlterTableAction::RenameColumn {
+                    old_column_name,
+                    new_column_name,
                 }
             }
         };

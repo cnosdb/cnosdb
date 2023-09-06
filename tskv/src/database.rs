@@ -489,11 +489,11 @@ impl Database {
         self.ts_families.iter().for_each(func);
     }
 
-    pub fn del_ts_index(&mut self, id: u32) {
+    pub fn del_ts_index(&mut self, id: TseriesFamilyId) {
         self.ts_indexes.remove(&id);
     }
 
-    pub fn get_ts_index(&self, id: u32) -> Option<Arc<index::ts_index::TSIndex>> {
+    pub fn get_ts_index(&self, id: TseriesFamilyId) -> Option<Arc<index::ts_index::TSIndex>> {
         if let Some(v) = self.ts_indexes.get(&id) {
             return Some(v.clone());
         }

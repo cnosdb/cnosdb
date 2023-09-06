@@ -243,6 +243,7 @@ impl DatabaseInfo {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct TenantMetaData {
     pub version: u64,
+    // db_name -> database_info
     pub dbs: HashMap<String, DatabaseInfo>,
     pub roles: HashMap<String, CustomTenantRole<Oid>>,
     pub members: HashMap<String, TenantRoleIdentifier>,

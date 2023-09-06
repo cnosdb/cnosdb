@@ -69,6 +69,14 @@ insert into readings_kv select * from readings_ext limit 10;
 ----
 10
 
+query T
+explain select * from TskvTable where name = 'Luffy';
+----
+logical_plan
+Watermark: event_time=time, delay=0ms
+--Filter: tskvtable.name = Utf8("Luffy")
+----StreamScan: [tskvtable.time,tskvtable.name,tskvtable.driver,tskvtable.elevation]
+
 # create stream job
 statement ok
 insert into readings_agg

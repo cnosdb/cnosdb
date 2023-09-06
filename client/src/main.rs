@@ -157,7 +157,7 @@ pub async fn main() -> Result<(), anyhow::Error> {
         return Ok(());
     }
 
-    let mut print_options = PrintOptions {
+    let print_options = PrintOptions {
         format: args.format,
         quiet: args.quiet,
     };
@@ -178,12 +178,12 @@ pub async fn main() -> Result<(), anyhow::Error> {
         }
     };
     if !files.is_empty() {
-        exec::exec_from_files(files, &mut ctx, &print_options).await
+        exec::exec_from_files(files, &ctx, &print_options).await
     } else {
         if !rc.is_empty() {
-            exec::exec_from_files(rc, &mut ctx, &print_options).await
+            exec::exec_from_files(rc, &ctx, &print_options).await
         }
-        exec::exec_from_repl(&mut ctx, &mut print_options).await;
+        exec::exec_from_repl(&mut ctx, &print_options).await;
     }
 
     Ok(())

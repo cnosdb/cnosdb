@@ -98,6 +98,20 @@ jobs:
         run: |
           cd meta && cargo test --features=meta_e2e_test tests -- --test-threads  1
 
+  e2e_test:
+    name: "E2E Test"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+      - name: Test
+        shell: bash
+        run: |
+          cargo test --package e2e_test --lib -- https_api_test
+
   #integration-test-3m2d:
   #  name: "Integration Test 3meta 2data cluster"
   #  runs-on: ubuntu-4c16g

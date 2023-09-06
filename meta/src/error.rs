@@ -149,12 +149,16 @@ pub enum MetaError {
     #[error_code(code = 34)]
     NotSupport { msg: String },
 
-    #[snafu(display("Operation request need to send to new address: {}", new_leader))]
+    #[snafu(display("Create limiter fail: {}", msg))]
     #[error_code(code = 35)]
+    LimiterCreate { msg: String },
+
+    #[snafu(display("Operation request need to send to new address: {}", new_leader))]
+    #[error_code(code = 36)]
     ChangeLeader { new_leader: String },
 
     #[snafu(display("The vnode {} not found", id))]
-    #[error_code(code = 36)]
+    #[error_code(code = 37)]
     VnodeNotFound { id: u32 },
 }
 impl MetaError {

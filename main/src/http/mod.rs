@@ -5,8 +5,8 @@ use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
 use snafu::Snafu;
 use spi::QueryError;
-use warp::reject;
 use warp::reply::Response;
+use warp::{reject, Rejection};
 
 use self::response::ResponseBuilder;
 
@@ -122,6 +122,10 @@ impl From<trace_http::ctx::ContextError> for Error {
 }
 
 impl reject::Reject for Error {}
+
+fn meta_err_to_reject(err: MetaError) -> Rejection {
+    reject::custom(Error::from(err))
+}
 
 impl Error {
     pub fn error_code(&self) -> &dyn ErrorCode {
