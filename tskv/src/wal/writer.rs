@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion};
+use crate::wal::reader::WalReader;
 use crate::wal::{raft, reader, WalType, WAL_FOOTER_MAGIC_NUMBER};
 use crate::{record_file, Error, Result};
 
@@ -29,6 +30,7 @@ pub struct WalWriter {
     buf: Vec<u8>,
     min_sequence: u64,
     max_sequence: u64,
+    has_footer: bool,
 }
 
 impl WalWriter {
@@ -69,6 +71,7 @@ impl WalWriter {
             buf: Vec::new(),
             min_sequence,
             max_sequence,
+            has_footer: false,
         })
     }
 
@@ -226,8 +229,19 @@ impl WalWriter {
         );
         let mut footer = build_footer(self.min_sequence, self.max_sequence);
         let size = self.inner.write_footer(&mut footer).await?;
+        self.has_footer = true;
         self.inner.close().await?;
         Ok(size)
+    }
+
+    pub fn new_reader(&self) -> WalReader {
+        let record_reader = self.inner.new_reader();
+        WalReader::new(
+            record_reader,
+            self.min_sequence,
+            self.max_sequence,
+            self.has_footer,
+        )
     }
 
     pub fn id(&self) -> u64 {
