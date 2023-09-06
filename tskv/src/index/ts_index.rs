@@ -171,30 +171,29 @@ impl TSIndex {
     }
 
     pub async fn add_series_if_not_exists(&self, series_key: &SeriesKey) -> IndexResult<u32> {
-        // generate series id; prepare data
-        let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
         let key_buf = encode_series_key(series_key.table(), series_key.tags());
         let encode = series_key.encode();
-        let block = SeriesKeyBlock {
-            ts: utils::now_timestamp_nanos(),
-            series_id: id,
-            data_len: encode.len() as u32,
-            data: encode,
-        };
 
-        let block_encode = block.encode();
-        self.binlog.write().await.write(&block_encode).await?;
-
-        // is already exist and store forward index
-        {
+        let (id, block) = {
             let mut storage_w = self.storage.write().await;
             if let Some(val) = storage_w.get(&key_buf)? {
+                // is already exist and store forward index
                 return Ok(byte_utils::decode_be_u32(&val));
             }
-
+            let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
             storage_w.set(&key_buf, &id.to_be_bytes())?;
+
+            let block = SeriesKeyBlock {
+                ts: utils::now_timestamp_nanos(),
+                series_id: id,
+                data_len: encode.len() as u32,
+                data: encode,
+            };
             storage_w.set(&encode_series_id_key(id), &block.data)?;
-        }
+            (id, block)
+        };
+
+        self.binlog.write().await.write(&block.encode()).await?;
 
         // then inverted index
         for tag in series_key.tags() {
