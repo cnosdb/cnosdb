@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use config::Config;
+use config::{Config, RequestLimiterConfig};
 use models::auth::user::{admin_user, User, UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
@@ -553,7 +553,7 @@ impl AdminMeta {
             .write()
             .insert(tenant_name.clone(), client.clone());
 
-        let limiter = self.new_limiter(&self.cluster(), &tenant_name, &option);
+        let limiter = self.new_limiter(&self.cluster(), &tenant_name, option.request_config());
         self.limiters.write().insert(tenant_name.clone(), limiter);
 
         let info = UseTenantInfo {
@@ -570,17 +570,14 @@ impl AdminMeta {
         &self,
         _cluster_name: &str,
         tenant_name: &str,
-        options: &TenantOptions,
+        options: Option<&RequestLimiterConfig>,
     ) -> Arc<dyn RequestLimiter> {
-        match options.request_config() {
-            Some(config) => Arc::new(LocalRequestLimiter::new(
-                &self.cluster(),
-                tenant_name,
-                config,
-                self.client.clone(),
-            )),
-            None => Arc::new(NoneLimiter {}),
-        }
+        Arc::new(LocalRequestLimiter::new(
+            &self.cluster(),
+            tenant_name,
+            options,
+            self.client.clone(),
+        ))
     }
 
     pub async fn create_tenant(
@@ -588,7 +585,7 @@ impl AdminMeta {
         name: String,
         options: TenantOptions,
     ) -> MetaResult<MetaClientRef> {
-        let limiter = self.new_limiter(&self.cluster(), &name, &options);
+        let limiter = self.new_limiter(&self.cluster(), &name, options.request_config());
 
         let oid = UuidGenerator::default().next_id();
         let tenant = Tenant::new(oid, name.to_string(), options.clone());
@@ -615,7 +612,7 @@ impl AdminMeta {
     }
 
     pub async fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
-        let limiter = self.new_limiter(&self.cluster(), name, &options);
+        let limiter = self.new_limiter(&self.cluster(), name, options.request_config());
 
         let req = command::WriteCommand::AlterTenant(self.cluster(), name.to_string(), options);
 
