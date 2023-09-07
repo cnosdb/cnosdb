@@ -227,10 +227,9 @@ impl VnodeManager {
                 .strip_prefix(&(files_meta.path.clone() + "/"))
                 .unwrap();
 
-            self.download_file(all_info, relative_filename, data_path, client)
-                .await?;
-
             let filename = data_path.join(relative_filename);
+            self.download_file(&info.name, &filename, client).await?;
+
             let filename = filename.to_string_lossy().to_string();
             let tmp_info = get_file_info(&filename).await?;
             if tmp_info.md5 != info.md5 {
@@ -266,26 +265,24 @@ impl VnodeManager {
 
     async fn download_file(
         &self,
-        req: &VnodeAllInfo,
-        filename: &str,
-        data_path: &Path,
+        download: &str,
+        filename: &Path,
         client: &mut TskvServiceClient<Timeout<Channel>>,
     ) -> CoordinatorResult<()> {
-        let file_path = data_path.join(filename);
-        tokio::fs::create_dir_all(file_path.parent().unwrap()).await?;
+        if let Some(dir) = filename.parent() {
+            tokio::fs::create_dir_all(dir).await?;
+        }
+
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
             .truncate(true)
             .read(true)
             .write(true)
-            .open(&file_path)
+            .open(filename)
             .await?;
 
         let request = tonic::Request::new(DownloadFileRequest {
-            tenant: req.tenant.clone(),
-            db: req.db_name.clone(),
-            vnode_id: req.vnode_id,
-            filename: filename.to_string(),
+            filename: download.to_string(),
         });
         let mut resp_stream = client
             .download_file(request)

@@ -224,12 +224,6 @@ pub struct BatchBytesResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DownloadFileRequest {
     #[prost(string, tag = "1")]
-    pub tenant: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub db: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "3")]
-    pub vnode_id: u32,
-    #[prost(string, tag = "4")]
     pub filename: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]

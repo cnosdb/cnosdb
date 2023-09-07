@@ -541,15 +541,11 @@ impl TskvService for TskvServiceImpl {
         request: tonic::Request<DownloadFileRequest>,
     ) -> Result<tonic::Response<Self::DownloadFileStream>, tonic::Status> {
         let inner = request.into_inner();
-        let owner = models::schema::make_owner(&inner.tenant, &inner.db);
-        let storage_opt = self.kv_inst.get_storage_options();
-        let data_dir = storage_opt.ts_family_dir(&owner, inner.vnode_id);
-        let path = data_dir.join(inner.filename);
-        info!("download file: {}", path.display());
+        info!("download file info : {:?}", inner);
 
         let (send, recv) = mpsc::channel(1024);
         tokio::spawn(async move {
-            if let Ok(mut file) = tokio::fs::File::open(path).await {
+            if let Ok(mut file) = tokio::fs::File::open(inner.filename).await {
                 let mut buffer = vec![0; 8 * 1024];
                 while let Ok(len) = file.read(&mut buffer).await {
                     if len == 0 {

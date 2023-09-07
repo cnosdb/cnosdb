@@ -132,10 +132,7 @@ message BatchBytesResponse {
 }
 
 message DownloadFileRequest {
-    string tenant = 1;
-    string db = 2;
-    uint32 vnode_id = 3;
-    string filename = 4;
+    string filename = 1;
 }
 
 message FetchVnodeSummaryRequest {
