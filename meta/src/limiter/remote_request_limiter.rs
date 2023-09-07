@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use config::RequestLimiterConfig;
+use config::{Bucket, RequestLimiterConfig};
 use limiter_bucket::RateBucket;
 use serde::{Deserialize, Serialize};
 
@@ -12,32 +12,35 @@ pub struct RemoteRequestLimiter {
 }
 
 impl RemoteRequestLimiter {
+    fn load_config(
+        limiter_config: Option<&RequestLimiterConfig>,
+    ) -> HashMap<RequestLimiterKind, RateBucket> {
+        match limiter_config {
+            Some(config) => {
+                use RequestLimiterKind::*;
+                let mut buckets = HashMap::new();
+                insert_remote_bucket(&mut buckets, DataIn, config.data_in.as_ref());
+                insert_remote_bucket(&mut buckets, DataOut, config.data_out.as_ref());
+                insert_remote_bucket(&mut buckets, Queries, config.queries.as_ref());
+                insert_remote_bucket(&mut buckets, Writes, config.writes.as_ref());
+                buckets
+            }
+            None => HashMap::new(),
+        }
+    }
+
     pub fn new(limit_config: &RequestLimiterConfig) -> Self {
-        let mut buckets = HashMap::new();
-        if let Some(bucket) = limit_config.data_in {
-            buckets.insert(
-                RequestLimiterKind::DataIn,
-                RateBucket::from(&bucket.remote_bucket),
-            );
-        }
-        if let Some(bucket) = limit_config.data_out {
-            buckets.insert(
-                RequestLimiterKind::DataOut,
-                RateBucket::from(&bucket.remote_bucket),
-            );
-        }
-        if let Some(bucket) = limit_config.queries {
-            buckets.insert(
-                RequestLimiterKind::Queries,
-                RateBucket::from(&bucket.remote_bucket),
-            );
-        }
-        if let Some(bucket) = limit_config.writes {
-            buckets.insert(
-                RequestLimiterKind::Writes,
-                RateBucket::from(&bucket.remote_bucket),
-            );
-        }
+        let buckets = Self::load_config(Some(limit_config));
         Self { buckets }
+    }
+}
+
+fn insert_remote_bucket(
+    buckets: &mut HashMap<RequestLimiterKind, RateBucket>,
+    kind: RequestLimiterKind,
+    bucket: Option<&Bucket>,
+) {
+    if let Some(bucket) = bucket {
+        buckets.insert(kind, RateBucket::from(&bucket.remote_bucket));
     }
 }
