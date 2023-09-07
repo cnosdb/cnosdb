@@ -102,21 +102,8 @@ impl RaftWriter {
             data: Arc::unwrap_or_clone(data.clone()),
         };
 
-        // let task = tskv::wal::writer::Task::new_write(
-        //     tenant.to_string(),
-        //     db_name.to_string(),
-        //     777777777,
-        //     precision,
-        //     Arc::unwrap_or_clone(data.clone()),
-        // );
-        // let raft_data = bincode::serialize(&task).map_err(|err| CoordinatorError::CommonError {
-        //     msg: err.to_string(),
-        // })?;
-
         let raft_data = to_prost_bytes(request);
         let result = self.write_to_raft(raft, raft_data).await;
-        println!("------ debugxxxx write_to_local_or_forward: {:?}", result);
-
         if let Err(CoordinatorError::ForwardToLeader {
             replica_id: _,
             leader_vnode_id,

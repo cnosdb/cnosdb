@@ -489,8 +489,7 @@ impl Coordinator for CoordService {
         replica: ReplicationSet,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
-        let result = self
-            .raft_writer
+        self.raft_writer
             .write_to_replica(
                 tenant,
                 db_name,
@@ -502,11 +501,7 @@ impl Coordinator for CoordService {
                     replica.id, self.node_id
                 ))),
             )
-            .await;
-
-        println!("------ debugxxxx write_replica_raft: {:?}", result);
-
-        result
+            .await
     }
 
     async fn write_lines<'a>(

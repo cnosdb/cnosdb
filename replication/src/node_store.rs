@@ -96,7 +96,7 @@ impl RaftLogReader<TypeConfig> for Arc<NodeStorage> {
         &mut self,
         range: RB,
     ) -> StorageResult<Vec<Entry<TypeConfig>>> {
-        info!("Storage callback try_get_log_entries: {:?}", range);
+        info!("Storage callback try_get_log_entries: [{:?})", range);
 
         let start = match range.start_bound() {
             std::ops::Bound::Included(x) => *x,

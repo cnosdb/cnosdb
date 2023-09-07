@@ -99,7 +99,6 @@ impl RaftNodesManager {
         }
 
         let node = self.open_raft_node(tenant, id, group_id).await?;
-        self.raft_state.set_init_flag(group_id)?;
         nodes.add_node(node);
 
         Ok(())
@@ -140,15 +139,9 @@ impl RaftNodesManager {
             return Ok(node);
         }
 
+        let mut cluster_nodes = BTreeMap::new();
         let leader_id = replica.leader_vnode_id();
         let raft_node = self.open_raft_node(tenant, leader_id, replica.id).await?;
-        if self.raft_state.is_already_init(replica.id)? {
-            info!("raft group already init: {:?}", replica);
-            nodes.add_node(raft_node.clone());
-            return Ok(raft_node);
-        }
-
-        let mut cluster_nodes = BTreeMap::new();
         for vnode in &replica.vnodes {
             let raft_id = vnode.id as RaftNodeId;
             let info = RaftNodeInfo {
@@ -165,12 +158,34 @@ impl RaftNodesManager {
                 .await?;
             info!("success open remote raft: {}", vnode.node_id,);
         }
+
+        info!("init raft group: {:?}", replica);
         raft_node.raft_init(cluster_nodes).await?;
-        self.raft_state.set_init_flag(replica.id)?;
+        self.try_wait_leader_elected(raft_node.clone()).await;
 
         nodes.add_node(raft_node.clone());
 
         Ok(raft_node)
+    }
+
+    async fn try_wait_leader_elected(&self, raft_node: Arc<RaftNode>) {
+        for _ in 0..10 {
+            let result = raft_node.raw_raft().is_leader().await;
+            info!("try wait leader elected, check leader: {:?}", result);
+            if let Err(err) = result {
+                if let Some(openraft::error::ForwardToLeader {
+                    leader_id: Some(_id),
+                    leader_node: Some(_node),
+                }) = err.forward_to_leader()
+                {
+                    break;
+                }
+            } else {
+                break;
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        }
     }
 
     pub async fn destory_replica_group(
@@ -320,11 +335,6 @@ impl RaftNodesManager {
         let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id).await?;
         let raft_logs = wal::raft::RaftEntryStorage::new(wal);
         Ok(Arc::new(raft_logs))
-
-        // let path = format!("/tmp/cnosdb/{}/{}-entry", self.node_id(), vnode_id);
-        // let entry = HeedEntryStorage::open(path)?;
-        // let entry: EntryStorageRef = Arc::new(entry);
-        // Ok(entry)
     }
 
     async fn raft_node_engine(&self, vnode_id: VnodeId) -> CoordinatorResult<ApplyStorageRef> {
@@ -336,11 +346,6 @@ impl RaftNodesManager {
         let engine = super::TskvEngineStorage::open(vnode_id, storage);
         let engine: ApplyStorageRef = Arc::new(engine);
         Ok(engine)
-
-        // let path = format!("/tmp/cnosdb/{}/{}-engine", self.node_id(), vnode_id);
-        // let engine = HeedApplyStorage::open(path)?;
-        // let engine: ApplyStorageRef = Arc::new(engine);
-        // Ok(engine)
     }
 
     async fn drop_remote_raft_node(
