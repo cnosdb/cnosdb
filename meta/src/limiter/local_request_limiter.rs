@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -42,6 +43,16 @@ pub struct LocalRequestLimiter {
     tenant: String,
     meta_http_client: MetaHttpClient,
     buckets: RwLock<HashMap<RequestLimiterKind, Arc<Mutex<CountBucket>>>>,
+}
+/// # Safety
+/// only [`LocalRequestLimiter`] impl [`RequestLimiter`]
+pub unsafe fn down_cast_to_local_request_limiter(
+    local_request_limiter: &dyn RequestLimiter,
+) -> &LocalRequestLimiter {
+    local_request_limiter
+        .as_any()
+        .downcast_ref()
+        .unwrap_unchecked()
 }
 
 impl LocalRequestLimiter {
@@ -181,6 +192,10 @@ impl RequestLimiter for LocalRequestLimiter {
 
     async fn check_coord_writes(&self) -> MetaResult<()> {
         self.check_bucket(RequestLimiterKind::CoordWrites, 1).await
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
