@@ -29,6 +29,62 @@ const SERIES_ID_PREFIX: &str = "_id_";
 const SERIES_KEY_PREFIX: &str = "_key_";
 const AUTO_INCR_ID_KEY: &str = "_auto_incr_id";
 
+/// Used to maintain forward and inverted indexes
+///
+/// # Example
+///
+/// The following is an index relationship diagram
+///
+/// In the following example, there are two records whose series keys are SeriesKey1 and SeriesKey2
+///
+/// SeriesKey1: Table1 T1=1a,T2=2a,T3=3a
+///
+/// SeriesKey2: Table1 T1=1b,T2=2b,T3=3a
+///
+///
+/// ```text
+/// SeriesKey1
+/// ┌────────┐
+/// │Table1  │◄───────────────────────── ┌──────────┐
+/// ├──┬──┬──┤                           │SeriesId-1│
+/// │T1│T2│T3│ ────────────────────────► └──────────┘
+/// │1a│2a│3a│                            ▲  ▲  ▲
+/// └┬─┴┬─┴─┬┘                            │  │  │
+///  │  │   │                             │  │  │
+///  │  │   └─────────────────────────────┘  │  │
+///  │  │                                    │  │
+///  │  └────────────────────────────────────┘  │
+///  │                                          │
+///  └──────────────────────────────────────────┘
+///
+///     
+/// ┌────────┐
+/// │Table1  │◄───────────────────────── ┌──────────┐
+/// ├──┬──┬──┤                           │SeriesId-2│
+/// │T1│T2│T3│ ────────────────────────► └──────────┘
+/// │1b│2b│3a│                            ▲  ▲  ▲
+/// └┬─┴┬─┴─┬┘                            │  │  │
+///  │  │   │                             │  │  │
+///  │  │   └─────────────────────────────┘  │  │
+///  │  │                                    │  │
+///  │  └────────────────────────────────────┘  │
+///  │                                          │
+///  └──────────────────────────────────────────┘
+///
+/// point1 with SeriesKey1(Table1 T1=1a,T2=2a,T3=3a), the generated indexes are
+///     _key_Table1_T1_1a_T2_2a_T3_3a -> SeriesId-1
+///     Table1.T1=1a -> SeriesId-1                    ──┐  
+///     Table1.T2=2a -> SeriesId-1                      │---- Inverted index, used to filter data based on tag value
+///     Table1.T3=3a -> SeriesId-1                    ──┘
+///     _id_SeriesId-1 -> SeriesKey1                  ------- Used to construct the result
+///
+/// point2 with SeriesKey1(Table1 T1=1b,T2=2b,T3=3a), the generated indexes are
+///     _key_Table1_T1_1b_T2_2b_T3_3a -> SeriesId-2
+///     Table1.T1=1b -> SeriesId-2
+///     Table1.T2=2b -> SeriesId-2
+///     Table1.T3=3a -> SeriesId-2
+///     _id_SeriesId-2 -> SeriesKey2
+/// ```
 pub struct TSIndex {
     path: PathBuf,
     incr_id: AtomicU32,
