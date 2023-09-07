@@ -126,7 +126,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                                 let limiter = self.limiter.clone();
                                 let future = async move {
                                     limiter
-                                        .check_data_out(batch_memory)
+                                        .check_coord_data_out(batch_memory)
                                         .await
                                         .map_err(CoordinatorError::from)
                                 };
