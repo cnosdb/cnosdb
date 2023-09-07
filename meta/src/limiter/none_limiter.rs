@@ -19,19 +19,19 @@ impl Debug for NoneLimiter {
 
 #[async_trait]
 impl RequestLimiter for NoneLimiter {
-    async fn check_data_in(&self, _data_len: usize) -> MetaResult<()> {
+    async fn check_coord_data_in(&self, _data_len: usize) -> MetaResult<()> {
         Ok(())
     }
 
-    async fn check_data_out(&self, _data_len: usize) -> MetaResult<()> {
+    async fn check_coord_data_out(&self, _data_len: usize) -> MetaResult<()> {
         Ok(())
     }
 
-    async fn check_query(&self) -> MetaResult<()> {
+    async fn check_coord_queries(&self) -> MetaResult<()> {
         Ok(())
     }
 
-    async fn check_write(&self) -> MetaResult<()> {
+    async fn check_coord_writes(&self) -> MetaResult<()> {
         Ok(())
     }
 }

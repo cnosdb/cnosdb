@@ -42,8 +42,8 @@ pub type LimiterRef = Arc<dyn RequestLimiter>;
 ///
 #[async_trait]
 pub trait RequestLimiter: Send + Sync + Debug {
-    async fn check_data_in(&self, data_len: usize) -> MetaResult<()>;
-    async fn check_data_out(&self, data_len: usize) -> MetaResult<()>;
-    async fn check_query(&self) -> MetaResult<()>;
-    async fn check_write(&self) -> MetaResult<()>;
+    async fn check_coord_data_in(&self, data_len: usize) -> MetaResult<()>;
+    async fn check_coord_data_out(&self, data_len: usize) -> MetaResult<()>;
+    async fn check_coord_queries(&self) -> MetaResult<()>;
+    async fn check_coord_writes(&self) -> MetaResult<()>;
 }

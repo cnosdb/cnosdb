@@ -66,10 +66,10 @@ impl LocalRequestLimiter {
         match limiter_config {
             Some(config) => {
                 let mut buckets = HashMap::new();
-                insert_local_bucket(&mut buckets, DataIn, config.data_in.as_ref());
-                insert_local_bucket(&mut buckets, DataOut, config.data_out.as_ref());
-                insert_local_bucket(&mut buckets, Writes, config.writes.as_ref());
-                insert_local_bucket(&mut buckets, Queries, config.queries.as_ref());
+                insert_local_bucket(&mut buckets, CoordDataIn, config.coord_data_in.as_ref());
+                insert_local_bucket(&mut buckets, CoordDataOut, config.coord_data_out.as_ref());
+                insert_local_bucket(&mut buckets, CoordWrites, config.coord_writes.as_ref());
+                insert_local_bucket(&mut buckets, CoordQueries, config.coord_queries.as_ref());
                 buckets
             }
             None => HashMap::new(),
@@ -165,22 +165,22 @@ impl LocalRequestLimiter {
 
 #[async_trait]
 impl RequestLimiter for LocalRequestLimiter {
-    async fn check_data_in(&self, data_len: usize) -> MetaResult<()> {
-        self.check_bucket(RequestLimiterKind::DataIn, data_len)
+    async fn check_coord_data_in(&self, data_len: usize) -> MetaResult<()> {
+        self.check_bucket(RequestLimiterKind::CoordDataIn, data_len)
             .await
     }
 
-    async fn check_data_out(&self, data_len: usize) -> MetaResult<()> {
-        self.check_bucket(RequestLimiterKind::DataOut, data_len)
+    async fn check_coord_data_out(&self, data_len: usize) -> MetaResult<()> {
+        self.check_bucket(RequestLimiterKind::CoordDataOut, data_len)
             .await
     }
 
-    async fn check_query(&self) -> MetaResult<()> {
-        self.check_bucket(RequestLimiterKind::Queries, 1).await
+    async fn check_coord_queries(&self) -> MetaResult<()> {
+        self.check_bucket(RequestLimiterKind::CoordQueries, 1).await
     }
 
-    async fn check_write(&self) -> MetaResult<()> {
-        self.check_bucket(RequestLimiterKind::Writes, 1).await
+    async fn check_coord_writes(&self) -> MetaResult<()> {
+        self.check_bucket(RequestLimiterKind::CoordWrites, 1).await
     }
 }
 
