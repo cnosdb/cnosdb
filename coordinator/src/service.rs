@@ -302,6 +302,7 @@ impl CoordService {
 
         let checker = async move {
             meta.limiter(&tenant)
+                .await?
                 .check_coord_queries()
                 .await
                 .map_err(CoordinatorError::from)
@@ -345,7 +346,7 @@ impl CoordService {
         {
             let _span_recorder = SpanRecorder::new(span_ctx.child_span("limit check"));
 
-            let limiter = self.meta.limiter(tenant);
+            let limiter = self.meta.limiter(tenant).await?;
             let write_size = points.len();
 
             limiter.check_coord_writes().await?;
