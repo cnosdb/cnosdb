@@ -34,7 +34,7 @@ select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1');
 drop tenant cnosdb;
 
 alter tenant test_ts_tenant1 set comment = 'hello world';
-alter tenant test_ts_tenant1 set _limiter = '{"object_config":{"max_users_number":1,"max_databases":3,"max_shard_number":2,"max_replicate_number":2,"max_retention_time":30},"request_config":{"data_in":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"data_out":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"queries":null,"writes":null}}';
+alter tenant test_ts_tenant1 set _limiter = '{"object_config":{"max_users_number":1,"max_databases":3,"max_shard_number":2,"max_replicate_number":2,"max_retention_time":30},"request_config":{"coord_data_in":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"coord_data_out":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"coord_queries":null,"coord_writes":null}}';
 
 select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1');
 

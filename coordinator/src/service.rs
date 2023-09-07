@@ -302,7 +302,7 @@ impl CoordService {
 
         let checker = async move {
             meta.limiter(&tenant)
-                .check_query()
+                .check_coord_queries()
                 .await
                 .map_err(CoordinatorError::from)
         };
@@ -348,8 +348,8 @@ impl CoordService {
             let limiter = self.meta.limiter(tenant);
             let write_size = points.len();
 
-            limiter.check_write().await?;
-            limiter.check_data_in(write_size).await?;
+            limiter.check_coord_writes().await?;
+            limiter.check_coord_data_in(write_size).await?;
 
             self.metrics.data_in(tenant, db).inc(write_size as u64);
         }

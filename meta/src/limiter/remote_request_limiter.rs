@@ -19,10 +19,10 @@ impl RemoteRequestLimiter {
             Some(config) => {
                 use RequestLimiterKind::*;
                 let mut buckets = HashMap::new();
-                insert_remote_bucket(&mut buckets, DataIn, config.data_in.as_ref());
-                insert_remote_bucket(&mut buckets, DataOut, config.data_out.as_ref());
-                insert_remote_bucket(&mut buckets, Queries, config.queries.as_ref());
-                insert_remote_bucket(&mut buckets, Writes, config.writes.as_ref());
+                insert_remote_bucket(&mut buckets, CoordDataIn, config.coord_data_in.as_ref());
+                insert_remote_bucket(&mut buckets, CoordDataOut, config.coord_data_out.as_ref());
+                insert_remote_bucket(&mut buckets, CoordQueries, config.coord_queries.as_ref());
+                insert_remote_bucket(&mut buckets, CoordWrites, config.coord_writes.as_ref());
                 buckets
             }
             None => HashMap::new(),
