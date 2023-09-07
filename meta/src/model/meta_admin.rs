@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use config::{Config, RequestLimiterConfig};
+use config::Config;
 use models::auth::user::{admin_user, User, UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
@@ -22,7 +22,8 @@ use super::meta_tenant::TenantMeta;
 use super::MetaClientRef;
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
-use crate::limiter::{LocalRequestLimiter, NoneLimiter, RequestLimiter};
+use crate::limiter::limiter_manager::LimiterManager;
+use crate::limiter::RequestLimiter;
 use crate::store::command::{self, EntryLog};
 use crate::store::key_path;
 
@@ -56,23 +57,25 @@ pub struct AdminMeta {
     data_nodes: RwLock<HashMap<u64, NodeInfo>>,
 
     tenants: RwLock<HashMap<String, Arc<TenantMeta>>>,
-    limiters: RwLock<HashMap<String, Arc<dyn RequestLimiter>>>,
+    limiters: Arc<LimiterManager>,
 }
 
 impl AdminMeta {
     pub fn mock() -> Self {
         let (watch_notify, _) = mpsc::channel(1024);
+        let client = MetaHttpClient::new("");
+        let config = Config::default();
+        let limiters = LimiterManager::new(client.clone(), config.cluster.name.clone());
 
         Self {
-            config: Config::default(),
+            config,
             watch_notify,
-            client: MetaHttpClient::new(""),
-
+            client,
             users: RwLock::new(HashMap::new()),
             conn_map: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
             tenants: RwLock::new(HashMap::new()),
-            limiters: RwLock::new(HashMap::new()),
+            limiters: Arc::new(limiters),
 
             watch_version: AtomicU64::new(0),
             watch_tenants: RwLock::new(HashSet::new()),
@@ -84,17 +87,21 @@ impl AdminMeta {
         let meta_url = meta_service_addr.join(";");
         let (watch_notify, receiver) = mpsc::channel(1024);
 
+        let client = MetaHttpClient::new(&meta_url);
+        let limiters = Arc::new(LimiterManager::new(
+            client.clone(),
+            config.cluster.name.clone(),
+        ));
+
         let admin = Arc::new(Self {
             config,
             watch_notify,
-            client: MetaHttpClient::new(&meta_url),
-
+            client,
             users: RwLock::new(HashMap::new()),
             conn_map: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
             tenants: RwLock::new(HashMap::new()),
-            limiters: RwLock::new(HashMap::new()),
-
+            limiters,
             watch_version: AtomicU64::new(0),
             watch_tenants: RwLock::new(HashSet::new()),
         });
@@ -545,17 +552,16 @@ impl AdminMeta {
 
     /******************** Tenant Limiter Operation Begin *********************/
     pub async fn create_tenant_meta(&self, tenant_info: Tenant) -> MetaResult<MetaClientRef> {
-        let option = tenant_info.options().clone();
         let tenant_name = tenant_info.name().to_string();
+
+        self.limiters
+            .create_limiter(&tenant_name, tenant_info.options().request_config());
 
         let client = TenantMeta::new(self.cluster(), tenant_info, self.meta_addrs()).await?;
 
         self.tenants
             .write()
             .insert(tenant_name.clone(), client.clone());
-
-        let limiter = self.new_limiter(&self.cluster(), &tenant_name, option.request_config());
-        self.limiters.write().insert(tenant_name.clone(), limiter);
 
         let info = UseTenantInfo {
             name: tenant_name,
@@ -567,34 +573,17 @@ impl AdminMeta {
         Ok(client)
     }
 
-    pub fn new_limiter(
-        &self,
-        _cluster_name: &str,
-        tenant_name: &str,
-        options: Option<&RequestLimiterConfig>,
-    ) -> Arc<dyn RequestLimiter> {
-        Arc::new(LocalRequestLimiter::new(
-            &self.cluster(),
-            tenant_name,
-            options,
-            self.client.clone(),
-        ))
-    }
-
     pub async fn create_tenant(
         &self,
         name: String,
         options: TenantOptions,
     ) -> MetaResult<MetaClientRef> {
-        let limiter = self.new_limiter(&self.cluster(), &name, options.request_config());
-
         let oid = UuidGenerator::default().next_id();
         let tenant = Tenant::new(oid, name.to_string(), options.clone());
         let req = command::WriteCommand::CreateTenant(self.cluster(), tenant.clone());
 
         self.client.write::<()>(&req).await?;
         let meta_client = self.create_tenant_meta(tenant).await?;
-        self.limiters.write().insert(name.to_string(), limiter);
         Ok(meta_client)
     }
 
@@ -613,15 +602,12 @@ impl AdminMeta {
     }
 
     pub async fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
-        let limiter = self.new_limiter(&self.cluster(), name, options.request_config());
-
         let req = command::WriteCommand::AlterTenant(self.cluster(), name.to_string(), options);
 
         let tenant = self.client.write::<Tenant>(&req).await?;
 
         let tenant_meta = self.create_tenant_meta(tenant).await?;
 
-        self.limiters.write().insert(name.to_string(), limiter);
         self.tenants.write().insert(name.to_string(), tenant_meta);
 
         Ok(())
@@ -634,7 +620,7 @@ impl AdminMeta {
             let req = command::WriteCommand::DropTenant(self.cluster(), name.to_string());
 
             self.client.write::<()>(&req).await?;
-            self.limiters.write().remove(name);
+            self.limiters.remove_limiter(name);
         }
 
         Ok(exist)
@@ -645,7 +631,6 @@ impl AdminMeta {
             return Some(client.clone());
         }
 
-        let _tenant_name = tenant.to_string();
         if let Ok(Some(tenant_info)) = self.tenant(tenant).await {
             return self.create_tenant_meta(tenant_info).await.ok();
         }
@@ -668,11 +653,8 @@ impl AdminMeta {
         list
     }
 
-    pub fn limiter(&self, tenant: &str) -> Arc<dyn RequestLimiter> {
-        match self.limiters.read().get(tenant) {
-            Some(limiter) => limiter.clone(),
-            None => Arc::new(NoneLimiter),
-        }
+    pub async fn limiter(&self, tenant: &str) -> MetaResult<Arc<dyn RequestLimiter>> {
+        self.limiters.get_limiter_or_create(tenant).await
     }
 
     /******************** Tenant Limiter Operation End *********************/

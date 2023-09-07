@@ -5,12 +5,12 @@ pub mod tag_scan;
 
 use std::mem;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
 use futures::{ready, FutureExt, Stream, StreamExt, TryFutureExt};
-use meta::limiter::LimiterRef;
 use meta::model::MetaRef;
 use metrics::count::U64Counter;
 use models::meta_data::{VnodeId, VnodeInfo, VnodeStatus};
@@ -36,12 +36,12 @@ pub trait VnodeOpener: Unpin {
 pub struct CheckedCoordinatorRecordBatchStream<O: VnodeOpener> {
     opener: O,
     meta: MetaRef,
+    tenant: Arc<String>,
     vnode: VnodeInfo,
     option: QueryOption,
     state: StreamState,
 
     data_out: U64Counter,
-    limiter: LimiterRef,
 }
 
 impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
@@ -56,16 +56,15 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
             option.table_schema.tenant.as_str(),
             option.table_schema.db.as_str(),
         );
-        let limiter = meta.limiter(option.tenant_name());
-
+        let tenant = option.table_schema.tenant.clone().into();
         Self {
             option,
             opener,
             meta,
+            tenant,
             vnode: VnodeInfo::default(),
             state: StreamState::Check(checker),
             data_out,
-            limiter,
         }
     }
 
@@ -123,9 +122,11 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                         Some(res) => match res {
                             Ok(batch) => {
                                 let batch_memory = batch.get_array_memory_size();
-                                let limiter = self.limiter.clone();
+                                let meta = self.meta.clone();
+                                let tenant_name = self.tenant.clone();
                                 let future = async move {
-                                    limiter
+                                    meta.limiter(&tenant_name)
+                                        .await?
                                         .check_coord_data_out(batch_memory)
                                         .await
                                         .map_err(CoordinatorError::from)

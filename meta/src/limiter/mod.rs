@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -6,13 +7,12 @@ use async_trait::async_trait;
 use crate::error::MetaResult;
 
 pub mod limiter_kind;
+pub mod limiter_manager;
 pub mod local_request_limiter;
-pub mod none_limiter;
 pub mod remote_request_limiter;
 
 pub use limiter_kind::RequestLimiterKind;
 pub use local_request_limiter::LocalRequestLimiter;
-pub use none_limiter::NoneLimiter;
 
 pub type LimiterRef = Arc<dyn RequestLimiter>;
 
@@ -46,4 +46,5 @@ pub trait RequestLimiter: Send + Sync + Debug {
     async fn check_coord_data_out(&self, data_len: usize) -> MetaResult<()>;
     async fn check_coord_queries(&self) -> MetaResult<()>;
     async fn check_coord_writes(&self) -> MetaResult<()>;
+    fn as_any(&self) -> &dyn Any;
 }
