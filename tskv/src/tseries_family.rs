@@ -888,10 +888,10 @@ impl TseriesFamily {
         self.status = status;
     }
 
-    pub fn delete_columns(&self, field_ids: &[FieldId]) {
-        self.mut_cache.read().delete_columns(field_ids);
+    pub fn drop_columns(&self, field_ids: &[FieldId]) {
+        self.mut_cache.read().drop_columns(field_ids);
         for memcache in self.immut_cache.iter() {
-            memcache.read().delete_columns(field_ids);
+            memcache.read().drop_columns(field_ids);
         }
     }
 
