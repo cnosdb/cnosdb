@@ -21,6 +21,10 @@ impl ErrorResponse {
             error_message: error_code.message(),
         }
     }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.to_string().into_bytes()
+    }
 }
 
 impl std::error::Error for ErrorResponse {}
