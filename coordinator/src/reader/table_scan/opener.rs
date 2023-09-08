@@ -11,7 +11,6 @@ use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::{SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::append_trace_context;
-use tskv::reader::status_listener::VnodeStatusListener;
 use tskv::reader::table_scan::LocalTskvTableScanStream;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
@@ -64,9 +63,8 @@ impl VnodeOpener for TemporaryTableScanOpener {
             // TODO 请求路由的过程应该由通信框架决定，客户端只关心业务逻辑（请求目标和请求内容）
             if node_id == curren_nodet_id {
                 // 路由到进程内的引擎
-                let tenant = option.table_schema.tenant.clone();
                 let kv_inst = kv_inst.ok_or(CoordinatorError::KvInstanceNotFound { node_id })?;
-                let input = Box::pin(LocalTskvTableScanStream::new(
+                let stream = LocalTskvTableScanStream::new(
                     vnode_id,
                     option,
                     kv_inst,
@@ -74,10 +72,8 @@ impl VnodeOpener for TemporaryTableScanOpener {
                     SpanRecorder::new(
                         span_ctx.child_span(format!("LocalTskvTableScanStream ({vnode_id})")),
                     ),
-                ));
-
-                let stream =
-                    VnodeStatusListener::new(tenant, meta, vnode_id, input).map_err(Into::into);
+                )
+                .map_err(Into::into);
 
                 Ok(Box::pin(stream) as SendableCoordinatorRecordBatchStream)
             } else {
