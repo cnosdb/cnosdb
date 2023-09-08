@@ -320,7 +320,7 @@ impl SeriesData {
         self.groups.push_back(group);
     }
 
-    pub fn delete_column(&mut self, column_id: ColumnId) {
+    pub fn drop_column(&mut self, column_id: ColumnId) {
         for item in self.groups.iter_mut() {
             let name = match item.schema.column_name(column_id) {
                 None => continue,
@@ -534,13 +534,13 @@ impl MemCache {
         true
     }
 
-    pub fn delete_columns(&self, field_ids: &[FieldId]) {
+    pub fn drop_columns(&self, field_ids: &[FieldId]) {
         for fid in field_ids {
             let (column_id, sid) = split_id(*fid);
             let index = (sid as usize) % self.part_count;
             let series_data = self.partions[index].read().get(&sid).cloned();
             if let Some(series_data) = series_data {
-                series_data.write().delete_column(column_id);
+                series_data.write().drop_column(column_id);
             }
         }
     }
