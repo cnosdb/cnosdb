@@ -83,6 +83,10 @@ impl LocalRequestLimiter {
                 insert_local_bucket(&mut buckets, CoordDataOut, config.coord_data_out.as_ref());
                 insert_local_bucket(&mut buckets, CoordWrites, config.coord_writes.as_ref());
                 insert_local_bucket(&mut buckets, CoordQueries, config.coord_queries.as_ref());
+                insert_local_bucket(&mut buckets, HttpDataIn, config.http_data_in.as_ref());
+                insert_local_bucket(&mut buckets, HttpDataOut, config.http_data_out.as_ref());
+                insert_local_bucket(&mut buckets, HttpQueries, config.http_queries.as_ref());
+                insert_local_bucket(&mut buckets, HttpWrites, config.http_writes.as_ref());
                 buckets
             }
             None => HashMap::new(),
@@ -204,6 +208,24 @@ impl RequestLimiter for LocalRequestLimiter {
 
     async fn check_coord_writes(&self) -> MetaResult<()> {
         self.check_bucket(RequestLimiterKind::CoordWrites, 1).await
+    }
+
+    async fn check_http_data_in(&self, data_len: usize) -> MetaResult<()> {
+        self.check_bucket(RequestLimiterKind::HttpDataIn, data_len)
+            .await
+    }
+
+    async fn check_http_data_out(&self, data_len: usize) -> MetaResult<()> {
+        self.check_bucket(RequestLimiterKind::HttpDataOut, data_len)
+            .await
+    }
+
+    async fn check_http_queries(&self) -> MetaResult<()> {
+        self.check_bucket(RequestLimiterKind::HttpQueries, 1).await
+    }
+
+    async fn check_http_writes(&self) -> MetaResult<()> {
+        self.check_bucket(RequestLimiterKind::HttpWrites, 1).await
     }
 
     fn as_any(&self) -> &dyn Any {
