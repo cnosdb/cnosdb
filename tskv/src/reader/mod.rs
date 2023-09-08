@@ -11,7 +11,6 @@ use crate::{Error, Result};
 mod iterator;
 pub mod query_executor;
 pub mod serialize;
-pub mod status_listener;
 pub mod table_scan;
 pub mod tag_scan;
 
