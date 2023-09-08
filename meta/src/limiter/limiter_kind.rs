@@ -8,6 +8,10 @@ pub enum RequestLimiterKind {
     CoordDataOut,
     CoordQueries,
     CoordWrites,
+    HttpDataIn,
+    HttpDataOut,
+    HttpQueries,
+    HttpWrites,
 }
 
 impl Display for RequestLimiterKind {

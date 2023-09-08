@@ -44,6 +44,10 @@ pub struct RequestLimiterConfig {
     pub coord_data_out: Option<Bucket>,
     pub coord_queries: Option<Bucket>,
     pub coord_writes: Option<Bucket>,
+    pub http_data_in: Option<Bucket>,
+    pub http_data_out: Option<Bucket>,
+    pub http_queries: Option<Bucket>,
+    pub http_writes: Option<Bucket>,
 }
 
 #[test]
@@ -73,6 +77,22 @@ local_bucket = {max = 100, initial = 0}
 remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
 
 [request_config.coord_data_queries]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
+
+[request_config.http_data_in]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
+
+[request_config.http_data_out]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
+
+[request_config.http_queries]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
+
+[request_config.http_writes]
 local_bucket = {max = 100, initial = 0}
 remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
 "#;
