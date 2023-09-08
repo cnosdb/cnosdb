@@ -9,13 +9,20 @@ pub mod manager;
 pub mod writer;
 
 pub struct TskvEngineStorage {
+    tenant: String,
+    db_name: String,
     vnode_id: VnodeId,
     storage: tskv::EngineRef,
 }
 
 impl TskvEngineStorage {
-    pub fn open(vnode_id: VnodeId, storage: tskv::EngineRef) -> Self {
-        Self { vnode_id, storage }
+    pub fn open(tenant: &str, db_name: &str, vnode_id: VnodeId, storage: tskv::EngineRef) -> Self {
+        Self {
+            vnode_id,
+            storage,
+            tenant: tenant.to_owned(),
+            db_name: db_name.to_owned(),
+        }
     }
 }
 
@@ -50,6 +57,17 @@ impl ApplyStorage for TskvEngineStorage {
     }
 
     async fn restore(&self, _snapshot: &[u8]) -> ReplicationResult<()> {
+        Ok(())
+    }
+
+    async fn destory(&self) -> ReplicationResult<()> {
+        self.storage
+            .remove_tsfamily(&self.tenant, &self.db_name, self.vnode_id)
+            .await
+            .map_err(|err| ReplicationError::ApplyEngineFailed {
+                msg: err.to_string(),
+            })?;
+
         Ok(())
     }
 }

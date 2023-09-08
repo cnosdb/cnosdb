@@ -116,12 +116,24 @@ impl ReplicationSet {
         }
     }
 
-    pub fn leader_node_id(&self) -> NodeId {
-        self.leader_node_id
+    pub fn vnode(&self, id: VnodeId) -> Option<VnodeInfo> {
+        for vnode in &self.vnodes {
+            if vnode.id == id {
+                return Some(vnode.clone());
+            }
+        }
+
+        None
     }
 
-    pub fn leader_vnode_id(&self) -> VnodeId {
-        self.leader_vnode_id
+    pub fn by_node_id(&self, id: NodeId) -> Option<VnodeInfo> {
+        for vnode in &self.vnodes {
+            if vnode.node_id == id {
+                return Some(vnode.clone());
+            }
+        }
+
+        None
     }
 }
 
@@ -162,6 +174,16 @@ pub struct VnodeAllInfo {
     pub status: VnodeStatus,
     pub start_time: i64,
     pub end_time: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct ReplicaAllInfo {
+    pub bucket_id: u32,
+    pub db_name: String,
+    pub tenant: String,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub replica_set: ReplicationSet,
 }
 
 impl VnodeAllInfo {

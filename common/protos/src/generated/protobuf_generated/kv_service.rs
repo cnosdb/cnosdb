@@ -155,12 +155,40 @@ pub struct AlterColumnRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AddRaftFollowerRequest {
+    #[prost(string, tag = "1")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub replica_id: u32,
+    #[prost(uint64, tag = "3")]
+    pub follower_nid: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RemoveRaftNodeRequest {
+    #[prost(string, tag = "1")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub replica_id: u32,
+    #[prost(uint32, tag = "3")]
+    pub vnode_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DestoryRaftGroupRequest {
+    #[prost(string, tag = "1")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub replica_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AdminCommandRequest {
     #[prost(string, tag = "1")]
     pub tenant: ::prost::alloc::string::String,
     #[prost(
         oneof = "admin_command_request::Command",
-        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10"
+        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13"
     )]
     pub command: ::core::option::Option<admin_command_request::Command>,
 }
@@ -187,6 +215,12 @@ pub mod admin_command_request {
         AddColumn(super::AddColumnRequest),
         #[prost(message, tag = "10")]
         AlterColumn(super::AlterColumnRequest),
+        #[prost(message, tag = "11")]
+        AddRaftFollower(super::AddRaftFollowerRequest),
+        #[prost(message, tag = "12")]
+        RemoveRaftNode(super::RemoveRaftNodeRequest),
+        #[prost(message, tag = "13")]
+        DestoryRaftGroup(super::DestoryRaftGroupRequest),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -263,9 +297,11 @@ pub struct WriteVnodeRequest {
 pub struct OpenRaftNodeRequest {
     #[prost(string, tag = "1")]
     pub tenant: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub vnode_id: u32,
+    #[prost(string, tag = "2")]
+    pub db_name: ::prost::alloc::string::String,
     #[prost(uint32, tag = "3")]
+    pub vnode_id: u32,
+    #[prost(uint32, tag = "4")]
     pub replica_id: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -273,9 +309,11 @@ pub struct OpenRaftNodeRequest {
 pub struct DropRaftNodeRequest {
     #[prost(string, tag = "1")]
     pub tenant: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub vnode_id: u32,
+    #[prost(string, tag = "2")]
+    pub db_name: ::prost::alloc::string::String,
     #[prost(uint32, tag = "3")]
+    pub vnode_id: u32,
+    #[prost(uint32, tag = "4")]
     pub replica_id: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]

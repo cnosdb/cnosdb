@@ -10,7 +10,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use errors::CoordinatorError;
 use futures::Stream;
 use meta::model::{MetaClientRef, MetaRef};
-use models::meta_data::{ReplicationSet, VnodeAllInfo};
+use models::meta_data::{ReplicaAllInfo, ReplicationSet, ReplicationSetId, VnodeAllInfo};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::{Precision, TskvTableSchemaRef};
@@ -60,24 +60,19 @@ pub enum VnodeManagerCmdType {
     Drop(u32),
     /// vnode id list
     Compact(Vec<u32>),
+
+    /// replica set id, dst nod id
+    AddRaftFollower(u32, u64),
+    /// vnode id
+    RemoveRaftNode(u32),
+    /// replica set id
+    DestoryRaftGroup(u32),
 }
 
 #[derive(Debug, Clone)]
 pub enum VnodeSummarizerCmdType {
     /// replication set id
     Checksum(u32),
-}
-
-pub fn status_response_to_result(
-    status: &protos::kv_service::StatusResponse,
-) -> errors::CoordinatorResult<()> {
-    if status.code == SUCCESS_RESPONSE_CODE {
-        Ok(())
-    } else {
-        Err(errors::CoordinatorError::GRPCRequest {
-            msg: status.data.clone(),
-        })
-    }
 }
 
 #[async_trait::async_trait]
@@ -152,6 +147,18 @@ pub trait Coordinator: Send + Sync {
     fn metrics(&self) -> &Arc<CoordServiceMetrics>;
 }
 
+pub fn status_response_to_result(
+    status: &protos::kv_service::StatusResponse,
+) -> errors::CoordinatorResult<()> {
+    if status.code == SUCCESS_RESPONSE_CODE {
+        Ok(())
+    } else {
+        Err(errors::CoordinatorError::GRPCRequest {
+            msg: status.data.clone(),
+        })
+    }
+}
+
 pub async fn get_vnode_all_info(
     meta: MetaRef,
     tenant: &str,
@@ -167,4 +174,41 @@ pub async fn get_vnode_all_info(
             name: tenant.to_string(),
         }),
     }
+}
+
+pub async fn get_replica_all_info(
+    meta: MetaRef,
+    tenant: &str,
+    replica_id: ReplicationSetId,
+) -> CoordinatorResult<ReplicaAllInfo> {
+    let replica = meta
+        .tenant_meta(tenant)
+        .await
+        .ok_or(CoordinatorError::TenantNotFound {
+            name: tenant.to_owned(),
+        })?
+        .get_replica_all_info(replica_id)
+        .ok_or(CoordinatorError::ReplicationSetNotFound { id: replica_id })?;
+
+    Ok(replica)
+}
+
+pub async fn update_replication_set(
+    meta: MetaRef,
+    tenant: &str,
+    db_name: &str,
+    bucket_id: u32,
+    replica_id: u32,
+    del_info: &[models::meta_data::VnodeInfo],
+    add_info: &[models::meta_data::VnodeInfo],
+) -> CoordinatorResult<()> {
+    meta.tenant_meta(tenant)
+        .await
+        .ok_or(CoordinatorError::TenantNotFound {
+            name: tenant.to_owned(),
+        })?
+        .update_replication_set(db_name, bucket_id, replica_id, del_info, add_info)
+        .await?;
+
+    Ok(())
 }

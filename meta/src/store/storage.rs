@@ -88,6 +88,10 @@ impl ApplyStorage for StateMachine {
 
         Ok(())
     }
+
+    async fn destory(&self) -> ReplicationResult<()> {
+        Ok(())
+    }
 }
 
 impl StateMachine {
@@ -649,8 +653,15 @@ impl StateMachine {
             }
         }
 
-        self.insert(&key, &value_encode(&bucket)?)?;
-        Ok(())
+        bucket
+            .shard_group
+            .retain(|replica| !replica.vnodes.is_empty());
+
+        if bucket.shard_group.is_empty() {
+            self.remove(&key)
+        } else {
+            self.insert(&key, &value_encode(&bucket)?)
+        }
     }
 
     fn process_change_repl_set_leader(&self, args: &ChangeReplSetLeaderArgs) -> MetaResult<()> {

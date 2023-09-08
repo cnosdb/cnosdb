@@ -55,8 +55,8 @@ use crate::reader::tag_scan::opener::TemporaryTagScanOpener;
 use crate::reader::{CheckFuture, CheckedCoordinatorRecordBatchStream};
 use crate::writer::PointWriter;
 use crate::{
-    status_response_to_result, Coordinator, QueryOption, SendableCoordinatorRecordBatchStream,
-    VnodeManagerCmdType, VnodeSummarizerCmdType,
+    get_replica_all_info, get_vnode_all_info, status_response_to_result, Coordinator, QueryOption,
+    SendableCoordinatorRecordBatchStream, VnodeManagerCmdType, VnodeSummarizerCmdType,
 };
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
@@ -266,25 +266,6 @@ impl CoordService {
         Ok(())
     }
 
-    async fn get_replication_set(
-        &self,
-        tenant: &str,
-        replication_set_id: u32,
-    ) -> CoordinatorResult<ReplicationSet> {
-        match self.tenant_meta(tenant).await {
-            Some(meta_client) => match meta_client.get_replication_set(replication_set_id) {
-                Some(repl_set) => Ok(repl_set),
-                None => Err(CoordinatorError::ReplicationSetNotFound {
-                    id: replication_set_id,
-                }),
-            },
-
-            None => Err(CoordinatorError::TenantNotFound {
-                name: tenant.to_string(),
-            }),
-        }
-    }
-
     async fn exec_admin_command_on_node(
         &self,
         node_id: u64,
@@ -425,18 +406,18 @@ impl CoordService {
         }
 
         let mut requests = Vec::new();
-        let request = self.write_replica_raft(
-            tenant,
-            db,
-            points.clone(),
-            precision,
-            info.clone(),
-            span_ctx,
-        );
-        requests.push(request);
+        // let request = self.write_replica_raft(
+        //     tenant,
+        //     db,
+        //     points.clone(),
+        //     precision,
+        //     info.clone(),
+        //     span_ctx,
+        // );
+        // requests.push(request);
 
-        // let mut tasks = self.multi_write_vnodes(tenant, precision, info, points, span_ctx)?;
-        // requests.append(&mut tasks);
+        let mut tasks = self.multi_write_vnodes(tenant, precision, info, points, span_ctx)?;
+        requests.append(&mut tasks);
 
         Ok(requests)
     }
@@ -763,9 +744,64 @@ impl Coordinator for CoordService {
         cmd_type: VnodeManagerCmdType,
     ) -> CoordinatorResult<()> {
         let (grpc_req, req_node_id) = match cmd_type {
+            VnodeManagerCmdType::AddRaftFollower(replica_id, node_id) => {
+                let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
+                if all_info.replica_set.by_node_id(node_id).is_some() {
+                    return Err(CoordinatorError::CommonError {
+                        msg: format!("A Replication Already in {}", node_id),
+                    });
+                }
+
+                (
+                    AdminCommandRequest {
+                        tenant: tenant.to_string(),
+                        command: Some(AddRaftFollower(AddRaftFollowerRequest {
+                            db_name: all_info.db_name,
+                            replica_id: all_info.replica_set.id,
+                            follower_nid: node_id,
+                        })),
+                    },
+                    all_info.replica_set.leader_node_id,
+                )
+            }
+
+            VnodeManagerCmdType::RemoveRaftNode(vnode_id) => {
+                let all_info = get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
+                let replica_id = all_info.repl_set_id;
+                let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id)
+                    .await?
+                    .replica_set;
+
+                (
+                    AdminCommandRequest {
+                        tenant: tenant.to_string(),
+                        command: Some(RemoveRaftNode(RemoveRaftNodeRequest {
+                            vnode_id,
+                            replica_id,
+                            db_name: all_info.db_name,
+                        })),
+                    },
+                    replica.leader_node_id,
+                )
+            }
+
+            VnodeManagerCmdType::DestoryRaftGroup(replica_id) => {
+                let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
+
+                (
+                    AdminCommandRequest {
+                        tenant: tenant.to_string(),
+                        command: Some(DestoryRaftGroup(DestoryRaftGroupRequest {
+                            replica_id,
+                            db_name: all_info.db_name,
+                        })),
+                    },
+                    all_info.replica_set.leader_node_id,
+                )
+            }
+
             VnodeManagerCmdType::Copy(vnode_id, node_id) => {
-                let all_info =
-                    crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
+                let all_info = get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
                 if all_info.node_id == node_id {
                     return Err(CoordinatorError::CommonError {
                         msg: format!("Vnode: {} Already in {}", all_info.vnode_id, node_id),
@@ -782,8 +818,7 @@ impl Coordinator for CoordService {
             }
 
             VnodeManagerCmdType::Move(vnode_id, node_id) => {
-                let all_info =
-                    crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
+                let all_info = get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
                 if all_info.node_id == node_id {
                     return Err(CoordinatorError::CommonError {
                         msg: format!("move vnode: {} already in {}", all_info.vnode_id, node_id),
@@ -800,8 +835,7 @@ impl Coordinator for CoordService {
             }
 
             VnodeManagerCmdType::Drop(vnode_id) => {
-                let all_info =
-                    crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
+                let all_info = get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
                 let db = all_info.db_name;
                 (
                     AdminCommandRequest {
@@ -816,8 +850,7 @@ impl Coordinator for CoordService {
                 // Group vnode ids by node id.
                 let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
                 for vnode_id in vnode_ids.iter() {
-                    let vnode =
-                        crate::get_vnode_all_info(self.meta.clone(), tenant, *vnode_id).await?;
+                    let vnode = get_vnode_all_info(self.meta.clone(), tenant, *vnode_id).await?;
                     node_vnode_ids_map
                         .entry(vnode.node_id)
                         .or_default()
@@ -856,12 +889,14 @@ impl Coordinator for CoordService {
         cmd_type: VnodeSummarizerCmdType,
     ) -> CoordinatorResult<Vec<RecordBatch>> {
         match cmd_type {
-            VnodeSummarizerCmdType::Checksum(replication_set_id) => {
-                let replication_set = self.get_replication_set(tenant, replication_set_id).await?;
+            VnodeSummarizerCmdType::Checksum(replica_id) => {
+                let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id)
+                    .await?
+                    .replica_set;
 
                 // Group vnode ids by node id.
                 let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
-                for vnode in replication_set.vnodes {
+                for vnode in replica.vnodes {
                     node_vnode_ids_map
                         .entry(vnode.node_id)
                         .or_default()

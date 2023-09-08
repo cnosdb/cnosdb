@@ -198,6 +198,63 @@ impl TskvServiceImpl {
             Err(_) => self.bytes_response(FAILED_RESPONSE_CODE, vec![]),
         }
     }
+    async fn admin_add_raft_follower(
+        &self,
+        tenant: &str,
+        request: &AddRaftFollowerRequest,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let raft_manager = self.coord.raft_manager();
+        if let Err(err) = raft_manager
+            .add_follower_to_group(
+                tenant,
+                &request.db_name,
+                request.follower_nid,
+                request.replica_id,
+            )
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
+
+    async fn admin_remove_raft_node(
+        &self,
+        tenant: &str,
+        request: &RemoveRaftNodeRequest,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let raft_manager = self.coord.raft_manager();
+        if let Err(err) = raft_manager
+            .remove_node_from_group(
+                tenant,
+                &request.db_name,
+                request.vnode_id,
+                request.replica_id,
+            )
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
+
+    async fn admin_destory_raft_group(
+        &self,
+        tenant: &str,
+        request: &DestoryRaftGroupRequest,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let raft_manager = self.coord.raft_manager();
+        if let Err(err) = raft_manager
+            .destory_replica_group(tenant, &request.db_name, request.replica_id)
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
 
     fn query_record_batch_exec(
         self,
@@ -396,7 +453,12 @@ impl TskvService for TskvServiceImpl {
         if let Err(err) = self
             .coord
             .raft_manager()
-            .exec_open_raft_node(&inner.tenant, inner.vnode_id, inner.replica_id)
+            .exec_open_raft_node(
+                &inner.tenant,
+                &inner.db_name,
+                inner.vnode_id,
+                inner.replica_id,
+            )
             .await
         {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
@@ -414,7 +476,12 @@ impl TskvService for TskvServiceImpl {
         if let Err(err) = self
             .coord
             .raft_manager()
-            .exec_drop_raft_node(&inner.tenant, inner.vnode_id, inner.replica_id)
+            .exec_drop_raft_node(
+                &inner.tenant,
+                &inner.db_name,
+                inner.vnode_id,
+                inner.replica_id,
+            )
             .await
         {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
@@ -457,6 +524,15 @@ impl TskvService for TskvServiceImpl {
                 }
                 admin_command_request::Command::AlterColumn(command) => {
                     self.admin_alter_column(&inner.tenant, command).await
+                }
+                admin_command_request::Command::AddRaftFollower(command) => {
+                    self.admin_add_raft_follower(&inner.tenant, command).await
+                }
+                admin_command_request::Command::RemoveRaftNode(command) => {
+                    self.admin_remove_raft_node(&inner.tenant, command).await
+                }
+                admin_command_request::Command::DestoryRaftGroup(command) => {
+                    self.admin_destory_raft_group(&inner.tenant, command).await
                 }
             };
 

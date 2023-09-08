@@ -22,6 +22,7 @@ use tracing::info;
 use tskv::{wal, EngineRef};
 
 use crate::errors::*;
+use crate::{get_replica_all_info, update_replication_set};
 
 pub struct RaftWriteRequest {
     pub points: WritePointsRequest,
@@ -70,13 +71,14 @@ impl RaftNodesManager {
     pub async fn get_node_or_build(
         &self,
         tenant: &str,
+        db_name: &str,
         replica: &ReplicationSet,
     ) -> CoordinatorResult<Arc<RaftNode>> {
         if let Some(node) = self.raft_nodes.read().await.get_node(replica.id) {
             return Ok(node);
         }
 
-        let result = self.build_replica_group(tenant, replica).await;
+        let result = self.build_replica_group(tenant, db_name, replica).await;
         if let Err(err) = &result {
             info!("build replica group failed: {:?}, {:?}", replica, err);
         } else {
@@ -89,6 +91,7 @@ impl RaftNodesManager {
     pub async fn exec_open_raft_node(
         &self,
         tenant: &str,
+        db_name: &str,
         id: VnodeId,
         group_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
@@ -98,7 +101,7 @@ impl RaftNodesManager {
             return Ok(());
         }
 
-        let node = self.open_raft_node(tenant, id, group_id).await?;
+        let node = self.open_raft_node(tenant, db_name, id, group_id).await?;
         nodes.add_node(node);
 
         Ok(())
@@ -107,6 +110,7 @@ impl RaftNodesManager {
     pub async fn exec_drop_raft_node(
         &self,
         _tenant: &str,
+        _db_name: &str,
         id: VnodeId,
         group_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
@@ -126,6 +130,7 @@ impl RaftNodesManager {
     async fn build_replica_group(
         &self,
         tenant: &str,
+        db_name: &str,
         replica: &ReplicationSet,
     ) -> CoordinatorResult<Arc<RaftNode>> {
         if replica.leader_node_id != self.node_id() {
@@ -140,8 +145,10 @@ impl RaftNodesManager {
         }
 
         let mut cluster_nodes = BTreeMap::new();
-        let leader_id = replica.leader_vnode_id();
-        let raft_node = self.open_raft_node(tenant, leader_id, replica.id).await?;
+        let leader_id = replica.leader_vnode_id;
+        let raft_node = self
+            .open_raft_node(tenant, db_name, leader_id, replica.id)
+            .await?;
         for vnode in &replica.vnodes {
             let raft_id = vnode.id as RaftNodeId;
             let info = RaftNodeInfo {
@@ -154,7 +161,7 @@ impl RaftNodesManager {
                 continue;
             }
 
-            self.open_remote_raft_node(tenant, vnode, replica.id)
+            self.open_remote_raft_node(tenant, db_name, vnode, replica.id)
                 .await?;
             info!("success open remote raft: {}", vnode.node_id,);
         }
@@ -191,15 +198,18 @@ impl RaftNodesManager {
     pub async fn destory_replica_group(
         &self,
         tenant: &str,
-        replica: &ReplicationSet,
+        db_name: &str,
+        replica_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
+        let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
+        let replica = all_info.replica_set.clone();
         if replica.leader_node_id != self.node_id() {
             return Err(CoordinatorError::LeaderIsWrong {
                 replica: replica.clone(),
             });
         }
 
-        let raft_node = self.get_node_or_build(tenant, replica).await?;
+        let raft_node = self.get_node_or_build(tenant, db_name, &replica).await?;
         let mut members = BTreeSet::new();
         members.insert(raft_node.raft_id());
         raft_node.raft_change_membership(members).await?;
@@ -209,11 +219,24 @@ impl RaftNodesManager {
                 continue;
             }
 
-            let result = self.drop_remote_raft_node(tenant, vnode, replica.id).await;
+            let result = self
+                .drop_remote_raft_node(tenant, db_name, vnode, replica.id)
+                .await;
             info!("destory replica group drop vnode: {:?},{:?}", vnode, result);
         }
 
         raft_node.shutdown().await?;
+
+        update_replication_set(
+            self.meta.clone(),
+            tenant,
+            db_name,
+            all_info.bucket_id,
+            replica.id,
+            &replica.vnodes,
+            &[],
+        )
+        .await?;
 
         Ok(())
     }
@@ -221,62 +244,100 @@ impl RaftNodesManager {
     pub async fn add_follower_to_group(
         &self,
         tenant: &str,
-        id: VnodeId,
-        info: RaftNodeInfo,
+        db_name: &str,
+        follower_nid: NodeId,
+        replica_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
-        let group_id = info.group_id;
-        let replica = self
-            .meta
-            .tenant_meta(tenant)
-            .await
-            .ok_or(CoordinatorError::TenantNotFound {
-                name: tenant.to_owned(),
-            })?
-            .get_replication_set(group_id)
-            .ok_or(CoordinatorError::ReplicationSetNotFound { id: group_id })?;
+        let follower_addr = self.meta.node_info_by_id(follower_nid).await?.grpc_addr;
+        let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
+        let replica = all_info.replica_set.clone();
         if replica.leader_node_id != self.node_id() {
             return Err(CoordinatorError::LeaderIsWrong {
                 replica: replica.clone(),
             });
         }
 
-        let raft_node = self.get_node_or_build(tenant, &replica).await?;
-        raft_node.raft_add_learner(id.into(), info).await?;
+        let raft_node = self.get_node_or_build(tenant, db_name, &replica).await?;
+
+        let new_vnode_id = self.meta.retain_id(1).await?;
+        let new_vnode = VnodeInfo {
+            id: new_vnode_id,
+            node_id: follower_nid,
+            status: VnodeStatus::Running,
+        };
+        self.open_remote_raft_node(tenant, db_name, &new_vnode, replica.id)
+            .await?;
+
+        let raft_node_info = RaftNodeInfo {
+            group_id: replica_id,
+            address: follower_addr,
+        };
+        raft_node
+            .raft_add_learner(new_vnode_id.into(), raft_node_info)
+            .await?;
 
         let mut members = BTreeSet::new();
-        members.insert(id as RaftNodeId);
+        members.insert(new_vnode_id as RaftNodeId);
         for vnode in replica.vnodes.iter() {
             members.insert(vnode.id as RaftNodeId);
         }
         raft_node.raft_change_membership(members).await?;
+
+        update_replication_set(
+            self.meta.clone(),
+            tenant,
+            db_name,
+            all_info.bucket_id,
+            replica.id,
+            &[],
+            &[new_vnode],
+        )
+        .await?;
 
         Ok(())
     }
 
-    pub async fn remove_follower_from_group(
+    // todo: if the remove node is leader,how to do ...
+    pub async fn remove_node_from_group(
         &self,
         tenant: &str,
+        db_name: &str,
         vnode_id: VnodeId,
-        replica: &ReplicationSet,
+        replica_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
+        let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
+        let replica = all_info.replica_set.clone();
         if replica.leader_node_id != self.node_id() {
             return Err(CoordinatorError::LeaderIsWrong {
                 replica: replica.clone(),
             });
         }
 
-        let raft_node = self.get_node_or_build(tenant, replica).await?;
         let mut members = BTreeSet::new();
         for vnode in replica.vnodes.iter() {
-            members.insert(vnode.id as RaftNodeId);
-
-            if vnode.id == vnode_id {
-                self.drop_remote_raft_node(tenant, vnode, replica.id)
-                    .await?;
+            if vnode.id != vnode_id {
+                members.insert(vnode.id as RaftNodeId);
             }
         }
-        members.remove(&vnode_id.into());
-        raft_node.raft_change_membership(members).await?;
+
+        if let Some(vnode) = replica.vnode(vnode_id) {
+            let raft_node = self.get_node_or_build(tenant, db_name, &replica).await?;
+            raft_node.raft_change_membership(members).await?;
+
+            self.drop_remote_raft_node(tenant, db_name, &vnode, replica.id)
+                .await?;
+
+            update_replication_set(
+                self.meta.clone(),
+                tenant,
+                db_name,
+                all_info.bucket_id,
+                replica.id,
+                &[vnode],
+                &[],
+            )
+            .await?;
+        }
 
         Ok(())
     }
@@ -284,13 +345,14 @@ impl RaftNodesManager {
     async fn open_raft_node(
         &self,
         tenant: &str,
+        db_name: &str,
         vnode_id: VnodeId,
         group_id: ReplicationSetId,
     ) -> CoordinatorResult<Arc<RaftNode>> {
         info!("open local raft node: {}.{}", group_id, vnode_id);
 
-        let entry = self.raft_node_logs(tenant, vnode_id).await?;
-        let engine = self.raft_node_engine(vnode_id).await?;
+        let entry = self.raft_node_logs(tenant, db_name, vnode_id).await?;
+        let engine = self.raft_node_engine(tenant, db_name, vnode_id).await?;
 
         let grpc_addr = models::utils::build_address(
             self.config.host.clone(),
@@ -326,10 +388,10 @@ impl RaftNodesManager {
     async fn raft_node_logs(
         &self,
         tenant: &str,
+        db_name: &str,
         vnode_id: VnodeId,
     ) -> CoordinatorResult<EntryStorageRef> {
-        let all_info = crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
-        let owner = models::schema::make_owner(tenant, &all_info.db_name);
+        let owner = models::schema::make_owner(tenant, db_name);
         let wal_option = tskv::kv_option::WalOptions::from(&self.config);
 
         let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id).await?;
@@ -337,13 +399,18 @@ impl RaftNodesManager {
         Ok(Arc::new(raft_logs))
     }
 
-    async fn raft_node_engine(&self, vnode_id: VnodeId) -> CoordinatorResult<ApplyStorageRef> {
+    async fn raft_node_engine(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        vnode_id: VnodeId,
+    ) -> CoordinatorResult<ApplyStorageRef> {
         let kv_inst = self.kv_inst.clone();
         let storage = kv_inst.ok_or(CoordinatorError::KvInstanceNotFound {
             node_id: self.node_id(),
         })?;
 
-        let engine = super::TskvEngineStorage::open(vnode_id, storage);
+        let engine = super::TskvEngineStorage::open(tenant, db_name, vnode_id, storage);
         let engine: ApplyStorageRef = Arc::new(engine);
         Ok(engine)
     }
@@ -351,6 +418,7 @@ impl RaftNodesManager {
     async fn drop_remote_raft_node(
         &self,
         tenant: &str,
+        db_name: &str,
         vnode: &VnodeInfo,
         replica_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
@@ -360,6 +428,7 @@ impl RaftNodesManager {
         let cmd = tonic::Request::new(DropRaftNodeRequest {
             replica_id,
             vnode_id: vnode.id,
+            db_name: db_name.to_string(),
             tenant: tenant.to_string(),
         });
 
@@ -377,6 +446,7 @@ impl RaftNodesManager {
     async fn open_remote_raft_node(
         &self,
         tenant: &str,
+        db_name: &str,
         vnode: &VnodeInfo,
         replica_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
@@ -391,6 +461,7 @@ impl RaftNodesManager {
         let cmd = tonic::Request::new(OpenRaftNodeRequest {
             replica_id,
             vnode_id: vnode.id,
+            db_name: db_name.to_string(),
             tenant: tenant.to_string(),
         });
 

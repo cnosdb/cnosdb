@@ -618,6 +618,28 @@ impl TenantMeta {
         None
     }
 
+    pub fn get_replica_all_info(&self, repl_id: u32) -> Option<ReplicaAllInfo> {
+        let data = self.data.read();
+        for (db_name, db_info) in data.dbs.iter() {
+            for bucket in db_info.buckets.iter() {
+                for repl_set in bucket.shard_group.iter() {
+                    if repl_set.id == repl_id {
+                        return Some(ReplicaAllInfo {
+                            bucket_id: bucket.id,
+                            db_name: db_name.clone(),
+                            tenant: self.tenant_name(),
+                            start_time: bucket.start_time,
+                            end_time: bucket.end_time,
+                            replica_set: repl_set.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn get_vnode_repl_set(&self, vnode_id: u32) -> Option<ReplicationSet> {
         let data = self.data.read();
         for (_db_name, db_info) in data.dbs.iter() {

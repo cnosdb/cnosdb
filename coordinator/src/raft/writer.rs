@@ -48,7 +48,7 @@ impl RaftWriter {
         span_recorder: SpanRecorder,
     ) -> CoordinatorResult<()> {
         let node_id = self.config.node_basic.node_id;
-        let leader_id = replica.leader_node_id();
+        let leader_id = replica.leader_node_id;
         if leader_id == node_id && self.kv_inst.is_some() {
             let span_recorder = span_recorder.child("write to local node or forward");
             let result = self
@@ -93,7 +93,10 @@ impl RaftWriter {
         replica: &ReplicationSet,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
-        let raft = self.raft_manager.get_node_or_build(tenant, replica).await?;
+        let raft = self
+            .raft_manager
+            .get_node_or_build(tenant, db_name, replica)
+            .await?;
         let request = WriteReplicaRequest {
             replica_id: replica.id,
             tenant: tenant.to_string(),

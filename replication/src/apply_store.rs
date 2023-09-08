@@ -23,6 +23,7 @@ pub trait ApplyStorage: Send + Sync + Any {
     async fn apply(&self, ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response>;
     async fn snapshot(&self) -> ReplicationResult<Vec<u8>>;
     async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()>;
+    async fn destory(&self) -> ReplicationResult<()>;
 }
 
 pub type ApplyStorageRef = Arc<dyn ApplyStorage + Send + Sync>;
@@ -106,6 +107,10 @@ impl ApplyStorage for HeedApplyStorage {
         }
         writer.commit()?;
 
+        Ok(())
+    }
+
+    async fn destory(&self) -> ReplicationResult<()> {
         Ok(())
     }
 }

@@ -132,7 +132,11 @@ impl RaftNode {
             .await
             .map_err(|err| ReplicationError::RaftInternalErr {
                 msg: err.to_string(),
-            })
+            })?;
+
+        self.storage.destory().await?;
+
+        Ok(())
     }
 
     /// Get the latest metrics of the cluster

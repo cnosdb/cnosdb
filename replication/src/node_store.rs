@@ -65,6 +65,13 @@ impl NodeStorage {
         self.info.group_id
     }
 
+    pub async fn destory(&self) -> ReplicationResult<()> {
+        self.state.del_group(self.group_id())?;
+        self.engine.destory().await?;
+
+        Ok(())
+    }
+
     async fn create_snapshot(&self) -> ReplicationResult<SerializableSnapshot> {
         let data = self.engine.snapshot().await?;
         let snapshot = SerializableSnapshot {
