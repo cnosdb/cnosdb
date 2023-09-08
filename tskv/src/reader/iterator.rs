@@ -1173,6 +1173,8 @@ impl RowIterator {
 
 impl Drop for RowIterator {
     fn drop(&mut self) {
+        self.series_iter_closer.cancel();
+
         if self.span_recorder.span_ctx().is_some() {
             let version_number = self.super_version.as_ref().map(|v| v.version_number);
             let ts_family_id = self.super_version.as_ref().map(|v| v.ts_family_id);
