@@ -46,5 +46,9 @@ pub trait RequestLimiter: Send + Sync + Debug {
     async fn check_coord_data_out(&self, data_len: usize) -> MetaResult<()>;
     async fn check_coord_queries(&self) -> MetaResult<()>;
     async fn check_coord_writes(&self) -> MetaResult<()>;
+    async fn check_http_data_in(&self, data_len: usize) -> MetaResult<()>;
+    async fn check_http_data_out(&self, data_len: usize) -> MetaResult<()>;
+    async fn check_http_queries(&self) -> MetaResult<()>;
+    async fn check_http_writes(&self) -> MetaResult<()>;
     fn as_any(&self) -> &dyn Any;
 }

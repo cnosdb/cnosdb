@@ -1,18 +1,22 @@
+use std::mem;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::Poll;
 
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
-use futures::{ready, Stream, StreamExt};
+use futures::future::BoxFuture;
+use futures::{ready, FutureExt, Stream, StreamExt};
 use http_protocol::header::{APPLICATION_JSON, CONTENT_TYPE};
+use http_protocol::response::ErrorResponse;
 use http_protocol::status_code::{
     BAD_REQUEST, INTERNAL_SERVER_ERROR, METHOD_NOT_ALLOWED, NOT_FOUND, OK, PAYLOAD_TOO_LARGE,
-    UNPROCESSABLE_ENTITY,
 };
+use meta::limiter::RequestLimiter;
 use metrics::count::U64Counter;
-use models::error_code::ErrorCode;
 use serde::Serialize;
 use spi::query::execution::Output;
+use spi::QueryError;
 use warp::http::header::HeaderMap;
 use warp::http::{HeaderValue, StatusCode};
 use warp::reply::Response;
@@ -108,24 +112,38 @@ impl ResponseBuilder {
         PAYLOAD_TOO_LARGE.into_response()
     }
 }
+pub type CheckFuture = BoxFuture<'static, Result<(), HttpError>>;
+pub enum HttpResponseStreamState {
+    PollNext,
+    Finish,
+    // future, res body, is_finish
+    CheckLimiter(CheckFuture, Vec<u8>, bool),
+}
 
 pub struct HttpResponse {
     result: Output,
     format: ResultFormat,
-    done: bool,
     schema: Option<SchemaRef>,
     body_counter: U64Counter,
+    limiter: Arc<dyn RequestLimiter>,
+    stream_state: HttpResponseStreamState,
 }
 
 impl HttpResponse {
-    pub fn new(result: Output, format: ResultFormat, body_counter: U64Counter) -> Self {
+    pub fn new(
+        result: Output,
+        format: ResultFormat,
+        body_counter: U64Counter,
+        limiter: Arc<dyn RequestLimiter>,
+    ) -> Self {
         let schema = result.schema();
         Self {
             result,
             format,
             schema: Some(schema),
-            done: false,
             body_counter,
+            limiter,
+            stream_state: HttpResponseStreamState::PollNext,
         }
     }
     pub async fn wrap_batches_to_response(self) -> Result<Response, HttpError> {
@@ -139,6 +157,76 @@ impl HttpResponse {
             .build_stream_response(self);
         Ok(resp)
     }
+
+    pub fn handle_opt_result_record_batch(
+        &mut self,
+        opt_result_batch: Option<Result<RecordBatch, QueryError>>,
+    ) -> Result<HttpResponseStreamState, HttpError> {
+        match opt_result_batch {
+            None => {
+                if let Some(schema) = self.schema.take() {
+                    let has_headers = !schema.fields().is_empty();
+                    let rb = RecordBatch::new_empty(schema);
+                    let buffer = self
+                        .format
+                        .format_batches(&[rb], has_headers)
+                        .map_err(|e| HttpError::FetchResult {
+                            reason: format!("{}", e),
+                        })?;
+                    self.schema = None;
+                    let limiter = self.limiter.clone();
+                    let buffer_len = buffer.len();
+                    let future = async move {
+                        limiter
+                            .check_http_data_out(buffer_len)
+                            .await
+                            .map_err(HttpError::from)
+                    };
+                    Ok(HttpResponseStreamState::CheckLimiter(
+                        Box::pin(future),
+                        buffer,
+                        true,
+                    ))
+                } else {
+                    Ok(HttpResponseStreamState::Finish)
+                }
+            }
+            Some(Ok(rb)) => {
+                if rb.num_rows() > 0 {
+                    let buffer = self
+                        .format
+                        .format_batches(&[rb], self.schema.is_some())
+                        .map_err(|e| HttpError::FetchResult {
+                            reason: format!("{}", e),
+                        })?;
+                    self.body_counter.inc(buffer.len() as u64);
+                    self.schema = None;
+
+                    let limiter = self.limiter.clone();
+                    let buffer_len = buffer.len();
+                    let future = async move {
+                        limiter
+                            .check_http_data_out(buffer_len)
+                            .await
+                            .map_err(HttpError::from)
+                    };
+                    Ok(HttpResponseStreamState::CheckLimiter(
+                        Box::pin(future),
+                        buffer,
+                        false,
+                    ))
+                } else {
+                    Ok(HttpResponseStreamState::PollNext)
+                }
+            }
+            Some(Err(e)) => {
+                let http_error = HttpError::FetchResult {
+                    reason: e.to_string(),
+                };
+                Err(http_error)
+            }
+        }
+    }
 }
 
 impl Stream for HttpResponse {
@@ -149,53 +237,37 @@ impl Stream for HttpResponse {
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         loop {
-            if self.done {
-                return Poll::Ready(None);
+            fn http_error_to_vec(error: HttpError) -> Vec<u8> {
+                ErrorResponse::new(error.error_code()).to_vec()
             }
-            let res = ready!(self.result.poll_next_unpin(cx));
-            match res {
-                None => {
-                    self.done = true;
-                    if let Some(schema) = self.schema.take() {
-                        let has_headers = !schema.fields().is_empty();
-                        let rb = RecordBatch::new_empty(schema);
-                        let buffer = self.format.format_batches(&[rb], has_headers).map_err(|e| {
-                            HttpError::FetchResult {
-                                reason: format!("{}", e),
+            match &mut self.stream_state {
+                HttpResponseStreamState::PollNext => {
+                    let res = ready!(self.result.poll_next_unpin(cx));
+                    match self.handle_opt_result_record_batch(res) {
+                        Ok(state) => self.stream_state = state,
+                        Err(e) => {
+                            self.stream_state = HttpResponseStreamState::Finish;
+                            return Poll::Ready(Some(Ok(http_error_to_vec(e))));
+                        }
+                    }
+                }
+                HttpResponseStreamState::Finish => return Poll::Ready(None),
+                HttpResponseStreamState::CheckLimiter(future, res, finish) => {
+                    return match ready!(future.poll_unpin(cx)).map(|_| res) {
+                        Ok(res) => {
+                            let res = mem::take(res);
+                            if *finish {
+                                self.stream_state = HttpResponseStreamState::Finish;
+                            } else {
+                                self.stream_state = HttpResponseStreamState::PollNext;
                             }
-                        });
-                        self.schema = None;
-                        return Poll::Ready(Some(buffer));
-                    }
-                }
-                Some(Ok(rb)) => {
-                    if rb.num_rows() > 0 {
-                        let buffer = self
-                            .format
-                            .format_batches(&[rb], self.schema.is_some())
-                            .map_err(|e| HttpError::FetchResult {
-                                reason: format!("{}", e),
-                            })
-                            .map(|b| {
-                                self.body_counter.inc(b.len() as u64);
-                                b
-                            });
-                        self.schema = None;
-                        return Poll::Ready(Some(buffer));
-                    }
-                }
-                Some(Err(e)) => {
-                    self.done = true;
-                    let http_error = HttpError::FetchResult {
-                        reason: e.message(),
+                            Poll::Ready(Some(Ok(res)))
+                        }
+                        Err(e) => {
+                            self.stream_state = HttpResponseStreamState::Finish;
+                            Poll::Ready(Some(Ok(http_error_to_vec(e))))
+                        }
                     };
-                    return Poll::Ready(Some(Ok(format!(
-                        r#"{}, details: {{"error_code":"{}","error_message":"{}"}}"#,
-                        UNPROCESSABLE_ENTITY,
-                        http_error.code(),
-                        http_error.error_code(),
-                    )
-                    .into_bytes())));
                 }
             }
         }

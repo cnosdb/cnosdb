@@ -23,6 +23,10 @@ impl RemoteRequestLimiter {
                 insert_remote_bucket(&mut buckets, CoordDataOut, config.coord_data_out.as_ref());
                 insert_remote_bucket(&mut buckets, CoordQueries, config.coord_queries.as_ref());
                 insert_remote_bucket(&mut buckets, CoordWrites, config.coord_writes.as_ref());
+                insert_remote_bucket(&mut buckets, HttpDataIn, config.http_data_in.as_ref());
+                insert_remote_bucket(&mut buckets, HttpDataOut, config.http_data_out.as_ref());
+                insert_remote_bucket(&mut buckets, HttpQueries, config.http_queries.as_ref());
+                insert_remote_bucket(&mut buckets, HttpWrites, config.http_writes.as_ref());
                 buckets
             }
             None => HashMap::new(),
