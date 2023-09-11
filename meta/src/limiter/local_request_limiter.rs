@@ -44,15 +44,17 @@ pub struct LocalRequestLimiter {
     meta_http_client: MetaHttpClient,
     buckets: RwLock<HashMap<RequestLimiterKind, Arc<Mutex<CountBucket>>>>,
 }
-/// # Safety
-/// only [`LocalRequestLimiter`] impl [`RequestLimiter`]
-pub unsafe fn down_cast_to_local_request_limiter(
+pub fn down_cast_to_local_request_limiter(
     local_request_limiter: &dyn RequestLimiter,
 ) -> &LocalRequestLimiter {
-    local_request_limiter
-        .as_any()
-        .downcast_ref()
-        .unwrap_unchecked()
+    // # Safety
+    // only [`LocalRequestLimiter`] impl [`RequestLimiter`]
+    unsafe {
+        local_request_limiter
+            .as_any()
+            .downcast_ref()
+            .unwrap_unchecked()
+    }
 }
 
 impl LocalRequestLimiter {
@@ -171,6 +173,16 @@ impl LocalRequestLimiter {
             }
             RequireResult::Fail => Err(MetaError::RequestLimit { kind }),
         }
+    }
+
+    pub async fn clear(&self) {
+        self.buckets.write().await.clear()
+    }
+
+    pub async fn change(&self, limiter_config: Option<&RequestLimiterConfig>) -> MetaResult<()> {
+        let mut buckets_guard = self.buckets.write().await;
+        *buckets_guard = Self::load_config(limiter_config);
+        Ok(())
     }
 }
 
