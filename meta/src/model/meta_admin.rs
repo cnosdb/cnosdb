@@ -333,8 +333,9 @@ impl AdminMeta {
             }
 
             if len > 3 && strs[2] == key_path::TENANTS {
-                let name = strs[3];
-                let opt_client = self.tenants.read().get(name).cloned();
+                let tenant_name = strs[3];
+                let opt_client = self.tenants.read().get(tenant_name).cloned();
+                let _ = self.limiters.process_watch_log(tenant_name, entry).await;
                 if let Some(client) = opt_client {
                     let _ = client.process_watch_log(entry).await;
                 }
