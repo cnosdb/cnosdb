@@ -124,7 +124,7 @@ pub struct HttpResponse {
     result: Output,
     format: ResultFormat,
     schema: Option<SchemaRef>,
-    body_counter: U64Counter,
+    http_query_data_out: U64Counter,
     limiter: Arc<dyn RequestLimiter>,
     stream_state: HttpResponseStreamState,
 }
@@ -133,7 +133,7 @@ impl HttpResponse {
     pub fn new(
         result: Output,
         format: ResultFormat,
-        body_counter: U64Counter,
+        http_query_data_out: U64Counter,
         limiter: Arc<dyn RequestLimiter>,
     ) -> Self {
         let schema = result.schema();
@@ -141,15 +141,16 @@ impl HttpResponse {
             result,
             format,
             schema: Some(schema),
-            body_counter,
             limiter,
             stream_state: HttpResponseStreamState::PollNext,
+            http_query_data_out,
         }
     }
+
     pub async fn wrap_batches_to_response(self) -> Result<Response, HttpError> {
         let actual = self.result.chunk_result().await?;
         self.format
-            .wrap_batches_to_response(&actual, true, self.body_counter.clone())
+            .wrap_batches_to_response(&actual, true, self.http_query_data_out.clone())
     }
     pub fn wrap_stream_to_response(self) -> Result<Response, HttpError> {
         let resp = ResponseBuilder::new(OK)
@@ -199,7 +200,7 @@ impl HttpResponse {
                         .map_err(|e| HttpError::FetchResult {
                             reason: format!("{}", e),
                         })?;
-                    self.body_counter.inc(buffer.len() as u64);
+                    self.http_query_data_out.inc(buffer.len() as u64);
                     self.schema = None;
 
                     let limiter = self.limiter.clone();
