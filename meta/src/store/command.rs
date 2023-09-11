@@ -156,7 +156,9 @@ pub const ENTRY_LOG_TYPE_NOP: i32 = 10;
 pub struct EntryLog {
     pub tye: i32,
     pub ver: u64,
+    /// store mache key
     pub key: String,
+    /// store mache val
     pub val: String,
 }
 

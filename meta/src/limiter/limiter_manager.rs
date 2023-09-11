@@ -6,9 +6,12 @@ use models::schema::Tenant;
 use parking_lot::RwLock;
 
 use crate::client::MetaHttpClient;
-use crate::error::{MetaError, MetaResult};
+use crate::error::{sm_r_err, MetaError, MetaResult};
+use crate::limiter::local_request_limiter::down_cast_to_local_request_limiter;
 use crate::limiter::{LocalRequestLimiter, RequestLimiter};
-use crate::store::command::ReadCommand;
+use crate::store::command::{
+    EntryLog, ReadCommand, ENTRY_LOG_TYPE_DEL, ENTRY_LOG_TYPE_NOP, ENTRY_LOG_TYPE_SET,
+};
 
 #[derive(Debug)]
 pub struct LimiterManager {
@@ -82,5 +85,32 @@ impl LimiterManager {
             }
             Some(l) => Ok(l.clone()),
         }
+    }
+
+    pub async fn process_watch_log(&self, tenant_name: &str, entry: &EntryLog) -> MetaResult<()> {
+        if entry.tye == ENTRY_LOG_TYPE_NOP {
+            return Ok(());
+        }
+        if entry.tye == ENTRY_LOG_TYPE_SET {
+            let tenant: Tenant = serde_json::from_str(&entry.val).map_err(sm_r_err)?;
+            let limiter_config = tenant.options().request_config();
+            match self.get_limiter(tenant_name) {
+                Some(limiter) => {
+                    down_cast_to_local_request_limiter(limiter.as_ref())
+                        .change(limiter_config)
+                        .await?;
+                }
+                None => {
+                    self.create_limiter(tenant_name, limiter_config);
+                }
+            };
+        } else if entry.tye == ENTRY_LOG_TYPE_DEL {
+            if let Some(limiter) = self.remove_limiter(tenant_name) {
+                down_cast_to_local_request_limiter(limiter.as_ref())
+                    .clear()
+                    .await;
+            };
+        }
+        Ok(())
     }
 }
