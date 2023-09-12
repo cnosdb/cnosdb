@@ -383,11 +383,18 @@ impl TenantMeta {
 
     // tenant role end
 
-    pub async fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
-        let req =
-            command::WriteCommand::AlterDB(self.cluster.clone(), self.tenant_name(), info.clone());
+    pub async fn alter_db_schema(&self, schema: DatabaseSchema) -> MetaResult<()> {
+        let req = command::WriteCommand::AlterDB(
+            self.cluster.clone(),
+            self.tenant_name(),
+            schema.clone(),
+        );
 
-        self.client.write::<()>(&req).await
+        self.client.write::<()>(&req).await?;
+        if let Some(info) = self.data.write().dbs.get_mut(schema.database_name()) {
+            info.schema = schema.clone()
+        }
+        Ok(())
     }
 
     pub fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
