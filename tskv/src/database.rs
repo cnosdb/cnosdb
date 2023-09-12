@@ -77,7 +77,7 @@ impl Database {
     ) {
         let tf = TseriesFamily::new(
             ver.tf_id(),
-            ver.database(),
+            ver.tenant_database(),
             MemCache::new(
                 ver.tf_id(),
                 self.opt.cache.max_buffer_size,
@@ -431,7 +431,7 @@ impl Database {
         Ok(res_sids)
     }
 
-    /// Snashots last version before `last_seq` of this database's all vnodes
+    /// Snapshots last version before `last_seq` of this database's all vnodes
     /// or specified vnode by `vnode_id`.
     ///
     /// Generated version data will be inserted into `version_edits` and `file_metas`.
@@ -447,12 +447,18 @@ impl Database {
     ) {
         if let Some(tsf_id) = vnode_id.as_ref() {
             if let Some(tsf) = self.ts_families.get(tsf_id) {
-                let ve = tsf.read().await.snapshot(self.owner.clone(), file_metas);
+                let ve = tsf
+                    .read()
+                    .await
+                    .build_version_edit(self.owner.clone(), file_metas);
                 version_edits.push(ve);
             }
         } else {
             for tsf in self.ts_families.values() {
-                let ve = tsf.read().await.snapshot(self.owner.clone(), file_metas);
+                let ve = tsf
+                    .read()
+                    .await
+                    .build_version_edit(self.owner.clone(), file_metas);
                 version_edits.push(ve);
             }
         }

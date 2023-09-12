@@ -73,6 +73,7 @@ io_uring = ["rio"]
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["async_tokio"] }
+dircpy = { workspace = true }
 parking_lot = { workspace = true, features = ["nightly"] }
 rand = { workspace = true }
 serial_test = { workspace = true }

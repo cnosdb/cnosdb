@@ -738,7 +738,8 @@ impl SummaryProcessor {
                     let _ = cb.send(Ok(()));
                 }
             }
-            Err(_e) => {
+            Err(e) => {
+                trace::error!("Failed to apply VersionEdit to summary: {e}");
                 for cb in self.cbs.drain(..) {
                     let _ = cb.send(Err(Error::ErrApplyEdit));
                 }

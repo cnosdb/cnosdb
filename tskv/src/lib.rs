@@ -12,14 +12,16 @@ use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{Precision, TableColumn};
-use models::{ColumnId, SeriesId, SeriesKey};
+use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
+use serde::{Deserialize, Serialize};
 use trace::SpanContext;
 
 pub use crate::error::{Error, Result};
 pub use crate::kv_option::Options;
 use crate::kv_option::StorageOptions;
 pub use crate::kvcore::TsKv;
+use crate::summary::CompactMeta;
 pub use crate::summary::{print_summary_statistics, Summary, VersionEdit};
 use crate::tseries_family::SuperVersion;
 pub use crate::tsm::print_tsm_statistics;
@@ -172,7 +174,7 @@ pub trait Engine: Send + Sync + Debug {
     /// Get the storage options which was used to install the engine.
     fn get_storage_options(&self) -> Arc<StorageOptions>;
 
-    /// Get the summary(information of files) of the storae unit.
+    /// Get the summary(information of files) of the storage unit.
     async fn get_vnode_summary(
         &self,
         tenant: &str,
@@ -204,6 +206,48 @@ pub trait Engine: Send + Sync + Debug {
 
     /// Close all background jobs of engine.
     async fn close(&self);
+
+    /// Flush caches into TSM file, create a new Version of the Vnode, make hard links
+    /// point to the flushed files in snapshot directory, then return VnodeSnapshot.
+    /// For one Vnode, only one snapshot can exist at a time.
+    async fn create_snapshot(&self, vnode_id: VnodeId) -> Result<VnodeSnapshot>;
+
+    /// Build a new Vnode from the VersionSnapshot, existing Vnode with the same VnodeId
+    /// will be deleted.
+    async fn apply_snapshot(&self, snapshot: VnodeSnapshot) -> Result<()>;
+
+    /// Delete the snapshot directory of a Vnode.
+    async fn delete_snapshot(&self, vnode_id: VnodeId) -> Result<()>;
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct VnodeSnapshot {
+    pub tenant: String,
+    pub database: String,
+    pub vnode_id: VnodeId,
+    pub files: Vec<SnapshotFileMeta>,
+    pub last_seq_no: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SnapshotFileMeta {
+    pub file_id: ColumnFileId,
+    pub file_size: u64,
+    pub level: LevelId,
+    pub min_ts: Timestamp,
+    pub max_ts: Timestamp,
+}
+
+impl From<&CompactMeta> for SnapshotFileMeta {
+    fn from(cm: &CompactMeta) -> Self {
+        Self {
+            file_id: cm.file_id,
+            file_size: cm.file_size,
+            level: cm.level,
+            min_ts: cm.min_ts,
+            max_ts: cm.max_ts,
+        }
+    }
 }
 
 pub mod test {
