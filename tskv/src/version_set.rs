@@ -71,7 +71,7 @@ impl VersionSet {
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
         for ver in ver_set.into_values() {
-            let owner = ver.database().to_string();
+            let owner = ver.tenant_database().to_string();
             let (tenant, database) = split_owner(&owner);
 
             let schema = match meta.tenant_meta(tenant).await {
@@ -204,7 +204,7 @@ impl VersionSet {
         None
     }
 
-    /// Snashots last version before `last_seq` of system state.
+    /// Snapshots last version before `last_seq` of system state.
     ///
     /// Generated data is `VersionEdit`s for all vnodes and db-files,
     /// and `HashMap<ColumnFileId, Arc<BloomFilter>>` for index data

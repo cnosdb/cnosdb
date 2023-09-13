@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::panic;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,7 +11,7 @@ use metrics::metric_register::MetricsRegister;
 use models::codec::Encoding;
 use models::meta_data::{VnodeId, VnodeStatus};
 use models::predicate::domain::{ColumnDomains, TimeRange};
-use models::schema::{make_owner, DatabaseSchema, Precision, TableColumn};
+use models::schema::{make_owner, split_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
 use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
@@ -30,14 +31,17 @@ use crate::database::Database;
 use crate::error::{self, Result};
 use crate::file_system::file_manager;
 use crate::index::ts_index;
-use crate::kv_option::{Options, StorageOptions};
+use crate::kv_option::{Options, StorageOptions, MOVE_PATH};
 use crate::schema::error::SchemaError;
-use crate::summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit};
+use crate::summary::{CompactMeta, Summary, SummaryProcessor, SummaryTask, VersionEdit};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
 use crate::wal::{self, Block, WalDecoder, WalManager, WalTask};
-use crate::{file_utils, tenant_name_from_request, Engine, Error, TseriesFamilyId};
+use crate::{
+    file_utils, tenant_name_from_request, Engine, Error, SnapshotFileMeta, TseriesFamilyId,
+    VnodeSnapshot,
+};
 
 // TODO: A small summay channel capacity can cause a block
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;
@@ -1135,7 +1139,10 @@ impl Engine for TsKv {
             // TODO: Send file_metas to the destination node.
             let mut file_metas = HashMap::new();
             if let Some(tsf) = db.get_tsfamily(vnode_id) {
-                let ve = tsf.read().await.snapshot(db.owner(), &mut file_metas);
+                let ve = tsf
+                    .read()
+                    .await
+                    .build_version_edit(db.owner(), &mut file_metas);
                 // it used for move vnode, set vnode status running at last
                 tsf.write().await.update_status(VnodeStatus::Running);
                 Ok(Some(ve))
@@ -1302,7 +1309,7 @@ impl Engine for TsKv {
                         self.summary_task_sender.clone(),
                         None,
                     )
-                    .await?
+                    .await?;
                 }
                 return check::vnode_checksum(vnode).await;
             }
@@ -1320,6 +1327,251 @@ impl Engine for TsKv {
             continue;
         }
         info!("TsKv closed");
+    }
+
+    async fn create_snapshot(&self, vnode_id: VnodeId) -> Result<VnodeSnapshot> {
+        debug!("Snapshot: create snapshot on vnode: {vnode_id}");
+        let vnode_optional = self
+            .version_set
+            .read()
+            .await
+            .get_tsfamily_by_tf_id(vnode_id)
+            .await;
+        if let Some(vnode) = vnode_optional {
+            // Run force flush
+            let flush_req_optional = vnode.write().await.build_flush_req(true);
+            if let Some(req) = flush_req_optional {
+                let last_seq_no = req.high_seq_no;
+                if let Some(version_edit) = run_flush_memtable_job(
+                    req,
+                    self.global_ctx.clone(),
+                    self.version_set.clone(),
+                    self.summary_task_sender.clone(),
+                    None,
+                )
+                .await?
+                {
+                    if version_edit.add_files.is_empty() {
+                        // Flushed but not generate any file.
+                        warn!("Snapshot: flush vnode {vnode_id} did not generated any file.");
+                        Err(Error::VnodeFlushedNothing { vnode_id })
+                    } else {
+                        // Normally flushed, and generated some tsm/delta files.
+                        debug!("Snapshot: flush vnode {vnode_id} succeed.");
+                        let tenant_database = vnode.read().await.tenant_database();
+                        let storage_opt = self.options.storage.clone();
+                        let snapshot_dir =
+                            storage_opt.tsfamily_snapshot_dir(tenant_database.as_str(), vnode_id);
+
+                        debug!(
+                            "Snapshot: removing snapshot directory {}.",
+                            snapshot_dir.display()
+                        );
+                        let _ = std::fs::remove_dir_all(&snapshot_dir);
+                        debug!(
+                            "Snapshot: creating snapshot directory {}.",
+                            snapshot_dir.display()
+                        );
+
+                        let mut files = Vec::with_capacity(version_edit.add_files.len());
+                        let delta_dir = storage_opt.delta_dir(tenant_database.as_str(), vnode_id);
+                        let tsm_dir = storage_opt.tsm_dir(tenant_database.as_str(), vnode_id);
+
+                        fn create_snapshot_dir(dir: &PathBuf) -> Result<()> {
+                            std::fs::create_dir_all(dir).with_context(|_| {
+                                debug!(
+                                    "Snapshot: failed to create snapshot directory {}.",
+                                    dir.display()
+                                );
+                                error::CreateFileSnafu { path: dir.clone() }
+                            })
+                        }
+                        let snap_delta_dir =
+                            storage_opt.snapshot_delta_dir(tenant_database.as_str(), vnode_id);
+                        create_snapshot_dir(&snap_delta_dir)?;
+                        let snap_tsm_dir =
+                            storage_opt.snapshot_tsm_dir(tenant_database.as_str(), vnode_id);
+                        create_snapshot_dir(&snap_tsm_dir)?;
+
+                        for f in version_edit.add_files {
+                            files.push(SnapshotFileMeta::from(&f));
+
+                            // Get tsm/delta file path and snapshot file path
+                            let (file_path, snapshot_path) = if f.is_delta {
+                                (
+                                    file_utils::make_delta_file_name(&delta_dir, f.file_id),
+                                    file_utils::make_delta_file_name(&snap_delta_dir, f.file_id),
+                                )
+                            } else {
+                                (
+                                    file_utils::make_tsm_file_name(&tsm_dir, f.file_id),
+                                    file_utils::make_tsm_file_name(&snap_tsm_dir, f.file_id),
+                                )
+                            };
+
+                            // Create hard link to tsm/delta file.
+                            debug!(
+                                "Snapshot: creating hard link {} to {}.",
+                                file_path.display(),
+                                snapshot_path.display()
+                            );
+                            if let Err(e) = std::fs::hard_link(&file_path, &snapshot_path)
+                                .context(error::IOSnafu)
+                            {
+                                error!(
+                                    "Snapshot: failed to create hard link {} to {}: {e}.",
+                                    file_path.display(),
+                                    snapshot_path.display()
+                                );
+                                return Err(e);
+                            }
+                        }
+                        let (tenant, database) = split_owner(tenant_database.as_str());
+                        let snapshot = VnodeSnapshot {
+                            tenant: tenant.to_string(),
+                            database: database.to_string(),
+                            vnode_id,
+                            files,
+                            last_seq_no,
+                        };
+                        debug!("Snapshot: created snapshot: {snapshot:?}");
+                        Ok(snapshot)
+                    }
+                } else {
+                    // Flushed no data.
+                    warn!("Snapshot: vnode {vnode_id} has not data to flush.");
+                    Err(Error::VnodeFlushedNothing { vnode_id })
+                }
+            } else {
+                // No data to flush.
+                warn!("Snapshot: vnode {vnode_id} has no data to flush.");
+                Err(Error::VnodeFlushedNothing { vnode_id })
+            }
+        } else {
+            // Vnode not found
+            warn!("Snapshot: vnode {vnode_id} not found.");
+            Err(Error::VnodeNotFound { vnode_id })
+        }
+    }
+
+    async fn apply_snapshot(&self, snapshot: VnodeSnapshot) -> Result<()> {
+        debug!("Snapshot: apply snapshot {snapshot:?} to create new vnode.");
+        let VnodeSnapshot {
+            tenant,
+            database,
+            vnode_id,
+            files,
+            last_seq_no,
+        } = snapshot;
+        let tenant_database = make_owner(&tenant, &database);
+        let storage_opt = self.options.storage.clone();
+        let db = self.get_db_or_else_create(&tenant, &database).await?;
+        let mut db_wlock = db.write().await;
+        if db_wlock.get_tsfamily(vnode_id).is_some() {
+            // If there was already a vnode, delete and re-build it.
+            warn!("Snapshot: removing existing vnode {vnode_id}.");
+            db_wlock
+                .del_tsfamily(vnode_id, self.summary_task_sender.clone())
+                .await;
+            let vnode_dir = storage_opt.ts_family_dir(&tenant_database, vnode_id);
+            debug!(
+                "Snapshot: removing existing vnode directory {}.",
+                vnode_dir.display()
+            );
+            for e in walkdir::WalkDir::new(&vnode_dir)
+                .min_depth(1)
+                .max_depth(1)
+                .into_iter()
+                .flatten()
+            {
+                if e.file_type().is_dir() && e.file_name() == MOVE_PATH {
+                    continue;
+                } else if e.file_type().is_file() {
+                    let _ = std::fs::remove_file(e.path());
+                } else {
+                    let _ = std::fs::remove_dir_all(e.path());
+                }
+            }
+        }
+
+        let version_edit = VersionEdit {
+            has_seq_no: true,
+            seq_no: last_seq_no,
+            add_files: files
+                .iter()
+                .map(|f| CompactMeta {
+                    file_id: f.file_id,
+                    file_size: f.file_id,
+                    tsf_id: vnode_id,
+                    level: f.level,
+                    min_ts: f.min_ts,
+                    max_ts: f.max_ts,
+                    high_seq: last_seq_no,
+                    low_seq: 0,
+                    is_delta: f.level == 0,
+                })
+                .collect(),
+            add_tsf: true,
+            tsf_id: vnode_id,
+            tsf_name: tenant_database,
+            ..Default::default()
+        };
+        debug!("Snapshot: created version edit {version_edit:?}");
+
+        // Create new vnode.
+        if let Err(e) = db_wlock
+            .add_tsfamily(
+                vnode_id,
+                Some(version_edit),
+                self.summary_task_sender.clone(),
+                self.flush_task_sender.clone(),
+                self.compact_task_sender.clone(),
+                self.global_ctx.clone(),
+            )
+            .await
+        {
+            error!("Snapshot: failed to create vnode {vnode_id}: {e}");
+            return Err(e);
+        }
+        // Create series index for vnode.
+        if let Err(e) = db_wlock.get_ts_index_or_add(vnode_id).await {
+            error!("Snapshot: failed to create index for vnode {vnode_id}: {e}");
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    async fn delete_snapshot(&self, vnode_id: VnodeId) -> Result<()> {
+        debug!("Snapshot: create snapshot on vnode: {vnode_id}");
+        let vnode_optional = self
+            .version_set
+            .read()
+            .await
+            .get_tsfamily_by_tf_id(vnode_id)
+            .await;
+        if let Some(vnode) = vnode_optional {
+            let tenant_database = vnode.read().await.tenant_database();
+            let storage_opt = self.options.storage.clone();
+            let snapshot_dir =
+                storage_opt.tsfamily_snapshot_dir(tenant_database.as_str(), vnode_id);
+            debug!(
+                "Snapshot: removing snapshot directory {}.",
+                snapshot_dir.display()
+            );
+            std::fs::remove_dir_all(&snapshot_dir).with_context(|_| {
+                error!(
+                    "Snapshot: failed to remove snapshot directory {}.",
+                    snapshot_dir.display()
+                );
+                error::DeleteFileSnafu { path: snapshot_dir }
+            })?;
+            Ok(())
+        } else {
+            // Vnode not found
+            warn!("Snapshot: vnode {vnode_id} not found.");
+            Err(Error::VnodeNotFound { vnode_id })
+        }
     }
 }
 

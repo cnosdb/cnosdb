@@ -11,13 +11,6 @@ use crate::errors::ReplicationError;
 use crate::raft_node::RaftNode;
 use crate::{RaftNodeId, RaftNodeInfo};
 
-async fn handle_rejection(
-    err: warp::Rejection,
-) -> Result<impl warp::Reply, std::convert::Infallible> {
-    let reason = format!("{:?}", err);
-
-    Ok(warp::Reply::into_response(reason))
-}
 pub struct RaftHttpAdmin {
     node: Arc<RaftNode>,
 }

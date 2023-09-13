@@ -15,6 +15,7 @@ const DATA_PATH: &str = "data";
 pub const TSM_PATH: &str = "tsm";
 pub const DELTA_PATH: &str = "delta";
 pub const MOVE_PATH: &str = "move";
+pub const T_SERIES_FAMILY_SNAPSHOT_PATH: &str = "snapshot";
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -97,6 +98,21 @@ impl StorageOptions {
 
     pub fn tsfamily_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
         self.database_dir(database).join(ts_family_id.to_string())
+    }
+
+    pub fn tsfamily_snapshot_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.tsfamily_dir(database, ts_family_id)
+            .join(T_SERIES_FAMILY_SNAPSHOT_PATH)
+    }
+
+    pub fn snapshot_tsm_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.tsfamily_snapshot_dir(database, ts_family_id)
+            .join(TSM_PATH)
+    }
+
+    pub fn snapshot_delta_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.tsfamily_snapshot_dir(database, ts_family_id)
+            .join(DELTA_PATH)
     }
 }
 

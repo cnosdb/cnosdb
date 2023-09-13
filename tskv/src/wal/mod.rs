@@ -37,7 +37,6 @@
 
 pub mod raft;
 mod reader;
-mod vnode;
 pub mod writer;
 
 use std::collections::{BTreeMap, HashMap};

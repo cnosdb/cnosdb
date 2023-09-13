@@ -14,7 +14,9 @@ use datafusion::physical_plan::ExecutionPlan;
 use meta::model::MetaClientRef;
 use models::auth::user::User;
 use models::oid::Identifier;
-use models::schema::{ColumnType, ExternalTableSchema, StreamTable, TableSchema, TskvTableSchema};
+use models::schema::{
+    ColumnType, ExternalTableSchema, StreamTable, TableSchema, TskvTableSchemaRef,
+};
 use models::ValueType;
 
 use crate::dispatcher::query_tracker::QueryTracker;
@@ -128,7 +130,7 @@ impl TableProvider for InformationColumnsTable {
 fn append_tskv_table(
     tenant_name: &str,
     database_name: &str,
-    table: Arc<TskvTableSchema>,
+    table: TskvTableSchemaRef,
     builder: &mut InformationSchemaColumnsBuilder,
 ) {
     for (idx, col) in table.columns().iter().enumerate() {

@@ -260,7 +260,7 @@ impl TagScanStream {
             split,
             None,
             proj_schema.clone(),
-            proj_table_schema,
+            proj_table_schema.into(),
         );
 
         let span_ctx = span_recorder.span_ctx();

@@ -903,7 +903,7 @@ pub mod test {
     use lru_cache::asynchronous::ShardedCache;
     use minivec::MiniVec;
     use models::predicate::domain::TimeRange;
-    use models::{FieldId, Timestamp, ValueType};
+    use models::{FieldId, PhysicalDType as ValueType, Timestamp};
 
     use crate::compaction::{run_compaction_job, CompactReq};
     use crate::context::GlobalContext;

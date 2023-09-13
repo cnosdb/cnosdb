@@ -184,3 +184,33 @@ impl AsyncFile {
         os::fd(&self.inner.0)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::fs::OpenOptions;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use crate::file_system::file::async_file::{AsyncFile, FsRuntime};
+    use crate::file_system::file::IFile;
+
+    #[tokio::test]
+    #[ignore]
+    async fn test() {
+        let runtime = Arc::new(FsRuntime::new_runtime());
+        let mut opt = OpenOptions::new();
+        opt.read(true).write(true).create(true).append(true);
+        let file = AsyncFile::open("test.txt", runtime, opt).await.unwrap();
+        let start_time = std::time::Instant::now();
+        let target_duration = Duration::from_secs(5);
+        let mut pos = 0;
+        loop {
+            let elapsed = start_time.elapsed();
+            if elapsed > target_duration {
+                break;
+            }
+            pos += file.write_at(pos, b"hello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldh").await.unwrap() as u64;
+        }
+        println!("write {} bytes", pos);
+    }
+}

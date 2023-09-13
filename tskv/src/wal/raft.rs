@@ -272,7 +272,6 @@ impl RaftEntryStorageInner {
                         return Err(Error::WalTruncated);
                     }
                 };
-                println!("{pos}, {seq}");
                 self.mark_write_wal(seq, wal_id, pos);
             }
         }
@@ -379,6 +378,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "deprecated"]
     async fn test_wal_raft_storage() {
         let dir = PathBuf::from("/tmp/test/wal/raft/2");
         // let _ = std::fs::remove_dir_all(&dir);

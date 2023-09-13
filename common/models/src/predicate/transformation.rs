@@ -124,16 +124,18 @@ pub struct RowExpressionToDomainsVisitor<'a> {
     ctx: &'a mut RowExpressionToDomainsVisitorContext,
 }
 
-type GetRangeFromDataTypeAndValue = fn(data_type: &DataType, scalar_value: &ScalarValue) -> Range;
-
-/// Get the corresponding range constructor according to the comparison operator
-fn get_get_range_fn(op: &Operator) -> Option<GetRangeFromDataTypeAndValue> {
+fn get_range_fn(
+    op: &Operator,
+    data_type: &DataType,
+    scalar_value: &ScalarValue,
+) -> Option<Vec<Range>> {
     match op {
-        Operator::Eq => Some(Range::eq),
-        Operator::Lt => Some(Range::lt),
-        Operator::LtEq => Some(Range::le),
-        Operator::Gt => Some(Range::gt),
-        Operator::GtEq => Some(Range::ge),
+        Operator::Eq => Some(vec![Range::eq(data_type, scalar_value)]),
+        Operator::Lt => Some(vec![Range::lt(data_type, scalar_value)]),
+        Operator::LtEq => Some(vec![Range::le(data_type, scalar_value)]),
+        Operator::Gt => Some(vec![Range::gt(data_type, scalar_value)]),
+        Operator::GtEq => Some(vec![Range::ge(data_type, scalar_value)]),
+        Operator::NotEq => Some(Range::ne(data_type, scalar_value)),
         _ => None,
     }
 }
@@ -281,13 +283,11 @@ impl RowExpressionToDomainsVisitor<'_> {
         let col = &nsc.column;
         let value = &nsc.value;
         let op = &nsc.op;
-        // Get the function that constructs Range by dataType and ScalarValue.
+        // Get the Vec<range> by op dataType and ScalarValue.
         // If op does not support it, it will return None, but it must be supported here (because op is obtained from nsc)
-        let val_set = get_get_range_fn(op)
-            // Construct Range
-            .map(|f| f(&value.get_datatype(), value))
-            // Construct ValueSet by Range, where of_ranges will not return an exception, because the parameter has only one range
-            .map(|r| Domain::of_ranges(&[r]).unwrap())
+        let val_set = get_range_fn(op, &value.get_datatype(), value)
+            // Construct ValueSet by Range
+            .map(|r| Domain::of_ranges(&r).unwrap())
             // Normally this is not triggered (unless there is a bug), but returns ValueSet::All for safety
             .unwrap_or(Domain::All);
 
