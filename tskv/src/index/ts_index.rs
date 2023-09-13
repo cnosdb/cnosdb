@@ -16,7 +16,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
 use trace::{debug, error, info};
 
-use super::binlog::{IndexBinlog, SeriesKeyBlock};
+use super::binlog::{AddSeries, DeleteSeries, IndexBinlog, IndexBinlogBlock};
 use super::cache::{ForwardIndexCache, SeriesKeyInfo};
 use super::{IndexEngine, IndexError, IndexResult};
 use crate::file_system::file::IFile;
@@ -150,31 +150,40 @@ impl TSIndex {
     async fn recover_from_file(&mut self, reader_file: &mut BinlogReader) -> IndexResult<()> {
         let mut max_id = self.incr_id.load(Ordering::Relaxed);
         while let Some(block) = reader_file.next_block().await? {
-            if block.data_len > 0 {
-                // add series
-                let series_key = SeriesKey::decode(&block.data)
-                    .map_err(|e| IndexError::DecodeSeriesKey { msg: e.to_string() })?;
+            match block {
+                IndexBinlogBlock::Add(block) => {
+                    // add series
+                    let series_key = SeriesKey::decode(block.data())
+                        .map_err(|e| IndexError::DecodeSeriesKey { msg: e.to_string() })?;
 
-                let mut storage_w = self.storage.write().await;
-                let id = block.series_id;
-                let key_buf = encode_series_key(series_key.table(), series_key.tags());
-                storage_w.set(&key_buf, &id.to_be_bytes())?;
-                storage_w.set(&encode_series_id_key(id), &block.data)?;
-                for tag in series_key.tags() {
-                    let key = encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
-                    storage_w.modify(&key, id, true)?;
-                }
-                if series_key.tags().is_empty() {
-                    let key = encode_inverted_index_key(series_key.table(), &[], &[]);
-                    storage_w.modify(&key, id, true)?;
-                }
+                    let mut storage_w = self.storage.write().await;
+                    let id = block.series_id();
+                    let key_buf = encode_series_key(series_key.table(), series_key.tags());
+                    storage_w.set(&key_buf, &id.to_be_bytes())?;
+                    storage_w.set(&encode_series_id_key(id), block.data())?;
+                    for tag in series_key.tags() {
+                        let key =
+                            encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
+                        storage_w.modify(&key, id, true)?;
+                    }
+                    if series_key.tags().is_empty() {
+                        let key = encode_inverted_index_key(series_key.table(), &[], &[]);
+                        storage_w.modify(&key, id, true)?;
+                    }
 
-                if max_id < block.series_id {
-                    max_id = block.series_id
+                    if max_id < block.series_id() {
+                        max_id = block.series_id()
+                    }
                 }
-            } else {
-                // delete series
-                self.del_series_id_from_engine(block.series_id).await?;
+                IndexBinlogBlock::Delete(block) => {
+                    // delete series
+                    self.del_series_id_from_engine(block.series_id()).await?;
+                }
+                IndexBinlogBlock::Update(_) => {
+                    return Err(IndexError::NotImplemented {
+                        err: "Update series".to_string(),
+                    })
+                }
             }
         }
         self.incr_id.store(max_id, Ordering::Relaxed);
@@ -252,17 +261,13 @@ impl TSIndex {
                 }
                 let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
                 storage_w.set(&key_buf, &id.to_be_bytes())?;
-                let block = SeriesKeyBlock {
-                    ts: utils::now_timestamp_nanos(),
-                    series_id: id,
-                    data_len: encode.len() as u32,
-                    data: encode,
-                };
+                let block =
+                    IndexBinlogBlock::Add(AddSeries::new(utils::now_timestamp_nanos(), id, encode));
                 ids.push(id);
-                blocks_data.extend_from_slice(&block.encode());
+                blocks_data.push(block);
             }
         }
-        self.binlog.write().await.write(&blocks_data).await?;
+        self.binlog.write().await.write_blocks(&blocks_data).await?;
         self.binlog_change_sender
             .send(())
             .map_err(|e| IndexError::IndexStroage {
@@ -307,13 +312,9 @@ impl TSIndex {
 
     pub async fn del_series_info(&self, sid: u32) -> IndexResult<()> {
         // first write binlog
-        let block = SeriesKeyBlock {
-            ts: utils::now_timestamp_nanos(),
-            series_id: sid,
-            data_len: 0,
-            data: vec![],
-        };
-        self.binlog.write().await.write(&block.encode()).await?;
+        let block = IndexBinlogBlock::Delete(DeleteSeries::new(sid));
+
+        self.binlog.write().await.write_blocks(&[block]).await?;
 
         // then delete forward index and inverted index
         self.del_series_id_from_engine(sid).await?;
@@ -678,69 +679,77 @@ pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: Unbounde
                         if reader_file.pos() <= *handle_file.get(&file_id).unwrap_or(&0) {
                             continue;
                         }
-                        if block.data_len > 0 {
-                            let series_key = match SeriesKey::decode(&block.data) {
-                                Ok(key) => key,
-                                Err(e) => {
-                                    error!("Decode series key failed, err: {}", e);
-                                    continue;
-                                }
-                            };
-                            // is already exist and store forward index
-                            {
-                                let mut storage_w;
-                                loop {
-                                    match ts_index.storage.try_write() {
-                                        Ok(stroage) => {
-                                            storage_w = stroage;
-                                            break;
-                                        }
-                                        Err(_) => {
-                                            info!("Waiting for index storage write lock");
-                                            tokio::time::sleep(Duration::from_secs(5)).await;
+
+                        match block {
+                            IndexBinlogBlock::Add(block) => {
+                                let series_key = match SeriesKey::decode(block.data()) {
+                                    Ok(key) => key,
+                                    Err(e) => {
+                                        error!("Decode series key failed, err: {}", e);
+                                        continue;
+                                    }
+                                };
+                                // is already exist and store forward index
+                                {
+                                    let mut storage_w;
+                                    loop {
+                                        match ts_index.storage.try_write() {
+                                            Ok(stroage) => {
+                                                storage_w = stroage;
+                                                break;
+                                            }
+                                            Err(_) => {
+                                                info!("Waiting for index storage write lock");
+                                                tokio::time::sleep(Duration::from_secs(5)).await;
+                                            }
                                         }
                                     }
+                                    if let Err(e) = storage_w
+                                        .set(&encode_series_id_key(block.series_id()), block.data())
+                                    {
+                                        error!("Set series key failed, err: {}", e);
+                                    }
                                 }
-                                if let Err(e) = storage_w
-                                    .set(&encode_series_id_key(block.series_id), &block.data)
-                                {
-                                    error!("Set series key failed, err: {}", e);
-                                }
-                            }
 
-                            // then inverted index
-                            for tag in series_key.tags() {
-                                let key = encode_inverted_index_key(
-                                    series_key.table(),
-                                    &tag.key,
-                                    &tag.value,
-                                );
-                                if let Err(e) = ts_index.storage.write().await.modify(
-                                    &key,
-                                    block.series_id,
-                                    true,
-                                ) {
-                                    error!("Modify inverted index failed, err: {}", e);
+                                // then inverted index
+                                for tag in series_key.tags() {
+                                    let key = encode_inverted_index_key(
+                                        series_key.table(),
+                                        &tag.key,
+                                        &tag.value,
+                                    );
+                                    if let Err(e) = ts_index.storage.write().await.modify(
+                                        &key,
+                                        block.series_id(),
+                                        true,
+                                    ) {
+                                        error!("Modify inverted index failed, err: {}", e);
+                                    }
                                 }
-                            }
-                            if series_key.tags().is_empty() {
-                                let key = encode_inverted_index_key(series_key.table(), &[], &[]);
-                                if let Err(e) = ts_index.storage.write().await.modify(
-                                    &key,
-                                    block.series_id,
-                                    true,
-                                ) {
-                                    error!("Modify inverted index failed, err: {}", e);
+                                if series_key.tags().is_empty() {
+                                    let key =
+                                        encode_inverted_index_key(series_key.table(), &[], &[]);
+                                    if let Err(e) = ts_index.storage.write().await.modify(
+                                        &key,
+                                        block.series_id(),
+                                        true,
+                                    ) {
+                                        error!("Modify inverted index failed, err: {}", e);
+                                    }
                                 }
-                            }
 
-                            let _ = ts_index.check_to_flush(false).await;
-                            handle_file.insert(file_id, reader_file.pos());
-                        } else {
-                            // delete series
-                            let _ = ts_index.del_series_id_from_engine(block.series_id).await;
-                            let _ = ts_index.check_to_flush(false).await;
-                            handle_file.insert(file_id, reader_file.pos());
+                                let _ = ts_index.check_to_flush(false).await;
+                                handle_file.insert(file_id, reader_file.pos());
+                            }
+                            IndexBinlogBlock::Delete(block) => {
+                                // delete series
+                                let _ = ts_index.del_series_id_from_engine(block.series_id()).await;
+                                let _ = ts_index.check_to_flush(false).await;
+                                handle_file.insert(file_id, reader_file.pos());
+                            }
+                            IndexBinlogBlock::Update(_) => {
+                                error!("This feature is not implemented: Update series");
+                            }
                         }
                     }
                 }

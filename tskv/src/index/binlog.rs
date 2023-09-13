@@ -1,6 +1,8 @@
 use std::io::{Read, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+use models::{SeriesId, SeriesKey};
+use serde::{Deserialize, Serialize};
 use trace::{debug, error};
 
 use super::{IndexError, IndexResult};
@@ -13,47 +15,97 @@ use crate::{byte_utils, file_utils};
 pub const SEGMENT_FILE_HEADER_SIZE: usize = 8;
 pub const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x02];
 pub const SEGMENT_FILE_MAX_SIZE: u64 = 64 * 1024 * 1024;
-pub const BLOCK_HEADER_SIZE: usize = 16;
+pub const BLOCK_HEADER_SIZE: usize = 4;
 
-#[derive(Debug, PartialEq)]
-pub struct SeriesKeyBlock {
-    pub ts: i64,
-    pub series_id: u32,
-    pub data_len: u32,
-    pub data: Vec<u8>,
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub enum IndexBinlogBlock {
+    Add(AddSeries),
+    Delete(DeleteSeries),
+    Update(UpdateSeriesKey),
 }
 
-impl SeriesKeyBlock {
-    pub fn new(ts: i64, series_id: u32, data: Vec<u8>) -> Self {
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct AddSeries {
+    ts: i64,
+    series_id: SeriesId,
+    data: Vec<u8>,
+}
+
+impl AddSeries {
+    pub fn new(ts: i64, series_id: SeriesId, data: Vec<u8>) -> Self {
         Self {
             ts,
             series_id,
-            data_len: data.len() as u32,
             data,
         }
     }
 
-    pub fn debug(&self) -> String {
-        format!(
-            "ts:{}, id: {}, data: {}",
-            self.ts,
-            self.series_id,
-            String::from_utf8(self.data.clone()).unwrap()
-        )
+    pub fn ts(&self) -> i64 {
+        self.ts
     }
 
-    pub fn size(&self) -> u32 {
-        self.data_len + BLOCK_HEADER_SIZE as u32
+    pub fn series_id(&self) -> SeriesId {
+        self.series_id
     }
 
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(self.size() as usize);
-        buf.extend_from_slice(&self.ts.to_be_bytes());
-        buf.extend_from_slice(&self.series_id.to_be_bytes());
-        buf.extend_from_slice(&self.data_len.to_be_bytes());
-        buf.extend_from_slice(&self.data);
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+}
 
-        buf
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct DeleteSeries {
+    series_id: SeriesId,
+}
+
+impl DeleteSeries {
+    pub fn new(series_id: SeriesId) -> Self {
+        Self { series_id }
+    }
+
+    pub fn series_id(&self) -> SeriesId {
+        self.series_id
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct UpdateSeriesKey {
+    // delete keys
+    // insert: (keys, ids) + (tag, ids) + (ids + keys)
+    new_series: SeriesKey,
+    series_id: SeriesId,
+}
+
+impl UpdateSeriesKey {
+    pub fn new(new_series: SeriesKey, series_id: SeriesId) -> Self {
+        Self {
+            new_series,
+            series_id,
+        }
+    }
+}
+
+impl IndexBinlogBlock {
+    pub fn size_bytes(&self) -> Result<u32, IndexError> {
+        let size = bincode::serialized_size(self).map_err(|err| IndexError::EncodeIndexBinlog {
+            msg: err.to_string(),
+        })? as u32;
+        Ok(size)
+    }
+
+    pub fn encode<W>(&self, writer: W) -> Result<(), IndexError>
+    where
+        W: std::io::Write,
+    {
+        bincode::serialize_into(writer, self).map_err(|err| IndexError::EncodeIndexBinlog {
+            msg: err.to_string(),
+        })
+    }
+
+    pub fn decode(buf: &[u8]) -> Result<Self, IndexError> {
+        bincode::deserialize(buf).map_err(|err| IndexError::DecodeIndexBinlog {
+            msg: err.to_string(),
+        })
     }
 }
 
@@ -104,6 +156,22 @@ impl IndexBinlog {
 
             debug!("Write Binlog  '{}' starts write", self.writer_file.id);
         }
+        Ok(())
+    }
+
+    pub async fn write_blocks(&mut self, blocks: &[IndexBinlogBlock]) -> IndexResult<()> {
+        self.roll_write_file().await?;
+
+        let mut buffer = Vec::new();
+        for block in blocks {
+            let size = block.size_bytes()?;
+            buffer.extend(size.to_be_bytes());
+            buffer.reserve(size as usize);
+            block.encode(&mut buffer)?;
+        }
+
+        self.writer_file.write(&buffer).await?;
+
         Ok(())
     }
 
@@ -262,7 +330,7 @@ impl BinlogReader {
         self.cursor.len()
     }
 
-    pub async fn next_block(&mut self) -> IndexResult<Option<SeriesKeyBlock>> {
+    pub async fn next_block(&mut self) -> IndexResult<Option<IndexBinlogBlock>> {
         if self.read_over() {
             return Ok(None);
         }
@@ -276,17 +344,8 @@ impl BinlogReader {
             });
         }
 
-        let ts = byte_utils::decode_be_i64(self.header_buf[0..8].into());
-        let id = byte_utils::decode_be_u32(self.header_buf[8..12].into());
-        let data_len = byte_utils::decode_be_u32(self.header_buf[12..16].into());
-        if data_len == 0 {
-            return Ok(Some(SeriesKeyBlock {
-                ts,
-                series_id: id,
-                data_len,
-                data: vec![],
-            }));
-        }
+        let data_len = byte_utils::decode_be_u32(self.header_buf[0..BLOCK_HEADER_SIZE].into());
+
         debug!("Read Binlog Reader: data_len={}", data_len);
 
         if data_len > (self.file_len() - self.read_pos()) as u32 {
@@ -299,8 +358,7 @@ impl BinlogReader {
 
             return Err(IndexError::FileErrors {
                 msg: format!(
-                    "{} block data length {} > {}-{}",
-                    ts,
+                    "block data length {} > {}-{}",
                     data_len,
                     self.file_len(),
                     self.read_pos()
@@ -316,19 +374,13 @@ impl BinlogReader {
         let read_bytes = self.cursor.read(buf).await?;
         if read_bytes != data_len as usize {
             return Err(IndexError::FileErrors {
-                msg: format!(
-                    "{} read block data error {} != {}",
-                    ts, read_bytes, data_len
-                ),
+                msg: format!("read block data error {} != {}", read_bytes, data_len),
             });
         }
 
-        Ok(Some(SeriesKeyBlock {
-            ts,
-            series_id: id,
-            data_len,
-            data: buf.to_vec(),
-        }))
+        let block = IndexBinlogBlock::decode(buf)?;
+
+        Ok(Some(block))
     }
 }
 
@@ -368,19 +420,20 @@ pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
 
 #[cfg(test)]
 mod test {
-    use super::SeriesKeyBlock;
+    use super::{AddSeries, IndexBinlogBlock};
     use crate::file_utils::make_index_binlog_file;
     use crate::index::binlog::{BinlogReader, BinlogWriter, IndexBinlog};
 
     /// ( timestamp, series_id, data )
-    type SeriesKeyBlockDesc<'a> = (i64, u32, &'a str);
+    type IndexBinlogBlockDesc<'a> = (i64, u32, &'a str);
 
     fn build_series_key_blocks(
-        series_key_blk_desc: &[SeriesKeyBlockDesc<'_>],
-    ) -> Vec<SeriesKeyBlock> {
+        series_key_blk_desc: &[IndexBinlogBlockDesc<'_>],
+    ) -> Vec<IndexBinlogBlock> {
         let mut blocks = Vec::with_capacity(series_key_blk_desc.len());
         for (ts, sid, data) in series_key_blk_desc {
-            blocks.push(SeriesKeyBlock::new(*ts, *sid, data.as_bytes().to_vec()));
+            let block = IndexBinlogBlock::Add(AddSeries::new(*ts, *sid, data.as_bytes().to_vec()));
+            blocks.push(block);
         }
         blocks
     }
@@ -391,33 +444,22 @@ mod test {
         let _ = std::fs::remove_dir_all(dir);
 
         #[rustfmt::skip]
-        let series_key_block_desc_1: Vec<SeriesKeyBlockDesc> = vec![
+        let series_key_block_desc_1: Vec<IndexBinlogBlockDesc> = vec![
             (1001, 101, "abc"),
             (1002, 102, "efg"),
             (1003, 103, "hij"),
         ];
         let series_key_blocks_1 = build_series_key_blocks(&series_key_block_desc_1);
-        // Test build_series_key_blocks() .
-        for ((ts, series_id, data), b) in series_key_block_desc_1
-            .iter()
-            .zip(series_key_blocks_1.iter())
-        {
-            assert_eq!(*ts, b.ts);
-            assert_eq!(*series_id, b.series_id);
-            assert_eq!(data.as_bytes(), b.data.as_slice());
-        }
 
         {
             // Write the first 3 entries;
             let mut index = IndexBinlog::new(dir).await.unwrap();
-            for blk in series_key_blocks_1.iter() {
-                index.write(&blk.encode()).await.unwrap();
-            }
+            index.write_blocks(&series_key_blocks_1).await.unwrap();
             index.close().await.unwrap();
         }
 
         #[rustfmt::skip]
-        let series_key_block_desc_2: Vec<SeriesKeyBlockDesc> = vec![
+        let series_key_block_desc_2: Vec<IndexBinlogBlockDesc> = vec![
             (1011, 111, "abcd"),
             (1012, 112, "defg"),
             (1013, 113, "hjkl"),
@@ -426,9 +468,7 @@ mod test {
         let binlog_id = {
             // Write the second 3 entries;
             let mut index = IndexBinlog::new(dir).await.unwrap();
-            for blk in series_key_blocks_2.iter() {
-                index.write(&blk.encode()).await.unwrap();
-            }
+            index.write_blocks(&series_key_blocks_2).await.unwrap();
             let binlog_id = index.writer_file.id;
             index.close().await.unwrap();
             binlog_id
