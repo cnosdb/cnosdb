@@ -118,7 +118,7 @@ impl RaftNodesManager {
         let mut nodes = self.raft_nodes.write().await;
         if let Some(raft_node) = nodes.get_node(group_id) {
             raft_node.shutdown().await?;
-            nodes.rm_node(id);
+            nodes.rm_node(group_id);
             info!("success remove raft node({}) from group({})", id, group_id)
         } else {
             info!("can't found raft node({}) from group({})", id, group_id)
@@ -297,7 +297,6 @@ impl RaftNodesManager {
         Ok(())
     }
 
-    // todo: if the remove node is leader,how to do ...
     pub async fn remove_node_from_group(
         &self,
         tenant: &str,
@@ -324,8 +323,13 @@ impl RaftNodesManager {
             let raft_node = self.get_node_or_build(tenant, db_name, &replica).await?;
             raft_node.raft_change_membership(members).await?;
 
-            self.drop_remote_raft_node(tenant, db_name, &vnode, replica.id)
-                .await?;
+            if vnode.node_id == self.node_id() {
+                self.exec_drop_raft_node(tenant, db_name, vnode.id, replica.id)
+                    .await?;
+            } else {
+                self.drop_remote_raft_node(tenant, db_name, &vnode, replica.id)
+                    .await?;
+            }
 
             update_replication_set(
                 self.meta.clone(),

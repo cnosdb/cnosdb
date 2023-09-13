@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use std::vec;
@@ -241,16 +242,22 @@ impl CoordService {
 
     async fn delete_expired_bucket(&self, info: &ExpiredBucketInfo) -> CoordinatorResult<()> {
         for repl_set in info.bucket.shard_group.iter() {
-            for vnode in repl_set.vnodes.iter() {
-                let cmd = AdminCommandRequest {
-                    tenant: info.tenant.clone(),
-                    command: Some(DelVnode(DeleteVnodeRequest {
-                        db: info.database.clone(),
-                        vnode_id: vnode.id,
-                    })),
-                };
+            if self.using_raft_replication() {
+                self.raft_manager()
+                    .destory_replica_group(&info.tenant, &info.database, repl_set.id)
+                    .await?;
+            } else {
+                for vnode in repl_set.vnodes.iter() {
+                    let cmd = AdminCommandRequest {
+                        tenant: info.tenant.clone(),
+                        command: Some(DelVnode(DeleteVnodeRequest {
+                            db: info.database.clone(),
+                            vnode_id: vnode.id,
+                        })),
+                    };
 
-                self.exec_admin_command_on_node(vnode.node_id, cmd).await?;
+                    self.exec_admin_command_on_node(vnode.node_id, cmd).await?;
+                }
             }
         }
 
@@ -348,8 +355,10 @@ impl CoordService {
         info: ReplicationSet,
         points: Arc<Vec<u8>>,
         span_ctx: Option<&'a SpanContext>,
-    ) -> CoordinatorResult<Vec<impl Future<Output = CoordinatorResult<()>> + Sized + 'a>> {
-        let mut requests = Vec::new();
+    ) -> CoordinatorResult<Vec<Pin<Box<dyn Future<Output = CoordinatorResult<()>> + Send + 'a>>>>
+    {
+        let mut requests: Vec<Pin<Box<dyn Future<Output = Result<(), CoordinatorError>> + Send>>> =
+            Vec::new();
         for vnode in info.vnodes.iter() {
             let now = tokio::time::Instant::now();
             debug!(
@@ -373,6 +382,8 @@ impl CoordService {
                     vnode.id, vnode.node_id
                 ))),
             );
+
+            let request = Box::pin(request);
             requests.push(request);
         }
 
@@ -406,20 +417,24 @@ impl CoordService {
         }
 
         let mut requests = Vec::new();
-        // let request = self.write_replica_raft(
-        //     tenant,
-        //     db,
-        //     points.clone(),
-        //     precision,
-        //     info.clone(),
-        //     span_ctx,
-        // );
-        // requests.push(request);
+        if self.using_raft_replication() {
+            let request = self.write_replica_raft(
+                tenant,
+                db,
+                points.clone(),
+                precision,
+                info.clone(),
+                span_ctx,
+            );
+            requests.push(request);
 
-        let mut tasks = self.multi_write_vnodes(tenant, precision, info, points, span_ctx)?;
-        requests.append(&mut tasks);
+            Ok(requests)
+        } else {
+            let mut tasks = self.multi_write_vnodes(tenant, precision, info, points, span_ctx)?;
+            requests.append(&mut tasks);
 
-        Ok(requests)
+            Ok(requests)
+        }
     }
 }
 
@@ -440,6 +455,10 @@ impl Coordinator for CoordService {
 
     fn raft_manager(&self) -> Arc<RaftNodesManager> {
         self.raft_manager.clone()
+    }
+
+    fn using_raft_replication(&self) -> bool {
+        self.config.using_raft_replication
     }
 
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
@@ -878,9 +897,7 @@ impl Coordinator for CoordService {
             }
         };
 
-        self.exec_admin_command_on_node(req_node_id, grpc_req)
-            .await
-            .map(|_| ())
+        self.exec_admin_command_on_node(req_node_id, grpc_req).await
     }
 
     async fn vnode_summarizer(

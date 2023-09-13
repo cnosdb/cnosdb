@@ -217,4 +217,8 @@ impl Coordinator for MockCoordinator {
     fn metrics(&self) -> &Arc<CoordServiceMetrics> {
         todo!()
     }
+
+    fn using_raft_replication(&self) -> bool {
+        false
+    }
 }

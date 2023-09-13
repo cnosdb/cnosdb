@@ -651,8 +651,15 @@ impl StateMachine {
             for info in args.add_info.iter() {
                 set.vnodes.push(info.clone());
             }
+
+            // process if the leader is deleted....
+            if set.vnode(set.leader_vnode_id).is_none() && !set.vnodes.is_empty() {
+                set.leader_vnode_id = set.vnodes[0].id;
+                set.leader_node_id = set.vnodes[0].node_id;
+            }
         }
 
+        // delete the vnodes is empty replication
         bucket
             .shard_group
             .retain(|replica| !replica.vnodes.is_empty());

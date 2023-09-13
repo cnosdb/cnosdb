@@ -145,6 +145,8 @@ pub trait Coordinator: Send + Sync {
     ) -> CoordinatorResult<Vec<RecordBatch>>;
 
     fn metrics(&self) -> &Arc<CoordServiceMetrics>;
+
+    fn using_raft_replication(&self) -> bool;
 }
 
 pub fn status_response_to_result(
