@@ -73,23 +73,50 @@ pub struct CoordService {
 
 #[derive(Debug)]
 pub struct CoordServiceMetrics {
-    data_in: Metric<U64Counter>,
+    coord_data_in: Metric<U64Counter>,
+    coord_data_out: Metric<U64Counter>,
+    coord_queries: Metric<U64Counter>,
+    coord_writes: Metric<U64Counter>,
+
     sql_data_in: Metric<U64Counter>,
-    data_out: Metric<U64Counter>,
     sql_write_row: Metric<U64Counter>,
     sql_points_data_in: Metric<U64Counter>,
 }
 
+macro_rules! generate_coord_metrics_gets {
+    ($IDENT: ident) => {
+        impl CoordServiceMetrics {
+            pub fn $IDENT(&self, tenant: &str, db: &str) -> U64Counter {
+                self.$IDENT.recorder(Self::tenant_db_labels(tenant, db))
+            }
+        }
+    };
+}
+generate_coord_metrics_gets!(coord_data_in);
+generate_coord_metrics_gets!(coord_data_out);
+generate_coord_metrics_gets!(coord_queries);
+generate_coord_metrics_gets!(coord_writes);
+generate_coord_metrics_gets!(sql_data_in);
+generate_coord_metrics_gets!(sql_write_row);
+generate_coord_metrics_gets!(sql_points_data_in);
+
 impl CoordServiceMetrics {
     pub fn new(register: &MetricsRegister) -> Self {
-        let data_in = register.metric("coord_data_in", "tenant data in");
-        let data_out = register.metric("coord_data_out", "tenant data out");
+        let coord_data_in = register.metric("coord_data_in", "tenant data in");
+        let coord_data_out = register.metric("coord_data_out", "tenant data out");
+        let coord_writes = register.metric("coord_writes", "");
+        let coord_queries = register.metric("coord_queries", "");
+
         let sql_data_in = register.metric("sql_data_in", "Traffic written through sql");
         let sql_write_row = register.metric("sql_write_row", "sql write row");
         let sql_points_data_in = register.metric("sql_points_data_in", "sql points data in");
+
         Self {
-            data_in,
-            data_out,
+            coord_data_in,
+            coord_data_out,
+            coord_writes,
+            coord_queries,
+
             sql_data_in,
             sql_write_row,
             sql_points_data_in,
@@ -98,26 +125,6 @@ impl CoordServiceMetrics {
 
     pub fn tenant_db_labels<'a>(tenant: &'a str, db: &'a str) -> impl Into<Labels> + 'a {
         [("tenant", tenant), ("database", db)]
-    }
-
-    pub fn data_in(&self, tenant: &str, db: &str) -> U64Counter {
-        self.data_in.recorder(Self::tenant_db_labels(tenant, db))
-    }
-
-    pub fn data_out(&self, tenant: &str, db: &str) -> U64Counter {
-        self.data_out.recorder(Self::tenant_db_labels(tenant, db))
-    }
-    pub fn sql_data_in(&self, tenant: &str, db: &str) -> U64Counter {
-        self.sql_data_in
-            .recorder(Self::tenant_db_labels(tenant, db))
-    }
-    pub fn sql_write_row(&self, tenant: &str, db: &str) -> U64Counter {
-        self.sql_write_row
-            .recorder(Self::tenant_db_labels(tenant, db))
-    }
-    pub fn sql_points_data_in(&self, tenant: &str, db: &str) -> U64Counter {
-        self.sql_points_data_in
-            .recorder(Self::tenant_db_labels(tenant, db))
     }
 }
 
@@ -352,7 +359,10 @@ impl CoordService {
             limiter.check_coord_writes().await?;
             limiter.check_coord_data_in(write_size).await?;
 
-            self.metrics.data_in(tenant, db).inc(write_size as u64);
+            self.metrics.coord_writes(tenant, db).inc_one();
+            self.metrics
+                .coord_data_in(tenant, db)
+                .inc(write_size as u64);
         }
         if info.vnodes.is_empty() {
             return Err(CoordinatorError::CommonError {

@@ -4,6 +4,12 @@ DESCRIBE DATABASE usage_schema;
 
 DESCRIBE TABLE coord_data_in;
 
+DESCRIBE TABLE coord_data_out;
+
+DESCRIBE TABLE coord_queries;
+
+DESCRIBE TABLE coord_writes;
+
 DESCRIBE TABLE sql_data_in;
 
 drop tenant if exists test_coord_data_in;

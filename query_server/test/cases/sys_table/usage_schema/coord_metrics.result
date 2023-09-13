@@ -12,6 +12,33 @@ node_id,STRING,TAG,DEFAULT
 tenant,STRING,TAG,DEFAULT
 value,BIGINT UNSIGNED,FIELD,DEFAULT
 
+-- EXECUTE SQL: DESCRIBE TABLE coord_data_out; --
+200 OK
+column_name,data_type,column_type,compression_codec
+time,TIMESTAMP(NANOSECOND),TIME,DEFAULT
+database,STRING,TAG,DEFAULT
+node_id,STRING,TAG,DEFAULT
+tenant,STRING,TAG,DEFAULT
+value,BIGINT UNSIGNED,FIELD,DEFAULT
+
+-- EXECUTE SQL: DESCRIBE TABLE coord_queries; --
+200 OK
+column_name,data_type,column_type,compression_codec
+time,TIMESTAMP(NANOSECOND),TIME,DEFAULT
+database,STRING,TAG,DEFAULT
+node_id,STRING,TAG,DEFAULT
+tenant,STRING,TAG,DEFAULT
+value,BIGINT UNSIGNED,FIELD,DEFAULT
+
+-- EXECUTE SQL: DESCRIBE TABLE coord_writes; --
+200 OK
+column_name,data_type,column_type,compression_codec
+time,TIMESTAMP(NANOSECOND),TIME,DEFAULT
+database,STRING,TAG,DEFAULT
+node_id,STRING,TAG,DEFAULT
+tenant,STRING,TAG,DEFAULT
+value,BIGINT UNSIGNED,FIELD,DEFAULT
+
 -- EXECUTE SQL: DESCRIBE TABLE sql_data_in; --
 200 OK
 column_name,data_type,column_type,compression_codec
