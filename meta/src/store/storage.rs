@@ -10,7 +10,7 @@ use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
-use replication::apply_store::ApplyStorage;
+use replication::apply_store::{ApplyContext, ApplyStorage};
 use replication::errors::ReplicationResult;
 use replication::{Request, Response};
 use serde::{Deserialize, Serialize};
@@ -54,7 +54,7 @@ pub struct StateMachine {
 
 #[async_trait::async_trait]
 impl ApplyStorage for StateMachine {
-    async fn apply(&self, req: &Request) -> ReplicationResult<Response> {
+    async fn apply(&self, _ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
         let req: WriteCommand = serde_json::from_slice(req)?;
 
         Ok(self.process_write_command(&req).into())
@@ -88,6 +88,10 @@ impl ApplyStorage for StateMachine {
 
         Ok(())
     }
+
+    async fn destory(&self) -> ReplicationResult<()> {
+        Ok(())
+    }
 }
 
 impl StateMachine {
@@ -110,7 +114,7 @@ impl StateMachine {
         Ok(storage)
     }
 
-    pub fn is_already_init(&self) -> MetaResult<bool> {
+    pub fn is_meta_init(&self) -> MetaResult<bool> {
         self.contains_key(&KeyPath::already_init())
     }
 
@@ -572,6 +576,9 @@ impl StateMachine {
             WriteCommand::UpdateVnodeReplSet(args) => {
                 response_encode(self.process_update_vnode_repl_set(args))
             }
+            WriteCommand::ChangeReplSetLeader(args) => {
+                response_encode(self.process_change_repl_set_leader(args))
+            }
             WriteCommand::UpdateVnode(args) => response_encode(self.process_update_vnode(args)),
             WriteCommand::LimiterRequest {
                 cluster,
@@ -643,6 +650,45 @@ impl StateMachine {
 
             for info in args.add_info.iter() {
                 set.vnodes.push(info.clone());
+            }
+
+            // process if the leader is deleted....
+            if set.vnode(set.leader_vnode_id).is_none() && !set.vnodes.is_empty() {
+                set.leader_vnode_id = set.vnodes[0].id;
+                set.leader_node_id = set.vnodes[0].node_id;
+            }
+        }
+
+        // delete the vnodes is empty replication
+        bucket
+            .shard_group
+            .retain(|replica| !replica.vnodes.is_empty());
+
+        if bucket.shard_group.is_empty() {
+            self.remove(&key)
+        } else {
+            self.insert(&key, &value_encode(&bucket)?)
+        }
+    }
+
+    fn process_change_repl_set_leader(&self, args: &ChangeReplSetLeaderArgs) -> MetaResult<()> {
+        let key = key_path::KeyPath::tenant_bucket_id(
+            &args.cluster,
+            &args.tenant,
+            &args.db_name,
+            args.bucket_id,
+        );
+        let mut bucket = match self.get_struct::<BucketInfo>(&key)? {
+            Some(b) => b,
+            None => {
+                return Err(MetaError::BucketNotFound { id: args.bucket_id });
+            }
+        };
+
+        for repl in bucket.shard_group.iter_mut() {
+            if repl.id == args.repl_id {
+                repl.leader_node_id = args.leader_node_id;
+                repl.leader_vnode_id = args.leader_vnode_id;
             }
         }
 

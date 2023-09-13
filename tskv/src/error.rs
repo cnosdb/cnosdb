@@ -4,6 +4,7 @@ use datafusion::arrow::error::ArrowError;
 use error_code::{ErrorCode, ErrorCoder};
 use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
+use models::meta_data::VnodeId;
 use protos::PointsError;
 use snafu::Snafu;
 use tonic::{Code, Status};
@@ -112,6 +113,12 @@ pub enum Error {
 
     #[snafu(display("Unable to sync file: {}", source))]
     SyncFile {
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Unable to delete file '{}': {}", path.display(), source))]
+    DeleteFile {
+        path: PathBuf,
         source: std::io::Error,
     },
 
@@ -226,6 +233,16 @@ pub enum Error {
     InvalidUtf8 {
         message: String,
         source: std::str::Utf8Error,
+    },
+
+    #[snafu(display("Vnode {vnode_id} not found"))]
+    VnodeNotFound {
+        vnode_id: VnodeId,
+    },
+
+    #[snafu(display("Manually flush on vnode did nothing"))]
+    VnodeFlushedNothing {
+        vnode_id: VnodeId,
     },
 }
 

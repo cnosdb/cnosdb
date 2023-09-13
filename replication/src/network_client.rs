@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use openraft::error::{InstallSnapshotError, NetworkError, RemoteError};
 use openraft::network::{RaftNetwork, RaftNetworkFactory};
 use openraft::raft::*;
+use openraft::MessageSummary;
 use parking_lot::RwLock;
 use protos::raft_service::raft_service_client::RaftServiceClient;
 use protos::raft_service::*;
@@ -166,7 +167,8 @@ impl RaftNetwork<TypeConfig> for TargetClient {
     ) -> Result<InstallSnapshotResponse<RaftNodeId>, RPCError<InstallSnapshotError>> {
         info!(
             "Network callback send_install_snapshot target:{}, req: {:?}",
-            self.target, req
+            self.target,
+            req.summary()
         );
 
         let channel = self

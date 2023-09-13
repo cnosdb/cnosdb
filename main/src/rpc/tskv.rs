@@ -198,6 +198,63 @@ impl TskvServiceImpl {
             Err(_) => self.bytes_response(FAILED_RESPONSE_CODE, vec![]),
         }
     }
+    async fn admin_add_raft_follower(
+        &self,
+        tenant: &str,
+        request: &AddRaftFollowerRequest,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let raft_manager = self.coord.raft_manager();
+        if let Err(err) = raft_manager
+            .add_follower_to_group(
+                tenant,
+                &request.db_name,
+                request.follower_nid,
+                request.replica_id,
+            )
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
+
+    async fn admin_remove_raft_node(
+        &self,
+        tenant: &str,
+        request: &RemoveRaftNodeRequest,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let raft_manager = self.coord.raft_manager();
+        if let Err(err) = raft_manager
+            .remove_node_from_group(
+                tenant,
+                &request.db_name,
+                request.vnode_id,
+                request.replica_id,
+            )
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
+
+    async fn admin_destory_raft_group(
+        &self,
+        tenant: &str,
+        request: &DestoryRaftGroupRequest,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let raft_manager = self.coord.raft_manager();
+        if let Err(err) = raft_manager
+            .destory_replica_group(tenant, &request.db_name, request.replica_id)
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
 
     fn query_record_batch_exec(
         self,
@@ -346,6 +403,93 @@ impl TskvService for TskvServiceImpl {
         self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
     }
 
+    async fn write_replica_points(
+        &self,
+        request: tonic::Request<WriteReplicaRequest>,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let span = get_span_recorder(request.extensions(), "grpc write_replica_points");
+        let inner = request.into_inner();
+
+        let client = self
+            .coord
+            .tenant_meta(&inner.tenant)
+            .await
+            .ok_or(tonic::Status::new(
+                tonic::Code::Internal,
+                format!("Not Found tenant({}) meta", inner.tenant),
+            ))?;
+
+        let replica = client
+            .get_replication_set(inner.replica_id)
+            .ok_or(tonic::Status::new(
+                tonic::Code::Internal,
+                format!("Not Found Replica Set({})", inner.replica_id),
+            ))?;
+
+        if let Err(err) = self
+            .coord
+            .write_replica_raft(
+                &inner.tenant,
+                &inner.db_name,
+                Arc::new(inner.data),
+                Precision::from(inner.precision as u8),
+                replica,
+                span.span_ctx(),
+            )
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
+
+    async fn exec_open_raft_node(
+        &self,
+        request: tonic::Request<OpenRaftNodeRequest>,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let inner = request.into_inner();
+
+        if let Err(err) = self
+            .coord
+            .raft_manager()
+            .exec_open_raft_node(
+                &inner.tenant,
+                &inner.db_name,
+                inner.vnode_id,
+                inner.replica_id,
+            )
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
+
+    async fn exec_drop_raft_node(
+        &self,
+        request: tonic::Request<DropRaftNodeRequest>,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let inner = request.into_inner();
+
+        if let Err(err) = self
+            .coord
+            .raft_manager()
+            .exec_drop_raft_node(
+                &inner.tenant,
+                &inner.db_name,
+                inner.vnode_id,
+                inner.replica_id,
+            )
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
+    }
+
     async fn exec_admin_command(
         &self,
         request: tonic::Request<AdminCommandRequest>,
@@ -380,6 +524,15 @@ impl TskvService for TskvServiceImpl {
                 }
                 admin_command_request::Command::AlterColumn(command) => {
                     self.admin_alter_column(&inner.tenant, command).await
+                }
+                admin_command_request::Command::AddRaftFollower(command) => {
+                    self.admin_add_raft_follower(&inner.tenant, command).await
+                }
+                admin_command_request::Command::RemoveRaftNode(command) => {
+                    self.admin_remove_raft_node(&inner.tenant, command).await
+                }
+                admin_command_request::Command::DestoryRaftGroup(command) => {
+                    self.admin_destory_raft_group(&inner.tenant, command).await
                 }
             };
 
@@ -464,15 +617,11 @@ impl TskvService for TskvServiceImpl {
         request: tonic::Request<DownloadFileRequest>,
     ) -> Result<tonic::Response<Self::DownloadFileStream>, tonic::Status> {
         let inner = request.into_inner();
-        let owner = models::schema::make_owner(&inner.tenant, &inner.db);
-        let storage_opt = self.kv_inst.get_storage_options();
-        let data_dir = storage_opt.ts_family_dir(&owner, inner.vnode_id);
-        let path = data_dir.join(inner.filename);
-        info!("download file: {}", path.display());
+        info!("download file info : {:?}", inner);
 
         let (send, recv) = mpsc::channel(1024);
         tokio::spawn(async move {
-            if let Ok(mut file) = tokio::fs::File::open(path).await {
+            if let Ok(mut file) = tokio::fs::File::open(inner.filename).await {
                 let mut buffer = vec![0; 8 * 1024];
                 while let Ok(len) = file.read(&mut buffer).await {
                     if len == 0 {

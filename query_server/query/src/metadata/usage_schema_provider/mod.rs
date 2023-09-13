@@ -8,25 +8,9 @@ use meta::error::MetaError;
 use models::schema::DEFAULT_CATALOG;
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
-pub use vnode_disk_storage::USAGE_SCHEMA_VNODE_DISK_STORAGE;
 
 use super::TableHandleProviderRef;
 use crate::data_source::table_source::TableHandle;
-use crate::metadata::usage_schema_provider::data_in::{
-    CoordDataIn, SQLDataIn, SQLPointsDataIn, SQLWriteRow, WriteDataIn,
-};
-use crate::metadata::usage_schema_provider::data_out::{CoordDataOut, HttpDataOut};
-use crate::metadata::usage_schema_provider::user_queries::UserQueries;
-use crate::metadata::usage_schema_provider::user_writes::UserWrites;
-use crate::metadata::usage_schema_provider::vnode_cache_size::VnodeCacheSize;
-use crate::metadata::usage_schema_provider::vnode_disk_storage::VnodeDiskStorage;
-
-mod data_in;
-mod data_out;
-mod user_queries;
-mod user_writes;
-mod vnode_cache_size;
-mod vnode_disk_storage;
 
 pub const USAGE_SCHEMA: &str = "usage_schema";
 
@@ -41,17 +25,24 @@ impl UsageSchemaProvider {
             table_factories: Default::default(),
             default_table_provider,
         };
-        provider.register_table_factory(Box::new(VnodeDiskStorage {}));
-        provider.register_table_factory(Box::new(VnodeCacheSize {}));
-        provider.register_table_factory(Box::new(CoordDataIn {}));
-        provider.register_table_factory(Box::new(CoordDataOut {}));
-        provider.register_table_factory(Box::new(UserQueries {}));
-        provider.register_table_factory(Box::new(UserWrites {}));
-        provider.register_table_factory(Box::new(SQLDataIn {}));
-        provider.register_table_factory(Box::new(WriteDataIn {}));
-        provider.register_table_factory(Box::new(SQLWriteRow {}));
-        provider.register_table_factory(Box::new(SQLPointsDataIn {}));
-        provider.register_table_factory(Box::new(HttpDataOut {}));
+        use crate::generate_usage_schema_table_factory;
+        macro_rules! register_table_factory {
+            ($measure: expr, $STRUCT_NAME:ident) => {
+                generate_usage_schema_table_factory!($measure, $STRUCT_NAME);
+                provider.register_table_factory(Box::new($STRUCT_NAME {}));
+            };
+        }
+        register_table_factory!("coord_data_in", CoordDataIn);
+        register_table_factory!("sql_data_in", SQLDataIn);
+        register_table_factory!("write_data_in", WriteDataIn);
+        register_table_factory!("sql_write_row", SQLWriteRow);
+        register_table_factory!("sql_points_data_in", SQLPointsDataIn);
+        register_table_factory!("coord_data_out", CoordDataOut);
+        register_table_factory!("http_data_out", HttpDataOut);
+        register_table_factory!("user_queries", UserQueries);
+        register_table_factory!("user_writes", UserWrites);
+        register_table_factory!("vnode_cache_size", VnodeCacheSize);
+        register_table_factory!("vnode_disk_storage", VnodeDiskStorage);
         provider
     }
 
@@ -114,4 +105,23 @@ pub fn create_usage_schema_view_table(
     let logical_plan = builder.build()?;
 
     Ok(Arc::new(ViewTable::try_new(logical_plan, None)?))
+}
+
+#[macro_export]
+macro_rules! generate_usage_schema_table_factory {
+    ($measure: expr, $STRUCT_NAME: ident) => {
+        struct $STRUCT_NAME {}
+        impl UsageSchemaTableFactory for $STRUCT_NAME {
+            fn table_name(&self) -> &str {
+                $measure
+            }
+            fn create(
+                &self,
+                session: &SessionCtx,
+                base_table_provider: &TableHandleProviderRef,
+            ) -> Result<Arc<dyn TableProvider>> {
+                create_usage_schema_view_table(session, base_table_provider, $measure)
+            }
+        }
+    };
 }

@@ -53,13 +53,6 @@ message StatusResponse {
   string data = 2;
 }
 
-message WriteVnodeRequest {
-    uint32 vnode_id = 1;
-    string tenant =2;
-    uint32 precision = 3;
-    bytes data = 4;
-}
-
 message DropDBRequest {
     string db = 1;
 }
@@ -105,6 +98,23 @@ message AlterColumnRequest {
     bytes column = 4;
 }
 
+message AddRaftFollowerRequest {
+    string db_name = 1;
+    uint32 replica_id = 2;
+    uint64 follower_nid = 3;
+}
+
+message RemoveRaftNodeRequest {
+    string db_name = 1;
+    uint32 replica_id = 2;
+    uint32 vnode_id = 3;
+}
+
+message DestoryRaftGroupRequest {
+    string db_name = 1;
+    uint32 replica_id = 2;
+}
+
 message AdminCommandRequest {
   string tenant = 1;
   oneof command {
@@ -117,6 +127,9 @@ message AdminCommandRequest {
     DropColumnRequest drop_column = 8;
     AddColumnRequest add_column = 9;
     AlterColumnRequest alter_column = 10;
+    AddRaftFollowerRequest add_raft_follower = 11;
+    RemoveRaftNodeRequest remove_raft_node = 12;
+    DestoryRaftGroupRequest destory_raft_group = 13;
   }
 }
 
@@ -139,10 +152,7 @@ message BatchBytesResponse {
 }
 
 message DownloadFileRequest {
-    string tenant = 1;
-    string db = 2;
-    uint32 vnode_id = 3;
-    string filename = 4;
+    string filename = 1;
 }
 
 message FetchVnodeSummaryRequest {
@@ -157,15 +167,48 @@ message QueryRecordBatchRequest {
     bytes aggs = 3;
 }
 
+message WriteVnodeRequest {
+    uint32 vnode_id = 1;
+    string tenant =2;
+    uint32 precision = 3;
+    bytes data = 4;
+}
+
+message OpenRaftNodeRequest {
+    string tenant = 1;
+    string db_name = 2;
+    uint32 vnode_id = 3;
+    uint32 replica_id = 4;
+}
+
+message DropRaftNodeRequest {
+    string tenant = 1;
+    string db_name = 2;
+    uint32 vnode_id = 3;
+    uint32 replica_id = 4;
+}
+
+message WriteReplicaRequest {
+    uint32 replica_id = 1;
+    string tenant = 2;
+    string db_name = 3;
+    uint32 precision = 4;
+    bytes data = 5;
+}
+
+
 /* -------------------------------------------------------------------- */
 service TSKVService {
   rpc Ping(PingRequest) returns (PingResponse) {};
   rpc WritePoints(stream WritePointsRequest) returns (stream WritePointsResponse) {};
 
   rpc WriteVnodePoints(WriteVnodeRequest) returns (StatusResponse) {};
+  rpc WriteReplicaPoints(WriteReplicaRequest) returns (StatusResponse) {};
   rpc QueryRecordBatch(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
   rpc ExecAdminCommand(AdminCommandRequest) returns (StatusResponse) {};
   rpc ExecAdminFetchCommand(AdminFetchCommandRequest) returns (BatchBytesResponse) {};
+  rpc ExecOpenRaftNode(OpenRaftNodeRequest) returns (StatusResponse) {};
+  rpc ExecDropRaftNode(DropRaftNodeRequest) returns (StatusResponse) {};
 
   rpc DownloadFile(DownloadFileRequest) returns (stream BatchBytesResponse) {};
   rpc GetVnodeFilesMeta(GetVnodeFilesMetaRequest) returns (GetVnodeFilesMetaResponse) {};

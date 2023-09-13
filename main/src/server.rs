@@ -274,7 +274,6 @@ impl ServiceBuilder {
             kv,
             meta,
             self.config.clone(),
-            self.config.hinted_off.clone(),
             self.metrics_register.clone(),
         )
         .await;

@@ -116,6 +116,15 @@ impl StateStorage {
         }
     }
 
+    pub fn set_init_flag(&self, group_id: u32) -> ReplicationResult<()> {
+        let mut writer = self.writer_txn()?;
+        self.db
+            .put(&mut writer, &Key::already_init_key(group_id), b"true")?;
+        writer.commit()?;
+
+        Ok(())
+    }
+
     pub fn get_last_membership(
         &self,
         group_id: u32,
@@ -232,6 +241,20 @@ impl StateStorage {
     pub fn set_snapshot(&self, group_id: u32, snap: StoredSnapshot) -> ReplicationResult<()> {
         let mut writer = self.writer_txn()?;
         self.set(&mut writer, &Key::snapshot_key(group_id), &snap)?;
+        writer.commit()?;
+
+        Ok(())
+    }
+
+    pub fn del_group(&self, group_id: u32) -> ReplicationResult<()> {
+        let mut writer = self.writer_txn()?;
+        self.del(&mut writer, &Key::applied_log(group_id))?;
+        self.del(&mut writer, &Key::membership(group_id))?;
+        self.del(&mut writer, &Key::purged_log_id(group_id))?;
+        self.del(&mut writer, &Key::snapshot_index(group_id))?;
+        self.del(&mut writer, &Key::vote_key(group_id))?;
+        self.del(&mut writer, &Key::snapshot_key(group_id))?;
+        self.del(&mut writer, &Key::already_init_key(group_id))?;
         writer.commit()?;
 
         Ok(())

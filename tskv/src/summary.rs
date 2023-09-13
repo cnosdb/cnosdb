@@ -18,7 +18,7 @@ use tokio::sync::RwLock;
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
-use crate::context::{GlobalContext, GlobalSequenceTask};
+use crate::context::GlobalContext;
 use crate::error::{Error, Result};
 use crate::file_system::file_manager::try_exists;
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
@@ -296,7 +296,6 @@ pub struct Summary {
     writer: Writer,
     opt: Arc<Options>,
     runtime: Arc<Runtime>,
-    sequence_task_sender: Sender<GlobalSequenceTask>,
     metrics_register: Arc<MetricsRegister>,
 }
 
@@ -306,7 +305,6 @@ impl Summary {
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
-        sequence_task_sender: Sender<GlobalSequenceTask>,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let db = VersionEdit::default();
@@ -334,7 +332,6 @@ impl Summary {
             writer: w,
             opt,
             runtime,
-            sequence_task_sender,
             metrics_register,
         })
     }
@@ -350,7 +347,6 @@ impl Summary {
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
         flush_task_sender: Sender<FlushReq>,
-        sequence_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
         load_field_filter: bool,
         metrics_register: Arc<MetricsRegister>,
@@ -385,7 +381,6 @@ impl Summary {
             writer,
             opt,
             runtime,
-            sequence_task_sender,
             metrics_register,
         })
     }
@@ -442,7 +437,6 @@ impl Summary {
         }
 
         let mut versions = HashMap::new();
-        let mut has_seq_no = false;
         let mut max_seq_no_all = 0_u64;
         let mut has_file_id = false;
         let mut max_file_id_all = 0_u64;
@@ -454,7 +448,6 @@ impl Summary {
             let mut max_level_ts = i64::MIN;
             for e in edits {
                 if e.has_seq_no {
-                    has_seq_no = true;
                     max_seq_no = std::cmp::max(max_seq_no, e.seq_no);
                     max_seq_no_all = std::cmp::max(max_seq_no_all, e.seq_no);
                 }
@@ -502,9 +495,6 @@ impl Summary {
             versions.insert(tsf_id, Arc::new(ver));
         }
 
-        if has_seq_no {
-            ctx.set_last_seq(max_seq_no_all + 1);
-        }
         if has_file_id {
             ctx.set_file_id(max_file_id_all + 1);
         }
@@ -589,18 +579,6 @@ impl Summary {
             }
         }
         drop(version_set);
-
-        // Send a GlobalSequenceTask to get a global min_sequence
-        if let Err(_e) = self
-            .sequence_task_sender
-            .send(GlobalSequenceTask {
-                del_ts_family: del_tsf,
-                ts_family_min_seq: tsf_min_seq,
-            })
-            .await
-        {
-            trace::error!("Failed to send AfterSummaryTask");
-        }
 
         Ok(())
     }
@@ -760,7 +738,8 @@ impl SummaryProcessor {
                     let _ = cb.send(Ok(()));
                 }
             }
-            Err(_e) => {
+            Err(e) => {
+                trace::error!("Failed to apply VersionEdit to summary: {e}");
                 for cb in self.cbs.drain(..) {
                     let _ = cb.send(Err(Error::ErrApplyEdit));
                 }
@@ -832,12 +811,10 @@ mod test {
     use utils::BloomFilter;
 
     use crate::compaction::{CompactTask, FlushReq};
-    use crate::context::{GlobalContext, GlobalSequenceTask};
+    use crate::context::GlobalContext;
     use crate::file_system::file_manager;
     use crate::kv_option::Options;
-    use crate::kvcore::{
-        COMPACT_REQ_CHANNEL_CAP, GLOBAL_TASK_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP,
-    };
+    use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
     use crate::summary::{CompactMeta, Summary, SummaryTask, VersionEdit};
 
     #[test]
@@ -898,15 +875,6 @@ mod test {
             }
             println!("Mock flush job finished (test_summary).");
         });
-        let (global_seq_task_sender, mut global_seq_task_receiver) =
-            mpsc::channel::<GlobalSequenceTask>(GLOBAL_TASK_REQ_CHANNEL_CAP);
-        let _global_seq_job_mock = runtime.spawn(async move {
-            println!("Mock global sequence job started (test_summary).");
-            while let Some(_t) = global_seq_task_receiver.recv().await {
-                // Do nothing
-            }
-            println!("Mock global sequence job finished (test_summary).");
-        });
         let (compact_task_sender, mut compact_task_receiver) =
             mpsc::channel::<CompactTask>(COMPACT_REQ_CHANNEL_CAP);
         let compact_job_mock = runtime.spawn(async move {
@@ -927,7 +895,6 @@ mod test {
                 config.clone(),
                 runtime_ref.clone(),
                 flush_task_sender.clone(),
-                global_seq_task_sender.clone(),
                 compact_task_sender.clone(),
             )
             .await;
@@ -940,7 +907,6 @@ mod test {
                 config.clone(),
                 runtime_ref.clone(),
                 flush_task_sender.clone(),
-                global_seq_task_sender.clone(),
                 compact_task_sender.clone(),
             )
             .await;
@@ -954,7 +920,6 @@ mod test {
                 runtime_ref.clone(),
                 summary_task_sender.clone(),
                 flush_task_sender.clone(),
-                global_seq_task_sender.clone(),
                 compact_task_sender.clone(),
             )
             .await;
@@ -968,7 +933,6 @@ mod test {
                 runtime_ref.clone(),
                 summary_task_sender,
                 flush_task_sender,
-                global_seq_task_sender,
                 compact_task_sender,
             )
             .await;
@@ -981,7 +945,6 @@ mod test {
         config: config::Config,
         runtime: Arc<Runtime>,
         flush_task_sender: Sender<FlushReq>,
-        global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
         let opt = Arc::new(Options::from(&config));
@@ -1001,7 +964,6 @@ mod test {
             opt.clone(),
             runtime.clone(),
             memory_pool.clone(),
-            global_seq_task_sender.clone(),
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -1017,7 +979,6 @@ mod test {
             runtime.clone(),
             memory_pool,
             flush_task_sender,
-            global_seq_task_sender,
             compact_task_sender,
             false,
             Arc::new(MetricsRegister::default()),
@@ -1030,7 +991,6 @@ mod test {
         config: config::Config,
         runtime: Arc<Runtime>,
         flush_task_sender: Sender<FlushReq>,
-        global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
         let opt = Arc::new(Options::from(&config));
@@ -1050,7 +1010,6 @@ mod test {
             opt.clone(),
             runtime.clone(),
             memory_pool.clone(),
-            global_seq_task_sender.clone(),
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -1067,7 +1026,6 @@ mod test {
             runtime.clone(),
             memory_pool.clone(),
             flush_task_sender.clone(),
-            global_seq_task_sender.clone(),
             compact_task_sender.clone(),
             false,
             Arc::new(MetricsRegister::default()),
@@ -1086,7 +1044,6 @@ mod test {
             runtime,
             memory_pool.clone(),
             flush_task_sender,
-            global_seq_task_sender,
             compact_task_sender,
             false,
             Arc::new(MetricsRegister::default()),
@@ -1103,7 +1060,6 @@ mod test {
         runtime: Arc<Runtime>,
         summary_task_sender: Sender<SummaryTask>,
         flush_task_sender: Sender<FlushReq>,
-        global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
         let opt = Arc::new(Options::from(&config));
@@ -1124,7 +1080,6 @@ mod test {
             opt.clone(),
             runtime.clone(),
             memory_pool.clone(),
-            global_seq_task_sender.clone(),
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -1147,7 +1102,6 @@ mod test {
                 .await
                 .add_tsfamily(
                     i,
-                    0,
                     None,
                     summary_task_sender.clone(),
                     flush_task_sender.clone(),
@@ -1180,7 +1134,6 @@ mod test {
             runtime,
             memory_pool.clone(),
             flush_task_sender.clone(),
-            global_seq_task_sender.clone(),
             compact_task_sender,
             false,
             Arc::new(MetricsRegister::default()),
@@ -1197,7 +1150,6 @@ mod test {
         runtime: Arc<Runtime>,
         summary_task_sender: Sender<SummaryTask>,
         flush_task_sender: Sender<FlushReq>,
-        global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
         let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
@@ -1219,7 +1171,6 @@ mod test {
             opt.clone(),
             runtime.clone(),
             memory_pool.clone(),
-            global_seq_task_sender.clone(),
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -1241,7 +1192,6 @@ mod test {
             .await
             .add_tsfamily(
                 10,
-                0,
                 None,
                 summary_task_sender.clone(),
                 flush_task_sender.clone(),
@@ -1274,7 +1224,6 @@ mod test {
             );
             let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache);
 
-            summary.ctx.set_last_seq(1);
             let mut edit = VersionEdit::new(10);
             let meta = CompactMeta {
                 file_id: 15,
@@ -1308,7 +1257,6 @@ mod test {
             runtime,
             memory_pool.clone(),
             flush_task_sender,
-            global_seq_task_sender,
             compact_task_sender,
             false,
             Arc::new(MetricsRegister::default()),

@@ -538,7 +538,7 @@ pub fn merge_affected_row_expr() -> Expr {
 }
 
 /// Normalize a SQL object name
-pub fn normalize_sql_object_name(sql_object_name: &ObjectName) -> String {
+pub fn normalize_sql_object_name_to_string(sql_object_name: &ObjectName) -> String {
     sql_object_name
         .0
         .iter()

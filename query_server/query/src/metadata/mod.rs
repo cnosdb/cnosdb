@@ -27,7 +27,7 @@ use models::schema::{Precision, Tenant, DEFAULT_CATALOG};
 use parking_lot::RwLock;
 use spi::query::function::FuncMetaManagerRef;
 use spi::query::session::SessionCtx;
-pub use usage_schema_provider::{USAGE_SCHEMA, USAGE_SCHEMA_VNODE_DISK_STORAGE};
+pub use usage_schema_provider::USAGE_SCHEMA;
 
 pub use self::base_table::BaseTableProvider;
 use self::cluster_schema_provider::ClusterSchemaProvider;

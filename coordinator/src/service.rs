@@ -1,11 +1,15 @@
+#![allow(dead_code)]
+#![allow(unused)]
+
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use std::vec;
 
-use config::{Config, HintedOffConfig};
+use config::Config;
 use datafusion::arrow::array::{
     Array, ArrayRef, Int64Array, StringArray, TimestampMicrosecondArray, TimestampMillisecondArray,
     TimestampNanosecondArray, UInt32Array,
@@ -44,14 +48,16 @@ use utils::BkdrHasher;
 use crate::errors::*;
 use crate::hh_queue::HintedOffManager;
 use crate::metrics::LPReporter;
+use crate::raft::manager::RaftNodesManager;
+use crate::raft::writer::RaftWriter;
 use crate::reader::replica_selection::{DynamicReplicaSelectioner, DynamicReplicaSelectionerRef};
 use crate::reader::table_scan::opener::TemporaryTableScanOpener;
 use crate::reader::tag_scan::opener::TemporaryTagScanOpener;
 use crate::reader::{CheckFuture, CheckedCoordinatorRecordBatchStream};
 use crate::writer::PointWriter;
 use crate::{
-    status_response_to_result, Coordinator, QueryOption, SendableCoordinatorRecordBatchStream,
-    VnodeManagerCmdType, VnodeSummarizerCmdType,
+    get_replica_all_info, get_vnode_all_info, status_response_to_result, Coordinator, QueryOption,
+    SendableCoordinatorRecordBatchStream, VnodeManagerCmdType, VnodeSummarizerCmdType,
 };
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
@@ -65,8 +71,10 @@ pub struct CoordService {
     config: Config,
     runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
-    writer: Arc<PointWriter>,
+    raft_writer: Arc<RaftWriter>,
+    point_writer: Arc<PointWriter>,
     metrics: Arc<CoordServiceMetrics>,
+    raft_manager: Arc<RaftNodesManager>,
 
     replica_selectioner: DynamicReplicaSelectionerRef,
 }
@@ -125,35 +133,55 @@ impl CoordService {
     pub async fn new(
         runtime: Arc<Runtime>,
         kv_inst: Option<EngineRef>,
-        meta_manager: MetaRef,
+        meta: MetaRef,
         config: Config,
-        handoff_cfg: HintedOffConfig,
         metrics_register: Arc<MetricsRegister>,
     ) -> Arc<Self> {
+        let node_id = config.node_basic.node_id;
+
         let (hh_sender, hh_receiver) = mpsc::channel(1024);
         let point_writer = Arc::new(PointWriter::new(
-            config.node_basic.node_id,
+            node_id,
             config.query.write_timeout_ms,
             kv_inst.clone(),
-            meta_manager.clone(),
+            meta.clone(),
             hh_sender,
         ));
 
         let hh_manager = Arc::new(
-            HintedOffManager::new(handoff_cfg, meta_manager.clone(), point_writer.clone()).await,
+            HintedOffManager::new(
+                config.hinted_off.clone(),
+                meta.clone(),
+                point_writer.clone(),
+            )
+            .await,
         );
         tokio::spawn(HintedOffManager::write_handoff_job(hh_manager, hh_receiver));
 
-        let replica_selectioner = Arc::new(DynamicReplicaSelectioner::new(meta_manager.clone()));
+        let raft_manager = Arc::new(RaftNodesManager::new(
+            config.clone(),
+            meta.clone(),
+            kv_inst.clone(),
+        ));
+        let raft_writer = Arc::new(RaftWriter::new(
+            meta.clone(),
+            config.clone(),
+            kv_inst.clone(),
+            raft_manager.clone(),
+        ));
+
         let coord = Arc::new(Self {
             runtime,
             kv_inst,
+            node_id,
+            raft_writer,
+            point_writer,
+            raft_manager,
+            meta: meta.clone(),
             config: config.clone(),
-            node_id: config.node_basic.node_id,
-            meta: meta_manager,
-            writer: point_writer,
+
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
-            replica_selectioner,
+            replica_selectioner: Arc::new(DynamicReplicaSelectioner::new(meta)),
         });
 
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
@@ -161,7 +189,7 @@ impl CoordService {
         if config.node_basic.store_metrics {
             tokio::spawn(CoordService::metrics_service(
                 coord.clone(),
-                metrics_register.clone(),
+                metrics_register,
             ));
         }
 
@@ -214,16 +242,22 @@ impl CoordService {
 
     async fn delete_expired_bucket(&self, info: &ExpiredBucketInfo) -> CoordinatorResult<()> {
         for repl_set in info.bucket.shard_group.iter() {
-            for vnode in repl_set.vnodes.iter() {
-                let cmd = AdminCommandRequest {
-                    tenant: info.tenant.clone(),
-                    command: Some(DelVnode(DeleteVnodeRequest {
-                        db: info.database.clone(),
-                        vnode_id: vnode.id,
-                    })),
-                };
+            if self.using_raft_replication() {
+                self.raft_manager()
+                    .destory_replica_group(&info.tenant, &info.database, repl_set.id)
+                    .await?;
+            } else {
+                for vnode in repl_set.vnodes.iter() {
+                    let cmd = AdminCommandRequest {
+                        tenant: info.tenant.clone(),
+                        command: Some(DelVnode(DeleteVnodeRequest {
+                            db: info.database.clone(),
+                            vnode_id: vnode.id,
+                        })),
+                    };
 
-                self.exec_admin_command_on_node(vnode.node_id, cmd).await?;
+                    self.exec_admin_command_on_node(vnode.node_id, cmd).await?;
+                }
             }
         }
 
@@ -237,25 +271,6 @@ impl CoordService {
         meta.delete_bucket(&info.database, info.bucket.id).await?;
 
         Ok(())
-    }
-
-    async fn get_replication_set(
-        &self,
-        tenant: &str,
-        replication_set_id: u32,
-    ) -> CoordinatorResult<ReplicationSet> {
-        match self.tenant_meta(tenant).await {
-            Some(meta_client) => match meta_client.get_replication_set(replication_set_id) {
-                Some(repl_set) => Ok(repl_set),
-                None => Err(CoordinatorError::ReplicationSetNotFound {
-                    id: replication_set_id,
-                }),
-            },
-
-            None => Err(CoordinatorError::TenantNotFound {
-                name: tenant.to_string(),
-            }),
-        }
     }
 
     async fn exec_admin_command_on_node(
@@ -333,6 +348,48 @@ impl CoordService {
         }
     }
 
+    fn multi_write_vnodes<'a>(
+        &'a self,
+        tenant: &'a str,
+        precision: Precision,
+        info: ReplicationSet,
+        points: Arc<Vec<u8>>,
+        span_ctx: Option<&'a SpanContext>,
+    ) -> CoordinatorResult<Vec<Pin<Box<dyn Future<Output = CoordinatorResult<()>> + Send + 'a>>>>
+    {
+        let mut requests: Vec<Pin<Box<dyn Future<Output = Result<(), CoordinatorError>> + Send>>> =
+            Vec::new();
+        for vnode in info.vnodes.iter() {
+            let now = tokio::time::Instant::now();
+            debug!(
+                "Preparing write points on vnode {:?}, start at {:?}",
+                vnode, now
+            );
+            if vnode.status == VnodeStatus::Copying {
+                return Err(CoordinatorError::CommonError {
+                    msg: "vnode is moving write forbidden ".to_string(),
+                });
+            }
+
+            let request = self.point_writer.write_to_node(
+                vnode.id,
+                tenant,
+                vnode.node_id,
+                precision,
+                points.clone(),
+                SpanRecorder::new(span_ctx.child_span(format!(
+                    "write to vnode {} on node {}",
+                    vnode.id, vnode.node_id
+                ))),
+            );
+
+            let request = Box::pin(request);
+            requests.push(request);
+        }
+
+        Ok(requests)
+    }
+
     async fn push_points_to_requests<'a>(
         &'a self,
         tenant: &'a str,
@@ -360,32 +417,24 @@ impl CoordService {
         }
 
         let mut requests = Vec::new();
-        for vnode in info.vnodes.iter() {
-            let now = tokio::time::Instant::now();
-            debug!(
-                "Preparing write points on vnode {:?}, start at {:?}",
-                vnode, now
-            );
-            if vnode.status == VnodeStatus::Copying {
-                return Err(CoordinatorError::CommonError {
-                    msg: "vnode is moving write forbidden ".to_string(),
-                });
-            }
-
-            let request = self.writer.write_to_node(
-                vnode.id,
+        if self.using_raft_replication() {
+            let request = self.write_replica_raft(
                 tenant,
-                vnode.node_id,
-                precision,
+                db,
                 points.clone(),
-                SpanRecorder::new(span_ctx.child_span(format!(
-                    "write to vnode {} on node {}",
-                    vnode.id, vnode.node_id
-                ))),
+                precision,
+                info.clone(),
+                span_ctx,
             );
             requests.push(request);
+
+            Ok(requests)
+        } else {
+            let mut tasks = self.multi_write_vnodes(tenant, precision, info, points, span_ctx)?;
+            requests.append(&mut tasks);
+
+            Ok(requests)
         }
-        Ok(requests)
     }
 }
 
@@ -402,6 +451,14 @@ impl Coordinator for CoordService {
 
     fn store_engine(&self) -> Option<EngineRef> {
         self.kv_inst.clone()
+    }
+
+    fn raft_manager(&self) -> Arc<RaftNodesManager> {
+        self.raft_manager.clone()
+    }
+
+    fn using_raft_replication(&self) -> bool {
+        self.config.using_raft_replication
     }
 
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
@@ -421,6 +478,30 @@ impl Coordinator for CoordService {
         let optimal_shards = self.replica_selectioner.select(shards)?;
 
         Ok(optimal_shards)
+    }
+
+    async fn write_replica_raft(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        data: Arc<Vec<u8>>,
+        precision: Precision,
+        replica: ReplicationSet,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<()> {
+        self.raft_writer
+            .write_to_replica(
+                tenant,
+                db_name,
+                data,
+                precision,
+                &replica,
+                SpanRecorder::new(span_ctx.child_span(format!(
+                    "write to replica {} on node {}",
+                    replica.id, self.node_id
+                ))),
+            )
+            .await
     }
 
     async fn write_lines<'a>(
@@ -682,9 +763,64 @@ impl Coordinator for CoordService {
         cmd_type: VnodeManagerCmdType,
     ) -> CoordinatorResult<()> {
         let (grpc_req, req_node_id) = match cmd_type {
+            VnodeManagerCmdType::AddRaftFollower(replica_id, node_id) => {
+                let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
+                if all_info.replica_set.by_node_id(node_id).is_some() {
+                    return Err(CoordinatorError::CommonError {
+                        msg: format!("A Replication Already in {}", node_id),
+                    });
+                }
+
+                (
+                    AdminCommandRequest {
+                        tenant: tenant.to_string(),
+                        command: Some(AddRaftFollower(AddRaftFollowerRequest {
+                            db_name: all_info.db_name,
+                            replica_id: all_info.replica_set.id,
+                            follower_nid: node_id,
+                        })),
+                    },
+                    all_info.replica_set.leader_node_id,
+                )
+            }
+
+            VnodeManagerCmdType::RemoveRaftNode(vnode_id) => {
+                let all_info = get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
+                let replica_id = all_info.repl_set_id;
+                let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id)
+                    .await?
+                    .replica_set;
+
+                (
+                    AdminCommandRequest {
+                        tenant: tenant.to_string(),
+                        command: Some(RemoveRaftNode(RemoveRaftNodeRequest {
+                            vnode_id,
+                            replica_id,
+                            db_name: all_info.db_name,
+                        })),
+                    },
+                    replica.leader_node_id,
+                )
+            }
+
+            VnodeManagerCmdType::DestoryRaftGroup(replica_id) => {
+                let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
+
+                (
+                    AdminCommandRequest {
+                        tenant: tenant.to_string(),
+                        command: Some(DestoryRaftGroup(DestoryRaftGroupRequest {
+                            replica_id,
+                            db_name: all_info.db_name,
+                        })),
+                    },
+                    all_info.replica_set.leader_node_id,
+                )
+            }
+
             VnodeManagerCmdType::Copy(vnode_id, node_id) => {
-                let all_info =
-                    crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
+                let all_info = get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
                 if all_info.node_id == node_id {
                     return Err(CoordinatorError::CommonError {
                         msg: format!("Vnode: {} Already in {}", all_info.vnode_id, node_id),
@@ -701,8 +837,7 @@ impl Coordinator for CoordService {
             }
 
             VnodeManagerCmdType::Move(vnode_id, node_id) => {
-                let all_info =
-                    crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
+                let all_info = get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
                 if all_info.node_id == node_id {
                     return Err(CoordinatorError::CommonError {
                         msg: format!("move vnode: {} already in {}", all_info.vnode_id, node_id),
@@ -719,8 +854,7 @@ impl Coordinator for CoordService {
             }
 
             VnodeManagerCmdType::Drop(vnode_id) => {
-                let all_info =
-                    crate::get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
+                let all_info = get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
                 let db = all_info.db_name;
                 (
                     AdminCommandRequest {
@@ -735,8 +869,7 @@ impl Coordinator for CoordService {
                 // Group vnode ids by node id.
                 let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
                 for vnode_id in vnode_ids.iter() {
-                    let vnode =
-                        crate::get_vnode_all_info(self.meta.clone(), tenant, *vnode_id).await?;
+                    let vnode = get_vnode_all_info(self.meta.clone(), tenant, *vnode_id).await?;
                     node_vnode_ids_map
                         .entry(vnode.node_id)
                         .or_default()
@@ -764,9 +897,7 @@ impl Coordinator for CoordService {
             }
         };
 
-        self.exec_admin_command_on_node(req_node_id, grpc_req)
-            .await
-            .map(|_| ())
+        self.exec_admin_command_on_node(req_node_id, grpc_req).await
     }
 
     async fn vnode_summarizer(
@@ -775,12 +906,14 @@ impl Coordinator for CoordService {
         cmd_type: VnodeSummarizerCmdType,
     ) -> CoordinatorResult<Vec<RecordBatch>> {
         match cmd_type {
-            VnodeSummarizerCmdType::Checksum(replication_set_id) => {
-                let replication_set = self.get_replication_set(tenant, replication_set_id).await?;
+            VnodeSummarizerCmdType::Checksum(replica_id) => {
+                let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id)
+                    .await?
+                    .replica_set;
 
                 // Group vnode ids by node id.
                 let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
-                for vnode in replication_set.vnodes {
+                for vnode in replica.vnodes {
                     node_vnode_ids_map
                         .entry(vnode.node_id)
                         .or_default()

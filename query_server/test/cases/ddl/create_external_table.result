@@ -12,11 +12,9 @@
 
 -- EXECUTE SQL: DESCRIBE TABLE create_external_table.cpu; --
 200 OK
-COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,COMPRESSION_CODEC
+column_name,data_type,column_type,compression_codec
 cpu_hz,"Decimal128(10, 6)",FIELD,
 temp,Float64,FIELD,
 version_num,Int64,FIELD,
 is_old,Boolean,FIELD,
 weight,"Decimal128(12, 7)",FIELD,
-
-

@@ -57,6 +57,7 @@ crossbeam-channel = "0.5"
 ctrlc = "3"
 dashmap = "5.2"
 derive_builder = "0.12.0"
+dircpy = "0.3.15"
 arrow = { version = "42.0.0", features = ["prettyprint"] }
 arrow-schema = { version = "42.0.0", features = ["serde"] }
 arrow-flight = { version = "42.0.0" }
@@ -87,11 +88,7 @@ os_info = { version = "3" }
 parking_lot = { version = "0.12" }
 paste = "1.0"
 pin-project = "1.0"
-pprof = { version = "0.11.0", features = [
-    "flamegraph",
-    "protobuf-codec",
-    "frame-pointer",
-] }
+pprof = { version = "0.11.0", features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
 prost = "0.11.0"
 prost-build = "0.11.0"
 prost-types = { version = "0.11.2" }
@@ -154,6 +151,8 @@ heed = "0.11.0"
 heed-traits = "0.8.0"
 http-body = "0.4.5"
 run_script = "0.10.1"
+geo = "0.26.0"
+geozero = "0.11.0"
 
 [workspace.package]
 edition = "2021"
@@ -198,7 +197,7 @@ overflow-checks = true
 panic = 'unwind'
 
 [profile.test-ci]
-debug-assertions = false
+debug-assertions = true
 incremental = true
 inherits = "test"
 overflow-checks = false

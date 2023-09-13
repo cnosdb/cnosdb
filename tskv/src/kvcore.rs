@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::panic;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use datafusion::arrow::record_batch::RecordBatch;
 use memory_pool::{MemoryPool, MemoryPoolRef};
@@ -10,7 +11,7 @@ use metrics::metric_register::MetricsRegister;
 use models::codec::Encoding;
 use models::meta_data::{VnodeId, VnodeStatus};
 use models::predicate::domain::{ColumnDomains, TimeRange};
-use models::schema::{make_owner, DatabaseSchema, Precision, TableColumn};
+use models::schema::{make_owner, split_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
 use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
@@ -25,30 +26,31 @@ use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
 use crate::compaction::{
     self, check, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
 };
-use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
+use crate::context::GlobalContext;
 use crate::database::Database;
 use crate::error::{self, Result};
 use crate::file_system::file_manager;
 use crate::index::ts_index;
-use crate::kv_option::{Options, StorageOptions};
+use crate::kv_option::{Options, StorageOptions, MOVE_PATH};
 use crate::schema::error::SchemaError;
-use crate::summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit};
+use crate::summary::{CompactMeta, Summary, SummaryProcessor, SummaryTask, VersionEdit};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
-use crate::wal::{self, WalDecoder, WalEntry, WalManager, WalTask};
-use crate::{file_utils, tenant_name_from_request, Engine, Error, TseriesFamilyId};
+use crate::wal::{self, Block, WalDecoder, WalManager, WalTask};
+use crate::{
+    file_utils, tenant_name_from_request, Engine, Error, SnapshotFileMeta, TseriesFamilyId,
+    VnodeSnapshot,
+};
 
 // TODO: A small summay channel capacity can cause a block
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;
 pub const SUMMARY_REQ_CHANNEL_CAP: usize = 1024;
-pub const GLOBAL_TASK_REQ_CHANNEL_CAP: usize = 1024;
 
 #[derive(Debug)]
 pub struct TsKv {
     options: Arc<Options>,
     global_ctx: Arc<GlobalContext>,
-    global_seq_ctx: Arc<GlobalSequenceContext>,
     version_set: Arc<RwLock<VersionSet>>,
     meta_manager: MetaRef,
 
@@ -58,7 +60,6 @@ pub struct TsKv {
     flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
     summary_task_sender: Sender<SummaryTask>,
-    global_seq_task_sender: Sender<GlobalSequenceTask>,
     close_sender: BroadcastSender<Sender<()>>,
     metrics: Arc<MetricsRegister>,
 }
@@ -80,8 +81,6 @@ impl TsKv {
             mpsc::channel::<WalTask>(shared_options.wal.wal_req_channel_cap);
         let (summary_task_sender, summary_task_receiver) =
             mpsc::channel::<SummaryTask>(SUMMARY_REQ_CHANNEL_CAP);
-        let (global_seq_task_sender, global_seq_task_receiver) =
-            mpsc::channel::<GlobalSequenceTask>(GLOBAL_TASK_REQ_CHANNEL_CAP);
         let (close_sender, _close_receiver) = broadcast::channel(1);
         let (version_set, summary) = Self::recover_summary(
             runtime.clone(),
@@ -89,18 +88,14 @@ impl TsKv {
             meta_manager.clone(),
             shared_options.clone(),
             flush_task_sender.clone(),
-            global_seq_task_sender.clone(),
             compact_task_sender.clone(),
             metrics.clone(),
         )
         .await;
-        let global_seq_ctx = version_set.read().await.get_global_sequence_context().await;
-        let global_seq_ctx = Arc::new(global_seq_ctx);
 
         let core = Self {
             options: shared_options.clone(),
             global_ctx: summary.global_context(),
-            global_seq_ctx: global_seq_ctx.clone(),
             version_set,
             meta_manager,
             runtime: runtime.clone(),
@@ -109,7 +104,6 @@ impl TsKv {
             flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
-            global_seq_task_sender: global_seq_task_sender.clone(),
             close_sender,
             metrics,
         };
@@ -119,7 +113,6 @@ impl TsKv {
         core.run_flush_job(
             flush_task_receiver,
             summary.global_context(),
-            global_seq_ctx.clone(),
             summary.version_set(),
             summary_task_sender.clone(),
             compact_task_sender.clone(),
@@ -129,16 +122,10 @@ impl TsKv {
             runtime,
             compact_task_receiver,
             summary.global_context(),
-            global_seq_ctx.clone(),
             summary.version_set(),
             summary_task_sender.clone(),
         );
         core.run_summary_job(summary, summary_task_receiver);
-        context::run_global_context_job(
-            core.runtime.clone(),
-            global_seq_task_receiver,
-            global_seq_ctx,
-        );
         Ok(core)
     }
 
@@ -149,7 +136,6 @@ impl TsKv {
         meta: MetaRef,
         opt: Arc<Options>,
         flush_task_sender: Sender<FlushReq>,
-        global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
         metrics: Arc<MetricsRegister>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
@@ -167,7 +153,6 @@ impl TsKv {
                 runtime,
                 memory_pool,
                 flush_task_sender,
-                global_seq_task_sender,
                 compact_task_sender,
                 true,
                 metrics.clone(),
@@ -175,7 +160,7 @@ impl TsKv {
             .await
             .unwrap()
         } else {
-            Summary::new(opt, runtime, memory_pool, global_seq_task_sender, metrics)
+            Summary::new(opt, runtime, memory_pool, metrics)
                 .await
                 .unwrap()
         };
@@ -185,84 +170,89 @@ impl TsKv {
     }
 
     async fn recover_wal(&self) -> WalManager {
-        let wal_manager = WalManager::open(self.options.wal.clone(), self.global_seq_ctx.clone())
+        let wal_manager = WalManager::open(self.options.wal.clone(), self.version_set.clone())
             .await
             .unwrap();
 
-        let vnode_last_seq_map = self.global_seq_ctx.cloned();
-        let min_log_seq = self.global_seq_ctx.min_seq();
-        let mut decoder = WalDecoder::new();
+        let vnode_last_seq_map = self
+            .version_set
+            .read()
+            .await
+            .get_tsfamily_seq_no_map()
+            .await;
+        let vnode_wal_readers = wal_manager.recover(&vnode_last_seq_map).await;
+        let mut recover_task = vec![];
+        for (vnode_id, readers) in vnode_wal_readers {
+            let vnode_seq = vnode_last_seq_map.get(&vnode_id).copied().unwrap_or(0);
+            let task = async move {
+                let mut decoder = WalDecoder::new();
+                for mut reader in readers {
+                    trace::info!(
+                        "Recover: reading wal '{}' for seq {} to {}",
+                        reader.path().display(),
+                        reader.min_sequence(),
+                        reader.max_sequence(),
+                    );
+                    if reader.is_empty() {
+                        continue;
+                    }
 
-        let wal_readers = wal_manager.readers_to_recover().await.unwrap();
-        for mut reader in wal_readers {
-            trace::info!(
-                "Recover: reading wal '{}' for seq {} to {}",
-                reader.path().display(),
-                reader.min_sequence(),
-                reader.max_sequence(),
-            );
-            if reader.is_empty() {
-                continue;
-            }
+                    loop {
+                        match reader.next_wal_entry().await {
+                            Ok(Some(wal_entry_blk)) => {
+                                let seq = wal_entry_blk.seq;
+                                match wal_entry_blk.block {
+                                    Block::Write(blk) => {
+                                        let vnode_id = blk.vnode_id();
+                                        if vnode_seq >= seq {
+                                            // If `seq_no` of TsFamily is greater than or equal to `seq`,
+                                            // it means that data was writen to tsm.
+                                            continue;
+                                        }
 
-            loop {
-                match reader.next_wal_entry().await {
-                    Ok(Some(wal_entry_blk)) => {
-                        let seq = wal_entry_blk.seq;
-                        if seq < min_log_seq {
-                            continue;
-                        }
-                        match wal_entry_blk.entry {
-                            WalEntry::Write(blk) => {
-                                let vnode_id = blk.vnode_id();
-                                if let Some(tsf_last_seq) = vnode_last_seq_map.get(&vnode_id) {
-                                    // If `seq_no` of TsFamily is greater than or equal to `seq`,
-                                    // it means that data was writen to tsm.
-                                    if *tsf_last_seq >= seq {
-                                        continue;
+                                        self.write_from_wal(vnode_id, seq, &blk, &mut decoder)
+                                            .await
+                                            .unwrap();
                                     }
-                                }
 
-                                self.write_from_wal(vnode_id, seq, &blk, &mut decoder)
-                                    .await
-                                    .unwrap();
-                            }
-
-                            WalEntry::DeleteVnode(blk) => {
-                                if let Err(e) = self.remove_tsfamily_from_wal(&blk).await {
-                                    // Ignore delete vnode error.
-                                    trace::error!("Recover: failed to delete vnode: {e}");
+                                    Block::DeleteVnode(blk) => {
+                                        if let Err(e) = self.remove_tsfamily_from_wal(&blk).await {
+                                            // Ignore delete vnode error.
+                                            trace::error!("Recover: failed to delete vnode: {e}");
+                                        }
+                                    }
+                                    Block::DeleteTable(blk) => {
+                                        if let Err(e) = self.drop_table_from_wal(&blk).await {
+                                            // Ignore delete table error.
+                                            trace::error!("Recover: failed to delete table: {e}");
+                                        }
+                                    }
+                                    _ => {}
                                 }
                             }
-                            WalEntry::DeleteTable(blk) => {
-                                if let Err(e) = self.drop_table_from_wal(&blk).await {
-                                    // Ignore delete table error.
-                                    trace::error!("Recover: failed to delete table: {e}");
-                                }
+                            Ok(None) | Err(Error::WalTruncated) => {
+                                break;
                             }
-                            _ => {}
+                            Err(e) => {
+                                panic!(
+                                    "Failed to recover from {}: {:?}",
+                                    reader.path().display(),
+                                    e
+                                );
+                            }
                         }
-                    }
-                    Ok(None) | Err(Error::WalTruncated) => {
-                        break;
-                    }
-                    Err(e) => {
-                        panic!(
-                            "Failed to recover from {}: {:?}",
-                            reader.path().display(),
-                            e
-                        );
                     }
                 }
-            }
+            };
+            recover_task.push(task);
         }
-
+        futures::future::join_all(recover_task).await;
         wal_manager
     }
 
     pub(crate) fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: Receiver<WalTask>) {
-        async fn on_write(wal_manager: &mut WalManager, wal_task: WalTask) {
-            wal_manager.write(wal_task).await;
+        async fn on_write(wal_manager: &mut WalManager, wal_task: WalTask) -> Result<()> {
+            wal_manager.write(wal_task).await
         }
 
         async fn on_tick_sync(wal_manager: &WalManager) {
@@ -271,25 +261,7 @@ impl TsKv {
             }
         }
 
-        async fn on_tick_check_total_size(
-            version_set: Arc<RwLock<VersionSet>>,
-            wal_manager: &mut WalManager,
-            check_to_flush_duration: &Duration,
-            check_to_flush_instant: &mut Instant,
-        ) {
-            // TODO(zipper): This is not a good way to prevent too frequent flushing.
-            if check_to_flush_instant.elapsed().lt(check_to_flush_duration) {
-                return;
-            }
-            *check_to_flush_instant = Instant::now();
-            if wal_manager.is_total_file_size_exceed() {
-                warn!("WAL total file size({}) exceed flush_trigger_total_file_size, force flushing all vnodes.", wal_manager.total_file_size());
-                version_set.read().await.send_flush_req().await;
-                wal_manager.check_to_delete().await;
-            }
-        }
-
-        async fn on_cancel(wal_manager: WalManager) {
+        async fn on_cancel(wal_manager: &mut WalManager) {
             info!("Job 'WAL' closing.");
             if let Err(e) = wal_manager.close().await {
                 error!("Failed to close job 'WAL': {:?}", e);
@@ -298,34 +270,26 @@ impl TsKv {
         }
 
         info!("Job 'WAL' starting.");
-        let version_set = self.version_set.clone();
         let mut close_receiver = self.close_sender.subscribe();
         self.runtime.spawn(async move {
             info!("Job 'WAL' started.");
 
             let sync_interval = wal_manager.sync_interval();
-            let mut check_total_size_ticker = tokio::time::interval(Duration::from_secs(10));
-            let check_to_flush_duration = Duration::from_secs(60);
-            let mut check_to_flush_instant = Instant::now();
             if sync_interval == Duration::ZERO {
                 loop {
                     tokio::select! {
                         wal_task = receiver.recv() => {
                             match wal_task {
                                 Some(t) => {
-                                    on_write(&mut wal_manager, t).await
+                                    if let Err(e) = on_write(&mut wal_manager, t).await {
+                                        error!("Failed to write to WAL: {:?}", e);
+                                    }
                                 },
                                 _ => break
                             }
                         }
-                        _ = check_total_size_ticker.tick() => {
-                            on_tick_check_total_size(
-                                version_set.clone(), &mut wal_manager,
-                                &check_to_flush_duration, &mut check_to_flush_instant,
-                            ).await;
-                        }
                         _ = close_receiver.recv() => {
-                            on_cancel(wal_manager).await;
+                            on_cancel(&mut wal_manager).await;
                             break;
                         }
                     }
@@ -337,7 +301,9 @@ impl TsKv {
                         wal_task = receiver.recv() => {
                             match wal_task {
                                 Some(t) => {
-                                    on_write(&mut wal_manager, t).await
+                                    if let Err(e) = on_write(&mut wal_manager, t).await {
+                                        error!("Failed to write to WAL: {:?}", e);
+                                    }
                                 },
                                 _ => break
                             }
@@ -345,14 +311,8 @@ impl TsKv {
                         _ = sync_ticker.tick() => {
                             on_tick_sync(&wal_manager).await;
                         }
-                        _ = check_total_size_ticker.tick() => {
-                            on_tick_check_total_size(
-                                version_set.clone(), &mut wal_manager,
-                                &check_to_flush_duration, &mut check_to_flush_instant,
-                            ).await;
-                        }
                         _ = close_receiver.recv() => {
-                            on_cancel(wal_manager).await;
+                            on_cancel(&mut wal_manager).await;
                             break;
                         }
                     }
@@ -365,7 +325,6 @@ impl TsKv {
         &self,
         mut receiver: Receiver<FlushReq>,
         ctx: Arc<GlobalContext>,
-        seq_ctx: Arc<GlobalSequenceContext>,
         version_set: Arc<RwLock<VersionSet>>,
         summary_task_sender: Sender<SummaryTask>,
         compact_task_sender: Sender<CompactTask>,
@@ -378,7 +337,6 @@ impl TsKv {
                 runtime.spawn(run_flush_memtable_job(
                     x,
                     ctx.clone(),
-                    seq_ctx.clone(),
                     version_set.clone(),
                     summary_task_sender.clone(),
                     Some(compact_task_sender.clone()),
@@ -450,7 +408,6 @@ impl TsKv {
 
     pub(crate) async fn get_tsfamily_or_else_create(
         &self,
-        seq: u64,
         id: TseriesFamilyId,
         ve: Option<VersionEdit>,
         db: Arc<RwLock<Database>>,
@@ -463,7 +420,6 @@ impl TsKv {
                     .await
                     .add_tsfamily(
                         id,
-                        seq,
                         ve,
                         self.summary_task_sender.clone(),
                         self.flush_task_sender.clone(),
@@ -584,6 +540,7 @@ impl TsKv {
         &self,
         vnode_id: VnodeId,
         tenant: String,
+        db_name: String,
         precision: Precision,
         points: Vec<u8>,
     ) -> Result<u64> {
@@ -597,7 +554,7 @@ impl TsKv {
             .with_context(|_| error::EncodeSnafu)?;
         drop(points);
 
-        let (wal_task, rx) = WalTask::new_write(tenant, vnode_id, precision, enc_points);
+        let (wal_task, rx) = WalTask::new_write(tenant, db_name, vnode_id, precision, enc_points);
         self.wal_sender
             .send(wal_task)
             .await
@@ -682,11 +639,9 @@ impl TsKv {
         let tenant = block.tenant_utf8()?;
         let database = block.database_utf8()?;
         let table = block.table_utf8()?;
-        trace::info!(
+        info!(
             "Recover: delete table, tenant: {}, database: {}, table: {}",
-            &tenant,
-            &database,
-            &table
+            &tenant, &database, &table
         );
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             return self.delete_table(db, table).await;
@@ -702,10 +657,9 @@ impl TsKv {
         let vnode_id = block.vnode_id();
         let tenant = block.tenant_utf8()?;
         let database = block.database_utf8()?;
-        trace::info!(
+        info!(
             "Recover: delete vnode, tenant: {}, database: {}, vnode_id: {vnode_id}",
-            &tenant,
-            &database
+            &tenant, &database
         );
 
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
@@ -775,9 +729,63 @@ impl Engine for TsKv {
                 })?
         };
 
+        let tsf = self
+            .get_tsfamily_or_else_create(vnode_id, None, db.clone())
+            .await?;
+
         let seq = {
             let mut span_recorder = span_recorder.child("write wal");
-            self.write_wal(vnode_id, tenant, precision, points)
+            self.write_wal(vnode_id, tenant, db_name.to_string(), precision, points)
+                .await
+                .map_err(|err| {
+                    span_recorder.error(err.to_string());
+                    err
+                })?
+        };
+
+        let res = {
+            let mut span_recorder = span_recorder.child("put points");
+            match tsf.read().await.put_points(seq, write_group) {
+                Ok(points_number) => Ok(WritePointsResponse { points_number }),
+                Err(err) => {
+                    span_recorder.error(err.to_string());
+                    Err(err)
+                }
+            }
+        };
+        tsf.write().await.check_to_flush().await;
+        res
+    }
+
+    async fn write_memcache(
+        &self,
+        index: u64,
+        tenant: &str,
+        points: Vec<u8>,
+        vnode_id: VnodeId,
+        precision: Precision,
+        span_ctx: Option<&SpanContext>,
+    ) -> Result<WritePointsResponse> {
+        let span_recorder = SpanRecorder::new(span_ctx.child_span("tskv engine write cache"));
+
+        let fb_points = flatbuffers::root::<fb_models::Points>(&points)
+            .context(error::InvalidFlatbufferSnafu)?;
+
+        let db_name = fb_points.db_ext()?;
+        let db = self.get_db_or_else_create(tenant, db_name).await?;
+        let ts_index = self
+            .get_ts_index_or_else_create(db.clone(), vnode_id)
+            .await?;
+
+        let tables = fb_points.tables().ok_or(Error::CommonError {
+            reason: "points missing table".to_string(),
+        })?;
+
+        let write_group = {
+            let mut span_recorder = span_recorder.child("build write group");
+            db.read()
+                .await
+                .build_write_group(db_name, precision, tables, ts_index)
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
@@ -786,12 +794,12 @@ impl Engine for TsKv {
         };
 
         let tsf = self
-            .get_tsfamily_or_else_create(seq, vnode_id, None, db.clone())
+            .get_tsfamily_or_else_create(vnode_id, None, db.clone())
             .await?;
 
         let res = {
             let mut span_recorder = span_recorder.child("put points");
-            match tsf.read().await.put_points(seq, write_group) {
+            match tsf.read().await.put_points(index, write_group) {
                 Ok(points_number) => Ok(WritePointsResponse { points_number }),
                 Err(err) => {
                     span_recorder.error(err.to_string());
@@ -832,7 +840,6 @@ impl Engine for TsKv {
 
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            // Store this action in WAL.
             let (wal_task, rx) = WalTask::new_delete_table(
                 tenant.to_string(),
                 database.to_string(),
@@ -926,7 +933,6 @@ impl Engine for TsKv {
                     run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
-                        self.global_seq_ctx.clone(),
                         self.version_set.clone(),
                         self.summary_task_sender.clone(),
                         Some(self.compact_task_sender.clone()),
@@ -1133,7 +1139,10 @@ impl Engine for TsKv {
             // TODO: Send file_metas to the destination node.
             let mut file_metas = HashMap::new();
             if let Some(tsf) = db.get_tsfamily(vnode_id) {
-                let ve = tsf.read().await.snapshot(db.owner(), &mut file_metas);
+                let ve = tsf
+                    .read()
+                    .await
+                    .build_version_edit(db.owner(), &mut file_metas);
                 // it used for move vnode, set vnode status running at last
                 tsf.write().await.update_status(VnodeStatus::Running);
                 Ok(Some(ve))
@@ -1177,7 +1186,6 @@ impl Engine for TsKv {
         db_wlock
             .add_tsfamily(
                 vnode_id,
-                self.global_seq_ctx.max_seq(),
                 Some(summary),
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
@@ -1239,7 +1247,6 @@ impl Engine for TsKv {
                     if let Err(e) = run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
-                        self.global_seq_ctx.clone(),
                         self.version_set.clone(),
                         self.summary_task_sender.clone(),
                         None,
@@ -1298,12 +1305,11 @@ impl Engine for TsKv {
                     run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
-                        self.global_seq_ctx.clone(),
                         self.version_set.clone(),
                         self.summary_task_sender.clone(),
                         None,
                     )
-                    .await?
+                    .await?;
                 }
                 return check::vnode_checksum(vnode).await;
             }
@@ -1322,16 +1328,257 @@ impl Engine for TsKv {
         }
         info!("TsKv closed");
     }
+
+    async fn create_snapshot(&self, vnode_id: VnodeId) -> Result<VnodeSnapshot> {
+        debug!("Snapshot: create snapshot on vnode: {vnode_id}");
+        let vnode_optional = self
+            .version_set
+            .read()
+            .await
+            .get_tsfamily_by_tf_id(vnode_id)
+            .await;
+        if let Some(vnode) = vnode_optional {
+            // Run force flush
+            let flush_req_optional = vnode.write().await.build_flush_req(true);
+            if let Some(req) = flush_req_optional {
+                let last_seq_no = req.high_seq_no;
+                if let Some(version_edit) = run_flush_memtable_job(
+                    req,
+                    self.global_ctx.clone(),
+                    self.version_set.clone(),
+                    self.summary_task_sender.clone(),
+                    None,
+                )
+                .await?
+                {
+                    if version_edit.add_files.is_empty() {
+                        // Flushed but not generate any file.
+                        warn!("Snapshot: flush vnode {vnode_id} did not generated any file.");
+                        Err(Error::VnodeFlushedNothing { vnode_id })
+                    } else {
+                        // Normally flushed, and generated some tsm/delta files.
+                        debug!("Snapshot: flush vnode {vnode_id} succeed.");
+                        let tenant_database = vnode.read().await.tenant_database();
+                        let storage_opt = self.options.storage.clone();
+                        let snapshot_dir =
+                            storage_opt.tsfamily_snapshot_dir(tenant_database.as_str(), vnode_id);
+
+                        debug!(
+                            "Snapshot: removing snapshot directory {}.",
+                            snapshot_dir.display()
+                        );
+                        let _ = std::fs::remove_dir_all(&snapshot_dir);
+                        debug!(
+                            "Snapshot: creating snapshot directory {}.",
+                            snapshot_dir.display()
+                        );
+
+                        let mut files = Vec::with_capacity(version_edit.add_files.len());
+                        let delta_dir = storage_opt.delta_dir(tenant_database.as_str(), vnode_id);
+                        let tsm_dir = storage_opt.tsm_dir(tenant_database.as_str(), vnode_id);
+
+                        fn create_snapshot_dir(dir: &PathBuf) -> Result<()> {
+                            std::fs::create_dir_all(dir).with_context(|_| {
+                                debug!(
+                                    "Snapshot: failed to create snapshot directory {}.",
+                                    dir.display()
+                                );
+                                error::CreateFileSnafu { path: dir.clone() }
+                            })
+                        }
+                        let snap_delta_dir =
+                            storage_opt.snapshot_delta_dir(tenant_database.as_str(), vnode_id);
+                        create_snapshot_dir(&snap_delta_dir)?;
+                        let snap_tsm_dir =
+                            storage_opt.snapshot_tsm_dir(tenant_database.as_str(), vnode_id);
+                        create_snapshot_dir(&snap_tsm_dir)?;
+
+                        for f in version_edit.add_files {
+                            files.push(SnapshotFileMeta::from(&f));
+
+                            // Get tsm/delta file path and snapshot file path
+                            let (file_path, snapshot_path) = if f.is_delta {
+                                (
+                                    file_utils::make_delta_file_name(&delta_dir, f.file_id),
+                                    file_utils::make_delta_file_name(&snap_delta_dir, f.file_id),
+                                )
+                            } else {
+                                (
+                                    file_utils::make_tsm_file_name(&tsm_dir, f.file_id),
+                                    file_utils::make_tsm_file_name(&snap_tsm_dir, f.file_id),
+                                )
+                            };
+
+                            // Create hard link to tsm/delta file.
+                            debug!(
+                                "Snapshot: creating hard link {} to {}.",
+                                file_path.display(),
+                                snapshot_path.display()
+                            );
+                            if let Err(e) = std::fs::hard_link(&file_path, &snapshot_path)
+                                .context(error::IOSnafu)
+                            {
+                                error!(
+                                    "Snapshot: failed to create hard link {} to {}: {e}.",
+                                    file_path.display(),
+                                    snapshot_path.display()
+                                );
+                                return Err(e);
+                            }
+                        }
+                        let (tenant, database) = split_owner(tenant_database.as_str());
+                        let snapshot = VnodeSnapshot {
+                            tenant: tenant.to_string(),
+                            database: database.to_string(),
+                            vnode_id,
+                            files,
+                            last_seq_no,
+                        };
+                        debug!("Snapshot: created snapshot: {snapshot:?}");
+                        Ok(snapshot)
+                    }
+                } else {
+                    // Flushed no data.
+                    warn!("Snapshot: vnode {vnode_id} has not data to flush.");
+                    Err(Error::VnodeFlushedNothing { vnode_id })
+                }
+            } else {
+                // No data to flush.
+                warn!("Snapshot: vnode {vnode_id} has no data to flush.");
+                Err(Error::VnodeFlushedNothing { vnode_id })
+            }
+        } else {
+            // Vnode not found
+            warn!("Snapshot: vnode {vnode_id} not found.");
+            Err(Error::VnodeNotFound { vnode_id })
+        }
+    }
+
+    async fn apply_snapshot(&self, snapshot: VnodeSnapshot) -> Result<()> {
+        debug!("Snapshot: apply snapshot {snapshot:?} to create new vnode.");
+        let VnodeSnapshot {
+            tenant,
+            database,
+            vnode_id,
+            files,
+            last_seq_no,
+        } = snapshot;
+        let tenant_database = make_owner(&tenant, &database);
+        let storage_opt = self.options.storage.clone();
+        let db = self.get_db_or_else_create(&tenant, &database).await?;
+        let mut db_wlock = db.write().await;
+        if db_wlock.get_tsfamily(vnode_id).is_some() {
+            // If there was already a vnode, delete and re-build it.
+            warn!("Snapshot: removing existing vnode {vnode_id}.");
+            db_wlock
+                .del_tsfamily(vnode_id, self.summary_task_sender.clone())
+                .await;
+            let vnode_dir = storage_opt.ts_family_dir(&tenant_database, vnode_id);
+            debug!(
+                "Snapshot: removing existing vnode directory {}.",
+                vnode_dir.display()
+            );
+            for e in walkdir::WalkDir::new(&vnode_dir)
+                .min_depth(1)
+                .max_depth(1)
+                .into_iter()
+                .flatten()
+            {
+                if e.file_type().is_dir() && e.file_name() == MOVE_PATH {
+                    continue;
+                } else if e.file_type().is_file() {
+                    let _ = std::fs::remove_file(e.path());
+                } else {
+                    let _ = std::fs::remove_dir_all(e.path());
+                }
+            }
+        }
+
+        let version_edit = VersionEdit {
+            has_seq_no: true,
+            seq_no: last_seq_no,
+            add_files: files
+                .iter()
+                .map(|f| CompactMeta {
+                    file_id: f.file_id,
+                    file_size: f.file_id,
+                    tsf_id: vnode_id,
+                    level: f.level,
+                    min_ts: f.min_ts,
+                    max_ts: f.max_ts,
+                    high_seq: last_seq_no,
+                    low_seq: 0,
+                    is_delta: f.level == 0,
+                })
+                .collect(),
+            add_tsf: true,
+            tsf_id: vnode_id,
+            tsf_name: tenant_database,
+            ..Default::default()
+        };
+        debug!("Snapshot: created version edit {version_edit:?}");
+
+        // Create new vnode.
+        if let Err(e) = db_wlock
+            .add_tsfamily(
+                vnode_id,
+                Some(version_edit),
+                self.summary_task_sender.clone(),
+                self.flush_task_sender.clone(),
+                self.compact_task_sender.clone(),
+                self.global_ctx.clone(),
+            )
+            .await
+        {
+            error!("Snapshot: failed to create vnode {vnode_id}: {e}");
+            return Err(e);
+        }
+        // Create series index for vnode.
+        if let Err(e) = db_wlock.get_ts_index_or_add(vnode_id).await {
+            error!("Snapshot: failed to create index for vnode {vnode_id}: {e}");
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    async fn delete_snapshot(&self, vnode_id: VnodeId) -> Result<()> {
+        debug!("Snapshot: create snapshot on vnode: {vnode_id}");
+        let vnode_optional = self
+            .version_set
+            .read()
+            .await
+            .get_tsfamily_by_tf_id(vnode_id)
+            .await;
+        if let Some(vnode) = vnode_optional {
+            let tenant_database = vnode.read().await.tenant_database();
+            let storage_opt = self.options.storage.clone();
+            let snapshot_dir =
+                storage_opt.tsfamily_snapshot_dir(tenant_database.as_str(), vnode_id);
+            debug!(
+                "Snapshot: removing snapshot directory {}.",
+                snapshot_dir.display()
+            );
+            std::fs::remove_dir_all(&snapshot_dir).with_context(|_| {
+                error!(
+                    "Snapshot: failed to remove snapshot directory {}.",
+                    snapshot_dir.display()
+                );
+                error::DeleteFileSnafu { path: snapshot_dir }
+            })?;
+            Ok(())
+        } else {
+            // Vnode not found
+            warn!("Snapshot: vnode {vnode_id} not found.");
+            Err(Error::VnodeNotFound { vnode_id })
+        }
+    }
 }
 
 #[cfg(test)]
 impl TsKv {
     pub(crate) fn global_ctx(&self) -> Arc<GlobalContext> {
         self.global_ctx.clone()
-    }
-
-    pub(crate) fn global_sql_ctx(&self) -> Arc<GlobalSequenceContext> {
-        self.global_seq_ctx.clone()
     }
 
     pub(crate) fn version_set(&self) -> Arc<RwLock<VersionSet>> {

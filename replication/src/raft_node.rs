@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use openraft::storage::Adaptor;
 use openraft::RaftMetrics;
+use tracing::info;
 
 use crate::apply_store::ApplyStorageRef;
 use crate::errors::{ReplicationError, ReplicationResult};
@@ -50,23 +51,49 @@ impl RaftNode {
         })
     }
 
+    pub fn raft_id(&self) -> RaftNodeId {
+        self.id
+    }
+
+    pub fn group_id(&self) -> u32 {
+        self.info.group_id
+    }
+
     pub fn raw_raft(&self) -> OpenRaftNode {
         self.raft.clone()
     }
 
     /// Initialize a single-node cluster.
-    pub async fn raft_init(&self) -> ReplicationResult<()> {
-        let mut nodes = BTreeMap::new();
+    pub async fn raft_init(
+        &self,
+        nodes: BTreeMap<RaftNodeId, RaftNodeInfo>,
+    ) -> ReplicationResult<()> {
+        let mut nodes = nodes.clone();
         nodes.insert(self.id, self.info.clone());
 
-        self.raft
-            .initialize(nodes)
-            .await
-            .map_err(|err| ReplicationError::RaftInternalErr {
-                msg: format!("Initialize raft execute failed: {}", err),
-            })?;
+        let result = self.raft.initialize(nodes).await;
+        info!("Initialize raft Status: {:?}", result);
+        if let Err(openraft::error::RaftError::APIError(
+            openraft::error::InitializeError::NotAllowed(_),
+        )) = result
+        {
+            Ok(())
+        } else if let Err(err) = result {
+            Err(ReplicationError::RaftInternalErr {
+                msg: format!("Initialize raft group failed: {}", err),
+            })
+        } else {
+            Ok(())
+        }
 
-        Ok(())
+        // self.raft
+        //     .initialize(nodes)
+        //     .await
+        //     .map_err(|err| ReplicationError::RaftInternalErr {
+        //         msg: format!("Initialize raft execute failed: {}", err),
+        //     })?;
+
+        // Ok(())
     }
 
     /// Add a node as **Learner**.
@@ -95,6 +122,19 @@ impl RaftNode {
             .map_err(|err| ReplicationError::RaftInternalErr {
                 msg: format!("Change membership raft execute failed: {}", err),
             })?;
+
+        Ok(())
+    }
+
+    pub async fn shutdown(&self) -> ReplicationResult<()> {
+        self.raft
+            .shutdown()
+            .await
+            .map_err(|err| ReplicationError::RaftInternalErr {
+                msg: err.to_string(),
+            })?;
+
+        self.storage.destory().await?;
 
         Ok(())
     }

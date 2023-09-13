@@ -17,7 +17,7 @@ use crate::error::Result;
 use crate::kv_option::StorageOptions;
 use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
-use crate::{Engine, TseriesFamilyId};
+use crate::{Engine, TseriesFamilyId, VnodeSnapshot};
 
 #[derive(Debug, Default)]
 pub struct MockEngine {}
@@ -38,6 +38,18 @@ impl Engine for MockEngine {
         debug!("writed point: {:?}", fb_points);
 
         Ok(WritePointsResponse { points_number: 0 })
+    }
+
+    async fn write_memcache(
+        &self,
+        index: u64,
+        tenant: &str,
+        points: Vec<u8>,
+        vnode_id: VnodeId,
+        precision: Precision,
+        span_ctx: Option<&SpanContext>,
+    ) -> Result<WritePointsResponse> {
+        todo!()
     }
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
@@ -192,6 +204,18 @@ impl Engine for MockEngine {
     async fn close(&self) {}
 
     async fn prepare_copy_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()> {
+        todo!()
+    }
+
+    async fn create_snapshot(&self, vnode_id: VnodeId) -> Result<VnodeSnapshot> {
+        todo!()
+    }
+
+    async fn apply_snapshot(&self, snapshot: VnodeSnapshot) -> Result<()> {
+        todo!()
+    }
+
+    async fn delete_snapshot(&self, vnode_id: VnodeId) -> Result<()> {
         todo!()
     }
 }

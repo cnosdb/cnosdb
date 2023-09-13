@@ -27,6 +27,17 @@ pub struct UpdateVnodeReplSetArgs {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ChangeReplSetLeaderArgs {
+    pub cluster: String,
+    pub tenant: String,
+    pub db_name: String,
+    pub bucket_id: u32,
+    pub repl_id: u32,
+    pub leader_node_id: NodeId,
+    pub leader_vnode_id: VnodeId,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UpdateVnodeArgs {
     pub cluster: String,
     pub vnode_info: VnodeAllInfo,
@@ -39,6 +50,8 @@ pub enum WriteCommand {
     RetainID(String, u32),
 
     UpdateVnodeReplSet(UpdateVnodeReplSetArgs),
+
+    ChangeReplSetLeader(ChangeReplSetLeaderArgs),
 
     UpdateVnode(UpdateVnodeArgs),
     // cluster, node info

@@ -4,7 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use models::codec::Encoding;
-use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp, ValueType};
+use models::{
+    utils as model_utils, ColumnId, FieldId, PhysicalDType as ValueType, SeriesId, Timestamp,
+};
 use parking_lot::RwLock;
 use snafu::ResultExt;
 use tokio::sync::mpsc::Sender;
@@ -14,7 +16,7 @@ use trace::{error, info, warn};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
-use crate::context::{GlobalContext, GlobalSequenceContext};
+use crate::context::GlobalContext;
 use crate::error::{self, Result};
 use crate::memcache::{FieldVal, MemCache, SeriesData};
 use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
@@ -31,8 +33,10 @@ struct FlushingBlock {
 }
 
 pub struct FlushTask {
-    mem_caches: Vec<Arc<RwLock<MemCache>>>,
     ts_family_id: TseriesFamilyId,
+    mem_caches: Vec<Arc<RwLock<MemCache>>>,
+    low_seq_no: u64,
+    high_seq_no: u64,
     global_context: Arc<GlobalContext>,
     path_tsm: PathBuf,
     path_delta: PathBuf,
@@ -40,15 +44,19 @@ pub struct FlushTask {
 
 impl FlushTask {
     pub fn new(
-        mem_caches: Vec<Arc<RwLock<MemCache>>>,
         ts_family_id: TseriesFamilyId,
+        mem_caches: Vec<Arc<RwLock<MemCache>>>,
+        low_seq_no: u64,
+        high_seq_no: u64,
         global_context: Arc<GlobalContext>,
         path_tsm: impl AsRef<Path>,
         path_delta: impl AsRef<Path>,
     ) -> Self {
         Self {
-            mem_caches,
             ts_family_id,
+            mem_caches,
+            low_seq_no,
+            high_seq_no,
             global_context,
             path_tsm: path_tsm.as_ref().into(),
             path_delta: path_delta.as_ref().into(),
@@ -58,10 +66,7 @@ impl FlushTask {
     pub async fn run(
         self,
         version: Arc<Version>,
-        version_edits: &mut Vec<VersionEdit>,
-        file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-    ) -> Result<()> {
-        let (mut high_seq, mut low_seq) = (0, u64::MAX);
+    ) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
         let mut total_memcache_size = 0_u64;
 
         let mut flushing_mems = Vec::with_capacity(self.mem_caches.len());
@@ -72,11 +77,7 @@ impl FlushTask {
             HashMap::new();
         let flushing_mems_len = flushing_mems.len();
         for mem in flushing_mems.into_iter() {
-            let seq_no = mem.seq_no();
-            high_seq = seq_no.max(high_seq);
-            low_seq = seq_no.min(low_seq);
             total_memcache_size += mem.cache_size();
-
             for (series_id, series_data) in mem.read_series_data() {
                 flushing_mems_data
                     .entry(series_id)
@@ -86,7 +87,8 @@ impl FlushTask {
         }
 
         if total_memcache_size == 0 {
-            return Ok(());
+            trace::debug!("Flush: caches are all empty that flushing is skipped");
+            return Ok(None);
         }
 
         let mut max_level_ts = version.max_level_ts;
@@ -99,17 +101,21 @@ impl FlushTask {
             .await?;
         let mut edit = VersionEdit::new(self.ts_family_id);
         for (cm, _) in column_file_metas.iter_mut() {
-            cm.low_seq = low_seq;
-            cm.high_seq = high_seq;
+            cm.low_seq = self.low_seq_no;
+            cm.high_seq = self.high_seq_no;
             max_level_ts = max_level_ts.max(cm.max_ts);
         }
+        edit.has_seq_no = true;
+        edit.seq_no = self.high_seq_no;
+
+        let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> =
+            HashMap::with_capacity(column_file_metas.len());
         for (cm, field_filter) in column_file_metas {
             file_metas.insert(cm.file_id, field_filter);
             edit.add_file(cm, max_level_ts);
         }
-        version_edits.push(edit);
 
-        Ok(())
+        Ok(Some((edit, file_metas)))
     }
 
     /// Merges caches data and write them into a `.tsm` file and a `.delta` file
@@ -185,18 +191,14 @@ impl FlushTask {
 pub async fn run_flush_memtable_job(
     req: FlushReq,
     global_context: Arc<GlobalContext>,
-    global_sequence_context: Arc<GlobalSequenceContext>,
     version_set: Arc<tokio::sync::RwLock<VersionSet>>,
     summary_task_sender: Sender<SummaryTask>,
     compact_task_sender: Option<Sender<CompactTask>>,
-) -> Result<()> {
-    info!(
-        "Flush: Running flush job for ts_family {} with {} MemCaches",
-        req.ts_family_id,
-        req.mems.len()
-    );
+) -> Result<Option<VersionEdit>> {
+    let req_str = format!("{req}");
+    info!("Flush: running: {req_str}");
 
-    let mut version_edits: Vec<VersionEdit> = vec![];
+    let mut version_edit = None;
     let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
 
     let get_tsf_result = version_set
@@ -212,7 +214,7 @@ pub async fn run_flush_memtable_job(
             (
                 tsf_rlock.storage_opt(),
                 tsf_rlock.version(),
-                tsf_rlock.database(),
+                tsf_rlock.tenant_database(),
             )
         };
 
@@ -220,16 +222,18 @@ pub async fn run_flush_memtable_job(
         let path_delta = storage_opt.delta_dir(&database, req.ts_family_id);
 
         let flush_task = FlushTask::new(
-            req.mems.clone(),
             req.ts_family_id,
+            req.mems.clone(),
+            req.low_seq_no,
+            req.high_seq_no,
             global_context.clone(),
             path_tsm,
             path_delta,
         );
-
-        flush_task
-            .run(version, &mut version_edits, &mut file_metas)
-            .await?;
+        if let Some((ve, fm)) = flush_task.run(version).await? {
+            let _ = version_edit.insert(ve);
+            file_metas = fm;
+        }
 
         tsf.read().await.update_last_modified().await;
 
@@ -238,40 +242,42 @@ pub async fn run_flush_memtable_job(
         }
     }
 
-    // If there are no data flushed but it's a force flush,
+    // If there are no data to be flushed but it's a force flush,
     // just write an empty VersionEdit with the max seq_no to the summary.
-    if version_edits.is_empty() && req.force_flush {
+    if version_edit.is_none() && req.force_flush {
         let mut ve = VersionEdit::new(req.ts_family_id);
         ve.has_seq_no = true;
-        ve.seq_no = global_sequence_context.max_seq();
-        version_edits.push(ve);
+        ve.seq_no = 0; // Fixme
+        let _ = version_edit.insert(ve);
     }
 
     info!(
-        "Flush: Run flush job for ts_family {} finished, version edits: {:?}",
-        req.ts_family_id, version_edits
+        "Flush: completed: {req_str}, version edit: {:?}",
+        version_edit
     );
 
-    let (task_state_sender, task_state_receiver) = oneshot::channel();
-    let task = SummaryTask::new(
-        version_edits,
-        Some(file_metas),
-        Some(HashMap::from([(req.ts_family_id, req.mems)])),
-        task_state_sender,
-    );
+    if let Some(ref ve) = version_edit {
+        let (task_state_sender, task_state_receiver) = oneshot::channel();
+        let task = SummaryTask::new(
+            vec![ve.clone()],
+            Some(file_metas),
+            Some(HashMap::from([(req.ts_family_id, req.mems)])),
+            task_state_sender,
+        );
 
-    if let Err(e) = summary_task_sender.send(task).await {
-        warn!("failed to send Summary task, {}", e);
+        if let Err(e) = summary_task_sender.send(task).await {
+            warn!("Flush: failed to send summary task for {req_str}: {e}",);
+        }
+
+        if timeout(Duration::from_secs(10), task_state_receiver)
+            .await
+            .is_err()
+        {
+            error!("Flush: failed to receive summary task result in 10 seconds for {req_str}",);
+        }
     }
 
-    if timeout(Duration::from_secs(10), task_state_receiver)
-        .await
-        .is_err()
-    {
-        error!("Failed recv summary call back, may case inconsistency of data temporarily");
-    }
-
-    Ok(())
+    Ok(version_edit)
 }
 
 struct WriterWrapper {
@@ -513,7 +519,7 @@ pub mod flush_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let tsm_dir = dir.join("tsm");
         let delta_dir = dir.join("delta");
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         let test_case = flush_test_case_1(&memory_pool, 10);
 
         let ts_family_id = 1;
@@ -521,23 +527,28 @@ pub mod flush_tests {
         let global_context = Arc::new(GlobalContext::new());
         let options = Options::from(&config);
         #[rustfmt::skip]
-            let version = Arc::new(Version {
+        let version = Arc::new(Version {
             ts_family_id,
-            database: database.clone(),
+            tenant_database: database.clone(),
             storage_opt: options.storage.clone(),
             last_seq: 1,
             max_level_ts: test_case.max_level_ts_before,
             levels_info: LevelInfo::init_levels(database, 0, options.storage),
             tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
         });
-        let flush_task =
-            FlushTask::new(test_case.caches(), 1, global_context, &tsm_dir, &delta_dir);
+        let flush_task = FlushTask::new(
+            1,
+            test_case.caches(),
+            1,
+            2,
+            global_context,
+            &tsm_dir,
+            &delta_dir,
+        );
         let mut version_edits = vec![];
-        let mut file_metas = HashMap::new();
-        flush_task
-            .run(version, &mut version_edits, &mut file_metas)
-            .await
-            .unwrap();
+        if let Some((version_edit, _file_metas)) = flush_task.run(version).await.unwrap() {
+            version_edits.push(version_edit);
+        }
 
         assert_eq!(version_edits.len(), 1);
         let ve = version_edits.get(0).unwrap();
@@ -709,8 +720,10 @@ pub mod flush_tests {
         let max_level_ts = 10;
         let global_context = Arc::new(GlobalContext::new());
         let flush_task = FlushTask::new(
-            vec![],
             ts_family_id,
+            vec![],
+            1,
+            2,
             global_context.clone(),
             &tsm_dir,
             &delta_dir,

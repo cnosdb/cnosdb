@@ -10,13 +10,20 @@ use heed::{Database, Env};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{ReplicationError, ReplicationResult};
-use crate::{Request, Response};
+use crate::{RaftNodeId, Request, Response};
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
+pub struct ApplyContext {
+    pub index: u64,
+    pub raft_id: RaftNodeId,
+}
 
 #[async_trait]
 pub trait ApplyStorage: Send + Sync + Any {
-    async fn apply(&self, req: &Request) -> ReplicationResult<Response>;
+    async fn apply(&self, ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response>;
     async fn snapshot(&self) -> ReplicationResult<Vec<u8>>;
     async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()>;
+    async fn destory(&self) -> ReplicationResult<()>;
 }
 
 pub type ApplyStorageRef = Arc<dyn ApplyStorage + Send + Sync>;
@@ -59,7 +66,7 @@ impl HeedApplyStorage {
 
 #[async_trait]
 impl ApplyStorage for HeedApplyStorage {
-    async fn apply(&self, req: &Request) -> ReplicationResult<Response> {
+    async fn apply(&self, ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
         #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
         struct RequestCommand {
             key: String,
@@ -100,6 +107,10 @@ impl ApplyStorage for HeedApplyStorage {
         }
         writer.commit()?;
 
+        Ok(())
+    }
+
+    async fn destory(&self) -> ReplicationResult<()> {
         Ok(())
     }
 }

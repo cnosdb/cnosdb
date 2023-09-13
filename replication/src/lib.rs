@@ -1,20 +1,22 @@
 #![allow(dead_code)]
 #![allow(unused)]
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::io::Cursor;
 use std::sync::Arc;
 
 use network_client::NetworkConn;
 use node_store::NodeStorage;
 use openraft::storage::Adaptor;
-use openraft::{AppData, AppDataResponse, RaftNetworkFactory, TokioRuntime};
+use openraft::TokioRuntime;
 
 pub mod apply_store;
 pub mod entry_store;
 pub mod errors;
 
+pub mod multi_raft;
 pub mod network_client;
-pub mod network_server;
+pub mod network_grpc;
+pub mod network_http;
 pub mod node_store;
 pub mod raft_node;
 pub mod state_store;
@@ -41,8 +43,14 @@ pub struct RaftNodeInfo {
 // }
 openraft::declare_raft_types!(
     /// Declare the type configuration.
-    pub TypeConfig: D = Request, R = Response, NodeId = RaftNodeId, Node = RaftNodeInfo,
-    Entry = openraft::Entry<TypeConfig>, SnapshotData = Cursor<Vec<u8>>, AsyncRuntime = TokioRuntime
+    pub TypeConfig:
+        D = Request,
+        R = Response,
+        NodeId = RaftNodeId,
+        Node = RaftNodeInfo,
+        Entry = openraft::Entry<TypeConfig>,
+        SnapshotData = Cursor<Vec<u8>>,
+        AsyncRuntime = TokioRuntime
 );
 
 type LocalLogStore = Adaptor<TypeConfig, Arc<NodeStorage>>;
