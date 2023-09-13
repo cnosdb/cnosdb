@@ -41,7 +41,7 @@ pub struct CheckedCoordinatorRecordBatchStream<O: VnodeOpener> {
     option: QueryOption,
     state: StreamState,
 
-    data_out: U64Counter,
+    coord_data_out: U64Counter,
 }
 
 impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
@@ -52,11 +52,11 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
         checker: CheckFuture,
         metrics: &CoordServiceMetrics,
     ) -> Self {
-        let data_out = metrics.data_out(
-            option.table_schema.tenant.as_str(),
-            option.table_schema.db.as_str(),
-        );
-        let tenant = option.table_schema.tenant.clone().into();
+        let tenant: Arc<String> = option.table_schema.tenant.clone().into();
+        let db = option.table_schema.db.as_str();
+
+        let coord_data_out = metrics.coord_data_out(tenant.as_str(), db);
+        metrics.coord_queries(tenant.as_str(), db).inc_one();
         Self {
             option,
             opener,
@@ -64,7 +64,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
             tenant,
             vnode: VnodeInfo::default(),
             state: StreamState::Check(checker),
-            data_out,
+            coord_data_out,
         }
     }
 
@@ -188,7 +188,8 @@ impl<O: VnodeOpener> Stream for CheckedCoordinatorRecordBatchStream<O> {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let poll = self.poll_inner(cx);
         if let Poll::Ready(Some(Ok(batch))) = &poll {
-            self.data_out.inc(batch.get_array_memory_size() as u64)
+            self.coord_data_out
+                .inc(batch.get_array_memory_size() as u64)
         }
         poll
     }
