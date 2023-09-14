@@ -848,6 +848,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                         table: table_schema.name.to_string(),
                     }
                 })?;
+                if table_schema.column(&new_column_name).is_some() {
+                    return Err(QueryError::ColumnAlreadyExists {
+                        column: new_column_name,
+                        table: table_schema.name.to_string(),
+                    });
+                }
 
                 let new_column_name = match column.column_type {
                     ColumnType::Time(_) => {

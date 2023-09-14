@@ -167,12 +167,24 @@ pub struct AlterColumnRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RenameColumnRequest {
+    #[prost(string, tag = "1")]
+    pub db: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub table: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub old_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub new_name: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AdminCommandRequest {
     #[prost(string, tag = "1")]
     pub tenant: ::prost::alloc::string::String,
     #[prost(
         oneof = "admin_command_request::Command",
-        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10"
+        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 11"
     )]
     pub command: ::core::option::Option<admin_command_request::Command>,
 }
@@ -199,6 +211,8 @@ pub mod admin_command_request {
         AddColumn(super::AddColumnRequest),
         #[prost(message, tag = "10")]
         AlterColumn(super::AlterColumnRequest),
+        #[prost(message, tag = "11")]
+        RenameColumn(super::RenameColumnRequest),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -130,6 +130,24 @@ impl TskvServiceImpl {
         self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
     }
 
+    async fn admin_rename_column(
+        &self,
+        tenant: &str,
+        request: &RenameColumnRequest,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        self.kv_inst
+            .rename_tag(
+                tenant,
+                &request.db,
+                &request.table,
+                &request.old_name,
+                &request.new_name,
+            )
+            .await?;
+
+        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+    }
+
     async fn admin_delete_vnode(
         &self,
         tenant: &str,
@@ -380,6 +398,9 @@ impl TskvService for TskvServiceImpl {
                 }
                 admin_command_request::Command::AlterColumn(command) => {
                     self.admin_alter_column(&inner.tenant, command).await
+                }
+                admin_command_request::Command::RenameColumn(command) => {
+                    self.admin_rename_column(&inner.tenant, command).await
                 }
             };
 

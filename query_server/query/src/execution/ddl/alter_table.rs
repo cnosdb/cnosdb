@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use meta::error::MetaError;
-use models::schema::TableSchema;
+use models::schema::{TableColumn, TableSchema};
 use protos::kv_service::admin_command_request::Command;
 use protos::kv_service::{
     AddColumnRequest, AdminCommandRequest, AlterColumnRequest, DropColumnRequest,
+    RenameColumnRequest,
 };
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::query::logical_planner::{AlterTable, AlterTableAction};
+use spi::query::logical_planner::{AlterTable, AlterTableAction, RenameColumnAction};
 use spi::{QueryError, Result};
 
 // use crate::execution::ddl::query::spi::MetaSnafu;
@@ -90,15 +91,43 @@ impl DDLDefinitionTask for AlterTableTask {
                     })),
                 }
             }
-            AlterTableAction::RenameColumn { .. } => {
-                // TODO
-                return Err(QueryError::NotImplemented {
-                    err: "RenameColumn".to_string(),
-                });
+            AlterTableAction::RenameColumn {
+                old_column_name,
+                new_column_name,
+            } => {
+                match new_column_name {
+                    RenameColumnAction::RenameTag(new_name) => {
+                        if let Some(old_column) = schema.column(old_column_name) {
+                            let new_column =
+                                TableColumn::new_tag_column(old_column.id, new_name.clone());
+                            schema.change_column(old_column_name, new_column);
+
+                            AdminCommandRequest {
+                                tenant: tenant.to_string(),
+                                command: Some(Command::RenameColumn(RenameColumnRequest {
+                                    db: schema.db.to_owned(),
+                                    table: schema.name.to_string(),
+                                    old_name: old_column_name.to_owned(),
+                                    new_name: new_name.to_owned(),
+                                })),
+                            }
+                        } else {
+                            return Err(QueryError::ColumnNotFound {
+                                col: old_column_name.to_owned(),
+                            });
+                        }
+                    }
+                    RenameColumnAction::RenameField(_new_name) => {
+                        // TODO
+                        return Err(QueryError::NotImplemented {
+                            err: "RenameField".to_string(),
+                        });
+                    }
+                }
             }
         };
         schema.schema_id += 1;
-
+        // TODO: @lutengda Start a task that guarantees eventual consistency
         client
             .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
             .await?;
