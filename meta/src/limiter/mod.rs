@@ -3,9 +3,11 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use config::RequestLimiterConfig;
 
 use crate::error::MetaResult;
 
+pub mod limiter_factory;
 pub mod limiter_kind;
 pub mod limiter_manager;
 pub mod local_request_limiter;
@@ -50,5 +52,19 @@ pub trait RequestLimiter: Send + Sync + Debug {
     async fn check_http_data_out(&self, data_len: usize) -> MetaResult<()>;
     async fn check_http_queries(&self) -> MetaResult<()>;
     async fn check_http_writes(&self) -> MetaResult<()>;
+    async fn change_self(&self, limiter_config: LimiterConfig) -> MetaResult<()>;
     fn as_any(&self) -> &dyn Any;
+}
+
+pub enum LimiterConfig {
+    TenantRequestLimiterConfig {
+        tenant: String,
+        config: Box<Option<RequestLimiterConfig>>,
+    },
+    Null,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LimiterType {
+    Tenant,
 }

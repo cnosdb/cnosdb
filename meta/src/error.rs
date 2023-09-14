@@ -163,6 +163,10 @@ pub enum MetaError {
     #[snafu(display("Operation not support: {}", msg))]
     #[error_code(code = 34)]
     NotSupport { msg: String },
+
+    #[snafu(display("Create limiter fail: {}", msg))]
+    #[error_code(code = 35)]
+    LimiterCreate { msg: String },
 }
 impl MetaError {
     pub fn error_code(&self) -> &dyn ErrorCode {
