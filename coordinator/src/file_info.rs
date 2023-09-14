@@ -18,7 +18,7 @@ pub struct PathFilesMeta {
     pub meta: Vec<FileInfo>,
 }
 
-impl From<PathFilesMeta> for protos::kv_service::GetVnodeFilesMetaResponse {
+impl From<PathFilesMeta> for protos::kv_service::GetFilesMetaResponse {
     fn from(src: PathFilesMeta) -> Self {
         let mut pb_file_infos = vec![];
         for it in src.meta.iter() {
@@ -31,7 +31,7 @@ impl From<PathFilesMeta> for protos::kv_service::GetVnodeFilesMetaResponse {
             pb_file_infos.push(info);
         }
 
-        protos::kv_service::GetVnodeFilesMetaResponse {
+        protos::kv_service::GetFilesMetaResponse {
             path: src.path,
             infos: pb_file_infos,
         }

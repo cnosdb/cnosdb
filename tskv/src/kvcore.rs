@@ -1467,12 +1467,12 @@ impl Engine for TsKv {
 
             let (tenant, database) = split_owner(tenant_database.as_str());
             let snapshot = VnodeSnapshot {
+                node_id: 0,
                 tenant: tenant.to_string(),
                 database: database.to_string(),
                 vnode_id,
                 files,
                 last_seq_no,
-                snapshot_dir,
             };
             debug!("Snapshot: created snapshot: {snapshot:?}");
             Ok(snapshot)
@@ -1486,12 +1486,12 @@ impl Engine for TsKv {
     async fn apply_snapshot(&self, snapshot: VnodeSnapshot) -> Result<()> {
         debug!("Snapshot: apply snapshot {snapshot:?} to create new vnode.");
         let VnodeSnapshot {
+            node_id: _,
             tenant,
             database,
             vnode_id,
             files,
             last_seq_no,
-            snapshot_dir: _,
         } = snapshot;
         let tenant_database = make_owner(&tenant, &database);
         let storage_opt = self.options.storage.clone();

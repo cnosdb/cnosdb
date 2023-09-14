@@ -4,13 +4,12 @@
 #![feature(maybe_uninit_uninit_array)]
 
 use std::fmt::Debug;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 pub use compaction::check::vnode_table_checksum_schema;
 use datafusion::arrow::record_batch::RecordBatch;
-use models::meta_data::VnodeId;
+use models::meta_data::{NodeId, VnodeId};
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{Precision, TableColumn};
 use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
@@ -238,12 +237,12 @@ pub trait Engine: Send + Sync + Debug {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct VnodeSnapshot {
+    pub node_id: NodeId,
     pub tenant: String,
     pub database: String,
     pub vnode_id: VnodeId,
     pub files: Vec<SnapshotFileMeta>,
     pub last_seq_no: u64,
-    pub snapshot_dir: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -253,7 +252,6 @@ pub struct SnapshotFileMeta {
     pub level: LevelId,
     pub min_ts: Timestamp,
     pub max_ts: Timestamp,
-    pub file_name: String,
 }
 
 impl From<&CompactMeta> for SnapshotFileMeta {
@@ -264,11 +262,6 @@ impl From<&CompactMeta> for SnapshotFileMeta {
             level: cm.level,
             min_ts: cm.min_ts,
             max_ts: cm.max_ts,
-            file_name: if cm.level == 0 {
-                file_utils::make_delta_file_name(cm.file_id)
-            } else {
-                file_utils::make_tsm_file_name(cm.file_id)
-            },
         }
     }
 }

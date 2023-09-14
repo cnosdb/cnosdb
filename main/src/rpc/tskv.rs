@@ -588,7 +588,7 @@ impl TskvService for TskvServiceImpl {
     async fn get_vnode_files_meta(
         &self,
         request: tonic::Request<GetVnodeFilesMetaRequest>,
-    ) -> Result<tonic::Response<GetVnodeFilesMetaResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<GetFilesMetaResponse>, tonic::Status> {
         let inner = request.into_inner();
         let owner = models::schema::make_owner(&inner.tenant, &inner.db);
         let storage_opt = self.kv_inst.get_storage_options();
@@ -602,6 +602,24 @@ impl TskvService for TskvServiceImpl {
         }
 
         let path = storage_opt.ts_family_dir(&owner, inner.vnode_id);
+        match get_files_meta(&path.as_path().to_string_lossy()).await {
+            Ok(files_meta) => {
+                info!("files meta: {:?} {:?}", path, files_meta);
+                Ok(tonic::Response::new(files_meta.into()))
+            }
+            Err(err) => Err(tonic::Status::new(tonic::Code::Internal, err.to_string())),
+        }
+    }
+
+    async fn get_vnode_snap_files_meta(
+        &self,
+        request: tonic::Request<GetVnodeSnapFilesMetaRequest>,
+    ) -> Result<tonic::Response<GetFilesMetaResponse>, tonic::Status> {
+        let inner = request.into_inner();
+        let owner = models::schema::make_owner(&inner.tenant, &inner.db);
+        let storage_opt = self.kv_inst.get_storage_options();
+
+        let path = storage_opt.snapshot_dir(&owner, inner.vnode_id);
         match get_files_meta(&path.as_path().to_string_lossy()).await {
             Ok(files_meta) => {
                 info!("files meta: {:?} {:?}", path, files_meta);

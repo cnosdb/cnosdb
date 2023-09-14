@@ -76,7 +76,7 @@ pub enum ReplicationError {
 
     #[snafu(display("Apply engine failed: {}", msg))]
     #[error_code(code = 11)]
-    ApplyEngineFailed {
+    ApplyEngineErr {
         msg: String,
     },
 }

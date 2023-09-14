@@ -7,7 +7,7 @@ use protos::kv_service::admin_command_request::Command::DelVnode;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{
     AdminCommandRequest, DeleteVnodeRequest, DownloadFileRequest, FetchVnodeSummaryRequest,
-    GetVnodeFilesMetaRequest, GetVnodeFilesMetaResponse,
+    GetFilesMetaResponse, GetVnodeFilesMetaRequest,
 };
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
@@ -228,7 +228,7 @@ impl VnodeManager {
                 .unwrap();
 
             let filename = data_path.join(relative_filename);
-            self.download_file(&info.name, &filename, client).await?;
+            VnodeManager::download_file(&info.name, &filename, client).await?;
 
             let filename = filename.to_string_lossy().to_string();
             let tmp_info = get_file_info(&filename).await?;
@@ -246,7 +246,7 @@ impl VnodeManager {
         &self,
         all_info: &VnodeAllInfo,
         client: &mut TskvServiceClient<Timeout<Channel>>,
-    ) -> CoordinatorResult<GetVnodeFilesMetaResponse> {
+    ) -> CoordinatorResult<GetFilesMetaResponse> {
         let request = tonic::Request::new(GetVnodeFilesMetaRequest {
             tenant: all_info.tenant.to_string(),
             db: all_info.db_name.to_string(),
@@ -263,8 +263,7 @@ impl VnodeManager {
         Ok(resp)
     }
 
-    async fn download_file(
-        &self,
+    pub async fn download_file(
         download: &str,
         filename: &Path,
         client: &mut TskvServiceClient<Timeout<Channel>>,

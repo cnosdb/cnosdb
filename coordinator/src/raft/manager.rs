@@ -6,6 +6,7 @@ use std::time::Duration;
 use meta::model::MetaRef;
 use models::meta_data::*;
 use models::schema::Precision;
+use openraft::SnapshotPolicy;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::*;
 use replication::apply_store::ApplyStorageRef;
@@ -381,6 +382,9 @@ impl RaftNodesManager {
             heartbeat_interval: 500,
             election_timeout_min: 1500,
             election_timeout_max: 3000,
+            replication_lag_threshold: 3,
+            snapshot_policy: SnapshotPolicy::LogsSinceLast(3),
+            max_in_snapshot_log_to_keep: 3,
             ..Default::default()
         };
 
@@ -414,7 +418,14 @@ impl RaftNodesManager {
             node_id: self.node_id(),
         })?;
 
-        let engine = super::TskvEngineStorage::open(tenant, db_name, vnode_id, storage);
+        let engine = super::TskvEngineStorage::open(
+            self.node_id(),
+            tenant,
+            db_name,
+            vnode_id,
+            self.meta.clone(),
+            storage,
+        );
         let engine: ApplyStorageRef = Arc::new(engine);
         Ok(engine)
     }

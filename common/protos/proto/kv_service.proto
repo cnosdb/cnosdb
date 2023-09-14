@@ -42,7 +42,13 @@ message GetVnodeFilesMetaRequest {
     uint32 vnode_id = 3;
 }
 
-message GetVnodeFilesMetaResponse {
+message GetVnodeSnapFilesMetaRequest {
+    string tenant = 1;
+    string db = 2;
+    uint32 vnode_id = 3;
+}
+
+message GetFilesMetaResponse {
     string path = 1;
     repeated FileInfo infos = 2;
 }
@@ -211,7 +217,8 @@ service TSKVService {
   rpc ExecDropRaftNode(DropRaftNodeRequest) returns (StatusResponse) {};
 
   rpc DownloadFile(DownloadFileRequest) returns (stream BatchBytesResponse) {};
-  rpc GetVnodeFilesMeta(GetVnodeFilesMetaRequest) returns (GetVnodeFilesMetaResponse) {};
+  rpc GetVnodeFilesMeta(GetVnodeFilesMetaRequest) returns (GetFilesMetaResponse) {};
+  rpc GetVnodeSnapFilesMeta(GetVnodeSnapFilesMetaRequest) returns (GetFilesMetaResponse) {};
   rpc FetchVnodeSummary(FetchVnodeSummaryRequest) returns (BatchBytesResponse) {};
   rpc TagScan(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
 }
