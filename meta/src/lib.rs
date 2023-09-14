@@ -14,6 +14,7 @@ pub mod limiter;
 pub mod model;
 pub mod service;
 pub mod store;
+pub mod thread_service;
 
 pub type ClusterNodeId = u64;
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]

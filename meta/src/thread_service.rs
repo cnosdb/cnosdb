@@ -6,10 +6,6 @@ use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{get, middleware, post, web, App, HttpServer, Responder};
 use config::Config;
-use meta::error::MetaResult;
-use meta::store::command::*;
-use meta::store::state_machine::{response_encode, CommandResp, StateMachine};
-use meta::{ClusterNode, ClusterNodeId, TypeConfig};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder, ROOT};
 use models::oid::{Identifier, UuidGenerator};
@@ -18,18 +14,24 @@ use models::schema::{
 };
 use openraft::error::ClientWriteError;
 use openraft::raft::ClientWriteResponse;
+use serde::{Deserialize, Serialize};
 use trace::{debug, error};
 use web::Json;
 
-use crate::meta_single::Infallible;
+use crate::error::MetaResult;
+use crate::store::command::*;
+use crate::store::state_machine::{response_encode, CommandResp, StateMachine};
+use crate::{ClusterNode, ClusterNodeId, TypeConfig};
 
-pub struct MetaApp {
-    pub http_addr: String,
-    pub store: StateMachine,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Infallible {}
+
+struct MetaApp {
+    store: StateMachine,
 }
 
 #[post("/read")]
-pub async fn read(app: Data<MetaApp>, req: Json<ReadCommand>) -> actix_web::Result<impl Responder> {
+async fn read(app: Data<MetaApp>, req: Json<ReadCommand>) -> actix_web::Result<impl Responder> {
     let res = app.store.process_read_command(&req.0);
 
     let response: Result<CommandResp, Infallible> = Ok(res);
@@ -37,10 +39,7 @@ pub async fn read(app: Data<MetaApp>, req: Json<ReadCommand>) -> actix_web::Resu
 }
 
 #[post("/write")]
-pub async fn write(
-    app: Data<MetaApp>,
-    req: Json<WriteCommand>,
-) -> actix_web::Result<impl Responder> {
+async fn write(app: Data<MetaApp>, req: Json<WriteCommand>) -> actix_web::Result<impl Responder> {
     let res = app.store.process_write_command(&req.0);
 
     let resp: Result<
@@ -56,7 +55,7 @@ pub async fn write(
 }
 
 #[get("/debug")]
-pub async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     let mut response = "******---------------------------******\n".to_string();
     for res in app.store.db.iter() {
         let (k, v) = res.unwrap();
@@ -70,7 +69,7 @@ pub async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
 }
 
 #[post("/watch")]
-pub async fn watch(
+async fn watch(
     app: Data<MetaApp>,
     req: Json<(String, String, HashSet<String>, u64)>, //client id, cluster,version
 ) -> actix_web::Result<impl Responder> {
@@ -132,7 +131,7 @@ impl MetaService {
     }
 }
 
-pub async fn run_service(cpu: usize, opt: &Config) -> std::io::Result<()> {
+async fn run_service(cpu: usize, opt: &Config) -> std::io::Result<()> {
     let db_path = format!("{}/meta/{}.binlog", opt.storage.path, 0);
     let db = Arc::new(sled::open(db_path.clone()).unwrap());
     let state_machine = StateMachine::new(db);
@@ -144,7 +143,6 @@ pub async fn run_service(cpu: usize, opt: &Config) -> std::io::Result<()> {
 
     let meta_service = opt.cluster.meta_service_addr.get(0).unwrap().clone();
     let app = Data::new(MetaApp {
-        http_addr: meta_service.clone(),
         store: state_machine,
     });
 
@@ -170,7 +168,7 @@ pub async fn run_service(cpu: usize, opt: &Config) -> std::io::Result<()> {
     Ok(())
 }
 
-pub async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
+async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
     // init user
     let user_opt_res = UserOptionsBuilder::default()
         .must_change_password(true)

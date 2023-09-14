@@ -6,6 +6,7 @@ use coordinator::service::{CoordService, CoordinatorRef};
 use memory_pool::MemoryPoolRef;
 use meta::model::meta_admin::AdminMeta;
 use meta::model::MetaRef;
+use meta::thread_service::MetaService;
 use metrics::metric_register::MetricsRegister;
 use models::utils::build_address;
 use query::instance::make_cnosdbms;
@@ -21,7 +22,6 @@ use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
 use crate::http::http_service::{HttpService, ServerMode};
-use crate::meta_single::meta_service::MetaService;
 use crate::rpc::grpc_service::GrpcService;
 use crate::spi::service::ServiceRef;
 use crate::tcp::tcp_service::TcpService;

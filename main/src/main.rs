@@ -22,7 +22,6 @@ use crate::report::ReportService;
 
 mod flight_sql;
 mod http;
-mod meta_single;
 mod report;
 mod rpc;
 pub mod server;
