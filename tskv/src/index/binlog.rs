@@ -83,6 +83,14 @@ impl UpdateSeriesKey {
             series_id,
         }
     }
+
+    pub fn new_series(&self) -> &SeriesKey {
+        &self.new_series
+    }
+
+    pub fn series_id(&self) -> SeriesId {
+        self.series_id
+    }
 }
 
 impl IndexBinlogBlock {

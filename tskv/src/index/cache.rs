@@ -22,13 +22,23 @@ impl ForwardIndexCache {
         }
     }
 
-    pub fn add(&self, info: SeriesKeyInfo) {
+    fn add_series_key_info(&self, info: SeriesKeyInfo) {
         let id = info.id;
         let hash = info.hash;
         let info_ref = Arc::new(info);
 
         self.id_map.insert(id, info_ref.clone());
         self.hash_map.insert(hash, info_ref);
+    }
+
+    pub fn add(&self, id: SeriesId, key: SeriesKey) {
+        let info = SeriesKeyInfo {
+            hash: key.hash(),
+            key,
+            id,
+        };
+
+        self.add_series_key_info(info);
     }
 
     pub fn del(&self, id: SeriesId, hash: u64) {
