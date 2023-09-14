@@ -16,10 +16,7 @@ mod tests {
     use tokio::runtime::Runtime;
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::file_system::file_manager;
-    use tskv::kv_option::{
-        DELTA_PATH, INDEX_PATH, MOVE_PATH, TSM_PATH, T_SERIES_FAMILY_SNAPSHOT_PATH,
-    };
-    use tskv::{kv_option, Engine, SnapshotFileMeta, TsKv};
+    use tskv::{file_utils, kv_option, Engine, SnapshotFileMeta, TsKv};
 
     /// Initializes a TsKv instance in specified directory, with an optional runtime,
     /// returns the TsKv and runtime.
@@ -330,16 +327,15 @@ mod tests {
         let database = "test_db";
         let table = "test_tab";
         let vnode_id = 11;
-        let vnode_dir = dir
-            .join("data")
-            .join(make_owner(tenant, database))
-            .join(vnode_id.to_string());
-        let vnode_index_dir = vnode_dir.join(INDEX_PATH);
-        let vnode_migration_dir = vnode_dir.join(MOVE_PATH);
-        let vnode_snapshot_dir = vnode_dir.join(T_SERIES_FAMILY_SNAPSHOT_PATH);
-        let vnode_backup_dir = dir.join("backup_for_test");
 
         let (runtime, tskv) = get_tskv(&dir, None);
+
+        let tenant_database = make_owner(tenant, database);
+        let storage_opt = tskv.get_storage_options();
+        let vnode_tsm_dir = storage_opt.tsm_dir(&tenant_database, vnode_id);
+        let vnode_delta_dir = storage_opt.delta_dir(&tenant_database, vnode_id);
+        let vnode_snapshot_dir = storage_opt.snapshot_dir(&tenant_database, vnode_id);
+        let vnode_backup_dir = dir.join("backup_for_test");
 
         {
             // Write test data
@@ -362,7 +358,7 @@ mod tests {
                 .unwrap();
         }
 
-        let (vnode_snapshot_dir, vnode_snapshot) = {
+        let (vnode_snapshot_dir, mut vnode_snapshot) = {
             // Test create snapshot.
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
             let vnode_snap = runtime.block_on(tskv.create_snapshot(vnode_id)).unwrap();
@@ -378,16 +374,16 @@ mod tests {
             assert_eq!(tsm_files.len(), 1);
             assert_eq!(delta_files.len(), 1);
 
-            let tsm_file_name = format!("_{:06}.tsm", tsm_files.first().unwrap().file_id);
-            let tsm_file_path = vnode_dir.join(TSM_PATH).join(tsm_file_name);
+            let tsm_file_path =
+                file_utils::make_tsm_file(vnode_tsm_dir, tsm_files.first().unwrap().file_id);
             assert!(
                 file_manager::try_exists(&tsm_file_path),
                 "{} not exists",
                 tsm_file_path.display(),
             );
 
-            let delta_file_name = format!("_{:06}.delta", delta_files.first().unwrap().file_id);
-            let delta_file_path = vnode_dir.join(DELTA_PATH).join(delta_file_name);
+            let delta_file_path =
+                file_utils::make_delta_file(vnode_delta_dir, delta_files.first().unwrap().file_id);
             assert!(
                 file_manager::try_exists(&delta_file_path),
                 "{} not exists",
@@ -401,7 +397,6 @@ mod tests {
             // Test delete snapshot.
             // 1. Backup files.
             dircpy::copy_dir(&vnode_snapshot_dir, &vnode_backup_dir).unwrap();
-            dircpy::copy_dir(vnode_index_dir, vnode_backup_dir.join(INDEX_PATH)).unwrap();
 
             // 2. Do test delete snapshot.
             runtime.block_on(tskv.delete_snapshot(vnode_id)).unwrap();
@@ -413,10 +408,17 @@ mod tests {
             );
         }
 
+        let new_vnode_id = 12;
+        let vnode_tsm_dir = storage_opt.tsm_dir(&tenant_database, new_vnode_id);
+        let vnode_delta_dir = storage_opt.delta_dir(&tenant_database, new_vnode_id);
+        let vnode_move_dir = storage_opt.move_dir(&tenant_database, new_vnode_id);
+        vnode_snapshot.vnode_id = new_vnode_id;
+
         {
             // Test apply snapshot
             // 1. Restore files to migration directory.
-            dircpy::copy_dir(vnode_backup_dir, vnode_migration_dir).unwrap();
+            std::fs::create_dir_all(&vnode_move_dir).unwrap();
+            dircpy::copy_dir(vnode_backup_dir, vnode_move_dir).unwrap();
 
             // 2. Do test apply snapshot.
             runtime
@@ -424,10 +426,10 @@ mod tests {
                 .unwrap();
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
             let vnode = runtime
-                .block_on(tskv.get_vnode_summary(tenant, database, vnode_id))
+                .block_on(tskv.get_vnode_summary(tenant, database, new_vnode_id))
                 .unwrap()
                 .unwrap();
-            assert_eq!(vnode.tsf_id, vnode_id);
+            assert_eq!(vnode.tsf_id, new_vnode_id);
             assert_eq!(vnode.add_files.len(), 2);
             let tsm_files: Vec<SnapshotFileMeta> = vnode
                 .add_files
@@ -444,16 +446,16 @@ mod tests {
             assert_eq!(tsm_files.len(), 1);
             assert_eq!(delta_files.len(), 1);
 
-            let tsm_file_name = format!("_{:06}.tsm", tsm_files.first().unwrap().file_id);
-            let tsm_file_path = vnode_dir.join(TSM_PATH).join(tsm_file_name);
+            let tsm_file_path =
+                file_utils::make_tsm_file(vnode_tsm_dir, tsm_files.first().unwrap().file_id);
             assert!(
                 file_manager::try_exists(&tsm_file_path),
                 "{} not exists",
                 tsm_file_path.display(),
             );
 
-            let delta_file_name = format!("_{:06}.delta", delta_files.first().unwrap().file_id);
-            let delta_file_path = vnode_dir.join(DELTA_PATH).join(delta_file_name);
+            let delta_file_path =
+                file_utils::make_delta_file(vnode_delta_dir, delta_files.first().unwrap().file_id);
             assert!(
                 file_manager::try_exists(&delta_file_path),
                 "{} not exists",

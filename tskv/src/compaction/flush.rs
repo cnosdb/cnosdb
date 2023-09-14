@@ -583,9 +583,9 @@ pub mod flush_tests {
             assert_eq!(cm.min_ts, test_case.expected_min_ts[cm.level as usize][i]);
             assert_eq!(cm.max_ts, test_case.expected_max_ts[cm.level as usize][i]);
             let file_path = if cm.is_delta {
-                file_utils::make_delta_file_name(&delta_dir, cm.file_id)
+                file_utils::make_delta_file(&delta_dir, cm.file_id)
             } else {
-                file_utils::make_tsm_file_name(&tsm_dir, cm.file_id)
+                file_utils::make_tsm_file(&tsm_dir, cm.file_id)
             };
             let tsm_reader = TsmReader::open(file_path).await.unwrap();
             read_and_check(&tsm_reader, &test_case.expected_data[cm.level as usize][i])
@@ -768,14 +768,13 @@ pub mod flush_tests {
         assert_eq!(compact_metas[0].0.level, 0);
         assert_eq!(compact_metas[1].0.level, 1);
 
-        let delta_file_name =
-            file_utils::make_delta_file_name(&delta_dir, compact_metas[0].0.file_id);
+        let delta_file_name = file_utils::make_delta_file(&delta_dir, compact_metas[0].0.file_id);
         let delta_reader = TsmReader::open(delta_file_name).await.unwrap();
         read_and_check(&delta_reader, &expected_delta_data)
             .await
             .unwrap();
 
-        let tsm_file_name = file_utils::make_tsm_file_name(&tsm_dir, compact_metas[1].0.file_id);
+        let tsm_file_name = file_utils::make_tsm_file(&tsm_dir, compact_metas[1].0.file_id);
         let tsm_reader = TsmReader::open(tsm_file_name).await.unwrap();
         read_and_check(&tsm_reader, &expected_tsm_data)
             .await

@@ -239,11 +239,6 @@ pub enum Error {
     VnodeNotFound {
         vnode_id: VnodeId,
     },
-
-    #[snafu(display("Manually flush on vnode did nothing"))]
-    VnodeFlushedNothing {
-        vnode_id: VnodeId,
-    },
 }
 
 impl From<PointsError> for Error {

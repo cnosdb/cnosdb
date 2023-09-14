@@ -28,6 +28,7 @@ crc32fast = { workspace = true }
 crossbeam-channel = { workspace = true }
 dashmap = { workspace = true }
 datafusion = { workspace = true }
+dircpy = { workspace = true }
 flatbuffers = { workspace = true }
 flate2 = { workspace = true }
 futures = { workspace = true, features = ["std", "thread-pool"] }
@@ -73,7 +74,6 @@ io_uring = ["rio"]
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["async_tokio"] }
-dircpy = { workspace = true }
 parking_lot = { workspace = true, features = ["nightly"] }
 rand = { workspace = true }
 serial_test = { workspace = true }

@@ -348,6 +348,7 @@ impl CoordService {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn multi_write_vnodes<'a>(
         &'a self,
         tenant: &'a str,

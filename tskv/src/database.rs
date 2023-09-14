@@ -447,18 +447,12 @@ impl Database {
     ) {
         if let Some(tsf_id) = vnode_id.as_ref() {
             if let Some(tsf) = self.ts_families.get(tsf_id) {
-                let ve = tsf
-                    .read()
-                    .await
-                    .build_version_edit(self.owner.clone(), file_metas);
+                let ve = tsf.read().await.build_version_edit(file_metas);
                 version_edits.push(ve);
             }
         } else {
             for tsf in self.ts_families.values() {
-                let ve = tsf
-                    .read()
-                    .await
-                    .build_version_edit(self.owner.clone(), file_metas);
+                let ve = tsf.read().await.build_version_edit(file_metas);
                 version_edits.push(ve);
             }
         }

@@ -46,13 +46,13 @@ impl Queue {
             max_file_id = max_id;
         }
 
-        let file_name = file_utils::make_file_name(data_dir.clone(), max_file_id, &suffix);
-        let (write_file, write_file_size) = Queue::open_write_file(file_name.clone()).await?;
-        info!("queue open write file: {:?}@{}", file_name, write_file_size);
+        let file_path = file_utils::make_file_path(data_dir.clone(), max_file_id, &suffix);
+        let (write_file, write_file_size) = Queue::open_write_file(file_path.clone()).await?;
+        info!("queue open write file: {:?}@{}", file_path, write_file_size);
 
-        let file_name = file_utils::make_file_name(data_dir, min_file_id, &suffix);
-        let (read_file, read_file_pos) = Queue::open_read_file(file_name.clone()).await?;
-        info!("queue open read file: {:?}@{}", file_name, read_file_pos);
+        let file_path = file_utils::make_file_path(data_dir, min_file_id, &suffix);
+        let (read_file, read_file_pos) = Queue::open_read_file(file_path.clone()).await?;
+        info!("queue open read file: {:?}@{}", file_path, read_file_pos);
 
         Ok(Self {
             config,
@@ -115,7 +115,7 @@ impl Queue {
         let mut size = 0;
         let mut index = self.read_file_id;
         loop {
-            let file_name = file_utils::make_file_name(
+            let file_name = file_utils::make_file_path(
                 PathBuf::from(self.config.data_path.clone()),
                 index,
                 &self.config.file_suffix,
@@ -179,7 +179,7 @@ impl Queue {
         debug!("queue file '{}' is full", self.write_file_id);
 
         let new_file_id = self.write_file_id + 1;
-        let new_file_name = file_utils::make_file_name(
+        let new_file_name = file_utils::make_file_path(
             PathBuf::from(self.config.data_path.clone()),
             new_file_id,
             &self.config.file_suffix,
@@ -199,7 +199,7 @@ impl Queue {
         debug!("queue file: {} read over", self.read_file_id);
 
         let new_file_id = self.read_file_id + 1;
-        let new_file_name = file_utils::make_file_name(
+        let new_file_name = file_utils::make_file_path(
             PathBuf::from(self.config.data_path.clone()),
             new_file_id,
             &self.config.file_suffix,
@@ -214,7 +214,7 @@ impl Queue {
         self.read_file_id = new_file_id;
         info!("queue starts read: {:?}@{}", new_file_name, read_pos);
 
-        let old_file_name = file_utils::make_file_name(
+        let old_file_name = file_utils::make_file_path(
             PathBuf::from(self.config.data_path.clone()),
             new_file_id - 1,
             &self.config.file_suffix,

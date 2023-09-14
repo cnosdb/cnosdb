@@ -4,6 +4,7 @@
 #![feature(maybe_uninit_uninit_array)]
 
 use std::fmt::Debug;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -217,9 +218,14 @@ pub trait Engine: Send + Sync + Debug {
     /// Close all background jobs of engine.
     async fn close(&self);
 
-    /// Flush caches into TSM file, create a new Version of the Vnode, make hard links
-    /// point to the flushed files in snapshot directory, then return VnodeSnapshot.
-    /// For one Vnode, only one snapshot can exist at a time.
+    /// Flush caches into TSM file, create a new Version of the Vnode, then:
+    /// 1. Make hard links point to all TSM files in the Version in snapshot directory,
+    /// 2. Copy series index in Vnode into snapshot directory,
+    /// 3. Save current Version as a summary file in snapshot directory.
+    /// Then return VnodeSnapshot.
+    ///
+    /// For one Vnode, only one snapshot can exist at a time， old snapshot directory
+    /// will be deleted.
     async fn create_snapshot(&self, vnode_id: VnodeId) -> Result<VnodeSnapshot>;
 
     /// Build a new Vnode from the VersionSnapshot, existing Vnode with the same VnodeId
@@ -237,6 +243,7 @@ pub struct VnodeSnapshot {
     pub vnode_id: VnodeId,
     pub files: Vec<SnapshotFileMeta>,
     pub last_seq_no: u64,
+    pub snapshot_dir: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -246,6 +253,7 @@ pub struct SnapshotFileMeta {
     pub level: LevelId,
     pub min_ts: Timestamp,
     pub max_ts: Timestamp,
+    pub file_name: String,
 }
 
 impl From<&CompactMeta> for SnapshotFileMeta {
@@ -256,6 +264,11 @@ impl From<&CompactMeta> for SnapshotFileMeta {
             level: cm.level,
             min_ts: cm.min_ts,
             max_ts: cm.max_ts,
+            file_name: if cm.level == 0 {
+                file_utils::make_delta_file_name(cm.file_id)
+            } else {
+                file_utils::make_tsm_file_name(cm.file_id)
+            },
         }
     }
 }

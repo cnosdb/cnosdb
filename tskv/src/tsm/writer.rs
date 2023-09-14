@@ -371,9 +371,9 @@ pub async fn new_tsm_writer(
     max_size: u64,
 ) -> Result<TsmWriter> {
     let tsm_path = if is_delta {
-        file_utils::make_delta_file_name(dir, tsm_sequence)
+        file_utils::make_delta_file(dir, tsm_sequence)
     } else {
-        file_utils::make_tsm_file_name(dir, tsm_sequence)
+        file_utils::make_tsm_file(dir, tsm_sequence)
     };
     TsmWriter::open(tsm_path, tsm_sequence, is_delta, max_size).await
 }
@@ -538,7 +538,7 @@ pub mod tsm_writer_tests {
 
     use crate::error::{self, Result};
     use crate::file_system::file_manager::{self};
-    use crate::file_utils::{self, make_tsm_file_name};
+    use crate::file_utils::{self, make_tsm_file};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_reader_tests::read_and_check;
     use crate::tsm::{DataBlock, TsmReader, TsmWriter};
@@ -576,7 +576,7 @@ pub mod tsm_writer_tests {
             (2, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103], enc: DataBlockEncoding::default() }]),
         ]);
 
-        let tsm_file = make_tsm_file_name(TEST_PATH, 0);
+        let tsm_file = make_tsm_file(TEST_PATH, 0);
         write_to_tsm(&tsm_file, &data).await.unwrap();
 
         let reader = TsmReader::open(tsm_file).await.unwrap();
@@ -606,7 +606,7 @@ pub mod tsm_writer_tests {
             ]),
         ]);
 
-        let tsm_file = make_tsm_file_name(TEST_PATH, 1);
+        let tsm_file = make_tsm_file(TEST_PATH, 1);
         write_to_tsm(&tsm_file, &data).await.unwrap();
 
         let reader = TsmReader::open(tsm_file).await.unwrap();

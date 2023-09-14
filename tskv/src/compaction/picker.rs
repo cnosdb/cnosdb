@@ -304,7 +304,7 @@ mod test {
 
     use crate::compaction::test::create_options;
     use crate::compaction::{LevelCompactionPicker, Picker};
-    use crate::file_utils::make_tsm_file_name;
+    use crate::file_utils::make_tsm_file;
     use crate::kv_option::Options;
     use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
     use crate::memcache::MemCache;
@@ -348,7 +348,7 @@ mod test {
                     TimeRange::new(fts_min, fts_max),
                     file_size,
                     level == 0,
-                    make_tsm_file_name(tsm_dir, file_id),
+                    make_tsm_file(tsm_dir, file_id),
                 );
                 if compacting {
                     col.mark_compacting();

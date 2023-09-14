@@ -23,7 +23,7 @@ use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::error::Result;
-use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
+use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
@@ -256,10 +256,10 @@ impl LevelInfo {
     ) {
         let file_path = if compact_meta.is_delta {
             let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
-            make_delta_file_name(base_dir, compact_meta.file_id)
+            make_delta_file(base_dir, compact_meta.file_id)
         } else {
             let base_dir = self.storage_opt.tsm_dir(&self.database, self.tsf_id);
-            make_tsm_file_name(base_dir, compact_meta.file_id)
+            make_tsm_file(base_dir, compact_meta.file_id)
         };
         self.files.push(Arc::new(ColumnFile::with_compact_data(
             compact_meta,
@@ -966,11 +966,10 @@ impl TseriesFamily {
     /// Db-files' index data (field-id filter) will be inserted into `file_metas`.
     pub fn build_version_edit(
         &self,
-        tenant_database: Arc<String>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     ) -> VersionEdit {
         let mut version_edit =
-            VersionEdit::new_add_vnode(self.tf_id, tenant_database.as_ref().clone(), self.seq_no);
+            VersionEdit::new_add_vnode(self.tf_id, (*self.tenant_database).clone(), self.seq_no);
         let version = self.version();
         let max_level_ts = version.max_level_ts;
         for files in version.levels_info.iter() {
@@ -1074,7 +1073,7 @@ pub mod test_tseries_family {
     use crate::compaction::flush_tests::default_table_schema;
     use crate::compaction::{run_flush_memtable_job, FlushReq};
     use crate::context::GlobalContext;
-    use crate::file_utils::make_tsm_file_name;
+    use crate::file_utils::make_tsm_file;
     use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
     use crate::memcache::{FieldVal, MemCache, RowData, RowGroup};
@@ -1116,7 +1115,7 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
+                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1128,8 +1127,8 @@ pub mod test_tseries_family {
             },
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file_name(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
+                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
+                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1211,8 +1210,8 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
-                    Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, make_tsm_file_name(&tsm_dir, 4))),
+                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
+                    Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, make_tsm_file(&tsm_dir, 4))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1224,8 +1223,8 @@ pub mod test_tseries_family {
             },
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file_name(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
+                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
+                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,

@@ -87,10 +87,10 @@ impl CompactMeta {
     ) -> PathBuf {
         if self.is_delta {
             let base_dir = storage_opt.delta_dir(database, ts_family_id);
-            file_utils::make_delta_file_name(base_dir, self.file_id)
+            file_utils::make_delta_file(base_dir, self.file_id)
         } else {
             let base_dir = storage_opt.tsm_dir(database, ts_family_id);
-            file_utils::make_tsm_file_name(base_dir, self.file_id)
+            file_utils::make_tsm_file(base_dir, self.file_id)
         }
     }
 
@@ -105,18 +105,18 @@ impl CompactMeta {
             let base_dir = storage_opt
                 .move_dir(database, ts_family_id)
                 .join(DELTA_PATH);
-            file_utils::make_delta_file_name(base_dir, self.file_id)
+            file_utils::make_delta_file(base_dir, self.file_id)
         } else {
             let base_dir = storage_opt.move_dir(database, ts_family_id).join(TSM_PATH);
-            file_utils::make_tsm_file_name(base_dir, self.file_id)
+            file_utils::make_tsm_file(base_dir, self.file_id)
         };
 
         let new_name = if self.is_delta {
             let base_dir = storage_opt.delta_dir(database, ts_family_id);
-            file_utils::make_delta_file_name(base_dir, file_id)
+            file_utils::make_delta_file(base_dir, file_id)
         } else {
             let base_dir = storage_opt.tsm_dir(database, ts_family_id);
-            file_utils::make_tsm_file_name(base_dir, file_id)
+            file_utils::make_tsm_file(base_dir, file_id)
         };
         trace::info!("rename file from {:?} to {:?}", &old_name, &new_name);
         file_utils::rename(old_name, &new_name).await?;

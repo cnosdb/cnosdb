@@ -14,6 +14,7 @@ use utils::BloomFilter;
 use crate::compaction::{CompactTask, FlushReq};
 use crate::database::Database;
 use crate::error::{MetaSnafu, Result};
+use crate::index::ts_index::TSIndex;
 use crate::summary::VersionEdit;
 use crate::tseries_family::{TseriesFamily, Version};
 use crate::{ColumnFileId, Options, TseriesFamilyId};
@@ -188,6 +189,26 @@ impl VersionSet {
         }
 
         None
+    }
+
+    pub async fn get_tsfamily_tsindex_by_tf_id(
+        &self,
+        tf_id: u32,
+    ) -> (Option<Arc<RwLock<TseriesFamily>>>, Option<Arc<TSIndex>>) {
+        let mut vnode = None;
+        let mut vnode_index = None;
+        for db in self.dbs.values() {
+            let db = db.read().await;
+            if let Some(v) = db.get_tsfamily(tf_id) {
+                vnode = Some(v);
+                if let Some(v) = db.get_ts_index(tf_id) {
+                    vnode_index = Some(v);
+                }
+                break;
+            }
+        }
+
+        (vnode, vnode_index)
     }
 
     pub async fn get_tsfamily_by_name_id(

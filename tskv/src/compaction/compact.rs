@@ -966,7 +966,7 @@ pub mod test {
     fn get_result_file_path(dir: impl AsRef<Path>, version_edit: VersionEdit) -> PathBuf {
         if version_edit.has_file_id && !version_edit.add_files.is_empty() {
             let file_id = version_edit.add_files.first().unwrap().file_id;
-            return file_utils::make_tsm_file_name(dir, file_id);
+            return file_utils::make_tsm_file(dir, file_id);
         }
 
         panic!("VersionEdit doesn't contain any add_files.");
