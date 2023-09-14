@@ -22,8 +22,9 @@ use super::meta_tenant::TenantMeta;
 use super::MetaClientRef;
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
-use crate::limiter::limiter_manager::LimiterManager;
-use crate::limiter::RequestLimiter;
+use crate::limiter::limiter_factory::{LimiterFactory, LocalRequestLimiterFactory};
+use crate::limiter::limiter_manager::{LimiterKey, LimiterManager};
+use crate::limiter::{LimiterConfig, LimiterType, RequestLimiter};
 use crate::store::command::{self, EntryLog};
 use crate::store::key_path;
 
@@ -65,7 +66,8 @@ impl AdminMeta {
         let (watch_notify, _) = mpsc::channel(1024);
         let client = MetaHttpClient::new("");
         let config = Config::default();
-        let limiters = LimiterManager::new(client.clone(), config.cluster.name.clone());
+
+        let limiters = LimiterManager::new(HashMap::new());
 
         Self {
             config,
@@ -88,10 +90,17 @@ impl AdminMeta {
         let (watch_notify, receiver) = mpsc::channel(1024);
 
         let client = MetaHttpClient::new(&meta_url);
-        let limiters = Arc::new(LimiterManager::new(
-            client.clone(),
-            config.cluster.name.clone(),
-        ));
+        let limiters = Arc::new(LimiterManager::new({
+            let mut map = HashMap::new();
+            map.insert(
+                LimiterType::Tenant,
+                Arc::new(LocalRequestLimiterFactory::new(
+                    config.cluster.name.clone(),
+                    client.clone(),
+                )) as Arc<dyn LimiterFactory>,
+            );
+            map
+        }));
 
         let admin = Arc::new(Self {
             config,
@@ -555,8 +564,13 @@ impl AdminMeta {
     pub async fn create_tenant_meta(&self, tenant_info: Tenant) -> MetaResult<MetaClientRef> {
         let tenant_name = tenant_info.name().to_string();
 
-        self.limiters
-            .create_limiter(&tenant_name, tenant_info.options().request_config());
+        let limiter_key = LimiterKey(LimiterType::Tenant, tenant_name.clone());
+        let config = LimiterConfig::TenantRequestLimiterConfig {
+            tenant: tenant_name.clone(),
+            config: Box::new(tenant_info.options().request_config().cloned()),
+        };
+
+        self.limiters.create_limiter(limiter_key, config).await?;
 
         let client = TenantMeta::new(self.cluster(), tenant_info, self.meta_addrs()).await?;
 
@@ -621,7 +635,8 @@ impl AdminMeta {
             let req = command::WriteCommand::DropTenant(self.cluster(), name.to_string());
 
             self.client.write::<()>(&req).await?;
-            self.limiters.remove_limiter(name);
+            let limiter_key = LimiterKey::tenant_key(name.to_string());
+            self.limiters.remove_limiter(&limiter_key);
         }
 
         Ok(exist)
@@ -655,7 +670,8 @@ impl AdminMeta {
     }
 
     pub async fn limiter(&self, tenant: &str) -> MetaResult<Arc<dyn RequestLimiter>> {
-        self.limiters.get_limiter_or_create(tenant).await
+        let key = LimiterKey(LimiterType::Tenant, tenant.to_string());
+        self.limiters.get_limiter_or_create(key).await
     }
 
     /******************** Tenant Limiter Operation End *********************/

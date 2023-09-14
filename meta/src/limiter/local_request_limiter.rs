@@ -11,7 +11,7 @@ use tokio::sync::{Mutex, MutexGuard, RwLock};
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::limiter_kind::RequestLimiterKind;
-use crate::limiter::RequestLimiter;
+use crate::limiter::{LimiterConfig, RequestLimiter};
 
 pub enum RequireResult {
     Fail,
@@ -226,6 +226,21 @@ impl RequestLimiter for LocalRequestLimiter {
 
     async fn check_http_writes(&self) -> MetaResult<()> {
         self.check_bucket(RequestLimiterKind::HttpWrites, 1).await
+    }
+
+    async fn change_self(&self, limiter_config: LimiterConfig) -> MetaResult<()> {
+        match limiter_config {
+            LimiterConfig::TenantRequestLimiterConfig { config, .. } => {
+                let map = LocalRequestLimiter::load_config(config.as_ref().as_ref());
+                *(self.buckets.write().await) = map;
+            }
+            _ => {
+                return Err(MetaError::LimiterCreate {
+                    msg: "config invalid".to_string(),
+                });
+            }
+        }
+        Ok(())
     }
 
     fn as_any(&self) -> &dyn Any {
