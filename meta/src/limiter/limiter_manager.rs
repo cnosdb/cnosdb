@@ -1,86 +1,81 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use config::RequestLimiterConfig;
 use models::schema::Tenant;
 use parking_lot::RwLock;
 
-use crate::client::MetaHttpClient;
 use crate::error::{sm_r_err, MetaError, MetaResult};
-use crate::limiter::local_request_limiter::down_cast_to_local_request_limiter;
-use crate::limiter::{LocalRequestLimiter, RequestLimiter};
-use crate::store::command::{
-    EntryLog, ReadCommand, ENTRY_LOG_TYPE_DEL, ENTRY_LOG_TYPE_NOP, ENTRY_LOG_TYPE_SET,
-};
+use crate::limiter::limiter_factory::LimiterFactory;
+use crate::limiter::{LimiterConfig, LimiterType, RequestLimiter};
+use crate::store::command::{EntryLog, ENTRY_LOG_TYPE_DEL, ENTRY_LOG_TYPE_NOP, ENTRY_LOG_TYPE_SET};
+
+#[derive(Debug, Hash, Clone, PartialEq, Eq)]
+pub struct LimiterKey(pub LimiterType, pub String);
+impl LimiterKey {
+    pub fn tenant_key(tenant: String) -> Self {
+        LimiterKey(LimiterType::Tenant, tenant)
+    }
+}
 
 #[derive(Debug)]
 pub struct LimiterManager {
-    cluster_name: String,
-    limiters: RwLock<HashMap<String, Arc<dyn RequestLimiter>>>,
-    meta_http_client: MetaHttpClient,
+    limiters: RwLock<HashMap<LimiterKey, Arc<dyn RequestLimiter>>>,
+    factories: HashMap<LimiterType, Arc<dyn LimiterFactory>>,
 }
+unsafe impl Send for LimiterManager {}
+unsafe impl Sync for LimiterManager {}
 
 impl LimiterManager {
-    pub fn new(meta_http_client: MetaHttpClient, cluster_name: String) -> Self {
+    pub fn new(factories: HashMap<LimiterType, Arc<dyn LimiterFactory>>) -> Self {
         Self {
-            cluster_name,
             limiters: RwLock::new(HashMap::new()),
-            meta_http_client,
+            factories,
         }
     }
 
-    fn new_limiter(
+    pub async fn create_limiter(
         &self,
-        tenant_name: &str,
-        config: Option<&RequestLimiterConfig>,
-    ) -> Arc<dyn RequestLimiter> {
-        Arc::new(LocalRequestLimiter::new(
-            self.cluster_name.as_str(),
-            tenant_name,
-            config,
-            self.meta_http_client.clone(),
-        ))
+        key: LimiterKey,
+        config: LimiterConfig,
+    ) -> MetaResult<Arc<dyn RequestLimiter>> {
+        let limiter_type = key.0;
+        let factory =
+            self.factories
+                .get(&limiter_type)
+                .ok_or_else(|| MetaError::LimiterCreate {
+                    msg: format!("couldn't found factory of {:?}", limiter_type),
+                })?;
+        let limiter = factory.create_limiter(config).await?;
+        self.insert_limiter(key, limiter.clone());
+        Ok(limiter)
     }
 
-    pub fn create_limiter(
-        &self,
-        tenant_name: &str,
-        limiter_config: Option<&RequestLimiterConfig>,
-    ) -> Arc<dyn RequestLimiter> {
-        let limiter = self.new_limiter(tenant_name, limiter_config);
-        self.insert_limiter(tenant_name.into(), limiter.clone());
-        limiter
+    fn insert_limiter(&self, key: LimiterKey, limiter: Arc<dyn RequestLimiter>) {
+        self.limiters.write().insert(key, limiter);
     }
 
-    fn insert_limiter(&self, tenant: String, limiter: Arc<dyn RequestLimiter>) {
-        self.limiters.write().insert(tenant, limiter);
+    pub fn remove_limiter(&self, key: &LimiterKey) -> Option<Arc<dyn RequestLimiter>> {
+        self.limiters.write().remove(key)
     }
 
-    pub fn remove_limiter(&self, tenant: &str) -> Option<Arc<dyn RequestLimiter>> {
-        self.limiters.write().remove(tenant)
-    }
-
-    fn get_limiter(&self, tenant: &str) -> Option<Arc<dyn RequestLimiter>> {
-        self.limiters.read().get(tenant).cloned()
+    fn get_limiter(&self, key: &LimiterKey) -> Option<Arc<dyn RequestLimiter>> {
+        self.limiters.read().get(key).cloned()
     }
 
     pub async fn get_limiter_or_create(
         &self,
-        tenant_name: &str,
+        key: LimiterKey,
     ) -> MetaResult<Arc<dyn RequestLimiter>> {
-        match self.get_limiter(tenant_name) {
+        match self.get_limiter(&key) {
             None => {
-                let command =
-                    ReadCommand::Tenant(self.cluster_name.clone(), tenant_name.to_string());
-                let tenant = self
-                    .meta_http_client
-                    .read::<Option<Tenant>>(&command)
-                    .await?
-                    .ok_or_else(|| MetaError::TenantNotFound {
-                        tenant: tenant_name.into(),
-                    })?;
-                let limiter = self.new_limiter(tenant_name, tenant.options().request_config());
-                self.insert_limiter(tenant_name.into(), limiter.clone());
+                let factories =
+                    self.factories
+                        .get(&key.0)
+                        .ok_or_else(|| MetaError::LimiterCreate {
+                            msg: format!("couldn't found factory of {:?}", key.0),
+                        })?;
+                let limiter = factories.create_default(key.clone()).await?;
+                self.insert_limiter(key.clone(), limiter.clone());
                 Ok(limiter)
             }
             Some(l) => Ok(l.clone()),
@@ -91,24 +86,28 @@ impl LimiterManager {
         if entry.tye == ENTRY_LOG_TYPE_NOP {
             return Ok(());
         }
+        let tenant: Tenant = serde_json::from_str(&entry.val).map_err(sm_r_err)?;
+        let key = LimiterKey::tenant_key(tenant_name.into());
         if entry.tye == ENTRY_LOG_TYPE_SET {
-            let tenant: Tenant = serde_json::from_str(&entry.val).map_err(sm_r_err)?;
-            let limiter_config = tenant.options().request_config();
-            match self.get_limiter(tenant_name) {
+            let limiter_config = LimiterConfig::TenantRequestLimiterConfig {
+                tenant: tenant_name.to_string(),
+                config: Box::new(tenant.options().request_config().cloned()),
+            };
+            match self.get_limiter(&key) {
                 Some(limiter) => {
-                    down_cast_to_local_request_limiter(limiter.as_ref())
-                        .change(limiter_config)
-                        .await?;
+                    limiter.change_self(limiter_config).await?;
                 }
                 None => {
-                    self.create_limiter(tenant_name, limiter_config);
+                    self.create_limiter(key, limiter_config).await?;
                 }
             };
         } else if entry.tye == ENTRY_LOG_TYPE_DEL {
-            if let Some(limiter) = self.remove_limiter(tenant_name) {
-                down_cast_to_local_request_limiter(limiter.as_ref())
-                    .clear()
-                    .await;
+            let limiter_config = LimiterConfig::TenantRequestLimiterConfig {
+                tenant: tenant_name.to_string(),
+                config: Box::new(None),
+            };
+            if let Some(limiter) = self.remove_limiter(&key) {
+                limiter.change_self(limiter_config).await?;
             };
         }
         Ok(())

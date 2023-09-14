@@ -171,6 +171,9 @@ pub enum MetaError {
     ))]
     #[error_code(code = 53)]
     ValidNodeNotEnough { need: u64, valid_node_num: u32 },
+    #[snafu(display("Create limiter fail: {}", msg))]
+    #[error_code(code = 35)]
+    LimiterCreate { msg: String },
 }
 
 impl MetaError {
