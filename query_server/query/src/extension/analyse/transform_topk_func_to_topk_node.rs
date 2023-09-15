@@ -46,11 +46,11 @@ fn do_transform(topk_function: &Expr, projection: &Projection) -> Result<Logical
     let (field, k) = extract_args(topk_function)?;
 
     let sort_expr = Expr::Sort(expr::Sort {
-        /// The expression to sort on
+        // The expression to sort on
         expr: Box::new(field.clone()),
-        /// The direction of the sort
+        // The direction of the sort
         asc: false,
-        /// Whether to put Nulls before all other data values
+        // Whether to put Nulls before all other data values
         nulls_first: false,
     });
     let topk_node = LogicalPlan::Sort(Sort {
