@@ -192,9 +192,12 @@ impl DBschemas {
             self.check_create_table_res(res, schema).await?;
         } else if schema_change {
             schema.schema_id += 1;
-            self.client
-                .update_table(&TableSchema::TsKvTableSchema(schema.into()))
-                .await?;
+            let schema: TskvTableSchemaRef = schema.into();
+            let res = self
+                .client
+                .update_table(&TableSchema::TsKvTableSchema(schema.clone()))
+                .await;
+            self.check_update_table_res(res, schema).await?;
         }
         Ok(new_schema || schema_change)
     }
@@ -266,6 +269,34 @@ impl DBschemas {
                 }
             }
         }
+    }
+
+    async fn check_update_table_res(
+        &self,
+        res: MetaResult<()>,
+        schema: TskvTableSchemaRef,
+    ) -> Result<()> {
+        let mut schema_id = schema.schema_id;
+        if let Err(ref e) = res {
+            if matches!(e, MetaError::UpdateTableConflict { .. }) {
+                for _ in 0..3 {
+                    let mut schema = schema.as_ref().clone();
+                    schema_id += 1;
+                    schema.schema_id = schema_id;
+                    if self
+                        .client
+                        .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
+                        .await
+                        .is_ok()
+                    {
+                        return Ok(());
+                    }
+                }
+            } else {
+                return res.map_err(|e| e.into());
+            }
+        }
+        Ok(())
     }
 
     pub fn get_table_schema(&self, tab: &str) -> Result<Option<TskvTableSchemaRef>> {
