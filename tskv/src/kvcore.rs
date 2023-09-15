@@ -14,7 +14,7 @@ use models::meta_data::{VnodeId, VnodeStatus};
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{make_owner, split_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
-use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
+use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
 use snafu::ResultExt;
@@ -41,7 +41,7 @@ use crate::version_set::VersionSet;
 use crate::wal::{self, Block, WalDecoder, WalManager, WalTask};
 use crate::{
     file_utils, tenant_name_from_request, Engine, Error, SnapshotFileMeta, TseriesFamilyId,
-    VnodeSnapshot,
+    UpdateSetValue, VnodeSnapshot,
 };
 
 // TODO: A small summay channel capacity can cause a block
@@ -1090,6 +1090,32 @@ impl Engine for TsKv {
                 .map_err(|err| {
                     error!(
                         "Rename tag of TSIndex({}): {}",
+                        ts_index.path().display(),
+                        err
+                    );
+                    err
+                })?;
+        }
+
+        Ok(())
+    }
+
+    async fn update_tags_value(
+        &self,
+        tenant: &str,
+        database: &str,
+        new_tags: &[UpdateSetValue<TagKey, TagValue>],
+        matched_series: &[SeriesKey],
+    ) -> Result<()> {
+        let db = self.get_db(tenant, database).await?;
+
+        for ts_index in db.read().await.ts_indexes().values() {
+            ts_index
+                .update_tags_value(new_tags, matched_series)
+                .await
+                .map_err(|err| {
+                    error!(
+                        "Update tags value tag of TSIndex({}): {}",
                         ts_index.path().display(),
                         err
                     );

@@ -10,7 +10,7 @@ use datafusion::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
 use models::predicate::domain::{utf8_from, Domain, Range};
 use models::tag::TagFromParts;
-use models::{utils, SeriesId, SeriesKey, Tag, TagKey};
+use models::{utils, SeriesId, SeriesKey, Tag, TagKey, TagValue};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
 use trace::{debug, error, info};
@@ -22,7 +22,7 @@ use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 use crate::index::binlog::{BinlogReader, BinlogWriter};
 use crate::index::ts_index::fmt::Debug;
-use crate::{byte_utils, file_utils};
+use crate::{byte_utils, file_utils, UpdateSetValue};
 
 const SERIES_ID_PREFIX: &str = "_id_";
 const SERIES_KEY_PREFIX: &str = "_key_";
@@ -519,6 +519,78 @@ impl TSIndex {
         Ok(())
     }
 
+    pub async fn update_tags_value(
+        &self,
+        new_tags: &[UpdateSetValue<TagKey, TagValue>],
+        matched_series: &[SeriesKey],
+    ) -> IndexResult<()> {
+        // Find all matching series ids
+        let mut ids = vec![];
+        for key in matched_series {
+            if let Some(sid) = self.get_series_id(key).await? {
+                ids.push(sid);
+            }
+        }
+
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let mut new_keys = vec![];
+        let mut waiting_delete_series = vec![];
+        for (sid, key) in ids.iter().zip(matched_series.iter()) {
+            let old_key_hash = key.hash();
+            waiting_delete_series.push((*sid, old_key_hash));
+
+            // modify tag value
+            let new_tags_for_series = key
+                .tags
+                .iter()
+                .flat_map(|tag| {
+                    new_tags
+                        .iter()
+                        .find(|new_tag| tag.key == new_tag.key)
+                        .and_then(|new_tag| {
+                            new_tag
+                                .value
+                                .as_ref()
+                                .map(|new_val| Tag::new(tag.key.clone(), new_val.clone()))
+                        })
+                })
+                .collect::<Vec<_>>();
+
+            let new_key = SeriesKey {
+                tags: new_tags_for_series,
+                table: key.table.clone(),
+                db: key.db.clone(),
+            };
+
+            // check conflict
+            if self.get_series_id(&new_key).await?.is_some() {
+                return Err(IndexError::SeriesAlreadyExists {
+                    key: key.to_string(),
+                });
+            }
+
+            new_keys.push(new_key);
+        }
+
+        // write binlog
+        let blocks = ids
+            .into_iter()
+            .zip(new_keys.into_iter())
+            .map(|(sid, key)| IndexBinlogBlock::Update(UpdateSeriesKey::new(key, sid)))
+            .collect::<Vec<_>>();
+        self.write_binlog(&blocks).await?;
+
+        // Only delete old index, not add new index
+        for (sid, key_hash) in waiting_delete_series {
+            self.forward_cache.del(sid, key_hash);
+        }
+
+        Ok(())
+    }
+
     pub async fn rename_tag(
         &self,
         table: &str,
@@ -833,15 +905,15 @@ mod test {
     use models::{SeriesId, SeriesKey, Tag};
 
     use super::TSIndex;
+    use crate::UpdateSetValue;
 
     /// ( sid, database, table, [(tag_key, tag_value)] )
     type SeriesKeyDesc<'a> = (SeriesId, &'a str, &'a str, Vec<(&'a str, &'a str)>);
 
     fn build_series_keys(series_keys_desc: &[SeriesKeyDesc<'_>]) -> Vec<SeriesKey> {
         let mut series_keys = Vec::with_capacity(series_keys_desc.len());
-        for (sid, db, table, tags) in series_keys_desc {
+        for (_, db, table, tags) in series_keys_desc {
             series_keys.push(SeriesKey {
-                id: *sid,
                 tags: tags
                     .iter()
                     .map(|(k, v)| Tag::new(k.as_bytes().to_vec(), v.as_bytes().to_vec()))
@@ -875,10 +947,9 @@ mod test {
             let series_keys = build_series_keys(&series_keys_desc);
             // Test build_series_key()
             assert_eq!(series_keys_desc.len(), series_keys.len());
-            for ((id, db, table, tags), series_key) in
+            for ((_, db, table, tags), series_key) in
                 series_keys_desc.iter().zip(series_keys.iter())
             {
-                assert_eq!(*id, series_key.id);
                 assert_eq!(*db, &series_key.db);
                 assert_eq!(*table, &series_key.table);
                 assert_eq!(tags.len(), series_key.tags.len());
@@ -1067,9 +1138,7 @@ mod test {
 
         let series_keys = [tags1, tags2, tags3, tags4]
             .into_iter()
-            .enumerate()
-            .map(|(idx, tags)| SeriesKey {
-                id: idx as SeriesId,
+            .map(|tags| SeriesKey {
                 tags,
                 table: table_name.to_string(),
                 db: db_name.to_string(),
@@ -1131,5 +1200,90 @@ mod test {
             .await
             .unwrap();
         assert_eq!(expected_sids, actual_sids);
+    }
+
+    #[tokio::test]
+    async fn test_update_tags_value() {
+        let table_name = "table";
+        let db_name = "db";
+        let dir = "/tmp/test/cnosdb/ts_index/update_tags_value";
+        let _ = std::fs::remove_dir_all(dir);
+
+        let ts_index = TSIndex::new(dir).await.unwrap();
+
+        let tags1 = vec![
+            Tag::new("station".as_bytes().to_vec(), "a0".as_bytes().to_vec()),
+            Tag::new("region".as_bytes().to_vec(), "SX".as_bytes().to_vec()),
+        ];
+        let waiting_update_tags = vec![
+            Tag::new("station".as_bytes().to_vec(), "a1".as_bytes().to_vec()),
+            Tag::new("region".as_bytes().to_vec(), "SN".as_bytes().to_vec()),
+        ];
+        let tags3 = vec![Tag::new(
+            "region".as_bytes().to_vec(),
+            "HB".as_bytes().to_vec(),
+        )];
+        let tags4 = vec![Tag::new(
+            "station".as_bytes().to_vec(),
+            "a1".as_bytes().to_vec(),
+        )];
+
+        let series_keys = [tags1, waiting_update_tags.clone(), tags3, tags4]
+            .into_iter()
+            .map(|tags| SeriesKey {
+                tags,
+                table: table_name.to_string(),
+                db: db_name.to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        // 添加series
+        let sids = ts_index
+            .add_series_if_not_exists(series_keys.clone())
+            .await
+            .unwrap();
+
+        assert_eq!(sids.len(), 4);
+
+        // 校验写入成功
+        for (sid, expected_series) in sids.iter().zip(series_keys.iter()) {
+            let series = ts_index.get_series_key(*sid).await.unwrap().unwrap();
+            assert_eq!(expected_series, &series)
+        }
+
+        let matched_series = SeriesKey {
+            tags: waiting_update_tags,
+            table: table_name.to_string(),
+            db: db_name.to_string(),
+        };
+        ts_index
+            .update_tags_value(
+                &[UpdateSetValue {
+                    key: "station".as_bytes().to_vec(),
+                    value: Some("a2".as_bytes().to_vec()),
+                }],
+                &[matched_series.clone()],
+            )
+            .await
+            .unwrap();
+
+        // Wait for binlog to be consumed
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        // 校验修改成功
+        for (sid, expected_series) in sids.iter().zip(series_keys.iter()) {
+            let series = ts_index.get_series_key(*sid).await.unwrap().unwrap();
+            if series != matched_series {
+                continue;
+            }
+
+            for (expected_tag, tag) in expected_series.tags.iter().zip(series.tags.iter()) {
+                if expected_tag.key == "station".as_bytes().to_vec() {
+                    assert_eq!("a2".as_bytes().to_vec(), tag.value);
+                } else {
+                    assert_eq!(expected_tag.key, tag.key);
+                }
+            }
+        }
     }
 }
