@@ -44,18 +44,6 @@ pub struct LocalRequestLimiter {
     meta_http_client: MetaHttpClient,
     buckets: RwLock<HashMap<RequestLimiterKind, Arc<Mutex<CountBucket>>>>,
 }
-pub fn down_cast_to_local_request_limiter(
-    local_request_limiter: &dyn RequestLimiter,
-) -> &LocalRequestLimiter {
-    // # Safety
-    // only [`LocalRequestLimiter`] impl [`RequestLimiter`]
-    unsafe {
-        local_request_limiter
-            .as_any()
-            .downcast_ref()
-            .unwrap_unchecked()
-    }
-}
 
 impl LocalRequestLimiter {
     pub fn new(
