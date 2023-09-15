@@ -146,6 +146,17 @@ impl TSIndex {
         Ok(())
     }
 
+    async fn write_binlog(&self, blocks: &[IndexBinlogBlock]) -> IndexResult<()> {
+        self.binlog.write().await.write_blocks(blocks).await?;
+        self.binlog_change_sender
+            .send(())
+            .map_err(|e| IndexError::IndexStroage {
+                msg: format!("Send binlog change failed, err: {}", e),
+            })?;
+
+        Ok(())
+    }
+
     async fn add_series(&self, id: SeriesId, series_key: &SeriesKey) -> IndexResult<()> {
         let mut storage_w = self.storage.write().await;
 
@@ -266,12 +277,8 @@ impl TSIndex {
                 self.forward_cache.add(id, series_key);
             }
         }
-        self.binlog.write().await.write_blocks(&blocks_data).await?;
-        self.binlog_change_sender
-            .send(())
-            .map_err(|e| IndexError::IndexStroage {
-                msg: format!("Send binlog change failed, err: {}", e),
-            })?;
+
+        self.write_binlog(&blocks_data).await?;
 
         Ok(ids)
     }
@@ -313,8 +320,8 @@ impl TSIndex {
         // first write binlog
         let block = IndexBinlogBlock::Delete(DeleteSeries::new(sid));
 
-        self.binlog.write().await.write_blocks(&[block]).await?;
-
+        self.write_binlog(&[block]).await?;
+        // TODO @Subsegment only delete mapping: key -> sid
         // then delete forward index and inverted index
         self.del_series_id_from_engine(sid).await?;
 
@@ -556,12 +563,7 @@ impl TSIndex {
             .zip(new_keys.into_iter())
             .map(|(sid, key)| IndexBinlogBlock::Update(UpdateSeriesKey::new(key, sid)))
             .collect::<Vec<_>>();
-        self.binlog.write().await.write_blocks(&blocks).await?;
-        self.binlog_change_sender
-            .send(())
-            .map_err(|e| IndexError::IndexStroage {
-                msg: format!("Send binlog change failed, err: {}", e),
-            })?;
+        self.write_binlog(&blocks).await?;
 
         // Only delete old index, not add new index
         for (sid, key_hash) in waiting_delete_series {
