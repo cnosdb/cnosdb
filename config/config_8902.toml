@@ -1,5 +1,6 @@
 #reporting_disabled = false
 host = "localhost"
+raft_logs_to_keep = 3
 using_raft_replication = true
 
 [deployment]

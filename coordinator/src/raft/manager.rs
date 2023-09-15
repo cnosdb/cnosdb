@@ -14,7 +14,7 @@ use replication::entry_store::EntryStorageRef;
 use replication::multi_raft::MultiRaft;
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
-use replication::state_store::StateStorage;
+use replication::state_store::{RaftNodeSummary, StateStorage};
 use replication::{RaftNodeId, RaftNodeInfo};
 use tokio::sync::RwLock;
 use tonic::transport;
@@ -67,6 +67,27 @@ impl RaftNodesManager {
         } else {
             format!("Not found raft group: {}", group_id)
         }
+    }
+
+    pub async fn start_all_raft_node(&self) -> CoordinatorResult<()> {
+        let nodes_summary = self.raft_state.all_nodes_summary()?;
+        let mut nodes = self.raft_nodes.write().await;
+        for summary in nodes_summary {
+            let node = self
+                .open_raft_node(
+                    &summary.tenant,
+                    &summary.db_name,
+                    summary.raft_id as VnodeId,
+                    summary.group_id,
+                )
+                .await?;
+
+            info!("start raft node: {:?} Success", summary);
+
+            nodes.add_node(node);
+        }
+
+        Ok(())
     }
 
     pub async fn get_node_or_build(
@@ -356,7 +377,9 @@ impl RaftNodesManager {
     ) -> CoordinatorResult<Arc<RaftNode>> {
         info!("open local raft node: {}.{}", group_id, vnode_id);
 
-        let entry = self.raft_node_logs(tenant, db_name, vnode_id).await?;
+        let entry = self
+            .raft_node_logs(tenant, db_name, vnode_id, group_id)
+            .await?;
         let engine = self.raft_node_engine(tenant, db_name, vnode_id).await?;
 
         let grpc_addr = models::utils::build_address(
@@ -378,17 +401,27 @@ impl RaftNodesManager {
         )?;
         let storage = Arc::new(storage);
 
+        let logs_to_keep = self.config.raft_logs_to_keep;
         let config = openraft::Config {
             heartbeat_interval: 500,
             election_timeout_min: 1500,
             election_timeout_max: 3000,
-            replication_lag_threshold: 3,
-            snapshot_policy: SnapshotPolicy::LogsSinceLast(3),
-            max_in_snapshot_log_to_keep: 3,
+            replication_lag_threshold: logs_to_keep,
+            snapshot_policy: SnapshotPolicy::LogsSinceLast(logs_to_keep),
+            max_in_snapshot_log_to_keep: logs_to_keep,
             ..Default::default()
         };
 
         let node = RaftNode::new(raft_id, info, config, storage, engine).await?;
+
+        let summary = RaftNodeSummary {
+            group_id,
+            tenant: tenant.to_string(),
+            db_name: db_name.to_string(),
+            raft_id: vnode_id as u64,
+        };
+
+        self.raft_state.set_node_summary(group_id, &summary)?;
 
         Ok(Arc::new(node))
     }
@@ -398,12 +431,17 @@ impl RaftNodesManager {
         tenant: &str,
         db_name: &str,
         vnode_id: VnodeId,
+        group_id: ReplicationSetId,
     ) -> CoordinatorResult<EntryStorageRef> {
         let owner = models::schema::make_owner(tenant, db_name);
         let wal_option = tskv::kv_option::WalOptions::from(&self.config);
 
         let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id).await?;
         let raft_logs = wal::raft::RaftEntryStorage::new(wal);
+
+        let _apply_id = self.raft_state.get_last_applied_log(group_id)?;
+        raft_logs.recover().await?;
+
         Ok(Arc::new(raft_logs))
     }
 

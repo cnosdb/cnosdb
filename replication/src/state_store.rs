@@ -12,6 +12,10 @@ use crate::{RaftNodeId, RaftNodeInfo};
 
 pub struct Key {}
 impl Key {
+    fn node_summary(id: u32) -> String {
+        format!("node_summary_{}", id)
+    }
+
     fn applied_log(id: u32) -> String {
         format!("applied_log_{}", id)
     }
@@ -41,6 +45,13 @@ impl Key {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct RaftNodeSummary {
+    pub tenant: String,
+    pub db_name: String,
+    pub group_id: u32,
+    pub raft_id: u64,
+}
 pub struct StateStorage {
     env: Env,
     db: Database<Str, OwnedSlice<u8>>,
@@ -246,6 +257,38 @@ impl StateStorage {
         Ok(())
     }
 
+    pub fn get_node_summary(&self, group_id: u32) -> ReplicationResult<Option<RaftNodeSummary>> {
+        let reader = self.reader_txn()?;
+        let summary: Option<RaftNodeSummary> = self.get(&reader, &Key::node_summary(group_id))?;
+
+        Ok(summary)
+    }
+
+    pub fn set_node_summary(
+        &self,
+        group_id: u32,
+        summary: &RaftNodeSummary,
+    ) -> ReplicationResult<()> {
+        let mut writer = self.writer_txn()?;
+        self.set(&mut writer, &Key::node_summary(group_id), summary)?;
+        writer.commit()?;
+
+        Ok(())
+    }
+
+    pub fn all_nodes_summary(&self) -> ReplicationResult<Vec<RaftNodeSummary>> {
+        let mut nodes_summary = vec![];
+        let reader = self.reader_txn()?;
+        let iter = self.db.prefix_iter(&reader, "node_summary_")?;
+        for pair in iter {
+            let (_, data) = pair?;
+            let summary: RaftNodeSummary = serde_json::from_slice(&data)?;
+            nodes_summary.push(summary);
+        }
+
+        Ok(nodes_summary)
+    }
+
     pub fn del_group(&self, group_id: u32) -> ReplicationResult<()> {
         let mut writer = self.writer_txn()?;
         self.del(&mut writer, &Key::applied_log(group_id))?;
@@ -255,6 +298,7 @@ impl StateStorage {
         self.del(&mut writer, &Key::vote_key(group_id))?;
         self.del(&mut writer, &Key::snapshot_key(group_id))?;
         self.del(&mut writer, &Key::already_init_key(group_id))?;
+        self.del(&mut writer, &Key::node_summary(group_id))?;
         writer.commit()?;
 
         Ok(())
