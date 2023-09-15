@@ -112,6 +112,17 @@ message RenameColumnRequest {
     string new_name = 4;
 }
 
+message UpdateSetValue {
+    bytes key = 1;
+    optional bytes value = 2;
+}
+
+message UpdateTagsRequest {
+    string db = 1;
+    repeated UpdateSetValue new_tags = 2;
+    repeated bytes matched_series = 3;
+}
+
 message AdminCommandRequest {
   string tenant = 1;
   oneof command {
@@ -125,6 +136,7 @@ message AdminCommandRequest {
     AddColumnRequest add_column = 9;
     AlterColumnRequest alter_column = 10;
     RenameColumnRequest rename_column = 11;
+    UpdateTagsRequest update_tags = 12;
   }
 }
 

@@ -179,12 +179,30 @@ pub struct RenameColumnRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateSetValue {
+    #[prost(bytes = "vec", tag = "1")]
+    pub key: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", optional, tag = "2")]
+    pub value: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateTagsRequest {
+    #[prost(string, tag = "1")]
+    pub db: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub new_tags: ::prost::alloc::vec::Vec<UpdateSetValue>,
+    #[prost(bytes = "vec", repeated, tag = "3")]
+    pub matched_series: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AdminCommandRequest {
     #[prost(string, tag = "1")]
     pub tenant: ::prost::alloc::string::String,
     #[prost(
         oneof = "admin_command_request::Command",
-        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 11"
+        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
     )]
     pub command: ::core::option::Option<admin_command_request::Command>,
 }
@@ -213,6 +231,8 @@ pub mod admin_command_request {
         AlterColumn(super::AlterColumnRequest),
         #[prost(message, tag = "11")]
         RenameColumn(super::RenameColumnRequest),
+        #[prost(message, tag = "12")]
+        UpdateTags(super::UpdateTagsRequest),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]

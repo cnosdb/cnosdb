@@ -12,7 +12,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{Precision, TableColumn};
-use models::{ColumnId, SeriesId, SeriesKey};
+use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use trace::SpanContext;
 
@@ -61,6 +61,11 @@ pub fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) ->
 }
 
 pub type EngineRef = Arc<dyn Engine>;
+
+pub struct UpdateSetValue<K, V> {
+    pub key: K,
+    pub value: Option<V>,
+}
 
 #[async_trait]
 pub trait Engine: Send + Sync + Debug {
@@ -141,6 +146,43 @@ pub trait Engine: Send + Sync + Debug {
         table: &str,
         tag_name: &str,
         new_tag_name: &str,
+    ) -> Result<()>;
+
+    /// Update the value of the tag type columns of the specified table
+    ///
+    /// `new_tags` is the new tags, and the tag key must be included in all series
+    ///
+    /// # Examples
+    ///
+    /// We have a table `tbl` as follows
+    ///
+    /// ```text
+    /// +----+-----+-----+-----+
+    /// | ts | tag1| tag2|field|
+    /// +----+-----+-----+-----+
+    /// | 1  | t1a | t2b | f1  |
+    /// +----+-----+-----+-----+
+    /// | 2  | t1a | t2c | f2  |
+    /// +----+-----+-----+-----+
+    /// | 3  | t1b | t2c | f3  |
+    /// +----+-----+-----+-----+
+    /// ```
+    ///
+    /// Execute the following update statement
+    ///
+    /// ```sql
+    /// UPDATE tbl SET tag1 = 't1c' WHERE tag2 = 't2c';
+    /// ```
+    ///
+    /// The `new_tags` is `[tag1 = 't1c']`, and the `matched_series` is `[(tag1 = 't1a', tag2 = 't2c'), (tag1 = 't1b', tag2 = 't2c')]`
+    ///
+    /// TODO Specify vnode id
+    async fn update_tags_value(
+        &self,
+        tenant: &str,
+        database: &str,
+        new_tags: &[UpdateSetValue<TagKey, TagValue>],
+        matched_series: &[SeriesKey],
     ) -> Result<()>;
 
     // TODO this method is not completed,

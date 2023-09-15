@@ -10,8 +10,8 @@ use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
 use models::predicate::domain::{self, QueryArgs, QueryExpr};
-use models::record_batch_encode;
 use models::schema::{Precision, TableColumn};
+use models::{record_batch_encode, SeriesKey};
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::*;
 use protos::models::{PingBody, PingBodyBuilder};
@@ -21,7 +21,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Extensions, Request, Response, Status};
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
-use tskv::error::Result as TskvResult;
+use tskv::error::{Error as TskvError, Result as TskvResult};
 use tskv::reader::query_executor::QueryExecutor;
 use tskv::reader::serialize::TonicRecordBatchEncoder;
 use tskv::reader::{QueryOption, SendableTskvRecordBatchStream};
@@ -157,6 +157,40 @@ impl TskvServiceImpl {
                 &request.old_name,
                 &request.new_name,
             )
+            .await?;
+
+        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+    }
+
+    async fn admin_update_tags(
+        &self,
+        tenant: &str,
+        request: &UpdateTagsRequest,
+    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let UpdateTagsRequest {
+            db,
+            new_tags,
+            matched_series,
+        } = request;
+
+        let new_tags = new_tags
+            .iter()
+            .cloned()
+            .map(|UpdateSetValue { key, value }| tskv::UpdateSetValue { key, value })
+            .collect::<Vec<_>>();
+
+        let mut old_series = Vec::with_capacity(matched_series.len());
+        for series in matched_series.iter() {
+            let ss = SeriesKey::decode(series).map_err(|_| TskvError::InvalidParam {
+                reason:
+                    "Deserialize 'matched_series' of 'UpdateTagsRequest' failed, expected: SeriesKey"
+                        .to_string(),
+            })?;
+            old_series.push(ss);
+        }
+
+        self.kv_inst
+            .update_tags_value(tenant, db, &new_tags, &old_series)
             .await?;
 
         self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
@@ -415,6 +449,9 @@ impl TskvService for TskvServiceImpl {
                 }
                 admin_command_request::Command::RenameColumn(command) => {
                     self.admin_rename_column(&inner.tenant, command).await
+                }
+                admin_command_request::Command::UpdateTags(command) => {
+                    self.admin_update_tags(&inner.tenant, command).await
                 }
             };
 
