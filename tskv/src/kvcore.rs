@@ -1350,6 +1350,7 @@ impl Engine for TsKv {
 
             let (flush_req_optional, mut ve_summary_snapshot) = {
                 let mut vnode_wlock = vnode.write().await;
+                vnode_wlock.switch_to_immutable();
                 let flush_req_optional = vnode_wlock.build_flush_req(true);
                 let mut _file_metas = HashMap::new();
                 let ve_summary_snapshot = vnode_wlock.build_version_edit(&mut _file_metas);
