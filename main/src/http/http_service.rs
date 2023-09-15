@@ -1177,14 +1177,14 @@ fn http_record_query_metrics(
     req_len: usize,
     start: Instant,
 ) {
-    let (tenant, user, db) = (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
+    let (tenant, user, db) = (ctx.tenant(), ctx.user_info().desc().name(), ctx.database());
     metrics.http_queries(tenant, user, db, addr).inc_one();
-    metrics
-        .http_query_duration(tenant, user, db, addr)
-        .record(start.elapsed());
     metrics
         .http_data_in(tenant, user, db, addr)
         .inc(req_len as u64);
+    metrics
+        .http_query_duration(tenant, user, db, addr)
+        .record(start.elapsed());
 }
 
 fn http_record_write_metrics(
@@ -1194,7 +1194,7 @@ fn http_record_write_metrics(
     req_len: usize,
     start: Instant,
 ) {
-    let (tenant, user, db) = (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
+    let (tenant, user, db) = (ctx.tenant(), ctx.user_info().desc().name(), ctx.database());
 
     metrics.http_writes(tenant, user, db, addr).inc_one();
     metrics
