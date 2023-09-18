@@ -5,6 +5,7 @@ use models::oid::Oid;
 // **    /cluster_name/tenants/tenant ->
 // **    /cluster_name/tenants/tenant/roles/roles ->
 // **    /cluster_name/tenants/tenant/members/user_id ->
+// **    /cluster_name/tenants/tenant/limiter ->
 // **    /cluster_name/auto_incr_id -> id
 // **    /cluster_name/data_nodes/node_id -> [NodeInfo] 集群、数据节点等信息
 
@@ -21,6 +22,7 @@ pub const TENANTS: &str = "tenants";
 pub const MEMBERS: &str = "members";
 pub const DATA_NODES: &str = "data_nodes";
 pub const AUTO_INCR_ID: &str = "auto_incr_id";
+pub const LIMITER: &str = "limiter";
 
 pub struct KeyPath {}
 

@@ -1325,10 +1325,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         data_type: &SQLDataType,
         time_unit: TimeUnit,
     ) -> Result<ColumnType> {
-        let unsupport_type_err = &|promot: String| QueryError::DataType {
+        let unsupport_type_err = &|prompt: String| QueryError::DataType {
             column: column_name.to_string(),
             data_type: data_type.to_string(),
-            promot,
+            prompt,
         };
 
         match data_type {
@@ -2492,12 +2492,12 @@ fn make_geometry_data_type(params: &[String]) -> std::result::Result<ColumnType,
 
     let sub_type = match sub_type.to_uppercase().as_str() {
         "POINT" => GeometryType::Point,
-        "LINESTRING" => GeometryType::Linestring,
+        "LINESTRING" => GeometryType::LineString,
         "POLYGON" => GeometryType::Polygon,
-        "MULTIPOINT" => GeometryType::Multipoint,
-        "MULTILINESTRING" => GeometryType::Multilinestring,
-        "MULTIPOLYGON" => GeometryType::Multipolygon,
-        "GEOMETRYCOLLECTION" => GeometryType::Geometrycollection,
+        "MULTIPOINT" => GeometryType::MultiPoint,
+        "MULTILINESTRING" => GeometryType::MultiLineString,
+        "MULTIPOLYGON" => GeometryType::MultiPolygon,
+        "GEOMETRYCOLLECTION" => GeometryType::GeometryCollection,
         _ => {
             return Err("sub_type must be POINT, LINESTRING, POLYGON, MULTIPOINT, MULTILINESTRING, MULTIPOLYGON, GEOMETRYCOLLECTION".to_string());
         }

@@ -18,7 +18,7 @@ mod test {
     }
     async fn get_client(tls: bool) -> TskvServiceClient<Channel> {
         if tls {
-            let channel = Channel::from_static("http://127.0.0.1:31006")
+            let channel = Channel::from_static("http://127.0.0.1:8903")
                 .tls_config(get_tls_config().await)
                 .unwrap()
                 .connect()
@@ -26,14 +26,13 @@ mod test {
                 .unwrap();
             TskvServiceClient::new(channel)
         } else {
-            TskvServiceClient::connect("http://127.0.0.1:31006")
+            TskvServiceClient::connect("http://127.0.0.1:8903")
                 .await
                 .unwrap()
         }
     }
 
     #[tokio::test]
-    #[ignore]
     async fn test_tskv_ping() {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let payload = fbb.create_vector(b"hello world");
@@ -48,7 +47,7 @@ mod test {
         let decoded_payload = flatbuffers::root::<PingBody>(finished_data);
         assert!(decoded_payload.is_ok());
 
-        let mut client = get_client(true).await;
+        let mut client = get_client(false).await;
 
         let resp = client
             .ping(Request::new(PingRequest {
@@ -69,7 +68,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn test_tskv_write_points() {
         let (tx, rx) = mpsc::channel(1);
         tokio::spawn(async move {
@@ -93,7 +91,7 @@ mod test {
         });
         let req_stream = ReceiverStream::from(rx);
 
-        let mut client = get_client(true).await;
+        let mut client = get_client(false).await;
 
         let mut resp_stream = client.write_points(req_stream).await.unwrap().into_inner();
 

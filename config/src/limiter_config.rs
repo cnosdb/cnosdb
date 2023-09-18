@@ -40,10 +40,14 @@ pub struct Bucket {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct RequestLimiterConfig {
-    pub data_in: Option<Bucket>,
-    pub data_out: Option<Bucket>,
-    pub queries: Option<Bucket>,
-    pub writes: Option<Bucket>,
+    pub coord_data_in: Option<Bucket>,
+    pub coord_data_out: Option<Bucket>,
+    pub coord_queries: Option<Bucket>,
+    pub coord_writes: Option<Bucket>,
+    pub http_data_in: Option<Bucket>,
+    pub http_data_out: Option<Bucket>,
+    pub http_queries: Option<Bucket>,
+    pub http_writes: Option<Bucket>,
 }
 
 #[test]
@@ -59,20 +63,36 @@ max_replicate_number = 2
 max_retention_time = 30
 
 
-[request_config.data_in]
+[request_config.coord_data_in]
 local_bucket = {max = 100, initial = 0}
 remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
 
 
-[request_config.data_out]
+[request_config.coord_data_out]
 local_bucket = {max = 100, initial = 0}
 remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
 
-[request_config.data_writes]
+[request_config.coord_data_writes]
 local_bucket = {max = 100, initial = 0}
 remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
 
-[request_config.data_queries]
+[request_config.coord_data_queries]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
+
+[request_config.http_data_in]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
+
+[request_config.http_data_out]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
+
+[request_config.http_queries]
+local_bucket = {max = 100, initial = 0}
+remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
+
+[request_config.http_writes]
 local_bucket = {max = 100, initial = 0}
 remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
 "#;

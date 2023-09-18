@@ -1,0 +1,29 @@
+##########
+## DDL
+##########
+
+statement ok
+alter database public set ttl '1000000d';
+
+statement ok
+drop table if exists gis_loc;
+
+statement ok
+CREATE TABLE IF NOT EXISTS gis_loc(loc geometry(point, 0));
+
+##########
+## Query
+##########
+
+# prepare data
+statement ok
+INSERT gis_loc(TIME, loc)
+VALUES
+    ('1999-12-31 00:00:00.000', 'POINT(0 0)'),
+    ('1999-12-31 00:00:00.005', 'POINT(0 1)'),
+    ('1999-12-31 00:00:00.010', 'POINT(0 2)'),
+    ('1999-12-31 00:00:10.015', 'POINT(0 3)'),
+    ('1999-12-31 00:00:10.020', 'POINT(0 4)'),
+    ('1999-12-31 00:10:00.025', 'POINT(0 5)'),
+    ('1999-12-31 00:10:00.030', 'POINT(0 6)'),
+    ('1999-12-31 01:00:00.035', 'POINT(0 7)');

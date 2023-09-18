@@ -158,8 +158,8 @@ pub async fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) 
                  idx.field_id(),
                  idx.field_type(),
                  idx.block_count(),
-                 tr.0,
-                 tr.1,
+                 tr.min_ts,
+                 tr.max_ts,
                  idx_points_cnt);
         println!("------------------------------------------------------------");
         println!("{}", buffer);
@@ -375,14 +375,8 @@ impl BlockMetaIterator {
         }
         let min_ts = time_ranges.min_ts();
         let max_ts = time_ranges.max_ts();
-        if min_ts > max_ts {
-            // This condition will match no results.
+        debug_assert!(min_ts <= max_ts, "time_ranges invalid: {:#?}", time_ranges);
 
-            // TODO: Drop this iterator and return a new type of
-            // iterator that always returns none.
-            self.time_ranges = Some(time_ranges);
-            return;
-        }
         self.time_ranges = Some(time_ranges);
         let base = self.index_offset + INDEX_META_SIZE;
         let sli = &self.index_ref.data()[base..base + self.block_count as usize * BLOCK_META_SIZE];

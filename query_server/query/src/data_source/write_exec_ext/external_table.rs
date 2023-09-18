@@ -57,6 +57,7 @@ impl WriteExecExt for ListingTable {
             object_store,
             serializer,
             file_extension,
+            input.schema(),
         ));
 
         Ok(Arc::new(TableWriterExec::new(

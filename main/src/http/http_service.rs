@@ -15,9 +15,12 @@ use http_protocol::header::{ACCEPT, AUTHORIZATION, PRIVATE_KEY};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
+use meta::limiter::RequestLimiter;
+use meta::model::MetaRef;
+use metrics::count::U64Counter;
+use metrics::gather_metrics;
 use metrics::metric_register::MetricsRegister;
 use metrics::prom_reporter::PromReporter;
-use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
@@ -47,7 +50,7 @@ use super::Error as HttpError;
 use crate::http::metrics::HttpMetrics;
 use crate::http::response::{HttpResponse, ResponseBuilder};
 use crate::http::result_format::{get_result_format_from_header, ResultFormat};
-use crate::http::QuerySnafu;
+use crate::http::{meta_err_to_reject, QuerySnafu};
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
 use crate::{server, VERSION};
@@ -189,6 +192,11 @@ impl HttpService {
         warp::any().map(move || metric.clone())
     }
 
+    fn with_meta(&self) -> impl Filter<Extract = (MetaRef,), Error = Infallible> + Clone {
+        let meta = self.coord.meta_manager();
+        warp::any().map(move || meta.clone())
+    }
+
     fn routes_bundle(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -266,6 +274,7 @@ impl HttpService {
             .and(self.handle_header())
             .and(warp::query::<SqlParam>())
             .and(self.with_dbms())
+            .and(self.with_meta())
             .and(self.with_http_metrics())
             .and(self.with_hostaddr())
             .and(self.handle_span_header())
@@ -275,9 +284,11 @@ impl HttpService {
                  header: Header,
                  param: SqlParam,
                  dbms: DBMSRef,
+                 meta: MetaRef,
                  metrics: Arc<HttpMetrics>,
                  addr: String,
                  parent_span_ctx: Option<SpanContext>| async move {
+                    let start = Instant::now();
                     debug!(
                         "Receive http sql request, header: {:?}, param: {:?}",
                         header, param
@@ -285,7 +296,7 @@ impl HttpService {
                     let span_recorder =
                         SpanRecorder::new(parent_span_ctx.child_span("rest sql request"));
                     let span_context = span_recorder.span_ctx();
-
+                    let req_len = req.len();
                     let query = {
                         let mut span_recorder =
                             SpanRecorder::new(span_context.child_span("authenticate"));
@@ -299,17 +310,30 @@ impl HttpService {
                     };
 
                     let result_fmt = get_result_format_from_header(&header)?;
+                    http_limiter_check_query(&meta, query.context().tenant(), req_len)
+                        .await
+                        .map_err(reject::custom)?;
+
+                    let tenant = query.context().tenant();
+                    let db = query.context().database();
+                    let user = query.context().user_info().desc().name();
+                    let addr_str = addr.as_str();
 
                     let result = {
                         let mut span_recorder =
                             SpanRecorder::new(span_context.child_span("sql handle"));
+                        let limiter = meta
+                            .limiter(query.context().tenant())
+                            .await
+                            .map_err(meta_err_to_reject)?;
+                        let http_data_out = metrics.http_data_out(tenant, user, db, addr_str);
                         sql_handle(
                             &query,
                             &dbms,
                             result_fmt,
                             span_recorder.span_ctx(),
-                            &metrics,
-                            addr.as_str(),
+                            limiter,
+                            http_data_out,
                         )
                         .await
                         .map_err(|e| {
@@ -319,12 +343,7 @@ impl HttpService {
                         })
                     };
 
-                    let tenant = query.context().tenant();
-                    let db = query.context().database();
-                    let user = query.context().user_info().desc().name();
-
-                    metrics.queries_inc(tenant, user, db, addr.as_str());
-
+                    http_record_query_metrics(&metrics, query.context(), &addr, req_len, start);
                     result
                 },
             )
@@ -372,9 +391,12 @@ impl HttpService {
                         span_recorder.record(ctx)
                     };
 
+                    let req_len = req.len();
+                    http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len).await?;
+
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
-                    let req_len = req.len() as u64;
+                    let req_len = req.len();
                     let write_points_lines = {
                         let mut span_recorder =
                             SpanRecorder::new(span_context.child_span("try parse req to lines"));
@@ -392,22 +414,7 @@ impl HttpService {
                     )
                     .await;
 
-                    let (tenant, db, user, addr) = (
-                        ctx.tenant(),
-                        ctx.database(),
-                        ctx.user_info().desc().name(),
-                        addr.as_str(),
-                    );
-
-                    metrics.writes_inc(tenant, user, db, addr);
-                    metrics.write_data_in_inc(tenant, user, db, addr, req_len);
-
-                    sample_point_write_duration(
-                        tenant,
-                        db,
-                        resp.is_ok(),
-                        start.elapsed().as_millis() as f64,
-                    );
+                    http_record_write_metrics(&metrics, &ctx, &addr, req_len, start);
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
@@ -457,7 +464,11 @@ impl HttpService {
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
-                    let req_len = req.len() as u64;
+                    let req_len = req.len();
+                    http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len)
+                        .await
+                        .map_err(reject::custom)?;
+
                     let write_points_req = {
                         let mut span_recorder = SpanRecorder::new(
                             span_context.child_span("construct write tsdb points request"),
@@ -475,22 +486,7 @@ impl HttpService {
                     )
                     .await;
 
-                    let (tenant, db, user, addr) = (
-                        ctx.tenant(),
-                        ctx.database(),
-                        ctx.user_info().desc().name(),
-                        addr.as_str(),
-                    );
-
-                    metrics.writes_inc(tenant, user, db, addr);
-                    metrics.write_data_in_inc(tenant, user, db, addr, req_len);
-
-                    sample_point_write_duration(
-                        tenant,
-                        db,
-                        resp.is_ok(),
-                        start.elapsed().as_millis() as f64,
-                    );
+                    http_record_write_metrics(&metrics, &ctx, &addr, req_len, start);
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
@@ -540,7 +536,11 @@ impl HttpService {
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
-                    let req_len = req.len() as u64;
+                    let req_len = req.len();
+                    http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len)
+                        .await
+                        .map_err(reject::custom)?;
+
                     let write_points_req = {
                         let mut span_recorder = SpanRecorder::new(
                             span_context.child_span("construct write tsdb points json request"),
@@ -558,22 +558,7 @@ impl HttpService {
                     )
                     .await;
 
-                    let (tenant, db, user, addr) = (
-                        ctx.tenant(),
-                        ctx.database(),
-                        ctx.user_info().desc().name(),
-                        addr.as_str(),
-                    );
-
-                    metrics.writes_inc(tenant, user, db, addr);
-                    metrics.write_data_in_inc(tenant, user, db, addr, req_len);
-
-                    sample_point_write_duration(
-                        tenant,
-                        db,
-                        resp.is_ok(),
-                        start.elapsed().as_millis() as f64,
-                    );
+                    http_record_write_metrics(&metrics, &ctx, &addr, req_len, start);
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
@@ -665,6 +650,7 @@ impl HttpService {
             .and(self.handle_header())
             .and(warp::query::<SqlParam>())
             .and(self.with_dbms())
+            .and(self.with_meta())
             .and(self.with_http_metrics())
             .and(self.with_prom_remote_server())
             .and(self.with_hostaddr())
@@ -674,6 +660,7 @@ impl HttpService {
                  header: Header,
                  param: SqlParam,
                  dbms: DBMSRef,
+                 meta: MetaRef,
                  metrics: Arc<HttpMetrics>,
                  prs: PromRemoteServerRef,
                  addr: String,
@@ -697,12 +684,17 @@ impl HttpService {
                             .map_err(reject::custom)?;
                         span_recorder.record(ctx)
                     };
+                    let req_len = req.len();
+
+                    http_limiter_check_query(&meta, context.tenant(), req_len)
+                        .await
+                        .map_err(reject::custom)?;
 
                     let tenant_name = context.tenant();
                     let username = context.user_info().desc().name();
                     let database_name = context.database();
 
-                    let counter =
+                    let http_query_data_out =
                         metrics.http_data_out(tenant_name, username, database_name, addr.as_str());
 
                     let result = {
@@ -719,19 +711,12 @@ impl HttpService {
                                 reject::custom(HttpError::from(e))
                             })
                             .map(|b| {
-                                counter.inc(b.len() as u64);
+                                http_query_data_out.inc(b.len() as u64);
                                 b
                             })
                     };
 
-                    metrics.queries_inc(tenant_name, username, database_name, addr.as_str());
-
-                    sample_query_read_duration(
-                        context.tenant(),
-                        context.database(),
-                        result.is_ok(),
-                        start.elapsed().as_millis() as f64,
-                    );
+                    http_record_query_metrics(&metrics, &context, &addr, req_len, start);
                     result
                 },
             )
@@ -787,7 +772,10 @@ impl HttpService {
                         span_recorder.record(ctx)
                     };
 
-                    let req_len = req.len() as u64;
+                    let req_len = req.len();
+                    http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len)
+                        .await
+                        .map_err(reject::custom)?;
 
                     let mut span_recorder =
                         SpanRecorder::new(span_context.child_span("remote write"));
@@ -813,23 +801,8 @@ impl HttpService {
                         span_context,
                     )
                     .await;
+                    http_record_write_metrics(&metrics, &ctx, &addr, req_len, start);
 
-                    let (tenant, user, db, addr) = (
-                        ctx.tenant(),
-                        ctx.database(),
-                        ctx.user_info().desc().name(),
-                        addr.as_str(),
-                    );
-
-                    metrics.writes_inc(tenant, user, db, addr);
-                    metrics.write_data_in_inc(tenant, user, db, addr, req_len);
-
-                    sample_point_write_duration(
-                        ctx.tenant(),
-                        ctx.database(),
-                        resp.is_ok(),
-                        start.elapsed().as_millis() as f64,
-                    );
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
@@ -1095,8 +1068,8 @@ async fn sql_handle(
     dbms: &DBMSRef,
     fmt: ResultFormat,
     span_ctx: Option<&SpanContext>,
-    metrics: &Arc<HttpMetrics>,
-    addr: &str,
+    limiter: Arc<dyn RequestLimiter>,
+    http_query_data_out: U64Counter,
 ) -> Result<Response, HttpError> {
     debug!("prepare to execute: {:?}", query.content());
     let handle = {
@@ -1110,13 +1083,13 @@ async fn sql_handle(
     };
 
     let out = handle.result();
-    let counter = metrics.http_data_out(
-        query.context().tenant(),
-        query.context().user_info().desc().name(),
-        query.context().database(),
-        addr,
+
+    let resp = HttpResponse::new(
+        out,
+        fmt.clone(),
+        http_query_data_out.clone(),
+        limiter.clone(),
     );
-    let resp = HttpResponse::new(out, fmt.clone(), counter.clone());
 
     let _response_span_recorder = SpanRecorder::new(span_ctx.child_span("build response"));
     if !query.context().chunked() {
@@ -1135,7 +1108,8 @@ async fn sql_handle(
                         })?
                 };
                 let out = handle.result();
-                let resp = HttpResponse::new(out, fmt, counter.clone());
+                let resp =
+                    HttpResponse::new(out, fmt, http_query_data_out.clone(), limiter.clone());
                 return resp.wrap_batches_to_response().await;
             }
         }
@@ -1144,6 +1118,63 @@ async fn sql_handle(
     } else {
         resp.wrap_stream_to_response()
     }
+}
+
+async fn http_limiter_check_query(
+    meta: &MetaRef,
+    tenant: &str,
+    req_len: usize,
+) -> Result<(), HttpError> {
+    let limiter = meta.limiter(tenant).await?;
+    limiter.check_http_queries().await?;
+    limiter.check_http_data_in(req_len).await?;
+    Ok(())
+}
+
+async fn http_limiter_check_write(
+    meta: &MetaRef,
+    tenant: &str,
+    req_len: usize,
+) -> Result<(), HttpError> {
+    let limiter = meta.limiter(tenant).await?;
+    limiter.check_http_writes().await?;
+    limiter.check_http_data_in(req_len).await?;
+    Ok(())
+}
+
+fn http_record_query_metrics(
+    metrics: &HttpMetrics,
+    ctx: &Context,
+    addr: &str,
+    req_len: usize,
+    start: Instant,
+) {
+    let (tenant, user, db) = (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
+    metrics.http_queries(tenant, user, db, addr).inc_one();
+    metrics
+        .http_query_duration(tenant, user, db, addr)
+        .record(start.elapsed());
+    metrics
+        .http_data_in(tenant, user, db, addr)
+        .inc(req_len as u64);
+}
+
+fn http_record_write_metrics(
+    metrics: &HttpMetrics,
+    ctx: &Context,
+    addr: &str,
+    req_len: usize,
+    start: Instant,
+) {
+    let (tenant, user, db) = (ctx.tenant(), ctx.database(), ctx.user_info().desc().name());
+
+    metrics.http_writes(tenant, user, db, addr).inc_one();
+    metrics
+        .http_data_in(tenant, user, db, addr)
+        .inc(req_len as u64);
+    metrics
+        .http_write_duration(tenant, user, db, addr)
+        .record(start.elapsed());
 }
 
 /*************** top ****************/

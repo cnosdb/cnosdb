@@ -82,6 +82,7 @@ impl IndexMeta {
         )
     }
 
+    /// get block_meta_iterator filter by time_ranges
     pub fn block_iterator_opt(&self, time_ranges: Arc<TimeRanges>) -> BlockMetaIterator {
         let mut iter = BlockMetaIterator::new(
             self.index_ref.clone(),
@@ -110,15 +111,15 @@ impl IndexMeta {
         self.block_count
     }
 
-    pub fn time_range(&self) -> (Timestamp, Timestamp) {
+    pub fn time_range(&self) -> TimeRange {
         if self.block_count == 0 {
-            return (Timestamp::MIN, Timestamp::MIN);
+            return TimeRange::new(Timestamp::MIN, Timestamp::MIN);
         }
         let first_blk_beg = self.index_ref.field_id_offs()[self.index_idx].1 + INDEX_META_SIZE;
         let min_ts = decode_be_i64(&self.index_ref.data[first_blk_beg..first_blk_beg + 8]);
         let last_blk_beg = first_blk_beg + BLOCK_META_SIZE * (self.block_count as usize - 1);
         let max_ts = decode_be_i64(&self.index_ref.data[last_blk_beg + 8..last_blk_beg + 16]);
-        (min_ts, max_ts)
+        TimeRange::new(min_ts, max_ts)
     }
 }
 

@@ -292,13 +292,13 @@ pub enum QueryError {
         "Semantic error: Unexpected data type {} of {}, {}",
         data_type,
         column,
-        promot
+        prompt
     ))]
     #[error_code(code = 41)]
     DataType {
         data_type: String,
         column: String,
-        promot: String,
+        prompt: String,
     },
 
     #[snafu(display(
@@ -500,6 +500,12 @@ pub enum QueryError {
     #[snafu(display("Analyze pushed down predicates, error: {}", reason))]
     #[error_code(code = 72)]
     AnalyzePushedFilter {
+        reason: String,
+    },
+
+    #[snafu(display("Invalid geometry type, error: {}", reason))]
+    #[error_code(code = 73)]
+    InvalidGeometryType {
         reason: String,
     },
 }

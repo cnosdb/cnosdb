@@ -242,12 +242,8 @@ impl TimeRanges {
     }
 
     pub fn overlaps(&self, time_range: &TimeRange) -> bool {
-        for tr in self.inner.iter() {
-            if tr.overlaps(time_range) {
-                return true;
-            }
-        }
-        false
+        self.max_time_range().overlaps(time_range)
+            && self.inner.iter().any(|tr| tr.overlaps(time_range))
     }
 
     pub fn includes(&self, time_range: &TimeRange) -> bool {
@@ -323,6 +319,10 @@ impl TimeRanges {
         }
 
         None
+    }
+
+    pub fn max_time_range(&self) -> TimeRange {
+        TimeRange::new(self.min_ts, self.max_ts)
     }
 }
 
@@ -624,19 +624,30 @@ impl Range {
         Self { low, high }
     }
     /// TODO Constructs a range of values not equal to scalar_value [scalar_value, scalar_value].
-    pub fn ne(data_type: &DataType, _scalar_value: &ScalarValue) -> Range {
-        let low = Marker {
+    pub fn ne(data_type: &DataType, scalar_value: &ScalarValue) -> Vec<Range> {
+        let low_1 = Marker::lower_unbound(data_type.clone());
+        let high_1 = Marker {
             data_type: data_type.clone(),
-            value: None,
+            value: Some(scalar_value.clone()),
             bound: Bound::Below,
         };
-        let high = Marker {
+        let low_2 = Marker {
             data_type: data_type.clone(),
-            value: None,
+            value: Some(scalar_value.clone()),
             bound: Bound::Above,
         };
+        let high_2 = Marker::upper_unbound(data_type.clone());
 
-        Self { low, high }
+        vec![
+            Self {
+                low: low_1,
+                high: high_1,
+            },
+            Self {
+                low: low_2,
+                high: high_2,
+            },
+        ]
     }
     /// Construct a range of values greater than scalar_value (scalar_value, +∞).
     pub fn gt(data_type: &DataType, scalar_value: &ScalarValue) -> Range {
@@ -692,6 +703,13 @@ impl Range {
     fn overlaps(&self, other: &Self) -> Result<bool> {
         self.check_type_compatibility(other)?;
         if self.low <= other.high && other.low <= self.high {
+            // like (-∞, 2) and (2, +∞) is not overlap
+            if self.high == other.low
+                && self.high.bound == Bound::Below
+                && other.low.bound == Bound::Above
+            {
+                return Ok(false);
+            }
             return Ok(true);
         }
         Ok(false)
@@ -1447,7 +1465,7 @@ impl QueryArgs {
 pub struct QueryExpr {
     pub split: PlacedSplit,
     pub df_schema: Schema,
-    pub table_schema: TskvTableSchema,
+    pub table_schema: TskvTableSchemaRef,
 }
 
 impl QueryExpr {
@@ -1700,9 +1718,11 @@ mod tests {
             &DataType::Float64,
             &ScalarValue::Float64(Some(3333333333333333.3)),
         );
+        let f4 = Range::ne(&DataType::Float64, &ScalarValue::Float64(Some(4.4)));
 
         let domain_1 = Domain::of_ranges(&[f1]).unwrap();
         let domain_2 = Domain::of_ranges(&[f2, f3]).unwrap();
+        let domain_3 = Domain::of_ranges(&f4).unwrap();
 
         assert!(matches!(domain_1, Domain::Range(_)));
 
@@ -1713,6 +1733,13 @@ mod tests {
             }
             _ => false,
         });
+
+        assert!(match domain_3 {
+            Domain::Range(val_set) => {
+                val_set.low_indexed_ranges.len() == 2
+            }
+            _ => false,
+        })
     }
 
     #[test]

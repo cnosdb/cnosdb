@@ -7,7 +7,8 @@ create database only_tag_col WITH TTL '100000d';
 drop table if exists m2;
 CREATE TABLE IF NOT EXISTS m2(f0 BIGINT , f1 DOUBLE , TAGS(t0, t1, t2) );
 
-INSERT m2(TIME, f0, f1, t0, t1) VALUES(101, 111, 444, 'tag11', 'tag21'),
+INSERT m2(TIME, f0, f1, t0, t1) VALUES
+(101, 111, 444, 'tag11', 'tag21'),
 (102, 222, 333, 'tag12', 'tag22'),
 (103, 333, 222, 'tag13', 'tag23'),
 (104, 444, 111, 'tag14', 'tag24'),
