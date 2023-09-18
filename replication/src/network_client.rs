@@ -165,11 +165,11 @@ impl RaftNetwork<TypeConfig> for TargetClient {
         &mut self,
         req: InstallSnapshotRequest<TypeConfig>,
     ) -> Result<InstallSnapshotResponse<RaftNodeId>, RPCError<InstallSnapshotError>> {
-        info!(
-            "Network callback send_install_snapshot target:{}, req: {:?}",
-            self.target,
-            req.summary()
-        );
+        // info!(
+        //     "Network callback send_install_snapshot target:{}, req: {:?}",
+        //     self.target,
+        //     req.summary()
+        // );
 
         let channel = self
             .conn
