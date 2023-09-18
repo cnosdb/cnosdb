@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use datafusion::arrow::record_batch::RecordBatch;
-use memory_pool::{MemoryPool, MemoryPoolRef};
+use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::codec::Encoding;
@@ -34,6 +34,7 @@ use crate::kv_option::{Options, StorageOptions};
 use crate::schema::error::SchemaError;
 use crate::summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
+use crate::tskv_ctx::TskvContext;
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
 use crate::wal::{self, WalDecoder, WalEntry, WalManager, WalTask};
@@ -46,21 +47,17 @@ pub const GLOBAL_TASK_REQ_CHANNEL_CAP: usize = 1024;
 
 #[derive(Debug)]
 pub struct TsKv {
-    options: Arc<Options>,
+    ctx: Arc<TskvContext>,
+    version_set: Arc<RwLock<VersionSet>>,
+
     global_ctx: Arc<GlobalContext>,
     global_seq_ctx: Arc<GlobalSequenceContext>,
-    version_set: Arc<RwLock<VersionSet>>,
-    meta_manager: MetaRef,
-
-    runtime: Arc<Runtime>,
-    memory_pool: Arc<dyn MemoryPool>,
     wal_sender: Sender<WalTask>,
     flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
     summary_task_sender: Sender<SummaryTask>,
     global_seq_task_sender: Sender<GlobalSequenceTask>,
     close_sender: BroadcastSender<Sender<()>>,
-    metrics: Arc<MetricsRegister>,
 }
 
 impl TsKv {
@@ -71,47 +68,47 @@ impl TsKv {
         memory_pool: MemoryPoolRef,
         metrics: Arc<MetricsRegister>,
     ) -> Result<TsKv> {
-        let shared_options = Arc::new(opt);
+        let tskv_ctx = Arc::new(TskvContext::new(
+            meta_manager,
+            Arc::new(opt),
+            runtime,
+            memory_pool,
+            metrics,
+        ));
+
         let (flush_task_sender, flush_task_receiver) =
-            mpsc::channel::<FlushReq>(shared_options.storage.flush_req_channel_cap);
+            mpsc::channel::<FlushReq>(tskv_ctx.storage_opt().flush_req_channel_cap);
         let (compact_task_sender, compact_task_receiver) =
             mpsc::channel::<CompactTask>(COMPACT_REQ_CHANNEL_CAP);
         let (wal_sender, wal_receiver) =
-            mpsc::channel::<WalTask>(shared_options.wal.wal_req_channel_cap);
+            mpsc::channel::<WalTask>(tskv_ctx.options().wal.wal_req_channel_cap);
         let (summary_task_sender, summary_task_receiver) =
             mpsc::channel::<SummaryTask>(SUMMARY_REQ_CHANNEL_CAP);
         let (global_seq_task_sender, global_seq_task_receiver) =
             mpsc::channel::<GlobalSequenceTask>(GLOBAL_TASK_REQ_CHANNEL_CAP);
         let (close_sender, _close_receiver) = broadcast::channel(1);
+
         let (version_set, summary) = Self::recover_summary(
-            runtime.clone(),
-            memory_pool.clone(),
-            meta_manager.clone(),
-            shared_options.clone(),
+            tskv_ctx.clone(),
             flush_task_sender.clone(),
             global_seq_task_sender.clone(),
             compact_task_sender.clone(),
-            metrics.clone(),
         )
         .await;
         let global_seq_ctx = version_set.read().await.get_global_sequence_context().await;
         let global_seq_ctx = Arc::new(global_seq_ctx);
 
         let core = Self {
-            options: shared_options.clone(),
+            ctx: tskv_ctx.clone(),
             global_ctx: summary.global_context(),
             global_seq_ctx: global_seq_ctx.clone(),
             version_set,
-            meta_manager,
-            runtime: runtime.clone(),
-            memory_pool,
             wal_sender,
             flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
             global_seq_task_sender: global_seq_task_sender.clone(),
             close_sender,
-            metrics,
         };
 
         let wal_manager = core.recover_wal().await;
@@ -125,8 +122,7 @@ impl TsKv {
             compact_task_sender.clone(),
         );
         compaction::job::run(
-            shared_options.storage.clone(),
-            runtime,
+            tskv_ctx.clone(),
             compact_task_receiver,
             summary.global_context(),
             global_seq_ctx.clone(),
@@ -135,7 +131,7 @@ impl TsKv {
         );
         core.run_summary_job(summary, summary_task_receiver);
         context::run_global_context_job(
-            core.runtime.clone(),
+            tskv_ctx.runtime().clone(),
             global_seq_task_receiver,
             global_seq_ctx,
         );
@@ -144,16 +140,12 @@ impl TsKv {
 
     #[allow(clippy::too_many_arguments)]
     async fn recover_summary(
-        runtime: Arc<Runtime>,
-        memory_pool: MemoryPoolRef,
-        meta: MetaRef,
-        opt: Arc<Options>,
+        ctx: Arc<TskvContext>,
         flush_task_sender: Sender<FlushReq>,
         global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
-        metrics: Arc<MetricsRegister>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
-        let summary_dir = opt.storage.summary_dir();
+        let summary_dir = ctx.options().storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
@@ -162,20 +154,16 @@ impl TsKv {
         let summary_file = file_utils::make_summary_file(&summary_dir, 0);
         let summary = if file_manager::try_exists(&summary_file) {
             Summary::recover(
-                meta,
-                opt,
-                runtime,
-                memory_pool,
+                ctx,
                 flush_task_sender,
                 global_seq_task_sender,
                 compact_task_sender,
                 true,
-                metrics.clone(),
             )
             .await
             .unwrap()
         } else {
-            Summary::new(opt, runtime, memory_pool, global_seq_task_sender, metrics)
+            Summary::new(ctx.clone(), global_seq_task_sender)
                 .await
                 .unwrap()
         };
@@ -186,7 +174,7 @@ impl TsKv {
 
     async fn recover_wal(&self) -> WalManager {
         let wal_manager = WalManager::open(
-            self.options.wal.clone(),
+            self.ctx.options().wal.clone(),
             self.global_seq_ctx.clone(),
             self.version_set.clone(),
         )
@@ -311,7 +299,7 @@ impl TsKv {
         info!("Job 'WAL' starting.");
         let version_set = self.version_set.clone();
         let mut close_receiver = self.close_sender.subscribe();
-        self.runtime.spawn(async move {
+        self.ctx.runtime().spawn(async move {
             info!("Job 'WAL' started.");
 
             let sync_interval = wal_manager.sync_interval();
@@ -385,7 +373,7 @@ impl TsKv {
         summary_task_sender: Sender<SummaryTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
-        let runtime = self.runtime.clone();
+        let runtime = self.ctx.runtime().clone();
         let f = async move {
             while let Some(x) = receiver.recv().await {
                 // TODO(zipper): this make config `flush_req_channel_cap` wasted
@@ -400,7 +388,7 @@ impl TsKv {
                 ));
             }
         };
-        self.runtime.spawn(f);
+        self.ctx.runtime().spawn(f);
         info!("Flush task handler started");
     }
 
@@ -413,7 +401,7 @@ impl TsKv {
                 summary_processor.apply().await;
             }
         };
-        self.runtime.spawn(f);
+        self.ctx.runtime().spawn(f);
         info!("Summary task handler started");
     }
 
@@ -442,11 +430,7 @@ impl TsKv {
             .version_set
             .write()
             .await
-            .create_db(
-                DatabaseSchema::new(tenant, db_name),
-                self.meta_manager.clone(),
-                self.memory_pool.clone(),
-            )
+            .create_db(DatabaseSchema::new(tenant, db_name))
             .await?;
         Ok(db)
     }
@@ -603,7 +587,7 @@ impl TsKv {
         precision: Precision,
         points: Vec<u8>,
     ) -> Result<u64> {
-        if !self.options.wal.enabled {
+        if !self.ctx.options().wal.enabled {
             return Ok(0);
         }
 
@@ -729,7 +713,8 @@ impl TsKv {
                 .await;
 
             let ts_dir = self
-                .options
+                .ctx
+                .options()
                 .storage
                 .ts_family_dir(&make_owner(tenant, database), vnode_id);
             match std::fs::remove_dir_all(&ts_dir) {
@@ -833,8 +818,8 @@ impl Engine for TsKv {
         }
 
         let db_dir = self
-            .options
-            .storage
+            .ctx
+            .storage_opt()
             .database_dir(&make_owner(tenant, database));
         if let Err(e) = std::fs::remove_dir_all(&db_dir) {
             error!("Failed to remove dir '{}', e: {}", db_dir.display(), e);
@@ -890,8 +875,8 @@ impl Engine for TsKv {
                 .await;
 
             let ts_dir = self
-                .options
-                .storage
+                .ctx
+                .storage_opt()
                 .ts_family_dir(&make_owner(tenant, database), vnode_id);
             match std::fs::remove_dir_all(&ts_dir) {
                 Ok(()) => {
@@ -1130,7 +1115,7 @@ impl Engine for TsKv {
     }
 
     fn get_storage_options(&self) -> Arc<StorageOptions> {
-        self.options.storage.clone()
+        self.ctx.storage_opt().clone()
     }
 
     async fn get_vnode_summary(
@@ -1215,11 +1200,11 @@ impl Engine for TsKv {
                     .del_tsfamily(vnode_id, self.summary_task_sender.clone())
                     .await;
             }
-            let tsf_dir = self.options.storage.tsfamily_dir(db_name, vnode_id);
+            let tsf_dir = self.ctx.options().storage.tsfamily_dir(db_name, vnode_id);
             if let Err(e) = std::fs::remove_dir_all(&tsf_dir) {
                 error!("Failed to remove dir '{}', e: {}", tsf_dir.display(), e);
             }
-            let index_dir = self.options.storage.index_dir(db_name, vnode_id);
+            let index_dir = self.ctx.storage_opt().index_dir(db_name, vnode_id);
             if let Err(e) = std::fs::remove_dir_all(&index_dir) {
                 error!("Failed to remove dir '{}', e: {}", index_dir.display(), e);
             }
@@ -1262,7 +1247,7 @@ impl Engine for TsKv {
                     }
                 }
 
-                let picker = LevelCompactionPicker::new(self.options.storage.clone());
+                let picker = LevelCompactionPicker::new(self.ctx.storage_opt().clone());
                 let version = ts_family.read().await.version();
                 if let Some(req) = picker.pick_compaction(version) {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {

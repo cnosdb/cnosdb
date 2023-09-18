@@ -2,15 +2,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{oneshot, RwLock, Semaphore};
 use trace::{error, info};
 
 use crate::compaction::{flush, CompactTask, LevelCompactionPicker, Picker};
 use crate::context::{GlobalContext, GlobalSequenceContext};
-use crate::kv_option::StorageOptions;
 use crate::summary::SummaryTask;
+use crate::tskv_ctx::TskvContext;
 use crate::version_set::VersionSet;
 use crate::TseriesFamilyId;
 
@@ -42,18 +41,18 @@ impl Default for CompactProcessor {
 }
 
 pub fn run(
-    storage_opt: Arc<StorageOptions>,
-    runtime: Arc<Runtime>,
+    tskv_ctx: Arc<TskvContext>,
     mut receiver: Receiver<CompactTask>,
     ctx: Arc<GlobalContext>,
     seq_ctx: Arc<GlobalSequenceContext>,
     version_set: Arc<RwLock<VersionSet>>,
     summary_task_sender: Sender<SummaryTask>,
 ) {
-    let runtime_inner = runtime.clone();
+    let runtime_inner = tskv_ctx.runtime().clone();
+    let storage_opt = tskv_ctx.storage_opt().clone();
     let compact_processor = Arc::new(RwLock::new(CompactProcessor::default()));
     let compact_batch_processor = compact_processor.clone();
-    runtime.spawn(async move {
+    tskv_ctx.runtime().spawn(async move {
         // TODO: Concurrent compactions should not over argument $cpu.
         let compaction_limit = Arc::new(Semaphore::new(
             storage_opt.max_concurrent_compaction as usize,
@@ -164,7 +163,7 @@ pub fn run(
         }
     });
 
-    runtime.spawn(async move {
+    tskv_ctx.runtime().spawn(async move {
         while let Some(compact_task) = receiver.recv().await {
             // Vnode id to compact & whether vnode be flushed before compact
             let (vnode_id, flush_vnode) = match compact_task {

@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{FieldId, PhysicalDType as ValueType};
-use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
 use utils::BloomFilter;
 
@@ -465,7 +464,7 @@ pub struct TsmReader {
     file_id: u64,
     reader: Arc<AsyncFile>,
     index_reader: Arc<IndexReader>,
-    tombstone: Arc<RwLock<TsmTombstone>>,
+    tombstone: Arc<TsmTombstone>,
 }
 
 impl TsmReader {
@@ -480,7 +479,7 @@ impl TsmReader {
             file_id,
             reader: tsm,
             index_reader: Arc::new(tsm_idx),
-            tombstone: Arc::new(RwLock::new(tombstone)),
+            tombstone: Arc::new(tombstone),
         })
     }
 
@@ -505,7 +504,6 @@ impl TsmReader {
         )
         .await?;
         self.tombstone
-            .read()
             .data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
         Ok(blk)
     }
@@ -528,7 +526,7 @@ impl TsmReader {
     }
 
     pub fn has_tombstone(&self) -> bool {
-        !self.tombstone.read().is_empty()
+        !self.tombstone.is_empty()
     }
 
     /// Returns all tombstone `TimeRange`s for a `BlockMeta`.
@@ -537,10 +535,10 @@ impl TsmReader {
         &self,
         block_meta: &BlockMeta,
     ) -> Option<Vec<TimeRange>> {
-        return self.tombstone.read().get_overlapped_time_ranges(
+        self.tombstone.get_overlapped_time_ranges(
             block_meta.field_id(),
             &TimeRange::from((block_meta.min_ts(), block_meta.max_ts())),
-        );
+        )
     }
 
     /// Returns all TimeRanges for a FieldId cloned from TsmTombstone.
@@ -548,7 +546,7 @@ impl TsmReader {
         &self,
         field_id: FieldId,
     ) -> Option<Vec<TimeRange>> {
-        self.tombstone.read().get_cloned_time_ranges(field_id)
+        self.tombstone.get_cloned_time_ranges(field_id)
     }
 
     pub(crate) fn file_id(&self) -> u64 {

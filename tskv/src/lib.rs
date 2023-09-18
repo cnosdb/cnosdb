@@ -3,7 +3,7 @@
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_uninit_array)]
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -44,12 +44,16 @@ mod record_file;
 mod schema;
 mod summary;
 mod tseries_family;
+pub mod tskv_ctx;
 pub mod tsm;
 mod version_set;
 mod wal;
 
+/// The column file ID is unique in a KV instance
+/// and uniquely corresponds to one column file.
 pub type ColumnFileId = u64;
-type TseriesFamilyId = u32;
+
+type TseriesFamilyId = VnodeId;
 type LevelId = u32;
 
 /// Returns the normalized tenant of a WritePointsRequest

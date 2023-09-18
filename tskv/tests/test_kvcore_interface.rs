@@ -4,47 +4,45 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
-    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{Precision, TenantOptions};
     use protos::kv_service::Meta;
     use protos::{kv_service, models_helper};
     use serial_test::serial;
-    use tokio::runtime;
     use tokio::runtime::Runtime;
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::file_system::file_manager;
-    use tskv::{kv_option, Engine, TsKv};
+    use tskv::tskv_ctx::TskvContext;
+    use tskv::{Engine, TsKv};
 
     /// Initializes a TsKv instance in specified directory, with an optional runtime,
     /// returns the TsKv and runtime.
     ///
     /// If the given runtime is none, get_tskv will create a new runtime and
     /// put into the return value, or else the given runtime will be returned.
-    fn get_tskv(dir: impl AsRef<Path>, runtime: Option<Arc<Runtime>>) -> (Arc<Runtime>, TsKv) {
+    fn get_tskv(dir: impl AsRef<Path>, _runtime: Option<Arc<Runtime>>) -> (Arc<Runtime>, TsKv) {
         let dir = dir.as_ref();
         let mut global_config = config::get_config_for_test();
         global_config.wal.path = dir.join("wal").to_str().unwrap().to_string();
         global_config.storage.path = dir.to_str().unwrap().to_string();
         global_config.cache.max_buffer_size = 128;
-        let opt = kv_option::Options::from(&global_config);
-        let rt = match runtime {
-            Some(rt) => rt,
-            None => Arc::new(runtime::Runtime::new().unwrap()),
-        };
-        let memory = Arc::new(GreedyMemoryPool::default());
-        let meta_manager: MetaRef = rt.block_on(AdminMeta::new(global_config));
+        let ctx = TskvContext::mock();
+        let ctx = ctx.change_config(&global_config);
+        let rt = ctx.runtime();
 
-        rt.block_on(meta_manager.add_data_node()).unwrap();
+        let meta_manager = rt.block_on(async { AdminMeta::new(global_config.clone()).await });
+        let ctx = ctx.change_meta(meta_manager.clone());
+        let opt = ctx.options().as_ref().clone();
+        let memory = ctx.memory_pool().clone();
+        rt.block_on(meta_manager.clone().add_data_node()).unwrap();
         let _ =
             rt.block_on(meta_manager.create_tenant("cnosdb".to_string(), TenantOptions::default()));
         rt.block_on(async {
             (
                 rt.clone(),
                 TsKv::open(
-                    meta_manager,
+                    meta_manager.clone(),
                     opt,
                     rt.clone(),
                     memory,

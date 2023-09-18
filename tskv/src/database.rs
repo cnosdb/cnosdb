@@ -4,15 +4,12 @@ use std::sync::Arc;
 
 use flatbuffers::{ForwardsUOffset, Vector};
 use lru_cache::asynchronous::ShardedCache;
-use memory_pool::MemoryPoolRef;
-use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::predicate::domain::TimeRange;
 use models::schema::{DatabaseSchema, Precision, TskvTableSchema, TskvTableSchemaRef};
 use models::{SchemaId, SeriesId, SeriesKey};
 use protos::models::{Column, ColumnType, FieldType, Table};
 use snafu::ResultExt;
-use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{oneshot, RwLock};
 use trace::{error, info};
@@ -22,11 +19,12 @@ use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalContext;
 use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
-use crate::kv_option::{Options, INDEX_PATH};
+use crate::kv_option::INDEX_PATH;
 use crate::memcache::{MemCache, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
+use crate::tskv_ctx::TskvContext;
 use crate::Error::{self};
 use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
@@ -34,36 +32,31 @@ pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOff
 
 #[derive(Debug)]
 pub struct Database {
+    ctx: Arc<TskvContext>,
     //tenant_name.database_name => owner
     owner: Arc<String>,
-    opt: Arc<Options>,
 
     schemas: Arc<DBschemas>,
     ts_indexes: HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>>,
     ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
-    runtime: Arc<Runtime>,
-    memory_pool: MemoryPoolRef,
+    /// Notify: this use sub metrics register [(tenant, ), (database, )]
     metrics_register: Arc<MetricsRegister>,
 }
 
 impl Database {
     pub async fn new(
+        ctx: Arc<TskvContext>,
         schema: DatabaseSchema,
-        opt: Arc<Options>,
-        runtime: Arc<Runtime>,
-        meta: MetaRef,
-        memory_pool: MemoryPoolRef,
-        metrics_register: Arc<MetricsRegister>,
+        sub_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
+        let meta = ctx.meta().clone();
         let db = Self {
-            opt,
+            ctx,
             owner: Arc::new(schema.owner()),
             schemas: Arc::new(DBschemas::new(schema, meta).await.context(SchemaSnafu)?),
             ts_indexes: HashMap::new(),
             ts_families: HashMap::new(),
-            runtime,
-            memory_pool,
-            metrics_register,
+            metrics_register: sub_register,
         };
 
         Ok(db)
@@ -76,24 +69,21 @@ impl Database {
         compact_task_sender: Sender<CompactTask>,
     ) {
         let tf = TseriesFamily::new(
+            self.ctx.clone(),
             ver.tf_id(),
             ver.database(),
             MemCache::new(
                 ver.tf_id(),
-                self.opt.cache.max_buffer_size,
-                self.opt.cache.partition,
+                self.ctx.options().cache.max_buffer_size,
+                self.ctx.options().cache.partition,
                 ver.last_seq,
-                &self.memory_pool,
+                self.ctx.memory_pool(),
             ),
             ver.clone(),
-            self.opt.cache.clone(),
-            self.opt.storage.clone(),
             flush_task_sender,
             compact_task_sender,
-            self.memory_pool.clone(),
-            &self.metrics_register,
         );
-        tf.schedule_compaction(self.runtime.clone());
+        tf.schedule_compaction(self.ctx.runtime().clone());
 
         self.ts_families
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
@@ -121,7 +111,7 @@ impl Database {
                     let new_file_id = global_ctx.file_id_next();
                     f.tsf_id = tsf_id;
                     let file_path = f
-                        .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
+                        .rename_file(self.ctx.storage_opt(), &self.owner, f.tsf_id, new_file_id)
                         .await?;
                     let file_reader = crate::tsm::TsmReader::open(file_path).await?;
                     file_metas.insert(new_file_id, file_reader.bloom_filter());
@@ -129,19 +119,26 @@ impl Database {
                 for f in ve.del_files.iter_mut() {
                     let new_file_id = global_ctx.file_id_next();
                     f.tsf_id = tsf_id;
-                    f.rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
-                        .await?;
+                    f.rename_file(
+                        &self.ctx.options().storage,
+                        &self.owner,
+                        f.tsf_id,
+                        new_file_id,
+                    )
+                    .await?;
                 }
                 //move index
                 let origin_index = self
-                    .opt
+                    .ctx
+                    .options()
                     .storage
                     .move_dir(&self.owner, tsf_id)
                     .join(INDEX_PATH);
-                let new_index = self.opt.storage.index_dir(&self.owner, tsf_id);
+                let new_index = self.ctx.options().storage.index_dir(&self.owner, tsf_id);
                 info!("move index from {:?} to {:?}", &origin_index, &new_index);
                 file_utils::rename(origin_index, new_index).await?;
-                tokio::fs::remove_dir_all(self.opt.storage.move_dir(&self.owner, tsf_id)).await?;
+                tokio::fs::remove_dir_all(self.ctx.options().storage.move_dir(&self.owner, tsf_id))
+                    .await?;
                 (ve.seq_no, vec![ve], Some(file_metas))
             }
             None => (
@@ -158,31 +155,32 @@ impl Database {
         let ver = Arc::new(Version::new(
             tsf_id,
             self.owner.clone(),
-            self.opt.storage.clone(),
+            self.ctx.storage_opt().clone(),
             seq_no,
-            LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone()),
+            LevelInfo::init_levels(
+                self.owner.clone(),
+                tsf_id,
+                self.ctx.options().storage.clone(),
+            ),
             i64::MIN,
             Arc::new(ShardedCache::with_capacity(
-                self.opt.storage.max_cached_readers,
+                self.ctx.storage_opt().max_cached_readers,
             )),
         ));
         let tf = TseriesFamily::new(
+            self.ctx.clone(),
             tsf_id,
             self.owner.clone(),
             MemCache::new(
                 tsf_id,
-                self.opt.cache.max_buffer_size,
-                self.opt.cache.partition,
+                self.ctx.options().cache.max_buffer_size,
+                self.ctx.options().cache.partition,
                 seq_no,
-                &self.memory_pool,
+                self.ctx.memory_pool(),
             ),
             ver,
-            self.opt.cache.clone(),
-            self.opt.storage.clone(),
             flush_task_sender,
             compact_task_sender,
-            self.memory_pool.clone(),
-            &self.metrics_register,
         );
 
         let tf = Arc::new(RwLock::new(tf));
@@ -221,7 +219,7 @@ impl Database {
         tables: FlatBufferTable<'_>,
         ts_index: Arc<index::ts_index::TSIndex>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
-        if self.opt.storage.strict_write {
+        if self.ctx.storage_opt().strict_write {
             self.build_write_group_strict_mode(db_name, precision, tables, ts_index)
                 .await
         } else {
@@ -510,7 +508,7 @@ impl Database {
             return Ok(v.clone());
         }
 
-        let path = self.opt.storage.index_dir(&self.owner, id);
+        let path = self.ctx.storage_opt().index_dir(&self.owner, id);
 
         let idx = index::ts_index::TSIndex::new(path).await?;
 

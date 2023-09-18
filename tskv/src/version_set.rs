@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use memory_pool::MemoryPoolRef;
-use meta::model::MetaRef;
-use metrics::metric_register::MetricsRegister;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
@@ -17,82 +14,62 @@ use crate::database::Database;
 use crate::error::{MetaSnafu, Result};
 use crate::summary::VersionEdit;
 use crate::tseries_family::{TseriesFamily, Version};
+use crate::tskv_ctx::TskvContext;
 use crate::{ColumnFileId, Options, TseriesFamilyId};
 
 #[derive(Debug)]
 pub struct VersionSet {
-    opt: Arc<Options>,
+    ctx: Arc<TskvContext>,
     /// Maps DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
-    runtime: Arc<Runtime>,
-    memory_pool: MemoryPoolRef,
-    metrics_register: Arc<MetricsRegister>,
 }
 
 impl VersionSet {
     pub fn runtime(&self) -> Arc<Runtime> {
-        self.runtime.clone()
+        self.ctx.runtime().clone()
     }
 
-    pub fn empty(
-        opt: Arc<Options>,
-        runtime: Arc<Runtime>,
-        memory_pool: MemoryPoolRef,
-        metrics_register: Arc<MetricsRegister>,
-    ) -> Self {
+    pub fn empty(ctx: Arc<TskvContext>) -> Self {
         Self {
-            opt,
+            ctx,
             dbs: HashMap::new(),
-            runtime,
-            memory_pool,
-            metrics_register,
         }
     }
 
-    pub fn build_empty_test(runtime: Arc<Runtime>) -> Self {
+    #[cfg(test)]
+    pub fn build_empty_test(ctx: Arc<TskvContext>) -> Self {
         Self {
+            ctx,
             dbs: HashMap::new(),
-            opt: Arc::new(Options::from(&config::Config::default())),
-            metrics_register: Arc::new(MetricsRegister::default()),
-            memory_pool: Arc::new(memory_pool::GreedyMemoryPool::default()),
-            runtime,
         }
     }
 
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        meta: MetaRef,
-        opt: Arc<Options>,
-        runtime: Arc<Runtime>,
-        memory_pool: MemoryPoolRef,
+        ctx: Arc<TskvContext>,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
-        metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
         for ver in ver_set.into_values() {
             let owner = ver.database().to_string();
             let (tenant, database) = split_owner(&owner);
 
-            let schema = match meta.tenant_meta(tenant).await {
+            let schema = match ctx.meta().tenant_meta(tenant).await {
                 None => DatabaseSchema::new(tenant, database),
                 Some(client) => match client.get_db_schema(database).context(MetaSnafu)? {
                     None => DatabaseSchema::new(tenant, database),
                     Some(schema) => schema,
                 },
             };
+            let sub_register = ctx.metrics_register().sub_register([
+                ("tenant", schema.tenant_name()),
+                ("database", schema.database_name()),
+            ]);
 
             let db: &mut Arc<RwLock<Database>> = dbs.entry(owner).or_insert(Arc::new(RwLock::new(
-                Database::new(
-                    schema,
-                    opt.clone(),
-                    runtime.clone(),
-                    meta.clone(),
-                    memory_pool.clone(),
-                    metrics_register.clone(),
-                )
-                .await?,
+                Database::new(ctx.clone(), schema, sub_register).await?,
             )));
 
             let tf_id = ver.tf_id();
@@ -104,26 +81,15 @@ impl VersionSet {
             db.write().await.get_ts_index_or_add(tf_id).await?;
         }
 
-        Ok(Self {
-            dbs,
-            opt,
-            runtime,
-            memory_pool,
-            metrics_register,
-        })
+        Ok(Self { ctx, dbs })
     }
 
     pub fn options(&self) -> Arc<Options> {
-        self.opt.clone()
+        self.ctx.options().clone()
     }
 
-    pub async fn create_db(
-        &mut self,
-        schema: DatabaseSchema,
-        meta: MetaRef,
-        memory_pool: MemoryPoolRef,
-    ) -> Result<Arc<RwLock<Database>>> {
-        let sub_register = self.metrics_register.sub_register([
+    pub async fn create_db(&mut self, schema: DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+        let sub_register = self.ctx.metrics_register().sub_register([
             ("tenant", schema.tenant_name()),
             ("database", schema.database_name()),
         ]);
@@ -131,15 +97,7 @@ impl VersionSet {
             .dbs
             .entry(schema.owner())
             .or_insert(Arc::new(RwLock::new(
-                Database::new(
-                    schema,
-                    self.opt.clone(),
-                    self.runtime.clone(),
-                    meta.clone(),
-                    memory_pool,
-                    sub_register,
-                )
-                .await?,
+                Database::new(self.ctx.clone(), schema, sub_register).await?,
             )))
             .clone();
         Ok(db)
@@ -227,7 +185,7 @@ impl VersionSet {
         for db in self.dbs.values() {
             for tsf in db.read().await.ts_families().values() {
                 let tsf_inner = tsf.clone();
-                self.runtime.spawn(async move {
+                self.runtime().spawn(async move {
                     let mut tsf = tsf_inner.write().await;
                     tsf.switch_to_immutable();
                     tsf.send_flush_req(true).await;

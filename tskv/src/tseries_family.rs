@@ -6,7 +6,6 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use lru_cache::asynchronous::ShardedCache;
-use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeStatus;
@@ -24,9 +23,10 @@ use utils::BloomFilter;
 use crate::compaction::{CompactTask, FlushReq};
 use crate::error::Result;
 use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
-use crate::kv_option::{CacheOptions, StorageOptions};
+use crate::kv_option::StorageOptions;
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
+use crate::tskv_ctx::TskvContext;
 use crate::tsm::{DataBlock, TsmReader, TsmTombstone};
 use crate::Error::CommonError;
 use crate::{ColumnFileId, LevelId, TseriesFamilyId};
@@ -678,6 +678,7 @@ impl TsfMetrics {
 
 #[derive(Debug)]
 pub struct TseriesFamily {
+    ctx: Arc<TskvContext>,
     tf_id: TseriesFamilyId,
     database: Arc<String>,
     mut_cache: Arc<RwLock<MemCache>>,
@@ -685,14 +686,11 @@ pub struct TseriesFamily {
     super_version: Arc<SuperVersion>,
     super_version_id: AtomicU64,
     version: Arc<Version>,
-    cache_opt: Arc<CacheOptions>,
-    storage_opt: Arc<StorageOptions>,
     seq_no: u64,
     last_modified: Arc<tokio::sync::RwLock<Option<Instant>>>,
     flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
     cancellation_token: CancellationToken,
-    memory_pool: MemoryPoolRef,
     tsf_metrics: TsfMetrics,
     status: VnodeStatus,
 }
@@ -701,20 +699,19 @@ impl TseriesFamily {
     pub const MAX_DATA_BLOCK_SIZE: u32 = 1000;
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        ctx: Arc<TskvContext>,
         tf_id: TseriesFamilyId,
         database: Arc<String>,
         cache: MemCache,
         version: Arc<Version>,
-        cache_opt: Arc<CacheOptions>,
-        storage_opt: Arc<StorageOptions>,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
-        memory_pool: MemoryPoolRef,
-        register: &Arc<MetricsRegister>,
     ) -> Self {
         let mm = Arc::new(RwLock::new(cache));
-
+        let storage_opt = ctx.storage_opt().clone();
+        let metrics_register = ctx.metrics_register().clone();
         Self {
+            ctx,
             tf_id,
             database: database.clone(),
             seq_no: version.last_seq,
@@ -732,14 +729,11 @@ impl TseriesFamily {
             )),
             super_version_id: AtomicU64::new(0),
             version,
-            cache_opt,
-            storage_opt,
             last_modified: Arc::new(tokio::sync::RwLock::new(None)),
             flush_task_sender,
             compact_task_sender,
             cancellation_token: CancellationToken::new(),
-            memory_pool,
-            tsf_metrics: TsfMetrics::new(register, database.as_str(), tf_id as u64),
+            tsf_metrics: TsfMetrics::new(&metrics_register, database.as_str(), tf_id as u64),
             status: VnodeStatus::Running,
         }
     }
@@ -750,7 +744,7 @@ impl TseriesFamily {
         self.tsf_metrics.record_cache_size(self.cache_size());
         self.super_version = Arc::new(SuperVersion::new(
             self.tf_id,
-            self.storage_opt.clone(),
+            self.storage_opt(),
             CacheGroup {
                 mut_cache: self.mut_cache.clone(),
                 immut_cache: self.immut_cache.clone(),
@@ -798,10 +792,10 @@ impl TseriesFamily {
         self.immut_cache.push(self.mut_cache.clone());
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
             self.tf_id,
-            self.cache_opt.max_buffer_size,
-            self.cache_opt.partition,
+            self.ctx.options().cache.max_buffer_size,
+            self.ctx.options().cache.partition,
             self.seq_no,
-            &self.memory_pool,
+            self.ctx.memory_pool(),
         )));
         self.new_super_version(self.version.clone());
     }
@@ -820,7 +814,8 @@ impl TseriesFamily {
             .cloned()
             .collect();
 
-        if !force && filtered_caches.len() < self.cache_opt.max_immutable_number as usize {
+        if !force && filtered_caches.len() < self.ctx.options().cache.max_immutable_number as usize
+        {
             return None;
         }
 
@@ -871,11 +866,11 @@ impl TseriesFamily {
         if self.mut_cache.read().is_full() {
             info!(
                 "mut_cache is full, switch to immutable. current pool_size : {}",
-                self.memory_pool.reserved()
+                self.ctx.memory_pool().reserved()
             );
             self.switch_to_immutable();
         }
-        if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
+        if self.immut_cache.len() >= self.ctx.options().cache.max_immutable_number as usize {
             self.send_flush_req(false).await;
         }
     }
@@ -920,7 +915,7 @@ impl TseriesFamily {
 
     pub fn schedule_compaction(&self, runtime: Arc<Runtime>) {
         let tsf_id = self.tf_id;
-        let compact_trigger_cold_duration = self.storage_opt.compact_trigger_cold_duration;
+        let compact_trigger_cold_duration = self.storage_opt().compact_trigger_cold_duration;
         let last_modified = self.last_modified.clone();
         let compact_task_sender = self.compact_task_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
@@ -1003,7 +998,7 @@ impl TseriesFamily {
     }
 
     pub fn storage_opt(&self) -> Arc<StorageOptions> {
-        self.storage_opt.clone()
+        self.ctx.storage_opt().clone()
     }
 
     pub fn seq_no(&self) -> u64 {
@@ -1011,11 +1006,11 @@ impl TseriesFamily {
     }
 
     pub fn get_delta_dir(&self) -> PathBuf {
-        self.storage_opt.delta_dir(&self.database, self.tf_id)
+        self.storage_opt().delta_dir(&self.database, self.tf_id)
     }
 
     pub fn get_tsm_dir(&self) -> PathBuf {
-        self.storage_opt.tsm_dir(&self.database, self.tf_id)
+        self.storage_opt().tsm_dir(&self.database, self.tf_id)
     }
 
     pub fn disk_storage(&self) -> u64 {
@@ -1051,11 +1046,8 @@ pub mod test_tseries_family {
     use std::sync::Arc;
 
     use lru_cache::asynchronous::ShardedCache;
-    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use meta::model::meta_admin::AdminMeta;
-    use meta::model::MetaRef;
-    use metrics::metric_register::MetricsRegister;
-    use models::schema::{DatabaseSchema, TenantOptions};
+    use models::schema::DatabaseSchema;
     use models::Timestamp;
     use parking_lot::RwLock;
     use tokio::sync::mpsc::{self, Receiver};
@@ -1071,6 +1063,7 @@ pub mod test_tseries_family {
     use crate::memcache::{FieldVal, MemCache, RowData, RowGroup};
     use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
     use crate::tseries_family::{TimeRange, TseriesFamily, Version};
+    use crate::tskv_ctx::TskvContext;
     use crate::tsm::TsmTombstone;
     use crate::version_set::VersionSet;
     use crate::TseriesFamilyId;
@@ -1326,37 +1319,33 @@ pub mod test_tseries_family {
         )
     }
 
-    #[tokio::test]
     pub async fn test_tsf_delete() {
+        let ctx = TskvContext::mock();
         let dir = "/tmp/test/ts_family/tsf_delete";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
-        let opt = Arc::new(Options::from(&global_config));
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
-        let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
+        let ctx = ctx.change_config(&global_config);
+        let (flush_task_sender, _) = mpsc::channel(ctx.storage_opt().flush_req_channel_cap);
         let (compact_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let database = Arc::new("db".to_string());
         let tsf = TseriesFamily::new(
+            ctx.clone(),
             0,
             database.clone(),
-            MemCache::new(0, 500, 2, 0, &memory_pool),
+            MemCache::new(0, 500, 2, 0, ctx.memory_pool()),
             Arc::new(Version::new(
                 0,
                 database.clone(),
-                opt.storage.clone(),
+                ctx.options().storage.clone(),
                 0,
-                LevelInfo::init_levels(database, 0, opt.storage.clone()),
+                LevelInfo::init_levels(database, 0, ctx.storage_opt().clone()),
                 0,
                 Arc::new(ShardedCache::with_capacity(1)),
             )),
-            opt.cache.clone(),
-            opt.storage.clone(),
             flush_task_sender,
             compact_task_sender,
-            memory_pool,
-            &Arc::new(MetricsRegister::default()),
         );
 
         let row_group = RowGroup {
@@ -1430,27 +1419,13 @@ pub mod test_tseries_family {
 
     #[test]
     pub fn test_read_with_tomb() {
-        let runtime = Arc::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .worker_threads(2)
-                .build()
-                .unwrap(),
-        );
-
         let config = config::get_config_for_test();
-        let meta_manager: MetaRef = runtime.block_on(async {
-            let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
+        let ctx = TskvContext::mock();
+        let rt = ctx.runtime();
+        let meta = rt.block_on(AdminMeta::new(config.clone()));
+        let ctx = ctx.change_meta(meta);
 
-            meta_manager.add_data_node().await.unwrap();
-
-            let _ = meta_manager
-                .create_tenant("cnosdb".to_string(), TenantOptions::default())
-                .await;
-            meta_manager
-        });
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
-        let mem = MemCache::new(0, 1000, 2, 0, &memory_pool);
+        let mem = MemCache::new(0, 1000, 2, 0, ctx.memory_pool());
         let row_group = RowGroup {
             schema: default_table_schema(vec![0, 1, 2]).into(),
             range: TimeRange {
@@ -1482,7 +1457,8 @@ pub mod test_tseries_family {
         std::fs::create_dir_all(dir).unwrap();
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
-        let opt = Arc::new(Options::from(&global_config));
+        let ctx = ctx.change_config(&global_config);
+        let opt = ctx.options();
 
         let tenant = "cnosdb".to_string();
         let database = "test_db".to_string();
@@ -1491,18 +1467,15 @@ pub mod test_tseries_family {
         let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
         let (compact_task_sender, _compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
-        let runtime_ref = runtime.clone();
-        runtime.block_on(async move {
+        let ctx_ref = ctx.clone();
+
+        ctx.runtime().block_on(async move {
             let version_set = Arc::new(AsyncRwLock::new(
                 VersionSet::new(
-                    meta_manager.clone(),
-                    opt.clone(),
-                    runtime_ref.clone(),
-                    memory_pool.clone(),
+                    ctx_ref.clone(),
                     HashMap::new(),
                     flush_task_sender.clone(),
                     compact_task_sender.clone(),
-                    Arc::new(MetricsRegister::default()),
                 )
                 .await
                 .unwrap(),
@@ -1510,11 +1483,7 @@ pub mod test_tseries_family {
             version_set
                 .write()
                 .await
-                .create_db(
-                    DatabaseSchema::new(&tenant, &database),
-                    meta_manager.clone(),
-                    memory_pool,
-                )
+                .create_db(DatabaseSchema::new(&tenant, &database))
                 .await
                 .unwrap();
             let db = version_set

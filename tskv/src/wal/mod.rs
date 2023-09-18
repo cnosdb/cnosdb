@@ -729,8 +729,8 @@ mod test {
 
     use crate::context::GlobalSequenceContext;
     use crate::file_system::file_manager::list_file_names;
-    use crate::kv_option::WalOptions;
     use crate::memcache::FieldVal;
+    use crate::tskv_ctx::TskvContext;
     use crate::tsm::codec::{get_str_codec, StringCodec};
     use crate::version_set::VersionSet;
     use crate::wal::reader::{WalEntry, WalReader};
@@ -845,22 +845,20 @@ mod test {
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = config::get_config_for_test();
         global_config.wal.path = dir;
-        let wal_config = WalOptions::from(&global_config);
+        let ctx = TskvContext::mock();
+        let wal_config = ctx.options().wal.clone();
+        let ctx = ctx.change_config(&global_config);
         let tenant = "cnosdb";
         let database = "test";
         let vnode_id = 0;
         let owner = make_owner(tenant, database);
         let dest_dir = wal_config.wal_dir(&owner, &vnode_id.to_string());
-        let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
-        let vs = Arc::new(RwLock::new(VersionSet::build_empty_test(runtime.clone())));
+
+        let vs = Arc::new(RwLock::new(VersionSet::build_empty_test(ctx.clone())));
         let feature = async {
-            let mut mgr = WalManager::open(
-                Arc::new(wal_config),
-                GlobalSequenceContext::empty(),
-                vs.clone(),
-            )
-            .await
-            .unwrap();
+            let mut mgr = WalManager::open(wal_config, GlobalSequenceContext::empty(), vs.clone())
+                .await
+                .unwrap();
             let mut data_vec = Vec::new();
             for i in 1..=10_u64 {
                 let data = b"hello".to_vec();
@@ -880,7 +878,7 @@ mod test {
 
             check_wal_files(&dest_dir, data_vec, false).await.unwrap();
         };
-        runtime.block_on(feature);
+        ctx.runtime().block_on(feature);
     }
 
     #[serial]
@@ -896,7 +894,9 @@ mod test {
         global_config.wal.max_file_size = 1;
         global_config.wal.sync = false;
         global_config.wal.flush_trigger_total_file_size = 100;
-        let wal_config = WalOptions::from(&global_config);
+        let ctx = TskvContext::mock();
+        let ctx = ctx.change_config(&global_config);
+        let wal_config = ctx.options().wal.clone();
 
         let tenant = "cnosdb";
         let database = "test";
@@ -910,9 +910,9 @@ mod test {
         let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
         let feature = async {
             let mut mgr = WalManager::open(
-                Arc::new(wal_config),
+                wal_config,
                 gcs,
-                Arc::new(RwLock::new(VersionSet::build_empty_test(runtime.clone()))),
+                Arc::new(RwLock::new(VersionSet::build_empty_test(ctx))),
             )
             .await
             .unwrap();
@@ -951,16 +951,18 @@ mod test {
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = config::get_config_for_test();
         global_config.wal.path = dir.clone();
-        let wal_config = WalOptions::from(&global_config);
+        let ctx = TskvContext::mock();
+        let ctx = ctx.change_config(&global_config);
+        let wal_config = ctx.options().wal.clone();
 
         let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
         let tenant = "cnosdb".to_string();
 
         let feature = async {
             let mut mgr = WalManager::open(
-                Arc::new(wal_config),
+                wal_config,
                 GlobalSequenceContext::empty(),
-                Arc::new(RwLock::new(VersionSet::build_empty_test(runtime.clone()))),
+                Arc::new(RwLock::new(VersionSet::build_empty_test(ctx.clone()))),
             )
             .await
             .unwrap();

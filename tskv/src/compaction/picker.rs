@@ -298,7 +298,6 @@ mod test {
 
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use metrics::metric_register::MetricsRegister;
     use models::predicate::domain::TimeRange;
     use tokio::sync::mpsc;
 
@@ -309,6 +308,7 @@ mod test {
     use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
     use crate::memcache::MemCache;
     use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
+    use crate::tskv_ctx::TskvContext;
 
     type ColumnFilesSketch = (u64, i64, i64, u64, bool);
     type LevelsSketch = Vec<(u32, i64, i64, Vec<ColumnFilesSketch>)>;
@@ -331,6 +331,7 @@ mod test {
         opt: Arc<Options>,
         levels_sketch: LevelsSketch,
     ) -> TseriesFamily {
+        let context = TskvContext::mock();
         let ts_family_id = 0;
         let mut level_infos =
             LevelInfo::init_levels(database.clone(), ts_family_id, opt.storage.clone());
@@ -379,16 +380,13 @@ mod test {
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
         let (compactt_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         TseriesFamily::new(
+            context.clone(),
             1,
             Arc::new("ts_family_1".to_string()),
             MemCache::new(1, 1000, 2, 1, &memory_pool),
             version,
-            opt.cache.clone(),
-            opt.storage.clone(),
             flush_task_sender,
             compactt_task_sender,
-            memory_pool,
-            &Arc::new(MetricsRegister::default()),
         )
     }
 
