@@ -28,7 +28,7 @@ use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
     lit, BinaryExpr, BuiltinScalarFunction, Case, CreateExternalTable as PlanCreateExternalTable,
-    EmptyRelation, Explain, Expr, LogicalPlan, LogicalPlanBuilder, Operator, PlanType,
+    EmptyRelation, Explain, Expr, Extension, LogicalPlan, LogicalPlanBuilder, Operator, PlanType,
     SubqueryAlias, TableSource, ToStringifiedPlan, Union,
 };
 use datafusion::prelude::{col, SessionConfig};
@@ -36,8 +36,8 @@ use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::{object_name_to_table_reference, PlannerContext, SqlToRel};
 use datafusion::sql::sqlparser::ast::{
-    DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, OrderByExpr, Query,
-    SqlOption, Statement, TableAlias, TableFactor, TimezoneInfo,
+    Assignment, DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, OrderByExpr,
+    Query, SqlOption, Statement, TableAlias, TableFactor, TableWithJoins, TimezoneInfo,
 };
 use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::sql::TableReference;
@@ -91,6 +91,7 @@ use crate::data_source::source_downcast_adapter;
 use crate::data_source::stream::{get_event_time_column, get_watermark_delay};
 use crate::data_source::table_source::{TableHandle, TableSourceAdapter, TEMP_LOCATION_TABLE_NAME};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
+use crate::extension::logical::plan_node::update::UpdateNode;
 use crate::metadata::{
     ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, COLUMNS_COLUMN_NAME,
     COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME, COLUMNS_DATA_TYPE,
@@ -213,7 +214,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         match stmt {
-            Statement::Query(_) | Statement::Update { .. } => {
+            Statement::Query(_) => {
                 let df_plan = self.df_planner.sql_statement_to_plan(stmt)?;
                 let plan = Plan::Query(QueryPlan { df_plan });
 
@@ -243,10 +244,103 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     privileges: vec![],
                 })
             }
+            Statement::Update {
+                table,
+                assignments,
+                from,
+                selection,
+                returning,
+            } => {
+                if returning.is_some() {
+                    Err(QueryError::NotImplemented {
+                        err: "Update-returning clause not yet supported".to_owned(),
+                    })?;
+                }
+                self.update_to_plan(session, table, assignments, from, selection)
+                    .await
+            }
             _ => Err(QueryError::NotImplemented {
                 err: stmt.to_string(),
             }),
         }
+    }
+
+    async fn update_to_plan(
+        &self,
+        session: &SessionCtx,
+        table: TableWithJoins,
+        assignments: Vec<Assignment>,
+        from: Option<TableWithJoins>,
+        predicate_expr: Option<ASTExpr>,
+    ) -> Result<PlanWithPrivileges> {
+        let from = from.unwrap_or(table);
+        let table_name = match &from.relation {
+            TableFactor::Table { name, .. } => name.clone(),
+            _ => Err(QueryError::NotImplemented {
+                err: "Cannot update non-table relation!".to_string(),
+            })?,
+        };
+
+        let table_ref = normalize_sql_object_name(table_name)?;
+        let table_owned_reference = table_ref.to_owned_reference();
+        let table_source = self.get_table_source(table_ref)?;
+
+        let schema = table_source.schema();
+        let df_schema = schema.to_dfschema_ref()?;
+
+        let mut planner_context = PlannerContext::new();
+        // set
+        let assigns = assignments
+            .into_iter()
+            .map(|Assignment { mut id, value }| {
+                let col_name = id
+                    .pop()
+                    .map(normalize_ident)
+                    .map(Column::from_name)
+                    .ok_or_else(|| DataFusionError::Plan("Empty column id".to_string()))?;
+
+                // Validate that the assignment target column exists
+                df_schema.field_from_column(&col_name)?;
+
+                let value_expr =
+                    self.df_planner
+                        .sql_to_expr(value, df_schema.as_ref(), &mut planner_context)?;
+
+                Ok((col_name, value_expr))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // where
+        let filter = predicate_expr.map(|expr| {
+            self.df_planner.sql_to_expr(
+                expr,
+                df_schema.as_ref(),
+                &mut planner_context,
+            )
+        }).transpose()?
+        .ok_or_else(|| {
+            DataFusionError::Plan("Disable updating of the entire table, if you want to continue, please add `where true`".to_string())
+        })?;
+
+        let update_node = Arc::new(UpdateNode::try_new(
+            table_owned_reference,
+            table_source,
+            assigns,
+            filter,
+        )?);
+        let df_plan = LogicalPlan::Extension(Extension { node: update_node });
+        let plan = Plan::Query(QueryPlan { df_plan });
+
+        // privileges
+        let write_privileges = databases_privileges(
+            DatabasePrivilege::Write,
+            *session.tenant_id(),
+            self.schema_provider.reset_access_databases(),
+        );
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: write_privileges,
+        })
     }
 
     /// Generate a plan for EXPLAIN ... that will print out a plan
