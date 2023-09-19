@@ -46,6 +46,7 @@ message GetVnodeSnapFilesMetaRequest {
     string tenant = 1;
     string db = 2;
     uint32 vnode_id = 3;
+    string snapshot_id = 4;
 }
 
 message GetFilesMetaResponse {

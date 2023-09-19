@@ -1340,13 +1340,18 @@ impl Engine for TsKv {
             let storage_opt = self.options.storage.clone();
             let tenant_database = vnode.read().await.tenant_database();
 
-            let snapshot_dir = storage_opt.snapshot_dir(tenant_database.as_str(), vnode_id);
+            let snapshot_id = chrono::Local::now().format("%d%m%Y_%H%M%S_%3f").to_string();
+            let snapshot_dir =
+                storage_opt.snapshot_sub_dir(tenant_database.as_str(), vnode_id, &snapshot_id);
             let index_dir = storage_opt.index_dir(tenant_database.as_str(), vnode_id);
             let delta_dir = storage_opt.delta_dir(tenant_database.as_str(), vnode_id);
             let tsm_dir = storage_opt.tsm_dir(tenant_database.as_str(), vnode_id);
-            let snap_index_dir = storage_opt.snapshot_index_dir(tenant_database.as_str(), vnode_id);
-            let snap_delta_dir = storage_opt.snapshot_delta_dir(tenant_database.as_str(), vnode_id);
-            let snap_tsm_dir = storage_opt.snapshot_tsm_dir(tenant_database.as_str(), vnode_id);
+            let snap_index_dir =
+                storage_opt.snapshot_index_dir(tenant_database.as_str(), vnode_id, &snapshot_id);
+            let snap_delta_dir =
+                storage_opt.snapshot_delta_dir(tenant_database.as_str(), vnode_id, &snapshot_id);
+            let snap_tsm_dir =
+                storage_opt.snapshot_tsm_dir(tenant_database.as_str(), vnode_id, &snapshot_id);
 
             let (flush_req_optional, mut ve_summary_snapshot) = {
                 let mut vnode_wlock = vnode.write().await;
@@ -1468,6 +1473,7 @@ impl Engine for TsKv {
 
             let (tenant, database) = split_owner(tenant_database.as_str());
             let snapshot = VnodeSnapshot {
+                snapshot_id,
                 node_id: 0,
                 tenant: tenant.to_string(),
                 database: database.to_string(),
@@ -1487,6 +1493,7 @@ impl Engine for TsKv {
     async fn apply_snapshot(&self, snapshot: VnodeSnapshot) -> Result<()> {
         debug!("Snapshot: apply snapshot {snapshot:?} to create new vnode.");
         let VnodeSnapshot {
+            snapshot_id: _,
             node_id: _,
             tenant,
             database,

@@ -223,20 +223,20 @@ pub trait Engine: Send + Sync + Debug {
     /// 3. Save current Version as a summary file in snapshot directory.
     /// Then return VnodeSnapshot.
     ///
-    /// For one Vnode, only one snapshot can exist at a time， old snapshot directory
-    /// will be deleted.
+    /// For one Vnode, multi snapshot may exist at a time.
     async fn create_snapshot(&self, vnode_id: VnodeId) -> Result<VnodeSnapshot>;
 
     /// Build a new Vnode from the VersionSnapshot, existing Vnode with the same VnodeId
     /// will be deleted.
     async fn apply_snapshot(&self, snapshot: VnodeSnapshot) -> Result<()>;
 
-    /// Delete the snapshot directory of a Vnode.
+    /// Delete the snapshot directory of a Vnode, all snapshots will be deleted.
     async fn delete_snapshot(&self, vnode_id: VnodeId) -> Result<()>;
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct VnodeSnapshot {
+    pub snapshot_id: String,
     pub node_id: NodeId,
     pub tenant: String,
     pub database: String,

@@ -55,10 +55,11 @@ impl TskvEngineStorage {
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
 
         let owner = models::schema::make_owner(&snapshot.tenant, &snapshot.database);
-        let path = self
-            .storage
-            .get_storage_options()
-            .snapshot_dir(&owner, self.vnode_id);
+        let path = self.storage.get_storage_options().snapshot_sub_dir(
+            &owner,
+            self.vnode_id,
+            &snapshot.snapshot_id,
+        );
         info!("snapshot path: {:?}", path);
         if let Err(err) = self
             .download_snapshot_files(&path, snapshot, &mut client)
@@ -110,6 +111,7 @@ impl TskvEngineStorage {
             tenant: snapshot.tenant.to_string(),
             db: snapshot.database.to_string(),
             vnode_id: snapshot.vnode_id,
+            snapshot_id: snapshot.snapshot_id.to_string(),
         });
 
         let resp = client
@@ -180,10 +182,11 @@ impl ApplyStorage for TskvEngineStorage {
             .storage
             .get_storage_options()
             .move_dir(&owner, self.vnode_id);
-        let snapshot_dir = self
-            .storage
-            .get_storage_options()
-            .snapshot_dir(&owner, self.vnode_id);
+        let snapshot_dir = self.storage.get_storage_options().snapshot_sub_dir(
+            &owner,
+            self.vnode_id,
+            &snapshot.snapshot_id,
+        );
         info!(
             "rename snpshot dir to move dir: {:?} -> {:?}",
             snapshot_dir, vnode_move_dir

@@ -73,6 +73,8 @@ pub struct GetVnodeSnapFilesMetaRequest {
     pub db: ::prost::alloc::string::String,
     #[prost(uint32, tag = "3")]
     pub vnode_id: u32,
+    #[prost(string, tag = "4")]
+    pub snapshot_id: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

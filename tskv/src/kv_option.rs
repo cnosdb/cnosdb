@@ -93,16 +93,43 @@ impl StorageOptions {
             .join(T_SERIES_FAMILY_SNAPSHOT_PATH)
     }
 
-    pub fn snapshot_index_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.snapshot_dir(database, ts_family_id).join(INDEX_PATH)
+    pub fn snapshot_sub_dir(
+        &self,
+        database: &str,
+        ts_family_id: TseriesFamilyId,
+        snapshot_id: &str,
+    ) -> PathBuf {
+        self.snapshot_dir(database, ts_family_id).join(snapshot_id)
     }
 
-    pub fn snapshot_tsm_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.snapshot_dir(database, ts_family_id).join(TSM_PATH)
+    pub fn snapshot_index_dir(
+        &self,
+        database: &str,
+        ts_family_id: TseriesFamilyId,
+        snapshot_id: &str,
+    ) -> PathBuf {
+        self.snapshot_sub_dir(database, ts_family_id, snapshot_id)
+            .join(INDEX_PATH)
     }
 
-    pub fn snapshot_delta_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.snapshot_dir(database, ts_family_id).join(DELTA_PATH)
+    pub fn snapshot_tsm_dir(
+        &self,
+        database: &str,
+        ts_family_id: TseriesFamilyId,
+        snapshot_id: &str,
+    ) -> PathBuf {
+        self.snapshot_sub_dir(database, ts_family_id, snapshot_id)
+            .join(TSM_PATH)
+    }
+
+    pub fn snapshot_delta_dir(
+        &self,
+        database: &str,
+        ts_family_id: TseriesFamilyId,
+        snapshot_id: &str,
+    ) -> PathBuf {
+        self.snapshot_sub_dir(database, ts_family_id, snapshot_id)
+            .join(DELTA_PATH)
     }
 }
 

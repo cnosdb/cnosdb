@@ -358,7 +358,7 @@ mod tests {
                 .unwrap();
         }
 
-        let (vnode_snapshot_dir, mut vnode_snapshot) = {
+        let (vnode_snapshot_sub_dir, mut vnode_snapshot) = {
             // Test create snapshot.
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
             let vnode_snap = runtime.block_on(tskv.create_snapshot(vnode_id)).unwrap();
@@ -390,20 +390,20 @@ mod tests {
                 delta_file_path.display(),
             );
 
-            (vnode_snapshot_dir, vnode_snap)
+            (vnode_snapshot_dir.join(&vnode_snap.snapshot_id), vnode_snap)
         };
 
         {
             // Test delete snapshot.
             // 1. Backup files.
-            dircpy::copy_dir(&vnode_snapshot_dir, &vnode_backup_dir).unwrap();
+            dircpy::copy_dir(vnode_snapshot_sub_dir, &vnode_backup_dir).unwrap();
 
             // 2. Do test delete snapshot.
             runtime.block_on(tskv.delete_snapshot(vnode_id)).unwrap();
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
             assert!(
                 !file_manager::try_exists(&vnode_snapshot_dir),
-                "{} exists",
+                "{} still exists unexpectedly",
                 vnode_snapshot_dir.display()
             );
         }

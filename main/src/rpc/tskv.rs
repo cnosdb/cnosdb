@@ -619,7 +619,7 @@ impl TskvService for TskvServiceImpl {
         let owner = models::schema::make_owner(&inner.tenant, &inner.db);
         let storage_opt = self.kv_inst.get_storage_options();
 
-        let path = storage_opt.snapshot_dir(&owner, inner.vnode_id);
+        let path = storage_opt.snapshot_sub_dir(&owner, inner.vnode_id, inner.snapshot_id.as_str());
         match get_files_meta(&path.as_path().to_string_lossy()).await {
             Ok(files_meta) => {
                 info!("files meta: {:?} {:?}", path, files_meta);
