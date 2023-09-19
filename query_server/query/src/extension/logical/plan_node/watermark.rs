@@ -76,7 +76,11 @@ impl UserDefinedLogicalNodeCore for WatermarkNode {
     fn from_template(&self, _exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
         assert_eq!(inputs.len(), 1, "input size inconsistent");
 
-        self.clone()
+        Self {
+            watermark: self.watermark.clone(),
+            input: Arc::new(inputs[0].clone()),
+            schema: self.schema.clone(),
+        }
     }
 
     fn prevent_predicate_push_down_columns(&self) -> std::collections::HashSet<String> {
