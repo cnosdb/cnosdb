@@ -1,11 +1,13 @@
 use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::{Extension, LogicalPlan};
+use datafusion::logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder};
 use datafusion::optimizer::analyzer::AnalyzerRule;
+use datafusion::prelude::col;
 use spi::QueryError;
 
 use crate::data_source::table_source::{TableHandle, TableSourceAdapter};
+use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::extension::logical::plan_node::update::UpdateNode;
 use crate::extension::utils::{downcast_plan_node, downcast_table_source};
 
@@ -112,10 +114,36 @@ fn update_tag() -> DFResult<LogicalPlan> {
 }
 
 /// 生成update field的逻辑计划
-fn update_field(_update_node: &UpdateNode) -> DFResult<LogicalPlan> {
-    Err(DataFusionError::External(Box::new(
-        QueryError::NotImplemented {
-            err: "update_field".to_string(),
-        },
-    )))
+fn update_field(update_node: &UpdateNode) -> DFResult<LogicalPlan> {
+    let UpdateNode {
+        table_name,
+        table_source,
+        assigns,
+        filter,
+        ..
+    } = update_node;
+
+    // All columns need to be included (old and updated column values)
+    let (insert_columns, project_exprs): (Vec<_>, Vec<_>) = table_source
+        .schema()
+        .fields()
+        .iter()
+        .map(|field| {
+            let name = field.name();
+            let set_value = assigns.iter().find(|(col, _)| &col.name == field.name());
+            let expr = match set_value {
+                Some((_, expr)) => expr.clone().alias(name),
+                None => col(name),
+            };
+            (name.clone(), expr)
+        })
+        .unzip();
+
+    let plan = LogicalPlanBuilder::scan(table_name.clone(), table_source.clone(), None)?
+        .filter(filter.clone())?
+        .project(project_exprs)?
+        .write(table_source.clone(), table_name.table(), &insert_columns)?
+        .build()?;
+
+    Ok(plan)
 }
