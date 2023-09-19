@@ -9,7 +9,7 @@ use snafu::{ResultExt, Snafu};
 use utils::BloomFilter;
 
 use crate::byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u64};
-use crate::error::{self, Error, Result};
+use crate::error::{self, Result};
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
@@ -46,18 +46,6 @@ pub enum ReadTsmError {
 
     #[snafu(display("TSM file is invalid: {}", reason))]
     Invalid { reason: String },
-}
-
-impl From<ReadTsmError> for Error {
-    fn from(rte: ReadTsmError) -> Self {
-        match rte {
-            ReadTsmError::CrcCheck
-            | ReadTsmError::FileNotFound { reason: _ }
-            | ReadTsmError::Invalid { reason: _ } => Error::TsmFileBroken { source: rte },
-
-            _ => Error::ReadTsm { source: rte },
-        }
-    }
 }
 
 /// Disk-based index reader
