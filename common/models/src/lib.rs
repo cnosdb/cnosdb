@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 pub use record_batch::*;
 pub use series_info::SeriesKey;
 pub use tag::Tag;
-pub use value_type::ValueType;
+pub use value_type::{PhysicalDType, ValueType};
 
 pub mod codec;
 pub mod consistency_level;
@@ -24,6 +24,7 @@ pub mod arrow_array;
 pub mod arrow;
 pub mod auth;
 pub mod duration;
+pub mod gis;
 pub mod object_reference;
 pub mod oid;
 pub mod predicate;

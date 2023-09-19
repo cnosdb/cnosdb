@@ -205,6 +205,7 @@ impl WriterBuilder {
                     return Err(QueryError::DataType {
                         data_type: type_.to_string(),
                         column: array.name().to_string(),
+                        prompt: "only support data type: string(label)/float(sample value)/timestamp(time)".to_string(),
                     });
                 }
             })

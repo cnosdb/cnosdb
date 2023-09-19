@@ -8,9 +8,13 @@ use flatbuffers::{ForwardsUOffset, Vector};
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
 use models::predicate::domain::TimeRange;
-use models::schema::{timestamp_convert, Precision, TableColumn, TskvTableSchema};
+use models::schema::{
+    timestamp_convert, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
+};
 use models::utils::split_id;
-use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
+use models::{
+    ColumnId, FieldId, PhysicalDType as ValueType, RwLockRef, SchemaId, SeriesId, Timestamp,
+};
 use parking_lot::RwLock;
 use protos::models::{Column, FieldType};
 use trace::error;
@@ -410,7 +414,7 @@ impl SeriesData {
         }
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, Arc<TskvTableSchema>, &LinkedList<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(SchemaId, TskvTableSchemaRef, &LinkedList<RowData>)> {
         self.groups
             .iter()
             .map(|g| (g.schema.schema_id, g.schema.clone(), &g.rows))
@@ -617,13 +621,34 @@ impl MemCache {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum DataType {
     U64(i64, u64),
     I64(i64, i64),
     Str(i64, MiniVec<u8>),
     F64(i64, f64),
     Bool(i64, bool),
+}
+
+impl PartialEq for DataType {
+    fn eq(&self, other: &Self) -> bool {
+        self.timestamp().eq(&other.timestamp())
+    }
+}
+
+impl Eq for DataType {}
+
+impl PartialOrd for DataType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Only care about timestamps when comparing
+impl Ord for DataType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.timestamp().cmp(&other.timestamp())
+    }
 }
 
 impl DataType {

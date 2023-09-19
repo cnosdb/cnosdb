@@ -262,6 +262,12 @@ impl From<ArrowError> for Error {
     }
 }
 
+impl From<ReadTsmError> for Error {
+    fn from(source: ReadTsmError) -> Self {
+        Error::ReadTsm { source }
+    }
+}
+
 impl Error {
     pub fn error_code(&self) -> &dyn ErrorCode {
         match self {

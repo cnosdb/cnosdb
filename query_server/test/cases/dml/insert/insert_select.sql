@@ -2,6 +2,8 @@
 --#SLEEP=100
 -- normal
 
+drop table if exists public.test_insert_subquery;
+
 -- public.test_insert_subquery(time i64, ta utf8, tb utf8, fa , fb)
 -- insert all columns
 --   1. single record

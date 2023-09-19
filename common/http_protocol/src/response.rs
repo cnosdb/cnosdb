@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use models::error_code::ErrorCode;
+use error_code::ErrorCode;
 pub use reqwest::Response;
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +20,10 @@ impl ErrorResponse {
             error_code: error_code.code().to_string(),
             error_message: error_code.message(),
         }
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.to_string().into_bytes()
     }
 }
 

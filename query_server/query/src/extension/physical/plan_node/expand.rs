@@ -77,7 +77,7 @@ impl ExpandExec {
                 let new_col_idx = schema.index_of(name)?;
                 // When the column name is the same, but index does not equal, treat it as Alias
                 if (column.name() != name) || (column.index() != new_col_idx) {
-                    let entry = alias_map.entry(column.clone()).or_insert_with(Vec::new);
+                    let entry = alias_map.entry(column.clone()).or_default();
                     entry.push(Column::new(name, new_col_idx));
                 }
             };

@@ -185,15 +185,17 @@ impl TsKv {
     }
 
     async fn recover_wal(&self) -> WalManager {
-        let wal_manager = WalManager::open(self.options.wal.clone(), self.global_seq_ctx.clone())
-            .await
-            .unwrap();
+        let wal_manager = WalManager::open(
+            self.options.wal.clone(),
+            self.global_seq_ctx.clone(),
+            self.version_set.clone(),
+        )
+        .await
+        .unwrap();
 
-        let vnode_last_seq_map = self.global_seq_ctx.cloned();
         let min_log_seq = self.global_seq_ctx.min_seq();
-        let mut decoder = WalDecoder::new();
-
-        let wal_readers = wal_manager.readers_to_recover().await.unwrap();
+        let wal_readers = wal_manager.recover().await;
+        let mut recover_task = vec![];
         for mut reader in wal_readers {
             trace::info!(
                 "Recover: reading wal '{}' for seq {} to {}",
@@ -204,65 +206,67 @@ impl TsKv {
             if reader.is_empty() {
                 continue;
             }
-
-            loop {
-                match reader.next_wal_entry().await {
-                    Ok(Some(wal_entry_blk)) => {
-                        let seq = wal_entry_blk.seq;
-                        if seq < min_log_seq {
-                            continue;
-                        }
-                        match wal_entry_blk.entry {
-                            WalEntry::Write(blk) => {
-                                let vnode_id = blk.vnode_id();
-                                if let Some(tsf_last_seq) = vnode_last_seq_map.get(&vnode_id) {
-                                    // If `seq_no` of TsFamily is greater than or equal to `seq`,
-                                    // it means that data was writen to tsm.
-                                    if *tsf_last_seq >= seq {
+            let vnode_last_seq_map = self.global_seq_ctx.clone();
+            let task = async move {
+                let mut decoder = WalDecoder::new();
+                loop {
+                    match reader.next_wal_entry().await {
+                        Ok(Some(wal_entry_blk)) => {
+                            let seq = wal_entry_blk.seq;
+                            if seq < min_log_seq {
+                                continue;
+                            }
+                            match wal_entry_blk.entry {
+                                WalEntry::Write(blk) => {
+                                    let vnode_id = blk.vnode_id();
+                                    if vnode_last_seq_map.vnode_min_seq(vnode_id) >= seq {
+                                        // If `seq_no` of TsFamily is greater than or equal to `seq`,
+                                        // it means that data was writen to tsm.
                                         continue;
                                     }
+
+                                    self.write_from_wal(vnode_id, seq, &blk, &mut decoder)
+                                        .await
+                                        .unwrap();
                                 }
 
-                                self.write_from_wal(vnode_id, seq, &blk, &mut decoder)
-                                    .await
-                                    .unwrap();
-                            }
-
-                            WalEntry::DeleteVnode(blk) => {
-                                if let Err(e) = self.remove_tsfamily_from_wal(&blk).await {
-                                    // Ignore delete vnode error.
-                                    trace::error!("Recover: failed to delete vnode: {e}");
+                                WalEntry::DeleteVnode(blk) => {
+                                    if let Err(e) = self.remove_tsfamily_from_wal(&blk).await {
+                                        // Ignore delete vnode error.
+                                        trace::error!("Recover: failed to delete vnode: {e}");
+                                    }
                                 }
-                            }
-                            WalEntry::DeleteTable(blk) => {
-                                if let Err(e) = self.drop_table_from_wal(&blk).await {
-                                    // Ignore delete table error.
-                                    trace::error!("Recover: failed to delete table: {e}");
+                                WalEntry::DeleteTable(blk) => {
+                                    if let Err(e) = self.drop_table_from_wal(&blk).await {
+                                        // Ignore delete table error.
+                                        trace::error!("Recover: failed to delete table: {e}");
+                                    }
                                 }
+                                _ => {}
                             }
-                            _ => {}
+                        }
+                        Ok(None) | Err(Error::WalTruncated) => {
+                            break;
+                        }
+                        Err(e) => {
+                            panic!(
+                                "Failed to recover from {}: {:?}",
+                                reader.path().display(),
+                                e
+                            );
                         }
                     }
-                    Ok(None) | Err(Error::WalTruncated) => {
-                        break;
-                    }
-                    Err(e) => {
-                        panic!(
-                            "Failed to recover from {}: {:?}",
-                            reader.path().display(),
-                            e
-                        );
-                    }
                 }
-            }
+            };
+            recover_task.push(task);
         }
-
+        futures::future::join_all(recover_task).await;
         wal_manager
     }
 
     pub(crate) fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: Receiver<WalTask>) {
-        async fn on_write(wal_manager: &mut WalManager, wal_task: WalTask) {
-            wal_manager.write(wal_task).await;
+        async fn on_write(wal_manager: &mut WalManager, wal_task: WalTask) -> Result<()> {
+            wal_manager.write(wal_task).await
         }
 
         async fn on_tick_sync(wal_manager: &WalManager) {
@@ -281,15 +285,22 @@ impl TsKv {
             if check_to_flush_instant.elapsed().lt(check_to_flush_duration) {
                 return;
             }
+            let mut flushed = false;
             *check_to_flush_instant = Instant::now();
-            if wal_manager.is_total_file_size_exceed() {
-                warn!("WAL total file size({}) exceed flush_trigger_total_file_size, force flushing all vnodes.", wal_manager.total_file_size());
-                version_set.read().await.send_flush_req().await;
-                wal_manager.check_to_delete().await;
+            let global_seq_ctx = wal_manager.global_seq_ctx();
+            for vnode_wal in wal_manager.wal_set().values_mut() {
+                if vnode_wal.is_total_file_size_exceed() && !flushed {
+                    warn!("WAL total file size({}) exceed flush_trigger_total_file_size, force flushing all vnodes.", vnode_wal.total_file_size());
+                    flushed = true;
+                    version_set.read().await.send_flush_req().await;
+                }
+                if vnode_wal.is_total_file_size_exceed() {
+                    vnode_wal.check_to_delete(global_seq_ctx.min_seq()).await;
+                }
             }
         }
 
-        async fn on_cancel(wal_manager: WalManager) {
+        async fn on_cancel(wal_manager: &mut WalManager) {
             info!("Job 'WAL' closing.");
             if let Err(e) = wal_manager.close().await {
                 error!("Failed to close job 'WAL': {:?}", e);
@@ -313,7 +324,9 @@ impl TsKv {
                         wal_task = receiver.recv() => {
                             match wal_task {
                                 Some(t) => {
-                                    on_write(&mut wal_manager, t).await
+                                    if let Err(e) = on_write(&mut wal_manager, t).await {
+                                        error!("Failed to write to WAL: {:?}", e);
+                                    }
                                 },
                                 _ => break
                             }
@@ -325,7 +338,7 @@ impl TsKv {
                             ).await;
                         }
                         _ = close_receiver.recv() => {
-                            on_cancel(wal_manager).await;
+                            on_cancel(&mut wal_manager).await;
                             break;
                         }
                     }
@@ -337,7 +350,9 @@ impl TsKv {
                         wal_task = receiver.recv() => {
                             match wal_task {
                                 Some(t) => {
-                                    on_write(&mut wal_manager, t).await
+                                    if let Err(e) = on_write(&mut wal_manager, t).await {
+                                        error!("Failed to write to WAL: {:?}", e);
+                                    }
                                 },
                                 _ => break
                             }
@@ -352,7 +367,7 @@ impl TsKv {
                             ).await;
                         }
                         _ = close_receiver.recv() => {
-                            on_cancel(wal_manager).await;
+                            on_cancel(&mut wal_manager).await;
                             break;
                         }
                     }
@@ -584,6 +599,7 @@ impl TsKv {
         &self,
         vnode_id: VnodeId,
         tenant: String,
+        db_name: String,
         precision: Precision,
         points: Vec<u8>,
     ) -> Result<u64> {
@@ -597,7 +613,7 @@ impl TsKv {
             .with_context(|_| error::EncodeSnafu)?;
         drop(points);
 
-        let (wal_task, rx) = WalTask::new_write(tenant, vnode_id, precision, enc_points);
+        let (wal_task, rx) = WalTask::new_write(tenant, db_name, vnode_id, precision, enc_points);
         self.wal_sender
             .send(wal_task)
             .await
@@ -682,11 +698,9 @@ impl TsKv {
         let tenant = block.tenant_utf8()?;
         let database = block.database_utf8()?;
         let table = block.table_utf8()?;
-        trace::info!(
+        info!(
             "Recover: delete table, tenant: {}, database: {}, table: {}",
-            &tenant,
-            &database,
-            &table
+            &tenant, &database, &table
         );
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             return self.delete_table(db, table).await;
@@ -702,10 +716,9 @@ impl TsKv {
         let vnode_id = block.vnode_id();
         let tenant = block.tenant_utf8()?;
         let database = block.database_utf8()?;
-        trace::info!(
+        info!(
             "Recover: delete vnode, tenant: {}, database: {}, vnode_id: {vnode_id}",
-            &tenant,
-            &database
+            &tenant, &database
         );
 
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
@@ -777,7 +790,7 @@ impl Engine for TsKv {
 
         let seq = {
             let mut span_recorder = span_recorder.child("write wal");
-            self.write_wal(vnode_id, tenant, precision, points)
+            self.write_wal(vnode_id, tenant, db_name.to_string(), precision, points)
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
@@ -832,7 +845,6 @@ impl Engine for TsKv {
 
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            // Store this action in WAL.
             let (wal_task, rx) = WalTask::new_delete_table(
                 tenant.to_string(),
                 database.to_string(),

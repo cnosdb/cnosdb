@@ -10,10 +10,10 @@ use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 use crate::{byte_utils, file_utils};
 
-const SEGMENT_FILE_HEADER_SIZE: usize = 8;
-const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x02];
-const SEGMENT_FILE_MAX_SIZE: u64 = 64 * 1024 * 1024;
-const BLOCK_HEADER_SIZE: usize = 16;
+pub const SEGMENT_FILE_HEADER_SIZE: usize = 8;
+pub const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x02];
+pub const SEGMENT_FILE_MAX_SIZE: u64 = 64 * 1024 * 1024;
+pub const BLOCK_HEADER_SIZE: usize = 16;
 
 #[derive(Debug, PartialEq)]
 pub struct SeriesKeyBlock {
@@ -242,6 +242,10 @@ impl BinlogReader {
         self.cursor.pos() >= self.cursor.len()
     }
 
+    pub fn pos(&self) -> u64 {
+        self.cursor.pos()
+    }
+
     pub async fn advance_read_offset(&mut self, mut offset: u32) -> IndexResult<()> {
         if offset == 0 {
             offset = self.cursor.pos() as u32;
@@ -250,12 +254,12 @@ impl BinlogReader {
         BinlogWriter::write_header(self.cursor.file_ref(), offset).await
     }
 
-    pub fn read_pos(&self) -> u32 {
-        self.cursor.pos() as u32
+    pub fn read_pos(&self) -> u64 {
+        self.cursor.pos()
     }
 
-    pub fn file_len(&self) -> u32 {
-        self.cursor.len() as u32
+    pub fn file_len(&self) -> u64 {
+        self.cursor.len()
     }
 
     pub async fn next_block(&mut self) -> IndexResult<Option<SeriesKeyBlock>> {
@@ -285,7 +289,7 @@ impl BinlogReader {
         }
         debug!("Read Binlog Reader: data_len={}", data_len);
 
-        if data_len > (self.file_len() - self.read_pos()) {
+        if data_len > (self.file_len() - self.read_pos()) as u32 {
             error!(
                 "binlog read block error {}, {} {} ",
                 data_len,
@@ -357,7 +361,7 @@ pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
     let mut file = std::fs::File::create(format!("{}.repair", file_name))?;
 
     file.write_all(&buffer)?;
-    file.set_len(max_can_repair as u64)?;
+    file.set_len(max_can_repair)?;
 
     Ok(())
 }

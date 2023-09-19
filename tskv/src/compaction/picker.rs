@@ -366,7 +366,7 @@ mod test {
                 time_range: TimeRange::new(lts_min, lts_max),
             };
         }
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         let version = Arc::new(Version::new(
             1,
             Arc::new("version_1".to_string()),

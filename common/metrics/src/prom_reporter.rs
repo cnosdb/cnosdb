@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use prometheus::proto::{Bucket, Counter, Gauge, Histogram, LabelPair, MetricFamily};
 use prometheus::{Encoder, TextEncoder};
 use trace::error;
@@ -25,7 +27,12 @@ impl<'a> PromReporter<'a> {
 }
 
 impl<'a> Reporter for PromReporter<'a> {
-    fn start(&mut self, name: &'static str, description: &'static str, metrics_type: MetricType) {
+    fn start(
+        &mut self,
+        name: Cow<'static, str>,
+        description: Cow<'static, str>,
+        metrics_type: MetricType,
+    ) {
         let (name, prom_type) = match metrics_type {
             MetricType::U64Gauge => (
                 format!("{name}_total"),

@@ -28,12 +28,11 @@ async fn get_tskv() -> TsKv {
 
     meta_manager.add_data_node().await.unwrap();
 
-    let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
     TsKv::open(
         meta_manager,
         opt,
         runtime,
-        memory,
+        Arc::new(GreedyMemoryPool::default()),
         Arc::new(MetricsRegister::default()),
     )
     .await

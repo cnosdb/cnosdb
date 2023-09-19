@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
+use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::metrics::{self, Count, ExecutionPlanMetricsSet, MetricBuilder};
@@ -77,6 +78,10 @@ impl TskvRecordBatchSinkProvider {
 }
 
 impl RecordBatchSinkProvider for TskvRecordBatchSinkProvider {
+    fn schema(&self) -> SchemaRef {
+        self.schema.to_arrow_schema()
+    }
+
     fn create_batch_sink(
         &self,
         context: Arc<TaskContext>,

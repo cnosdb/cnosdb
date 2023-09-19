@@ -18,7 +18,7 @@
 
 -- EXECUTE SQL: DESCRIBE DATABASE alter_database; --
 200 OK
-TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
+ttl,shard,vnode_duration,replica,precision
 10 Days,5,3 Days,1,US
 
 -- EXECUTE SQL: ALTER DATABASE alter_database Set TTL '30d'; --
@@ -27,7 +27,7 @@ TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
 
 -- EXECUTE SQL: DESCRIBE DATABASE alter_database; --
 200 OK
-TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
+ttl,shard,vnode_duration,replica,precision
 30 Days,5,3 Days,1,US
 
 -- EXECUTE SQL: ALTER DATABASE alter_database Set SHARD 6; --
@@ -36,7 +36,7 @@ TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
 
 -- EXECUTE SQL: DESCRIBE DATABASE alter_database; --
 200 OK
-TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
+ttl,shard,vnode_duration,replica,precision
 30 Days,6,3 Days,1,US
 
 -- EXECUTE SQL: ALTER DATABASE alter_database Set VNODE_DURATION '100d'; --
@@ -45,7 +45,7 @@ TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
 
 -- EXECUTE SQL: DESCRIBE DATABASE alter_database; --
 200 OK
-TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
+ttl,shard,vnode_duration,replica,precision
 30 Days,6,100 Days,1,US
 
 -- EXECUTE SQL: ALTER DATABASE alter_database Set REPLICA 1; --
@@ -54,7 +54,7 @@ TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
 
 -- EXECUTE SQL: DESCRIBE DATABASE alter_database; --
 200 OK
-TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
+ttl,shard,vnode_duration,replica,precision
 30 Days,6,100 Days,1,US
 
 -- EXECUTE SQL: ALTER DATABASE alter_database Set PRECision 'ms'; --
@@ -64,5 +64,5 @@ TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
 
 -- EXECUTE SQL: DESCRIBE DATABASE alter_database; --
 200 OK
-TTL,SHARD,VNODE_DURATION,REPLICA,PRECISION
+ttl,shard,vnode_duration,replica,precision
 30 Days,6,100 Days,1,US

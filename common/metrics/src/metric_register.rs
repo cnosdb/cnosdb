@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -12,7 +13,7 @@ use crate::{CreateMetricRecorder, Measure, MetricRecorder};
 #[derive(Debug)]
 pub struct MetricsRegister {
     labels: Labels,
-    measures: Mutex<BTreeMap<&'static str, Box<dyn Measure>>>,
+    measures: Mutex<BTreeMap<Cow<'static, str>, Box<dyn Measure>>>,
     sub_register: Mutex<BTreeMap<Labels, Arc<MetricsRegister>>>,
 }
 
@@ -56,12 +57,17 @@ impl MetricsRegister {
             .collect()
     }
 
-    pub fn metric<I>(&self, name: &'static str, description: &'static str) -> Metric<I>
+    pub fn metric<I>(
+        &self,
+        name: impl Into<Cow<'static, str>>,
+        description: impl Into<Cow<'static, str>>,
+    ) -> Metric<I>
     where
         I: MetricRecorder + Clone + 'static + Default + CreateMetricRecorder<Options = ()>,
     {
         let mut measures = self.measures.lock();
-        match measures.entry(name) {
+        let name = name.into();
+        match measures.entry(name.clone()) {
             Entry::Occupied(o) => o
                 .get()
                 .as_any()
@@ -78,12 +84,13 @@ impl MetricsRegister {
 
     pub fn register_metric<I: MetricRecorder + Clone + 'static>(
         &self,
-        name: &'static str,
-        description: &'static str,
+        name: impl Into<Cow<'static, str>>,
+        description: impl Into<Cow<'static, str>>,
         options: I::Options,
     ) -> Metric<I> {
         let mut measures = self.measures.lock();
-        match measures.entry(name) {
+        let name = name.into();
+        match measures.entry(name.clone()) {
             Entry::Occupied(o) => o
                 .get()
                 .as_any()
@@ -91,7 +98,12 @@ impl MetricsRegister {
                 .expect("measure type error")
                 .clone(),
             Entry::Vacant(v) => {
-                let res = Metric::new_with_labels(name, description, self.labels.clone(), options);
+                let res = Metric::new_with_labels(
+                    name.clone(),
+                    description,
+                    self.labels.clone(),
+                    options,
+                );
                 v.insert(Box::new(res.clone()));
                 res
             }

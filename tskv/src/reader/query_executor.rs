@@ -7,7 +7,6 @@ use models::meta_data::VnodeInfo;
 use tokio::runtime::Runtime;
 use trace::{SpanContext, SpanExt, SpanRecorder};
 
-use super::status_listener::VnodeStatusListener;
 use super::table_scan::LocalTskvTableScanStream;
 use super::tag_scan::LocalTskvTagScanStream;
 use crate::error::Result;
@@ -53,13 +52,8 @@ impl QueryExecutor {
                     span_ctx.child_span(format!("LocalTskvTableScanStream ({})", vnode.id)),
                 ),
             ));
-            let stream = VnodeStatusListener::new(
-                &self.option.table_schema.tenant,
-                self.meta.clone(),
-                vnode.id,
-                input,
-            );
-            streams.push(Box::pin(stream));
+
+            streams.push(input);
         });
 
         let parallel_merge_stream = ParallelMergeStream::new(Some(self.runtime.clone()), streams);

@@ -431,13 +431,15 @@ mod test {
         // check user info
         let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = ["+------------+----------+-------------------------------------------------------------------------------------------------+",
-            "| user_name  | is_admin | user_options                                                                                    |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
-            "| root       | true     | {\"password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
-            "| test_au_u1 | false    | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "| test_au_u2 | false    | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+"];
+        let expected = [
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+            "| user_name  | is_admin | user_options                                                                                         |",
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+            "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
+            "| test_au_u1 | false    | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
+            "| test_au_u2 | false    | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+                ];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -451,13 +453,15 @@ mod test {
         assert!(actual.is_empty());
         let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = ["+------------+----------+-------------------------------------------------------------------------------------------------+",
-            "| user_name  | is_admin | user_options                                                                                    |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
-            "| root       | true     | {\"password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
-            "| test_au_u1 | true     | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
-            "| test_au_u2 | false    | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+"];
+        let expected = [
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+            "| user_name  | is_admin | user_options                                                                                         |",
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+            "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
+            "| test_au_u1 | true     | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
+            "| test_au_u2 | false    | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+        ];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -471,13 +475,15 @@ mod test {
         assert!(actual.is_empty());
         let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = ["+------------+----------+-------------------------------------------------------------------------------------------------+",
-            "| user_name  | is_admin | user_options                                                                                    |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
-            "| root       | true     | {\"password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
-            "| test_au_u1 | true     | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
-            "| test_au_u2 | true     | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+"];
+        let expected = [
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+            "| user_name  | is_admin | user_options                                                                                         |",
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+            "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
+            "| test_au_u1 | true     | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
+            "| test_au_u2 | true     | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+                ];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -500,13 +506,15 @@ mod test {
         assert!(actual.is_empty());
         let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = ["+------------+----------+-------------------------------------------------------------------------------------------------+",
-            "| user_name  | is_admin | user_options                                                                                    |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+",
-            "| root       | true     | {\"password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
-            "| test_au_u1 | false    | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "| test_au_u2 | false    | {\"password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "+------------+----------+-------------------------------------------------------------------------------------------------+"];
+        let expected = [
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+            "| user_name  | is_admin | user_options                                                                                         |",
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+            "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
+            "| test_au_u1 | false    | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
+            "| test_au_u2 | false    | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
+            "+------------+----------+------------------------------------------------------------------------------------------------------+",
+        ];
         assert_batches_eq!(expected, &actual);
 
         // clean env
@@ -544,7 +552,7 @@ mod test {
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected = [
             "+---------+-------+----------------+---------+-----------+",
-            "| TTL     | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
+            "| ttl     | shard | vnode_duration | replica | precision |",
             "+---------+-------+----------------+---------+-----------+",
             "| 10 Days | 5     | 3 Days         | 1       | US        |",
             "+---------+-------+----------------+---------+-----------+",
@@ -567,7 +575,7 @@ mod test {
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected = [
             "+---------+-------+----------------+---------+-----------+",
-            "| TTL     | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
+            "| ttl     | shard | vnode_duration | replica | precision |",
             "+---------+-------+----------------+---------+-----------+",
             "| 30 Days | 5     | 3 Days         | 1       | US        |",
             "+---------+-------+----------------+---------+-----------+",
@@ -592,7 +600,7 @@ mod test {
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected = [
             "+---------+-------+----------------+---------+-----------+",
-            "| TTL     | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
+            "| ttl     | shard | vnode_duration | replica | precision |",
             "+---------+-------+----------------+---------+-----------+",
             "| 30 Days | 6     | 3 Days         | 1       | US        |",
             "+---------+-------+----------------+---------+-----------+",
@@ -616,7 +624,7 @@ mod test {
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected = [
             "+---------+-------+----------------+---------+-----------+",
-            "| TTL     | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
+            "| ttl     | shard | vnode_duration | replica | precision |",
             "+---------+-------+----------------+---------+-----------+",
             "| 30 Days | 6     | 100 Days       | 1       | US        |",
             "+---------+-------+----------------+---------+-----------+",
@@ -639,7 +647,7 @@ mod test {
         let actual = fetch_result_and_print(flight_info, &mut client).await;
         let expected = [
             "+---------+-------+----------------+---------+-----------+",
-            "| TTL     | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
+            "| ttl     | shard | vnode_duration | replica | precision |",
             "+---------+-------+----------------+---------+-----------+",
             "| 30 Days | 6     | 100 Days       | 1       | US        |",
             "+---------+-------+----------------+---------+-----------+",
@@ -1055,16 +1063,19 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = ["+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
-            "| plan_type     | plan                                                                                                                                  |",
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
-            "| logical_plan  | Filter: m0.t0 = Utf8(NULL)                                                                                                            |",
-            "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]                                   |",
-            "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                           |",
-            "|               |   FilterExec: t0@1 = NULL                                                                                                             |",
-            "|               |     TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
-            "|               |                                                                                                                                       |",
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+"];
+        let expected = [
+            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
+            "| plan_type     | plan                                                                                                                                    |",
+            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
+            "| logical_plan  | Filter: m0.t0 = Utf8(NULL)                                                                                                              |",
+            "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]                                     |",
+            "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                             |",
+            "|               |   FilterExec: t0@1 = NULL                                                                                                               |",
+            "|               |     RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=5                                                                |",
+            "|               |       TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
+            "|               |                                                                                                                                         |",
+            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
+        ];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -1075,16 +1086,19 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = ["+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
-            "| plan_type     | plan                                                                                                                                  |",
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
-            "| logical_plan  | Filter: m0.t0 > Utf8(NULL)                                                                                                            |",
-            "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]                                   |",
-            "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                           |",
-            "|               |   FilterExec: t0@1 > NULL                                                                                                             |",
-            "|               |     TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
-            "|               |                                                                                                                                       |",
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+"];
+        let expected = [
+            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
+            "| plan_type     | plan                                                                                                                                    |",
+            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
+            "| logical_plan  | Filter: m0.t0 > Utf8(NULL)                                                                                                              |",
+            "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]                                     |",
+            "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                             |",
+            "|               |   FilterExec: t0@1 > NULL                                                                                                               |",
+            "|               |     RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=5                                                                |",
+            "|               |       TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
+            "|               |                                                                                                                                         |",
+            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
+        ];
         assert_batches_eq!(expected, &actual);
 
         // clean env
@@ -1337,7 +1351,7 @@ mod test {
 
         let expected = [
             "+-------------+-----------------------+-------------+-------------------+",
-            "| COLUMN_NAME | DATA_TYPE             | COLUMN_TYPE | COMPRESSION_CODEC |",
+            "| column_name | data_type             | column_type | compression_codec |",
             "+-------------+-----------------------+-------------+-------------------+",
             "| time        | TIMESTAMP(NANOSECOND) | TIME        | DEFAULT           |",
             "| station     | STRING                | TAG         | DEFAULT           |",
@@ -1392,7 +1406,7 @@ mod test {
 
         let expected = [
             "+-------------+-------+----------------+---------+-----------+",
-            "| TTL         | SHARD | VNODE_DURATION | REPLICA | PRECISION |",
+            "| ttl         | shard | vnode_duration | replica | precision |",
             "+-------------+-------+----------------+---------+-----------+",
             "| 100000 Days | 1     | 365 Days       | 1       | NS        |",
             "+-------------+-------+----------------+---------+-----------+",
@@ -1452,21 +1466,6 @@ mod test {
         //clean env
         clean_env(&mut client, db_name).await;
         client.close().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_flight_sql_test() {
-        // create flight client
-        let mut client = authed_client().await;
-
-        // clean env
-        let db_name = "update_test";
-        clean_env(&mut client, db_name).await;
-
-        let close_info = client.close().await;
-        assert!(close_info.is_ok());
-        //clean env
-        clean_env(&mut client, db_name).await;
     }
 
     #[tokio::test]
