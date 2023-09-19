@@ -34,12 +34,13 @@ impl RaftHttpAdmin {
         warp::path!("init")
             .and(self.with_raft_node())
             .and_then(|node: Arc<RaftNode>| async move {
-                let rsp = node
-                    .raft_init(BTreeMap::new())
-                    .await
-                    .map_or_else(|err| err.to_string(), |_| "Success".to_string());
+                let rsp = match node.raft_init(BTreeMap::new()).await {
+                    Ok(_) => Ok(()),
+                    Err(err) => Err(err.to_string()),
+                };
 
-                let res: Result<String, warp::Rejection> = Ok(rsp);
+                let data = serde_json::to_string(&rsp).unwrap_or_default();
+                let res: Result<String, warp::Rejection> = Ok(data);
 
                 res
             })
@@ -63,12 +64,9 @@ impl RaftHttpAdmin {
                     address: addr,
                 };
 
-                let rsp = node
-                    .raft_add_learner(id, info)
-                    .await
-                    .map_or_else(|err| err.to_string(), |_| "Success".to_string());
-
-                let res: Result<String, warp::Rejection> = Ok(rsp);
+                let rsp = node.raw_raft().add_learner(id, info, true).await;
+                let data = serde_json::to_string(&rsp).unwrap_or_default();
+                let res: Result<String, warp::Rejection> = Ok(data);
 
                 res
             })
@@ -85,12 +83,9 @@ impl RaftHttpAdmin {
                     .map_err(ReplicationError::from)
                     .map_err(warp::reject::custom)?;
 
-                let rsp = node
-                    .raft_change_membership(req)
-                    .await
-                    .map_or_else(|err| err.to_string(), |_| "Success".to_string());
-
-                let res: Result<String, warp::Rejection> = Ok(rsp);
+                let rsp = node.raw_raft().change_membership(req, false).await;
+                let data = serde_json::to_string(&rsp).unwrap_or_default();
+                let res: Result<String, warp::Rejection> = Ok(data);
 
                 res
             })
