@@ -65,6 +65,17 @@ impl Queue {
         })
     }
 
+    pub async fn write_bytes(&mut self, data: &[u8]) -> Result<()> {
+        if self.write_file_size > self.config.max_file_size {
+            let _ = self.roll_write_file().await;
+        }
+
+        self.write_file.write_all(data).await?;
+        self.write_file_size += data.len() as u64;
+
+        Ok(())
+    }
+
     pub async fn write<Block>(&mut self, block: &Block) -> Result<()>
     where
         Block: DataBlock,

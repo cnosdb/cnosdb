@@ -12,7 +12,7 @@ use protos::raft_service::raft_service_client::RaftServiceClient;
 use protos::raft_service::*;
 use tonic::transport::{Channel, Endpoint};
 use tower::timeout::Timeout;
-use trace::info;
+use trace::debug;
 
 use crate::errors::{ReplicationError, ReplicationResult};
 use crate::{RaftNodeId, RaftNodeInfo, TypeConfig};
@@ -91,7 +91,7 @@ impl RaftNetwork<TypeConfig> for TargetClient {
         &mut self,
         req: VoteRequest<RaftNodeId>,
     ) -> Result<VoteResponse<RaftNodeId>, RPCError> {
-        info!(
+        debug!(
             "Network callback send_vote target:{}, req: {:?}",
             self.target, req
         );
@@ -128,7 +128,7 @@ impl RaftNetwork<TypeConfig> for TargetClient {
         &mut self,
         req: AppendEntriesRequest<TypeConfig>,
     ) -> Result<AppendEntriesResponse<RaftNodeId>, RPCError> {
-        // info!(
+        // debug!(
         //     "Network callback send_append_entries target:{}, req: {:?}",
         //     self.target, req
         // );
@@ -165,7 +165,7 @@ impl RaftNetwork<TypeConfig> for TargetClient {
         &mut self,
         req: InstallSnapshotRequest<TypeConfig>,
     ) -> Result<InstallSnapshotResponse<RaftNodeId>, RPCError<InstallSnapshotError>> {
-        // info!(
+        // debug!(
         //     "Network callback send_install_snapshot target:{}, req: {:?}",
         //     self.target,
         //     req.summary()

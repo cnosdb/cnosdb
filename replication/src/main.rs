@@ -97,7 +97,6 @@ async fn start_raft_node(id: RaftNodeId, http_addr: String) -> ReplicationResult
         .unwrap();
 
     start_warp_grpc_server(http_addr, node).await?;
-    //start_actix_web_server(http_addr, node).await?;
 
     Ok(())
 }

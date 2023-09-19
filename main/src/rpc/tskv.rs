@@ -428,7 +428,7 @@ impl TskvService for TskvServiceImpl {
 
         if let Err(err) = self
             .coord
-            .write_replica_raft(
+            .exec_write_replica_points(
                 &inner.tenant,
                 &inner.db_name,
                 Arc::new(inner.data),

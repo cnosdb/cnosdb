@@ -1,0 +1,89 @@
+#reporting_disabled = false
+host = "localhost"
+raft_logs_to_keep = 3
+using_raft_replication = true
+
+[deployment]
+#mode = 'singleton'
+#cpu = 4
+#memory = 16
+
+[query]
+max_server_connections = 10240
+query_sql_limit = 16777216   # 16 * 1024 * 1024
+write_sql_limit = 167772160  # 160 * 1024 * 1024
+auth_enabled = false
+read_timeout_ms = 3000
+write_timeout_ms = 3000
+stream_trigger_cpu = 1
+stream_executor_cpu = 2
+
+[storage]
+# Directory for summary: $path/summary/
+# Directory for index: $path/index/$database/
+# Directory for tsm: $path/data/$database/tsm/
+# Directory for delta: $path/data/$database/delta/
+path = '/tmp/cnosdb/3001/db'
+max_summary_size = "128M" # 134217728
+base_file_size = "16M" # 16777216
+flush_req_channel_cap = 16
+max_cached_readers = 32
+compact_trigger_file_num = 4
+compact_trigger_cold_duration = "1h"
+max_compact_size = "2G" # 2147483648
+max_concurrent_compaction = 4
+strict_write = false
+
+[wal]
+enabled = true
+path = '/tmp/cnosdb/3001/wal'
+wal_req_channel_cap = 64
+max_file_size = "1G" # 1073741824
+flush_trigger_total_file_size = "2G" # 2147483648
+sync = false
+sync_interval = "0"
+
+[cache]
+max_buffer_size = "128M" # 134217728
+max_immutable_number = 4
+partition = 16          # default memcache partition number
+
+[log]
+level = 'info'
+path = '/tmp/cnosdb/3001/log'
+
+[security]
+# [security.tls_config]
+# certificate = "./config/tls/server.crt"
+# private_key = "./config/tls/server.key"
+
+[cluster]
+name = 'cluster_xxx'
+meta_service_addr = ["127.0.0.1:8901"]
+
+http_listen_port = 8922
+grpc_listen_port = 8923
+flight_rpc_listen_port = 8924
+tcp_listen_port = 8925
+vector_listen_port = 8926
+
+[node_basic]
+node_id = 3001 
+cold_data_server = false
+store_metrics = false
+
+[heartbeat]
+report_time_interval_secs = 30
+
+[hinted_off]
+enable = true
+path = '/tmp/cnosdb/3001/hh'
+
+# [trace]
+# auto_generate_span = false
+# [trace.log]
+# path = '/tmp/cnosdb'
+# [trace.jaeger]
+# jaeger_agent_endpoint = 'http://localhost:14268/api/traces'
+# max_concurrent_exports = 2
+# max_queue_size = 4096

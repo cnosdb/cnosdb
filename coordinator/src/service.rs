@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused)]
+#![allow(clippy::type_complexity)]
 
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -393,6 +394,30 @@ impl CoordService {
         Ok(requests)
     }
 
+    async fn write_replica_by_raft(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        data: Arc<Vec<u8>>,
+        precision: Precision,
+        replica: ReplicationSet,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<()> {
+        self.raft_writer
+            .write_to_replica(
+                tenant,
+                db_name,
+                data,
+                precision,
+                &replica,
+                SpanRecorder::new(span_ctx.child_span(format!(
+                    "write to replica {} on node {}",
+                    replica.id, self.node_id
+                ))),
+            )
+            .await
+    }
+
     async fn push_points_to_requests<'a>(
         &'a self,
         tenant: &'a str,
@@ -419,9 +444,10 @@ impl CoordService {
             });
         }
 
-        let mut requests = Vec::new();
+        let mut requests: Vec<Pin<Box<dyn Future<Output = Result<(), CoordinatorError>> + Send>>> =
+            Vec::new();
         if self.using_raft_replication() {
-            let request = self.write_replica_raft(
+            let request = self.write_replica_by_raft(
                 tenant,
                 db,
                 points.clone(),
@@ -429,15 +455,13 @@ impl CoordService {
                 info.clone(),
                 span_ctx,
             );
-            requests.push(request);
-
-            Ok(requests)
+            requests.push(Box::pin(request));
         } else {
             let mut tasks = self.multi_write_vnodes(tenant, precision, info, points, span_ctx)?;
             requests.append(&mut tasks);
-
-            Ok(requests)
         }
+
+        Ok(requests)
     }
 }
 
@@ -483,7 +507,7 @@ impl Coordinator for CoordService {
         Ok(optimal_shards)
     }
 
-    async fn write_replica_raft(
+    async fn exec_write_replica_points(
         &self,
         tenant: &str,
         db_name: &str,
@@ -493,17 +517,7 @@ impl Coordinator for CoordService {
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         self.raft_writer
-            .write_to_replica(
-                tenant,
-                db_name,
-                data,
-                precision,
-                &replica,
-                SpanRecorder::new(span_ctx.child_span(format!(
-                    "write to replica {} on node {}",
-                    replica.id, self.node_id
-                ))),
-            )
+            .write_to_local_or_forward(data, tenant, db_name, precision, &replica, span_ctx)
             .await
     }
 

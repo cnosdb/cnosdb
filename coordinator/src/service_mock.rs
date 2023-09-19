@@ -145,7 +145,7 @@ impl Coordinator for MockCoordinator {
         Ok(vec![])
     }
 
-    async fn write_replica_raft(
+    async fn exec_write_replica_points(
         &self,
         tenant: &str,
         db_name: &str,

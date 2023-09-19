@@ -11,6 +11,7 @@ use openraft::{
 };
 use serde::{Deserialize, Serialize};
 use trace::info;
+use tracing::debug;
 
 use crate::apply_store::{ApplyContext, ApplyStorageRef};
 use crate::entry_store::EntryStorageRef;
@@ -103,7 +104,7 @@ impl RaftLogReader<TypeConfig> for Arc<NodeStorage> {
         &mut self,
         range: RB,
     ) -> StorageResult<Vec<Entry<TypeConfig>>> {
-        info!("Storage callback try_get_log_entries: [{:?})", range);
+        debug!("Storage callback try_get_log_entries: [{:?})", range);
 
         let start = match range.start_bound() {
             std::ops::Bound::Included(x) => *x,
@@ -133,7 +134,7 @@ impl RaftLogReader<TypeConfig> for Arc<NodeStorage> {
 impl RaftSnapshotBuilder<TypeConfig> for Arc<NodeStorage> {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn build_snapshot(&mut self) -> Result<Snapshot<TypeConfig>, StorageError<RaftNodeId>> {
-        info!("Storage callback build_snapshot");
+        debug!("Storage callback build_snapshot");
 
         let snapshot = self
             .create_snapshot()
@@ -181,7 +182,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
     type SnapshotBuilder = Self;
 
     async fn get_log_state(&mut self) -> StorageResult<LogState<TypeConfig>> {
-        info!("Storage callback get_log_state");
+        debug!("Storage callback get_log_state");
 
         let last = self
             .raft_logs
@@ -207,7 +208,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
 
     #[tracing::instrument(level = "trace", skip(self))]
     async fn save_vote(&mut self, vote: &Vote<RaftNodeId>) -> Result<(), StorageError<RaftNodeId>> {
-        info!("Storage callback save_vote vote: {:?}", vote);
+        debug!("Storage callback save_vote vote: {:?}", vote);
 
         self.state
             .set_vote(self.group_id(), vote)
@@ -219,7 +220,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
     }
 
     async fn read_vote(&mut self) -> Result<Option<Vote<RaftNodeId>>, StorageError<RaftNodeId>> {
-        info!("Storage callback read_vote");
+        debug!("Storage callback read_vote");
 
         let vote = self
             .state
@@ -243,7 +244,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
 
         let begin = entries.first().map_or(0, |ent| ent.log_id.index);
         let end = entries.last().map_or(0, |ent| ent.log_id.index);
-        info!("Storage callback append_to_log entires:[{}~{}]", begin, end);
+        debug!("Storage callback append_to_log entires:[{}~{}]", begin, end);
 
         self.raft_logs
             .append(&entries)
@@ -255,7 +256,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
 
     #[tracing::instrument(level = "debug", skip(self))]
     async fn delete_conflict_logs_since(&mut self, log_id: LogId<RaftNodeId>) -> StorageResult<()> {
-        info!(
+        debug!(
             "Storage callback delete_conflict_logs_since log_id: {:?}",
             log_id
         );
@@ -273,7 +274,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
         &mut self,
         log_id: LogId<RaftNodeId>,
     ) -> Result<(), StorageError<RaftNodeId>> {
-        info!("Storage callback purge_logs_upto log_id: {:?}", log_id);
+        debug!("Storage callback purge_logs_upto log_id: {:?}", log_id);
 
         self.state
             .set_last_purged(self.group_id(), log_id)
@@ -296,7 +297,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
         ),
         StorageError<RaftNodeId>,
     > {
-        info!("Storage callback last_applied_state");
+        debug!("Storage callback last_applied_state");
 
         let log_id = self
             .state
@@ -319,7 +320,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
         let mut res = Vec::with_capacity(entries.len());
 
         for entry in entries {
-            info!(
+            debug!(
                 "Storage callback apply_to_state_machine log_id: {:?}",
                 entry.log_id
             );
@@ -367,7 +368,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
     async fn begin_receiving_snapshot(
         &mut self,
     ) -> Result<Box<<TypeConfig as RaftTypeConfig>::SnapshotData>, StorageError<RaftNodeId>> {
-        info!("Storage callback begin_receiving_snapshot");
+        debug!("Storage callback begin_receiving_snapshot");
 
         Ok(Box::new(Cursor::new(Vec::new())))
     }
@@ -378,7 +379,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
         meta: &SnapshotMeta<RaftNodeId, RaftNodeInfo>,
         snapshot: Box<<TypeConfig as RaftTypeConfig>::SnapshotData>,
     ) -> Result<(), StorageError<RaftNodeId>> {
-        info!(
+        debug!(
             "Storage callback install_snapshot size: {}",
             snapshot.get_ref().len()
         );
@@ -408,7 +409,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
     async fn get_current_snapshot(
         &mut self,
     ) -> Result<Option<Snapshot<TypeConfig>>, StorageError<RaftNodeId>> {
-        info!("Storage callback get_current_snapshot");
+        debug!("Storage callback get_current_snapshot");
 
         match self
             .state
@@ -427,13 +428,13 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
     }
 
     async fn get_log_reader(&mut self) -> Self::LogReader {
-        info!("Storage callback get_log_reader");
+        debug!("Storage callback get_log_reader");
 
         self.clone()
     }
 
     async fn get_snapshot_builder(&mut self) -> Self::SnapshotBuilder {
-        info!("Storage callback get_snapshot_builder");
+        debug!("Storage callback get_snapshot_builder");
 
         self.clone()
     }
