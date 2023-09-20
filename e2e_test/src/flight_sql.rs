@@ -101,11 +101,11 @@ mod test {
             .unwrap();
 
         let expected = [
-            "+--------------+---------------+",
-            "| table_schem  | table_catalog |",
-            "+--------------+---------------+",
-            "| usage_schema | cnosdb        |",
-            "+--------------+---------------+",
+            "+----------------+--------------+",
+            "| db_schema_name | catalog_name |",
+            "+----------------+--------------+",
+            "| usage_schema   | cnosdb       |",
+            "+----------------+--------------+",
         ];
         let actual = fetch_result_and_print(flight_info, &mut client).await;
 
@@ -129,11 +129,11 @@ mod test {
             .unwrap();
 
         let expected = [
-            "+-----------+--------------+---------------+------------+",
-            "| table_cat | table_schem  | table_name    | table_type |",
-            "+-----------+--------------+---------------+------------+",
-            "| cnosdb    | usage_schema | coord_data_in | TABLE      |",
-            "+-----------+--------------+---------------+------------+",
+            "+--------------+----------------+---------------+------------+",
+            "| catalog_name | db_schema_name | table_name    | table_type |",
+            "+--------------+----------------+---------------+------------+",
+            "| cnosdb       | usage_schema   | coord_data_in | TABLE      |",
+            "+--------------+----------------+---------------+------------+",
         ];
         let actual = fetch_result_and_print(flight_info, &mut client).await;
 
