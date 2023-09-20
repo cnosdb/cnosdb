@@ -1,3 +1,4 @@
+use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::error::DataFusionError;
@@ -23,7 +24,7 @@ impl TransformUpdateRule {
 
 impl AnalyzerRule for TransformUpdateRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> DFResult<LogicalPlan> {
-        analyze_internal(plan)
+        plan.transform_up(&analyze_internal)
     }
 
     fn name(&self) -> &str {
@@ -31,7 +32,7 @@ impl AnalyzerRule for TransformUpdateRule {
     }
 }
 
-fn analyze_internal(plan: LogicalPlan) -> DFResult<LogicalPlan> {
+fn analyze_internal(plan: LogicalPlan) -> DFResult<Transformed<LogicalPlan>> {
     if let LogicalPlan::Extension(Extension { node }) = &plan {
         if let Some(
             update_node @ UpdateNode {
@@ -66,17 +67,17 @@ fn analyze_internal(plan: LogicalPlan) -> DFResult<LogicalPlan> {
 
                     let is_update_time = columns.iter().all(|c| c.column_type.is_time());
                     if is_update_time {
-                        return update_time();
+                        return update_time().map(Transformed::Yes);
                     }
 
                     let is_update_tag = columns.iter().all(|c| c.column_type.is_tag());
                     if is_update_tag {
-                        return update_tag();
+                        return update_tag().map(Transformed::Yes);
                     }
 
                     let is_update_field = columns.iter().all(|c| c.column_type.is_field());
                     if is_update_field {
-                        return update_field(update_node);
+                        return update_field(update_node).map(Transformed::Yes);
                     }
 
                     return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
@@ -92,7 +93,7 @@ fn analyze_internal(plan: LogicalPlan) -> DFResult<LogicalPlan> {
         }
     }
 
-    Ok(plan)
+    Ok(Transformed::No(plan))
 }
 
 /// 不支持update time
