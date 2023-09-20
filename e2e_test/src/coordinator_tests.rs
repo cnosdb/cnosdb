@@ -45,7 +45,7 @@ impl CnosdbMeta {
             println!("Creating tenant: {:?}", &create_tenant_req);
             let create_tenant_res = self
                 .runtime
-                .block_on(self.meta_client.write::<Tenant>(&create_tenant_req));
+                .block_on(self.meta_client.write::<()>(&create_tenant_req));
             create_tenant_res.unwrap();
 
             thread::sleep(Duration::from_secs(3));
