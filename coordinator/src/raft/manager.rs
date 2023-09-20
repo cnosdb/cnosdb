@@ -368,6 +368,20 @@ impl RaftNodesManager {
         Ok(())
     }
 
+    fn raft_config(&self) -> openraft::Config {
+        let logs_to_keep = self.config.raft_logs_to_keep;
+
+        openraft::Config {
+            heartbeat_interval: 500,
+            election_timeout_min: 1500,
+            election_timeout_max: 3000,
+            replication_lag_threshold: logs_to_keep,
+            snapshot_policy: SnapshotPolicy::LogsSinceLast(logs_to_keep),
+            max_in_snapshot_log_to_keep: logs_to_keep,
+            ..Default::default()
+        }
+    }
+
     async fn open_raft_node(
         &self,
         tenant: &str,
@@ -400,25 +414,13 @@ impl RaftNodesManager {
             entry,
         )?;
         let storage = Arc::new(storage);
-
-        let logs_to_keep = self.config.raft_logs_to_keep;
-        let config = openraft::Config {
-            heartbeat_interval: 500,
-            election_timeout_min: 1500,
-            election_timeout_max: 3000,
-            replication_lag_threshold: logs_to_keep,
-            snapshot_policy: SnapshotPolicy::LogsSinceLast(logs_to_keep),
-            max_in_snapshot_log_to_keep: logs_to_keep,
-            ..Default::default()
-        };
-
-        let node = RaftNode::new(raft_id, info, config, storage, engine).await?;
+        let node = RaftNode::new(raft_id, info, self.raft_config(), storage, engine).await?;
 
         let summary = RaftNodeSummary {
+            raft_id,
             group_id,
             tenant: tenant.to_string(),
             db_name: db_name.to_string(),
-            raft_id: vnode_id as u64,
         };
 
         self.raft_state.set_node_summary(group_id, &summary)?;

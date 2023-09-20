@@ -62,7 +62,7 @@ impl RaftWriter {
                 )
                 .await;
 
-            info!("write to local {} {:?} {:?}", node_id, replica, result);
+            debug!("write to local {} {:?} {:?}", node_id, replica, result);
 
             result
         } else {
@@ -77,7 +77,7 @@ impl RaftWriter {
             let result = self
                 .write_to_remote(leader_id, request, span_recorder.span_ctx())
                 .await;
-            info!("write to remote {} {:?} {:?}", leader_id, replica, result);
+            debug!("write to remote {} {:?} {:?}", leader_id, replica, result);
 
             if let Err(CoordinatorError::FailoverNode { .. }) = result {
                 for vnode in replica.vnodes.iter() {
@@ -95,7 +95,7 @@ impl RaftWriter {
                     let result = self
                         .write_to_remote(vnode.node_id, request, span_recorder.span_ctx())
                         .await;
-                    info!(
+                    debug!(
                         "try write to remote {} {:?} {:?}",
                         vnode.node_id, replica, result
                     );
