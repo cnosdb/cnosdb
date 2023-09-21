@@ -48,17 +48,11 @@ pub mod tsm;
 mod version_set;
 mod wal;
 
+/// The column file ID is unique in a KV instance
+/// and uniquely corresponds to one column file.
 pub type ColumnFileId = u64;
-type TseriesFamilyId = u32;
+type TseriesFamilyId = VnodeId;
 type LevelId = u32;
-
-/// Returns the normalized tenant of a WritePointsRequest
-pub fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) -> String {
-    match &req.meta {
-        Some(meta) => meta.tenant.clone(),
-        None => models::schema::DEFAULT_CATALOG.to_string(),
-    }
-}
 
 pub type EngineRef = Arc<dyn Engine>;
 

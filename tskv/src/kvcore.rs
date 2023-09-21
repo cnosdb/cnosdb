@@ -37,7 +37,7 @@ use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
 use crate::wal::{self, WalDecoder, WalEntry, WalManager, WalTask};
-use crate::{file_utils, tenant_name_from_request, Engine, Error, TseriesFamilyId};
+use crate::{file_utils, Engine, Error, TseriesFamilyId};
 
 // TODO: A small summay channel capacity can cause a block
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;
@@ -1390,5 +1390,13 @@ impl TsKv {
 
     pub(crate) fn compact_task_sender(&self) -> Sender<CompactTask> {
         self.compact_task_sender.clone()
+    }
+}
+
+/// Returns the normalized tenant of a WritePointsRequest
+fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) -> String {
+    match &req.meta {
+        Some(meta) => meta.tenant.clone(),
+        None => models::schema::DEFAULT_CATALOG.to_string(),
     }
 }

@@ -195,11 +195,10 @@ impl TsmTombstone {
         if let Some(tr_tuple) = data_block.time_range() {
             let time_range: &TimeRange = &tr_tuple.into();
             if let Some(time_ranges) = self.tombstones.get(&field_id) {
-                for t in time_ranges.iter() {
-                    if t.overlaps(time_range) {
-                        data_block.exclude(t);
-                    }
-                }
+                time_ranges
+                    .iter()
+                    .filter(|t| t.overlaps(time_range))
+                    .for_each(|t| data_block.exclude(t));
             }
         }
     }

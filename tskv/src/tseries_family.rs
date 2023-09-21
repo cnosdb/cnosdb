@@ -361,15 +361,15 @@ impl LevelInfo {
 
 #[derive(Debug)]
 pub struct Version {
-    pub ts_family_id: TseriesFamilyId,
-    pub database: Arc<String>,
-    pub storage_opt: Arc<StorageOptions>,
+    ts_family_id: TseriesFamilyId,
+    database: Arc<String>,
+    storage_opt: Arc<StorageOptions>,
     /// The max seq_no of write batch in wal flushed to column file.
-    pub last_seq: u64,
+    last_seq: u64,
     /// The max timestamp of write batch in wal flushed to column file.
-    pub max_level_ts: i64,
-    pub levels_info: [LevelInfo; 5],
-    pub tsm_reader_cache: Arc<ShardedCache<String, Arc<TsmReader>>>,
+    max_level_ts: i64,
+    levels_info: [LevelInfo; 5],
+    tsm_reader_cache: Arc<ShardedCache<String, Arc<TsmReader>>>,
 }
 
 impl Version {
@@ -544,6 +544,23 @@ impl Version {
             }
         }
         unsafe { MaybeUninit::array_assume_init(res) }
+    }
+
+    pub fn max_level_ts(&self) -> i64 {
+        self.max_level_ts
+    }
+
+    pub fn tsm_reader_cache(&self) -> &Arc<ShardedCache<String, Arc<TsmReader>>> {
+        &self.tsm_reader_cache
+    }
+
+    pub fn last_seq(&self) -> u64 {
+        self.last_seq
+    }
+
+    #[cfg(test)]
+    pub fn levels_info_mut(&mut self) -> &mut [LevelInfo; 5] {
+        &mut self.levels_info
     }
 }
 

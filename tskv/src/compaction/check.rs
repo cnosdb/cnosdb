@@ -923,7 +923,7 @@ mod test {
             // If flushing is finished, the newest super_version contains a level 1 file.
             let vnode = vnode.read().await;
             let super_version = vnode.super_version();
-            if !super_version.version.levels_info[1].files.is_empty() {
+            if !super_version.version.levels_info()[1].files.is_empty() {
                 break;
             }
             check_num += 1;

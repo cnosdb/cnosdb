@@ -176,13 +176,13 @@ pub async fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) 
     println!("PointsCount: {}", points_cnt);
 }
 
-pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<Index> {
+pub async fn load_index(tsm_file_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<Index> {
     let len = reader.len();
     if len < FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
             reason: format!(
                 "TSM file ({}) size less than FOOTER_SIZE({})",
-                tsm_id, FOOTER_SIZE
+                tsm_file_id, FOOTER_SIZE
             ),
         });
     }
@@ -199,7 +199,7 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
         return Err(ReadTsmError::Invalid {
             reason: format!(
                 "TSM file ({}) size less than index offset({})",
-                tsm_id, offset
+                tsm_file_id, offset
             ),
         });
     }
@@ -226,7 +226,7 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
     field_id_offs.sort_unstable_by_key(|e| e.0);
 
     Ok(Index::new(
-        tsm_id,
+        tsm_file_id,
         Arc::new(bloom_filter),
         data,
         field_id_offs,
@@ -239,8 +239,8 @@ pub struct IndexReader {
 }
 
 impl IndexReader {
-    pub async fn open(tsm_id: u64, reader: Arc<AsyncFile>) -> Result<Self> {
-        let idx = load_index(tsm_id, reader)
+    pub async fn open(tsm_file_id: u64, reader: Arc<AsyncFile>) -> Result<Self> {
+        let idx = load_index(tsm_file_id, reader)
             .await
             .context(error::ReadTsmSnafu)?;
 

@@ -82,7 +82,7 @@ impl Database {
                 ver.tf_id(),
                 self.opt.cache.max_buffer_size,
                 self.opt.cache.partition,
-                ver.last_seq,
+                ver.last_seq(),
                 &self.memory_pool,
             ),
             ver.clone(),

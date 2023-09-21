@@ -772,7 +772,7 @@ pub async fn run_compaction_job(
             &mut file_metas,
             &mut version_edit,
             &request,
-            request.version.max_level_ts,
+            request.version.max_level_ts(),
         )
         .await?;
     }
@@ -829,7 +829,7 @@ async fn write_tsm(
                     file_metas,
                     version_edit,
                     request,
-                    request.version.max_level_ts,
+                    request.version.max_level_ts(),
                 )
                 .await?;
                 return Ok(true);
