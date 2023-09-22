@@ -497,7 +497,7 @@ where
         } = query;
 
         let mut filters = vec![];
-        let _ = catalog.map(|e| filters.push(format!("TABLE_CATALOG = '{}'", e)));
+        let _ = catalog.map(|e| filters.push(format!("TENANT_NAME = '{}'", e)));
         let _ =
             db_schema_filter_pattern.map(|e| filters.push(format!("DATABASE_NAME LIKE '{e}'",)));
 
@@ -546,7 +546,7 @@ where
         } = query;
 
         let mut filters = vec![];
-        let _ = catalog.map(|e| filters.push(format!("TABLE_CATALOG = '{}'", e)));
+        let _ = catalog.map(|e| filters.push(format!("TABLE_TENANT = '{}'", e)));
         let _ =
             db_schema_filter_pattern.map(|e| filters.push(format!("TABLE_DATABASE LIKE '{e}'")));
         let _ = table_name_filter_pattern.map(|e| filters.push(format!("TABLE_NAME LIKE '{e}'")));
