@@ -164,7 +164,7 @@ async fn exec_and_print(
 
 fn parse_use_database(sql: &str) -> Option<String> {
     let sql = sql.trim().trim_end_matches(';');
-    if !sql[0..3].to_ascii_lowercase().eq("use") {
+    if !sql.to_ascii_lowercase().starts_with("use") {
         return None;
     }
 
