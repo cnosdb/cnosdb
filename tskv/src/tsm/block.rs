@@ -550,6 +550,89 @@ impl DataBlock {
         }
     }
 
+    pub fn exclude_time_ranges(&self, exclude_time_ranges: &[&TimeRange]) -> Self {
+        let time_ranges = match self.time_range() {
+            Some((min, max)) => TimeRanges::new(vec![TimeRange::new(min, max)]),
+            None => return self.clone(),
+        };
+
+        let indexs = time_ranges
+            .exclude_time_ranges(exclude_time_ranges)
+            .time_ranges()
+            .iter()
+            .filter_map(|tr| self.index_range(tr))
+            .collect::<Vec<_>>();
+
+        match self {
+            DataBlock::U64 { ts, val, enc } => {
+                let mut new_ts = vec![];
+                let mut new_val = vec![];
+                indexs.into_iter().for_each(|(min, max)| {
+                    new_ts.extend_from_slice(&ts[min..=max]);
+                    new_val.extend_from_slice(&val[min..=max])
+                });
+                DataBlock::U64 {
+                    ts: new_ts,
+                    val: new_val,
+                    enc: *enc,
+                }
+            }
+            DataBlock::I64 { ts, val, enc } => {
+                let mut new_ts = vec![];
+                let mut new_val = vec![];
+                indexs.into_iter().for_each(|(min, max)| {
+                    new_ts.extend_from_slice(&ts[min..=max]);
+                    new_val.extend_from_slice(&val[min..=max])
+                });
+                DataBlock::I64 {
+                    ts: new_ts,
+                    val: new_val,
+                    enc: *enc,
+                }
+            }
+            DataBlock::Str { ts, val, enc } => {
+                let mut new_ts = vec![];
+                let mut new_val = vec![];
+                indexs.into_iter().for_each(|(min, max)| {
+                    new_ts.extend_from_slice(&ts[min..=max]);
+                    new_val.extend_from_slice(&val[min..=max])
+                });
+                DataBlock::Str {
+                    ts: new_ts,
+                    val: new_val,
+                    enc: *enc,
+                }
+            }
+            DataBlock::F64 { ts, val, enc } => {
+                let mut new_ts = vec![];
+                let mut new_val = vec![];
+                indexs.into_iter().for_each(|(min, max)| {
+                    new_ts.extend_from_slice(&ts[min..=max]);
+                    new_val.extend_from_slice(&val[min..=max])
+                });
+                DataBlock::F64 {
+                    ts: new_ts,
+                    val: new_val,
+                    enc: *enc,
+                }
+            }
+            DataBlock::Bool { ts, val, enc } => {
+                let mut new_ts = vec![];
+                let mut new_val = vec![];
+                indexs.into_iter().for_each(|(min, max)| {
+                    new_ts.extend_from_slice(&ts[min..=max]);
+                    new_val.extend_from_slice(&val[min..=max])
+                });
+                DataBlock::Bool {
+                    ts: new_ts,
+                    val: new_val,
+                    enc: *enc,
+                }
+            }
+        }
+    }
+
+    // left close, right open [min, max]
     pub fn index_range(&self, time_range: &TimeRange) -> Option<(usize, usize)> {
         if self.is_empty() {
             return None;
@@ -1187,5 +1270,59 @@ pub mod test {
                 enc: DataBlockEncoding::default(),
             }
         );
+    }
+
+    #[test]
+    fn test_data_block_exclude_3() {
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3],
+            val: vec![10, 11, 12, 13],
+            enc: DataBlockEncoding::default(),
+        };
+        let exclude_time_range: TimeRange = (-2, 0).into();
+        let new_blk = blk.exclude_time_ranges(&[&exclude_time_range]);
+        blk.exclude(&exclude_time_range);
+
+        assert_eq!(blk, new_blk);
+
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3],
+            val: vec![10, 11, 12, 13],
+            enc: DataBlockEncoding::default(),
+        };
+        let exclude_time_range: TimeRange = (3, 5).into();
+        let new_blk = blk.exclude_time_ranges(&[&exclude_time_range]);
+        blk.exclude(&exclude_time_range);
+        assert_eq!(blk, new_blk);
+
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3],
+            val: vec![10, 11, 12, 13],
+            enc: DataBlockEncoding::default(),
+        };
+        let exclude_time_range: TimeRange = (-3, -1).into();
+        let new_blk = blk.exclude_time_ranges(&[&exclude_time_range]);
+        blk.exclude(&exclude_time_range);
+        assert_eq!(blk, new_blk,);
+
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3],
+            val: vec![10, 11, 12, 13],
+            enc: DataBlockEncoding::default(),
+        };
+        let exclude_time_range: TimeRange = (5, 7).into();
+        let new_blk = blk.exclude_time_ranges(&[&exclude_time_range]);
+        blk.exclude(&exclude_time_range);
+        assert_eq!(blk, new_blk);
+
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3, 7, 8, 9, 10],
+            val: vec![10, 11, 12, 13, 17, 18, 19, 20],
+            enc: DataBlockEncoding::default(),
+        };
+        let exclude_time_range: TimeRange = (5, 6).into();
+        let new_blk = blk.exclude_time_ranges(&[&exclude_time_range]);
+        blk.exclude(&exclude_time_range);
+        assert_eq!(blk, new_blk);
     }
 }

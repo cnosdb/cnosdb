@@ -202,6 +202,25 @@ impl TsmTombstone {
             }
         }
     }
+
+    // if no exclude, return None
+    pub fn data_block_exclude_tombstones_new(
+        &self,
+        field_id: FieldId,
+        data_block: &DataBlock,
+    ) -> Option<DataBlock> {
+        let block_tr: TimeRange = data_block.time_range()?.into();
+        let tombstone = self
+            .tombstones
+            .get(&field_id)?
+            .iter()
+            .filter(|tr| tr.overlaps(&block_tr))
+            .collect::<Vec<_>>();
+        if tombstone.is_empty() {
+            return None;
+        }
+        Some(data_block.exclude_time_ranges(tombstone.as_slice()))
+    }
 }
 
 #[cfg(test)]
