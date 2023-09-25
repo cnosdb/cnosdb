@@ -118,22 +118,48 @@ impl DDLDefinitionTask for AlterTableTask {
                     RenameColumnAction::RenameTag(new_name) => {
                         alter_schema_func(&mut schema, old_column_name, new_name)?;
 
-                        Some(AdminCommandRequest {
+                        // construct check req
+                        let mut rename_check_req = RenameColumnRequest {
+                            db: schema.db.to_owned(),
+                            table: schema.name.to_string(),
+                            old_name: old_column_name.to_owned(),
+                            new_name: new_name.to_owned(),
+                            dry_run: true,
+                        };
+                        let check_req = AdminCommandRequest {
                             tenant: tenant.to_string(),
-                            command: Some(Command::RenameColumn(RenameColumnRequest {
-                                db: schema.db.to_owned(),
-                                table: schema.name.to_string(),
-                                old_name: old_column_name.to_owned(),
-                                new_name: new_name.to_owned(),
-                            })),
-                        })
+                            command: Some(Command::RenameColumn(rename_check_req.clone())),
+                        };
+                        // construct execute req
+                        rename_check_req.dry_run = false;
+                        let exec_req = AdminCommandRequest {
+                            tenant: tenant.to_string(),
+                            command: Some(Command::RenameColumn(rename_check_req)),
+                        };
+
+                        // check conflict
+                        query_state_machine
+                            .coord
+                            .broadcast_command(check_req)
+                            .await?;
+                        // exec
+                        query_state_machine
+                            .coord
+                            .broadcast_command(exec_req)
+                            .await?;
                     }
                     RenameColumnAction::RenameField(new_name) => {
                         alter_schema_func(&mut schema, old_column_name, new_name)?;
-
-                        None
                     }
                 }
+
+                // update metadata
+                schema.schema_id += 1;
+                client
+                    .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
+                    .await?;
+
+                return Ok(Output::Nil(()));
             }
         };
         schema.schema_id += 1;

@@ -150,6 +150,14 @@ pub trait Engine: Send + Sync + Debug {
 
     /// Modify the name of the tag type column of the specified table
     ///
+    /// # Parameters
+    /// - `tenant` - The tenant name.
+    /// - `database` - The database name.
+    /// - `table` - The table name.
+    /// - `tag_name` - The old tag name.
+    /// - `new_tag_name` - The new tag name.
+    /// - `dry_run` - Whether to only check if the `rename_tag` is successful, if it is true, the update will not be performed.
+    ///
     /// TODO Could specify vnode id, because the current interface may include modifying multiple vnodes, but atomicity cannot be guaranteed.
     async fn rename_tag(
         &self,
@@ -158,11 +166,19 @@ pub trait Engine: Send + Sync + Debug {
         table: &str,
         tag_name: &str,
         new_tag_name: &str,
+        dry_run: bool,
     ) -> Result<()>;
 
     /// Update the value of the tag type columns of the specified table
     ///
     /// `new_tags` is the new tags, and the tag key must be included in all series
+    ///
+    /// # Parameters
+    /// - `tenant` - The tenant name.
+    /// - `database` - The database name.
+    /// - `new_tags` - The tags and its new tag value.
+    /// - `matched_series` - The series that need to be updated.
+    /// - `dry_run` - Whether to only check if the `update_tags_value` is successful, if it is true, the update will not be performed.
     ///
     /// # Examples
     ///
@@ -195,6 +211,7 @@ pub trait Engine: Send + Sync + Debug {
         database: &str,
         new_tags: &[UpdateSetValue<TagKey, TagValue>],
         matched_series: &[SeriesKey],
+        dry_run: bool,
     ) -> Result<()>;
 
     // TODO this method is not completed,

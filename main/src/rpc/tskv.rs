@@ -149,14 +149,16 @@ impl TskvServiceImpl {
         tenant: &str,
         request: &RenameColumnRequest,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        let RenameColumnRequest {
+            db,
+            table,
+            old_name,
+            new_name,
+            dry_run,
+        } = request;
+
         self.kv_inst
-            .rename_tag(
-                tenant,
-                &request.db,
-                &request.table,
-                &request.old_name,
-                &request.new_name,
-            )
+            .rename_tag(tenant, db, table, old_name, new_name, *dry_run)
             .await?;
 
         self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
@@ -171,6 +173,7 @@ impl TskvServiceImpl {
             db,
             new_tags,
             matched_series,
+            dry_run,
         } = request;
 
         let new_tags = new_tags
@@ -190,7 +193,7 @@ impl TskvServiceImpl {
         }
 
         self.kv_inst
-            .update_tags_value(tenant, db, &new_tags, &old_series)
+            .update_tags_value(tenant, db, &new_tags, &old_series, *dry_run)
             .await?;
 
         self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
