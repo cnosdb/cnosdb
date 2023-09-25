@@ -523,6 +523,7 @@ impl TSIndex {
         &self,
         new_tags: &[UpdateSetValue<TagKey, TagValue>],
         matched_series: &[SeriesKey],
+        dry_run: bool,
     ) -> IndexResult<()> {
         // Find all matching series ids
         let mut ids = vec![];
@@ -575,6 +576,11 @@ impl TSIndex {
             new_keys.push(new_key);
         }
 
+        // If only do conflict checking, wal and cache will not be written.
+        if dry_run {
+            return Ok(());
+        }
+
         // write binlog
         let blocks = ids
             .into_iter()
@@ -596,6 +602,7 @@ impl TSIndex {
         table: &str,
         old_tag_name: &TagKey,
         new_tag_name: &TagKey,
+        dry_run: bool,
     ) -> IndexResult<()> {
         // Find all matching series ids
         let ids = self.get_series_ids_by_tag_key(table, old_tag_name).await?;
@@ -627,6 +634,11 @@ impl TSIndex {
 
                 new_keys.push(key);
             }
+        }
+
+        // If only do conflict checking, wal and cache will not be written.
+        if dry_run {
+            return Ok(());
         }
 
         // write binlog
@@ -1176,6 +1188,7 @@ mod test {
                 table_name,
                 &old_tag_name.as_bytes().to_vec(),
                 &new_tag_name.as_bytes().to_vec(),
+                false,
             )
             .await
             .unwrap();
@@ -1263,6 +1276,7 @@ mod test {
                     value: Some("a2".as_bytes().to_vec()),
                 }],
                 &[matched_series.clone()],
+                false,
             )
             .await
             .unwrap();

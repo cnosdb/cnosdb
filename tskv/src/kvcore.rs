@@ -1077,6 +1077,7 @@ impl Engine for TsKv {
         table: &str,
         tag_name: &str,
         new_tag_name: &str,
+        dry_run: bool,
     ) -> Result<()> {
         let tag_name = tag_name.as_bytes().to_vec();
         let new_tag_name = new_tag_name.as_bytes().to_vec();
@@ -1085,7 +1086,7 @@ impl Engine for TsKv {
 
         for ts_index in db.read().await.ts_indexes().values() {
             ts_index
-                .rename_tag(table, &tag_name, &new_tag_name)
+                .rename_tag(table, &tag_name, &new_tag_name, dry_run)
                 .await
                 .map_err(|err| {
                     error!(
@@ -1106,12 +1107,13 @@ impl Engine for TsKv {
         database: &str,
         new_tags: &[UpdateSetValue<TagKey, TagValue>],
         matched_series: &[SeriesKey],
+        dry_run: bool,
     ) -> Result<()> {
         let db = self.get_db(tenant, database).await?;
 
         for ts_index in db.read().await.ts_indexes().values() {
             ts_index
-                .update_tags_value(new_tags, matched_series)
+                .update_tags_value(new_tags, matched_series, dry_run)
                 .await
                 .map_err(|err| {
                     error!(

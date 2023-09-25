@@ -97,6 +97,7 @@ impl Engine for MockEngine {
         table: &str,
         tag_name: &str,
         new_tag_name: &str,
+        dry_run: bool,
     ) -> Result<()> {
         Ok(())
     }
@@ -107,6 +108,7 @@ impl Engine for MockEngine {
         database: &str,
         new_tags: &[UpdateSetValue<TagKey, TagValue>],
         matched_series: &[SeriesKey],
+        dry_run: bool,
     ) -> Result<()> {
         Ok(())
     }

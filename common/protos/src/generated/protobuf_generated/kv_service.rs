@@ -176,6 +176,8 @@ pub struct RenameColumnRequest {
     pub old_name: ::prost::alloc::string::String,
     #[prost(string, tag = "4")]
     pub new_name: ::prost::alloc::string::String,
+    #[prost(bool, tag = "5")]
+    pub dry_run: bool,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -194,6 +196,8 @@ pub struct UpdateTagsRequest {
     pub new_tags: ::prost::alloc::vec::Vec<UpdateSetValue>,
     #[prost(bytes = "vec", repeated, tag = "3")]
     pub matched_series: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    #[prost(bool, tag = "4")]
+    pub dry_run: bool,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
