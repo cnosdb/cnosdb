@@ -1,7 +1,7 @@
 #reporting_disabled = false
 host = "localhost"
-raft_logs_to_keep = 3
-using_raft_replication = true
+raft_logs_to_keep = 5000
+using_raft_replication = false
 
 [deployment]
 #mode = 'singleton'
@@ -70,7 +70,7 @@ vector_listen_port = 8926
 [node_basic]
 node_id = 3001 
 cold_data_server = false
-store_metrics = false
+store_metrics = true
 
 [heartbeat]
 report_time_interval_secs = 30

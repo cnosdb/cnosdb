@@ -2,20 +2,15 @@
 #![allow(unused)]
 #![feature(trait_upcasting)]
 
-use std::any::Any;
-use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible as StdInfallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use actix_web::web;
 use clap::Parser;
 use futures::future::TryFutureExt;
-use openraft::error::Infallible as OpenRaftInfallible;
-use openraft::raft::{AppendEntriesRequest, InstallSnapshotRequest, VoteRequest};
 use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
-use replication::apply_store::{ApplyStorage, ApplyStorageRef, HeedApplyStorage};
+use replication::apply_store::{ApplyStorageRef, HeedApplyStorage};
 use replication::entry_store::{EntryStorageRef, HeedEntryStorage};
 use replication::errors::{ReplicationError, ReplicationResult};
 use replication::multi_raft::MultiRaft;
@@ -24,10 +19,10 @@ use replication::network_http::{EitherBody, RaftHttpAdmin, SyncSendError};
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
-use replication::{RaftNodeId, RaftNodeInfo, Request, TypeConfig};
+use replication::{RaftNodeId, RaftNodeInfo};
 use tokio::sync::RwLock;
 use tower::Service;
-use trace::info;
+use trace::{debug, info};
 use warp::{hyper, Filter};
 
 #[derive(clap::Parser, Clone, Debug)]
@@ -42,10 +37,15 @@ pub struct Opt {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let options = Opt::parse();
+    tracing_subscriber::fmt()
+        .with_file(true)
+        .with_line_number(true)
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 
-    let subscriber = tracing_subscriber::FmtSubscriber::new();
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    debug!("this is a debug log");
+
+    let options = Opt::parse();
 
     info!("service start option: {:?}", options);
 
@@ -75,7 +75,7 @@ async fn start_raft_node(id: RaftNodeId, http_addr: String) -> ReplicationResult
     let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry)?;
     let storage = Arc::new(storage);
 
-    let hb: u64 = 1000;
+    let hb: u64 = 10000;
     let config = openraft::Config {
         enable_tick: true,
         enable_elect: true,
