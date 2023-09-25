@@ -9,30 +9,7 @@ use heed::{Database, Env};
 use openraft::Entry;
 
 use crate::errors::ReplicationResult;
-use crate::TypeConfig;
-
-#[async_trait]
-pub trait EntryStorage: Send + Sync {
-    // Get the entry by index
-    async fn entry(&self, index: u64) -> ReplicationResult<Option<Entry<TypeConfig>>>;
-
-    // Delete entries: from begin to index
-    async fn del_before(&self, index: u64) -> ReplicationResult<()>; // [0, index)
-
-    // Delete entries: from index to end
-    async fn del_after(&self, index: u64) -> ReplicationResult<()>; // [index, ...)
-
-    // Write entries
-    async fn append(&self, ents: &[Entry<TypeConfig>]) -> ReplicationResult<()>;
-
-    // Get the last entry
-    async fn last_entry(&self) -> ReplicationResult<Option<Entry<TypeConfig>>>;
-
-    // Get entries from begin to end
-    async fn entries(&self, begin: u64, end: u64) -> ReplicationResult<Vec<Entry<TypeConfig>>>; // [begin, end)
-}
-
-pub type EntryStorageRef = Arc<dyn EntryStorage>;
+use crate::{EntryStorage, TypeConfig};
 
 // --------------------------------------------------------------------------- //
 type BEU64 = U64<BigEndian>;

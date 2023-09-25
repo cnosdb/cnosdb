@@ -5,11 +5,10 @@ use openraft::storage::Adaptor;
 use openraft::RaftMetrics;
 use tracing::info;
 
-use crate::apply_store::ApplyStorageRef;
 use crate::errors::{ReplicationError, ReplicationResult};
 use crate::network_client::NetworkConn;
 use crate::node_store::NodeStorage;
-use crate::{OpenRaftNode, RaftNodeId, RaftNodeInfo};
+use crate::{ApplyStorageRef, OpenRaftNode, RaftNodeId, RaftNodeInfo};
 
 #[derive(Clone)]
 pub struct RaftNode {

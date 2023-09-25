@@ -4,7 +4,6 @@ use std::process::Command;
 use std::sync::Arc;
 use std::{env, thread, time};
 
-use meta::store::Store;
 // use std::time;
 use meta::{client, store::command};
 // use meta::store::command::*;
@@ -12,14 +11,6 @@ use meta::{client, store::command};
 use models::{meta_data::NodeAttribute, meta_data::NodeInfo, schema::Tenant};
 use openraft::Config;
 use sysinfo::{ProcessExt, System, SystemExt};
-
-pub async fn new_async() -> Arc<Store> {
-    let db_path = format!("{}/{}-{}.binlog", "./meta/journal", "test", "1");
-    let db = sled::open(db_path).unwrap();
-    let config = Config::default().validate().unwrap();
-    let _config = Arc::new(config);
-    Arc::new(Store::new(db))
-}
 
 #[cfg(feature = "meta_e2e_test")]
 #[cfg(test)]

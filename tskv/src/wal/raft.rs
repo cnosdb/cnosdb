@@ -3,9 +3,8 @@ use std::fmt::Write;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 
-use replication::entry_store::EntryStorage;
 use replication::errors::{ReplicationError, ReplicationResult};
-use replication::{RaftNodeId, RaftNodeInfo, TypeConfig};
+use replication::{EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
 use tokio::sync::Mutex;
 
 use crate::byte_utils::decode_be_u64;
@@ -305,11 +304,10 @@ mod test {
     use std::sync::{atomic, Arc};
 
     use models::schema::make_owner;
-    use replication::apply_store::{ApplyStorageRef, HeedApplyStorage};
-    use replication::entry_store::EntryStorageRef;
+    use replication::apply_store::HeedApplyStorage;
     use replication::node_store::NodeStorage;
     use replication::state_store::StateStorage;
-    use replication::RaftNodeInfo;
+    use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeInfo};
 
     use crate::wal::raft::RaftEntryStorage;
     use crate::wal::VnodeWal;

@@ -13,11 +13,11 @@ use serde::{Deserialize, Serialize};
 use trace::info;
 use tracing::debug;
 
-use crate::apply_store::{ApplyContext, ApplyStorageRef};
-use crate::entry_store::EntryStorageRef;
 use crate::errors::ReplicationResult;
 use crate::state_store::StateStorage;
-use crate::{RaftNodeId, RaftNodeInfo, Response, TypeConfig};
+use crate::{
+    ApplyContext, ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo, Response, TypeConfig,
+};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SerializableSnapshot {
@@ -444,10 +444,10 @@ mod test {
     use std::sync::Arc;
 
     use super::NodeStorage;
-    use crate::apply_store::{ApplyStorageRef, HeedApplyStorage};
-    use crate::entry_store::{EntryStorageRef, HeedEntryStorage};
+    use crate::apply_store::HeedApplyStorage;
+    use crate::entry_store::HeedEntryStorage;
     use crate::state_store::StateStorage;
-    use crate::RaftNodeInfo;
+    use crate::{ApplyStorageRef, EntryStorageRef, RaftNodeInfo};
 
     #[test]
     pub fn test_node_store() {

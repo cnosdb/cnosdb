@@ -4,7 +4,7 @@ use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder};
 use models::oid::Identifier;
 use models::schema::{Tenant, TenantOptionsBuilder};
-use replication::apply_store::{ApplyContext, ApplyStorage};
+use replication::{ApplyContext, ApplyStorage};
 
 use crate::store::command::WriteCommand;
 use crate::store::config::MetaInit;

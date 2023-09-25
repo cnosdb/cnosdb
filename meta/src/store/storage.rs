@@ -10,9 +10,8 @@ use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
-use replication::apply_store::{ApplyContext, ApplyStorage};
 use replication::errors::ReplicationResult;
-use replication::{Request, Response};
+use replication::{ApplyContext, ApplyStorage, Request, Response};
 use serde::{Deserialize, Serialize};
 use trace::{debug, error, info};
 
