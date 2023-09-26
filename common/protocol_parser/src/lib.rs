@@ -10,6 +10,8 @@ use utils::BkdrHasher;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+type NextTagRes<'a> = Result<Option<(Vec<(&'a str, &'a str)>, usize)>>;
+
 pub mod line_protocol;
 pub mod lines_convert;
 pub mod open_tsdb;
@@ -200,7 +202,7 @@ fn is_tagset_character(c: char) -> bool {
     c.is_alphanumeric() || c == '\\'
 }
 
-fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
+fn next_tag_set(buf: &str) -> NextTagRes {
     let mut escaped = false;
     let mut exists_tag_set = false;
     let mut tok_offsets = [0_usize; 3];
@@ -223,7 +225,7 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
             if !escaped && c == '=' {
                 tok_offsets[1] = i;
                 if buf.len() <= i + 1 {
-                    return None;
+                    return Ok(None);
                 }
                 tok_offsets[2] = i + 1;
             }
@@ -233,7 +235,7 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
                     &buf[tok_offsets[2]..i],
                 ));
                 if buf.len() <= i + 1 {
-                    return None;
+                    return Ok(None);
                 }
                 tok_offsets[0] = i + 1;
             }
@@ -263,13 +265,21 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
                 tok_end -= 1;
             }
         }
+        if tok_offsets[0] == tok_offsets[1] {
+            return Err(Error::Common {
+                content: format!(
+                    "tag missing name in next_tag_set, buf : {}",
+                    &buf.get(0..30).unwrap_or(buf)
+                ),
+            });
+        }
         tag_set.push((
             &buf[tok_offsets[0]..tok_offsets[1]],
             &buf[tok_offsets[2]..tok_end],
         ));
-        Some((tag_set, tok_end + 1))
+        Ok(Some((tag_set, tok_end + 1)))
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -341,6 +351,14 @@ fn next_field_set(buf: &str) -> Result<Option<(FieldSet, usize)>> {
     if exists_field_set {
         if tok_end == 0 {
             tok_end = buf.len()
+        }
+        if tok_offsets[0] == tok_offsets[1] {
+            return Err(Error::Common {
+                content: format!(
+                    "field missing name in next_field_set, buf : {}",
+                    &buf.get(0..30).unwrap_or(buf)
+                ),
+            });
         }
         field_set.push((
             &buf[tok_offsets[0]..tok_offsets[1]],

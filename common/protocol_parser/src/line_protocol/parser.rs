@@ -39,7 +39,7 @@ impl Parser {
         };
         check_pos_valid(buf, pos)?;
 
-        let tags = if let Some(t) = next_tag_set(&buf[pos..]) {
+        let tags = if let Some(t) = next_tag_set(&buf[pos..])? {
             pos += t.1;
             t.0
         } else {
@@ -123,7 +123,7 @@ mod test {
         pos += measurement.1;
 
         if pos < lines.len() {
-            let tagset = next_tag_set(&lines[pos..]).unwrap();
+            let tagset = next_tag_set(&lines[pos..]).unwrap().unwrap();
             assert_eq!(tagset, (vec![("ta", "2\\\\"), ("tb", "1")], 12));
             pos += tagset.1;
         }
@@ -158,7 +158,7 @@ mod test {
         }
 
         if pos < lines.len() {
-            let tagset = next_tag_set(&lines[pos..]).unwrap();
+            let tagset = next_tag_set(&lines[pos..]).unwrap().unwrap();
             assert_eq!(tagset, (vec![("tb", "2"), ("tc", "abc")], 12));
             pos += tagset.1;
         }
