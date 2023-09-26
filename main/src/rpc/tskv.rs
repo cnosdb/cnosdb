@@ -63,9 +63,11 @@ impl TskvServiceImpl {
         tenant: &str,
         request: &DropDbRequest,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let _ = self.kv_inst.drop_database(tenant, &request.db).await;
-
-        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        if let Err(e) = self.kv_inst.drop_database(tenant, &request.db).await {
+            self.status_response(FAILED_RESPONSE_CODE, e.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
     }
 
     async fn admin_drop_table(
@@ -73,12 +75,15 @@ impl TskvServiceImpl {
         tenant: &str,
         request: &DropTableRequest,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let _ = self
+        if let Err(e) = self
             .kv_inst
             .drop_table(tenant, &request.db, &request.table)
-            .await;
-
-        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, e.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
     }
 
     async fn admin_drop_column(
@@ -86,12 +91,15 @@ impl TskvServiceImpl {
         tenant: &str,
         request: &DropColumnRequest,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let _ = self
+        if let Err(e) = self
             .kv_inst
             .drop_table_column(tenant, &request.db, &request.table, &request.column)
-            .await;
-
-        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, e.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
     }
 
     async fn admin_add_column(
@@ -104,12 +112,15 @@ impl TskvServiceImpl {
             Err(err) => return self.status_response(SUCCESS_RESPONSE_CODE, err.to_string()),
         };
 
-        let _ = self
+        if let Err(e) = self
             .kv_inst
             .add_table_column(tenant, &request.db, &request.table, column)
-            .await;
-
-        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, e.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
     }
 
     async fn admin_alter_column(
@@ -122,12 +133,15 @@ impl TskvServiceImpl {
             Err(err) => return self.status_response(SUCCESS_RESPONSE_CODE, err.to_string()),
         };
 
-        let _ = self
+        if let Err(e) = self
             .kv_inst
             .change_table_column(tenant, &request.db, &request.table, &request.name, column)
-            .await;
-
-        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+            .await
+        {
+            self.status_response(FAILED_RESPONSE_CODE, e.to_string())
+        } else {
+            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        }
     }
 
     async fn admin_delete_vnode(
