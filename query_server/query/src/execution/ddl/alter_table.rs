@@ -138,13 +138,13 @@ impl DDLDefinitionTask for AlterTableTask {
         };
         schema.schema_id += 1;
         // TODO: @lutengda Start a task that guarantees eventual consistency
-        client
-            .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
-            .await?;
         if let Some(req) = req {
             query_state_machine.coord.broadcast_command(req).await?;
         }
 
+        client
+            .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
+            .await?;
         return Ok(Output::Nil(()));
     }
 }
