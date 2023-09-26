@@ -71,7 +71,7 @@ fn expand_row(mut row: Vec<String>) -> Vec<Vec<String>> {
             })
             .collect();
 
-        once(row).chain(new_lines.into_iter()).collect::<Vec<_>>()
+        once(row).chain(new_lines).collect::<Vec<_>>()
     } else {
         vec![row]
     }
