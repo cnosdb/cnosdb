@@ -92,12 +92,11 @@ impl DDLDefinitionTask for AlterTableTask {
             }
         };
         schema.schema_id += 1;
+        query_state_machine.coord.broadcast_command(req).await?;
 
         client
             .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
             .await?;
-        query_state_machine.coord.broadcast_command(req).await?;
-
         return Ok(Output::Nil(()));
     }
 }
