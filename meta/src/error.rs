@@ -163,7 +163,16 @@ pub enum MetaError {
     #[snafu(display("Operation not support: {}", msg))]
     #[error_code(code = 34)]
     NotSupport { msg: String },
+
+    #[snafu(display(
+        "Valid node is not enough, need: {}, but found: {}",
+        need,
+        valid_node_num
+    ))]
+    #[error_code(code = 53)]
+    ValidNodeNotEnough { need: u64, valid_node_num: u32 },
 }
+
 impl MetaError {
     pub fn error_code(&self) -> &dyn ErrorCode {
         self
