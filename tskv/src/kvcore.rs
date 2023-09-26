@@ -569,11 +569,6 @@ impl TsKv {
                 // TODO: Limit parallel delete to 1.
                 if let Some(ts_index) = db_rlock.get_ts_index(*ts_family_id) {
                     let series_ids = ts_index.get_series_id_list(table, &[]).await?;
-                    ts_family
-                        .write()
-                        .await
-                        .delete_series(&series_ids, time_range);
-
                     let field_ids: Vec<u64> = series_ids
                         .iter()
                         .flat_map(|sid| to_drop_column_ids.iter().map(|fid| unite_id(*fid, *sid)))
@@ -581,6 +576,8 @@ impl TsKv {
                     info!(
                         "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}", field_ids.len()
                     );
+
+                    ts_family.write().await.drop_columns(&field_ids);
 
                     let version = ts_family.read().await.super_version();
                     for column_file in version.version.column_files(&field_ids, time_range) {
