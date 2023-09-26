@@ -922,6 +922,7 @@ mod test {
             println!("Running test: test_summary_recover");
             let base_dir = "/tmp/test/summary/test_summary_recover".to_string();
             let _ = fs::remove_dir_all(&base_dir);
+            fs::create_dir_all(&base_dir).unwrap();
             config.storage.path = base_dir.clone();
             test_summary_recover(
                 config.clone(),
@@ -935,6 +936,7 @@ mod test {
             println!("Running test: test_tsf_num_recover");
             let base_dir = "/tmp/test/summary/test_tsf_num_recover".to_string();
             let _ = fs::remove_dir_all(&base_dir);
+            fs::create_dir_all(&base_dir).unwrap();
             config.storage.path = base_dir.clone();
             test_tsf_num_recover(
                 config.clone(),
@@ -948,6 +950,7 @@ mod test {
             println!("Running test: test_recover_summary_with_roll_0");
             let base_dir = "/tmp/test/summary/test_recover_summary_with_roll_0".to_string();
             let _ = fs::remove_dir_all(&base_dir);
+            fs::create_dir_all(&base_dir).unwrap();
             config.storage.path = base_dir.clone();
             test_recover_summary_with_roll_0(
                 config.clone(),
