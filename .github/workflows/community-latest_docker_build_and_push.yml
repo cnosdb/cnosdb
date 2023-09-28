@@ -32,7 +32,9 @@ jobs:
         with:
           #platforms: linux/amd64,linux/arm64
           push: true
-          tags: cnosdb/cnosdb:community-latest
+          tags: |
+            cnosdb/cnosdb:community-latest
+            cnosdb/cnosdb:${{ steps.date.outputs.today }}
           build-args: |
             git_hash=${{ github.sha }}
       -
