@@ -1091,6 +1091,7 @@ impl Coordinator for CoordService {
                 db: db.clone(),
                 new_tags: new_tags.clone(),
                 matched_series,
+                dry_run: false,
             };
             let req = AdminCommandRequest {
                 tenant: tenant.clone(),
