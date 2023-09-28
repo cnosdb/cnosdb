@@ -1,4 +1,4 @@
-name: community-2.3 docker build and push
+name: community-tag docker build and push
 
 on:
   workflow_dispatch:
