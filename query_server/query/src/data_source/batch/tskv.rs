@@ -14,6 +14,7 @@ use datafusion::logical_expr::{
     aggregate_function, Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
 };
 use datafusion::optimizer::utils::split_conjunction;
+use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use datafusion::prelude::Column;
@@ -26,12 +27,13 @@ use trace::debug;
 use crate::data_source::sink::tskv::TskvRecordBatchSinkProvider;
 use crate::data_source::split::tskv::TableLayoutHandle;
 use crate::data_source::split::SplitManagerRef;
-use crate::data_source::WriteExecExt;
+use crate::data_source::{UpdateExecExt, WriteExecExt};
 use crate::extension::expr::expr_utils;
 use crate::extension::physical::plan_node::aggregate_filter_scan::AggregateFilterTskvExec;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
 use crate::extension::physical::plan_node::tag_scan::TagScanExec;
 use crate::extension::physical::plan_node::tskv_exec::TskvExec;
+use crate::extension::physical::plan_node::update_tag::UpdateTagExec;
 
 #[derive(Clone)]
 pub struct ClusterTable {
@@ -383,6 +385,22 @@ impl WriteExecExt for ClusterTable {
             input,
             self.schema.name.clone(),
             record_batch_sink_privider,
+        )))
+    }
+}
+
+#[async_trait]
+impl UpdateExecExt for ClusterTable {
+    async fn update(
+        &self,
+        assigns: Vec<(String, Arc<dyn PhysicalExpr>)>,
+        scan: Arc<dyn ExecutionPlan>,
+    ) -> Result<Arc<UpdateTagExec>> {
+        Ok(Arc::new(UpdateTagExec::new(
+            scan,
+            self.schema.clone(),
+            assigns,
+            self.coord.clone(),
         )))
     }
 }
