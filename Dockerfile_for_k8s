@@ -1,4 +1,4 @@
-From cnosdb/cnosdb:community-latest
+From cnosdb/cnosdb:community-[tag]
 
 COPY endpoint.sh /usr/bin
 
