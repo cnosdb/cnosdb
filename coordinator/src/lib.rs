@@ -15,7 +15,7 @@ use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::{Precision, TskvTableSchemaRef};
 use protocol_parser::Line;
-use protos::kv_service::AdminCommandRequest;
+use protos::kv_service::{AdminCommandRequest, UpdateSetValue};
 use trace::SpanContext;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
@@ -137,6 +137,13 @@ pub trait Coordinator: Send + Sync {
     ) -> CoordinatorResult<Vec<RecordBatch>>;
 
     fn metrics(&self) -> &Arc<CoordServiceMetrics>;
+
+    async fn update_tags_value(
+        &self,
+        table_schema: TskvTableSchemaRef,
+        new_tags: Vec<UpdateSetValue>,
+        record_batch: RecordBatch,
+    ) -> CoordinatorResult<()>;
 }
 
 async fn get_vnode_all_info(

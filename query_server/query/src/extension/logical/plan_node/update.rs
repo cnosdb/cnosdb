@@ -94,7 +94,7 @@ impl UserDefinedLogicalNodeCore for UpdateNode {
     }
 
     fn from_template(&self, _exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
-        assert_eq!(inputs.len(), 1, "input size inconsistent");
+        assert_eq!(inputs.len(), 0, "input size inconsistent");
 
         Self {
             table_name: self.table_name.clone(),

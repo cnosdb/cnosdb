@@ -13,7 +13,7 @@ use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::{Precision, TskvTableSchemaRef};
 use protocol_parser::Line;
-use protos::kv_service::AdminCommandRequest;
+use protos::kv_service::{AdminCommandRequest, UpdateSetValue};
 use trace::SpanContext;
 use tskv::engine_mock::MockEngine;
 use tskv::reader::QueryOption;
@@ -182,6 +182,15 @@ impl Coordinator for MockCoordinator {
     }
 
     fn metrics(&self) -> &Arc<CoordServiceMetrics> {
+        todo!()
+    }
+
+    async fn update_tags_value(
+        &self,
+        table_schema: TskvTableSchemaRef,
+        new_tags: Vec<UpdateSetValue>,
+        record_batch: RecordBatch,
+    ) -> CoordinatorResult<()> {
         todo!()
     }
 }

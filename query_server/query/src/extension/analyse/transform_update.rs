@@ -1,14 +1,20 @@
+use std::sync::Arc;
+
 use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder};
 use datafusion::optimizer::analyzer::AnalyzerRule;
-use datafusion::prelude::col;
+use datafusion::prelude::{col, Expr};
+use models::schema::TskvTableSchema;
+use spi::query::logical_planner::{affected_row_expr, merge_affected_row_expr};
 use spi::QueryError;
 
 use crate::data_source::table_source::{TableHandle, TableSourceAdapter};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
+use crate::extension::logical::plan_node::table_writer_merge::TableWriterMergePlanNode;
 use crate::extension::logical::plan_node::update::UpdateNode;
+use crate::extension::logical::plan_node::update_tag::UpdateTagPlanNode;
 use crate::extension::utils::{downcast_plan_node, downcast_table_source};
 
 #[derive(Default)]
@@ -71,7 +77,7 @@ fn analyze_internal(plan: LogicalPlan) -> DFResult<LogicalPlan> {
 
                     let is_update_tag = columns.iter().all(|c| c.column_type.is_tag());
                     if is_update_tag {
-                        return update_tag();
+                        return update_tag(update_node, schema);
                     }
 
                     let is_update_field = columns.iter().all(|c| c.column_type.is_field());
@@ -105,12 +111,47 @@ fn update_time() -> DFResult<LogicalPlan> {
 }
 
 /// 生成update tag的逻辑计划
-fn update_tag() -> DFResult<LogicalPlan> {
-    Err(DataFusionError::External(Box::new(
-        QueryError::NotImplemented {
-            err: "update_tag".to_string(),
-        },
-    )))
+fn update_tag(update_node: &UpdateNode, schema: Arc<TskvTableSchema>) -> DFResult<LogicalPlan> {
+    let UpdateNode {
+        table_name,
+        table_source,
+        assigns,
+        filter,
+        ..
+    } = update_node;
+
+    let mut projection = vec![];
+    for field in schema.columns() {
+        if field.column_type.is_tag() || field.column_type.is_time() {
+            projection.push(col(field.name.clone()));
+        }
+    }
+
+    let scan = LogicalPlanBuilder::scan(table_name.clone(), table_source.clone(), None)?
+        .filter(filter.clone())?
+        .project(projection)?
+        .build()?;
+
+    let input_exprs = scan
+        .schema()
+        .fields()
+        .iter()
+        .map(|f| Expr::Column(f.qualified_column()))
+        .collect::<Vec<Expr>>();
+    let affected_row_expr = affected_row_expr(input_exprs);
+
+    let plan = UpdateTagPlanNode::try_new(
+        table_name.to_string(),
+        table_source.clone(),
+        Arc::new(scan),
+        assigns.clone(),
+        vec![affected_row_expr],
+    )?;
+
+    let plan =
+        TableWriterMergePlanNode::try_new(Arc::new(plan.into()), vec![merge_affected_row_expr()])?;
+
+    Ok(plan.into())
 }
 
 /// 生成update field的逻辑计划
