@@ -364,10 +364,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         } = stmt;
         // get the current tenant id from the session
         let tenant_id = *session.tenant_id();
-        let mut after_duration = None;
-        if let Some(after) = after {
-            after_duration = Some(self.str_to_duration(&after)?);
-        }
+        let after_duration = after.map(|e| self.str_to_duration(&e)).transpose()?;
 
         let (plan, privilege) = match obj_type {
             DatabaseObjectType::Table => {
@@ -411,10 +408,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         // get the current tenant id from the session
         let tenant_name = session.tenant();
         let tenant_id = *session.tenant_id();
-        let mut after_duration = None;
-        if let Some(after) = after {
-            after_duration = Some(self.str_to_duration(&after)?);
-        }
+        let after_duration = after.map(|e| self.str_to_duration(&e)).transpose()?;
 
         let (plan, privilege) = match obj_type {
             TenantObjectType::Database => {
@@ -472,10 +466,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ref obj_type,
             after,
         } = stmt;
-        let mut after_duration = None;
-        if let Some(after) = after {
-            after_duration = Some(self.str_to_duration(&after)?);
-        }
+        let after_duration = after.map(|e| self.str_to_duration(&e)).transpose()?;
 
         let (plan, privilege) = match obj_type {
             GlobalObjectType::Tenant => {

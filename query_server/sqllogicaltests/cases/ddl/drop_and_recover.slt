@@ -1,0 +1,128 @@
+# drop
+statement ok
+drop table if exists air_delay;
+
+# create
+statement ok
+create table air_delay(visibility double,temperature double,pressure double,tags(station));
+
+# check is hidden
+query T
+show tables;
+----
+air_delay
+
+# drop delay
+statement ok
+drop table air_delay after '3m';
+
+# check resource status
+query T
+select name,type,operator,status from information_schema.resource_status where name = 'cnosdb/public/air_delay';
+----
+cnosdb/public/air_delay Table Drop Schedule
+
+# check is hidden
+query T
+show tables;
+----
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: air_delay", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+select * from air_delay;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: air_delay", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+INSERT INTO air_delay (TIME, station, visibility, temperature, pressure) VALUES (1666165200290401000, 'XiaoMaiDao', 56, 69, 77);
+
+# modify
+#ALTER TABLE air_delay ADD TAG height;
+#ALTER TABLE air_delay ADD FIELD humidity DOUBLE CODEC(DEFAULT);
+#ALTER TABLE air_delay ALTER humidity SET CODEC(QUANTILE);
+#ALTER TABLE air_delay DROP humidity;
+
+statement ok
+recover table air_delay;
+
+# check
+query T
+select name,type,operator,status from information_schema.resource_status where name = 'cnosdb/public/air_delay';
+----
+cnosdb/public/air_delay Table Drop Cancel 
+
+query T
+show tables;
+----
+air_delay
+
+query T
+select * from air_delay;
+----
+
+# write
+statement ok
+INSERT INTO air_delay (TIME, station, visibility, temperature, pressure) VALUES
+                (1666165200290401000, 'XiaoMaiDao', 56, 69, 77);
+
+# modify
+#ALTER TABLE air_delay ADD TAG height;
+#ALTER TABLE air_delay ADD FIELD humidity DOUBLE CODEC(DEFAULT);
+#ALTER TABLE air_delay ALTER humidity SET CODEC(QUANTILE);
+#ALTER TABLE air_delay DROP humidity;
+
+# drop again
+
+statement ok
+drop table air_delay after '3m';
+
+statement ok
+drop table air_delay after '1m';
+
+sleep 2m
+
+# check
+query T
+select name,type,operator,status from information_schema.resource_status where name = 'cnosdb/public/air_delay';
+----
+cnosdb/public/air_delay Table Drop Successed
+
+query T
+show tables;
+----
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: air_delay", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+select * from air_delay;
+
+# write
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: air_delay", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+INSERT INTO air_delay (TIME, station, visibility, temperature, pressure) VALUES
+                (1666165200290401000, 'XiaoMaiDao', 56, 69, 77);
+
+# modify
+#ALTER TABLE air_delay ADD TAG height;
+#ALTER TABLE air_delay ADD FIELD humidity DOUBLE CODEC(DEFAULT);
+#ALTER TABLE air_delay ALTER humidity SET CODEC(QUANTILE);
+#ALTER TABLE air_delay DROP humidity;
+
+# create
+statement ok
+CREATE TABLE air_delay (
+    visibility DOUBLE,
+    temperature DOUBLE,
+    pressure DOUBLE,
+    TAGS(station)
+);
+
+statement ok
+drop table air_delay after '3m';
+
+statement ok
+drop table air_delay;
+
+statement ok
+drop table if exists air_delay after '3m';
+
+statement ok
+recover table if exists air_delay;
+
+# drop
+statement ok
+drop table if exists air_delay;

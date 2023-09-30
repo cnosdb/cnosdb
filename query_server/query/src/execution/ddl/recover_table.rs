@@ -37,40 +37,40 @@ impl DDLDefinitionTask for RecoverTableTask {
             },
         )?;
 
-        match client.get_table_schema(table.database(), table.table()) {
-            Ok(_) => {
-                let mut resourceinfo = ResourceInfo::new(
-                    *client.tenant().id(),
-                    vec![
-                        table.tenant().to_string(),
-                        table.database().to_string(),
-                        table.table().to_string(),
-                    ],
-                    ResourceType::Table,
-                    ResourceOperator::Drop,
-                    &None,
-                )
-                .unwrap();
-                resourceinfo.status = ResourceStatus::Cancel;
-                resourceinfo.comment.clear();
+        // first, cancel drop task
+        let mut resourceinfo = ResourceInfo::new(
+            *client.tenant().id(),
+            vec![
+                table.tenant().to_string(),
+                table.database().to_string(),
+                table.table().to_string(),
+            ],
+            ResourceType::Table,
+            ResourceOperator::Drop,
+            &None,
+        );
+        resourceinfo.set_status(ResourceStatus::Cancel);
+        resourceinfo.set_comment("");
 
-                query_state_machine
-                    .meta
-                    .write_resourceinfo(resourceinfo.names(), resourceinfo.clone())
-                    .await?;
-                Ok(Output::Nil(()))
-            }
-            Err(_) => {
-                if !if_exist {
-                    return Err(QueryError::Meta {
-                        source: MetaError::TableNotFound {
-                            table: table.table().to_string(),
-                        },
-                    });
-                } else {
-                    Ok(Output::Nil(()))
-                }
-            }
+        query_state_machine
+            .meta
+            .write_resourceinfo(resourceinfo.get_names(), resourceinfo.clone())
+            .await?;
+
+        // second, set hidden to FALSE
+        if (client
+            .set_table_is_hidden(tenant, table.database(), table.table(), false)
+            .await)
+            .is_err()
+            && !if_exist
+        {
+            return Err(QueryError::Meta {
+                source: MetaError::TableNotFound {
+                    table: table.table().to_string(),
+                },
+            });
         }
+
+        Ok(Output::Nil(()))
     }
 }

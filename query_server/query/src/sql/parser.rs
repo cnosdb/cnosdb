@@ -1711,6 +1711,42 @@ mod tests {
             _ => panic!("failed"),
         }
 
+        let sql = "drop table test_tb after '1d'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropDatabaseObject(DropDatabaseObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tb".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+                assert_eq!(obj_type, &DatabaseObjectType::Table);
+                assert_eq!(*after, Some("1d".to_string()));
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop table if exists test_tb after '1d'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropDatabaseObject(DropDatabaseObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tb".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+                assert_eq!(obj_type, &DatabaseObjectType::Table);
+                assert_eq!(*after, Some("1d".to_string()));
+            }
+            _ => panic!("failed"),
+        }
+
         let sql = "drop database if exists test_db";
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
@@ -1741,6 +1777,199 @@ mod tests {
                 assert_eq!(object_name.to_string(), "test_db".to_string());
                 assert_eq!(if_exist.to_string(), "false".to_string());
                 assert_eq!(obj_type, &TenantObjectType::Database);
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop database test_db after '1h'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropTenantObject(DropTenantObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_db".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+                assert_eq!(obj_type, &TenantObjectType::Database);
+                assert_eq!(*after, Some("1h".to_string()));
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop database if exists test_db after '1h'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropTenantObject(DropTenantObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_db".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+                assert_eq!(obj_type, &TenantObjectType::Database);
+                assert_eq!(*after, Some("1h".to_string()));
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop tenant if exists test_tt";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropGlobalObject(DropGlobalObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after: None,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+                assert_eq!(obj_type, &GlobalObjectType::Tenant);
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop tenant test_tt";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropGlobalObject(DropGlobalObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after: None,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+                assert_eq!(obj_type, &GlobalObjectType::Tenant);
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop tenant test_tt after '1h'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropGlobalObject(DropGlobalObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+                assert_eq!(obj_type, &GlobalObjectType::Tenant);
+                assert_eq!(*after, Some("1h".to_string()));
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop tenant if exists test_tt after '1h'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropGlobalObject(DropGlobalObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+                assert_eq!(obj_type, &GlobalObjectType::Tenant);
+                assert_eq!(*after, Some("1h".to_string()));
+            }
+            _ => panic!("failed"),
+        }
+    }
+
+    #[test]
+    fn test_recover() {
+        let sql = "recover table test_tb";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::RecoverTable(RecoverTable {
+                object_name,
+                if_exist,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tb".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "recover table if exists test_tb";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::RecoverTable(RecoverTable {
+                object_name,
+                if_exist,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tb".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "recover database test_db";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::RecoverDatabase(RecoverDatabase {
+                object_name,
+                if_exist,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_db".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "recover database if exists test_db";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::RecoverDatabase(RecoverDatabase {
+                object_name,
+                if_exist,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_db".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "recover tenant test_tt";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::RecoverTenant(RecoverTenant {
+                object_name,
+                if_exist,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "recover tenant if exists test_tt";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::RecoverTenant(RecoverTenant {
+                object_name,
+                if_exist,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
             }
             _ => panic!("failed"),
         }

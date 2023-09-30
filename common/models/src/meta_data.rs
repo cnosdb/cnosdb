@@ -220,7 +220,14 @@ impl TenantMetaData {
     pub fn table_schema(&self, db: &str, tab: &str) -> Option<TableSchema> {
         if let Some(info) = self.dbs.get(db) {
             if let Some(schema) = info.tables.get(tab) {
-                return Some(schema.clone());
+                let table_is_hidden = match schema {
+                    TableSchema::TsKvTableSchema(val) => val.get_table_is_hidden(),
+                    TableSchema::ExternalTableSchema(val) => val.get_table_is_hidden(),
+                    TableSchema::StreamTableSchema(val) => val.get_table_is_hidden(),
+                };
+                if !table_is_hidden {
+                    return Some(schema.clone());
+                }
             }
         }
 

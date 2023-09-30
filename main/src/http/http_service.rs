@@ -309,6 +309,26 @@ impl HttpService {
                         span_recorder.record(query)
                     };
 
+                    // when drop tenant delay, tenant is hidden
+                    let _ = meta
+                        .tenant(query.context().tenant())
+                        .await
+                        .map_err(meta_err_to_reject)?;
+
+                    // when drop database delay, database is hidden
+                    if let Some(tenant_meta) = meta.tenant_meta(query.context().tenant()).await {
+                        tenant_meta
+                            .get_db_info(query.context().database())
+                            .unwrap()
+                            .ok_or(meta_err_to_reject(MetaError::DatabaseNotFound {
+                                database: query.context().database().to_string(),
+                            }))?;
+                    } else {
+                        meta_err_to_reject(MetaError::TenantNotFound {
+                            tenant: query.context().tenant().to_string(),
+                        });
+                    }
+
                     let result_fmt = get_result_format_from_header(&header)?;
                     http_limiter_check_query(&meta, query.context().tenant(), req_len)
                         .await

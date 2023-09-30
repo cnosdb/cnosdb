@@ -22,42 +22,78 @@ impl ResourceManager {
         dest_status: ResourceStatus,
         comment: &str,
     ) -> CoordinatorResult<bool> {
-        resourceinfo.status = dest_status;
-        resourceinfo.comment = comment.to_string();
+        resourceinfo.set_status(dest_status);
+        resourceinfo.set_comment(comment);
         admin_meta
-            .write_resourceinfo(resourceinfo.names(), resourceinfo.clone())
+            .write_resourceinfo(resourceinfo.get_names(), resourceinfo.clone())
             .await
             .map_err(|err| CoordinatorError::Meta { source: err })?;
         Ok(true)
     }
 
     pub async fn check_and_run(coord: Arc<dyn Coordinator>) {
-        let now = now_timestamp_nanos();
-        match coord.meta_manager().read_resourceinfos(&[]).await {
-            Ok(resourceinfos) => {
-                for mut resourceinfo in resourceinfos {
-                    if (resourceinfo.status == ResourceStatus::Schedule && resourceinfo.time <= now)
-                        || resourceinfo.status == ResourceStatus::Failed
+        match coord.meta_manager().read_resourceinfos_mark().await {
+            Ok((node_id, is_lock)) => {
+                if !is_lock {
+                    // no other node execute
+                    if let Err(meta_err) = coord
+                        .meta_manager()
+                        .write_resourceinfos_mark(coord.node_id(), true)
+                        .await
+                    // lock resourceinfos, only this node can execute
                     {
-                        resourceinfo.status = ResourceStatus::Executing;
+                        error!("write resourceinfos_mark failed: {}", meta_err.to_string());
+                    } else {
+                        let now = now_timestamp_nanos();
+                        match coord.meta_manager().read_resourceinfos(&[]).await {
+                            Ok(resourceinfos) => {
+                                for mut resourceinfo in resourceinfos {
+                                    if (*resourceinfo.get_status() == ResourceStatus::Schedule
+                                        && resourceinfo.get_time() <= now)
+                                        || *resourceinfo.get_status() == ResourceStatus::Failed
+                                    {
+                                        resourceinfo.set_status(ResourceStatus::Executing);
+                                        if let Err(meta_err) = coord
+                                            .meta_manager()
+                                            .write_resourceinfo(
+                                                resourceinfo.get_names(),
+                                                resourceinfo.clone(),
+                                            )
+                                            .await
+                                        {
+                                            error!("{}", meta_err.to_string());
+                                            continue;
+                                        }
+                                        if let Err(coord_err) = ResourceManager::do_operator(
+                                            coord.clone(),
+                                            resourceinfo,
+                                        )
+                                        .await
+                                        {
+                                            error!("{}", coord_err.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                            Err(meta_err) => {
+                                error!("{}", meta_err.to_string());
+                            }
+                        }
                         if let Err(meta_err) = coord
                             .meta_manager()
-                            .write_resourceinfo(resourceinfo.names(), resourceinfo.clone())
+                            .write_resourceinfos_mark(coord.node_id(), false)
                             .await
+                        // unlock resourceinfos
                         {
-                            error!("{}", meta_err.to_string());
-                            continue;
-                        }
-                        if let Err(coord_err) =
-                            ResourceManager::do_operator(coord.clone(), resourceinfo).await
-                        {
-                            error!("{}", coord_err.to_string());
+                            error!("write resourceinfos_mark failed: {}", meta_err.to_string());
                         }
                     }
+                } else {
+                    info!("resource is executing by {}", node_id);
                 }
             }
             Err(meta_err) => {
-                error!("{}", meta_err.to_string());
+                error!("read resourceinfos_mark failed: {}", meta_err.to_string());
             }
         }
     }
@@ -66,20 +102,20 @@ impl ResourceManager {
         coord: Arc<dyn Coordinator>,
         resourceinfo: ResourceInfo,
     ) -> CoordinatorResult<bool> {
-        let operator_result = match resourceinfo.res_type {
-            ResourceType::Tenant => match resourceinfo.operator {
+        let operator_result = match resourceinfo.get_type() {
+            ResourceType::Tenant => match resourceinfo.get_operator() {
                 ResourceOperator::Drop => {
                     ResourceManager::drop_tenant(coord.clone(), &resourceinfo).await
                 }
                 _ => Ok(false),
             },
-            ResourceType::Database => match resourceinfo.operator {
+            ResourceType::Database => match resourceinfo.get_operator() {
                 ResourceOperator::Drop => {
                     ResourceManager::drop_database(coord.clone(), &resourceinfo).await
                 }
                 _ => Ok(false),
             },
-            ResourceType::Table => match resourceinfo.operator {
+            ResourceType::Table => match resourceinfo.get_operator() {
                 ResourceOperator::Drop => {
                     ResourceManager::drop_table(coord.clone(), &resourceinfo).await
                 }
@@ -107,7 +143,7 @@ impl ResourceManager {
         if let Err(coord_err) = operator_result {
             ResourceManager::change_and_write(
                 coord.meta_manager(),
-                resourceinfo,
+                resourceinfo.clone(),
                 ResourceStatus::Failed,
                 &coord_err.to_string(),
             )
@@ -115,7 +151,7 @@ impl ResourceManager {
         } else {
             ResourceManager::change_and_write(
                 coord.meta_manager(),
-                resourceinfo,
+                resourceinfo.clone(),
                 ResourceStatus::Successed,
                 "",
             )
@@ -127,8 +163,9 @@ impl ResourceManager {
         coord: Arc<dyn Coordinator>,
         resourceinfo: &ResourceInfo,
     ) -> CoordinatorResult<bool> {
-        if resourceinfo.names().len() == 1 {
-            let tenant_name = resourceinfo.names().get(0).unwrap();
+        let names = resourceinfo.get_names();
+        if names.len() == 1 {
+            let tenant_name = names.get(0).unwrap();
             let tenant =
                 coord
                     .tenant_meta(tenant_name)
@@ -170,7 +207,7 @@ impl ResourceManager {
             Ok(true)
         } else {
             Err(CoordinatorError::ResNamesIllegality {
-                names: resourceinfo.names().join("/"),
+                names: resourceinfo.get_names().join("/"),
             })
         }
     }
@@ -179,9 +216,10 @@ impl ResourceManager {
         coord: Arc<dyn Coordinator>,
         resourceinfo: &ResourceInfo,
     ) -> CoordinatorResult<bool> {
-        if resourceinfo.names().len() == 2 {
-            let tenant_name = resourceinfo.names().get(0).unwrap();
-            let db_name = resourceinfo.names().get(1).unwrap();
+        let names = resourceinfo.get_names();
+        if names.len() == 2 {
+            let tenant_name = names.get(0).unwrap();
+            let db_name = names.get(1).unwrap();
 
             let req = AdminCommandRequest {
                 tenant: tenant_name.clone(),
@@ -207,7 +245,7 @@ impl ResourceManager {
             Ok(true)
         } else {
             Err(CoordinatorError::ResNamesIllegality {
-                names: resourceinfo.names().join("/"),
+                names: resourceinfo.get_names().join("/"),
             })
         }
     }
@@ -216,10 +254,11 @@ impl ResourceManager {
         coord: Arc<dyn Coordinator>,
         resourceinfo: &ResourceInfo,
     ) -> CoordinatorResult<bool> {
-        if resourceinfo.names().len() == 3 {
-            let tenant_name = resourceinfo.names().get(0).unwrap();
-            let db_name = resourceinfo.names().get(1).unwrap();
-            let table_name = resourceinfo.names().get(2).unwrap();
+        let names = resourceinfo.get_names();
+        if names.len() == 3 {
+            let tenant_name = names.get(0).unwrap();
+            let db_name = names.get(1).unwrap();
+            let table_name = names.get(2).unwrap();
 
             info!("Drop table {}/{}/{}", tenant_name, db_name, table_name);
             let req = AdminCommandRequest {
@@ -230,7 +269,6 @@ impl ResourceManager {
                 })),
             };
             coord.broadcast_command(req).await?;
-
             let tenant =
                 coord
                     .tenant_meta(tenant_name)
@@ -246,7 +284,7 @@ impl ResourceManager {
             Ok(true)
         } else {
             Err(CoordinatorError::ResNamesIllegality {
-                names: resourceinfo.names().join("/"),
+                names: resourceinfo.get_names().join("/"),
             })
         }
     }
@@ -266,21 +304,20 @@ impl ResourceManager {
         let resourceinfos = coord.meta_manager().read_resourceinfos(&[]).await?;
         let mut resourceinfos_map: HashMap<String, ResourceInfo> = HashMap::default();
         for resourceinfo in resourceinfos {
-            resourceinfos_map.insert(resourceinfo.names().join("/"), resourceinfo);
+            resourceinfos_map.insert(resourceinfo.get_names().join("/"), resourceinfo);
         }
 
-        let name = resourceinfo.names().join("/");
+        let name = resourceinfo.get_names().join("/");
         if !resourceinfos_map.contains_key(&name)
-            || resourceinfos_map[&name].status == ResourceStatus::Successed
-            || resourceinfos_map[&name].status == ResourceStatus::Cancel
+            || *resourceinfos_map[&name].get_status() != ResourceStatus::Executing
         {
-            // write to cache and meta
+            // write to meta
             coord
                 .meta_manager()
-                .write_resourceinfo(resourceinfo.names(), resourceinfo.clone())
+                .write_resourceinfo(resourceinfo.get_names(), resourceinfo.clone())
                 .await?;
 
-            if resourceinfo.status == ResourceStatus::Executing {
+            if *resourceinfo.get_status() == ResourceStatus::Executing {
                 // execute right now
                 ResourceManager::do_operator(coord, resourceinfo).await?;
             }

@@ -53,6 +53,9 @@ pub enum WriteCommand {
     // cluster, tenant, db schema
     AlterDB(String, String, DatabaseSchema),
 
+    // cluster, tenant, db, db_is_hidden
+    SetDBIsHidden(String, String, String, bool),
+
     // cluster, tenant, db name
     DropDB(String, String, String),
 
@@ -65,6 +68,8 @@ pub enum WriteCommand {
     // cluster, tenant, table schema
     CreateTable(String, String, TableSchema),
     UpdateTable(String, String, TableSchema),
+    // cluster, tenant, db name, table name, table_is_hidden
+    SetTableIsHidden(String, String, String, String, bool),
     // cluster, tenant, db name, table name
     DropTable(String, String, String, String),
 
@@ -81,6 +86,8 @@ pub enum WriteCommand {
     CreateTenant(String, Tenant),
     // cluster, tenant_name, tenant_options
     AlterTenant(String, String, TenantOptions),
+    // cluster, tenant_name, tenant_is_hidden
+    SetTenantIsHidden(String, String, bool),
     // cluster, old_name, new_name
     RenameTenant(String, String, String),
     // cluster, tenant_name
@@ -120,6 +127,8 @@ pub enum WriteCommand {
     },
     // cluster, [tenant, db, table,...], ResourceInfo
     ResourceInfo(String, Vec<String>, ResourceInfo),
+    // cluster, node_id, is_lock
+    ResourceInfosMark(String, NodeId, bool),
 }
 
 /******************* read command *************************/
@@ -150,6 +159,8 @@ pub enum ReadCommand {
     TableSchema(String, String, String, String),
     // cluster, [tenant, db, table,...]
     ResourceInfos(String, Vec<String>),
+    // cluster
+    ResourceInfosMark(String),
 }
 
 pub const ENTRY_LOG_TYPE_SET: i32 = 1;

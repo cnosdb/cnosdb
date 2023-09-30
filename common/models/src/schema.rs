@@ -115,14 +115,14 @@ impl fmt::Display for ResourceStatus {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ResourceInfo {
-    pub time: i64,
+    time: i64,
     tenant_id: Oid,
     names: Vec<String>,
-    pub res_type: ResourceType,
-    pub operator: ResourceOperator,
-    pub after: Option<Duration>, // None means now
-    pub status: ResourceStatus,
-    pub comment: String,
+    res_type: ResourceType,
+    operator: ResourceOperator,
+    after: Option<Duration>, // None means now
+    status: ResourceStatus,
+    comment: String,
 }
 impl ResourceInfo {
     pub fn new(
@@ -131,10 +131,7 @@ impl ResourceInfo {
         res_type: ResourceType,
         operator: ResourceOperator,
         after: &Option<Duration>,
-    ) -> Option<Self> {
-        if names.is_empty() {
-            return None;
-        }
+    ) -> Self {
         let mut res_info = ResourceInfo {
             time: now_timestamp_nanos(),
             tenant_id,
@@ -145,22 +142,50 @@ impl ResourceInfo {
             status: ResourceStatus::Executing,
             comment: String::default(),
         };
-        if after.is_some() {
-            let after_nanos = after.clone().unwrap().to_nanoseconds();
+        if let Some(after) = after {
+            let after_nanos = after.to_nanoseconds();
             if after_nanos > 0 {
                 res_info.status = ResourceStatus::Schedule;
                 res_info.time += after_nanos;
             }
         }
-        Some(res_info)
+        res_info
     }
 
-    pub fn names(&self) -> &[String] {
+    pub fn get_time(&self) -> i64 {
+        self.time
+    }
+
+    pub fn get_tenant_id(&self) -> Oid {
+        self.tenant_id
+    }
+
+    pub fn get_names(&self) -> &[String] {
         &self.names
     }
 
-    pub fn tenant_id(&self) -> Oid {
-        self.tenant_id
+    pub fn get_type(&self) -> &ResourceType {
+        &self.res_type
+    }
+
+    pub fn get_operator(&self) -> &ResourceOperator {
+        &self.operator
+    }
+
+    pub fn get_status(&self) -> &ResourceStatus {
+        &self.status
+    }
+
+    pub fn get_comment(&self) -> &String {
+        &self.comment
+    }
+
+    pub fn set_status(&mut self, status: ResourceStatus) {
+        self.status = status;
+    }
+
+    pub fn set_comment(&mut self, comment: &str) {
+        self.comment = comment.to_string();
     }
 }
 
@@ -218,6 +243,7 @@ pub struct ExternalTableSchema {
     pub has_header: bool,
     pub delimiter: u8,
     pub schema: Schema,
+    pub table_is_hidden: bool,
 }
 
 impl ExternalTableSchema {
@@ -251,6 +277,14 @@ impl ExternalTableSchema {
 
         Ok(options)
     }
+
+    pub fn get_table_is_hidden(&self) -> bool {
+        self.table_is_hidden
+    }
+
+    pub fn set_table_is_hidden(&mut self, table_is_hidden: bool) {
+        self.table_is_hidden = table_is_hidden;
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -264,6 +298,8 @@ pub struct TskvTableSchema {
     columns: Vec<TableColumn>,
     //ColumnName -> ColumnsIndex
     columns_index: HashMap<String, usize>,
+
+    table_is_hidden: bool,
 }
 
 impl Default for TskvTableSchema {
@@ -276,6 +312,7 @@ impl Default for TskvTableSchema {
             next_column_id: 0,
             columns: Default::default(),
             columns_index: Default::default(),
+            table_is_hidden: false,
         }
     }
 }
@@ -301,6 +338,7 @@ impl TskvTableSchema {
             next_column_id: columns.len() as ColumnId,
             columns,
             columns_index,
+            table_is_hidden: false,
         }
     }
 
@@ -465,6 +503,14 @@ impl TskvTableSchema {
 
     pub fn contains_column(&self, column_name: &str) -> bool {
         self.columns_index.contains_key(column_name)
+    }
+
+    pub fn get_table_is_hidden(&self) -> bool {
+        self.table_is_hidden
+    }
+
+    pub fn set_table_is_hidden(&mut self, table_is_hidden: bool) {
+        self.table_is_hidden = table_is_hidden;
     }
 }
 
@@ -824,6 +870,8 @@ pub struct DatabaseOptions {
     replica: Option<u64>,
     // timestamp precision
     precision: Option<Precision>,
+
+    db_is_hidden: bool,
 }
 
 impl DatabaseOptions {
@@ -852,6 +900,7 @@ impl DatabaseOptions {
             vnode_duration,
             replica,
             precision,
+            db_is_hidden: false,
         }
     }
 
@@ -917,6 +966,14 @@ impl DatabaseOptions {
 
     pub fn with_precision(&mut self, precision: Precision) {
         self.precision = Some(precision)
+    }
+
+    pub fn get_db_is_hidden(&self) -> bool {
+        self.db_is_hidden
+    }
+
+    pub fn set_db_is_hidden(&mut self, db_is_hidden: bool) {
+        self.db_is_hidden = db_is_hidden;
     }
 }
 
@@ -1142,6 +1199,7 @@ impl Tenant {
 pub struct TenantOptions {
     pub comment: Option<String>,
     pub limiter_config: Option<TenantLimiterConfig>,
+    tenant_is_hidden: bool,
 }
 
 impl From<TenantOptions> for TenantOptionsBuilder {
@@ -1153,6 +1211,7 @@ impl From<TenantOptions> for TenantOptionsBuilder {
         if let Some(config) = value.limiter_config {
             builder.limiter_config(config);
         }
+        builder.tenant_is_hidden(false);
         builder
     }
 }
@@ -1179,6 +1238,14 @@ impl TenantOptions {
             Some(ref limit_config) => limit_config.request_config.as_ref(),
             None => None,
         }
+    }
+
+    pub fn get_tenant_is_hidden(&self) -> bool {
+        self.tenant_is_hidden
+    }
+
+    pub fn set_tenant_is_hidden(&mut self, tenant_is_hidden: bool) {
+        self.tenant_is_hidden = tenant_is_hidden;
     }
 }
 
@@ -1213,6 +1280,7 @@ pub struct StreamTable {
     stream_type: String,
     watermark: Watermark,
     extra_options: HashMap<String, String>,
+    table_is_hidden: bool,
 }
 
 impl StreamTable {
@@ -1233,6 +1301,7 @@ impl StreamTable {
             stream_type: stream_type.into(),
             watermark,
             extra_options,
+            table_is_hidden: false,
         }
     }
 
@@ -1262,6 +1331,14 @@ impl StreamTable {
 
     pub fn extra_options(&self) -> &HashMap<String, String> {
         &self.extra_options
+    }
+
+    pub fn get_table_is_hidden(&self) -> bool {
+        self.table_is_hidden
+    }
+
+    pub fn set_table_is_hidden(&mut self, table_is_hidden: bool) {
+        self.table_is_hidden = table_is_hidden;
     }
 }
 

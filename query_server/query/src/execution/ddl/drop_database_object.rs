@@ -42,8 +42,13 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     },
                 )?;
 
-                match client.get_table_schema(object_name.database(), object_name.table()) {
+                // first, set hidden to TRUE
+                match client
+                    .set_table_is_hidden(tenant, object_name.database(), object_name.table(), true)
+                    .await
+                {
                     Ok(_) => {
+                        // second, add drop task
                         let resourceinfo = ResourceInfo::new(
                             *client.tenant().id(),
                             vec![
@@ -54,8 +59,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                             ResourceType::Table,
                             ResourceOperator::Drop,
                             after,
-                        )
-                        .unwrap();
+                        );
                         ResourceManager::add_resource_task(
                             query_state_machine.coord.clone(),
                             resourceinfo,

@@ -397,22 +397,52 @@ impl TenantMeta {
         Ok(())
     }
 
+    pub async fn set_db_is_hidden(
+        &self,
+        tenant: &str,
+        db: &str,
+        db_is_hidden: bool,
+    ) -> MetaResult<()> {
+        let req = command::WriteCommand::SetDBIsHidden(
+            self.cluster.clone(),
+            tenant.to_string(),
+            db.to_string(),
+            db_is_hidden,
+        );
+
+        self.client.write::<()>(&req).await?;
+        if let Some(info) = self.data.write().dbs.get_mut(db) {
+            info.schema.config.set_db_is_hidden(db_is_hidden)
+        }
+        Ok(())
+    }
+
     pub fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
         if let Some(db) = self.data.read().dbs.get(name) {
-            return Ok(Some(db.schema.clone()));
+            if !db.schema.options().get_db_is_hidden() {
+                return Ok(Some(db.schema.clone()));
+            }
         }
 
         Ok(None)
     }
 
     pub fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
-        Ok(self.data.read().dbs.get(name).cloned())
+        if let Some(db) = self.data.read().dbs.get(name) {
+            if !db.schema.options().get_db_is_hidden() {
+                return Ok(Some(db.clone()));
+            }
+        }
+
+        Ok(None)
     }
 
     pub fn list_databases(&self) -> MetaResult<Vec<String>> {
         let mut list = vec![];
-        for (k, _) in self.data.read().dbs.iter() {
-            list.push(k.clone());
+        for (k, db_info) in self.data.read().dbs.iter() {
+            if !db_info.schema.options().get_db_is_hidden() {
+                list.push(k.clone());
+            }
         }
 
         Ok(list)
@@ -462,6 +492,24 @@ impl TenantMeta {
         self.client.write::<()>(&req).await
     }
 
+    pub async fn set_table_is_hidden(
+        &self,
+        tenant: &str,
+        db: &str,
+        table: &str,
+        table_is_hidden: bool,
+    ) -> MetaResult<()> {
+        let req = command::WriteCommand::SetTableIsHidden(
+            self.cluster.clone(),
+            tenant.to_string(),
+            db.to_string(),
+            table.to_string(),
+            table_is_hidden,
+        );
+
+        self.client.write::<()>(&req).await
+    }
+
     pub fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>> {
         return Ok(self.data.read().table_schema(db, table));
     }
@@ -472,7 +520,9 @@ impl TenantMeta {
         table: &str,
     ) -> MetaResult<Option<TskvTableSchemaRef>> {
         if let Some(TableSchema::TsKvTableSchema(val)) = self.data.read().table_schema(db, table) {
-            return Ok(Some(val));
+            if !val.get_table_is_hidden() {
+                return Ok(Some(val));
+            }
         }
         Ok(None)
     }
@@ -490,16 +540,18 @@ impl TenantMeta {
         );
         let rsp = self.client.read::<Option<TableSchema>>(&req).await?;
         if let Some(TableSchema::TsKvTableSchema(val)) = rsp {
-            let mut data_w = self.data.write();
-            let db = data_w
-                .dbs
-                .get_mut(&val.db)
-                .ok_or(MetaError::DatabaseNotFound {
-                    database: val.db.clone(),
-                })?;
-            db.tables
-                .insert(val.name.clone(), TableSchema::TsKvTableSchema(val.clone()));
-            return Ok(Some(val));
+            if !val.get_table_is_hidden() {
+                let mut data_w = self.data.write();
+                let db = data_w
+                    .dbs
+                    .get_mut(&val.db)
+                    .ok_or(MetaError::DatabaseNotFound {
+                        database: val.db.clone(),
+                    })?;
+                db.tables
+                    .insert(val.name.clone(), TableSchema::TsKvTableSchema(val.clone()));
+                return Ok(Some(val));
+            }
         }
         Ok(None)
     }
@@ -512,7 +564,9 @@ impl TenantMeta {
         if let Some(TableSchema::ExternalTableSchema(val)) =
             self.data.read().table_schema(db, table)
         {
-            return Ok(Some(val));
+            if !val.get_table_is_hidden() {
+                return Ok(Some(val));
+            }
         }
 
         Ok(None)
@@ -521,7 +575,15 @@ impl TenantMeta {
     pub fn list_tables(&self, db: &str) -> MetaResult<Vec<String>> {
         let mut list = vec![];
         if let Some(info) = self.data.read().dbs.get(db) {
-            for (k, _) in info.tables.iter() {
+            for (k, table_schema) in info.tables.iter() {
+                let table_is_hidden = match table_schema {
+                    TableSchema::TsKvTableSchema(val) => val.get_table_is_hidden(),
+                    TableSchema::ExternalTableSchema(val) => val.get_table_is_hidden(),
+                    TableSchema::StreamTableSchema(val) => val.get_table_is_hidden(),
+                };
+                if table_is_hidden {
+                    continue;
+                }
                 list.push(k.clone());
             }
         }

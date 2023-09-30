@@ -221,7 +221,7 @@ pub async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
             opt.cluster.name, DEFAULT_CATALOG, DEFAULT_DATABASE
         ),
         value: format!(
-            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null}}}}",
+            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null,\"db_is_hidden\":false}}}}",
             DEFAULT_CATALOG, DEFAULT_DATABASE
         ),
     };
@@ -233,7 +233,7 @@ pub async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
             opt.cluster.name, DEFAULT_CATALOG, USAGE_SCHEMA
         ),
         value: format!(
-            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null}}}}",
+            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null,\"db_is_hidden\":false}}}}",
             DEFAULT_CATALOG, USAGE_SCHEMA
         ),
     };

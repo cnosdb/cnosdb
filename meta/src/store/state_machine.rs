@@ -402,8 +402,7 @@ impl StateMachine {
             }
             ReadCommand::Users(cluster) => response_encode(self.process_read_users(cluster)),
             ReadCommand::Tenant(cluster, tenant_name) => {
-                let path = KeyPath::tenant(cluster, tenant_name);
-                response_encode(self.get_struct::<Tenant>(&path))
+                response_encode(self.process_read_tenant(cluster, tenant_name))
             }
             ReadCommand::Tenants(cluster) => response_encode(self.process_read_tenants(cluster)),
             ReadCommand::TableSchema(cluster, tenant_name, db_name, table_name) => {
@@ -412,6 +411,9 @@ impl StateMachine {
             }
             ReadCommand::ResourceInfos(cluster, names) => {
                 response_encode(self.process_read_resourceinfos(cluster, names))
+            }
+            ReadCommand::ResourceInfosMark(cluster) => {
+                response_encode(self.process_read_resourceinfos_mark(cluster))
             }
         }
     }
@@ -445,9 +447,29 @@ impl StateMachine {
         Ok(users)
     }
 
+    pub fn process_read_tenant(&self, cluster: &str, tenant_name: &str) -> MetaResult<Tenant> {
+        let path = KeyPath::tenant(cluster, tenant_name);
+        let tenant = match self.get_struct::<Tenant>(&path)? {
+            Some(t) => t,
+            None => {
+                return Err(MetaError::TenantNotFound {
+                    tenant: tenant_name.to_string(),
+                });
+            }
+        };
+        if !tenant.options().get_tenant_is_hidden() {
+            Ok(tenant)
+        } else {
+            Err(MetaError::TenantNotFound {
+                tenant: tenant_name.to_string(),
+            })
+        }
+    }
+
     pub fn process_read_tenants(&self, cluster: &str) -> MetaResult<Vec<Tenant>> {
         let path = KeyPath::tenants(cluster);
-        let tenants: Vec<Tenant> = self.children_data::<Tenant>(&path)?.into_values().collect();
+        let mut tenants: Vec<Tenant> = self.children_data::<Tenant>(&path)?.into_values().collect();
+        tenants.retain(|tenant| !tenant.options().get_tenant_is_hidden());
 
         Ok(tenants)
     }
@@ -499,13 +521,21 @@ impl StateMachine {
         cluster: &str,
         names: &[String],
     ) -> MetaResult<Vec<ResourceInfo>> {
-        let path = KeyPath::resourceinfo(cluster, names);
+        let path = KeyPath::resourceinfos(cluster, names);
         let resourceinfos: Vec<ResourceInfo> = self
             .children_data::<ResourceInfo>(&path)?
             .into_values()
             .collect();
 
         Ok(resourceinfos)
+    }
+
+    pub fn process_read_resourceinfos_mark(&self, cluster: &str) -> MetaResult<(NodeId, bool)> {
+        let path = KeyPath::resourceinfosmark(cluster);
+        match self.get_struct::<(NodeId, bool)>(&path)? {
+            Some((node_id, is_lock)) => Ok((node_id, is_lock)),
+            None => Ok((0, false)),
+        }
     }
 
     pub fn process_write_command(&self, req: &WriteCommand) -> CommandResp {
@@ -525,6 +555,9 @@ impl StateMachine {
             WriteCommand::AlterDB(cluster, tenant, schema) => {
                 response_encode(self.process_alter_db(cluster, tenant, schema))
             }
+            WriteCommand::SetDBIsHidden(cluster, tenant, db, db_is_hidden) => {
+                response_encode(self.process_db_is_hidden(cluster, tenant, db, *db_is_hidden))
+            }
             WriteCommand::DropDB(cluster, tenant, db_name) => {
                 response_encode(self.process_drop_db(cluster, tenant, db_name))
             }
@@ -536,6 +569,15 @@ impl StateMachine {
             }
             WriteCommand::UpdateTable(cluster, tenant, schema) => {
                 response_encode(self.process_update_table(cluster, tenant, schema))
+            }
+            WriteCommand::SetTableIsHidden(cluster, tenant, db, table, table_is_hidden) => {
+                response_encode(self.process_table_is_hidden(
+                    cluster,
+                    tenant,
+                    db,
+                    table,
+                    *table_is_hidden,
+                ))
             }
             WriteCommand::CreateBucket(cluster, tenant, db, ts) => {
                 response_encode(self.process_create_bucket(cluster, tenant, db, ts))
@@ -560,6 +602,9 @@ impl StateMachine {
             }
             WriteCommand::AlterTenant(cluster, name, options) => {
                 response_encode(self.process_alter_tenant(cluster, name, options))
+            }
+            WriteCommand::SetTenantIsHidden(cluster, name, tenant_is_hidden) => {
+                response_encode(self.process_tenant_is_hidden(cluster, name, *tenant_is_hidden))
             }
             WriteCommand::RenameTenant(cluster, old_name, new_name) => {
                 response_encode(self.process_rename_tenant(cluster, old_name, new_name))
@@ -629,6 +674,9 @@ impl StateMachine {
             } => response_encode(self.process_limiter_request(cluster, tenant, request)),
             WriteCommand::ResourceInfo(cluster, names, res_info) => {
                 response_encode(self.process_write_resourceinfo(cluster, names, res_info))
+            }
+            WriteCommand::ResourceInfosMark(cluster, node_id, is_lock) => {
+                response_encode(self.process_write_resourceinfos_mark(cluster, *node_id, *is_lock))
             }
         }
     }
@@ -807,15 +855,40 @@ impl StateMachine {
         schema: &DatabaseSchema,
     ) -> MetaResult<()> {
         let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
-        if !self.contains_key(&key)? {
+        if let Some(db_schema) = self.get_struct::<DatabaseSchema>(&key)? {
+            if !db_schema.options().get_db_is_hidden() {
+                self.check_db_schema_valid(cluster, schema)?;
+                self.insert(&key, &value_encode(schema)?)?;
+                Ok(())
+            } else {
+                return Err(MetaError::DatabaseNotFound {
+                    database: schema.database_name().to_string(),
+                });
+            }
+        } else {
             return Err(MetaError::DatabaseNotFound {
                 database: schema.database_name().to_string(),
             });
         }
+    }
 
-        self.check_db_schema_valid(cluster, schema)?;
-        self.insert(&key, &value_encode(schema)?)?;
-        Ok(())
+    fn process_db_is_hidden(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        db: &str,
+        db_is_hidden: bool,
+    ) -> MetaResult<()> {
+        let key = KeyPath::tenant_db_name(cluster, tenant, db);
+        if let Some(mut db_schema) = self.get_struct::<DatabaseSchema>(&key)? {
+            db_schema.config.set_db_is_hidden(db_is_hidden);
+            self.insert(&key, &value_encode(&db_schema)?)?;
+            Ok(())
+        } else {
+            Err(MetaError::DatabaseNotFound {
+                database: db.to_string(),
+            })
+        }
     }
 
     fn check_db_schema_valid(&self, cluster: &str, db_schema: &DatabaseSchema) -> MetaResult<()> {
@@ -872,6 +945,10 @@ impl StateMachine {
                         return Err(MetaError::UpdateTableConflict {
                             name: schema.name.clone(),
                         });
+                    } else if val.get_table_is_hidden() {
+                        return Err(MetaError::TableNotFound {
+                            table: schema.name.clone(),
+                        });
                     }
                 }
                 _ => {
@@ -883,6 +960,39 @@ impl StateMachine {
         }
 
         self.insert(&key, &value_encode(schema)?)?;
+        Ok(())
+    }
+
+    fn process_table_is_hidden(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        db: &str,
+        table: &str,
+        new_table_is_hidden: bool,
+    ) -> MetaResult<()> {
+        let key = KeyPath::tenant_schema_name(cluster, tenant, db, table);
+        if let Some(val) = self.get_struct::<TableSchema>(&key)? {
+            let new_val: TableSchema = match val {
+                TableSchema::TsKvTableSchema(schema) => {
+                    let mut new_schema = (*schema).clone();
+                    new_schema.set_table_is_hidden(new_table_is_hidden);
+                    TableSchema::TsKvTableSchema(Arc::new(new_schema))
+                }
+                TableSchema::ExternalTableSchema(schema) => {
+                    let mut new_schema = (*schema).clone();
+                    new_schema.set_table_is_hidden(new_table_is_hidden);
+                    TableSchema::ExternalTableSchema(Arc::new(new_schema))
+                }
+                TableSchema::StreamTableSchema(schema) => {
+                    let mut new_schema = (*schema).clone();
+                    new_schema.set_table_is_hidden(new_table_is_hidden);
+                    TableSchema::StreamTableSchema(Arc::new(new_schema))
+                }
+            };
+            self.insert(&key, &value_encode(&new_val)?)?;
+        }
+
         Ok(())
     }
 
@@ -1121,16 +1231,45 @@ impl StateMachine {
     ) -> MetaResult<Tenant> {
         let key = KeyPath::tenant(cluster, name);
         if let Some(tenant) = self.get_struct::<Tenant>(&key)? {
+            if !tenant.options().get_tenant_is_hidden() {
+                let new_tenant = Tenant::new(*tenant.id(), name.to_string(), options.to_owned());
+                self.insert(&key, &value_encode(&new_tenant)?)?;
+
+                let limiter = options.request_config().map(RemoteRequestLimiter::new);
+
+                self.set_tenant_limiter(cluster, name, limiter)?;
+
+                Ok(new_tenant)
+            } else {
+                Err(MetaError::TenantNotFound {
+                    tenant: name.to_string(),
+                })
+            }
+        } else {
+            Err(MetaError::TenantNotFound {
+                tenant: name.to_string(),
+            })
+        }
+    }
+
+    fn process_tenant_is_hidden(
+        &self,
+        cluster: &str,
+        name: &str,
+        tenant_is_hidden: bool,
+    ) -> MetaResult<Tenant> {
+        let key = KeyPath::tenant(cluster, name);
+        if let Some(tenant) = self.get_struct::<Tenant>(&key)? {
+            let mut options = tenant.options().clone();
+            options.set_tenant_is_hidden(tenant_is_hidden);
             let new_tenant = Tenant::new(*tenant.id(), name.to_string(), options.to_owned());
             self.insert(&key, &value_encode(&new_tenant)?)?;
-
             let limiter = options.request_config().map(RemoteRequestLimiter::new);
 
             self.set_tenant_limiter(cluster, name, limiter)?;
-
             Ok(new_tenant)
         } else {
-            Err(MetaError::TenantAlreadyExists {
+            Err(MetaError::TenantNotFound {
                 tenant: name.to_string(),
             })
         }
@@ -1338,8 +1477,18 @@ impl StateMachine {
         names: &[String],
         res_info: &ResourceInfo,
     ) -> MetaResult<()> {
-        let key = KeyPath::resourceinfo(cluster, names);
+        let key = KeyPath::resourceinfos(cluster, names);
         Ok(self.insert(&key, &value_encode(&res_info)?)?)
+    }
+
+    fn process_write_resourceinfos_mark(
+        &self,
+        cluster: &str,
+        node_id: NodeId,
+        is_lock: bool,
+    ) -> MetaResult<()> {
+        let key = KeyPath::resourceinfosmark(cluster);
+        Ok(self.insert(&key, &value_encode(&(node_id, is_lock))?)?)
     }
 }
 

@@ -27,39 +27,42 @@ impl DDLDefinitionTask for RecoverTenantTask {
             ref if_exist,
         } = self.stmt;
 
-        let meta = query_state_machine.meta.clone();
-
         debug!("Recover tenant {}", tenant_name);
 
-        match meta.tenant_meta(tenant_name).await {
-            Some(tenant) => {
-                let mut resourceinfo = ResourceInfo::new(
-                    *tenant.tenant().id(),
-                    vec![tenant_name.clone()],
-                    ResourceType::Tenant,
-                    ResourceOperator::Drop,
-                    &None,
-                )
-                .unwrap();
-                resourceinfo.status = ResourceStatus::Cancel;
-                resourceinfo.comment.clear();
-                query_state_machine
-                    .meta
-                    .write_resourceinfo(resourceinfo.names(), resourceinfo.clone())
-                    .await?;
-                Ok(Output::Nil(()))
-            }
-            None => {
-                if !if_exist {
-                    return Err(QueryError::Meta {
-                        source: MetaError::TenantNotFound {
-                            tenant: tenant_name.to_string(),
-                        },
-                    });
-                } else {
-                    Ok(Output::Nil(()))
-                }
-            }
+        let meta = query_state_machine.meta.clone();
+        let tenant_meta = meta
+            .tenant_meta(tenant_name)
+            .await
+            .ok_or_else(|| QueryError::Meta {
+                source: MetaError::TenantNotFound {
+                    tenant: tenant_name.to_string(),
+                },
+            })?;
+
+        // first, cancel drop task
+        let mut resourceinfo = ResourceInfo::new(
+            *tenant_meta.tenant().id(),
+            vec![tenant_name.clone()],
+            ResourceType::Tenant,
+            ResourceOperator::Drop,
+            &None,
+        );
+        resourceinfo.set_status(ResourceStatus::Cancel);
+        resourceinfo.set_comment("");
+        query_state_machine
+            .meta
+            .write_resourceinfo(resourceinfo.get_names(), resourceinfo.clone())
+            .await?;
+
+        // second, set hidden to FALSE
+        if (meta.set_tenant_is_hidden(tenant_name, false).await).is_err() && !if_exist {
+            return Err(QueryError::Meta {
+                source: MetaError::TenantNotFound {
+                    tenant: tenant_name.to_string(),
+                },
+            });
         }
+
+        Ok(Output::Nil(()))
     }
 }

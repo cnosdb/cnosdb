@@ -70,22 +70,23 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 // 删除租户下的database
                 // tenant_id
                 // database_name
-                match meta.get_db_info(name) {
+
+                // first, set hidden to TRUE
+                match meta.set_db_is_hidden(tenant_name, name, true).await {
                     Ok(_) => {
+                        // second, add drop task
                         let resourceinfo = ResourceInfo::new(
                             *meta.tenant().id(),
                             vec![tenant_name.clone(), name.clone()],
                             ResourceType::Database,
                             ResourceOperator::Drop,
                             after,
-                        )
-                        .unwrap();
+                        );
                         ResourceManager::add_resource_task(
                             query_state_machine.coord.clone(),
                             resourceinfo,
                         )
                         .await?;
-                        Ok(Output::Nil(()))
                     }
                     Err(_) => {
                         if !if_exist {
@@ -94,11 +95,11 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                                     database: name.to_string(),
                                 },
                             });
-                        } else {
-                            Ok(Output::Nil(()))
                         }
                     }
                 }
+
+                Ok(Output::Nil(()))
             }
         }
     }

@@ -13,7 +13,7 @@ use meta::store::command::WriteCommand;
 use meta::store::config::{HeartBeatConfig, Opt};
 use meta::store::Store;
 use meta::{store, MetaApp, RaftStore};
-use models::meta_data::NodeMetrics;
+use models::meta_data::{NodeId, NodeMetrics};
 use models::node_info::NodeStatus;
 use models::utils::{build_address, now_timestamp_secs};
 use once_cell::sync::Lazy;
@@ -158,6 +158,32 @@ async fn detect_node_heartbeat(heartbeat_config: HeartBeatConfig, app: Data<Meta
 
                         if app.raft.client_write(req).await.is_err() {
                             tracing::error!("failed to change node status to unreachable");
+                        }
+
+                        let resourceinfos_mark_path =
+                            KeyPath::resourceinfosmark(&app.meta_init.cluster_name);
+                        let result = app
+                            .store
+                            .state_machine
+                            .write()
+                            .await
+                            .children_data::<(NodeId, bool)>(&resourceinfos_mark_path);
+                        if let Ok(opt) = result {
+                            let node_id_is_lock_vec: Vec<(NodeId, bool)> =
+                                opt.into_values().collect();
+                            for node_id_is_lock in node_id_is_lock_vec {
+                                if node_id_is_lock.0 == node_metrics.id && node_id_is_lock.1 {
+                                    let req = WriteCommand::ResourceInfosMark(
+                                        app.meta_init.cluster_name.clone(),
+                                        node_metrics.id,
+                                        false,
+                                    );
+
+                                    if app.raft.client_write(req).await.is_err() {
+                                        tracing::error!("write resourceinfos_mark failed");
+                                    }
+                                }
+                            }
                         }
                     }
                 }

@@ -956,6 +956,7 @@ mod test {
             has_header: true,
             delimiter: 5,
             schema,
+            table_is_hidden: false,
         };
 
         let ans_inter = serde_json::to_string(&schema).unwrap();

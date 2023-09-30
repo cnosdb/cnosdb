@@ -87,17 +87,18 @@ impl TableProvider for InformationSchemaResourceStatusTable {
             //resourceinfos.retain(|resourceinfo| resourceinfo.names().get(0).unwrap() == tenant_name);
             for resourceinfo in resourceinfos {
                 // Check if the current user has at least read permission on this db, skip if not
-                if !self.user.can_access_role(resourceinfo.tenant_id())
-                    || (resourceinfo.names().len() > 1
-                        && !self.user.can_read_database(
-                            resourceinfo.tenant_id(),
-                            resourceinfo.names().get(1).unwrap(),
-                        ))
+                let names = resourceinfo.get_names();
+                let tenant_id = resourceinfo.get_tenant_id();
+                if !self.user.can_access_role(tenant_id)
+                    || (names.len() > 1
+                        && !self
+                            .user
+                            .can_read_database(tenant_id, names.get(1).unwrap()))
                 {
                     continue;
                 }
 
-                let duration = std::time::Duration::from_nanos(resourceinfo.time as u64);
+                let duration = std::time::Duration::from_nanos(resourceinfo.get_time() as u64);
                 let datetime = UNIX_EPOCH + duration;
                 let time_str = chrono::DateTime::<chrono::Utc>::from(datetime)
                     .format("%Y-%m-%d %H:%M:%S")
@@ -105,11 +106,11 @@ impl TableProvider for InformationSchemaResourceStatusTable {
 
                 builder.append_row(
                     time_str,
-                    resourceinfo.names().join("/"),
-                    resourceinfo.res_type.to_string(),
-                    resourceinfo.operator.to_string(),
-                    resourceinfo.status.to_string(),
-                    resourceinfo.comment,
+                    resourceinfo.get_names().join("/"),
+                    resourceinfo.get_type().to_string(),
+                    resourceinfo.get_operator().to_string(),
+                    resourceinfo.get_status().to_string(),
+                    resourceinfo.get_comment(),
                 );
             }
         }

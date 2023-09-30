@@ -38,36 +38,31 @@ impl DDLDefinitionTask for RecoverDatabaseTask {
                 },
             })?;
 
-        match meta.get_db_info(db_name) {
-            Ok(_) => {
-                let mut resourceinfo = ResourceInfo::new(
-                    *meta.tenant().id(),
-                    vec![tenant_name.clone(), db_name.clone()],
-                    ResourceType::Database,
-                    ResourceOperator::Drop,
-                    &None,
-                )
-                .unwrap();
-                resourceinfo.status = ResourceStatus::Cancel;
-                resourceinfo.comment.clear();
+        // first, cancel drop task
+        let mut resourceinfo = ResourceInfo::new(
+            *meta.tenant().id(),
+            vec![tenant_name.clone(), db_name.clone()],
+            ResourceType::Database,
+            ResourceOperator::Drop,
+            &None,
+        );
+        resourceinfo.set_status(ResourceStatus::Cancel);
+        resourceinfo.set_comment("");
 
-                query_state_machine
-                    .meta
-                    .write_resourceinfo(resourceinfo.names(), resourceinfo.clone())
-                    .await?;
-                Ok(Output::Nil(()))
-            }
-            Err(_) => {
-                if !if_exist {
-                    return Err(QueryError::Meta {
-                        source: MetaError::DatabaseNotFound {
-                            database: db_name.to_string(),
-                        },
-                    });
-                } else {
-                    Ok(Output::Nil(()))
-                }
-            }
+        query_state_machine
+            .meta
+            .write_resourceinfo(resourceinfo.get_names(), resourceinfo.clone())
+            .await?;
+
+        // second, set hidden to FALSE
+        if (meta.set_db_is_hidden(tenant_name, db_name, false).await).is_err() && !if_exist {
+            return Err(QueryError::Meta {
+                source: MetaError::DatabaseNotFound {
+                    database: db_name.to_string(),
+                },
+            });
         }
+
+        Ok(Output::Nil(()))
     }
 }
