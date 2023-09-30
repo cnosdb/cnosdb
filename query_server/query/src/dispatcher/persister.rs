@@ -80,9 +80,11 @@ impl QueryPersister for LocalQueryPersister {
                 ),
             })?;
 
-        let body = bincode::serialize(&query).map_err(|err| {
+        let body = serde_json::to_vec(&query).map_err(|err| {
             trace::error!("Failed to serialize query info: {}", err);
-            QueryError::BincodeSerialize { source: err }
+            QueryError::BincodeSerialize {
+                source: Box::new(err),
+            }
         })?;
 
         file.write_all(&body)
@@ -104,7 +106,7 @@ impl QueryPersister for LocalQueryPersister {
         let mut entries = fs::read_dir(self.root_dir()).await?;
         while let Some(entry) = entries.next_entry().await? {
             let bytes = fs::read(entry.path().join(QUERY_INFO_FILE_NAME)).await?;
-            match bincode::deserialize::<QueryInfo>(&bytes) {
+            match serde_json::from_slice::<QueryInfo>(&bytes) {
                 Ok(query_info) => {
                     result.push(query_info);
                 }

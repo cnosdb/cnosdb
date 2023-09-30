@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
@@ -5,7 +6,6 @@ use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
-use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, ResourceInfo, TableSchema, Tenant, TenantOptions};
 use openraft::{EffectiveMembership, LogId};
@@ -892,13 +892,10 @@ impl StateMachine {
     }
 
     fn check_db_schema_valid(&self, cluster: &str, db_schema: &DatabaseSchema) -> MetaResult<()> {
-        if db_schema.config.shard_num_or_default() == 0
-            || db_schema.config.replica_or_default()
-                > self
-                    .children_data::<NodeInfo>(&KeyPath::data_nodes(cluster))?
-                    .into_values()
-                    .count() as u64
-        {
+        let node_list = self.get_valid_node_list(cluster)?;
+        check_node_enough(db_schema.config.replica_or_default(), &node_list)?;
+
+        if db_schema.config.shard_num_or_default() == 0 {
             return Err(MetaError::DatabaseSchemaInvalid {
                 name: db_schema.database_name().to_string(),
             });
@@ -1001,50 +998,33 @@ impl StateMachine {
             .children_data::<NodeInfo>(&KeyPath::data_nodes(cluster))?
             .into_values()
             .collect();
-
-        let node_metrics_list: Vec<NodeMetrics> = self
+        let node_metrics_list: HashMap<NodeId, NodeMetrics> = self
             .children_data::<NodeMetrics>(&KeyPath::data_nodes_metrics(cluster))?
             .into_values()
+            .map(|m| (m.id, m))
             .collect();
 
-        let mut filter_node_list = node_info_list;
-        filter_node_list.retain(|node_info| node_info.attribute != NodeAttribute::Cold);
+        let node_info_list = node_info_list
+            .into_iter()
+            .filter_map(|n| node_metrics_list.get(&n.id).map(|m| (n, m)))
+            .filter(|(_, m)| m.is_healthy())
+            .collect::<Vec<_>>();
 
-        let mut tmp_node_list: Vec<_> = filter_node_list
-            .clone()
+        let temp_node_info_list = node_info_list
             .iter()
-            .map(|a| {
-                (
-                    a.clone(),
-                    node_metrics_list
-                        .iter()
-                        .find(|b| b.id == a.id)
-                        .unwrap_or(&NodeMetrics {
-                            id: a.id,
-                            disk_free: 0,
-                            time: 0,
-                            status: NodeStatus::Unreachable,
-                        })
-                        .clone(),
-                )
-            })
-            .collect();
+            .filter(|(n, _)| !n.is_cold())
+            .cloned()
+            .collect::<Vec<_>>();
 
-        if tmp_node_list.is_empty() {
-            return Ok(filter_node_list);
-        }
+        let mut res = if temp_node_info_list.is_empty() {
+            node_info_list
+        } else {
+            temp_node_info_list
+        };
 
-        tmp_node_list.sort_by(|(_, a), (_, b)| b.disk_free.cmp(&a.disk_free));
-
-        let mut valid_node_list = Vec::new();
-
-        for (node_info, node_metrics) in tmp_node_list.iter() {
-            if node_metrics.status == NodeStatus::Healthy {
-                valid_node_list.push(node_info.clone());
-            }
-        }
-
-        Ok(valid_node_list)
+        res.sort_by_key(|(_, m)| Reverse(m.disk_free));
+        let res = res.into_iter().map(|(n, _)| n).collect();
+        Ok(res)
     }
 
     fn process_create_bucket(
@@ -1074,10 +1054,9 @@ impl StateMachine {
         };
 
         let node_list = self.get_valid_node_list(cluster)?;
-        if node_list.is_empty()
-            || db_schema.config.shard_num_or_default() == 0
-            || db_schema.config.replica_or_default() > node_list.len() as u64
-        {
+        check_node_enough(db_schema.config.replica_or_default(), &node_list)?;
+
+        if db_schema.config.shard_num_or_default() == 0 {
             return Err(MetaError::DatabaseSchemaInvalid {
                 name: db.to_string(),
             });
@@ -1490,6 +1469,16 @@ impl StateMachine {
         let key = KeyPath::resourceinfosmark(cluster);
         Ok(self.insert(&key, &value_encode(&(node_id, is_lock))?)?)
     }
+}
+
+fn check_node_enough(need: u64, node_list: &[NodeInfo]) -> MetaResult<()> {
+    if need > node_list.len() as u64 {
+        return Err(MetaError::ValidNodeNotEnough {
+            need,
+            valid_node_num: node_list.len() as u32,
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]

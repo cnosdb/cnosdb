@@ -583,10 +583,7 @@ impl Coordinator for CoordService {
             let info = meta_client
                 .locate_replication_set_for_write(db, hash, ts)
                 .await?;
-            repl_idx
-                .entry(info)
-                .or_insert_with(Vec::new)
-                .push(idx as u32);
+            repl_idx.entry(info).or_default().push(idx as u32);
         }
 
         let mut requests = Vec::new();

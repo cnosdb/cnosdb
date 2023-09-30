@@ -105,6 +105,13 @@ message AlterColumnRequest {
     bytes column = 4;
 }
 
+message RenameColumnRequest {
+    string db = 1;
+    string table = 2;
+    string old_name = 3;
+    string new_name = 4;
+}
+
 message AdminCommandRequest {
   string tenant = 1;
   oneof command {
@@ -117,6 +124,7 @@ message AdminCommandRequest {
     DropColumnRequest drop_column = 8;
     AddColumnRequest add_column = 9;
     AlterColumnRequest alter_column = 10;
+    RenameColumnRequest rename_column = 11;
   }
 }
 

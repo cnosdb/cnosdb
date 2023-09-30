@@ -888,10 +888,10 @@ impl TseriesFamily {
         self.status = status;
     }
 
-    pub fn delete_columns(&self, field_ids: &[FieldId]) {
-        self.mut_cache.read().delete_columns(field_ids);
+    pub fn drop_columns(&self, field_ids: &[FieldId]) {
+        self.mut_cache.read().drop_columns(field_ids);
         for memcache in self.immut_cache.iter() {
-            memcache.read().delete_columns(field_ids);
+            memcache.read().drop_columns(field_ids);
         }
     }
 
@@ -1438,7 +1438,12 @@ pub mod test_tseries_family {
                 .unwrap(),
         );
 
-        let config = config::get_config_for_test();
+        let mut config = config::get_config_for_test();
+        let dir = "/tmp/test/kv_core/test_read_with_tomb";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        config.storage.path = dir.into();
+
         let meta_manager: MetaRef = runtime.block_on(async {
             let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
 

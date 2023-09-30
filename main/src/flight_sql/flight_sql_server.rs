@@ -467,11 +467,11 @@ where
 
         self.precess_flight_info_req(
             "SELECT 
-                TENANT_NAME AS TABLE_CAT 
+                TENANT_NAME AS CATALOG_NAME 
             FROM 
                 CLUSTER_SCHEMA.TENANTS 
             ORDER BY 
-                TABLE_CAT",
+                CATALOG_NAME",
             request,
             span_recorder.span_ctx(),
         )
@@ -497,7 +497,7 @@ where
         } = query;
 
         let mut filters = vec![];
-        let _ = catalog.map(|e| filters.push(format!("TABLE_CATALOG = '{}'", e)));
+        let _ = catalog.map(|e| filters.push(format!("TENANT_NAME = '{}'", e)));
         let _ =
             db_schema_filter_pattern.map(|e| filters.push(format!("DATABASE_NAME LIKE '{e}'",)));
 
@@ -510,13 +510,13 @@ where
         self.precess_flight_info_req(
             format!(
                 "SELECT
-                    DATABASE_NAME AS TABLE_SCHEM,
-                    TENANT_NAME AS TABLE_CATALOG
+                    DATABASE_NAME AS DB_SCHEMA_NAME,
+                    TENANT_NAME AS CATALOG_NAME
                 FROM
                     INFORMATION_SCHEMA.DATABASES
                 {filter}
                 ORDER BY
-                    TABLE_CATALOG, TABLE_SCHEM"
+                    CATALOG_NAME, DB_SCHEMA_NAME"
             ),
             request,
             span_recorder.span_ctx(),
@@ -546,7 +546,7 @@ where
         } = query;
 
         let mut filters = vec![];
-        let _ = catalog.map(|e| filters.push(format!("TABLE_CATALOG = '{}'", e)));
+        let _ = catalog.map(|e| filters.push(format!("TABLE_TENANT = '{}'", e)));
         let _ =
             db_schema_filter_pattern.map(|e| filters.push(format!("TABLE_DATABASE LIKE '{e}'")));
         let _ = table_name_filter_pattern.map(|e| filters.push(format!("TABLE_NAME LIKE '{e}'")));
@@ -567,15 +567,15 @@ where
 
         let sql = format!(
             "SELECT
-                TABLE_TENANT as TABLE_CAT,
-                TABLE_DATABASE as TABLE_SCHEM,
+                TABLE_TENANT as CATALOG_NAME,
+                TABLE_DATABASE as DB_SCHEMA_NAME,
                 TABLE_NAME,
                 TABLE_TYPE
             FROM
                 INFORMATION_SCHEMA.TABLES
             {filter}
             ORDER BY
-                TABLE_TYPE, TABLE_CAT, TABLE_SCHEM, TABLE_NAME"
+                TABLE_TYPE, CATALOG_NAME, DB_SCHEMA_NAME, TABLE_NAME"
         );
 
         self.precess_flight_info_req(sql, request, span_recorder.span_ctx())

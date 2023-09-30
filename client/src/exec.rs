@@ -16,7 +16,7 @@ use crate::Result;
 
 /// run and execute SQL statements and commands from a file, against a context with the given print options
 pub async fn exec_from_lines(
-    ctx: &mut SessionContext,
+    ctx: &SessionContext,
     reader: &mut BufReader<File>,
     print_options: &PrintOptions,
 ) {
@@ -57,7 +57,7 @@ pub async fn exec_from_lines(
 
 pub async fn exec_from_files(
     files: Vec<String>,
-    ctx: &mut SessionContext,
+    ctx: &SessionContext,
     print_options: &PrintOptions,
 ) {
     let files = files
@@ -71,7 +71,7 @@ pub async fn exec_from_files(
 }
 
 /// run and execute SQL statements and commands against a context with the given print options
-pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &mut PrintOptions) {
+pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &PrintOptions) {
     let mut rl = Editor::<CliHelper>::new();
     rl.set_helper(Some(CliHelper::default()));
     rl.load_history(".history").ok();
@@ -164,7 +164,7 @@ async fn exec_and_print(
 
 fn parse_use_database(sql: &str) -> Option<String> {
     let sql = sql.trim().trim_end_matches(';');
-    if !sql[0..3].to_ascii_lowercase().eq("use") {
+    if !sql.to_ascii_lowercase().starts_with("use") {
         return None;
     }
 
