@@ -421,6 +421,7 @@ impl AdminMeta {
         let cluster_name = self.config.cluster.name.clone();
         let req = command::WriteCommand::AddDataNode(cluster_name, node.clone());
         self.client.write::<()>(&req).await?;
+        self.report_node_metrics().await?;
 
         self.data_nodes.write().insert(node.id, node);
 

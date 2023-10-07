@@ -100,7 +100,10 @@ mod tests {
     #[serial]
     fn test_kvcore_flush() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_flush", None);
+        let dir = "/tmp/test/kvcore/kvcore_flush";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let (rt, tskv) = get_tskv(dir, None);
 
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 2000);
@@ -179,7 +182,10 @@ mod tests {
     #[serial]
     fn test_kvcore_flush_delta() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_flush_delta", None);
+        let dir = "/tmp/test/kvcore/kvcore_flush_delta";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let (rt, tskv) = get_tskv(dir, None);
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let database = "db_flush_delta";
         let table = "kvcore_flush_delta";
@@ -244,7 +250,10 @@ mod tests {
     #[serial]
     fn test_kvcore_build_row_data() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_build_row_data", None);
+        let dir = "/tmp/test/kvcore/kvcore_build_row_data";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let (rt, tskv) = get_tskv(dir, None);
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_include_delta(
             &mut fbb,
@@ -276,6 +285,7 @@ mod tests {
     fn test_kvcore_recover() {
         let dir = PathBuf::from("/tmp/test/kvcore/kvcore_recover");
         let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
 
         init_default_global_tracing(dir.join("log"), "tskv.log", "debug");
         let tenant = "cnosdb";

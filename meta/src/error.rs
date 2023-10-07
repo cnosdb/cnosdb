@@ -160,7 +160,16 @@ pub enum MetaError {
     #[snafu(display("The vnode {} not found", id))]
     #[error_code(code = 37)]
     VnodeNotFound { id: u32 },
+
+    #[snafu(display(
+        "Valid node is not enough, need: {}, but found: {}",
+        need,
+        valid_node_num
+    ))]
+    #[error_code(code = 53)]
+    ValidNodeNotEnough { need: u64, valid_node_num: u32 },
 }
+
 impl MetaError {
     pub fn error_code(&self) -> &dyn ErrorCode {
         self

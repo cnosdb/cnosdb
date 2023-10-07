@@ -1446,7 +1446,12 @@ pub mod test_tseries_family {
                 .unwrap(),
         );
 
-        let config = config::get_config_for_test();
+        let mut config = config::get_config_for_test();
+        let dir = "/tmp/test/kv_core/test_read_with_tomb";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        config.storage.path = dir.into();
+
         let meta_manager: MetaRef = runtime.block_on(async {
             let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
 

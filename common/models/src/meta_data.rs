@@ -69,12 +69,24 @@ pub struct NodeInfo {
     pub attribute: NodeAttribute,
 }
 
+impl NodeInfo {
+    pub fn is_cold(&self) -> bool {
+        self.attribute == NodeAttribute::Cold
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct NodeMetrics {
     pub id: NodeId,
     pub disk_free: u64,
     pub time: i64,
     pub status: NodeStatus,
+}
+
+impl NodeMetrics {
+    pub fn is_healthy(&self) -> bool {
+        self.status == NodeStatus::Healthy
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

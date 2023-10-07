@@ -1939,6 +1939,8 @@ dependencies = [
  "models",
  "protobuf 3.2.0",
  "protos",
+ "rand",
+ "regex",
  "reqwest",
  "serial_test",
  "sysinfo",

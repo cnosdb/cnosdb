@@ -82,7 +82,7 @@ impl Parser {
         check_pos_valid(buf, pos)?;
 
         let mut tags = vec![];
-        while let Some(t) = next_tag_set(&buf[pos..]) {
+        while let Some(t) = next_tag_set(&buf[pos..])? {
             pos += t.1;
             tags.extend(t.0);
             if check_pos_valid(buf, pos).is_err() {
