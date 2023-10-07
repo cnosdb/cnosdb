@@ -25,7 +25,6 @@ pub mod test {
             .to_str()
             .unwrap()
             .to_owned();
-        println!("{}", crt_path);
         HttpClient::new("127.0.0.1", 8902, true, false, &[crt_path]).unwrap()
     }
 

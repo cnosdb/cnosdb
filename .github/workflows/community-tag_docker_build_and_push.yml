@@ -39,6 +39,11 @@ jobs:
           build-args: |
             git_hash=${{ github.sha }}
       -
+        name: modify dockerfile
+        shell: bash
+        run: |
+          sed -i 's/\[tag\]/${{ github.event.inputs.tag }}/g' Dockerfile_for_k8s
+      -
         name: Login to Aliyun
         uses: docker/login-action@v3
         with:
@@ -52,3 +57,9 @@ jobs:
           push: true
           tags: registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:community-${{ github.event.inputs.tag }}
           file: Dockerfile_for_k8s
+      -
+        name: recover dockerfile
+        shell: bash
+        run: |
+          sed -i 's/${{ github.event.inputs.tag }}/\[tag\]/g' Dockerfile_for_k8s
+ 
