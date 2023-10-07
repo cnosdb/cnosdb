@@ -26,7 +26,7 @@ use crate::memcache::{RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
-use crate::tsm::DataBlockCache;
+use crate::tsm::DataBlockCacheFactory;
 use crate::Error::{self};
 use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
@@ -45,6 +45,7 @@ pub struct Database {
     memory_pool: MemoryPoolRef,
     metrics_register: Arc<MetricsRegister>,
     tsf_factory: TsfFactory,
+    data_block_cache_factory: DataBlockCacheFactory,
 }
 
 #[derive(Debug)]
@@ -103,6 +104,13 @@ impl Database {
             metrics_register.clone(),
         );
 
+        let data_block_cache_factory = DataBlockCacheFactory::new(
+            owner.clone(),
+            metrics_register.clone(),
+            memory_pool.clone(),
+            opt.storage.clone(),
+        );
+
         let db = Self {
             opt,
             owner: Arc::new(schema.owner()),
@@ -113,6 +121,7 @@ impl Database {
             memory_pool,
             metrics_register,
             tsf_factory,
+            data_block_cache_factory,
         };
 
         Ok(db)
@@ -191,12 +200,8 @@ impl Database {
 
         let cache =
             cache::ShardedAsyncCache::create_lru_sharded_cache(self.opt.storage.max_cached_readers);
-        let data_block_cache = Arc::new(DataBlockCache::create(
-            &self.metrics_register,
-            &self.owner,
-            tsf_id,
-            &self.opt.storage,
-        ));
+
+        let data_block_cache = Arc::new(self.data_block_cache_factory.create_cache(tsf_id));
 
         let ver = Arc::new(Version::new(
             tsf_id,

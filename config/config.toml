@@ -39,7 +39,8 @@ path = '/var/lib/cnosdb/data'
 #max_cached_readers = 32
 
 ## The maximum count of data block cache in each vnode.
-#max_data_block_cache = 4096
+## 512 MB
+#max_data_block_cache_size = "512M"
 
 ## The maxmimum level of a data file (from 0 to 4).
 #max_level = 4

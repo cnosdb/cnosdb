@@ -1,6 +1,7 @@
 use std::cmp::min;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
+use std::mem::{size_of, size_of_val};
 
 use minivec::MiniVec;
 use models::predicate::domain::{TimeRange, TimeRanges};
@@ -826,6 +827,32 @@ impl DataBlock {
                 field_type
             )
             .into()),
+        }
+    }
+
+    pub fn memory_size(&self) -> usize {
+        let self_size = size_of_val(self);
+        match self {
+            DataBlock::U64 { ts, val, .. } => {
+                self_size + ts.capacity() * size_of::<i64>() + val.capacity() * size_of::<u64>()
+            }
+            DataBlock::I64 { ts, val, .. } => {
+                self_size + ts.capacity() * size_of::<i64>() + val.capacity() * size_of::<i64>()
+            }
+            DataBlock::Str { ts, val, .. } => {
+                self_size
+                    + ts.capacity() * size_of::<i64>()
+                    + val
+                        .iter()
+                        .map(|v| v.capacity() * size_of::<u8>())
+                        .sum::<usize>()
+            }
+            DataBlock::F64 { ts, val, .. } => {
+                self_size + ts.capacity() * size_of::<i64>() + val.capacity() * size_of::<f64>()
+            }
+            DataBlock::Bool { ts, val, .. } => {
+                self_size + ts.capacity() * size_of::<i64>() + val.capacity() * size_of::<bool>()
+            }
         }
     }
 }

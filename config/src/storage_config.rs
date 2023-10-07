@@ -26,8 +26,11 @@ pub struct StorageConfig {
     #[serde(default = "StorageConfig::default_max_cached_readers")]
     pub max_cached_readers: usize,
 
-    #[serde(default = "StorageConfig::default_max_data_block_cache")]
-    pub max_data_block_cache: u32,
+    #[serde(
+        with = "bytes_num",
+        default = "StorageConfig::default_max_data_block_cache_size"
+    )]
+    pub max_data_block_cache_size: u64,
 
     #[serde(default = "StorageConfig::default_max_level")]
     pub max_level: u16,
@@ -75,8 +78,9 @@ impl StorageConfig {
         32
     }
 
-    fn default_max_data_block_cache() -> u32 {
-        4096
+    fn default_max_data_block_cache_size() -> u64 {
+        // 512MB
+        512 * 1024 * 1024
     }
 
     fn default_max_level() -> u16 {
@@ -153,7 +157,7 @@ impl Default for StorageConfig {
             base_file_size: Self::default_base_file_size(),
             flush_req_channel_cap: Self::default_flush_req_channel_cap(),
             max_cached_readers: Self::default_max_cached_readers(),
-            max_data_block_cache: Self::default_max_data_block_cache(),
+            max_data_block_cache_size: Self::default_max_data_block_cache_size(),
             max_level: Self::default_max_level(),
             compact_trigger_file_num: Self::default_compact_trigger_file_num(),
             compact_trigger_cold_duration: Self::default_compact_trigger_cold_duration(),

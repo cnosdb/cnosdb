@@ -2,12 +2,7 @@ use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
 
-use cache::{ShardedSyncCache, SyncCache};
-use metrics::count::U64Counter;
-use metrics::duration::DurationCounter;
-use metrics::metric_register::MetricsRegister;
 use models::predicate::domain::{TimeRange, TimeRanges};
-use models::schema::split_owner;
 use models::{FieldId, PhysicalDType as ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
@@ -18,7 +13,8 @@ use crate::error::{self, Result};
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
-use crate::kv_option::StorageOptions;
+use crate::file_utils;
+use crate::tsm::block_cache::DataBlockCache;
 use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
     get_u64_codec, DataBlockEncoding,
@@ -26,10 +22,9 @@ use crate::tsm::codec::{
 use crate::tsm::tombstone::TsmTombstone;
 use crate::tsm::{
     get_data_block_meta_unchecked, get_index_meta_unchecked, BlockEntry, BlockMeta, DataBlock,
-    DataBlockId, Index, IndexEntry, IndexMeta, BLOCK_META_SIZE, BLOOM_FILTER_SIZE, FOOTER_SIZE,
-    INDEX_META_SIZE, MAX_BLOCK_VALUES,
+    Index, IndexEntry, IndexMeta, BLOCK_META_SIZE, BLOOM_FILTER_SIZE, FOOTER_SIZE, INDEX_META_SIZE,
+    MAX_BLOCK_VALUES,
 };
-use crate::{file_utils, TseriesFamilyId};
 
 pub type ReadTsmResult<T, E = ReadTsmError> = std::result::Result<T, E>;
 
@@ -463,106 +458,6 @@ pub struct TsmReader {
     cache: Option<Arc<DataBlockCache>>,
 }
 
-#[derive(Debug, Clone)]
-pub struct DataBlockCache {
-    hits: U64Counter,
-    visits: U64Counter,
-    load_duration: DurationCounter,
-    cache: Arc<ShardedSyncCache<DataBlockId, Arc<DataBlock>>>,
-}
-
-impl Default for DataBlockCache {
-    fn default() -> Self {
-        Self {
-            hits: Default::default(),
-            visits: Default::default(),
-            load_duration: Default::default(),
-            cache: Arc::new(ShardedSyncCache::create_lru_sharded_cache(1)),
-        }
-    }
-}
-
-impl DataBlockCache {
-    pub fn new(
-        hits: U64Counter,
-        visits: U64Counter,
-        load_duration: DurationCounter,
-        cache: Arc<ShardedSyncCache<DataBlockId, Arc<DataBlock>>>,
-    ) -> Self {
-        Self {
-            hits,
-            visits,
-            load_duration,
-            cache,
-        }
-    }
-
-    pub fn create(
-        metrics: &MetricsRegister,
-        database: &str,
-        tsf_id: TseriesFamilyId,
-        cache_option: &StorageOptions,
-    ) -> Self {
-        let (tenant, db) = split_owner(database);
-        let vnode_id = tsf_id.to_string();
-        let labels = [
-            ("tenant", tenant),
-            ("database", db),
-            ("vnode_id", vnode_id.as_str()),
-        ];
-        let hits_metric = metrics.metric::<U64Counter>("block_cache_hits", "");
-        let visits_metric = metrics.metric::<U64Counter>("block_cache_visits", "");
-        let load_duration_metric =
-            metrics.metric::<DurationCounter>("block_cache_load_duration", "");
-
-        let hits = hits_metric.recorder(labels);
-        let visits = visits_metric.recorder(labels);
-        let load_duration = load_duration_metric.recorder(labels);
-        let cache_cap = cache_option.max_data_block_cache;
-        Self {
-            hits,
-            visits,
-            load_duration,
-            cache: Arc::new(ShardedSyncCache::create_lru_sharded_cache(
-                cache_cap as usize,
-            )),
-        }
-    }
-
-    pub async fn get_data_block(
-        &self,
-        block_meta: &BlockMeta,
-        file: Arc<AsyncFile>,
-    ) -> ReadTsmResult<Arc<DataBlock>> {
-        self.visits.inc_one();
-        let id = DataBlockId::new(block_meta.tsm_file_id(), block_meta.offset());
-        match self.cache.get(&id) {
-            // hits!
-            Some(res) => {
-                self.hits.inc_one();
-                Ok(res)
-            }
-            None => {
-                let start = std::time::Instant::now();
-                let mut buf = vec![0_u8; block_meta.size() as usize];
-                let blk = read_data_block(
-                    file,
-                    &mut buf,
-                    block_meta.field_type(),
-                    block_meta.offset(),
-                    block_meta.val_off(),
-                )
-                .await?;
-                let blk = Arc::new(blk);
-                self.cache.insert(id, blk.clone());
-                println!("debug: {:#?}\n blk_len: {}", self, blk.len());
-                self.load_duration.inc(start.elapsed());
-                Ok(blk)
-            }
-        }
-    }
-}
-
 impl TsmReader {
     pub async fn open(
         tsm_path: impl AsRef<Path>,
@@ -592,21 +487,18 @@ impl TsmReader {
     }
 
     /// Returns a DataBlock without tombstone
-    pub async fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
+    pub async fn get_data_block(&self, block_meta: &BlockMeta) -> Result<DataBlock> {
         match self.cache.as_ref() {
             Some(cache) => {
                 let blk = cache
-                    .get_data_block(block_meta, self.reader.clone())
+                    .get_data_block_or_read(block_meta, self.reader.clone())
                     .await?;
                 match self
                     .tombstone
                     .read()
                     .data_block_exclude_tombstones_new(block_meta.field_id(), &blk)
                 {
-                    None => {
-                        // FIXME: this has clone
-                        Ok(blk.as_ref().clone())
-                    }
+                    None => Ok(blk.as_ref().clone()),
                     Some(block) => Ok(block),
                 }
             }
@@ -727,7 +619,7 @@ impl ColumnReader {
     }
 }
 
-async fn read_data_block(
+pub(crate) async fn read_data_block(
     reader: Arc<AsyncFile>,
     buf: &mut [u8],
     field_type: ValueType,
@@ -898,10 +790,7 @@ pub mod tsm_reader_tests {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator() {
             for blk in idx.block_iterator() {
-                let data_blk = reader
-                    .get_data_block(&blk)
-                    .await
-                    .context(error::ReadTsmSnafu)?;
+                let data_blk = reader.get_data_block(&blk).await?;
                 read_data.entry(idx.field_id()).or_default().push(data_blk);
             }
         }

@@ -1,4 +1,5 @@
 mod block;
+mod block_cache;
 pub mod codec;
 mod index;
 mod reader;
@@ -6,6 +7,7 @@ mod tombstone;
 mod writer;
 
 pub use block::*;
+pub use block_cache::*;
 pub use index::*;
 pub use reader::*;
 pub use tombstone::{Tombstone, TsmTombstone};

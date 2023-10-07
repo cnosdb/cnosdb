@@ -478,6 +478,7 @@ impl Summary {
                 &database,
                 tsf_id,
                 &opt.storage,
+                &memory_pool,
             ));
 
             let weak_tsm_reader_cache = Arc::downgrade(&tsm_reader_cache);

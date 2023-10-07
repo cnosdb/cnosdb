@@ -84,10 +84,7 @@ impl CompactingBlockMeta {
     }
 
     pub async fn get_data_block(&self) -> Result<DataBlock> {
-        self.reader
-            .get_data_block(&self.meta)
-            .await
-            .context(error::ReadTsmSnafu)
+        self.reader.get_data_block(&self.meta).await
     }
 
     pub async fn get_raw_data(&self, dst: &mut Vec<u8>) -> Result<usize> {
