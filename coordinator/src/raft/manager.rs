@@ -437,7 +437,7 @@ impl RaftNodesManager {
         let wal_option = tskv::kv_option::WalOptions::from(&self.config);
 
         let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id).await?;
-        let raft_logs = wal::raft::RaftEntryStorage::new(wal);
+        let raft_logs = wal::raft_store::RaftEntryStorage::new(wal);
 
         let _apply_id = self.raft_state.get_last_applied_log(group_id)?;
         raft_logs.recover().await?;

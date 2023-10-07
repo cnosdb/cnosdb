@@ -309,7 +309,7 @@ mod test {
     use replication::state_store::StateStorage;
     use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeInfo};
 
-    use crate::wal::raft::RaftEntryStorage;
+    use crate::wal::raft_store::RaftEntryStorage;
     use crate::wal::VnodeWal;
     use crate::Result;
 

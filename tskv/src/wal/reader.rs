@@ -8,7 +8,7 @@ use protos::models_helper::print_points;
 use snafu::ResultExt;
 
 use super::{
-    raft, WalType, WAL_DATABASE_SIZE_LEN, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN,
+    raft_store, WalType, WAL_DATABASE_SIZE_LEN, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN,
     WAL_PRECISION_LEN, WAL_TENANT_SIZE_LEN, WAL_VNODE_ID_LEN,
 };
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
@@ -172,7 +172,7 @@ impl WalRecordData {
             WalType::DeleteVnode => Block::DeleteVnode(DeleteVnodeBlock::new(buf)),
             WalType::DeleteTable => Block::DeleteTable(DeleteTableBlock::new(buf)),
             WalType::RaftBlankLog | WalType::RaftNormalLog | WalType::RaftMembershipLog => {
-                match raft::new_raft_entry(&buf[WAL_HEADER_LEN..]) {
+                match raft_store::new_raft_entry(&buf[WAL_HEADER_LEN..]) {
                     Ok(e) => Block::RaftLog(e),
                     Err(e) => {
                         trace::error!("Failed to decode raft entry from wal: {e}");
@@ -199,7 +199,7 @@ pub enum Block {
     Write(WriteBlock),
     DeleteVnode(DeleteVnodeBlock),
     DeleteTable(DeleteTableBlock),
-    RaftLog(raft::RaftEntry),
+    RaftLog(raft_store::RaftEntry),
     Unknown,
 }
 
