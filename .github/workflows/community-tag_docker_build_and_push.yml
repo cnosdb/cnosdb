@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/LTS/2.3'
     steps:
+      - uses: actions/checkout@v3
       -
         name: Get version
         id: get_version
@@ -52,11 +53,10 @@ jobs:
           password: ${{ secrets.ALIYUN_PASSWORD }}
       -
         name: Build and push k8s
-        uses: docker/build-push-action@v5
-        with:
-          push: true
-          tags: registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:community-${{ github.event.inputs.tag }}
-          file: Dockerfile_for_k8s
+        shell: bash
+        run: |
+          docker build -f Dockerfile_for_k8s -t registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:community-${{ github.event.inputs.tag }} .
+          docker push registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:community-${{ github.event.inputs.tag }}
       -
         name: recover dockerfile
         shell: bash
