@@ -143,8 +143,6 @@ pub enum DDLPlan {
 
     ChecksumGroup(ChecksumGroup),
 
-    RecoverTable(RecoverTable),
-
     RecoverDatabase(RecoverDatabase),
 
     RecoverTenant(RecoverTenant),
@@ -219,7 +217,6 @@ pub struct DropDatabaseObject {
     pub if_exist: bool,
     ///ObjectType
     pub obj_type: DatabaseObjectType,
-    pub after: Option<Duration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

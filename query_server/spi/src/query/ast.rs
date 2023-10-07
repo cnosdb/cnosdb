@@ -63,7 +63,6 @@ pub enum ExtStatement {
     // recover cmd
     RecoverTenant(RecoverTenant),
     RecoverDatabase(RecoverDatabase),
-    RecoverTable(RecoverTable),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -187,7 +186,6 @@ pub struct DropDatabaseObject {
     pub object_name: ObjectName,
     pub if_exist: bool,
     pub obj_type: DatabaseObjectType,
-    pub after: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

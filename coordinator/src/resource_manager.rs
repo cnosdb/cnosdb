@@ -140,14 +140,14 @@ impl ResourceManager {
             _ => Ok(false),
         };
 
-        if let Err(coord_err) = operator_result {
-            ResourceManager::change_and_write(
+        if let Err(coord_err) = &operator_result {
+            let _ = ResourceManager::change_and_write(
                 coord.meta_manager(),
                 resourceinfo.clone(),
                 ResourceStatus::Failed,
                 &coord_err.to_string(),
             )
-            .await
+            .await;
         } else {
             ResourceManager::change_and_write(
                 coord.meta_manager(),
@@ -155,8 +155,10 @@ impl ResourceManager {
                 ResourceStatus::Successed,
                 "",
             )
-            .await
+            .await?;
         }
+
+        operator_result
     }
 
     async fn drop_tenant(
@@ -260,6 +262,14 @@ impl ResourceManager {
             let db_name = names.get(1).unwrap();
             let table_name = names.get(2).unwrap();
 
+            let tenant =
+                coord
+                    .tenant_meta(tenant_name)
+                    .await
+                    .ok_or(CoordinatorError::TenantNotFound {
+                        name: tenant_name.clone(),
+                    })?;
+
             info!("Drop table {}/{}/{}", tenant_name, db_name, table_name);
             let req = AdminCommandRequest {
                 tenant: tenant_name.clone(),
@@ -269,13 +279,7 @@ impl ResourceManager {
                 })),
             };
             coord.broadcast_command(req).await?;
-            let tenant =
-                coord
-                    .tenant_meta(tenant_name)
-                    .await
-                    .ok_or(CoordinatorError::TenantNotFound {
-                        name: tenant_name.clone(),
-                    })?;
+
             tenant
                 .drop_table(db_name, table_name)
                 .await

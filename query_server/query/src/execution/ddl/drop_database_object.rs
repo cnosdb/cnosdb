@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use coordinator::errors::CoordinatorError;
 use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
 use models::oid::Identifier;
@@ -28,10 +29,9 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
             ref object_name,
             ref if_exist,
             ref obj_type,
-            ref after,
         } = self.stmt;
 
-        match obj_type {
+        let res = match obj_type {
             DatabaseObjectType::Table => {
                 // TODO 删除指定租户下的表
                 info!("Drop table {}", object_name);
@@ -42,44 +42,33 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     },
                 )?;
 
-                // first, set hidden to TRUE
-                match client
-                    .set_table_is_hidden(tenant, object_name.database(), object_name.table(), true)
+                let resourceinfo = ResourceInfo::new(
+                    *client.tenant().id(),
+                    vec![
+                        object_name.tenant().to_string(),
+                        object_name.database().to_string(),
+                        object_name.table().to_string(),
+                    ],
+                    ResourceType::Table,
+                    ResourceOperator::Drop,
+                    &None,
+                );
+                ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
                     .await
-                {
-                    Ok(_) => {
-                        // second, add drop task
-                        let resourceinfo = ResourceInfo::new(
-                            *client.tenant().id(),
-                            vec![
-                                object_name.tenant().to_string(),
-                                object_name.database().to_string(),
-                                object_name.table().to_string(),
-                            ],
-                            ResourceType::Table,
-                            ResourceOperator::Drop,
-                            after,
-                        );
-                        ResourceManager::add_resource_task(
-                            query_state_machine.coord.clone(),
-                            resourceinfo,
-                        )
-                        .await?;
-                        Ok(Output::Nil(()))
-                    }
-                    Err(_) => {
-                        if !if_exist {
-                            return Err(QueryError::Meta {
-                                source: MetaError::TableNotFound {
-                                    table: object_name.table().to_string(),
-                                },
-                            });
-                        } else {
-                            Ok(Output::Nil(()))
-                        }
-                    }
+            }
+        };
+
+        if let Err(err) = res {
+            if let CoordinatorError::Meta {
+                source: MetaError::TableNotFound { .. },
+            } = &err
+            {
+                if *if_exist {
+                    return Ok(Output::Nil(()));
                 }
             }
+            return Err(QueryError::Coordinator { source: err });
         }
+        Ok(Output::Nil(()))
     }
 }

@@ -21,8 +21,8 @@ use spi::query::ast::{
     CopyIntoLocation, CopyIntoTable, CopyTarget, CopyVnode, CreateDatabase, CreateRole,
     CreateStream, CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase,
     DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode, Explain,
-    ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege, RecoverDatabase, RecoverTable,
-    RecoverTenant, ShowSeries, ShowTagBody, ShowTagValues, Trigger, UriLocation, With,
+    ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege, RecoverDatabase, RecoverTenant,
+    ShowSeries, ShowTagBody, ShowTagValues, Trigger, UriLocation, With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -1387,14 +1387,7 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_recover(&mut self) -> Result<ExtStatement> {
-        let ast = if self.parser.parse_keyword(Keyword::TABLE) {
-            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
-            let object_name = self.parser.parse_object_name()?;
-            ExtStatement::RecoverTable(RecoverTable {
-                object_name,
-                if_exist,
-            })
-        } else if self.parser.parse_keyword(Keyword::DATABASE) {
+        let ast = if self.parser.parse_keyword(Keyword::DATABASE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_identifier()?;
             ExtStatement::RecoverDatabase(RecoverDatabase {
@@ -1409,10 +1402,7 @@ impl<'a> ExtParser<'a> {
                 if_exist,
             })
         } else {
-            return self.expected(
-                "TABLE,DATABASE,TENANT after RECOVER",
-                self.parser.peek_token(),
-            );
+            return self.expected("DATABASE,TENANT after RECOVER", self.parser.peek_token());
         };
 
         Ok(ast)
@@ -1423,15 +1413,10 @@ impl<'a> ExtParser<'a> {
         let ast = if self.parser.parse_keyword(Keyword::TABLE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_object_name()?;
-            let mut after = None;
-            if self.parse_cnos_keyword(CnosKeyWord::AFTER) {
-                after = Some(self.parse_string_value()?);
-            }
             ExtStatement::DropDatabaseObject(DropDatabaseObject {
                 object_name,
                 if_exist,
                 obj_type: DatabaseObjectType::Table,
-                after,
             })
         } else if self.parser.parse_keyword(Keyword::DATABASE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
@@ -1705,7 +1690,6 @@ mod tests {
                 object_name,
                 if_exist,
                 obj_type,
-                after: None,
             }) => {
                 assert_eq!(object_name.to_string(), "test_tb".to_string());
                 assert_eq!(if_exist.to_string(), "false".to_string());
@@ -1722,7 +1706,6 @@ mod tests {
                 object_name,
                 if_exist,
                 obj_type,
-                after: None,
             }) => {
                 assert_eq!(object_name.to_string(), "test_tb".to_string());
                 assert_eq!(if_exist.to_string(), "true".to_string());
@@ -1739,12 +1722,10 @@ mod tests {
                 object_name,
                 if_exist,
                 obj_type,
-                after,
             }) => {
                 assert_eq!(object_name.to_string(), "test_tb".to_string());
                 assert_eq!(if_exist.to_string(), "false".to_string());
                 assert_eq!(obj_type, &DatabaseObjectType::Table);
-                assert_eq!(*after, Some("1d".to_string()));
             }
             _ => panic!("failed"),
         }
@@ -1757,12 +1738,10 @@ mod tests {
                 object_name,
                 if_exist,
                 obj_type,
-                after,
             }) => {
                 assert_eq!(object_name.to_string(), "test_tb".to_string());
                 assert_eq!(if_exist.to_string(), "true".to_string());
                 assert_eq!(obj_type, &DatabaseObjectType::Table);
-                assert_eq!(*after, Some("1d".to_string()));
             }
             _ => panic!("failed"),
         }
@@ -1910,34 +1889,6 @@ mod tests {
 
     #[test]
     fn test_recover() {
-        let sql = "recover table test_tb";
-        let statements = ExtParser::parse_sql(sql).unwrap();
-        assert_eq!(statements.len(), 1);
-        match &statements[0] {
-            ExtStatement::RecoverTable(RecoverTable {
-                object_name,
-                if_exist,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_tb".to_string());
-                assert_eq!(if_exist.to_string(), "false".to_string());
-            }
-            _ => panic!("failed"),
-        }
-
-        let sql = "recover table if exists test_tb";
-        let statements = ExtParser::parse_sql(sql).unwrap();
-        assert_eq!(statements.len(), 1);
-        match &statements[0] {
-            ExtStatement::RecoverTable(RecoverTable {
-                object_name,
-                if_exist,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_tb".to_string());
-                assert_eq!(if_exist.to_string(), "true".to_string());
-            }
-            _ => panic!("failed"),
-        }
-
         let sql = "recover database test_db";
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);

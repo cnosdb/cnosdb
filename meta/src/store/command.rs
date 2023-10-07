@@ -68,8 +68,6 @@ pub enum WriteCommand {
     // cluster, tenant, table schema
     CreateTable(String, String, TableSchema),
     UpdateTable(String, String, TableSchema),
-    // cluster, tenant, db name, table name, table_is_hidden
-    SetTableIsHidden(String, String, String, String, bool),
     // cluster, tenant, db name, table name
     DropTable(String, String, String, String),
 

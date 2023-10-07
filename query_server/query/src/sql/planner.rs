@@ -80,7 +80,7 @@ use spi::query::logical_planner::{
     CreateUser, DDLPlan, DatabaseObjectType, DropDatabaseObject, DropGlobalObject,
     DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
     GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, RecoverDatabase,
-    RecoverTable, RecoverTenant, RenameColumnAction, SYSPlan, TenantObjectType,
+    RecoverTenant, RenameColumnAction, SYSPlan, TenantObjectType,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -206,7 +206,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             }
             ExtStatement::RecoverTenant(stmt) => self.recovertenant_to_plan(stmt),
             ExtStatement::RecoverDatabase(stmt) => self.recoverdatabase_to_plan(stmt, session),
-            ExtStatement::RecoverTable(stmt) => self.recovertable_to_plan(stmt, session),
         }
     }
 
@@ -360,11 +359,9 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             object_name,
             if_exist,
             ref obj_type,
-            after,
         } = stmt;
         // get the current tenant id from the session
         let tenant_id = *session.tenant_id();
-        let after_duration = after.map(|e| self.str_to_duration(&e)).transpose()?;
 
         let (plan, privilege) = match obj_type {
             DatabaseObjectType::Table => {
@@ -375,7 +372,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                         if_exist,
                         object_name: table,
                         obj_type: DatabaseObjectType::Table,
-                        after: after_duration,
                     }),
                     Privilege::TenantObject(
                         TenantObjectPrivilege::Database(
@@ -497,35 +493,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     Privilege::Global(GlobalPrivilege::User(None)),
                 )
             }
-        };
-
-        Ok(PlanWithPrivileges {
-            plan: Plan::DDL(plan),
-            privileges: vec![privilege],
-        })
-    }
-
-    fn recovertable_to_plan(
-        &self,
-        stmt: ast::RecoverTable,
-        session: &SessionCtx,
-    ) -> Result<PlanWithPrivileges> {
-        let ast::RecoverTable {
-            object_name,
-            if_exist,
-        } = stmt;
-        let tenant_id = *session.tenant_id();
-
-        let (plan, privilege) = {
-            let table = object_name_to_resolved_table(session, object_name)?;
-            let database_name = table.database().to_string();
-            (
-                DDLPlan::RecoverTable(RecoverTable { table, if_exist }),
-                Privilege::TenantObject(
-                    TenantObjectPrivilege::Database(DatabasePrivilege::Full, Some(database_name)),
-                    Some(tenant_id),
-                ),
-            )
         };
 
         Ok(PlanWithPrivileges {

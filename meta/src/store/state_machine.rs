@@ -570,15 +570,6 @@ impl StateMachine {
             WriteCommand::UpdateTable(cluster, tenant, schema) => {
                 response_encode(self.process_update_table(cluster, tenant, schema))
             }
-            WriteCommand::SetTableIsHidden(cluster, tenant, db, table, table_is_hidden) => {
-                response_encode(self.process_table_is_hidden(
-                    cluster,
-                    tenant,
-                    db,
-                    table,
-                    *table_is_hidden,
-                ))
-            }
             WriteCommand::CreateBucket(cluster, tenant, db, ts) => {
                 response_encode(self.process_create_bucket(cluster, tenant, db, ts))
             }
@@ -942,10 +933,6 @@ impl StateMachine {
                         return Err(MetaError::UpdateTableConflict {
                             name: schema.name.clone(),
                         });
-                    } else if val.get_table_is_hidden() {
-                        return Err(MetaError::TableNotFound {
-                            table: schema.name.clone(),
-                        });
                     }
                 }
                 _ => {
@@ -957,39 +944,6 @@ impl StateMachine {
         }
 
         self.insert(&key, &value_encode(schema)?)?;
-        Ok(())
-    }
-
-    fn process_table_is_hidden(
-        &self,
-        cluster: &str,
-        tenant: &str,
-        db: &str,
-        table: &str,
-        new_table_is_hidden: bool,
-    ) -> MetaResult<()> {
-        let key = KeyPath::tenant_schema_name(cluster, tenant, db, table);
-        if let Some(val) = self.get_struct::<TableSchema>(&key)? {
-            let new_val: TableSchema = match val {
-                TableSchema::TsKvTableSchema(schema) => {
-                    let mut new_schema = (*schema).clone();
-                    new_schema.set_table_is_hidden(new_table_is_hidden);
-                    TableSchema::TsKvTableSchema(Arc::new(new_schema))
-                }
-                TableSchema::ExternalTableSchema(schema) => {
-                    let mut new_schema = (*schema).clone();
-                    new_schema.set_table_is_hidden(new_table_is_hidden);
-                    TableSchema::ExternalTableSchema(Arc::new(new_schema))
-                }
-                TableSchema::StreamTableSchema(schema) => {
-                    let mut new_schema = (*schema).clone();
-                    new_schema.set_table_is_hidden(new_table_is_hidden);
-                    TableSchema::StreamTableSchema(Arc::new(new_schema))
-                }
-            };
-            self.insert(&key, &value_encode(&new_val)?)?;
-        }
-
         Ok(())
     }
 

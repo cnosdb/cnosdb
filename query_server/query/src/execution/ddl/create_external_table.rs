@@ -129,7 +129,6 @@ async fn build_table_schema(
         has_header: stmt.has_header,
         delimiter: stmt.delimiter as u8,
         schema: schema.deref().clone(),
-        table_is_hidden: false,
     };
     Ok(schema)
 }

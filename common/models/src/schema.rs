@@ -243,7 +243,6 @@ pub struct ExternalTableSchema {
     pub has_header: bool,
     pub delimiter: u8,
     pub schema: Schema,
-    pub table_is_hidden: bool,
 }
 
 impl ExternalTableSchema {
@@ -277,14 +276,6 @@ impl ExternalTableSchema {
 
         Ok(options)
     }
-
-    pub fn get_table_is_hidden(&self) -> bool {
-        self.table_is_hidden
-    }
-
-    pub fn set_table_is_hidden(&mut self, table_is_hidden: bool) {
-        self.table_is_hidden = table_is_hidden;
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -298,8 +289,6 @@ pub struct TskvTableSchema {
     columns: Vec<TableColumn>,
     //ColumnName -> ColumnsIndex
     columns_index: HashMap<String, usize>,
-
-    table_is_hidden: bool,
 }
 
 impl Default for TskvTableSchema {
@@ -312,7 +301,6 @@ impl Default for TskvTableSchema {
             next_column_id: 0,
             columns: Default::default(),
             columns_index: Default::default(),
-            table_is_hidden: false,
         }
     }
 }
@@ -338,7 +326,6 @@ impl TskvTableSchema {
             next_column_id: columns.len() as ColumnId,
             columns,
             columns_index,
-            table_is_hidden: false,
         }
     }
 
@@ -504,14 +491,6 @@ impl TskvTableSchema {
 
     pub fn contains_column(&self, column_name: &str) -> bool {
         self.columns_index.contains_key(column_name)
-    }
-
-    pub fn get_table_is_hidden(&self) -> bool {
-        self.table_is_hidden
-    }
-
-    pub fn set_table_is_hidden(&mut self, table_is_hidden: bool) {
-        self.table_is_hidden = table_is_hidden;
     }
 }
 
@@ -1281,7 +1260,6 @@ pub struct StreamTable {
     stream_type: String,
     watermark: Watermark,
     extra_options: HashMap<String, String>,
-    table_is_hidden: bool,
 }
 
 impl StreamTable {
@@ -1302,7 +1280,6 @@ impl StreamTable {
             stream_type: stream_type.into(),
             watermark,
             extra_options,
-            table_is_hidden: false,
         }
     }
 
@@ -1332,14 +1309,6 @@ impl StreamTable {
 
     pub fn extra_options(&self) -> &HashMap<String, String> {
         &self.extra_options
-    }
-
-    pub fn get_table_is_hidden(&self) -> bool {
-        self.table_is_hidden
-    }
-
-    pub fn set_table_is_hidden(&mut self, table_is_hidden: bool) {
-        self.table_is_hidden = table_is_hidden;
     }
 }
 
