@@ -10,12 +10,13 @@ use datafusion::arrow::record_batch::RecordBatch;
 use errors::CoordinatorError;
 use futures::Stream;
 use meta::model::{MetaClientRef, MetaRef};
-use models::meta_data::{ReplicationSet, VnodeAllInfo};
+use models::meta_data::{ReplicaAllInfo, ReplicationSet, ReplicationSetId, VnodeAllInfo};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::{Precision, TskvTableSchemaRef};
 use protocol_parser::Line;
 use protos::kv_service::AdminCommandRequest;
+use raft::manager::RaftNodesManager;
 use trace::SpanContext;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
@@ -27,6 +28,7 @@ pub mod errors;
 pub mod file_info;
 pub mod hh_queue;
 pub mod metrics;
+pub mod raft;
 pub mod reader;
 pub mod service;
 pub mod service_mock;
@@ -58,6 +60,13 @@ pub enum VnodeManagerCmdType {
     Drop(u32),
     /// vnode id list
     Compact(Vec<u32>),
+
+    /// replica set id, dst nod id
+    AddRaftFollower(u32, u64),
+    /// vnode id
+    RemoveRaftNode(u32),
+    /// replica set id
+    DestoryRaftGroup(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -66,23 +75,12 @@ pub enum VnodeSummarizerCmdType {
     Checksum(u32),
 }
 
-pub fn status_response_to_result(
-    status: &protos::kv_service::StatusResponse,
-) -> errors::CoordinatorResult<()> {
-    if status.code == SUCCESS_RESPONSE_CODE {
-        Ok(())
-    } else {
-        Err(errors::CoordinatorError::CommonError {
-            msg: "Unreachable".to_string(),
-        })
-    }
-}
-
 #[async_trait::async_trait]
 pub trait Coordinator: Send + Sync {
     fn node_id(&self) -> u64;
     fn meta_manager(&self) -> MetaRef;
     fn store_engine(&self) -> Option<EngineRef>;
+    fn raft_manager(&self) -> Arc<RaftNodesManager>;
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
 
     /// get all vnodes of a table to quering
@@ -91,6 +89,16 @@ pub trait Coordinator: Send + Sync {
         table: &ResolvedTable,
         predicate: ResolvedPredicateRef,
     ) -> CoordinatorResult<Vec<ReplicationSet>>;
+
+    async fn exec_write_replica_points(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        data: Arc<Vec<u8>>,
+        precision: Precision,
+        replica: ReplicationSet,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<()>;
 
     async fn write_lines<'a>(
         &self,
@@ -137,9 +145,23 @@ pub trait Coordinator: Send + Sync {
     ) -> CoordinatorResult<Vec<RecordBatch>>;
 
     fn metrics(&self) -> &Arc<CoordServiceMetrics>;
+
+    fn using_raft_replication(&self) -> bool;
 }
 
-async fn get_vnode_all_info(
+pub fn status_response_to_result(
+    status: &protos::kv_service::StatusResponse,
+) -> errors::CoordinatorResult<()> {
+    if status.code == SUCCESS_RESPONSE_CODE {
+        Ok(())
+    } else {
+        Err(errors::CoordinatorError::GRPCRequest {
+            msg: status.data.clone(),
+        })
+    }
+}
+
+pub async fn get_vnode_all_info(
     meta: MetaRef,
     tenant: &str,
     vnode_id: u32,
@@ -154,4 +176,41 @@ async fn get_vnode_all_info(
             name: tenant.to_string(),
         }),
     }
+}
+
+pub async fn get_replica_all_info(
+    meta: MetaRef,
+    tenant: &str,
+    replica_id: ReplicationSetId,
+) -> CoordinatorResult<ReplicaAllInfo> {
+    let replica = meta
+        .tenant_meta(tenant)
+        .await
+        .ok_or(CoordinatorError::TenantNotFound {
+            name: tenant.to_owned(),
+        })?
+        .get_replica_all_info(replica_id)
+        .ok_or(CoordinatorError::ReplicationSetNotFound { id: replica_id })?;
+
+    Ok(replica)
+}
+
+pub async fn update_replication_set(
+    meta: MetaRef,
+    tenant: &str,
+    db_name: &str,
+    bucket_id: u32,
+    replica_id: u32,
+    del_info: &[models::meta_data::VnodeInfo],
+    add_info: &[models::meta_data::VnodeInfo],
+) -> CoordinatorResult<()> {
+    meta.tenant_meta(tenant)
+        .await
+        .ok_or(CoordinatorError::TenantNotFound {
+            name: tenant.to_owned(),
+        })?
+        .update_replication_set(db_name, bucket_id, replica_id, del_info, add_info)
+        .await?;
+
+    Ok(())
 }

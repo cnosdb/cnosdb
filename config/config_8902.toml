@@ -1,5 +1,7 @@
 #reporting_disabled = false
 host = "localhost"
+raft_logs_to_keep = 5000
+using_raft_replication = false
 
 [deployment]
 #mode = 'singleton'

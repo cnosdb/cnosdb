@@ -1,0 +1,31 @@
+syntax = "proto3";
+package raft_service;
+
+/* -------------------------------------------------------------------- */
+message RaftResponse {
+  int32 code = 1;
+  string data = 2;
+}
+
+
+message RaftVoteReq {
+    uint32 group_id = 2;
+    string data = 3;
+}
+
+message RaftSnapshotReq {
+    uint32 group_id = 2;
+    bytes data = 3;
+}
+
+message RaftAppendEntriesReq {
+    uint32 group_id = 2;
+    bytes data = 3;
+}
+
+/* -------------------------------------------------------------------- */
+service RaftService {
+  rpc RaftVote(RaftVoteReq) returns (RaftResponse) {};
+  rpc RaftSnapshot(RaftSnapshotReq) returns (RaftResponse) {};
+  rpc RaftAppendEntries(RaftAppendEntriesReq) returns (RaftResponse) {};
+}

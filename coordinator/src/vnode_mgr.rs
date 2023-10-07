@@ -7,7 +7,7 @@ use protos::kv_service::admin_command_request::Command::DelVnode;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{
     AdminCommandRequest, DeleteVnodeRequest, DownloadFileRequest, FetchVnodeSummaryRequest,
-    GetVnodeFilesMetaRequest, GetVnodeFilesMetaResponse,
+    GetFilesMetaResponse, GetVnodeFilesMetaRequest,
 };
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
@@ -227,10 +227,9 @@ impl VnodeManager {
                 .strip_prefix(&(files_meta.path.clone() + "/"))
                 .unwrap();
 
-            self.download_file(all_info, relative_filename, data_path, client)
-                .await?;
-
             let filename = data_path.join(relative_filename);
+            VnodeManager::download_file(&info.name, &filename, client).await?;
+
             let filename = filename.to_string_lossy().to_string();
             let tmp_info = get_file_info(&filename).await?;
             if tmp_info.md5 != info.md5 {
@@ -247,7 +246,7 @@ impl VnodeManager {
         &self,
         all_info: &VnodeAllInfo,
         client: &mut TskvServiceClient<Timeout<Channel>>,
-    ) -> CoordinatorResult<GetVnodeFilesMetaResponse> {
+    ) -> CoordinatorResult<GetFilesMetaResponse> {
         let request = tonic::Request::new(GetVnodeFilesMetaRequest {
             tenant: all_info.tenant.to_string(),
             db: all_info.db_name.to_string(),
@@ -264,28 +263,25 @@ impl VnodeManager {
         Ok(resp)
     }
 
-    async fn download_file(
-        &self,
-        req: &VnodeAllInfo,
-        filename: &str,
-        data_path: &Path,
+    pub async fn download_file(
+        download: &str,
+        filename: &Path,
         client: &mut TskvServiceClient<Timeout<Channel>>,
     ) -> CoordinatorResult<()> {
-        let file_path = data_path.join(filename);
-        tokio::fs::create_dir_all(file_path.parent().unwrap()).await?;
+        if let Some(dir) = filename.parent() {
+            tokio::fs::create_dir_all(dir).await?;
+        }
+
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
             .truncate(true)
             .read(true)
             .write(true)
-            .open(&file_path)
+            .open(filename)
             .await?;
 
         let request = tonic::Request::new(DownloadFileRequest {
-            tenant: req.tenant.clone(),
-            db: req.db_name.clone(),
-            vnode_id: req.vnode_id,
-            filename: filename.to_string(),
+            filename: download.to_string(),
         });
         let mut resp_stream = client
             .download_file(request)

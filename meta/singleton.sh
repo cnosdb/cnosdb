@@ -86,22 +86,17 @@ rpc() {
   local body="$2"
 
   echo '---'" rpc(:$uri, $body)"
-  {
+
+  local response=$(
     if [ ".$body" = "." ]; then
       curl --silent "127.0.0.1:$uri"
     else
       curl --silent "127.0.0.1:$uri" -H "Content-Type: application/json" -d "$body"
     fi
-  } | {
-    echo -n '--- '
-    if type jq >/dev/null 2>&1; then
-      jq
-    else
-      cat
-    fi
-  }
-  echo
-  echo
+  )
+
+  echo -n '--- '
+  { echo $response | jq 2>/dev/null; } || { echo $response | cat; }
 }
 
 #export RUST_LOG=debug

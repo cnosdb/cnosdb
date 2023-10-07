@@ -24,8 +24,13 @@ impl DDLDefinitionTask for DropVnodeTask {
         let tenant = query_state_machine.session.tenant();
 
         let coord = query_state_machine.coord.clone();
-        let cmd_type = VnodeManagerCmdType::Drop(vnode_id);
-        coord.vnode_manager(tenant, cmd_type).await?;
+        if coord.using_raft_replication() {
+            let cmd_type = VnodeManagerCmdType::RemoveRaftNode(vnode_id);
+            coord.vnode_manager(tenant, cmd_type).await?;
+        } else {
+            let cmd_type = VnodeManagerCmdType::Drop(vnode_id);
+            coord.vnode_manager(tenant, cmd_type).await?;
+        }
 
         Ok(Output::Nil(()))
     }
