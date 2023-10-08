@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/main'
     steps:
+      - uses: actions/checkout@v3
       - name: Get current date
         id: date
         run: echo "::set-output name=today::$(date +'%Y-%m-%d')"
@@ -51,13 +52,11 @@ jobs:
           password: ${{ secrets.ALIYUN_PASSWORD }}
       -
         name: Build and push k8s
-        uses: docker/build-push-action@v5
-        with:
-          push: true
-          tags: |
-            registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:community-latest
-            registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:${{ steps.date.outputs.today }}
-          file: Dockerfile_for_k8s
+        shell: bash
+        run: |
+          docker build -f Dockerfile_for_k8s -t registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:community-latest -t registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:${{ steps.date.outputs.today }} .
+          docker push registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:community-latest
+          docker push registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:${{ steps.date.outputs.today }}
       -
         name: recover dockerfile
         shell: bash
