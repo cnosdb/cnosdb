@@ -65,6 +65,10 @@ mod tests {
     #[serial]
     fn test_kvcore_init() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
+        let dir = "/tmp/test/kvcore/kvcore_init";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+
         get_tskv("/tmp/test/kvcore/kvcore_init", None);
         dbg!("Ok");
     }
@@ -73,6 +77,9 @@ mod tests {
     #[serial]
     fn test_kvcore_write() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
+        let dir = "/tmp/test/kvcore/kvcore_write";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
 
         let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_write", None);
 
@@ -152,6 +159,9 @@ mod tests {
     #[ignore]
     fn test_kvcore_big_write() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
+        let dir = "/tmp/test/kvcore/kvcore_big_write";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
         let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_big_write", None);
 
         for _ in 0..100 {
@@ -331,6 +341,7 @@ mod tests {
     fn test_kvcore_snapshot_create_apply_delete() {
         let dir = PathBuf::from("/tmp/test/kvcore/test_kvcore_snapshot_create_apply_delete");
         let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
 
         init_default_global_tracing(dir.join("log"), "tskv.log", "debug");
         let tenant = "cnosdb";
