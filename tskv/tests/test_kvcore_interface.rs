@@ -69,7 +69,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
 
-        get_tskv("/tmp/test/kvcore/kvcore_init", None);
+        get_tskv(dir, None);
         dbg!("Ok");
     }
 
@@ -81,7 +81,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
 
-        let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_write", None);
+        let (rt, tskv) = get_tskv(dir, None);
 
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
@@ -162,7 +162,7 @@ mod tests {
         let dir = "/tmp/test/kvcore/kvcore_big_write";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_big_write", None);
+        let (rt, tskv) = get_tskv(dir, None);
 
         for _ in 0..100 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
