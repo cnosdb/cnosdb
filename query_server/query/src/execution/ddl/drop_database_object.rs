@@ -53,8 +53,11 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     ResourceOperator::Drop,
                     &None,
                 );
-                let res = ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
-                    .await;
+                let res = ResourceManager::add_resource_task(
+                    query_state_machine.coord.clone(),
+                    resourceinfo,
+                )
+                .await;
 
                 if let Err(err) = res {
                     if let CoordinatorError::Meta {
