@@ -14,8 +14,11 @@ bench-job:
     # - pkill -9 cnosdb-meta
     - sudo rm -rf /home/gitlab-runner/cnosdb
     - echo "compile code"
+    - source ~/.cargo/env
     - make build_release
     - sleep 10
+    - ulimit -n 65535
+    - ulimit -a
     - echo "modify default config"
     - sed -i "s/tmp/home\/gitlab-runner/g" config/config_8902.toml
     #- sed -i "s/tmp/data1/g" config/config_8912.toml
