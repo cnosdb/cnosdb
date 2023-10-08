@@ -31,14 +31,6 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
         } = self.stmt;
 
         let meta = query_state_machine.meta.clone();
-        let tenant_meta = meta
-            .tenant_meta(name)
-            .await
-            .ok_or_else(|| QueryError::Meta {
-                source: MetaError::TenantNotFound {
-                    tenant: name.to_string(),
-                },
-            })?;
 
         match obj_type {
             GlobalObjectType::User => {
@@ -68,12 +60,14 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 // ) -> Result<bool>;
                 debug!("Drop tenant {}", name);
 
-                // first, set hidden to TRUE
-                match meta.set_tenant_is_hidden(name, true).await {
-                    Ok(_) => {
+                match meta.tenant_meta(name).await {
+                    Some(tm) => {
+                        // first, set hidden to TRUE
+                        meta.set_tenant_is_hidden(name, true).await?;
+
                         // second, add drop task
                         let resourceinfo = ResourceInfo::new(
-                            *tenant_meta.tenant().id(),
+                            *tm.tenant().id(),
                             vec![name.clone()],
                             ResourceType::Tenant,
                             ResourceOperator::Drop,
@@ -84,19 +78,20 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                             resourceinfo,
                         )
                         .await?;
+                        Ok(Output::Nil(()))
                     }
-                    Err(_) => {
+                    None => {
                         if !if_exist {
                             return Err(QueryError::Meta {
                                 source: MetaError::TenantNotFound {
                                     tenant: name.to_string(),
                                 },
                             });
+                        } else {
+                            Ok(Output::Nil(()))
                         }
                     }
                 }
-
-                Ok(Output::Nil(()))
             }
         }
     }

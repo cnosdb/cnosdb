@@ -72,32 +72,28 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 // database_name
 
                 // first, set hidden to TRUE
-                match meta.set_db_is_hidden(tenant_name, name, true).await {
-                    Ok(_) => {
-                        // second, add drop task
-                        let resourceinfo = ResourceInfo::new(
-                            *meta.tenant().id(),
-                            vec![tenant_name.clone(), name.clone()],
-                            ResourceType::Database,
-                            ResourceOperator::Drop,
-                            after,
-                        );
-                        ResourceManager::add_resource_task(
-                            query_state_machine.coord.clone(),
-                            resourceinfo,
-                        )
-                        .await?;
-                    }
-                    Err(_) => {
-                        if !if_exist {
-                            return Err(QueryError::Meta {
-                                source: MetaError::DatabaseNotFound {
-                                    database: name.to_string(),
-                                },
-                            });
+                if let Err(err) = meta.set_db_is_hidden(tenant_name, name, true).await {
+                    if let MetaError::DatabaseNotFound { .. } = &err {
+                        if *if_exist {
+                            return Ok(Output::Nil(()));
                         }
                     }
+                    return Err(QueryError::Meta { source: err });
                 }
+
+                // second, add drop task
+                let resourceinfo = ResourceInfo::new(
+                    *meta.tenant().id(),
+                    vec![tenant_name.clone(), name.clone()],
+                    ResourceType::Database,
+                    ResourceOperator::Drop,
+                    after,
+                );
+                ResourceManager::add_resource_task(
+                    query_state_machine.coord.clone(),
+                    resourceinfo,
+                )
+                .await?;
 
                 Ok(Output::Nil(()))
             }

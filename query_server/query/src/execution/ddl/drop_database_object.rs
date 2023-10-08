@@ -31,7 +31,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
             ref obj_type,
         } = self.stmt;
 
-        let res = match obj_type {
+        match obj_type {
             DatabaseObjectType::Table => {
                 // TODO 删除指定租户下的表
                 info!("Drop table {}", object_name);
@@ -53,22 +53,23 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     ResourceOperator::Drop,
                     &None,
                 );
-                ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
-                    .await
+                let res = ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
+                    .await;
+
+                if let Err(err) = res {
+                    if let CoordinatorError::Meta {
+                        source: MetaError::TableNotFound { .. },
+                    } = &err
+                    {
+                        if *if_exist {
+                            return Ok(Output::Nil(()));
+                        }
+                    }
+                    return Err(QueryError::Coordinator { source: err });
+                }
             }
         };
 
-        if let Err(err) = res {
-            if let CoordinatorError::Meta {
-                source: MetaError::TableNotFound { .. },
-            } = &err
-            {
-                if *if_exist {
-                    return Ok(Output::Nil(()));
-                }
-            }
-            return Err(QueryError::Coordinator { source: err });
-        }
         Ok(Output::Nil(()))
     }
 }
