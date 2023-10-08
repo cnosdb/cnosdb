@@ -129,8 +129,8 @@ impl RaftNodesManager {
 
     pub async fn exec_drop_raft_node(
         &self,
-        _tenant: &str,
-        _db_name: &str,
+        tenant: &str,
+        db_name: &str,
         id: VnodeId,
         group_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
@@ -139,6 +139,12 @@ impl RaftNodesManager {
         if let Some(raft_node) = nodes.get_node(group_id) {
             raft_node.shutdown().await?;
             nodes.rm_node(group_id);
+
+            let vnode_id = raft_node.raft_id() as VnodeId;
+            if let Some(storage) = &self.kv_inst {
+                let _ = storage.remove_tsfamily(tenant, db_name, vnode_id).await;
+            }
+
             info!("success remove raft node({}) from group({})", id, group_id)
         } else {
             info!("can't found raft node({}) from group({})", id, group_id)
@@ -258,6 +264,12 @@ impl RaftNodesManager {
         )
         .await?;
 
+        let vnode_id = raft_node.raft_id() as VnodeId;
+        if let Some(storage) = &self.kv_inst {
+            let _ = storage.remove_tsfamily(tenant, db_name, vnode_id).await;
+        }
+        self.raft_nodes.write().await.rm_node(replica_id);
+
         Ok(())
     }
 
@@ -369,10 +381,11 @@ impl RaftNodesManager {
     fn raft_config(&self) -> openraft::Config {
         let logs_to_keep = self.config.raft_logs_to_keep;
 
+        let heartbeat = 3000;
         openraft::Config {
-            heartbeat_interval: 500,
-            election_timeout_min: 1500,
-            election_timeout_max: 3000,
+            heartbeat_interval: heartbeat,
+            election_timeout_min: 3 * heartbeat,
+            election_timeout_max: 5 * heartbeat,
             replication_lag_threshold: logs_to_keep,
             snapshot_policy: SnapshotPolicy::LogsSinceLast(logs_to_keep),
             max_in_snapshot_log_to_keep: logs_to_keep,

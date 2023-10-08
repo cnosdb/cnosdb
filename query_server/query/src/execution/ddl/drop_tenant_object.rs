@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use coordinator::VnodeManagerCmdType;
 use meta::error::MetaError;
 use protos::kv_service::admin_command_request::Command::DropDb;
 use protos::kv_service::{AdminCommandRequest, DropDbRequest};
@@ -74,7 +75,18 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                     command: Some(DropDb(DropDbRequest { db: name.clone() })),
                 };
 
-                query_state_machine.coord.broadcast_command(req).await?;
+                let coord = query_state_machine.coord.clone();
+                if coord.using_raft_replication() {
+                    let buckets = meta.get_db_info(name)?.map_or(vec![], |v| v.buckets);
+                    for bucket in buckets {
+                        for replica in bucket.shard_group {
+                            let cmd_type = VnodeManagerCmdType::DestoryRaftGroup(replica.id);
+                            coord.vnode_manager(tenant_name, cmd_type).await?;
+                        }
+                    }
+                } else {
+                    coord.broadcast_command(req).await?;
+                }
 
                 debug!("Drop database {} of tenant {}", name, tenant_name);
                 let success = meta.drop_db(name).await?;

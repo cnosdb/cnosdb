@@ -208,7 +208,7 @@ impl CoordService {
 
     async fn db_ttl_service(coord: Arc<CoordService>) {
         loop {
-            let dur = tokio::time::Duration::from_secs(5);
+            let dur = tokio::time::Duration::from_secs(60);
             tokio::time::sleep(dur).await;
 
             let expired = coord.meta.expired_bucket().await;
@@ -253,9 +253,13 @@ impl CoordService {
     async fn delete_expired_bucket(&self, info: &ExpiredBucketInfo) -> CoordinatorResult<()> {
         for repl_set in info.bucket.shard_group.iter() {
             if self.using_raft_replication() {
-                self.raft_manager()
-                    .destory_replica_group(&info.tenant, &info.database, repl_set.id)
-                    .await?;
+                if repl_set.leader_node_id == self.node_id {
+                    self.raft_manager()
+                        .destory_replica_group(&info.tenant, &info.database, repl_set.id)
+                        .await?;
+                } else {
+                    info!("Not the leader node for group: {} ignore...", repl_set.id);
+                }
             } else {
                 for vnode in repl_set.vnodes.iter() {
                     let cmd = AdminCommandRequest {
