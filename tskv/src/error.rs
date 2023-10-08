@@ -233,6 +233,11 @@ pub enum Error {
     VnodeNotFound {
         vnode_id: VnodeId,
     },
+
+    #[snafu(display("Create TskvDatabase Failed, {msg}"))]
+    CreateDatabase {
+        msg: String,
+    },
 }
 
 impl From<PointsError> for Error {

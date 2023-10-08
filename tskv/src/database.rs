@@ -23,10 +23,10 @@ use crate::context::GlobalContext;
 use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::{Options, INDEX_PATH};
-use crate::memcache::{MemCache, RowData, RowGroup};
+use crate::memcache::{RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
-use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
+use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
 use crate::Error::{self};
 use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
@@ -44,6 +44,46 @@ pub struct Database {
     runtime: Arc<Runtime>,
     memory_pool: MemoryPoolRef,
     metrics_register: Arc<MetricsRegister>,
+    tsf_factory: TsfFactory,
+}
+
+#[derive(Debug)]
+pub struct DatabaseFactory {
+    runtime: Arc<Runtime>,
+    meta: MetaRef,
+    memory_pool: MemoryPoolRef,
+    metrics_register: Arc<MetricsRegister>,
+    opt: Arc<Options>,
+}
+
+impl DatabaseFactory {
+    pub fn new(
+        meta: MetaRef,
+        memory_pool: MemoryPoolRef,
+        metrics_register: Arc<MetricsRegister>,
+        opt: Arc<Options>,
+        runtime: Arc<Runtime>,
+    ) -> Self {
+        Self {
+            runtime,
+            meta,
+            memory_pool,
+            metrics_register,
+            opt,
+        }
+    }
+
+    pub async fn create_database(&self, schema: DatabaseSchema) -> Result<Database> {
+        Database::new(
+            schema,
+            self.opt.clone(),
+            self.runtime.clone(),
+            self.meta.clone(),
+            self.memory_pool.clone(),
+            self.metrics_register.clone(),
+        )
+        .await
+    }
 }
 
 impl Database {
@@ -55,6 +95,14 @@ impl Database {
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
+        let owner = Arc::new(schema.owner());
+        let tsf_factory = TsfFactory::new(
+            owner.clone(),
+            opt.clone(),
+            memory_pool.clone(),
+            metrics_register.clone(),
+        );
+
         let db = Self {
             opt,
             owner: Arc::new(schema.owner()),
@@ -64,6 +112,7 @@ impl Database {
             runtime,
             memory_pool,
             metrics_register,
+            tsf_factory,
         };
 
         Ok(db)
@@ -75,26 +124,11 @@ impl Database {
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
     ) {
-        let tf = TseriesFamily::new(
-            ver.tf_id(),
-            ver.tenant_database(),
-            MemCache::new(
-                ver.tf_id(),
-                self.opt.cache.max_buffer_size,
-                self.opt.cache.partition,
-                ver.last_seq(),
-                &self.memory_pool,
-            ),
-            ver.clone(),
-            self.opt.cache.clone(),
-            self.opt.storage.clone(),
-            flush_task_sender,
-            compact_task_sender,
-            self.memory_pool.clone(),
-            &self.metrics_register,
-        );
+        let tf_id = ver.tf_id();
+        let tf =
+            self.tsf_factory
+                .create_tsf(tf_id, ver.clone(), flush_task_sender, compact_task_sender);
         tf.schedule_compaction(self.runtime.clone());
-
         self.ts_families
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
@@ -103,7 +137,7 @@ impl Database {
     #[allow(clippy::too_many_arguments)]
     pub async fn add_tsfamily(
         &mut self,
-        tsf_id: u32,
+        tsf_id: TseriesFamilyId,
         version_edit: Option<VersionEdit>,
         summary_task_sender: Sender<SummaryTask>,
         flush_task_sender: Sender<FlushReq>,
@@ -166,25 +200,13 @@ impl Database {
                 self.opt.storage.max_cached_readers,
             )),
         ));
-        let tf = TseriesFamily::new(
+
+        let tf = self.tsf_factory.create_tsf(
             tsf_id,
-            self.owner.clone(),
-            MemCache::new(
-                tsf_id,
-                self.opt.cache.max_buffer_size,
-                self.opt.cache.partition,
-                seq_no,
-                &self.memory_pool,
-            ),
-            ver,
-            self.opt.cache.clone(),
-            self.opt.storage.clone(),
+            ver.clone(),
             flush_task_sender,
             compact_task_sender,
-            self.memory_pool.clone(),
-            &self.metrics_register,
         );
-
         let tf = Arc::new(RwLock::new(tf));
         if let Some(tsf) = self.ts_families.get(&tsf_id) {
             return Ok(tsf.clone());

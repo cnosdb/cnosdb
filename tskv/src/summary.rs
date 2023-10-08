@@ -290,6 +290,7 @@ impl Display for VersionEdit {
 }
 
 pub struct Summary {
+    meta: MetaRef,
     file_no: u64,
     version_set: Arc<RwLock<VersionSet>>,
     ctx: Arc<GlobalContext>,
@@ -304,6 +305,7 @@ impl Summary {
     pub async fn new(
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
+        meta: MetaRef,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
@@ -321,8 +323,10 @@ impl Summary {
         w.sync().await?;
 
         Ok(Self {
+            meta: meta.clone(),
             file_no: 0,
             version_set: Arc::new(RwLock::new(VersionSet::empty(
+                meta.clone(),
                 opt.clone(),
                 runtime.clone(),
                 memory_pool,
@@ -361,7 +365,7 @@ impl Summary {
                 .unwrap(),
         );
         let vs = Self::recover_version(
-            meta,
+            meta.clone(),
             rd,
             &ctx,
             opt.clone(),
@@ -375,6 +379,7 @@ impl Summary {
         .await?;
 
         Ok(Self {
+            meta: meta.clone(),
             file_no: 0,
             version_set: Arc::new(RwLock::new(vs)),
             ctx,
@@ -966,6 +971,7 @@ mod test {
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
+            meta_manager.clone(),
             memory_pool.clone(),
             Arc::new(MetricsRegister::default()),
         )
@@ -1012,6 +1018,7 @@ mod test {
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
+            meta_manager.clone(),
             memory_pool.clone(),
             Arc::new(MetricsRegister::default()),
         )
@@ -1082,6 +1089,7 @@ mod test {
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
+            meta_manager.clone(),
             memory_pool.clone(),
             Arc::new(MetricsRegister::default()),
         )
@@ -1093,11 +1101,7 @@ mod test {
             .version_set
             .write()
             .await
-            .create_db(
-                DatabaseSchema::new("cnosdb", &database),
-                meta_manager.clone(),
-                memory_pool.clone(),
-            )
+            .create_db(DatabaseSchema::new("cnosdb", &database))
             .await
             .unwrap();
         for i in 0..40 {
@@ -1173,6 +1177,7 @@ mod test {
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
+            meta_manager.clone(),
             memory_pool.clone(),
             Arc::new(MetricsRegister::default()),
         )
@@ -1183,11 +1188,7 @@ mod test {
             .version_set
             .write()
             .await
-            .create_db(
-                DatabaseSchema::new("cnosdb", &database),
-                meta_manager.clone(),
-                memory_pool.clone(),
-            )
+            .create_db(DatabaseSchema::new("cnosdb", &database))
             .await
             .unwrap();
         let cxt = Arc::new(GlobalContext::new());
