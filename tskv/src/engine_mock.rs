@@ -78,6 +78,17 @@ impl Engine for MockEngine {
         Ok(())
     }
 
+    async fn rename_tag(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        tag_name: &str,
+        new_tag_name: &str,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     async fn delete_series(
         &self,
         tenant: &str,

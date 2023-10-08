@@ -6,6 +6,10 @@ DROP TABLE IF EXISTS ci_location_tbl_ext_csv;
 DROP TABLE IF EXISTS ci_location_tbl_ext_json;
 DROP TABLE IF EXISTS local_to_table_json;
 
+--#SHELL_SCRIPT_BEGIN
+rm -rf /tmp/data
+--#SHELL_SCRIPT_END
+
 CREATE EXTERNAL TABLE ci_location_tbl
 STORED AS PARQUET
 LOCATION 'query_server/test/resource/parquet/part-0.parquet';

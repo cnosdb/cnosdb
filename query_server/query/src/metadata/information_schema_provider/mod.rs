@@ -28,6 +28,7 @@ use self::factory::databases::DatabasesFactory;
 use self::factory::enabled_roles::EnabledRolesFactory;
 use self::factory::members::MembersFactory;
 use self::factory::queries::QueriesFactory;
+use self::factory::resource_status::InformationSchemaResourceStatusFactory;
 use self::factory::roles::RolesFactory;
 use super::INFORMATION_SCHEMA;
 use crate::dispatcher::query_tracker::QueryTracker;
@@ -57,6 +58,7 @@ impl InformationSchemaProvider {
         provider.register_table_factory(Box::new(DatabasePrivilegesFactory {}));
         provider.register_table_factory(Box::new(MembersFactory {}));
         provider.register_table_factory(Box::new(QueriesFactory {}));
+        provider.register_table_factory(Box::new(InformationSchemaResourceStatusFactory {}));
 
         provider
     }

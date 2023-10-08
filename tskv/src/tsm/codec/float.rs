@@ -31,7 +31,6 @@ pub fn f64_gorilla_encode(
     src: &[f64],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear(); // reset buffer.
     if src.is_empty() {
         return Ok(());
     }
@@ -248,7 +247,6 @@ pub fn f64_q_compress_encode(
     src: &[f64],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear();
     if src.is_empty() {
         return Ok(());
     }
@@ -263,8 +261,6 @@ pub fn f64_without_compress_encode(
     src: &[f64],
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    dst.clear();
-
     if src.is_empty() {
         return Ok(());
     }

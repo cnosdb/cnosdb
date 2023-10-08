@@ -1,0 +1,103 @@
+# drop
+statement ok
+drop database if exists db_delay;
+
+# create
+statement ok
+create database db_delay;
+
+# check is hidden
+query T
+select database_name from information_schema.databases where database_name = 'db_delay';
+----
+db_delay
+
+# create table and write data
+statement ok
+create table db_delay.air(visibility double,temperature double,pressure double,tags(station));
+
+query T
+INSERT INTO db_delay.air (TIME, station, visibility, temperature, pressure) VALUES (1666165200290401000, 'XiaoMaiDao', 56, 69, 77);
+----
+1
+
+query T
+select station, visibility, temperature, pressure from db_delay.air;
+----
+XiaoMaiDao 56.0 69.0 77.0
+
+# drop delay
+statement ok
+drop database db_delay after '3m';
+
+# check resource status
+query T
+select name,type,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
+----
+cnosdb/db_delay Database Drop Schedule
+
+# check is hidden
+query T
+select database_name from information_schema.databases where database_name = 'db_delay';
+----
+
+statement ok
+recover database db_delay;
+
+# check
+query T
+select name,type,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
+----
+cnosdb/db_delay Database Drop Cancel 
+
+query T
+select database_name from information_schema.databases where database_name = 'db_delay';;
+----
+db_delay
+
+# drop again
+statement ok
+drop database db_delay after '3m';
+
+statement ok
+drop database db_delay after '1m';
+
+sleep 2m
+
+# check
+query T
+select name,type,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
+----
+cnosdb/db_delay Database Drop Successed
+
+query T
+select database_name from information_schema.databases where database_name = 'db_delay';;
+----
+
+# create
+statement ok
+create database db_delay;
+
+# create table and write data
+statement ok
+create table db_delay.air(visibility double,temperature double,pressure double,tags(station));
+
+query T
+select * from db_delay.air;
+----
+
+statement ok
+drop database db_delay after '3m';
+
+statement ok
+drop database db_delay;
+
+statement ok
+drop database if exists db_delay after '3m';
+
+statement ok
+recover database if exists db_delay;
+
+# drop
+statement ok
+drop database if exists db_delay;

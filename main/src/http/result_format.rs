@@ -94,14 +94,14 @@ impl ResultFormat {
         &self,
         batches: &[RecordBatch],
         has_headers: bool,
-        body_counter: U64Counter,
+        http_query_data_out: U64Counter,
     ) -> Result<Response, HttpError> {
         let result =
             self.format_batches(batches, has_headers)
                 .map_err(|e| HttpError::FetchResult {
                     reason: format!("{}", e),
                 })?;
-        body_counter.inc(result.len() as u64);
+        http_query_data_out.inc(result.len() as u64);
 
         let resp = ResponseBuilder::new(OK)
             .insert_header((CONTENT_TYPE, self.get_http_content_type()))

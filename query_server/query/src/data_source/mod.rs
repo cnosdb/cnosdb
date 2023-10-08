@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
 use datafusion::execution::context::{SessionState, TaskContext};
@@ -48,6 +49,7 @@ pub trait RecordBatchSink: Send + Sync {
 }
 
 pub trait RecordBatchSinkProvider: Send + Sync {
+    fn schema(&self) -> SchemaRef;
     fn create_batch_sink(
         &self,
         context: Arc<TaskContext>,

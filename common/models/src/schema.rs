@@ -7,6 +7,7 @@
 //!         - Column #3
 //!         - Column #4
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::mem::size_of_val;
@@ -33,12 +34,14 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use crate::codec::Encoding;
+use crate::gis::data_type::Geometry;
 use crate::oid::{Identifier, Oid};
 use crate::utils::{
-    DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS, MINUTES_MICROS,
-    MINUTES_MILLS, MINUTES_NANOS,
+    now_timestamp_nanos, DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS,
+    MINUTES_MICROS, MINUTES_MILLS, MINUTES_NANOS,
 };
-use crate::{ColumnId, Error, SchemaId, Timestamp, ValueType};
+use crate::value_type::ValueType;
+use crate::{ColumnId, Error, PhysicalDType, SchemaId, Timestamp};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
@@ -53,9 +56,142 @@ pub const USAGE_SCHEMA: &str = "usage_schema";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
 pub const DEFAULT_PRECISION: &str = "NS";
 
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub enum ResourceType {
+    #[default]
+    Tenant,
+    Database,
+    Table,
+    Tagname,
+    Tagvalue,
+}
+impl fmt::Display for ResourceType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceType::Tenant => write!(f, "Tenant"),
+            ResourceType::Database => write!(f, "Database"),
+            ResourceType::Table => write!(f, "Table"),
+            ResourceType::Tagname => write!(f, "Tagname"),
+            ResourceType::Tagvalue => write!(f, "Tagvalue"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub enum ResourceOperator {
+    #[default]
+    Drop,
+    Update,
+}
+impl fmt::Display for ResourceOperator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceOperator::Drop => write!(f, "Drop"),
+            ResourceOperator::Update => write!(f, "Update"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+pub enum ResourceStatus {
+    #[default]
+    Schedule,
+    Executing,
+    Successed,
+    Failed,
+    Cancel,
+}
+impl fmt::Display for ResourceStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceStatus::Schedule => write!(f, "Schedule"),
+            ResourceStatus::Executing => write!(f, "Executing"),
+            ResourceStatus::Successed => write!(f, "Successed"),
+            ResourceStatus::Failed => write!(f, "Failed"),
+            ResourceStatus::Cancel => write!(f, "Cancel"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct ResourceInfo {
+    time: i64,
+    tenant_id: Oid,
+    names: Vec<String>,
+    res_type: ResourceType,
+    operator: ResourceOperator,
+    after: Option<Duration>, // None means now
+    status: ResourceStatus,
+    comment: String,
+}
+impl ResourceInfo {
+    pub fn new(
+        tenant_id: Oid,
+        names: Vec<String>,
+        res_type: ResourceType,
+        operator: ResourceOperator,
+        after: &Option<Duration>,
+    ) -> Self {
+        let mut res_info = ResourceInfo {
+            time: now_timestamp_nanos(),
+            tenant_id,
+            names,
+            res_type,
+            operator,
+            after: after.clone(),
+            status: ResourceStatus::Executing,
+            comment: String::default(),
+        };
+        if let Some(after) = after {
+            let after_nanos = after.to_nanoseconds();
+            if after_nanos > 0 {
+                res_info.status = ResourceStatus::Schedule;
+                res_info.time += after_nanos;
+            }
+        }
+        res_info
+    }
+
+    pub fn get_time(&self) -> i64 {
+        self.time
+    }
+
+    pub fn get_tenant_id(&self) -> Oid {
+        self.tenant_id
+    }
+
+    pub fn get_names(&self) -> &[String] {
+        &self.names
+    }
+
+    pub fn get_type(&self) -> &ResourceType {
+        &self.res_type
+    }
+
+    pub fn get_operator(&self) -> &ResourceOperator {
+        &self.operator
+    }
+
+    pub fn get_status(&self) -> &ResourceStatus {
+        &self.status
+    }
+
+    pub fn get_comment(&self) -> &String {
+        &self.comment
+    }
+
+    pub fn set_status(&mut self, status: ResourceStatus) {
+        self.status = status;
+    }
+
+    pub fn set_comment(&mut self, comment: &str) {
+        self.comment = comment.to_string();
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TableSchema {
-    TsKvTableSchema(Arc<TskvTableSchema>),
+    TsKvTableSchema(TskvTableSchemaRef),
     ExternalTableSchema(Arc<ExternalTableSchema>),
     StreamTableSchema(Arc<StreamTable>),
 }
@@ -171,11 +307,7 @@ impl Default for TskvTableSchema {
 
 impl TskvTableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
-        let fields: Vec<ArrowField> = self
-            .columns
-            .iter()
-            .map(|field| field.to_arrow_field())
-            .collect();
+        let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
         Arc::new(Schema::new(fields))
     }
 
@@ -238,6 +370,7 @@ impl TskvTableSchema {
             None => return,
             Some(id) => *id,
         };
+        self.columns_index.remove(col_name);
         self.columns_index.insert(new_column.name.clone(), id);
         self.columns[id] = new_column;
     }
@@ -373,15 +506,33 @@ pub struct TableColumn {
     pub encoding: Encoding,
 }
 
-impl From<TableColumn> for ArrowField {
-    fn from(column: TableColumn) -> Self {
+pub const GIS_SRID_META_KEY: &str = "gis.srid";
+pub const GIS_SUB_TYPE_META_KEY: &str = "gis.sub_type";
+
+impl From<&TableColumn> for ArrowField {
+    fn from(column: &TableColumn) -> Self {
         let mut map = HashMap::new();
         map.insert(FIELD_ID.to_string(), column.id.to_string());
         map.insert(TAG.to_string(), column.column_type.is_tag().to_string());
+
+        // 通过 SRID_META_KEY 标记 Geometry 类型的列
+        if let ColumnType::Field(ValueType::Geometry(Geometry { srid, sub_type })) =
+            column.column_type
+        {
+            map.insert(GIS_SUB_TYPE_META_KEY.to_string(), sub_type.to_string());
+            map.insert(GIS_SRID_META_KEY.to_string(), srid.to_string());
+        }
+
         let nullable = column.nullable();
-        let mut f = ArrowField::new(&column.name, column.column_type.into(), nullable);
+        let mut f = ArrowField::new(&column.name, column.column_type.clone().into(), nullable);
         f.set_metadata(map);
         f
+    }
+}
+
+impl From<TableColumn> for ArrowField {
+    fn from(column: TableColumn) -> Self {
+        Self::from(&column)
     }
 }
 
@@ -446,15 +597,6 @@ impl TableColumn {
         Ok(column)
     }
 
-    pub fn to_arrow_field(&self) -> ArrowField {
-        let mut f = ArrowField::new(&self.name, self.column_type.clone().into(), self.nullable());
-        let mut map = HashMap::new();
-        map.insert(FIELD_ID.to_string(), self.id.to_string());
-        map.insert(TAG.to_string(), self.column_type.is_tag().to_string());
-        f.set_metadata(map);
-        f
-    }
-
     pub fn encoding_valid(&self) -> bool {
         if let ColumnType::Field(ValueType::Float) = self.column_type {
             return self.encoding.is_double_encoding();
@@ -486,22 +628,8 @@ impl From<ColumnType> for ArrowDataType {
             ColumnType::Field(ValueType::Unsigned) => ArrowDataType::UInt64,
             ColumnType::Field(ValueType::String) => ArrowDataType::Utf8,
             ColumnType::Field(ValueType::Boolean) => ArrowDataType::Boolean,
+            ColumnType::Field(ValueType::Geometry(_)) => ArrowDataType::Utf8,
             _ => ArrowDataType::Null,
-        }
-    }
-}
-
-impl TryFrom<ArrowDataType> for ColumnType {
-    type Error = &'static str;
-
-    fn try_from(value: ArrowDataType) -> Result<Self, Self::Error> {
-        match value {
-            ArrowDataType::Float64 => Ok(Self::Field(ValueType::Float)),
-            ArrowDataType::Int64 => Ok(Self::Field(ValueType::Integer)),
-            ArrowDataType::UInt64 => Ok(Self::Field(ValueType::Unsigned)),
-            ArrowDataType::Utf8 => Ok(Self::Field(ValueType::String)),
-            ArrowDataType::Boolean => Ok(Self::Field(ValueType::Boolean)),
-            _ => Err("Error field type not supported"),
         }
     }
 }
@@ -546,7 +674,7 @@ impl ColumnType {
             Self::Field(ValueType::Integer) => 1,
             Self::Field(ValueType::Unsigned) => 2,
             Self::Field(ValueType::Boolean) => 3,
-            Self::Field(ValueType::String) => 4,
+            Self::Field(ValueType::String) | Self::Field(ValueType::Geometry(_)) => 4,
             _ => 0,
         }
     }
@@ -562,22 +690,23 @@ impl ColumnType {
         }
     }
 
-    pub fn to_sql_type_str(&self) -> &'static str {
+    pub fn to_sql_type_str(&self) -> Cow<'static, str> {
         match self {
-            Self::Tag => "STRING",
+            Self::Tag => "STRING".into(),
             Self::Time(unit) => match unit {
-                TimeUnit::Second => "TIMESTAMP(SECOND)",
-                TimeUnit::Millisecond => "TIMESTAMP(MILLISECOND)",
-                TimeUnit::Microsecond => "TIMESTAMP(MICROSECOND)",
-                TimeUnit::Nanosecond => "TIMESTAMP(NANOSECOND)",
+                TimeUnit::Second => "TIMESTAMP(SECOND)".into(),
+                TimeUnit::Millisecond => "TIMESTAMP(MILLISECOND)".into(),
+                TimeUnit::Microsecond => "TIMESTAMP(MICROSECOND)".into(),
+                TimeUnit::Nanosecond => "TIMESTAMP(NANOSECOND)".into(),
             },
             Self::Field(value_type) => match value_type {
-                ValueType::String => "STRING",
-                ValueType::Integer => "BIGINT",
-                ValueType::Unsigned => "BIGINT UNSIGNED",
-                ValueType::Float => "DOUBLE",
-                ValueType::Boolean => "BOOLEAN",
-                ValueType::Unknown => "UNKNOWN",
+                ValueType::String => "STRING".into(),
+                ValueType::Integer => "BIGINT".into(),
+                ValueType::Unsigned => "BIGINT UNSIGNED".into(),
+                ValueType::Float => "DOUBLE".into(),
+                ValueType::Boolean => "BOOLEAN".into(),
+                ValueType::Unknown => "UNKNOWN".into(),
+                ValueType::Geometry(geo) => geo.to_string().into(),
             },
         }
     }
@@ -721,6 +850,8 @@ pub struct DatabaseOptions {
     replica: Option<u64>,
     // timestamp precision
     precision: Option<Precision>,
+
+    db_is_hidden: bool,
 }
 
 impl DatabaseOptions {
@@ -749,6 +880,7 @@ impl DatabaseOptions {
             vnode_duration,
             replica,
             precision,
+            db_is_hidden: false,
         }
     }
 
@@ -814,6 +946,14 @@ impl DatabaseOptions {
 
     pub fn with_precision(&mut self, precision: Precision) {
         self.precision = Some(precision)
+    }
+
+    pub fn get_db_is_hidden(&self) -> bool {
+        self.db_is_hidden
+    }
+
+    pub fn set_db_is_hidden(&mut self, db_is_hidden: bool) {
+        self.db_is_hidden = db_is_hidden;
     }
 }
 
@@ -1039,6 +1179,7 @@ impl Tenant {
 pub struct TenantOptions {
     pub comment: Option<String>,
     pub limiter_config: Option<TenantLimiterConfig>,
+    tenant_is_hidden: bool,
 }
 
 impl From<TenantOptions> for TenantOptionsBuilder {
@@ -1050,6 +1191,7 @@ impl From<TenantOptions> for TenantOptionsBuilder {
         if let Some(config) = value.limiter_config {
             builder.limiter_config(config);
         }
+        builder.tenant_is_hidden(false);
         builder
     }
 }
@@ -1076,6 +1218,14 @@ impl TenantOptions {
             Some(ref limit_config) => limit_config.request_config.as_ref(),
             None => None,
         }
+    }
+
+    pub fn get_tenant_is_hidden(&self) -> bool {
+        self.tenant_is_hidden
+    }
+
+    pub fn set_tenant_is_hidden(&mut self, tenant_is_hidden: bool) {
+        self.tenant_is_hidden = tenant_is_hidden;
     }
 }
 
@@ -1240,5 +1390,29 @@ impl From<ScalarValue> for ScalarValueForkDF {
 impl From<ScalarValueForkDF> for ScalarValue {
     fn from(value: ScalarValueForkDF) -> Self {
         unsafe { std::mem::transmute::<ScalarValueForkDF, Self>(value) }
+    }
+}
+
+/// column type for tskv
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PhysicalCType {
+    Tag,
+    Time(TimeUnit),
+    Field(PhysicalDType),
+}
+
+impl PhysicalCType {
+    pub fn default_time() -> Self {
+        Self::Time(TimeUnit::Nanosecond)
+    }
+}
+
+impl ColumnType {
+    pub fn to_physical_type(&self) -> PhysicalCType {
+        match self {
+            Self::Tag => PhysicalCType::Tag,
+            Self::Time(unit) => PhysicalCType::Time(unit.clone()),
+            Self::Field(value_type) => PhysicalCType::Field(value_type.to_physical_type()),
+        }
     }
 }

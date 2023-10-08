@@ -1,0 +1,93 @@
+-- EXECUTE SQL: DESCRIBE DATABASE usage_schema; --
+200 OK
+ttl,shard,vnode_duration,replica,precision
+INF,1,365 Days,1,NS
+
+-- EXECUTE SQL: DESCRIBE TABLE coord_data_in; --
+200 OK
+column_name,data_type,column_type,compression_codec
+time,TIMESTAMP(NANOSECOND),TIME,DEFAULT
+database,STRING,TAG,DEFAULT
+node_id,STRING,TAG,DEFAULT
+tenant,STRING,TAG,DEFAULT
+value,BIGINT UNSIGNED,FIELD,DEFAULT
+
+-- EXECUTE SQL: DESCRIBE TABLE coord_data_out; --
+200 OK
+column_name,data_type,column_type,compression_codec
+time,TIMESTAMP(NANOSECOND),TIME,DEFAULT
+database,STRING,TAG,DEFAULT
+node_id,STRING,TAG,DEFAULT
+tenant,STRING,TAG,DEFAULT
+value,BIGINT UNSIGNED,FIELD,DEFAULT
+
+-- EXECUTE SQL: DESCRIBE TABLE coord_queries; --
+200 OK
+column_name,data_type,column_type,compression_codec
+time,TIMESTAMP(NANOSECOND),TIME,DEFAULT
+database,STRING,TAG,DEFAULT
+node_id,STRING,TAG,DEFAULT
+tenant,STRING,TAG,DEFAULT
+value,BIGINT UNSIGNED,FIELD,DEFAULT
+
+-- EXECUTE SQL: DESCRIBE TABLE coord_writes; --
+200 OK
+column_name,data_type,column_type,compression_codec
+time,TIMESTAMP(NANOSECOND),TIME,DEFAULT
+database,STRING,TAG,DEFAULT
+node_id,STRING,TAG,DEFAULT
+tenant,STRING,TAG,DEFAULT
+value,BIGINT UNSIGNED,FIELD,DEFAULT
+
+-- EXECUTE SQL: DESCRIBE TABLE sql_data_in; --
+200 OK
+column_name,data_type,column_type,compression_codec
+time,TIMESTAMP(NANOSECOND),TIME,DEFAULT
+database,STRING,TAG,DEFAULT
+node_id,STRING,TAG,DEFAULT
+tenant,STRING,TAG,DEFAULT
+value,BIGINT UNSIGNED,FIELD,DEFAULT
+
+-- EXECUTE SQL: drop tenant if exists test_coord_data_in; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_cdi_u1; --
+200 OK
+
+
+-- EXECUTE SQL: create tenant if not exists test_coord_data_in; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_cdi_u1; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_coord_data_in add user test_cdi_u1 as owner; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant cnosdb add user test_cdi_u1 as owner; --
+200 OK
+
+
+-- EXECUTE SQL: select * from usage_schema.coord_data_in where false; --
+-- AFTER_SORT --
+200 OK
+
+
+-- EXECUTE SQL: select * from usage_schema.coord_data_in where false; --
+-- AFTER_SORT --
+200 OK
+
+
+-- EXECUTE SQL: select * from usage_schema.coord_data_in where false; --
+-- AFTER_SORT --
+200 OK
+
+
+-- EXECUTE SQL: select * from coord_data_in where false; --
+-- AFTER_SORT --
+200 OK
+

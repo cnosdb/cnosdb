@@ -1,32 +1,45 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use std::vec;
 
 use config::{Config, HintedOffConfig};
+use datafusion::arrow::array::{
+    Array, ArrayRef, Int64Array, StringArray, TimestampMicrosecondArray, TimestampMillisecondArray,
+    TimestampNanosecondArray, UInt32Array,
+};
+use datafusion::arrow::compute::take;
+use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
+use meta::error::MetaError;
 use meta::model::{MetaClientRef, MetaRef};
 use metrics::count::U64Counter;
 use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
-use models::consistency_level::ConsistencyLevel;
-use models::meta_data::{ExpiredBucketInfo, ReplicationSet};
+use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId, VnodeStatus};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicateRef, TimeRanges};
 use models::record_batch_decode;
-use models::schema::{Precision, DEFAULT_CATALOG};
+use models::schema::{
+    timestamp_convert, ColumnType, Precision, TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
+};
+use protocol_parser::lines_convert::{
+    arrow_array_to_points, line_to_batches, mutable_batches_to_point,
+};
+use protocol_parser::Line;
 use protos::kv_service::admin_command_request::Command::*;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
-use protos::kv_service::{WritePointsRequest, *};
-use protos::models::Points;
+use protos::kv_service::*;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
 use tskv::EngineRef;
+use utils::BkdrHasher;
 
 use crate::errors::*;
 use crate::hh_queue::HintedOffManager;
@@ -35,13 +48,16 @@ use crate::reader::replica_selection::{DynamicReplicaSelectioner, DynamicReplica
 use crate::reader::table_scan::opener::TemporaryTableScanOpener;
 use crate::reader::tag_scan::opener::TemporaryTagScanOpener;
 use crate::reader::{CheckFuture, CheckedCoordinatorRecordBatchStream};
+use crate::resource_manager::ResourceManager;
 use crate::writer::PointWriter;
 use crate::{
     status_response_to_result, Coordinator, QueryOption, SendableCoordinatorRecordBatchStream,
-    VnodeManagerCmdType, VnodeSummarizerCmdType, WriteRequest,
+    VnodeManagerCmdType, VnodeSummarizerCmdType,
 };
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
+
+const USAGE_SCHEMA: &str = "usage_schema";
 
 #[derive(Clone)]
 pub struct CoordService {
@@ -58,23 +74,50 @@ pub struct CoordService {
 
 #[derive(Debug)]
 pub struct CoordServiceMetrics {
-    data_in: Metric<U64Counter>,
+    coord_data_in: Metric<U64Counter>,
+    coord_data_out: Metric<U64Counter>,
+    coord_queries: Metric<U64Counter>,
+    coord_writes: Metric<U64Counter>,
+
     sql_data_in: Metric<U64Counter>,
-    data_out: Metric<U64Counter>,
     sql_write_row: Metric<U64Counter>,
     sql_points_data_in: Metric<U64Counter>,
 }
 
+macro_rules! generate_coord_metrics_gets {
+    ($IDENT: ident) => {
+        impl CoordServiceMetrics {
+            pub fn $IDENT(&self, tenant: &str, db: &str) -> U64Counter {
+                self.$IDENT.recorder(Self::tenant_db_labels(tenant, db))
+            }
+        }
+    };
+}
+generate_coord_metrics_gets!(coord_data_in);
+generate_coord_metrics_gets!(coord_data_out);
+generate_coord_metrics_gets!(coord_queries);
+generate_coord_metrics_gets!(coord_writes);
+generate_coord_metrics_gets!(sql_data_in);
+generate_coord_metrics_gets!(sql_write_row);
+generate_coord_metrics_gets!(sql_points_data_in);
+
 impl CoordServiceMetrics {
     pub fn new(register: &MetricsRegister) -> Self {
-        let data_in = register.metric("coord_data_in", "tenant data in");
-        let data_out = register.metric("coord_data_out", "tenant data out");
+        let coord_data_in = register.metric("coord_data_in", "tenant data in");
+        let coord_data_out = register.metric("coord_data_out", "tenant data out");
+        let coord_writes = register.metric("coord_writes", "");
+        let coord_queries = register.metric("coord_queries", "");
+
         let sql_data_in = register.metric("sql_data_in", "Traffic written through sql");
         let sql_write_row = register.metric("sql_write_row", "sql write row");
         let sql_points_data_in = register.metric("sql_points_data_in", "sql points data in");
+
         Self {
-            data_in,
-            data_out,
+            coord_data_in,
+            coord_data_out,
+            coord_writes,
+            coord_queries,
+
             sql_data_in,
             sql_write_row,
             sql_points_data_in,
@@ -83,26 +126,6 @@ impl CoordServiceMetrics {
 
     pub fn tenant_db_labels<'a>(tenant: &'a str, db: &'a str) -> impl Into<Labels> + 'a {
         [("tenant", tenant), ("database", db)]
-    }
-
-    pub fn data_in(&self, tenant: &str, db: &str) -> U64Counter {
-        self.data_in.recorder(Self::tenant_db_labels(tenant, db))
-    }
-
-    pub fn data_out(&self, tenant: &str, db: &str) -> U64Counter {
-        self.data_out.recorder(Self::tenant_db_labels(tenant, db))
-    }
-    pub fn sql_data_in(&self, tenant: &str, db: &str) -> U64Counter {
-        self.sql_data_in
-            .recorder(Self::tenant_db_labels(tenant, db))
-    }
-    pub fn sql_write_row(&self, tenant: &str, db: &str) -> U64Counter {
-        self.sql_write_row
-            .recorder(Self::tenant_db_labels(tenant, db))
-    }
-    pub fn sql_points_data_in(&self, tenant: &str, db: &str) -> U64Counter {
-        self.sql_points_data_in
-            .recorder(Self::tenant_db_labels(tenant, db))
     }
 }
 
@@ -141,6 +164,7 @@ impl CoordService {
             replica_selectioner,
         });
 
+        tokio::spawn(CoordService::check_resourceinfos(coord.clone()));
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
 
         if config.node_basic.store_metrics {
@@ -151,6 +175,15 @@ impl CoordService {
         }
 
         coord
+    }
+
+    async fn check_resourceinfos(coord: Arc<CoordService>) {
+        loop {
+            let dur = tokio::time::Duration::from_secs(60);
+            tokio::time::sleep(dur).await;
+
+            ResourceManager::check_and_run(coord.clone()).await;
+        }
     }
 
     async fn db_ttl_service(coord: Arc<CoordService>) {
@@ -171,29 +204,22 @@ impl CoordService {
         coord: Arc<CoordService>,
         root_metrics_register: Arc<MetricsRegister>,
     ) {
-        let start = tokio::time::Instant::now() + tokio::time::Duration::from_secs(10);
-        let interval = tokio::time::Duration::from_secs(10);
+        let start = tokio::time::Instant::now() + Duration::from_secs(10);
+        let interval = Duration::from_secs(10);
         let mut intv = tokio::time::interval_at(start, interval);
         loop {
             intv.tick().await;
             let mut points_buffer = Vec::new();
-            let mut reporter = LPReporter::new("usage_schema", &mut points_buffer);
+            let mut reporter = LPReporter::new(&mut points_buffer);
             root_metrics_register.report(&mut reporter);
 
-            for points in points_buffer {
-                let req = WritePointsRequest {
-                    version: 0,
-                    meta: None,
-                    points,
-                };
-
+            for lines in points_buffer {
                 if let Err(e) = coord
-                    .write_points(
-                        DEFAULT_CATALOG.to_string(),
-                        ConsistencyLevel::Any,
+                    .write_lines(
+                        DEFAULT_CATALOG,
+                        USAGE_SCHEMA,
                         Precision::NS,
-                        req,
-                        // metrics service 不采集trace
+                        lines.iter().map(|l| l.to_line()).collect::<Vec<_>>(),
                         None,
                     )
                     .await
@@ -294,7 +320,8 @@ impl CoordService {
 
         let checker = async move {
             meta.limiter(&tenant)
-                .check_query()
+                .await?
+                .check_coord_queries()
                 .await
                 .map_err(CoordinatorError::from)
         };
@@ -323,6 +350,64 @@ impl CoordService {
             Ok(r) => Ok(r),
             Err(e) => Err(CoordinatorError::ArrowError { source: e }),
         }
+    }
+
+    async fn push_points_to_requests<'a>(
+        &'a self,
+        tenant: &'a str,
+        db: &'a str,
+        precision: Precision,
+        info: ReplicationSet,
+        points: Arc<Vec<u8>>,
+        span_ctx: Option<&'a SpanContext>,
+    ) -> CoordinatorResult<Vec<impl Future<Output = CoordinatorResult<()>> + Sized + 'a>> {
+        {
+            let _span_recorder = SpanRecorder::new(span_ctx.child_span("limit check"));
+
+            let limiter = self.meta.limiter(tenant).await?;
+            let write_size = points.len();
+
+            limiter.check_coord_writes().await?;
+            limiter.check_coord_data_in(write_size).await?;
+
+            self.metrics.coord_writes(tenant, db).inc_one();
+            self.metrics
+                .coord_data_in(tenant, db)
+                .inc(write_size as u64);
+        }
+        if info.vnodes.is_empty() {
+            return Err(CoordinatorError::CommonError {
+                msg: "no available vnode in replication set".to_string(),
+            });
+        }
+
+        let mut requests = Vec::new();
+        for vnode in info.vnodes.iter() {
+            let now = tokio::time::Instant::now();
+            debug!(
+                "Preparing write points on vnode {:?}, start at {:?}",
+                vnode, now
+            );
+            if vnode.status == VnodeStatus::Copying {
+                return Err(CoordinatorError::CommonError {
+                    msg: "vnode is moving write forbidden ".to_string(),
+                });
+            }
+
+            let request = self.writer.write_to_node(
+                vnode.id,
+                tenant,
+                vnode.node_id,
+                precision,
+                points.clone(),
+                SpanRecorder::new(span_ctx.child_span(format!(
+                    "write to vnode {} on node {}",
+                    vnode.id, vnode.node_id
+                ))),
+            );
+            requests.push(request);
+        }
+        Ok(requests)
     }
 }
 
@@ -360,51 +445,183 @@ impl Coordinator for CoordService {
         Ok(optimal_shards)
     }
 
-    async fn write_points(
+    async fn write_lines<'a>(
         &self,
-        tenant: String,
-        level: ConsistencyLevel,
+        tenant: &str,
+        db: &str,
         precision: Precision,
-        request: WritePointsRequest,
+        lines: Vec<Line<'a>>,
         span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<()> {
-        {
-            let _span_recorder = SpanRecorder::new(span_ctx.child_span("limit check"));
+    ) -> CoordinatorResult<usize> {
+        let mut write_bytes: usize = 0;
+        let meta_client =
+            self.meta
+                .tenant_meta(tenant)
+                .await
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant.to_string(),
+                })?;
+        let mut map_lines: HashMap<ReplicationSetId, VnodeLines> = HashMap::new();
+        let db_schema =
+            meta_client
+                .get_db_schema(db)?
+                .ok_or_else(|| MetaError::DatabaseNotFound {
+                    database: db.to_string(),
+                })?;
+        let db_precision = db_schema.config.precision_or_default();
 
-            let limiter = self.meta.limiter(&tenant);
-            let points = request.points.as_slice();
-
-            let fb_points = flatbuffers::root::<Points>(points)?;
-            let db = fb_points.db_ext()?;
-
-            let write_size = points.len();
-
-            limiter.check_write().await?;
-            limiter.check_data_in(write_size).await?;
-
-            self.metrics
-                .data_in(tenant.as_str(), db)
-                .inc(write_size as u64);
+        for line in lines {
+            let ts = timestamp_convert(precision, *db_precision, line.timestamp).ok_or(
+                CoordinatorError::CommonError {
+                    msg: "timestamp overflow".to_string(),
+                },
+            )?;
+            let info = meta_client
+                .locate_replication_set_for_write(db, line.hash_id, ts)
+                .await?;
+            let lines_entry = map_lines.entry(info.id).or_insert(VnodeLines::new(info));
+            lines_entry.add_line(line)
         }
 
-        let req = WriteRequest {
-            tenant: tenant.clone(),
-            level,
-            precision,
-            request,
-        };
-
+        let mut requests = Vec::new();
+        for lines in map_lines.into_values() {
+            let batches =
+                line_to_batches(&lines.lines).map_err(|e| CoordinatorError::CommonError {
+                    msg: format!("line to batch error: {}", e),
+                })?;
+            let points = Arc::new(mutable_batches_to_point(db, batches));
+            write_bytes += points.len();
+            requests.extend(
+                self.push_points_to_requests(tenant, db, precision, lines.info, points, span_ctx)
+                    .await?,
+            );
+        }
         let now = tokio::time::Instant::now();
-        trace::trace!("write points, now: {:?}", now);
-        let res = self.writer.write_points(&req, span_ctx).await;
-        trace::trace!(
-            "write points result: {:?}, start at: {:?} elapsed: {:?}",
-            res,
-            now,
-            now.elapsed()
-        );
+        for res in futures::future::join_all(requests).await {
+            debug!(
+                "Parallel write points on vnode over, start at: {:?}, elapsed: {} millis, result: {:?}",
+                now,
+                now.elapsed().as_millis(),
+                res
+            );
+            res?
+        }
+        Ok(write_bytes)
+    }
 
-        res
+    async fn write_record_batch<'a>(
+        &self,
+        table_schema: TskvTableSchemaRef,
+        record_batch: RecordBatch,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<usize> {
+        let mut write_bytes: usize = 0;
+        let mut precision = Precision::NS;
+        let tenant = table_schema.tenant.as_str();
+        let db = table_schema.db.as_str();
+        let meta_client =
+            self.meta
+                .tenant_meta(tenant)
+                .await
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant.to_string(),
+                })?;
+        let db_schema =
+            meta_client
+                .get_db_schema(db)?
+                .ok_or_else(|| MetaError::DatabaseNotFound {
+                    database: db.to_string(),
+                })?;
+        let db_precision = db_schema.config.precision_or_default();
+
+        let mut repl_idx: HashMap<ReplicationSet, Vec<u32>> = HashMap::new();
+        let schema = record_batch.schema().fields.clone();
+        let table_name = table_schema.name.as_str();
+        let columns = record_batch.columns();
+        for idx in 0..record_batch.num_rows() {
+            let mut hasher = BkdrHasher::new();
+            hasher.hash_with(table_name.as_bytes());
+            let mut ts = i64::MAX;
+            let mut has_ts = false;
+            for (column, schema) in columns.iter().zip(schema.iter()) {
+                let name = schema.name().as_str();
+                let tskv_schema_column =
+                    table_schema
+                        .column(name)
+                        .ok_or(CoordinatorError::CommonError {
+                            msg: format!("column {} not found in table {}", name, table_name),
+                        })?;
+                if name == TIME_FIELD {
+                    let precsion_and_value =
+                        get_precision_and_value_from_arrow_column(column, idx)?;
+                    precision = precsion_and_value.0;
+                    ts = timestamp_convert(precision, *db_precision, precsion_and_value.1).ok_or(
+                        CoordinatorError::CommonError {
+                            msg: "timestamp overflow".to_string(),
+                        },
+                    )?;
+                    has_ts = true;
+                }
+                if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
+                    let value = column
+                        .as_any()
+                        .downcast_ref::<StringArray>()
+                        .ok_or(CoordinatorError::CommonError {
+                            msg: format!("column {} is not string", name),
+                        })?
+                        .value(idx);
+                    hasher.hash_with(name.as_bytes());
+                    hasher.hash_with(value.as_bytes());
+                }
+            }
+            if !has_ts {
+                return Err(CoordinatorError::CommonError {
+                    msg: format!("column {} not found in table {}", TIME_FIELD, table_name),
+                });
+            }
+            let hash = hasher.number();
+            let info = meta_client
+                .locate_replication_set_for_write(db, hash, ts)
+                .await?;
+            repl_idx.entry(info).or_default().push(idx as u32);
+        }
+
+        let mut requests = Vec::new();
+        for (repl, idxs) in repl_idx {
+            let indices = UInt32Array::from(idxs);
+            let columns = record_batch
+                .columns()
+                .iter()
+                .map(|column| {
+                    take(column, &indices, None).map_err(|e| CoordinatorError::CommonError {
+                        msg: format!("take column error: {}", e),
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let schema = record_batch.schema();
+            let points = Arc::new(
+                arrow_array_to_points(columns, schema, table_schema.clone(), indices.len())
+                    .map_err(|e| CoordinatorError::CommonError {
+                        msg: format!("arrow array to points error: {}", e),
+                    })?,
+            );
+            write_bytes += points.len();
+            requests.extend(
+                self.push_points_to_requests(tenant, db, precision, repl, points, span_ctx)
+                    .await?,
+            );
+        }
+        let now = tokio::time::Instant::now();
+        for res in futures::future::join_all(requests).await {
+            debug!(
+                "Parallel write points on vnode over, start at: {:?}, elapsed: {} millis, result: {:?}",
+                now,
+                now.elapsed().as_millis(),
+                res
+            );
+            res?
+        }
+        Ok(write_bytes)
     }
 
     fn table_scan(
@@ -617,5 +834,79 @@ impl Coordinator for CoordService {
 
     fn metrics(&self) -> &Arc<CoordServiceMetrics> {
         &self.metrics
+    }
+}
+
+struct VnodeLines<'a> {
+    pub lines: Vec<Line<'a>>,
+    pub info: ReplicationSet,
+}
+
+impl<'a> VnodeLines<'a> {
+    pub fn new(info: ReplicationSet) -> Self {
+        Self {
+            lines: vec![],
+            info,
+        }
+    }
+
+    pub fn add_line(&mut self, line: Line<'a>) {
+        self.lines.push(line);
+    }
+}
+
+fn get_precision_and_value_from_arrow_column(
+    column: &ArrayRef,
+    idx: usize,
+) -> CoordinatorResult<(Precision, i64)> {
+    match column.data_type() {
+        DataType::Timestamp(unit, _) => match unit {
+            TimeUnit::Second => Err(CoordinatorError::CommonError {
+                msg: "time field not support second".to_string(),
+            }),
+            TimeUnit::Millisecond => {
+                let value = column
+                    .as_any()
+                    .downcast_ref::<TimestampMillisecondArray>()
+                    .ok_or(CoordinatorError::CommonError {
+                        msg: "time field data type miss match: millisecond".to_string(),
+                    })?
+                    .value(idx);
+                Ok((Precision::MS, value))
+            }
+            TimeUnit::Microsecond => {
+                let value = column
+                    .as_any()
+                    .downcast_ref::<TimestampMicrosecondArray>()
+                    .ok_or(CoordinatorError::CommonError {
+                        msg: "time field data type miss match: microsecond".to_string(),
+                    })?
+                    .value(idx);
+                Ok((Precision::US, value))
+            }
+            TimeUnit::Nanosecond => {
+                let value = column
+                    .as_any()
+                    .downcast_ref::<TimestampNanosecondArray>()
+                    .ok_or(CoordinatorError::CommonError {
+                        msg: "time field data type miss match: nanosecond".to_string(),
+                    })?
+                    .value(idx);
+                Ok((Precision::NS, value))
+            }
+        },
+        DataType::Int64 => {
+            let value = column
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .ok_or(CoordinatorError::CommonError {
+                    msg: "time field data type miss match: int64".to_string(),
+                })?
+                .value(idx);
+            Ok((Precision::NS, value))
+        }
+        _ => Err(CoordinatorError::CommonError {
+            msg: "time field data type miss match".to_string(),
+        }),
     }
 }

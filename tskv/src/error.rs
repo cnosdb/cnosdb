@@ -9,6 +9,7 @@ use snafu::Snafu;
 use tonic::{Code, Status};
 
 use crate::index::IndexError;
+use crate::record_file;
 use crate::schema::error::SchemaError;
 use crate::tsm::{ReadTsmError, WriteTsmError};
 
@@ -64,12 +65,6 @@ pub enum Error {
     #[snafu(display("read tsm block file error: {}", source))]
     #[error_code(code = 7)]
     ReadTsm {
-        source: ReadTsmError,
-    },
-
-    #[snafu(display("found damaged tsm file error: {}", source))]
-    #[error_code(code = 8)]
-    TsmFileBroken {
         source: ReadTsmError,
     },
 
@@ -163,6 +158,25 @@ pub enum Error {
         source: bincode::Error,
     },
 
+    /// This error is handled by the caller of record_file::Reader::read_record()
+    #[snafu(display("Record data at [{pos}..{}] is invalid", pos + *len as u64))]
+    RecordFileInvalidDataSize {
+        pos: u64,
+        len: u32,
+    },
+
+    /// This error is handled by the caller of record_file::Reader::read_record()
+    #[snafu(display(
+        "Record CRC not match at [{}..{}], expected: {crc}, calculated: {crc_calculated}",
+        record.pos,
+        record.pos + record.data.len() as u64 + record_file::RECORD_HEADER_LEN as u64,
+    ))]
+    RecordFileHashCheckFailed {
+        crc: u32,
+        crc_calculated: u32,
+        record: record_file::Record,
+    },
+
     #[snafu(display("Failed to do encode: {}", source))]
     Encode {
         source: Box<dyn std::error::Error + Send + Sync>,
@@ -245,6 +259,12 @@ impl From<MetaError> for Error {
 impl From<ArrowError> for Error {
     fn from(source: ArrowError) -> Self {
         Error::Arrow { source }
+    }
+}
+
+impl From<ReadTsmError> for Error {
+    fn from(source: ReadTsmError) -> Self {
+        Error::ReadTsm { source }
     }
 }
 

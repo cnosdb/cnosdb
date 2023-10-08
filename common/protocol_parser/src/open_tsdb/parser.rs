@@ -19,7 +19,7 @@ impl Parser {
         let mut ret: Vec<Line> = Vec::new();
         let mut pos = 0_usize;
         while let Some((mut line, offset)) = self.next_line(lines, pos)? {
-            line.sort_and_dedup();
+            line.sort_dedup_and_hash();
             ret.push(line);
             pos += offset;
         }
@@ -82,7 +82,7 @@ impl Parser {
         check_pos_valid(buf, pos)?;
 
         let mut tags = vec![];
-        while let Some(t) = next_tag_set(&buf[pos..]) {
+        while let Some(t) = next_tag_set(&buf[pos..])? {
             pos += t.1;
             tags.extend(t.0);
             if check_pos_valid(buf, pos).is_err() {
@@ -111,7 +111,7 @@ impl Parser {
         let lines = lines.split("\r\n").collect::<Vec<&str>>();
         for line_raw in lines {
             if let Some(mut line) = self.next_tcp_line(line_raw)? {
-                line.sort_and_dedup();
+                line.sort_dedup_and_hash();
                 ret.push(line);
                 pos += line_raw.len() + 2;
             }

@@ -24,7 +24,8 @@ pub fn convert_batches(batches: Vec<RecordBatch>) -> Result<Vec<Vec<String>>, Ar
                 )));
             }
 
-            rows.extend(convert_batch(batch)?);
+            let new_rows = convert_batch(batch)?.into_iter().flat_map(expand_row);
+            rows.extend(new_rows);
         }
         Ok(rows)
     }
@@ -40,6 +41,40 @@ fn convert_batch(batch: RecordBatch) -> Result<Vec<Vec<String>>, ArrowError> {
                 .collect::<Result<Vec<String>, ArrowError>>()
         })
         .collect()
+}
+
+/// special case rows that have newlines in them (like explain plans)
+//
+/// Transform inputs into one cell per line
+fn expand_row(mut row: Vec<String>) -> Vec<Vec<String>> {
+    use std::iter::once;
+
+    // check last cell
+    if let Some(cell) = row.pop() {
+        let lines: Vec<_> = cell.split('\n').collect();
+
+        // no newlines in last cell
+        if lines.len() < 2 {
+            row.push(cell);
+            return vec![row];
+        }
+
+        // form new rows with each additional line
+        let new_lines: Vec<_> = lines
+            .into_iter()
+            .map(|l| {
+                // replace any leading spaces with '-' as
+                // `sqllogictest` ignores whitespace differences
+                let content = l.trim_start();
+                let new_prefix = "-".repeat(l.len() - content.len());
+                vec![format!("{new_prefix}{content}")]
+            })
+            .collect();
+
+        once(row).chain(new_lines).collect::<Vec<_>>()
+    } else {
+        vec![row]
+    }
 }
 
 pub fn value_to_string(col: &ArrayRef, row: usize) -> Result<String, ArrowError> {

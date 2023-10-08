@@ -17,6 +17,8 @@ use self::drop_database_object::DropDatabaseObjectTask;
 use self::drop_global_object::DropGlobalObjectTask;
 use self::drop_tenant_object::DropTenantObjectTask;
 use self::grant_revoke::GrantRevokeTask;
+use self::recover_database::RecoverDatabaseTask;
+use self::recover_tenant::RecoverTenantTask;
 use crate::execution::ddl::alter_database::AlterDatabaseTask;
 use crate::execution::ddl::alter_table::AlterTableTask;
 use crate::execution::ddl::checksum_group::ChecksumGroupTask;
@@ -46,6 +48,8 @@ mod drop_tenant_object;
 mod drop_vnode;
 mod grant_revoke;
 mod move_node;
+mod recover_database;
+mod recover_tenant;
 
 /// Traits that DDL tasks should implement
 #[async_trait]
@@ -169,6 +173,10 @@ impl DDLDefinitionTaskFactory {
 
                 Box::new(CreateStreamTableTask::new(checker, sub_plan.clone()))
             }
+            DDLPlan::RecoverDatabase(sub_plan) => {
+                Box::new(RecoverDatabaseTask::new(sub_plan.clone()))
+            }
+            DDLPlan::RecoverTenant(sub_plan) => Box::new(RecoverTenantTask::new(sub_plan.clone())),
         }
     }
 }

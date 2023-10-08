@@ -2,8 +2,22 @@ use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
 
+use crate::gis::data_type::Geometry;
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash)]
 pub enum ValueType {
+    Unknown,
+    Float,
+    Integer,
+    Unsigned,
+    Boolean,
+    String,
+    Geometry(Geometry),
+}
+
+/// data type for tskv
+#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash)]
+pub enum PhysicalDType {
     Unknown,
     Float,
     Integer,
@@ -13,32 +27,33 @@ pub enum ValueType {
 }
 
 impl ValueType {
-    pub fn to_fb_type(&self) -> protos::models::FieldType {
-        match *self {
-            ValueType::Float => protos::models::FieldType::Float,
-            ValueType::Integer => protos::models::FieldType::Integer,
-            ValueType::Unsigned => protos::models::FieldType::Unsigned,
-            ValueType::Boolean => protos::models::FieldType::Boolean,
-            ValueType::String => protos::models::FieldType::String,
-            ValueType::Unknown => protos::models::FieldType::Unknown,
+    pub fn to_physical_type(&self) -> PhysicalDType {
+        match self {
+            Self::Unknown => PhysicalDType::Unknown,
+            Self::Float => PhysicalDType::Float,
+            Self::Integer => PhysicalDType::Integer,
+            Self::Unsigned => PhysicalDType::Unsigned,
+            Self::Boolean => PhysicalDType::Boolean,
+            Self::String => PhysicalDType::String,
+            Self::Geometry(_) => PhysicalDType::String,
         }
     }
 }
 
-impl Display for ValueType {
+impl Display for PhysicalDType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValueType::Unknown => f.write_str("Unknown"),
-            ValueType::Float => f.write_str("Float"),
-            ValueType::Integer => f.write_str("Integer"),
-            ValueType::Unsigned => f.write_str("Unsigned"),
-            ValueType::Boolean => f.write_str("Boolean"),
-            ValueType::String => f.write_str("String"),
+            PhysicalDType::Unknown => f.write_str("Unknown"),
+            PhysicalDType::Float => f.write_str("Float"),
+            PhysicalDType::Integer => f.write_str("Integer"),
+            PhysicalDType::Unsigned => f.write_str("Unsigned"),
+            PhysicalDType::Boolean => f.write_str("Boolean"),
+            PhysicalDType::String => f.write_str("String"),
         }
     }
 }
 
-impl From<u8> for ValueType {
+impl From<u8> for PhysicalDType {
     fn from(value: u8) -> Self {
         match value {
             0 => Self::Float,
@@ -51,28 +66,28 @@ impl From<u8> for ValueType {
     }
 }
 
-impl From<ValueType> for u8 {
-    fn from(value: ValueType) -> Self {
+impl From<PhysicalDType> for u8 {
+    fn from(value: PhysicalDType) -> Self {
         match value {
-            ValueType::Float => 0,
-            ValueType::Integer => 1,
-            ValueType::Boolean => 2,
-            ValueType::String => 3,
-            ValueType::Unsigned => 4,
-            ValueType::Unknown => 5,
+            PhysicalDType::Float => 0,
+            PhysicalDType::Integer => 1,
+            PhysicalDType::Boolean => 2,
+            PhysicalDType::String => 3,
+            PhysicalDType::Unsigned => 4,
+            PhysicalDType::Unknown => 5,
         }
     }
 }
 
-impl From<protos::models::FieldType> for ValueType {
+impl From<protos::models::FieldType> for PhysicalDType {
     fn from(t: protos::models::FieldType) -> Self {
         match t {
-            protos::models::FieldType::Float => ValueType::Float,
-            protos::models::FieldType::Integer => ValueType::Integer,
-            protos::models::FieldType::Unsigned => ValueType::Unsigned,
-            protos::models::FieldType::Boolean => ValueType::Boolean,
-            protos::models::FieldType::String => ValueType::String,
-            _ => ValueType::Unknown,
+            protos::models::FieldType::Float => PhysicalDType::Float,
+            protos::models::FieldType::Integer => PhysicalDType::Integer,
+            protos::models::FieldType::Unsigned => PhysicalDType::Unsigned,
+            protos::models::FieldType::Boolean => PhysicalDType::Boolean,
+            protos::models::FieldType::String => PhysicalDType::String,
+            _ => PhysicalDType::Unknown,
         }
     }
 }

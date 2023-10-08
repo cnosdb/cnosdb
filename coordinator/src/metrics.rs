@@ -1,20 +1,29 @@
+use std::borrow::Cow;
 use std::fmt::Debug;
 
 use metrics::label::Labels;
 use metrics::metric_type::MetricType;
 use metrics::metric_value::MetricValue;
 use metrics::reporter::Reporter;
-use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::Line;
 use protos::FieldValue;
 
-#[derive(Debug)]
-struct LPLine {
-    measure: &'static str,
+#[derive(Debug, Clone)]
+pub struct LPLine {
+    measure: Cow<'static, str>,
     labels: Labels,
     value: FieldValue,
 }
+
 impl LPLine {
+    pub fn new(measure: impl Into<Cow<'static, str>>, tags: Labels, value: FieldValue) -> Self {
+        Self {
+            measure: measure.into(),
+            labels: tags,
+            value,
+        }
+    }
+
     pub fn to_line(&self) -> Line {
         let tags = self
             .labels
@@ -24,7 +33,7 @@ impl LPLine {
             .collect();
 
         Line::new(
-            self.measure,
+            self.measure.as_ref(),
             tags,
             vec![("value", self.value.clone())],
             chrono::Utc::now().timestamp_nanos(),
@@ -34,62 +43,89 @@ impl LPLine {
 
 #[derive(Debug)]
 pub struct LPReporter<'a> {
-    db: &'a str,
-    current_measure: Option<(Vec<LPLine>, &'static str, MetricType)>,
-    points_buffer: &'a mut Vec<Vec<u8>>,
+    current_measure: Option<(Vec<LPLine>, Cow<'static, str>, MetricType)>,
+    points_buffer: &'a mut Vec<Vec<LPLine>>,
 }
 
 impl<'a> LPReporter<'a> {
-    pub fn new(db: &'a str, points_buffer: &'a mut Vec<Vec<u8>>) -> Self {
+    pub fn new(points_buffer: &'a mut Vec<Vec<LPLine>>) -> Self {
         Self {
-            db,
             current_measure: None,
             points_buffer,
         }
     }
+
+    pub fn current_measure(&self) -> Option<&(Vec<LPLine>, Cow<'static, str>, MetricType)> {
+        self.current_measure.as_ref()
+    }
 }
 
 impl<'a> Reporter for LPReporter<'a> {
-    fn start(&mut self, name: &'static str, _description: &'static str, metrics_type: MetricType) {
+    fn start(
+        &mut self,
+        name: Cow<'static, str>,
+        _description: Cow<'static, str>,
+        metrics_type: MetricType,
+    ) {
         if metrics_type.eq(&MetricType::UnTyped) {
             return;
         }
         self.current_measure = Some((vec![], name, metrics_type))
     }
-    fn report(&mut self, label: &Labels, metrics_value: MetricValue) {
+    fn report(&mut self, labels: &Labels, metrics_value: MetricValue) {
         let (lines, name, metric_type) = self.current_measure.as_mut().expect("start reporter");
         assert_eq!(
             metrics_value.metric_type(),
             *metric_type,
             "metric type error"
         );
-        let field_value = match metrics_value {
-            MetricValue::U64Counter(c) => FieldValue::U64(c),
-            MetricValue::U64Gauge(g) => FieldValue::U64(g),
-            MetricValue::DurationGauge(g) => FieldValue::F64(g.as_secs_f64()),
-            MetricValue::DurationCounter(c) => FieldValue::F64(c.as_secs_f64()),
-            MetricValue::U64Histogram(_h) => {
-                todo!()
-            }
-            MetricValue::DurationHistogram(_h) => {
-                todo!()
-            }
-            MetricValue::Null => return,
-        };
 
-        let line = LPLine {
-            measure: name,
-            labels: label.clone(),
-            value: field_value,
-        };
-        lines.push(line);
+        match metrics_value {
+            MetricValue::U64Counter(c) => {
+                let value = FieldValue::U64(c);
+                lines.push(LPLine::new(name.clone(), labels.clone(), value));
+            }
+            MetricValue::U64Gauge(g) => {
+                let value = FieldValue::U64(g);
+                lines.push(LPLine::new(name.clone(), labels.clone(), value));
+            }
+            MetricValue::DurationGauge(g) => {
+                let value = FieldValue::F64(g.as_secs_f64());
+                lines.push(LPLine::new(name.clone(), labels.clone(), value));
+            }
+            MetricValue::DurationCounter(c) => {
+                let value = FieldValue::F64(c.as_secs_f64());
+                lines.push(LPLine::new(name.clone(), labels.clone(), value));
+            }
+            MetricValue::U64Histogram(histogram) => {
+                for bucket in histogram.buckets {
+                    let mut labels = labels.clone();
+                    labels.insert(("le", bucket.le.to_string().into()));
+                    let value = FieldValue::U64(bucket.count);
+                    lines.push(LPLine::new(name.clone(), labels, value));
+                }
+                let value = FieldValue::U64(histogram.total);
+                lines.push(LPLine::new(name.clone(), labels.clone(), value))
+            }
+            MetricValue::DurationHistogram(histogram) => {
+                for bucket in histogram.buckets {
+                    let mut labels = labels.clone();
+                    labels.insert(("le", bucket.le.as_secs_f64().to_string().into()));
+                    // sum type must be same as count type
+                    // so this is f64
+                    let value = FieldValue::F64(bucket.count as f64);
+                    lines.push(LPLine::new(name.clone(), labels, value));
+                }
+                let value = FieldValue::F64(histogram.total.as_secs_f64());
+                lines.push(LPLine::new(name.clone(), labels.clone(), value));
+            }
+            MetricValue::Null => (),
+        }
     }
 
     fn stop(&mut self) {
         if let Some((lines, _name, _metrics_type)) = &self.current_measure {
-            let lines = lines.iter().map(|l| l.to_line()).collect::<Vec<_>>();
-            let points = parse_lines_to_points(self.db, &lines);
-            self.points_buffer.push(points);
+            self.points_buffer.push(lines.clone());
         }
     }
 }

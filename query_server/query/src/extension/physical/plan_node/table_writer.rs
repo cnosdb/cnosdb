@@ -55,6 +55,10 @@ impl TableWriterExec {
             schema,
         }
     }
+
+    pub fn sink_schema(&self) -> SchemaRef {
+        self.record_batch_sink_provider.schema()
+    }
 }
 
 impl Debug for TableWriterExec {

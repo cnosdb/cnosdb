@@ -8,12 +8,12 @@ use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::meta_admin::AdminMeta;
 use meta::model::meta_tenant::TenantMeta;
 use meta::model::{MetaClientRef, MetaRef};
-use models::consistency_level::ConsistencyLevel;
 use models::meta_data::{ReplicationSet, VnodeInfo, VnodeStatus};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
-use models::schema::Precision;
-use protos::kv_service::{AdminCommandRequest, WritePointsRequest};
+use models::schema::{Precision, TskvTableSchemaRef};
+use protocol_parser::Line;
+use protos::kv_service::AdminCommandRequest;
 use trace::SpanContext;
 use tskv::engine_mock::MockEngine;
 use tskv::reader::QueryOption;
@@ -124,15 +124,24 @@ impl Coordinator for MockCoordinator {
         Ok(vec![])
     }
 
-    async fn write_points(
+    async fn write_lines<'a>(
         &self,
-        tenant: String,
-        level: ConsistencyLevel,
+        tenant: &str,
+        db: &str,
         precision: Precision,
-        req: WritePointsRequest,
-        _span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<()> {
-        Ok(())
+        line: Vec<Line<'a>>,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<usize> {
+        todo!()
+    }
+
+    async fn write_record_batch<'a>(
+        &self,
+        table_schema: TskvTableSchemaRef,
+        record_batch: RecordBatch,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<usize> {
+        todo!()
     }
 
     fn table_scan(

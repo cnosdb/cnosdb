@@ -11,7 +11,9 @@ use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifie
 use models::auth::user::UserDesc;
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
-use models::schema::{DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TskvTableSchema};
+use models::schema::{
+    DatabaseSchema, ExternalTableSchema, ResourceInfo, TableSchema, Tenant, TskvTableSchemaRef,
+};
 use parking_lot::RwLock;
 use store::command;
 use trace::info;
@@ -381,29 +383,66 @@ impl TenantMeta {
 
     // tenant role end
 
-    pub async fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
-        let req =
-            command::WriteCommand::AlterDB(self.cluster.clone(), self.tenant_name(), info.clone());
+    pub async fn alter_db_schema(&self, schema: DatabaseSchema) -> MetaResult<()> {
+        let req = command::WriteCommand::AlterDB(
+            self.cluster.clone(),
+            self.tenant_name(),
+            schema.clone(),
+        );
 
-        self.client.write::<()>(&req).await
+        self.client.write::<()>(&req).await?;
+        if let Some(info) = self.data.write().dbs.get_mut(schema.database_name()) {
+            info.schema = schema.clone()
+        }
+        Ok(())
+    }
+
+    pub async fn set_db_is_hidden(
+        &self,
+        tenant: &str,
+        db: &str,
+        db_is_hidden: bool,
+    ) -> MetaResult<()> {
+        let req = command::WriteCommand::SetDBIsHidden(
+            self.cluster.clone(),
+            tenant.to_string(),
+            db.to_string(),
+            db_is_hidden,
+        );
+
+        self.client.write::<()>(&req).await?;
+        if let Some(info) = self.data.write().dbs.get_mut(db) {
+            info.schema.config.set_db_is_hidden(db_is_hidden)
+        }
+        Ok(())
     }
 
     pub fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
         if let Some(db) = self.data.read().dbs.get(name) {
-            return Ok(Some(db.schema.clone()));
+            if !db.schema.options().get_db_is_hidden() {
+                return Ok(Some(db.schema.clone()));
+            }
         }
 
         Ok(None)
     }
 
     pub fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
-        Ok(self.data.read().dbs.get(name).cloned())
+        if let Some(db) = self.data.read().dbs.get(name) {
+            if !db.schema.options().get_db_is_hidden() {
+                return Ok(Some(db.clone()));
+            }
+        }
+
+        Ok(None)
     }
 
     pub fn list_databases(&self) -> MetaResult<Vec<String>> {
         let mut list = vec![];
-        for (k, _) in self.data.read().dbs.iter() {
-            list.push(k.clone());
+        for (k, db_info) in self.data.read().dbs.iter() {
+            if !db_info.schema.options().get_db_is_hidden() {
+                list.push(k.clone());
+            }
         }
 
         Ok(list)
@@ -461,7 +500,7 @@ impl TenantMeta {
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
+    ) -> MetaResult<Option<TskvTableSchemaRef>> {
         if let Some(TableSchema::TsKvTableSchema(val)) = self.data.read().table_schema(db, table) {
             return Ok(Some(val));
         }
@@ -472,7 +511,7 @@ impl TenantMeta {
         &self,
         db: &str,
         table: &str,
-    ) -> MetaResult<Option<Arc<TskvTableSchema>>> {
+    ) -> MetaResult<Option<TskvTableSchemaRef>> {
         let req = ReadCommand::TableSchema(
             self.cluster.clone(),
             self.tenant.name().to_string(),
@@ -783,10 +822,7 @@ impl TenantMeta {
             let mut data = self.data.write();
             if entry.tye == command::ENTRY_LOG_TYPE_SET {
                 if let Ok(info) = serde_json::from_str::<DatabaseSchema>(&entry.val) {
-                    let db = data
-                        .dbs
-                        .entry(db_name.to_string())
-                        .or_insert_with(DatabaseInfo::default);
+                    let db = data.dbs.entry(db_name.to_string()).or_default();
 
                     db.schema = info;
                 }
@@ -823,6 +859,25 @@ impl TenantMeta {
         info!("****** Meta Data: {:#?}", self.data);
 
         format!("{:#?}", self.data.read())
+    }
+
+    pub async fn write_resourceinfo(
+        &self,
+        names: &[String],
+        res_info: ResourceInfo,
+    ) -> MetaResult<()> {
+        let req =
+            command::WriteCommand::ResourceInfo(self.cluster.clone(), names.to_owned(), res_info);
+
+        self.client.write::<ResourceInfo>(&req).await?;
+
+        Ok(())
+    }
+
+    pub async fn read_resourceinfos(&self, names: &[String]) -> MetaResult<Vec<ResourceInfo>> {
+        let req = command::ReadCommand::ResourceInfos(self.cluster.clone(), names.to_owned());
+
+        self.client.read::<Vec<ResourceInfo>>(&req).await
     }
 }
 

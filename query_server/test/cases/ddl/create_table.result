@@ -1,8 +1,10 @@
 -- EXECUTE SQL: DROP DATABASE IF EXISTS createtable; --
 200 OK
 
+
 -- EXECUTE SQL: CREATE DATABASE createtable WITH TTL '100000d'; --
 200 OK
+
 
 -- EXECUTE SQL: CREATE TABLE createtable."tesT"(column1 BIGINT,); --
 422 Unprocessable Entity
@@ -26,6 +28,7 @@
 
 -- EXECUTE SQL: CREATE TABLE test0( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 200 OK
+
 
 -- EXECUTE SQL: insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (100, -1234, 'hello', 1234, false, 1.2, 'beijing', 'shanghai'); --
 -- AFTER_SORT --
@@ -104,6 +107,7 @@ time,column6,column7,column1,column2,column3,column4,column5
 -- EXECUTE SQL: ALTER TABLE test0 DROP column2; --
 200 OK
 
+
 -- EXECUTE SQL: select ALL * from test0; --
 -- AFTER_SORT --
 200 OK
@@ -132,6 +136,7 @@ time,column6,column7,column1,column3,column4,column5
 -- EXECUTE SQL: ALTER TABLE test0 ADD TAG column8; --
 200 OK
 
+
 -- EXECUTE SQL: SELECT ALL * FROM test0; --
 -- AFTER_SORT --
 200 OK
@@ -159,11 +164,12 @@ time,column6,column7,column1,column3,column4,column5,column8
 
 -- EXECUTE SQL: CREATE TABLE test1( column0 TIMESTAMP CODEC(DELTA), column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: already have timestamp column"}
+{"error_code":"010028","error_message":"Semantic error:  column time already exists in table cnosdb.createtable.test1"}
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE TABLE test2( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA)); --
 200 OK
+
 
 -- EXECUTE SQL: CREATE TABLE test0( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
@@ -172,6 +178,7 @@ time,column6,column7,column1,column3,column4,column5,column8
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test0( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 200 OK
+
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test3( column1 BIGINT CODEC(DELTA), column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
@@ -185,11 +192,12 @@ time,column6,column7,column1,column3,column4,column5,column8
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test5( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLE, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
-{"error_code":"010009","error_message":"sql parser error: BOOLE is not a supported type"}
+{"error_code":"010041","error_message":"Semantic error: Unexpected data type BOOLE of column4, "}
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test6( column1 BIGINT CODEC(delta), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(null), column4 BOOLEAN CODEC(BITPACK), column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 200 OK
+
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test7( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
@@ -199,6 +207,7 @@ time,column6,column7,column1,column3,column4,column5,column8
 -- EXECUTE SQL: DROP TABLE test0; --
 200 OK
 
+
 -- EXECUTE SQL: SELECT ALL * FROM test0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
@@ -207,6 +216,7 @@ time,column6,column7,column1,column3,column4,column5,column8
 
 -- EXECUTE SQL: CREATE TABLE test0( column1 BIGINT CODEC(DELTA), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column8, column7)); --
 200 OK
+
 
 -- EXECUTE SQL: SELECT ALL * FROM test0; --
 -- AFTER_SORT --
@@ -219,7 +229,7 @@ time,column6,column8,column7,column1,column3,column4,column5
 
 -- EXECUTE SQL: DESCRIBE TABLE test8; --
 200 OK
-COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,COMPRESSION_CODEC
+column_name,data_type,column_type,compression_codec
 time,TIMESTAMP(NANOSECOND),TIME,DEFAULT
 column1,BIGINT,FIELD,DELTA
 column2,BIGINT UNSIGNED,FIELD,NULL
@@ -231,3 +241,4 @@ column3,BOOLEAN,FIELD,DEFAULT
 
 -- EXECUTE SQL: DROP DATABASE IF EXISTS createtable; --
 200 OK
+

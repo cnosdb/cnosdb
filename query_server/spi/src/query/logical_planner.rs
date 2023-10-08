@@ -26,7 +26,7 @@ use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use models::object_reference::ResolvedTable;
 use models::oid::{Identifier, Oid};
 use models::schema::{
-    DatabaseOptions, TableColumn, Tenant, TenantOptions, TenantOptionsBuilder, Watermark,
+    DatabaseOptions, Duration, TableColumn, Tenant, TenantOptions, TenantOptionsBuilder, Watermark,
 };
 use snafu::ResultExt;
 use tempfile::NamedTempFile;
@@ -142,6 +142,10 @@ pub enum DDLPlan {
     CompactVnode(CompactVnode),
 
     ChecksumGroup(ChecksumGroup),
+
+    RecoverDatabase(RecoverDatabase),
+
+    RecoverTenant(RecoverTenant),
 }
 
 impl DDLPlan {
@@ -226,6 +230,7 @@ pub struct DropTenantObject {
     pub name: String,
     pub if_exist: bool,
     pub obj_type: TenantObjectType,
+    pub after: Option<Duration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,12 +244,32 @@ pub struct DropGlobalObject {
     pub name: String,
     pub if_exist: bool,
     pub obj_type: GlobalObjectType,
+    pub after: Option<Duration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlobalObjectType {
     User,
     Tenant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoverTenant {
+    pub tenant_name: String,
+    pub if_exist: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoverDatabase {
+    pub tenant_name: String,
+    pub db_name: String,
+    pub if_exist: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoverTable {
+    pub table: ResolvedTable,
+    pub if_exist: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -515,6 +540,16 @@ pub enum AlterTableAction {
     DropColumn {
         column_name: String,
     },
+    RenameColumn {
+        old_column_name: String,
+        new_column_name: RenameColumnAction,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenameColumnAction {
+    RenameTag(String),
+    RenameField(String),
 }
 
 #[async_trait]
@@ -538,7 +573,7 @@ pub fn merge_affected_row_expr() -> Expr {
 }
 
 /// Normalize a SQL object name
-pub fn normalize_sql_object_name(sql_object_name: &ObjectName) -> String {
+pub fn normalize_sql_object_name_to_string(sql_object_name: &ObjectName) -> String {
     sql_object_name
         .0
         .iter()

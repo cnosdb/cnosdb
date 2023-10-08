@@ -33,22 +33,32 @@ pub struct WalReader {
     /// Max write sequence in the wal file, may be 0 if wal file is new or
     /// CnosDB was crushed or force-killed.
     max_sequence: u64,
+    has_footer: bool,
 }
 
 impl WalReader {
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
         let reader = record_file::Reader::open(&path).await?;
 
+        let mut has_footer = true;
         let (min_sequence, max_sequence) = match reader.footer() {
             Some(footer) => Self::parse_footer(footer).unwrap_or((0_u64, 0_u64)),
-            None => (0_u64, 0_u64),
+            None => {
+                has_footer = false;
+                (0_u64, 0_u64)
+            }
         };
 
         Ok(Self {
             inner: reader,
             min_sequence,
             max_sequence,
+            has_footer,
         })
+    }
+
+    pub fn has_footer(&self) -> bool {
+        self.has_footer
     }
 
     /// Parses wal footer, returns sequence range.
@@ -64,17 +74,20 @@ impl WalReader {
     }
 
     pub async fn next_wal_entry(&mut self) -> Result<Option<WalEntryBlock>> {
-        let data = match self.inner.read_record().await {
-            Ok(r) => r.data,
-            Err(Error::Eof) => {
-                return Ok(None);
-            }
-            Err(e) => {
-                trace::error!("Error reading wal: {:?}", e);
-                return Err(Error::WalTruncated);
-            }
-        };
-        Ok(Some(WalEntryBlock::new(data)))
+        loop {
+            let data = match self.inner.read_record().await {
+                Ok(r) => r.data,
+                Err(Error::Eof) => {
+                    return Ok(None);
+                }
+                Err(Error::RecordFileHashCheckFailed { .. }) => continue,
+                Err(e) => {
+                    trace::error!("Error reading wal: {:?}", e);
+                    return Err(Error::WalTruncated);
+                }
+            };
+            return Ok(Some(WalEntryBlock::new(data)));
+        }
     }
 
     pub fn min_sequence(&self) -> u64 {
@@ -102,6 +115,10 @@ impl WalReader {
             Some(d) => d == 0,
             None => true,
         }
+    }
+
+    pub fn take_record_reader(self) -> record_file::Reader {
+        self.inner
     }
 }
 

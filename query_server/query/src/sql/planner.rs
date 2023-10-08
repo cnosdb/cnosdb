@@ -48,6 +48,7 @@ use models::auth::privilege::{
 };
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::User;
+use models::gis::data_type::{Geometry, GeometryType};
 use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
 use models::schema::{
@@ -70,15 +71,16 @@ use spi::query::ast::{
 };
 use spi::query::datasource::{self, UriSchema};
 use spi::query::logical_planner::{
-    parse_connection_options, sql_option_to_alter_tenant_action, sql_options_to_map,
-    sql_options_to_tenant_options, sql_options_to_user_options,
-    unset_option_to_alter_tenant_action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
-    AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction,
-    ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder, CopyVnode, CreateDatabase,
-    CreateRole, CreateStreamTable, CreateTable, CreateTenant, CreateUser, DDLPlan,
-    DatabaseObjectType, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode,
-    FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType, GrantRevoke, LogicalPlanner,
-    MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan, TenantObjectType,
+    normalize_sql_object_name_to_string, parse_connection_options,
+    sql_option_to_alter_tenant_action, sql_options_to_map, sql_options_to_tenant_options,
+    sql_options_to_user_options, unset_option_to_alter_tenant_action, AlterDatabase, AlterTable,
+    AlterTableAction, AlterTenant, AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser,
+    AlterUser, AlterUserAction, ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder,
+    CopyVnode, CreateDatabase, CreateRole, CreateStreamTable, CreateTable, CreateTenant,
+    CreateUser, DDLPlan, DatabaseObjectType, DropDatabaseObject, DropGlobalObject,
+    DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
+    GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, RecoverDatabase,
+    RecoverTenant, RenameColumnAction, SYSPlan, TenantObjectType,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -170,7 +172,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 .await
             }
             ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt, session),
-            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt, session),
+            ExtStatement::AlterTable(stmt) => self.alter_table_to_plan(stmt, session),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt).await,
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt).await,
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
@@ -202,6 +204,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::CreateStreamTable(stmt) => {
                 self.create_stream_table_to_plan(stmt, session)
             }
+            ExtStatement::RecoverTenant(stmt) => self.recovertenant_to_plan(stmt),
+            ExtStatement::RecoverDatabase(stmt) => self.recoverdatabase_to_plan(stmt, session),
         }
     }
 
@@ -395,10 +399,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             object_name,
             if_exist,
             ref obj_type,
+            after,
         } = stmt;
         // get the current tenant id from the session
         let tenant_name = session.tenant();
         let tenant_id = *session.tenant_id();
+        let after_duration = after.map(|e| self.str_to_duration(&e)).transpose()?;
 
         let (plan, privilege) = match obj_type {
             TenantObjectType::Database => {
@@ -414,6 +420,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                         name: database_name.clone(),
                         if_exist,
                         obj_type: TenantObjectType::Database,
+                        after: after_duration,
                     }),
                     Privilege::TenantObject(
                         TenantObjectPrivilege::Database(
@@ -432,6 +439,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                         name: role_name,
                         if_exist,
                         obj_type: TenantObjectType::Role,
+                        after: after_duration,
                     }),
                     Privilege::TenantObject(TenantObjectPrivilege::RoleFull, Some(tenant_id)),
                 )
@@ -452,7 +460,9 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             object_name,
             if_exist,
             ref obj_type,
+            after,
         } = stmt;
+        let after_duration = after.map(|e| self.str_to_duration(&e)).transpose()?;
 
         let (plan, privilege) = match obj_type {
             GlobalObjectType::Tenant => {
@@ -466,6 +476,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                         if_exist,
                         name: tenant_name,
                         obj_type: GlobalObjectType::Tenant,
+                        after: after_duration,
                     }),
                     Privilege::Global(GlobalPrivilege::Tenant(None)),
                 )
@@ -477,10 +488,67 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                         if_exist,
                         name: user_name,
                         obj_type: GlobalObjectType::User,
+                        after: after_duration,
                     }),
                     Privilege::Global(GlobalPrivilege::User(None)),
                 )
             }
+        };
+
+        Ok(PlanWithPrivileges {
+            plan: Plan::DDL(plan),
+            privileges: vec![privilege],
+        })
+    }
+
+    fn recoverdatabase_to_plan(
+        &self,
+        stmt: ast::RecoverDatabase,
+        session: &SessionCtx,
+    ) -> Result<PlanWithPrivileges> {
+        let ast::RecoverDatabase {
+            object_name,
+            if_exist,
+        } = stmt;
+        let tenant_name = session.tenant();
+        let tenant_id = *session.tenant_id();
+
+        let (plan, privilege) = {
+            let database_name = normalize_ident(object_name);
+            (
+                DDLPlan::RecoverDatabase(RecoverDatabase {
+                    tenant_name: tenant_name.to_string(),
+                    db_name: database_name.clone(),
+                    if_exist,
+                }),
+                Privilege::TenantObject(
+                    TenantObjectPrivilege::Database(DatabasePrivilege::Full, Some(database_name)),
+                    Some(tenant_id),
+                ),
+            )
+        };
+
+        Ok(PlanWithPrivileges {
+            plan: Plan::DDL(plan),
+            privileges: vec![privilege],
+        })
+    }
+
+    fn recovertenant_to_plan(&self, stmt: ast::RecoverTenant) -> Result<PlanWithPrivileges> {
+        let ast::RecoverTenant {
+            object_name,
+            if_exist,
+        } = stmt;
+
+        let (plan, privilege) = {
+            let tenant_name = normalize_ident(object_name);
+            (
+                DDLPlan::RecoverTenant(RecoverTenant {
+                    tenant_name,
+                    if_exist,
+                }),
+                Privilege::Global(GlobalPrivilege::Tenant(None)),
+            )
         };
 
         Ok(PlanWithPrivileges {
@@ -605,6 +673,13 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             schema.push(column);
         }
 
+        if schema.iter().filter(|e| e.column_type.is_time()).count() > 1 {
+            return Err(QueryError::ColumnAlreadyExists {
+                column: "time".to_string(),
+                table: resolved_table.to_string(),
+            });
+        }
+
         let mut column_name = HashSet::new();
         for col in schema.iter() {
             if !column_name.insert(col.name.as_str()) {
@@ -659,11 +734,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let projections = vec![
-            col(DATABASES_TTL).alias(DATABASES_TTL.to_uppercase()),
-            col(DATABASES_SHARD).alias(DATABASES_SHARD.to_uppercase()),
-            col(DATABASES_VNODE_DURATION).alias(DATABASES_VNODE_DURATION.to_uppercase()),
-            col(DATABASES_REPLICA).alias(DATABASES_REPLICA.to_uppercase()),
-            col(DATABASES_PRECISION).alias(DATABASES_PRECISION.to_uppercase()),
+            col(DATABASES_TTL),
+            col(DATABASES_SHARD),
+            col(DATABASES_VNODE_DURATION),
+            col(DATABASES_REPLICA),
+            col(DATABASES_PRECISION),
         ];
 
         let database_name = normalize_ident(statement.database_name);
@@ -706,10 +781,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             .database_table_exist(database_name.as_str(), Some(&table_name))?;
 
         let projections = vec![
-            col(COLUMNS_COLUMN_NAME).alias(COLUMNS_COLUMN_NAME.to_uppercase()),
-            col(COLUMNS_DATA_TYPE).alias(COLUMNS_DATA_TYPE.to_uppercase()),
-            col(COLUMNS_COLUMN_TYPE).alias(COLUMNS_COLUMN_TYPE.to_uppercase()),
-            col(COLUMNS_COMPRESSION_CODEC).alias(COLUMNS_COMPRESSION_CODEC.to_uppercase()),
+            col(COLUMNS_COLUMN_NAME),
+            col(COLUMNS_DATA_TYPE),
+            col(COLUMNS_COLUMN_TYPE),
+            col(COLUMNS_COMPRESSION_CODEC),
         ];
 
         let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_COLUMNS);
@@ -736,7 +811,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn table_to_alter(
+    fn alter_table_to_plan(
         &self,
         statement: ASTAlterTable,
         session: &SessionCtx,
@@ -827,6 +902,40 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     new_column,
                 }
             }
+            ASTAlterTableAction::RenameColumn {
+                old_column_name,
+                new_column_name,
+            } => {
+                let old_column_name = normalize_ident(old_column_name);
+                let new_column_name = normalize_ident(new_column_name);
+                let column = table_schema.column(&old_column_name).ok_or_else(|| {
+                    QueryError::ColumnNotExists {
+                        column: old_column_name.clone(),
+                        table: table_schema.name.to_string(),
+                    }
+                })?;
+                if table_schema.column(&new_column_name).is_some() {
+                    return Err(QueryError::ColumnAlreadyExists {
+                        column: new_column_name,
+                        table: table_schema.name.to_string(),
+                    });
+                }
+
+                let new_column_name = match column.column_type {
+                    ColumnType::Time(_) => {
+                        return Err(QueryError::NotImplemented {
+                            err: "rename time column".to_string(),
+                        })
+                    }
+                    ColumnType::Tag => RenameColumnAction::RenameTag(new_column_name),
+                    ColumnType::Field(_) => RenameColumnAction::RenameField(new_column_name),
+                };
+
+                AlterTableAction::RenameColumn {
+                    old_column_name,
+                    new_column_name,
+                }
+            }
         };
         let plan = Plan::DDL(DDLPlan::AlterTable(AlterTable {
             table_name,
@@ -847,8 +956,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     }
 
     fn show_databases_to_plan(&self, session: &SessionCtx) -> Result<PlanWithPrivileges> {
-        let projections =
-            vec![col(DATABASES_DATABASE_NAME).alias(DATABASES_DATABASE_NAME.to_uppercase())];
+        let projections = vec![col(DATABASES_DATABASE_NAME)];
         let sorts = vec![col(DATABASES_DATABASE_NAME).sort(true, true)];
 
         let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_DATABASES);
@@ -882,7 +990,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let database_name = session.default_database();
         let db_name = database.map(normalize_ident);
 
-        let projections = vec![col(TABLES_TABLE_NAME).alias(TABLES_TABLE_NAME.to_uppercase())];
+        let projections = vec![col(TABLES_TABLE_NAME)];
         let sorts = vec![col(TABLES_TABLE_NAME).sort(true, true)];
 
         let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_TABLES);
@@ -1209,6 +1317,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         data_type: &SQLDataType,
         time_unit: TimeUnit,
     ) -> Result<ColumnType> {
+        let unsupport_type_err = &|prompt: String| QueryError::DataType {
+            column: column_name.to_string(),
+            data_type: data_type.to_string(),
+            prompt,
+        };
+
         match data_type {
             // todo : should support get time unit for database
             SQLDataType::Timestamp(_, TimezoneInfo::None) => Ok(ColumnType::Time(time_unit)),
@@ -1217,10 +1331,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             SQLDataType::Double => Ok(ColumnType::Field(ValueType::Float)),
             SQLDataType::String => Ok(ColumnType::Field(ValueType::String)),
             SQLDataType::Boolean => Ok(ColumnType::Field(ValueType::Boolean)),
-            _ => Err(QueryError::DataType {
-                column: column_name.to_string(),
-                data_type: data_type.to_string(),
-            }),
+            SQLDataType::Custom(name, params) => {
+                make_custom_data_type(name, params).map_err(unsupport_type_err)
+            }
+            _ => Err(unsupport_type_err("".to_string())),
         }
     }
 
@@ -1236,7 +1350,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             SQLDataType::BigInt(_) => encoding.is_bigint_encoding(),
             SQLDataType::UnsignedBigInt(_) => encoding.is_unsigned_encoding(),
             SQLDataType::Double => encoding.is_double_encoding(),
-            SQLDataType::String => encoding.is_string_encoding(),
+            SQLDataType::String | SQLDataType::Custom(_, _) => encoding.is_string_encoding(),
             SQLDataType::Boolean => encoding.is_bool_encoding(),
             _ => false,
         };
@@ -2336,6 +2450,56 @@ pub fn normalize_sql_object_name(
     object_name_to_table_reference(sql_object_name, true)
 }
 
+fn make_custom_data_type(
+    type_name: &ObjectName,
+    params: &[String],
+) -> std::result::Result<ColumnType, String> {
+    // handle ext/custom type
+    let type_name = normalize_sql_object_name_to_string(type_name);
+    match type_name.to_uppercase().as_str() {
+        "GEOMETRY" => make_geometry_data_type(params),
+        _ => Err("".to_string()),
+    }
+}
+
+fn make_geometry_data_type(params: &[String]) -> std::result::Result<ColumnType, String> {
+    if params.len() != 2 {
+        return Err("format: GEOMETRY(<sub_type>, <srid>)".to_string());
+    }
+    let sub_type = &params[0];
+    let srid = &params[1];
+
+    let srid = match srid.parse::<i16>() {
+        Ok(srid) => {
+            if srid != 0 {
+                // obly support 0, Cartesian coordinate system
+                return Err("currently only supports 0, Cartesian coordinate system".to_string());
+            }
+            srid
+        }
+        Err(_) => {
+            return Err("srid must be a number".to_string());
+        }
+    };
+
+    let sub_type = match sub_type.to_uppercase().as_str() {
+        "POINT" => GeometryType::Point,
+        "LINESTRING" => GeometryType::LineString,
+        "POLYGON" => GeometryType::Polygon,
+        "MULTIPOINT" => GeometryType::MultiPoint,
+        "MULTILINESTRING" => GeometryType::MultiLineString,
+        "MULTIPOLYGON" => GeometryType::MultiPolygon,
+        "GEOMETRYCOLLECTION" => GeometryType::GeometryCollection,
+        _ => {
+            return Err("sub_type must be POINT, LINESTRING, POLYGON, MULTIPOINT, MULTILINESTRING, MULTIPOLYGON, GEOMETRYCOLLECTION".to_string());
+        }
+    };
+
+    let geo_type = Geometry::new_with_srid(sub_type, srid);
+
+    Ok(ColumnType::Field(ValueType::Geometry(geo_type)))
+}
+
 #[cfg(test)]
 mod tests {
     use std::any::Any;
@@ -2355,7 +2519,8 @@ mod tests {
     use meta::error::MetaError;
     use models::auth::user::{User, UserDesc, UserOptions};
     use models::codec::Encoding;
-    use models::schema::Tenant;
+    use models::schema::{ColumnType, Tenant};
+    use models::ValueType;
     use spi::query::session::SessionCtxFactory;
     use spi::service::protocol::ContextBuilder;
 
@@ -2676,6 +2841,51 @@ mod tests {
             .err()
             .unwrap();
         assert!(matches!(error, QueryError::SameColumnName {column} if column.eq("pressure")));
+    }
+
+    #[tokio::test]
+    async fn test_create_table_with_geo_type() {
+        let sql = "CREATE TABLE air (loc geometry(point, 0));";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlanner::new(&test);
+        let plan = planner
+            .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .await
+            .unwrap()
+            .plan;
+
+        if let Plan::DDL(DDLPlan::CreateTable(create)) = plan {
+            let schema = vec![
+                TableColumn {
+                    id: 0,
+                    name: "time".to_string(),
+                    column_type: ColumnType::Time(Nanosecond),
+                    encoding: Encoding::Default,
+                },
+                TableColumn {
+                    id: 1,
+                    name: "loc".to_string(),
+                    column_type: ColumnType::Field(ValueType::Geometry(Geometry::new_with_srid(
+                        GeometryType::Point,
+                        0,
+                    ))),
+                    encoding: Encoding::Default,
+                },
+            ];
+            let expected = CreateTable {
+                schema,
+                name: TableReference::parse_str("public.air")
+                    .resolve_object("cnosdb", "public")
+                    .unwrap(),
+                if_not_exists: false,
+            };
+
+            assert_eq!(expected, create)
+        } else {
+            panic!("expected create table plan")
+        }
     }
 
     #[tokio::test]

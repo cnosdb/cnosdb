@@ -119,6 +119,99 @@ impl<'a> flatbuffers::Verifiable for FieldType {
 }
 
 impl flatbuffers::SimpleToVerifyInSlice for FieldType {}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_COLUMN_TYPE: i32 = -1;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_COLUMN_TYPE: i32 = 2;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_COLUMN_TYPE: [ColumnType; 4] = [
+  ColumnType::Unknown,
+  ColumnType::Time,
+  ColumnType::Tag,
+  ColumnType::Field,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct ColumnType(pub i32);
+#[allow(non_upper_case_globals)]
+impl ColumnType {
+  pub const Unknown: Self = Self(-1);
+  pub const Time: Self = Self(0);
+  pub const Tag: Self = Self(1);
+  pub const Field: Self = Self(2);
+
+  pub const ENUM_MIN: i32 = -1;
+  pub const ENUM_MAX: i32 = 2;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::Unknown,
+    Self::Time,
+    Self::Tag,
+    Self::Field,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::Unknown => Some("Unknown"),
+      Self::Time => Some("Time"),
+      Self::Tag => Some("Tag"),
+      Self::Field => Some("Field"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for ColumnType {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for ColumnType {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = flatbuffers::read_scalar_at::<i32>(buf, loc);
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for ColumnType {
+    type Output = ColumnType;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        flatbuffers::emplace_scalar::<i32>(dst, self.0);
+    }
+}
+
+impl flatbuffers::EndianScalar for ColumnType {
+  type Scalar = i32;
+  #[inline]
+  fn to_little_endian(self) -> i32 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: i32) -> Self {
+    let b = i32::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for ColumnType {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    i32::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for ColumnType {}
 pub enum PingBodyOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -220,509 +313,341 @@ impl core::fmt::Debug for PingBody<'_> {
       ds.finish()
   }
 }
-pub enum TagOffset {}
+pub enum ValuesOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
-pub struct Tag<'a> {
+pub struct Values<'a> {
   pub _tab: flatbuffers::Table<'a>,
 }
 
-impl<'a> flatbuffers::Follow<'a> for Tag<'a> {
-  type Inner = Tag<'a>;
+impl<'a> flatbuffers::Follow<'a> for Values<'a> {
+  type Inner = Values<'a>;
   #[inline]
   unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
     Self { _tab: flatbuffers::Table::new(buf, loc) }
   }
 }
 
-impl<'a> Tag<'a> {
-  pub const VT_VALUE: flatbuffers::VOffsetT = 4;
+impl<'a> Values<'a> {
+  pub const VT_FLOAT_VALUE: flatbuffers::VOffsetT = 4;
+  pub const VT_INT_VALUE: flatbuffers::VOffsetT = 6;
+  pub const VT_UINT_VALUE: flatbuffers::VOffsetT = 8;
+  pub const VT_BOOL_VALUE: flatbuffers::VOffsetT = 10;
+  pub const VT_STRING_VALUE: flatbuffers::VOffsetT = 12;
 
   pub const fn get_fully_qualified_name() -> &'static str {
-    "models.Tag"
+    "models.Values"
   }
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    Tag { _tab: table }
+    Values { _tab: table }
   }
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args TagArgs<'args>
-  ) -> flatbuffers::WIPOffset<Tag<'bldr>> {
-    let mut builder = TagBuilder::new(_fbb);
-    if let Some(x) = args.value { builder.add_value(x); }
+    args: &'args ValuesArgs<'args>
+  ) -> flatbuffers::WIPOffset<Values<'bldr>> {
+    let mut builder = ValuesBuilder::new(_fbb);
+    if let Some(x) = args.string_value { builder.add_string_value(x); }
+    if let Some(x) = args.bool_value { builder.add_bool_value(x); }
+    if let Some(x) = args.uint_value { builder.add_uint_value(x); }
+    if let Some(x) = args.int_value { builder.add_int_value(x); }
+    if let Some(x) = args.float_value { builder.add_float_value(x); }
     builder.finish()
   }
 
 
   #[inline]
-  pub fn value(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+  pub fn float_value(&self) -> Option<flatbuffers::Vector<'a, f64>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(Tag::VT_VALUE, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, f64>>>(Values::VT_FLOAT_VALUE, None)}
+  }
+  #[inline]
+  pub fn int_value(&self) -> Option<flatbuffers::Vector<'a, i64>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, i64>>>(Values::VT_INT_VALUE, None)}
+  }
+  #[inline]
+  pub fn uint_value(&self) -> Option<flatbuffers::Vector<'a, u64>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u64>>>(Values::VT_UINT_VALUE, None)}
+  }
+  #[inline]
+  pub fn bool_value(&self) -> Option<flatbuffers::Vector<'a, bool>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, bool>>>(Values::VT_BOOL_VALUE, None)}
+  }
+  #[inline]
+  pub fn string_value(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Values::VT_STRING_VALUE, None)}
   }
 }
 
-impl flatbuffers::Verifiable for Tag<'_> {
+impl flatbuffers::Verifiable for Values<'_> {
   #[inline]
   fn run_verifier(
     v: &mut flatbuffers::Verifier, pos: usize
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("value", Self::VT_VALUE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, f64>>>("float_value", Self::VT_FLOAT_VALUE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, i64>>>("int_value", Self::VT_INT_VALUE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u64>>>("uint_value", Self::VT_UINT_VALUE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, bool>>>("bool_value", Self::VT_BOOL_VALUE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("string_value", Self::VT_STRING_VALUE, false)?
      .finish();
     Ok(())
   }
 }
-pub struct TagArgs<'a> {
-    pub value: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+pub struct ValuesArgs<'a> {
+    pub float_value: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, f64>>>,
+    pub int_value: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, i64>>>,
+    pub uint_value: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u64>>>,
+    pub bool_value: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, bool>>>,
+    pub string_value: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
 }
-impl<'a> Default for TagArgs<'a> {
+impl<'a> Default for ValuesArgs<'a> {
   #[inline]
   fn default() -> Self {
-    TagArgs {
-      value: None,
+    ValuesArgs {
+      float_value: None,
+      int_value: None,
+      uint_value: None,
+      bool_value: None,
+      string_value: None,
     }
   }
 }
 
-pub struct TagBuilder<'a: 'b, 'b> {
+pub struct ValuesBuilder<'a: 'b, 'b> {
   fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
   start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
-impl<'a: 'b, 'b> TagBuilder<'a, 'b> {
+impl<'a: 'b, 'b> ValuesBuilder<'a, 'b> {
   #[inline]
-  pub fn add_value(&mut self, value: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Tag::VT_VALUE, value);
+  pub fn add_float_value(&mut self, float_value: flatbuffers::WIPOffset<flatbuffers::Vector<'b , f64>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Values::VT_FLOAT_VALUE, float_value);
   }
   #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> TagBuilder<'a, 'b> {
+  pub fn add_int_value(&mut self, int_value: flatbuffers::WIPOffset<flatbuffers::Vector<'b , i64>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Values::VT_INT_VALUE, int_value);
+  }
+  #[inline]
+  pub fn add_uint_value(&mut self, uint_value: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u64>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Values::VT_UINT_VALUE, uint_value);
+  }
+  #[inline]
+  pub fn add_bool_value(&mut self, bool_value: flatbuffers::WIPOffset<flatbuffers::Vector<'b , bool>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Values::VT_BOOL_VALUE, bool_value);
+  }
+  #[inline]
+  pub fn add_string_value(&mut self, string_value: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Values::VT_STRING_VALUE, string_value);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> ValuesBuilder<'a, 'b> {
     let start = _fbb.start_table();
-    TagBuilder {
+    ValuesBuilder {
       fbb_: _fbb,
       start_: start,
     }
   }
   #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<Tag<'a>> {
+  pub fn finish(self) -> flatbuffers::WIPOffset<Values<'a>> {
     let o = self.fbb_.end_table(self.start_);
     flatbuffers::WIPOffset::new(o.value())
   }
 }
 
-impl core::fmt::Debug for Tag<'_> {
+impl core::fmt::Debug for Values<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("Tag");
-      ds.field("value", &self.value());
+    let mut ds = f.debug_struct("Values");
+      ds.field("float_value", &self.float_value());
+      ds.field("int_value", &self.int_value());
+      ds.field("uint_value", &self.uint_value());
+      ds.field("bool_value", &self.bool_value());
+      ds.field("string_value", &self.string_value());
       ds.finish()
   }
 }
-pub enum FieldOffset {}
+pub enum ColumnOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
-pub struct Field<'a> {
+pub struct Column<'a> {
   pub _tab: flatbuffers::Table<'a>,
 }
 
-impl<'a> flatbuffers::Follow<'a> for Field<'a> {
-  type Inner = Field<'a>;
+impl<'a> flatbuffers::Follow<'a> for Column<'a> {
+  type Inner = Column<'a>;
   #[inline]
   unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
     Self { _tab: flatbuffers::Table::new(buf, loc) }
   }
 }
 
-impl<'a> Field<'a> {
-  pub const VT_VALUE: flatbuffers::VOffsetT = 4;
-
-  pub const fn get_fully_qualified_name() -> &'static str {
-    "models.Field"
-  }
-
-  #[inline]
-  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    Field { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
-    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args FieldArgs<'args>
-  ) -> flatbuffers::WIPOffset<Field<'bldr>> {
-    let mut builder = FieldBuilder::new(_fbb);
-    if let Some(x) = args.value { builder.add_value(x); }
-    builder.finish()
-  }
-
-
-  #[inline]
-  pub fn value(&self) -> Option<flatbuffers::Vector<'a, u8>> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(Field::VT_VALUE, None)}
-  }
-}
-
-impl flatbuffers::Verifiable for Field<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut flatbuffers::Verifier, pos: usize
-  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-    use self::flatbuffers::Verifiable;
-    v.visit_table(pos)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("value", Self::VT_VALUE, false)?
-     .finish();
-    Ok(())
-  }
-}
-pub struct FieldArgs<'a> {
-    pub value: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
-}
-impl<'a> Default for FieldArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    FieldArgs {
-      value: None,
-    }
-  }
-}
-
-pub struct FieldBuilder<'a: 'b, 'b> {
-  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
-  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
-}
-impl<'a: 'b, 'b> FieldBuilder<'a, 'b> {
-  #[inline]
-  pub fn add_value(&mut self, value: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Field::VT_VALUE, value);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> FieldBuilder<'a, 'b> {
-    let start = _fbb.start_table();
-    FieldBuilder {
-      fbb_: _fbb,
-      start_: start,
-    }
-  }
-  #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<Field<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    flatbuffers::WIPOffset::new(o.value())
-  }
-}
-
-impl core::fmt::Debug for Field<'_> {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("Field");
-      ds.field("value", &self.value());
-      ds.finish()
-  }
-}
-pub enum SchemaOffset {}
-#[derive(Copy, Clone, PartialEq)]
-
-pub struct Schema<'a> {
-  pub _tab: flatbuffers::Table<'a>,
-}
-
-impl<'a> flatbuffers::Follow<'a> for Schema<'a> {
-  type Inner = Schema<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: flatbuffers::Table::new(buf, loc) }
-  }
-}
-
-impl<'a> Schema<'a> {
-  pub const VT_TAG_NAME: flatbuffers::VOffsetT = 4;
-  pub const VT_FIELD_NAME: flatbuffers::VOffsetT = 6;
+impl<'a> Column<'a> {
+  pub const VT_NAME: flatbuffers::VOffsetT = 4;
+  pub const VT_COLUMN_TYPE: flatbuffers::VOffsetT = 6;
   pub const VT_FIELD_TYPE: flatbuffers::VOffsetT = 8;
+  pub const VT_COL_VALUES: flatbuffers::VOffsetT = 10;
+  pub const VT_NULLBITS: flatbuffers::VOffsetT = 12;
 
   pub const fn get_fully_qualified_name() -> &'static str {
-    "models.Schema"
+    "models.Column"
   }
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    Schema { _tab: table }
+    Column { _tab: table }
   }
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args SchemaArgs<'args>
-  ) -> flatbuffers::WIPOffset<Schema<'bldr>> {
-    let mut builder = SchemaBuilder::new(_fbb);
-    if let Some(x) = args.field_type { builder.add_field_type(x); }
-    if let Some(x) = args.field_name { builder.add_field_name(x); }
-    if let Some(x) = args.tag_name { builder.add_tag_name(x); }
+    args: &'args ColumnArgs<'args>
+  ) -> flatbuffers::WIPOffset<Column<'bldr>> {
+    let mut builder = ColumnBuilder::new(_fbb);
+    if let Some(x) = args.nullbits { builder.add_nullbits(x); }
+    if let Some(x) = args.col_values { builder.add_col_values(x); }
+    builder.add_field_type(args.field_type);
+    builder.add_column_type(args.column_type);
+    if let Some(x) = args.name { builder.add_name(x); }
     builder.finish()
   }
 
 
   #[inline]
-  pub fn tag_name(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+  pub fn name(&self) -> Option<&'a str> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Schema::VT_TAG_NAME, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Column::VT_NAME, None)}
   }
   #[inline]
-  pub fn field_name(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+  pub fn column_type(&self) -> ColumnType {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Schema::VT_FIELD_NAME, None)}
+    unsafe { self._tab.get::<ColumnType>(Column::VT_COLUMN_TYPE, Some(ColumnType::Time)).unwrap()}
   }
   #[inline]
-  pub fn field_type(&self) -> Option<flatbuffers::Vector<'a, FieldType>> {
+  pub fn field_type(&self) -> FieldType {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, FieldType>>>(Schema::VT_FIELD_TYPE, None)}
+    unsafe { self._tab.get::<FieldType>(Column::VT_FIELD_TYPE, Some(FieldType::Float)).unwrap()}
+  }
+  #[inline]
+  pub fn col_values(&self) -> Option<Values<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<Values>>(Column::VT_COL_VALUES, None)}
+  }
+  #[inline]
+  pub fn nullbits(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(Column::VT_NULLBITS, None)}
   }
 }
 
-impl flatbuffers::Verifiable for Schema<'_> {
+impl flatbuffers::Verifiable for Column<'_> {
   #[inline]
   fn run_verifier(
     v: &mut flatbuffers::Verifier, pos: usize
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("tag_name", Self::VT_TAG_NAME, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("field_name", Self::VT_FIELD_NAME, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, FieldType>>>("field_type", Self::VT_FIELD_TYPE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("name", Self::VT_NAME, false)?
+     .visit_field::<ColumnType>("column_type", Self::VT_COLUMN_TYPE, false)?
+     .visit_field::<FieldType>("field_type", Self::VT_FIELD_TYPE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<Values>>("col_values", Self::VT_COL_VALUES, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("nullbits", Self::VT_NULLBITS, false)?
      .finish();
     Ok(())
   }
 }
-pub struct SchemaArgs<'a> {
-    pub tag_name: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
-    pub field_name: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
-    pub field_type: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, FieldType>>>,
+pub struct ColumnArgs<'a> {
+    pub name: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub column_type: ColumnType,
+    pub field_type: FieldType,
+    pub col_values: Option<flatbuffers::WIPOffset<Values<'a>>>,
+    pub nullbits: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
 }
-impl<'a> Default for SchemaArgs<'a> {
+impl<'a> Default for ColumnArgs<'a> {
   #[inline]
   fn default() -> Self {
-    SchemaArgs {
-      tag_name: None,
-      field_name: None,
-      field_type: None,
+    ColumnArgs {
+      name: None,
+      column_type: ColumnType::Time,
+      field_type: FieldType::Float,
+      col_values: None,
+      nullbits: None,
     }
   }
 }
 
-pub struct SchemaBuilder<'a: 'b, 'b> {
+pub struct ColumnBuilder<'a: 'b, 'b> {
   fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
   start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
-impl<'a: 'b, 'b> SchemaBuilder<'a, 'b> {
+impl<'a: 'b, 'b> ColumnBuilder<'a, 'b> {
   #[inline]
-  pub fn add_tag_name(&mut self, tag_name: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Schema::VT_TAG_NAME, tag_name);
+  pub fn add_name(&mut self, name: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Column::VT_NAME, name);
   }
   #[inline]
-  pub fn add_field_name(&mut self, field_name: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Schema::VT_FIELD_NAME, field_name);
+  pub fn add_column_type(&mut self, column_type: ColumnType) {
+    self.fbb_.push_slot::<ColumnType>(Column::VT_COLUMN_TYPE, column_type, ColumnType::Time);
   }
   #[inline]
-  pub fn add_field_type(&mut self, field_type: flatbuffers::WIPOffset<flatbuffers::Vector<'b , FieldType>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Schema::VT_FIELD_TYPE, field_type);
+  pub fn add_field_type(&mut self, field_type: FieldType) {
+    self.fbb_.push_slot::<FieldType>(Column::VT_FIELD_TYPE, field_type, FieldType::Float);
   }
   #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> SchemaBuilder<'a, 'b> {
+  pub fn add_col_values(&mut self, col_values: flatbuffers::WIPOffset<Values<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<Values>>(Column::VT_COL_VALUES, col_values);
+  }
+  #[inline]
+  pub fn add_nullbits(&mut self, nullbits: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Column::VT_NULLBITS, nullbits);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> ColumnBuilder<'a, 'b> {
     let start = _fbb.start_table();
-    SchemaBuilder {
+    ColumnBuilder {
       fbb_: _fbb,
       start_: start,
     }
   }
   #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<Schema<'a>> {
+  pub fn finish(self) -> flatbuffers::WIPOffset<Column<'a>> {
     let o = self.fbb_.end_table(self.start_);
     flatbuffers::WIPOffset::new(o.value())
   }
 }
 
-impl core::fmt::Debug for Schema<'_> {
+impl core::fmt::Debug for Column<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("Schema");
-      ds.field("tag_name", &self.tag_name());
-      ds.field("field_name", &self.field_name());
+    let mut ds = f.debug_struct("Column");
+      ds.field("name", &self.name());
+      ds.field("column_type", &self.column_type());
       ds.field("field_type", &self.field_type());
-      ds.finish()
-  }
-}
-pub enum PointOffset {}
-#[derive(Copy, Clone, PartialEq)]
-
-pub struct Point<'a> {
-  pub _tab: flatbuffers::Table<'a>,
-}
-
-impl<'a> flatbuffers::Follow<'a> for Point<'a> {
-  type Inner = Point<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: flatbuffers::Table::new(buf, loc) }
-  }
-}
-
-impl<'a> Point<'a> {
-  pub const VT_TIMESTAMP: flatbuffers::VOffsetT = 4;
-  pub const VT_TAGS: flatbuffers::VOffsetT = 6;
-  pub const VT_TAGS_NULLBIT: flatbuffers::VOffsetT = 8;
-  pub const VT_FIELDS: flatbuffers::VOffsetT = 10;
-  pub const VT_FIELDS_NULLBIT: flatbuffers::VOffsetT = 12;
-
-  pub const fn get_fully_qualified_name() -> &'static str {
-    "models.Point"
-  }
-
-  #[inline]
-  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    Point { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
-    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args PointArgs<'args>
-  ) -> flatbuffers::WIPOffset<Point<'bldr>> {
-    let mut builder = PointBuilder::new(_fbb);
-    builder.add_timestamp(args.timestamp);
-    if let Some(x) = args.fields_nullbit { builder.add_fields_nullbit(x); }
-    if let Some(x) = args.fields { builder.add_fields(x); }
-    if let Some(x) = args.tags_nullbit { builder.add_tags_nullbit(x); }
-    if let Some(x) = args.tags { builder.add_tags(x); }
-    builder.finish()
-  }
-
-
-  #[inline]
-  pub fn timestamp(&self) -> i64 {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<i64>(Point::VT_TIMESTAMP, Some(0)).unwrap()}
-  }
-  #[inline]
-  pub fn tags(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Tag<'a>>>> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Tag>>>>(Point::VT_TAGS, None)}
-  }
-  #[inline]
-  pub fn tags_nullbit(&self) -> Option<flatbuffers::Vector<'a, u8>> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(Point::VT_TAGS_NULLBIT, None)}
-  }
-  #[inline]
-  pub fn fields(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Field<'a>>>> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Field>>>>(Point::VT_FIELDS, None)}
-  }
-  #[inline]
-  pub fn fields_nullbit(&self) -> Option<flatbuffers::Vector<'a, u8>> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(Point::VT_FIELDS_NULLBIT, None)}
-  }
-}
-
-impl flatbuffers::Verifiable for Point<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut flatbuffers::Verifier, pos: usize
-  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-    use self::flatbuffers::Verifiable;
-    v.visit_table(pos)?
-     .visit_field::<i64>("timestamp", Self::VT_TIMESTAMP, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Tag>>>>("tags", Self::VT_TAGS, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("tags_nullbit", Self::VT_TAGS_NULLBIT, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Field>>>>("fields", Self::VT_FIELDS, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("fields_nullbit", Self::VT_FIELDS_NULLBIT, false)?
-     .finish();
-    Ok(())
-  }
-}
-pub struct PointArgs<'a> {
-    pub timestamp: i64,
-    pub tags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Tag<'a>>>>>,
-    pub tags_nullbit: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
-    pub fields: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Field<'a>>>>>,
-    pub fields_nullbit: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
-}
-impl<'a> Default for PointArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    PointArgs {
-      timestamp: 0,
-      tags: None,
-      tags_nullbit: None,
-      fields: None,
-      fields_nullbit: None,
-    }
-  }
-}
-
-pub struct PointBuilder<'a: 'b, 'b> {
-  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
-  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
-}
-impl<'a: 'b, 'b> PointBuilder<'a, 'b> {
-  #[inline]
-  pub fn add_timestamp(&mut self, timestamp: i64) {
-    self.fbb_.push_slot::<i64>(Point::VT_TIMESTAMP, timestamp, 0);
-  }
-  #[inline]
-  pub fn add_tags(&mut self, tags: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Tag<'b >>>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Point::VT_TAGS, tags);
-  }
-  #[inline]
-  pub fn add_tags_nullbit(&mut self, tags_nullbit: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Point::VT_TAGS_NULLBIT, tags_nullbit);
-  }
-  #[inline]
-  pub fn add_fields(&mut self, fields: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Field<'b >>>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Point::VT_FIELDS, fields);
-  }
-  #[inline]
-  pub fn add_fields_nullbit(&mut self, fields_nullbit: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Point::VT_FIELDS_NULLBIT, fields_nullbit);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> PointBuilder<'a, 'b> {
-    let start = _fbb.start_table();
-    PointBuilder {
-      fbb_: _fbb,
-      start_: start,
-    }
-  }
-  #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<Point<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    flatbuffers::WIPOffset::new(o.value())
-  }
-}
-
-impl core::fmt::Debug for Point<'_> {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("Point");
-      ds.field("timestamp", &self.timestamp());
-      ds.field("tags", &self.tags());
-      ds.field("tags_nullbit", &self.tags_nullbit());
-      ds.field("fields", &self.fields());
-      ds.field("fields_nullbit", &self.fields_nullbit());
+      ds.field("col_values", &self.col_values());
+      ds.field("nullbits", &self.nullbits());
       ds.finish()
   }
 }
@@ -743,9 +668,8 @@ impl<'a> flatbuffers::Follow<'a> for Table<'a> {
 
 impl<'a> Table<'a> {
   pub const VT_TAB: flatbuffers::VOffsetT = 4;
-  pub const VT_SCHEMA: flatbuffers::VOffsetT = 6;
-  pub const VT_POINTS: flatbuffers::VOffsetT = 8;
-  pub const VT_NUM_ROWS: flatbuffers::VOffsetT = 10;
+  pub const VT_COLUMNS: flatbuffers::VOffsetT = 6;
+  pub const VT_NUM_ROWS: flatbuffers::VOffsetT = 8;
 
   pub const fn get_fully_qualified_name() -> &'static str {
     "models.Table"
@@ -762,33 +686,25 @@ impl<'a> Table<'a> {
   ) -> flatbuffers::WIPOffset<Table<'bldr>> {
     let mut builder = TableBuilder::new(_fbb);
     builder.add_num_rows(args.num_rows);
-    if let Some(x) = args.points { builder.add_points(x); }
-    if let Some(x) = args.schema { builder.add_schema(x); }
+    if let Some(x) = args.columns { builder.add_columns(x); }
     if let Some(x) = args.tab { builder.add_tab(x); }
     builder.finish()
   }
 
 
   #[inline]
-  pub fn tab(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+  pub fn tab(&self) -> Option<&'a str> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(Table::VT_TAB, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Table::VT_TAB, None)}
   }
   #[inline]
-  pub fn schema(&self) -> Option<Schema<'a>> {
+  pub fn columns(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Column<'a>>>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<Schema>>(Table::VT_SCHEMA, None)}
-  }
-  #[inline]
-  pub fn points(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point>>>>(Table::VT_POINTS, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Column>>>>(Table::VT_COLUMNS, None)}
   }
   #[inline]
   pub fn num_rows(&self) -> u64 {
@@ -806,18 +722,16 @@ impl flatbuffers::Verifiable for Table<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("tab", Self::VT_TAB, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<Schema>>("schema", Self::VT_SCHEMA, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Point>>>>("points", Self::VT_POINTS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("tab", Self::VT_TAB, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Column>>>>("columns", Self::VT_COLUMNS, false)?
      .visit_field::<u64>("num_rows", Self::VT_NUM_ROWS, false)?
      .finish();
     Ok(())
   }
 }
 pub struct TableArgs<'a> {
-    pub tab: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
-    pub schema: Option<flatbuffers::WIPOffset<Schema<'a>>>,
-    pub points: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>>>,
+    pub tab: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub columns: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Column<'a>>>>>,
     pub num_rows: u64,
 }
 impl<'a> Default for TableArgs<'a> {
@@ -825,8 +739,7 @@ impl<'a> Default for TableArgs<'a> {
   fn default() -> Self {
     TableArgs {
       tab: None,
-      schema: None,
-      points: None,
+      columns: None,
       num_rows: 0,
     }
   }
@@ -838,16 +751,12 @@ pub struct TableBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> TableBuilder<'a, 'b> {
   #[inline]
-  pub fn add_tab(&mut self, tab: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+  pub fn add_tab(&mut self, tab: flatbuffers::WIPOffset<&'b  str>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Table::VT_TAB, tab);
   }
   #[inline]
-  pub fn add_schema(&mut self, schema: flatbuffers::WIPOffset<Schema<'b >>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<Schema>>(Table::VT_SCHEMA, schema);
-  }
-  #[inline]
-  pub fn add_points(&mut self, points: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Point<'b >>>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Table::VT_POINTS, points);
+  pub fn add_columns(&mut self, columns: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Column<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Table::VT_COLUMNS, columns);
   }
   #[inline]
   pub fn add_num_rows(&mut self, num_rows: u64) {
@@ -872,8 +781,7 @@ impl core::fmt::Debug for Table<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("Table");
       ds.field("tab", &self.tab());
-      ds.field("schema", &self.schema());
-      ds.field("points", &self.points());
+      ds.field("columns", &self.columns());
       ds.field("num_rows", &self.num_rows());
       ds.finish()
   }
@@ -918,11 +826,11 @@ impl<'a> Points<'a> {
 
 
   #[inline]
-  pub fn db(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+  pub fn db(&self) -> Option<&'a str> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(Points::VT_DB, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Points::VT_DB, None)}
   }
   #[inline]
   pub fn tables(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>> {
@@ -940,14 +848,14 @@ impl flatbuffers::Verifiable for Points<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("db", Self::VT_DB, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("db", Self::VT_DB, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Table>>>>("tables", Self::VT_TABLES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct PointsArgs<'a> {
-    pub db: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub db: Option<flatbuffers::WIPOffset<&'a str>>,
     pub tables: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>>>,
 }
 impl<'a> Default for PointsArgs<'a> {
@@ -966,7 +874,7 @@ pub struct PointsBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> PointsBuilder<'a, 'b> {
   #[inline]
-  pub fn add_db(&mut self, db: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+  pub fn add_db(&mut self, db: flatbuffers::WIPOffset<&'b  str>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Points::VT_DB, db);
   }
   #[inline]

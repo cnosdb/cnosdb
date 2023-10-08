@@ -1,0 +1,29 @@
+##########
+## DDL
+##########
+
+statement ok
+alter database public set ttl '1000000d';
+
+statement ok
+drop table if exists ddl_tbl;
+
+statement ok
+CREATE TABLE IF NOT EXISTS ddl_tbl(f0 BIGINT , f1 bigint , TAGS(t0, t1, t2) );
+
+##########
+## Query
+##########
+
+# prepare data
+statement ok
+INSERT ddl_tbl(TIME, f0, f1, t0, t1)
+VALUES
+    ('1999-12-31 00:00:00.000', 111, 444, 'tag11', 'tag21'),
+    ('1999-12-31 00:00:00.005', 222, 444, 'tag12', 'tag22'),
+    ('1999-12-31 00:00:00.010', 333, 222, 'tag12', 'tag23'),
+    ('1999-12-31 00:00:10.015', 444, 111, 'tag14', 'tag24'),
+    ('1999-12-31 00:00:10.020', 222, 555, 'tag14', 'tag21'),
+    ('1999-12-31 00:10:00.025', 333, 555, 'tag11', 'tag22'),
+    ('1999-12-31 00:10:00.030', 444, 333, 'tag11', 'tag23'),
+    ('1999-12-31 01:00:00.035', 555, 222, 'tag14', 'tag24');

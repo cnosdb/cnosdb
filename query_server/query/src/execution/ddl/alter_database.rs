@@ -39,7 +39,7 @@ impl DDLDefinitionTask for AlterDatabaseTask {
         //     .alter_database(schema)
         //     .context(spi::MetaSnafu)?;
 
-        client.alter_db_schema(&schema).await?;
+        client.alter_db_schema(schema).await?;
         // .context(spi::MetaSnafu)?;
         return Ok(Output::Nil(()));
     }

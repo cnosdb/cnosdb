@@ -69,12 +69,24 @@ pub struct NodeInfo {
     pub attribute: NodeAttribute,
 }
 
+impl NodeInfo {
+    pub fn is_cold(&self) -> bool {
+        self.attribute == NodeAttribute::Cold
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct NodeMetrics {
     pub id: NodeId,
     pub disk_free: u64,
     pub time: i64,
     pub status: NodeStatus,
+}
+
+impl NodeMetrics {
+    pub fn is_healthy(&self) -> bool {
+        self.status == NodeStatus::Healthy
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -93,7 +105,7 @@ impl BucketInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ReplicationSet {
     pub id: ReplicationSetId,
     pub vnodes: Vec<VnodeInfo>,
@@ -105,7 +117,7 @@ impl ReplicationSet {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct VnodeInfo {
     pub id: VnodeId,
     pub node_id: NodeId,
@@ -123,7 +135,7 @@ impl VnodeInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VnodeStatus {
     #[default]
     Running,
@@ -201,6 +213,7 @@ impl DatabaseInfo {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct TenantMetaData {
     pub version: u64,
+    // db_name -> database_info
     pub dbs: HashMap<String, DatabaseInfo>,
     pub roles: HashMap<String, CustomTenantRole<Oid>>,
     pub members: HashMap<String, TenantRoleIdentifier>,

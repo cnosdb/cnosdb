@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -86,8 +87,8 @@ impl ColumnFile {
         self.size
     }
 
-    pub fn file_path(&self) -> PathBuf {
-        self.path.clone()
+    pub fn file_path(&self) -> &PathBuf {
+        &self.path
     }
 
     pub fn overlap(&self, time_range: &TimeRange) -> bool {
@@ -153,7 +154,7 @@ impl Drop for ColumnFile {
                 });
             }
 
-            if let Err(e) = std::fs::remove_file(&path) {
+            if let Err(e) = std::fs::remove_file(path) {
                 error!(
                     "Error when removing file {} at '{}': {}",
                     self.file_id,
@@ -198,6 +199,8 @@ impl ColumnFile {
 
 #[derive(Debug)]
 pub struct LevelInfo {
+    /// the time_range of column file is overlap in L0,
+    /// the time_range of column file is not overlap in L0,
     pub files: Vec<Arc<ColumnFile>>,
     pub database: Arc<String>,
     pub tsf_id: u32,
@@ -293,7 +296,7 @@ impl LevelInfo {
         self.time_range = TimeRange::new(min_ts, max_ts);
     }
 
-    pub async fn read_column_file(
+    pub(self) async fn read_column_file(
         &self,
         _tf_id: u32,
         field_id: FieldId,
@@ -338,6 +341,21 @@ impl LevelInfo {
 
     pub fn level(&self) -> u32 {
         self.level
+    }
+
+    pub fn overlaps_column_files(
+        &self,
+        time_ranges: &TimeRanges,
+        field_id: FieldId,
+    ) -> Vec<Arc<ColumnFile>> {
+        let mut res = self
+            .files
+            .iter()
+            .filter(|f| time_ranges.overlaps(f.time_range()) && f.contains_field_id(field_id))
+            .cloned()
+            .collect::<Vec<Arc<ColumnFile>>>();
+        res.sort_by_key(|f| *f.time_range());
+        res
     }
 }
 
@@ -492,7 +510,7 @@ impl Version {
     }
 
     pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
-        let path = format!("{}", path.as_ref().display());
+        let path = path.as_ref().display().to_string();
         let tsm_reader = match self.tsm_reader_cache.get(&path).await {
             Some(val) => val.clone(),
             None => {
@@ -507,6 +525,25 @@ impl Version {
             }
         };
         Ok(tsm_reader)
+    }
+
+    // return: l0 , l1-l4 files
+    pub fn get_level_files(
+        &self,
+        time_ranges: &TimeRanges,
+        field_id: FieldId,
+    ) -> [Option<Vec<Arc<ColumnFile>>>; 5] {
+        let mut res = MaybeUninit::uninit_array();
+        debug_assert!(self.levels_info.len().eq(&5));
+        for (res, level_info) in res.iter_mut().zip(self.levels_info.iter()) {
+            let files = level_info.overlaps_column_files(time_ranges, field_id);
+            if !files.is_empty() {
+                res.write(Some(files));
+            } else {
+                res.write(None);
+            }
+        }
+        unsafe { MaybeUninit::array_assume_init(res) }
     }
 }
 
@@ -851,10 +888,10 @@ impl TseriesFamily {
         self.status = status;
     }
 
-    pub fn delete_columns(&self, field_ids: &[FieldId]) {
-        self.mut_cache.read().delete_columns(field_ids);
+    pub fn drop_columns(&self, field_ids: &[FieldId]) {
+        self.mut_cache.read().drop_columns(field_ids);
         for memcache in self.immut_cache.iter() {
-            memcache.read().delete_columns(field_ids);
+            memcache.read().drop_columns(field_ids);
         }
     }
 
@@ -1009,7 +1046,7 @@ impl Drop for TseriesFamily {
 
 #[cfg(test)]
 pub mod test_tseries_family {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, LinkedList};
     use std::mem::size_of;
     use std::sync::Arc;
 
@@ -1297,7 +1334,7 @@ pub mod test_tseries_family {
         let mut global_config = config::get_config_for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
         let (compact_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let database = Arc::new("db".to_string());
@@ -1328,14 +1365,14 @@ pub mod test_tseries_family {
                 min_ts: 1,
                 max_ts: 100,
             },
-            rows: vec![RowData {
+            rows: LinkedList::from([RowData {
                 ts: 10,
                 fields: vec![
                     Some(FieldVal::Integer(11)),
                     Some(FieldVal::Integer(12)),
                     Some(FieldVal::Integer(13)),
                 ],
-            }],
+            }]),
             size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         let mut points = HashMap::new();
@@ -1401,7 +1438,12 @@ pub mod test_tseries_family {
                 .unwrap(),
         );
 
-        let config = config::get_config_for_test();
+        let mut config = config::get_config_for_test();
+        let dir = "/tmp/test/kv_core/test_read_with_tomb";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        config.storage.path = dir.into();
+
         let meta_manager: MetaRef = runtime.block_on(async {
             let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
 
@@ -1412,7 +1454,7 @@ pub mod test_tseries_family {
                 .await;
             meta_manager
         });
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         let mem = MemCache::new(0, 1000, 2, 0, &memory_pool);
         let row_group = RowGroup {
             schema: default_table_schema(vec![0, 1, 2]).into(),
@@ -1420,14 +1462,14 @@ pub mod test_tseries_family {
                 min_ts: 1,
                 max_ts: 100,
             },
-            rows: vec![RowData {
+            rows: LinkedList::from([RowData {
                 ts: 10,
                 fields: vec![
                     Some(FieldVal::Integer(11)),
                     Some(FieldVal::Integer(12)),
                     Some(FieldVal::Integer(13)),
                 ],
-            }],
+            }]),
             size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         mem.write_group(1, 0, row_group).unwrap();

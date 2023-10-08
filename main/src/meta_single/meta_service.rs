@@ -176,11 +176,12 @@ pub async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
         .must_change_password(true)
         .comment("system admin")
         .build();
-    let user_opt = if user_opt_res.is_err() {
-        error!("failed init admin user {}, exit init meta", ROOT);
-        return;
-    } else {
-        user_opt_res.unwrap()
+    let user_opt = match user_opt_res {
+        Ok(opt) => opt,
+        Err(_) => {
+            error!("failed init admin user {}, exit init meta", ROOT);
+            return;
+        }
     };
     let oid = UuidGenerator::default().next_id();
     let user_desc = UserDesc::new(oid, ROOT.to_string(), user_opt, true);
@@ -221,7 +222,7 @@ pub async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
             opt.cluster.name, DEFAULT_CATALOG, DEFAULT_DATABASE
         ),
         value: format!(
-            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null}}}}",
+            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null,\"db_is_hidden\":false}}}}",
             DEFAULT_CATALOG, DEFAULT_DATABASE
         ),
     };
@@ -233,7 +234,7 @@ pub async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
             opt.cluster.name, DEFAULT_CATALOG, USAGE_SCHEMA
         ),
         value: format!(
-            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null}}}}",
+            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null,\"db_is_hidden\":false}}}}",
             DEFAULT_CATALOG, USAGE_SCHEMA
         ),
     };

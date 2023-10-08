@@ -6,6 +6,9 @@ use snafu::Snafu;
 
 #[derive(Snafu, Debug)]
 pub enum IndexError {
+    #[snafu(display("This feature is not implemented: {}", err))]
+    NotImplemented { err: String },
+
     #[snafu(display("Unrecognized action"))]
     Action,
 
@@ -44,6 +47,15 @@ pub enum IndexError {
 
     #[snafu(display("column '{}' already exists", column))]
     ColumnAlreadyExists { column: String },
+
+    #[snafu(display("series '{}' already exists", key))]
+    SeriesAlreadyExists { key: String },
+
+    #[snafu(display("Encode index binlog block failed for '{}'", msg))]
+    EncodeIndexBinlog { msg: String },
+
+    #[snafu(display("Decode index binlog block failed for '{}'", msg))]
+    DecodeIndexBinlog { msg: String },
 }
 
 impl From<sled::Error> for IndexError {

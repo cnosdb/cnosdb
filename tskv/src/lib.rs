@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 #![allow(unreachable_patterns)]
+#![feature(maybe_uninit_array_assume_init)]
+#![feature(maybe_uninit_uninit_array)]
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -127,6 +129,18 @@ pub trait Engine: Send + Sync + Debug {
         table: &str,
         column_name: &str,
         new_column: TableColumn,
+    ) -> Result<()>;
+
+    /// Modify the name of the tag type column of the specified table
+    ///
+    /// TODO Could specify vnode id, because the current interface may include modifying multiple vnodes, but atomicity cannot be guaranteed.
+    async fn rename_tag(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        tag_name: &str,
+        new_tag_name: &str,
     ) -> Result<()>;
 
     // TODO this method is not completed,

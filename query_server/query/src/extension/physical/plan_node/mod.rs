@@ -5,6 +5,7 @@ use datafusion::error::DataFusionError;
 use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, Time};
 
 pub mod aggregate_filter_scan;
+pub mod assert;
 pub mod expand;
 pub mod gapfill;
 pub mod state_restore;

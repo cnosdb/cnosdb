@@ -1,3 +1,5 @@
+#![feature(allocator_api)]
+#![feature(hash_raw_entry)]
 extern crate core;
 
 use std::cmp::Ordering;
@@ -9,6 +11,8 @@ use snafu::Snafu;
 use utils::BkdrHasher;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+type NextTagRes<'a> = Result<Option<(Vec<(&'a str, &'a str)>, usize)>>;
 
 pub mod line_protocol;
 pub mod lines_convert;
@@ -29,7 +33,7 @@ pub enum Error {
 
 #[derive(Debug, PartialEq)]
 pub struct Line<'a> {
-    hash_id: u64,
+    pub hash_id: u64,
     pub table: &'a str,
     pub tags: Vec<(&'a str, &'a str)>,
     pub fields: Vec<(&'a str, FieldValue)>,
@@ -40,13 +44,15 @@ impl<'a> From<DataPoint<'a>> for Line<'a> {
     fn from(value: DataPoint<'a>) -> Self {
         let tags = value.tags.into_iter().collect();
         let fields = vec![("value", FieldValue::F64(value.value))];
-        Line {
+        let mut line = Line {
             hash_id: 0,
             table: value.metric,
             tags,
             fields,
             timestamp: value.timestamp,
-        }
+        };
+        line.init_hash_id();
+        line
     }
 }
 
@@ -59,7 +65,7 @@ pub struct DataPoint<'a> {
 }
 
 impl<'a> Line<'_> {
-    pub fn hash_id(&mut self) -> u64 {
+    pub fn init_hash_id(&mut self) {
         if self.hash_id == 0 {
             self.tags
                 .sort_by(|a, b| -> Ordering { a.0.partial_cmp(b.0).unwrap() });
@@ -73,8 +79,6 @@ impl<'a> Line<'_> {
 
             self.hash_id = hasher.number()
         }
-
-        self.hash_id
     }
 
     pub fn new(
@@ -90,15 +94,16 @@ impl<'a> Line<'_> {
             fields,
             timestamp,
         };
-        res.hash_id = res.hash_id();
+        res.init_hash_id();
         res
     }
 
-    pub fn sort_and_dedup(&mut self) {
+    pub fn sort_dedup_and_hash(&mut self) {
         self.tags.sort_by(|a, b| a.0.cmp(b.0));
         self.fields.sort_by(|a, b| a.0.cmp(b.0));
         self.tags.dedup_by(|a, b| a.0 == b.0);
         self.fields.dedup_by(|a, b| a.0 == b.0);
+        self.init_hash_id();
     }
 }
 
@@ -200,7 +205,7 @@ fn is_tagset_character(c: char) -> bool {
     c.is_alphanumeric() || c == '\\'
 }
 
-fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
+fn next_tag_set(buf: &str) -> NextTagRes {
     let mut escaped = false;
     let mut exists_tag_set = false;
     let mut tok_offsets = [0_usize; 3];
@@ -223,7 +228,7 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
             if !escaped && c == '=' {
                 tok_offsets[1] = i;
                 if buf.len() <= i + 1 {
-                    return None;
+                    return Ok(None);
                 }
                 tok_offsets[2] = i + 1;
             }
@@ -233,7 +238,7 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
                     &buf[tok_offsets[2]..i],
                 ));
                 if buf.len() <= i + 1 {
-                    return None;
+                    return Ok(None);
                 }
                 tok_offsets[0] = i + 1;
             }
@@ -263,13 +268,21 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
                 tok_end -= 1;
             }
         }
+        if tok_offsets[0] == tok_offsets[1] {
+            return Err(Error::Common {
+                content: format!(
+                    "tag missing name in next_tag_set, buf : {}",
+                    &buf.get(0..30).unwrap_or(buf)
+                ),
+            });
+        }
         tag_set.push((
             &buf[tok_offsets[0]..tok_offsets[1]],
             &buf[tok_offsets[2]..tok_end],
         ));
-        Some((tag_set, tok_end + 1))
+        Ok(Some((tag_set, tok_end + 1)))
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -341,6 +354,14 @@ fn next_field_set(buf: &str) -> Result<Option<(FieldSet, usize)>> {
     if exists_field_set {
         if tok_end == 0 {
             tok_end = buf.len()
+        }
+        if tok_offsets[0] == tok_offsets[1] {
+            return Err(Error::Common {
+                content: format!(
+                    "field missing name in next_field_set, buf : {}",
+                    &buf.get(0..30).unwrap_or(buf)
+                ),
+            });
         }
         field_set.push((
             &buf[tok_offsets[0]..tok_offsets[1]],

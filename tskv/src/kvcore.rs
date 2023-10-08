@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
 use std::panic;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -185,84 +186,94 @@ impl TsKv {
     }
 
     async fn recover_wal(&self) -> WalManager {
-        let wal_manager = WalManager::open(self.options.wal.clone(), self.global_seq_ctx.clone())
-            .await
-            .unwrap();
+        let wal_manager = WalManager::open(
+            self.options.wal.clone(),
+            self.global_seq_ctx.clone(),
+            self.version_set.clone(),
+        )
+        .await
+        .unwrap();
 
-        let vnode_last_seq_map = self.global_seq_ctx.cloned();
         let min_log_seq = self.global_seq_ctx.min_seq();
-        let mut decoder = WalDecoder::new();
+        let wal_readers = wal_manager.recover().await;
+        let mut recover_task = vec![];
+        for (vnode_id, readers) in wal_readers {
+            let task = async move {
+                for mut reader in readers {
+                    info!(
+                        "Recover: reading wal '{}' for seq {} to {}",
+                        reader.path().display(),
+                        reader.min_sequence(),
+                        reader.max_sequence(),
+                    );
+                    if reader.is_empty() {
+                        continue;
+                    }
+                    let vnode_last_seq_map = self.global_seq_ctx.clone();
+                    let mut decoder = WalDecoder::new();
+                    loop {
+                        match reader.next_wal_entry().await {
+                            Ok(Some(wal_entry_blk)) => {
+                                let seq = wal_entry_blk.seq;
+                                if seq < min_log_seq {
+                                    continue;
+                                }
+                                match wal_entry_blk.entry {
+                                    WalEntry::Write(blk) => {
+                                        error!("write seq: {}", seq);
+                                        let vnode_id = blk.vnode_id();
+                                        if vnode_last_seq_map.vnode_min_seq(vnode_id) >= seq {
+                                            // If `seq_no` of TsFamily is greater than or equal to `seq`,
+                                            // it means that data was writen to tsm.
+                                            continue;
+                                        }
 
-        let wal_readers = wal_manager.readers_to_recover().await.unwrap();
-        for mut reader in wal_readers {
-            trace::info!(
-                "Recover: reading wal '{}' for seq {} to {}",
-                reader.path().display(),
-                reader.min_sequence(),
-                reader.max_sequence(),
-            );
-            if reader.is_empty() {
-                continue;
-            }
-
-            loop {
-                match reader.next_wal_entry().await {
-                    Ok(Some(wal_entry_blk)) => {
-                        let seq = wal_entry_blk.seq;
-                        if seq < min_log_seq {
-                            continue;
-                        }
-                        match wal_entry_blk.entry {
-                            WalEntry::Write(blk) => {
-                                let vnode_id = blk.vnode_id();
-                                if let Some(tsf_last_seq) = vnode_last_seq_map.get(&vnode_id) {
-                                    // If `seq_no` of TsFamily is greater than or equal to `seq`,
-                                    // it means that data was writen to tsm.
-                                    if *tsf_last_seq >= seq {
-                                        continue;
+                                        self.write_from_wal(vnode_id, seq, &blk, &mut decoder)
+                                            .await
+                                            .unwrap();
                                     }
-                                }
 
-                                self.write_from_wal(vnode_id, seq, &blk, &mut decoder)
-                                    .await
-                                    .unwrap();
-                            }
-
-                            WalEntry::DeleteVnode(blk) => {
-                                if let Err(e) = self.remove_tsfamily_from_wal(&blk).await {
-                                    // Ignore delete vnode error.
-                                    trace::error!("Recover: failed to delete vnode: {e}");
+                                    WalEntry::DeleteVnode(blk) => {
+                                        if let Err(e) = self.remove_tsfamily_from_wal(&blk).await {
+                                            // Ignore delete vnode error.
+                                            trace::error!("Recover: failed to delete vnode: {e}");
+                                        }
+                                    }
+                                    WalEntry::DeleteTable(blk) => {
+                                        error!("delete table seq: {}", seq);
+                                        if let Err(e) =
+                                            self.drop_table_from_wal(&blk, vnode_id).await
+                                        {
+                                            // Ignore delete table error.
+                                            trace::error!("Recover: failed to delete table: {e}");
+                                        }
+                                    }
+                                    _ => {}
                                 }
                             }
-                            WalEntry::DeleteTable(blk) => {
-                                if let Err(e) = self.drop_table_from_wal(&blk).await {
-                                    // Ignore delete table error.
-                                    trace::error!("Recover: failed to delete table: {e}");
-                                }
+                            Ok(None) | Err(Error::WalTruncated) => {
+                                break;
                             }
-                            _ => {}
+                            Err(e) => {
+                                panic!(
+                                    "Failed to recover from {}: {:?}",
+                                    reader.path().display(),
+                                    e
+                                );
+                            }
                         }
-                    }
-                    Ok(None) | Err(Error::WalTruncated) => {
-                        break;
-                    }
-                    Err(e) => {
-                        panic!(
-                            "Failed to recover from {}: {:?}",
-                            reader.path().display(),
-                            e
-                        );
                     }
                 }
-            }
+            };
+            recover_task.push(task);
         }
-
+        futures::future::join_all(recover_task).await;
         wal_manager
     }
 
     pub(crate) fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: Receiver<WalTask>) {
-        async fn on_write(wal_manager: &mut WalManager, wal_task: WalTask) {
-            wal_manager.write(wal_task).await;
+        async fn on_write(wal_manager: &mut WalManager, wal_task: WalTask) -> Result<()> {
+            wal_manager.write(wal_task).await
         }
 
         async fn on_tick_sync(wal_manager: &WalManager) {
@@ -281,15 +292,22 @@ impl TsKv {
             if check_to_flush_instant.elapsed().lt(check_to_flush_duration) {
                 return;
             }
+            let mut flushed = false;
             *check_to_flush_instant = Instant::now();
-            if wal_manager.is_total_file_size_exceed() {
-                warn!("WAL total file size({}) exceed flush_trigger_total_file_size, force flushing all vnodes.", wal_manager.total_file_size());
-                version_set.read().await.send_flush_req().await;
-                wal_manager.check_to_delete().await;
+            let global_seq_ctx = wal_manager.global_seq_ctx();
+            for vnode_wal in wal_manager.wal_set().values_mut() {
+                if vnode_wal.is_total_file_size_exceed() && !flushed {
+                    warn!("WAL total file size({}) exceed flush_trigger_total_file_size, force flushing all vnodes.", vnode_wal.total_file_size());
+                    flushed = true;
+                    version_set.read().await.send_flush_req().await;
+                }
+                if vnode_wal.is_total_file_size_exceed() {
+                    vnode_wal.check_to_delete(global_seq_ctx.min_seq()).await;
+                }
             }
         }
 
-        async fn on_cancel(wal_manager: WalManager) {
+        async fn on_cancel(wal_manager: &mut WalManager) {
             info!("Job 'WAL' closing.");
             if let Err(e) = wal_manager.close().await {
                 error!("Failed to close job 'WAL': {:?}", e);
@@ -313,7 +331,9 @@ impl TsKv {
                         wal_task = receiver.recv() => {
                             match wal_task {
                                 Some(t) => {
-                                    on_write(&mut wal_manager, t).await
+                                    if let Err(e) = on_write(&mut wal_manager, t).await {
+                                        error!("Failed to write to WAL: {:?}", e);
+                                    }
                                 },
                                 _ => break
                             }
@@ -325,7 +345,7 @@ impl TsKv {
                             ).await;
                         }
                         _ = close_receiver.recv() => {
-                            on_cancel(wal_manager).await;
+                            on_cancel(&mut wal_manager).await;
                             break;
                         }
                     }
@@ -337,7 +357,9 @@ impl TsKv {
                         wal_task = receiver.recv() => {
                             match wal_task {
                                 Some(t) => {
-                                    on_write(&mut wal_manager, t).await
+                                    if let Err(e) = on_write(&mut wal_manager, t).await {
+                                        error!("Failed to write to WAL: {:?}", e);
+                                    }
                                 },
                                 _ => break
                             }
@@ -352,7 +374,7 @@ impl TsKv {
                             ).await;
                         }
                         _ = close_receiver.recv() => {
-                            on_cancel(wal_manager).await;
+                            on_cancel(&mut wal_manager).await;
                             break;
                         }
                     }
@@ -475,7 +497,12 @@ impl TsKv {
         }
     }
 
-    async fn delete_table(&self, database: Arc<RwLock<Database>>, table: &str) -> Result<()> {
+    async fn delete_table(
+        &self,
+        database: Arc<RwLock<Database>>,
+        table: &str,
+        vnode_id: Option<VnodeId>,
+    ) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
         let db_rlock = database.read().await;
         let db_owner = db_rlock.owner();
@@ -492,31 +519,31 @@ impl TsKv {
                 min_ts: Timestamp::MIN,
                 max_ts: Timestamp::MAX,
             };
-            for (ts_family_id, ts_family) in database.read().await.ts_families().iter() {
-                // TODO: Concurrent delete on ts_family.
-                // TODO: Limit parallel delete to 1.
-                if let Some(ts_index) = db_rlock.get_ts_index(*ts_family_id) {
-                    let series_ids = ts_index.get_series_id_list(table, &[]).await?;
-                    ts_family
-                        .write()
-                        .await
-                        .delete_series(&series_ids, time_range);
-
-                    let field_ids: Vec<u64> = series_ids
-                        .iter()
-                        .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
-                        .collect();
-                    info!(
-                        "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}",
-                        field_ids.len()
-                    );
-
-                    let version = ts_family.read().await.super_version();
-                    for column_file in version.version.column_files(&field_ids, time_range) {
-                        column_file.add_tombstone(&field_ids, time_range).await?;
-                    }
-                } else {
-                    continue;
+            if let Some(vnode_id) = vnode_id {
+                if let Some(ts_family) = db_rlock.ts_families().get(&vnode_id) {
+                    self.tsf_delete_table(
+                        &db_rlock,
+                        vnode_id,
+                        ts_family.clone(),
+                        table,
+                        time_range,
+                        &column_ids,
+                    )
+                    .await?;
+                }
+            } else {
+                for (ts_family_id, ts_family) in database.read().await.ts_families().iter() {
+                    // TODO: Concurrent delete on ts_family.
+                    // TODO: Limit parallel delete to 1.
+                    self.tsf_delete_table(
+                        &db_rlock,
+                        *ts_family_id,
+                        ts_family.clone(),
+                        table,
+                        time_range,
+                        &column_ids,
+                    )
+                    .await?;
                 }
             }
         }
@@ -524,7 +551,44 @@ impl TsKv {
         Ok(())
     }
 
-    async fn delete_columns(
+    async fn tsf_delete_table<Db>(
+        &self,
+        db: &Db,
+        ts_family_id: TseriesFamilyId,
+        ts_family: Arc<RwLock<TseriesFamily>>,
+        table: &str,
+        time_range: &TimeRange,
+        column_ids: &[ColumnId],
+    ) -> Result<()>
+    where
+        Db: Deref<Target = Database>,
+    {
+        let db_owner = db.owner();
+        if let Some(ts_index) = db.get_ts_index(ts_family_id) {
+            let series_ids = ts_index.get_series_id_list(table, &[]).await?;
+            ts_family
+                .write()
+                .await
+                .delete_series(&series_ids, time_range);
+
+            let field_ids: Vec<u64> = series_ids
+                .iter()
+                .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
+                .collect();
+            info!(
+                "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}",
+                field_ids.len()
+            );
+
+            let version = ts_family.read().await.super_version();
+            for column_file in version.version.column_files(&field_ids, time_range) {
+                column_file.add_tombstone(&field_ids, time_range).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn drop_columns(
         &self,
         database: Arc<RwLock<Database>>,
         table: &str,
@@ -538,10 +602,10 @@ impl TsKv {
         if let Some(fields) = schemas.get_table_schema(table)? {
             let table_column_ids: HashSet<ColumnId> =
                 fields.columns().iter().map(|f| f.id).collect();
-            let mut to_delete_column_ids = Vec::with_capacity(column_ids.len());
+            let mut to_drop_column_ids = Vec::with_capacity(column_ids.len());
             for cid in column_ids {
                 if table_column_ids.contains(cid) {
-                    to_delete_column_ids.push(*cid);
+                    to_drop_column_ids.push(*cid);
                 }
             }
 
@@ -554,18 +618,15 @@ impl TsKv {
                 // TODO: Limit parallel delete to 1.
                 if let Some(ts_index) = db_rlock.get_ts_index(*ts_family_id) {
                     let series_ids = ts_index.get_series_id_list(table, &[]).await?;
-                    ts_family
-                        .write()
-                        .await
-                        .delete_series(&series_ids, time_range);
-
                     let field_ids: Vec<u64> = series_ids
                         .iter()
-                        .flat_map(|sid| to_delete_column_ids.iter().map(|fid| unite_id(*fid, *sid)))
+                        .flat_map(|sid| to_drop_column_ids.iter().map(|fid| unite_id(*fid, *sid)))
                         .collect();
                     info!(
                         "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}", field_ids.len()
                     );
+
+                    ts_family.write().await.drop_columns(&field_ids);
 
                     let version = ts_family.read().await.super_version();
                     for column_file in version.version.column_files(&field_ids, time_range) {
@@ -584,6 +645,7 @@ impl TsKv {
         &self,
         vnode_id: VnodeId,
         tenant: String,
+        db_name: String,
         precision: Precision,
         points: Vec<u8>,
     ) -> Result<u64> {
@@ -597,7 +659,7 @@ impl TsKv {
             .with_context(|_| error::EncodeSnafu)?;
         drop(points);
 
-        let (wal_task, rx) = WalTask::new_write(tenant, vnode_id, precision, enc_points);
+        let (wal_task, rx) = WalTask::new_write(tenant, db_name, vnode_id, precision, enc_points);
         self.wal_sender
             .send(wal_task)
             .await
@@ -678,18 +740,20 @@ impl TsKv {
     /// Delete all data of a table.
     ///
     /// Data is from the WAL(write-ahead-log), so won't write back to WAL.
-    async fn drop_table_from_wal(&self, block: &wal::DeleteTableBlock) -> Result<()> {
+    async fn drop_table_from_wal(
+        &self,
+        block: &wal::DeleteTableBlock,
+        vnode_id: VnodeId,
+    ) -> Result<()> {
         let tenant = block.tenant_utf8()?;
         let database = block.database_utf8()?;
         let table = block.table_utf8()?;
-        trace::info!(
+        info!(
             "Recover: delete table, tenant: {}, database: {}, table: {}",
-            &tenant,
-            &database,
-            &table
+            &tenant, &database, &table
         );
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            return self.delete_table(db, table).await;
+            return self.delete_table(db, table, Some(vnode_id)).await;
         }
         Ok(())
     }
@@ -702,10 +766,9 @@ impl TsKv {
         let vnode_id = block.vnode_id();
         let tenant = block.tenant_utf8()?;
         let database = block.database_utf8()?;
-        trace::info!(
+        info!(
             "Recover: delete vnode, tenant: {}, database: {}, vnode_id: {vnode_id}",
-            &tenant,
-            &database
+            &tenant, &database
         );
 
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
@@ -777,7 +840,7 @@ impl Engine for TsKv {
 
         let seq = {
             let mut span_recorder = span_recorder.child("write wal");
-            self.write_wal(vnode_id, tenant, precision, points)
+            self.write_wal(vnode_id, tenant, db_name.to_string(), precision, points)
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
@@ -832,7 +895,6 @@ impl Engine for TsKv {
 
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            // Store this action in WAL.
             let (wal_task, rx) = WalTask::new_delete_table(
                 tenant.to_string(),
                 database.to_string(),
@@ -849,7 +911,7 @@ impl Engine for TsKv {
                 source: error::ChannelReceiveError::WriteWalResult { source: e },
             })??;
 
-            return self.delete_table(db, table).await;
+            return self.delete_table(db, table, None).await;
         }
 
         Ok(())
@@ -984,7 +1046,7 @@ impl Engine for TsKv {
                 field: column_name.to_string(),
             })?
             .id;
-        self.delete_columns(db, table, &[column_id]).await?;
+        self.drop_columns(db, table, &[column_id]).await?;
         Ok(())
     }
 
@@ -1006,6 +1068,36 @@ impl Engine for TsKv {
         //         .await
         //         .change_column(&sids, column_name, &new_column);
         // }
+        Ok(())
+    }
+
+    async fn rename_tag(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        tag_name: &str,
+        new_tag_name: &str,
+    ) -> Result<()> {
+        let tag_name = tag_name.as_bytes().to_vec();
+        let new_tag_name = new_tag_name.as_bytes().to_vec();
+
+        let db = self.get_db(tenant, database).await?;
+
+        for ts_index in db.read().await.ts_indexes().values() {
+            ts_index
+                .rename_tag(table, &tag_name, &new_tag_name)
+                .await
+                .map_err(|err| {
+                    error!(
+                        "Rename tag of TSIndex({}): {}",
+                        ts_index.path().display(),
+                        err
+                    );
+                    err
+                })?;
+        }
+
         Ok(())
     }
 

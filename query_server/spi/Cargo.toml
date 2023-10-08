@@ -13,6 +13,7 @@ tskv = { path = "../../tskv" }
 protos = { path = "../../common/protos" }
 config = { path = "../../config" }
 trace = { path = "../../common/trace" }
+protocol_parser = { path = "../../common/protocol_parser" }
 flatbuffers = { workspace = true }
 async-trait = { workspace = true }
 datafusion = { workspace = true }

@@ -228,7 +228,7 @@ pub(crate) async fn vnode_hash_tree(
         (vnode_rlock.version(), vnode_rlock.tf_id())
     };
     let mut readers: Vec<Arc<TsmReader>> = Vec::new();
-    let tsm_paths: Vec<PathBuf> = version
+    let tsm_paths: Vec<&PathBuf> = version
         .levels_info()
         .iter()
         .flat_map(|l| l.files.iter().map(|f| f.file_path()))
@@ -465,8 +465,9 @@ mod test {
     };
     use models::{Timestamp, ValueType};
     use protos::kv_service::{Meta, WritePointsRequest};
-    use protos::models::{self as fb_models, FieldType, Points, PointsArgs, TableBuilder};
-    use protos::{build_fb_schema_offset, models_helper, FbSchema};
+    use protos::models::{self as fb_models, FieldType};
+    use protos::models_helper;
+    use protos::models_helper::create_points;
     use tokio::runtime::{self, Runtime};
     use tokio::sync::RwLock;
 
@@ -565,7 +566,7 @@ mod test {
             parse_nanos("2023-01-01 00:06:00"),
         ];
         #[rustfmt::skip]
-        let data_blocks = vec![
+            let data_blocks = vec![
             DataBlock::U64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::I64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::Str {
@@ -621,8 +622,9 @@ mod test {
 
     fn data_blocks_to_write_batch_args(
         data_blocks: &[DataBlock],
-        timestamps: &mut Vec<Timestamp>,
-        fields: &mut Vec<Vec<(&str, Vec<u8>)>>,
+        _timestamps: &mut [Timestamp],
+        fields: &mut HashMap<&str, Vec<Vec<u8>>>,
+        time: &mut Vec<i64>,
     ) {
         let mut u64_vec = vec![];
         let mut i64_vec = vec![];
@@ -676,102 +678,72 @@ mod test {
                 entry.push((col_name, v));
             });
         }
-        #[allow(clippy::type_complexity)]
-        let mut map: BTreeMap<Timestamp, Vec<(&str, Vec<u8>)>> = BTreeMap::new();
-        write_vec_into_map(u64_vec, U64_COL_NAME, &mut map);
-        write_vec_into_map(i64_vec, I64_COL_NAME, &mut map);
-        write_vec_into_map(f64_vec, F64_COL_NAME, &mut map);
-        write_vec_into_map(str_vec, STR_COL_NAME, &mut map);
-        write_vec_into_map(bool_vec, BOOL_COL_NAME, &mut map);
 
-        map.into_iter().for_each(|(t, v)| {
-            timestamps.push(t);
-            fields.push(v);
+        let entry = fields.entry(U64_COL_NAME).or_default();
+        u64_vec.into_iter().for_each(|(t, v)| {
+            time.push(t);
+            entry.push(v);
+        });
+        let entry = fields.entry(I64_COL_NAME).or_default();
+        i64_vec.into_iter().for_each(|(_, v)| {
+            entry.push(v);
+        });
+        let entry = fields.entry(F64_COL_NAME).or_default();
+        f64_vec.into_iter().for_each(|(_, v)| {
+            entry.push(v);
+        });
+        let entry = fields.entry(STR_COL_NAME).or_default();
+        str_vec.into_iter().for_each(|(_, v)| {
+            entry.push(v);
+        });
+        let entry = fields.entry(BOOL_COL_NAME).or_default();
+        bool_vec.into_iter().for_each(|(_, v)| {
+            entry.push(v);
         });
     }
 
     async fn do_write_batch(
         engine: &TsKv,
         vnode_id: TseriesFamilyId,
-        timestamps: Vec<i64>,
+        _timestamps: Vec<i64>,
         tenant: &str,
         database: &str,
         table: &str,
-        rows: Vec<Vec<(&str, Vec<u8>)>>,
+        columns: HashMap<&str, Vec<Vec<u8>>>,
+        time: Vec<i64>,
     ) {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
 
-        let db = fbb.create_vector(database.as_bytes());
-
-        let mut rows_ref = Vec::with_capacity(rows.len());
-        for cols in rows.iter() {
-            let mut cols_ref = Vec::with_capacity(cols.len());
-            for (col, v) in cols.iter() {
-                cols_ref.push((*col, v.as_slice()));
-            }
-            rows_ref.push(cols_ref);
+        let mut tags = HashMap::new();
+        tags.insert("ta", vec![]);
+        tags.insert("tb", vec![]);
+        let len = time.len();
+        for _ in 0..len {
+            tags.get_mut("ta").unwrap().push("a1".to_string());
+            tags.get_mut("tb").unwrap().push("b1".to_string());
         }
+        let fields_type = HashMap::from([
+            (U64_COL_NAME, FieldType::Unsigned),
+            (I64_COL_NAME, FieldType::Integer),
+            (F64_COL_NAME, FieldType::Float),
+            (STR_COL_NAME, FieldType::String),
+            (BOOL_COL_NAME, FieldType::Boolean),
+        ]);
 
-        let mut points = vec![];
-
-        let mut tags_names: HashMap<&str, usize> = HashMap::new();
-        tags_names.insert("ta", 0);
-        tags_names.insert("tb", 1);
-
-        let mut fields: HashMap<&str, usize> = HashMap::new();
-        fields.insert(U64_COL_NAME, 0);
-        fields.insert(I64_COL_NAME, 1);
-        fields.insert(F64_COL_NAME, 2);
-        fields.insert(STR_COL_NAME, 3);
-        fields.insert(BOOL_COL_NAME, 4);
-
-        let schema = FbSchema::new(
-            tags_names,
-            fields,
-            vec![
-                FieldType::Unsigned,
-                FieldType::Integer,
-                FieldType::Float,
-                FieldType::String,
-                FieldType::Boolean,
-            ],
-        );
-
-        for (timestamp, v) in timestamps.into_iter().zip(rows_ref) {
-            let (tags, tags_nullbit) =
-                models_helper::create_tags(&mut fbb, &[("ta", "a1"), ("tb", "b1")], &schema);
-            let (fields, fields_nullbits) = models_helper::create_fields(&mut fbb, &v, &schema);
-            let point = models_helper::create_point(
-                &mut fbb,
-                timestamp,
-                tags,
-                tags_nullbit,
-                fields,
-                fields_nullbits,
-            );
-            points.push(point);
-        }
-        let fb_schema = build_fb_schema_offset(&mut fbb, &schema);
-
-        let point = fbb.create_vector(&points);
-        let tab = fbb.create_vector(table.as_bytes());
-
-        let mut table_builder = TableBuilder::new(&mut fbb);
-
-        table_builder.add_points(point);
-        table_builder.add_schema(fb_schema);
-        table_builder.add_tab(tab);
-        table_builder.add_num_rows(rows.len() as u64);
-
-        let table = table_builder.finish();
-        let table_offsets = fbb.create_vector(&[table]);
-
-        let points = Points::create(
+        let points = create_points(
             &mut fbb,
-            &PointsArgs {
-                db: Some(db),
-                tables: Some(table_offsets),
-            },
+            database,
+            table,
+            tags.iter()
+                .map(|(k, v)| (*k, v.iter().map(|v| v.as_str()).collect()))
+                .collect(),
+            columns
+                .iter()
+                .map(|(k, v)| (*k, v.iter().map(|v| v.as_slice()).collect()))
+                .collect(),
+            fields_type,
+            &time,
+            time.len(),
         );
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
@@ -864,7 +836,7 @@ mod test {
             meta_manager,
             options.clone(),
             runtime.clone(),
-            Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024)),
+            Arc::new(GreedyMemoryPool::default()),
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -928,9 +900,11 @@ mod test {
         let vnode_id = vnode.read().await.tf_id();
         // Write data to database and vnode
         let mut timestamps: Vec<Timestamp> = Vec::new();
-        let mut fields: Vec<Vec<(&str, Vec<u8>)>> = Vec::new();
-        data_blocks_to_write_batch_args(data_blocks, &mut timestamps, &mut fields);
-        do_write_batch(engine, vnode_id, timestamps, tenant, database, table, fields).await;
+        let _fields: Vec<Vec<(&str, Vec<u8>)>> = Vec::new();
+        let mut fields : HashMap<&str, Vec<Vec<u8>>> = HashMap::new();
+        let mut time = Vec::new();
+        data_blocks_to_write_batch_args(data_blocks, &mut timestamps, &mut fields, &mut time);
+        do_write_batch(engine, vnode_id, timestamps, tenant, database, table, fields, time).await;
 
         let flush_req = {
             let mut vnode = vnode.write().await;

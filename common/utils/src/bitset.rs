@@ -19,6 +19,12 @@ impl BitSet {
         bitset
     }
 
+    pub fn with_size_all_set(count: usize) -> Self {
+        let mut bitset = Self::default();
+        bitset.append_set(count);
+        bitset
+    }
+
     /// Create a bitset with a sequence of index number which means value exists.
     ///
     /// The length of the bit set is `len`, but if the max value in `offsets`
@@ -277,7 +283,11 @@ mod tests {
     }
 
     fn iter_set_bools(bools: &[bool]) -> impl Iterator<Item = usize> + '_ {
-        bools.iter().enumerate().filter_map(|(x, y)| y.then(|| x))
+        bools
+            .iter()
+            .enumerate()
+            .filter(|&(_, y)| *y)
+            .map(|(x, _)| x)
     }
 
     #[test]

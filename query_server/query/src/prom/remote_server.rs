@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -7,11 +6,9 @@ use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
-use models::schema::{TskvTableSchema, TIME_FIELD_NAME};
+use models::schema::{TskvTableSchemaRef, TIME_FIELD_NAME};
 use models::snappy::SnappyCodec;
-use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::Line;
-use protos::kv_service::WritePointsRequest;
 use protos::models_helper::{parse_proto_bytes, to_proto_bytes};
 use protos::prompb::remote::{
     Query as PromQuery, QueryResult, ReadRequest, ReadResponse, WriteRequest,
@@ -67,12 +64,35 @@ impl PromRemoteServer for PromRemoteSqlServer {
         self.serialize_read_response(read_response).await
     }
 
-    fn remote_write(&self, ctx: &Context, req: Bytes) -> Result<WritePointsRequest> {
+    fn remote_write(&self, req: Bytes) -> Result<WriteRequest> {
         let prom_write_request = self.deserialize_write_request(req)?;
-        let write_points_request =
-            self.prom_write_request_to_write_points_request(ctx, prom_write_request)?;
+        Ok(prom_write_request)
+    }
 
-        Ok(write_points_request)
+    fn prom_write_request_to_lines<'a>(&self, req: &'a WriteRequest) -> Result<Vec<Line<'a>>> {
+        let mut lines = Vec::with_capacity(req.timeseries.len());
+
+        for ts in req.timeseries.iter() {
+            let mut table_name = DEFAULT_PROM_TABLE_NAME;
+            let tags = ts
+                .labels
+                .iter()
+                .map(|label| {
+                    if label.name.eq(METRIC_NAME_LABEL) {
+                        table_name = label.value.as_ref()
+                    }
+                    (label.name.as_ref(), label.value.as_ref())
+                })
+                .collect::<Vec<(_, _)>>();
+
+            for sample in ts.samples.iter() {
+                let fields = vec![(METRIC_SAMPLE_COLUMN_NAME, FieldValue::F64(sample.value))];
+                let timestamp = sample.timestamp * 1000000;
+                lines.push(Line::new(table_name, tags.clone(), fields, timestamp));
+            }
+        }
+
+        Ok(lines)
     }
 }
 
@@ -107,43 +127,6 @@ impl PromRemoteSqlServer {
                 source: Box::new(source),
             }
         })
-    }
-
-    fn prom_write_request_to_write_points_request(
-        &self,
-        ctx: &Context,
-        req: WriteRequest,
-    ) -> Result<WritePointsRequest> {
-        let mut lines = Vec::with_capacity(req.timeseries.len());
-
-        for ts in req.timeseries.iter() {
-            let mut table_name = DEFAULT_PROM_TABLE_NAME;
-            let tags = ts
-                .labels
-                .iter()
-                .map(|label| {
-                    if label.name.eq(METRIC_NAME_LABEL) {
-                        table_name = label.value.as_ref()
-                    }
-                    (label.name.as_ref(), label.value.as_ref())
-                })
-                .collect::<Vec<(_, _)>>();
-
-            for sample in ts.samples.iter() {
-                let fields = vec![(METRIC_SAMPLE_COLUMN_NAME, FieldValue::F64(sample.value))];
-                let timestamp = sample.timestamp * 1000000;
-                lines.push(Line::new(table_name, tags.clone(), fields, timestamp));
-            }
-        }
-
-        let points = parse_lines_to_points(ctx.database(), &lines);
-        let request = WritePointsRequest {
-            version: 0,
-            meta: None,
-            points,
-        };
-
-        Ok(request)
     }
 
     async fn process_read_request(
@@ -353,7 +336,7 @@ async fn transform_time_series(
 #[derive(Debug)]
 struct SqlWithTable {
     pub sql: String,
-    pub table: Arc<TskvTableSchema>,
+    pub table: TskvTableSchemaRef,
 }
 
 #[cfg(test)]

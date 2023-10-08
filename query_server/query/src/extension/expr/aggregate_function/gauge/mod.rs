@@ -2,7 +2,7 @@ mod gauge_agg;
 
 use std::sync::Arc;
 
-use datafusion::arrow::datatypes::{DataType, Field, Fields};
+use datafusion::arrow::datatypes::{ArrowNativeTypeOp, DataType, Field, Fields};
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::scalar::ScalarValue;
@@ -37,6 +37,10 @@ impl GaugeData {
         })
     }
 
+    fn is_null(&self) -> bool {
+        self.num_elements == 0
+    }
+
     pub fn delta(&self) -> DFResult<ScalarValue> {
         match self.last.val().sub_checked(self.first.val()) {
             Ok(value) => Ok(value),
@@ -57,6 +61,24 @@ impl GaugeData {
                 ScalarValue::try_from(interval_datatype)
             }
         }
+    }
+
+    pub fn rate(&self) -> DFResult<ScalarValue> {
+        if self.is_null() {
+            return ScalarValue::try_from(self.last.val().get_datatype());
+        }
+
+        let last_ts: i64 = self.last.ts.clone().try_into()?;
+        let first_ts: i64 = self.first.ts.clone().try_into()?;
+
+        let time_delta = last_ts.sub_checked(first_ts)?;
+        if time_delta == 0 {
+            // return Null
+            return ScalarValue::try_from(self.last.val().get_datatype());
+        }
+
+        self.delta()?
+            .div_checked(ScalarValue::from(time_delta as f64))
     }
 }
 
@@ -152,5 +174,161 @@ impl GaugeData {
                 err: format!("Expected GaugeData, got {:?}", scalar),
             }))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use datafusion::scalar::ScalarValue;
+
+    use super::GaugeData;
+    use crate::extension::expr::aggregate_function::TSPoint;
+
+    #[test]
+    fn test_delta_of_gauge_data() {
+        let point_1 = TSPoint {
+            ts: ScalarValue::TimestampSecond(Some(2), None),
+            val: ScalarValue::from(2.1),
+        };
+        let point_2 = TSPoint {
+            ts: ScalarValue::TimestampSecond(Some(2), None),
+            val: ScalarValue::from(4.1),
+        };
+
+        let data = GaugeData {
+            first: point_1.clone(),
+            second: point_2.clone(),
+            penultimate: point_1,
+            last: point_2,
+            num_elements: 2,
+        };
+
+        let delta = data.delta().unwrap();
+
+        let deviation = ScalarValue::from(2.0).sub(delta).unwrap();
+
+        assert!(deviation.lt(&ScalarValue::from(0.0001)));
+    }
+
+    #[test]
+    fn test_time_delta_s_of_gauge_data() {
+        let point_1 = TSPoint {
+            ts: ScalarValue::TimestampSecond(Some(2), None),
+            val: ScalarValue::Null,
+        };
+        let point_2 = TSPoint {
+            ts: ScalarValue::TimestampSecond(Some(3), None),
+            val: ScalarValue::Null,
+        };
+
+        let data = GaugeData {
+            first: point_1.clone(),
+            second: point_2.clone(),
+            penultimate: point_1,
+            last: point_2,
+            num_elements: 2,
+        };
+
+        let delta = data.time_delta().unwrap();
+
+        assert_eq!(delta, ScalarValue::IntervalDayTime(Some(1000)))
+    }
+
+    #[test]
+    fn test_time_delta_ms_of_gauge_data() {
+        let point_1 = TSPoint {
+            ts: ScalarValue::TimestampMillisecond(Some(2), None),
+            val: ScalarValue::Null,
+        };
+        let point_2 = TSPoint {
+            ts: ScalarValue::TimestampMillisecond(Some(3), None),
+            val: ScalarValue::Null,
+        };
+
+        let data = GaugeData {
+            first: point_1.clone(),
+            second: point_2.clone(),
+            penultimate: point_1,
+            last: point_2,
+            num_elements: 2,
+        };
+
+        let delta = data.time_delta().unwrap();
+
+        assert_eq!(delta, ScalarValue::IntervalDayTime(Some(1)))
+    }
+
+    #[test]
+    fn test_time_delta_us_of_gauge_data() {
+        let point_1 = TSPoint {
+            ts: ScalarValue::TimestampMicrosecond(Some(2), None),
+            val: ScalarValue::Null,
+        };
+        let point_2 = TSPoint {
+            ts: ScalarValue::TimestampMicrosecond(Some(3), None),
+            val: ScalarValue::Null,
+        };
+
+        let data = GaugeData {
+            first: point_1.clone(),
+            second: point_2.clone(),
+            penultimate: point_1,
+            last: point_2,
+            num_elements: 2,
+        };
+
+        let delta = data.time_delta().unwrap();
+
+        assert_eq!(delta, ScalarValue::IntervalMonthDayNano(Some(1000)))
+    }
+
+    #[test]
+    fn test_time_delta_ns_of_gauge_data() {
+        let point_1 = TSPoint {
+            ts: ScalarValue::TimestampNanosecond(Some(2), None),
+            val: ScalarValue::Null,
+        };
+        let point_2 = TSPoint {
+            ts: ScalarValue::TimestampNanosecond(Some(3), None),
+            val: ScalarValue::Null,
+        };
+
+        let data = GaugeData {
+            first: point_1.clone(),
+            second: point_2.clone(),
+            penultimate: point_1,
+            last: point_2,
+            num_elements: 2,
+        };
+
+        let delta = data.time_delta().unwrap();
+
+        assert_eq!(delta, ScalarValue::IntervalMonthDayNano(Some(1)))
+    }
+
+    #[test]
+    fn test_rate_of_gauge_data() {
+        let point_1 = TSPoint {
+            ts: ScalarValue::TimestampNanosecond(Some(2), None),
+            val: ScalarValue::from(2.1),
+        };
+        let point_2 = TSPoint {
+            ts: ScalarValue::TimestampNanosecond(Some(3), None),
+            val: ScalarValue::from(4.1),
+        };
+
+        let data = GaugeData {
+            first: point_1.clone(),
+            second: point_2.clone(),
+            penultimate: point_1,
+            last: point_2,
+            num_elements: 2,
+        };
+
+        let rate = data.rate().unwrap();
+
+        let deviation = ScalarValue::from(2.0).sub(rate).unwrap();
+
+        assert!(deviation.lt(&ScalarValue::from(0.0001)));
     }
 }

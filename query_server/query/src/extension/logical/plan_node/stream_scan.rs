@@ -64,6 +64,10 @@ impl UserDefinedLogicalNodeCore for StreamScanPlanNode {
     }
 
     fn expressions(&self) -> Vec<Expr> {
+        if self.agg_with_grouping.is_none() {
+            return self.filters.to_vec();
+        }
+
         vec![]
     }
 
@@ -77,14 +81,30 @@ impl UserDefinedLogicalNodeCore for StreamScanPlanNode {
 
     fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
         assert_eq!(inputs.len(), 0, "input size inconsistent");
-        assert_eq!(exprs.len(), 0, "expr size inconsistent");
-        self.clone()
+
+        if self.agg_with_grouping.is_some() {
+            self.clone()
+        } else {
+            Self {
+                table_name: self.table_name.clone(),
+                source: self.source.clone(),
+                projection: self.projection.clone(),
+                projected_schema: self.projected_schema.clone(),
+                filters: exprs.to_vec(),
+                agg_with_grouping: self.agg_with_grouping.clone(),
+            }
+        }
     }
 
     fn prevent_predicate_push_down_columns(&self) -> std::collections::HashSet<String> {
         // default (safe) is all columns in the schema.
-        let name = self.source.watermark().column.clone();
-        HashSet::from_iter([name])
+        self.source
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| f.name())
+            .cloned()
+            .collect::<HashSet<_>>()
     }
 
     fn name(&self) -> &str {

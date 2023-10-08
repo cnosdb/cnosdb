@@ -21,8 +21,8 @@ use spi::query::ast::{
     CopyIntoLocation, CopyIntoTable, CopyTarget, CopyVnode, CreateDatabase, CreateRole,
     CreateStream, CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase,
     DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode, Explain,
-    ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege, ShowSeries, ShowTagBody,
-    ShowTagValues, Trigger, UriLocation, With,
+    ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege, RecoverDatabase, RecoverTenant,
+    ShowSeries, ShowTagBody, ShowTagValues, Trigger, UriLocation, With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -108,6 +108,10 @@ enum CnosKeyWord {
     APPEND,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     UNSET,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    AFTER,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    RECOVER,
 }
 
 impl FromStr for CnosKeyWord {
@@ -149,6 +153,8 @@ impl FromStr for CnosKeyWord {
             "COMPLETE" => Ok(CnosKeyWord::COMPLETE),
             "APPEND" => Ok(CnosKeyWord::APPEND),
             "UNSET" => Ok(CnosKeyWord::UNSET),
+            "AFTER" => Ok(CnosKeyWord::AFTER),
+            "RECOVER" => Ok(CnosKeyWord::RECOVER),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
                 s
@@ -286,6 +292,10 @@ impl<'a> ExtParser<'a> {
                             CnosKeyWord::CHECKSUM => {
                                 self.parser.next_token();
                                 self.parse_checksum()
+                            }
+                            CnosKeyWord::RECOVER => {
+                                self.parser.next_token();
+                                self.parse_recover()
                             }
                             _ => Ok(ExtStatement::SqlStatement(Box::new(
                                 self.parser.parse_statement()?,
@@ -544,8 +554,11 @@ impl<'a> ExtParser<'a> {
             self.parse_alter_table_alter_column(table_name)
         } else if self.parser.parse_keyword(Keyword::DROP) {
             self.parse_alter_table_drop_column(table_name)
+        } else if self.parser.parse_keyword(Keyword::RENAME) {
+            let alter_tbl = self.parse_alter_table_rename(table_name)?;
+            Ok(ExtStatement::AlterTable(alter_tbl))
         } else {
-            self.expected("ADD or ALTER or DROP", self.parser.peek_token())
+            self.expected("ADD or ALTER or DROP or RENAME", self.parser.peek_token())
         }
     }
 
@@ -574,6 +587,23 @@ impl<'a> ExtParser<'a> {
             table_name,
             alter_action: AlterTableAction::DropColumn { column_name },
         }))
+    }
+
+    fn parse_alter_table_rename(&mut self, table_name: ObjectName) -> Result<AlterTable> {
+        if self.parser.parse_keyword(Keyword::COLUMN) {
+            let old_column_name = self.parser.parse_identifier()?;
+            self.parser.expect_keyword(Keyword::TO)?;
+            let new_column_name = self.parser.parse_identifier()?;
+            Ok(AlterTable {
+                table_name,
+                alter_action: AlterTableAction::RenameColumn {
+                    old_column_name,
+                    new_column_name,
+                },
+            })
+        } else {
+            self.expected("COLUMN", self.parser.peek_token())?
+        }
     }
 
     fn parse_alter_table_alter_column(&mut self, table_name: ObjectName) -> Result<ExtStatement> {
@@ -1356,6 +1386,28 @@ impl<'a> ExtParser<'a> {
         Ok(options)
     }
 
+    fn parse_recover(&mut self) -> Result<ExtStatement> {
+        let ast = if self.parser.parse_keyword(Keyword::DATABASE) {
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let object_name = self.parser.parse_identifier()?;
+            ExtStatement::RecoverDatabase(RecoverDatabase {
+                object_name,
+                if_exist,
+            })
+        } else if self.parse_cnos_keyword(CnosKeyWord::TENANT) {
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let object_name = self.parser.parse_identifier()?;
+            ExtStatement::RecoverTenant(RecoverTenant {
+                object_name,
+                if_exist,
+            })
+        } else {
+            return self.expected("DATABASE,TENANT after RECOVER", self.parser.peek_token());
+        };
+
+        Ok(ast)
+    }
+
     /// Parse a SQL DROP statement
     fn parse_drop(&mut self) -> Result<ExtStatement> {
         let ast = if self.parser.parse_keyword(Keyword::TABLE) {
@@ -1369,18 +1421,28 @@ impl<'a> ExtParser<'a> {
         } else if self.parser.parse_keyword(Keyword::DATABASE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_identifier()?;
+            let mut after = None;
+            if self.parse_cnos_keyword(CnosKeyWord::AFTER) {
+                after = Some(self.parse_string_value()?);
+            }
             ExtStatement::DropTenantObject(DropTenantObject {
                 object_name,
                 if_exist,
                 obj_type: TenantObjectType::Database,
+                after,
             })
         } else if self.parse_cnos_keyword(CnosKeyWord::TENANT) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_identifier()?;
+            let mut after = None;
+            if self.parse_cnos_keyword(CnosKeyWord::AFTER) {
+                after = Some(self.parse_string_value()?);
+            }
             ExtStatement::DropGlobalObject(DropGlobalObject {
                 object_name,
                 if_exist,
                 obj_type: GlobalObjectType::Tenant,
+                after,
             })
         } else if self.parser.parse_keyword(Keyword::USER) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
@@ -1389,6 +1451,7 @@ impl<'a> ExtParser<'a> {
                 object_name,
                 if_exist,
                 obj_type: GlobalObjectType::User,
+                after: None,
             })
         } else if self.parser.parse_keyword(Keyword::ROLE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
@@ -1397,6 +1460,7 @@ impl<'a> ExtParser<'a> {
                 object_name,
                 if_exist,
                 obj_type: TenantObjectType::Role,
+                after: None,
             })
         } else if self.parse_cnos_keyword(CnosKeyWord::VNODE) {
             let vnode_id = self.parse_number::<VnodeId>()?;
@@ -1506,7 +1570,7 @@ impl<'a> ExtParser<'a> {
     // parse: ident data_type [CODEC(encoding_type)]
     fn parse_cnos_field(&mut self) -> Result<ColumnOption, ParserError> {
         let name = self.parser.parse_identifier()?;
-        let column_type = self.parse_column_type()?;
+        let column_type = self.parser.parse_data_type()?;
         let encoding = if self.parse_cnos_keyword(CnosKeyWord::CODEC) {
             Some(self.parse_codec_type()?)
         } else {
@@ -1552,26 +1616,6 @@ impl<'a> ExtParser<'a> {
         all_columns.append(&mut field_columns);
 
         Ok(all_columns)
-    }
-    fn parse_column_type(&mut self) -> Result<DataType> {
-        let TokenWithLocation { token, location: _ } = self.parser.next_token();
-        match token {
-            Token::Word(w) => match w.keyword {
-                Keyword::TIMESTAMP => parser_err!(format!("already have timestamp column")),
-                Keyword::BIGINT => {
-                    if self.parser.parse_keyword(Keyword::UNSIGNED) {
-                        Ok(DataType::UnsignedBigInt(None))
-                    } else {
-                        Ok(DataType::BigInt(None))
-                    }
-                }
-                Keyword::DOUBLE => Ok(DataType::Double),
-                Keyword::STRING => Ok(DataType::String),
-                Keyword::BOOLEAN => Ok(DataType::Boolean),
-                _ => parser_err!(format!("{} is not a supported type", w)),
-            },
-            unexpected => parser_err!(format!("{} is not a type", unexpected)),
-        }
     }
 
     fn parse_codec_encoding(&mut self) -> Result<Encoding, String> {
@@ -1670,6 +1714,38 @@ mod tests {
             _ => panic!("failed"),
         }
 
+        let sql = "drop table test_tb after '1d'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropDatabaseObject(DropDatabaseObject {
+                object_name,
+                if_exist,
+                obj_type,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tb".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+                assert_eq!(obj_type, &DatabaseObjectType::Table);
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop table if exists test_tb after '1d'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropDatabaseObject(DropDatabaseObject {
+                object_name,
+                if_exist,
+                obj_type,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tb".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+                assert_eq!(obj_type, &DatabaseObjectType::Table);
+            }
+            _ => panic!("failed"),
+        }
+
         let sql = "drop database if exists test_db";
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
@@ -1678,6 +1754,7 @@ mod tests {
                 object_name,
                 if_exist,
                 obj_type,
+                after: None,
             }) => {
                 assert_eq!(object_name.to_string(), "test_db".to_string());
                 assert_eq!(if_exist.to_string(), "true".to_string());
@@ -1694,10 +1771,176 @@ mod tests {
                 object_name,
                 if_exist,
                 obj_type,
+                after: None,
             }) => {
                 assert_eq!(object_name.to_string(), "test_db".to_string());
                 assert_eq!(if_exist.to_string(), "false".to_string());
                 assert_eq!(obj_type, &TenantObjectType::Database);
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop database test_db after '1h'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropTenantObject(DropTenantObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_db".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+                assert_eq!(obj_type, &TenantObjectType::Database);
+                assert_eq!(*after, Some("1h".to_string()));
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop database if exists test_db after '1h'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropTenantObject(DropTenantObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_db".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+                assert_eq!(obj_type, &TenantObjectType::Database);
+                assert_eq!(*after, Some("1h".to_string()));
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop tenant if exists test_tt";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropGlobalObject(DropGlobalObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after: None,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+                assert_eq!(obj_type, &GlobalObjectType::Tenant);
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop tenant test_tt";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropGlobalObject(DropGlobalObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after: None,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+                assert_eq!(obj_type, &GlobalObjectType::Tenant);
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop tenant test_tt after '1h'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropGlobalObject(DropGlobalObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+                assert_eq!(obj_type, &GlobalObjectType::Tenant);
+                assert_eq!(*after, Some("1h".to_string()));
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "drop tenant if exists test_tt after '1h'";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::DropGlobalObject(DropGlobalObject {
+                object_name,
+                if_exist,
+                obj_type,
+                after,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+                assert_eq!(obj_type, &GlobalObjectType::Tenant);
+                assert_eq!(*after, Some("1h".to_string()));
+            }
+            _ => panic!("failed"),
+        }
+    }
+
+    #[test]
+    fn test_recover() {
+        let sql = "recover database test_db";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::RecoverDatabase(RecoverDatabase {
+                object_name,
+                if_exist,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_db".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "recover database if exists test_db";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::RecoverDatabase(RecoverDatabase {
+                object_name,
+                if_exist,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_db".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "recover tenant test_tt";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::RecoverTenant(RecoverTenant {
+                object_name,
+                if_exist,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "false".to_string());
+            }
+            _ => panic!("failed"),
+        }
+
+        let sql = "recover tenant if exists test_tt";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::RecoverTenant(RecoverTenant {
+                object_name,
+                if_exist,
+            }) => {
+                assert_eq!(object_name.to_string(), "test_tt".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
             }
             _ => panic!("failed"),
         }
@@ -2270,6 +2513,27 @@ mod tests {
                 panic!("expect CreateStreamTable")
             }
             _ => panic!("expect CreateStream"),
+        }
+    }
+
+    #[test]
+    fn test_alter_table_rename_column() {
+        let statement = parse_sql("ALTER TABLE TskvTable RENAME COLUMN tag1 to tag2;");
+
+        match statement {
+            ExtStatement::AlterTable(AlterTable {
+                table_name,
+                alter_action:
+                    AlterTableAction::RenameColumn {
+                        old_column_name,
+                        new_column_name,
+                    },
+            }) => {
+                assert_eq!("TskvTable", &table_name.to_string());
+                assert_eq!(Ident::from("tag1"), old_column_name);
+                assert_eq!(Ident::from("tag2"), new_column_name);
+            }
+            _ => panic!("expect RenameColumn"),
         }
     }
 }

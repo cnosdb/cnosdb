@@ -3,6 +3,7 @@ mod duration_in;
 mod example;
 mod gapfill;
 mod gauge;
+mod gis;
 mod interpolate;
 mod locf;
 mod state_at;
@@ -31,6 +32,7 @@ pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<(
     gauge::register_udfs(func_manager)?;
     duration_in::register_udf(func_manager)?;
     state_at::register_udf(func_manager)?;
+    gis::register_udfs(func_manager)?;
     Ok(())
 }
 

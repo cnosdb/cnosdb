@@ -11,7 +11,7 @@ trace = { path = "../trace" }
 async-backtrace = { workspace = true, optional = true }
 libc = { workspace = true }
 tokio = { workspace = true, features = ["full", "tracing"] }
-
+futures = { workspace = true }
 [target.'cfg(unix)'.dependencies]
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
 tikv-jemalloc-ctl = { workspace = true }
