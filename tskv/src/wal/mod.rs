@@ -796,7 +796,7 @@ mod test {
 
     #[test]
     fn test_read_and_write() {
-        let dir = "/tmp/test/wal/".to_string();
+        let dir = "/tmp/test/wal/1".to_string();
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = config::get_config_for_test();
         global_config.wal.path = dir;
