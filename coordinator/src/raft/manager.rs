@@ -142,7 +142,8 @@ impl RaftNodesManager {
 
             let vnode_id = raft_node.raft_id() as VnodeId;
             if let Some(storage) = &self.kv_inst {
-                let _ = storage.remove_tsfamily(tenant, db_name, vnode_id).await;
+                let err = storage.remove_tsfamily(tenant, db_name, vnode_id).await;
+                info!("drop raft node remove tsfamily: {:?}", err);
             }
 
             info!("success remove raft node({}) from group({})", id, group_id)
@@ -266,7 +267,8 @@ impl RaftNodesManager {
 
         let vnode_id = raft_node.raft_id() as VnodeId;
         if let Some(storage) = &self.kv_inst {
-            let _ = storage.remove_tsfamily(tenant, db_name, vnode_id).await;
+            let err = storage.remove_tsfamily(tenant, db_name, vnode_id).await;
+            info!("destory replica group remove tsfamily: {:?}", err);
         }
         self.raft_nodes.write().await.rm_node(replica_id);
 
