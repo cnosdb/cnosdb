@@ -16,11 +16,9 @@ use models::schema::{
     DatabaseOptions, DatabaseSchema, Duration as CnosDuration, Precision, Tenant, TenantOptions,
 };
 use serial_test::serial;
-use sysinfo::{ProcessExt, System, SystemExt};
-use tokio::runtime::Runtime;
 use walkdir::WalkDir;
 
-use crate::utils::{CnosdbData, CnosdbMeta};
+use crate::utils::{clean_env, start_cluster, CnosdbData, CnosdbMeta};
 use crate::{E2eError, E2eResult};
 
 const DEFAULT_CLUSTER: &str = "cluster_xxx";
@@ -126,48 +124,6 @@ impl CnosdbData {
             Err(E2eError::DataWrite(String::new()))
         } else {
             Ok(())
-        }
-    }
-}
-
-/// Start the cnosdb cluster
-fn start_cluster(runtime: Arc<Runtime>) -> (CnosdbMeta, CnosdbData) {
-    let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_dir = crate_dir.parent().unwrap();
-    let mut meta = CnosdbMeta::new(runtime.clone(), workspace_dir);
-    meta.run_cluster();
-    let mut data = CnosdbData::new(runtime, workspace_dir);
-    data.run_cluster();
-    (meta, data)
-}
-
-/// Clean test environment.
-///
-/// 1. Kill all 'cnosdb' and 'cnosdb-meta' process,
-/// 2. Remove directory '/tmp/cnosdb'.
-fn clean_env() {
-    println!("Cleaning environment...");
-    kill_process("cnosdb");
-    kill_process("cnosdb-meta");
-    println!(" - Removing directory '/tmp/cnosdb'");
-    let _ = std::fs::remove_dir_all("/tmp/cnosdb");
-    println!("Clean environment completed.");
-}
-
-/// Kill all processes with specified process name.
-fn kill_process(process_name: &str) {
-    println!("- Killing processes {process_name}...");
-    let system = System::new_all();
-    for (pid, process) in system.processes() {
-        if process.name() == process_name {
-            let output = Command::new("kill")
-                .args(["-9", &(pid.to_string())])
-                .output()
-                .expect("failed to execute kill");
-            if !output.status.success() {
-                println!(" - failed killing process {} ('{}')", pid, process.name());
-            }
-            println!(" - killed process {pid} ('{}')", process.name());
         }
     }
 }

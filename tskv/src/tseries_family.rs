@@ -23,7 +23,7 @@ use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::error::Result;
-use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
+use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
@@ -256,10 +256,10 @@ impl LevelInfo {
     ) {
         let file_path = if compact_meta.is_delta {
             let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
-            make_delta_file_name(base_dir, compact_meta.file_id)
+            make_delta_file(base_dir, compact_meta.file_id)
         } else {
             let base_dir = self.storage_opt.tsm_dir(&self.database, self.tsf_id);
-            make_tsm_file_name(base_dir, compact_meta.file_id)
+            make_tsm_file(base_dir, compact_meta.file_id)
         };
         self.files.push(Arc::new(ColumnFile::with_compact_data(
             compact_meta,
@@ -362,7 +362,7 @@ impl LevelInfo {
 #[derive(Debug)]
 pub struct Version {
     pub ts_family_id: TseriesFamilyId,
-    pub database: Arc<String>,
+    pub tenant_database: Arc<String>,
     pub storage_opt: Arc<StorageOptions>,
     /// The max seq_no of write batch in wal flushed to column file.
     pub last_seq: u64,
@@ -385,7 +385,7 @@ impl Version {
     ) -> Self {
         Self {
             ts_family_id,
-            database,
+            tenant_database: database,
             storage_opt,
             last_seq,
             max_level_ts,
@@ -417,7 +417,7 @@ impl Version {
         }
 
         let mut new_levels = LevelInfo::init_levels(
-            self.database.clone(),
+            self.tenant_database.clone(),
             self.ts_family_id,
             self.storage_opt.clone(),
         );
@@ -443,7 +443,7 @@ impl Version {
 
         let mut new_version = Self {
             ts_family_id: self.ts_family_id,
-            database: self.database.clone(),
+            tenant_database: self.tenant_database.clone(),
             storage_opt: self.storage_opt.clone(),
             last_seq: last_seq.unwrap_or(self.last_seq),
             max_level_ts: self.max_level_ts,
@@ -475,8 +475,8 @@ impl Version {
         self.ts_family_id
     }
 
-    pub fn database(&self) -> Arc<String> {
-        self.database.clone()
+    pub fn tenant_database(&self) -> Arc<String> {
+        self.tenant_database.clone()
     }
 
     pub fn levels_info(&self) -> &[LevelInfo; 5] {
@@ -679,7 +679,7 @@ impl TsfMetrics {
 #[derive(Debug)]
 pub struct TseriesFamily {
     tf_id: TseriesFamilyId,
-    database: Arc<String>,
+    tenant_database: Arc<String>,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
     super_version: Arc<SuperVersion>,
@@ -702,7 +702,7 @@ impl TseriesFamily {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         tf_id: TseriesFamilyId,
-        database: Arc<String>,
+        tenant_database: Arc<String>,
         cache: MemCache,
         version: Arc<Version>,
         cache_opt: Arc<CacheOptions>,
@@ -716,7 +716,7 @@ impl TseriesFamily {
 
         Self {
             tf_id,
-            database: database.clone(),
+            tenant_database: tenant_database.clone(),
             seq_no: version.last_seq,
             mut_cache: mm.clone(),
             immut_cache: Default::default(),
@@ -739,7 +739,7 @@ impl TseriesFamily {
             compact_task_sender,
             cancellation_token: CancellationToken::new(),
             memory_pool,
-            tsf_metrics: TsfMetrics::new(register, database.as_str(), tf_id as u64),
+            tsf_metrics: TsfMetrics::new(register, tenant_database.as_str(), tf_id as u64),
             status: VnodeStatus::Running,
         }
     }
@@ -829,11 +829,19 @@ impl TseriesFamily {
         if filtered_caches.is_empty() {
             return None;
         }
+        let (mut high_seq_no, mut low_seq_no) = (0, u64::MAX);
+        for mem in filtered_caches.iter() {
+            let seq_no = mem.read().seq_no();
+            high_seq_no = seq_no.max(high_seq_no);
+            low_seq_no = seq_no.min(low_seq_no);
+        }
 
         Some(FlushReq {
             ts_family_id: self.tf_id,
             mems: filtered_caches,
             force_flush: force,
+            low_seq_no,
+            high_seq_no,
         })
     }
 
@@ -956,13 +964,12 @@ impl TseriesFamily {
     /// Snapshots last version before `last_seq` of this vnode.
     ///
     /// Db-files' index data (field-id filter) will be inserted into `file_metas`.
-    pub fn snapshot(
+    pub fn build_version_edit(
         &self,
-        owner: Arc<String>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     ) -> VersionEdit {
         let mut version_edit =
-            VersionEdit::new_add_vnode(self.tf_id, owner.as_ref().clone(), self.seq_no);
+            VersionEdit::new_add_vnode(self.tf_id, (*self.tenant_database).clone(), self.seq_no);
         let version = self.version();
         let max_level_ts = version.max_level_ts;
         for files in version.levels_info.iter() {
@@ -982,8 +989,8 @@ impl TseriesFamily {
         self.tf_id
     }
 
-    pub fn database(&self) -> Arc<String> {
-        self.database.clone()
+    pub fn tenant_database(&self) -> Arc<String> {
+        self.tenant_database.clone()
     }
 
     pub fn cache(&self) -> &Arc<RwLock<MemCache>> {
@@ -1011,11 +1018,12 @@ impl TseriesFamily {
     }
 
     pub fn get_delta_dir(&self) -> PathBuf {
-        self.storage_opt.delta_dir(&self.database, self.tf_id)
+        self.storage_opt
+            .delta_dir(&self.tenant_database, self.tf_id)
     }
 
     pub fn get_tsm_dir(&self) -> PathBuf {
-        self.storage_opt.tsm_dir(&self.database, self.tf_id)
+        self.storage_opt.tsm_dir(&self.tenant_database, self.tf_id)
     }
 
     pub fn disk_storage(&self) -> u64 {
@@ -1064,8 +1072,8 @@ pub mod test_tseries_family {
     use super::{ColumnFile, LevelInfo};
     use crate::compaction::flush_tests::default_table_schema;
     use crate::compaction::{run_flush_memtable_job, FlushReq};
-    use crate::context::{GlobalContext, GlobalSequenceContext};
-    use crate::file_utils::make_tsm_file_name;
+    use crate::context::GlobalContext;
+    use crate::file_utils::make_tsm_file;
     use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
     use crate::memcache::{FieldVal, MemCache, RowData, RowGroup};
@@ -1107,7 +1115,7 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
+                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1119,8 +1127,8 @@ pub mod test_tseries_family {
             },
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file_name(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
+                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
+                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1202,8 +1210,8 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
-                    Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, make_tsm_file_name(&tsm_dir, 4))),
+                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
+                    Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, make_tsm_file(&tsm_dir, 4))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1215,8 +1223,8 @@ pub mod test_tseries_family {
             },
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file_name(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
+                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
+                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1480,6 +1488,8 @@ pub mod test_tseries_family {
             ts_family_id: 0,
             mems: req_mem,
             force_flush: false,
+            low_seq_no: 0,
+            high_seq_no: 1,
         };
 
         let dir = "/tmp/test/ts_family/read_with_tomb";
@@ -1492,7 +1502,6 @@ pub mod test_tseries_family {
         let tenant = "cnosdb".to_string();
         let database = "test_db".to_string();
         let global_ctx = Arc::new(GlobalContext::new());
-        let global_seq_ctx = GlobalSequenceContext::empty();
         let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
         let (compact_task_sender, _compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
@@ -1533,7 +1542,6 @@ pub mod test_tseries_family {
                 .await
                 .add_tsfamily(
                     0,
-                    0,
                     None,
                     summary_task_sender.clone(),
                     flush_task_sender.clone(),
@@ -1549,7 +1557,6 @@ pub mod test_tseries_family {
             run_flush_memtable_job(
                 flush_seq,
                 global_ctx,
-                global_seq_ctx,
                 version_set.clone(),
                 summary_task_sender,
                 Some(compact_task_sender),

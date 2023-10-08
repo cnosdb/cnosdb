@@ -108,12 +108,44 @@ impl BucketInfo {
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ReplicationSet {
     pub id: ReplicationSetId,
+    pub leader_node_id: NodeId,
+    pub leader_vnode_id: VnodeId,
     pub vnodes: Vec<VnodeInfo>,
 }
 
 impl ReplicationSet {
-    pub fn new(id: ReplicationSetId, vnodes: Vec<VnodeInfo>) -> Self {
-        Self { id, vnodes }
+    pub fn new(
+        id: ReplicationSetId,
+        leader_node_id: NodeId,
+        leader_vnode_id: VnodeId,
+        vnodes: Vec<VnodeInfo>,
+    ) -> Self {
+        Self {
+            id,
+            vnodes,
+            leader_node_id,
+            leader_vnode_id,
+        }
+    }
+
+    pub fn vnode(&self, id: VnodeId) -> Option<VnodeInfo> {
+        for vnode in &self.vnodes {
+            if vnode.id == id {
+                return Some(vnode.clone());
+            }
+        }
+
+        None
+    }
+
+    pub fn by_node_id(&self, id: NodeId) -> Option<VnodeInfo> {
+        for vnode in &self.vnodes {
+            if vnode.node_id == id {
+                return Some(vnode.clone());
+            }
+        }
+
+        None
     }
 }
 
@@ -154,6 +186,16 @@ pub struct VnodeAllInfo {
     pub status: VnodeStatus,
     pub start_time: i64,
     pub end_time: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct ReplicaAllInfo {
+    pub bucket_id: u32,
+    pub db_name: String,
+    pub tenant: String,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub replica_set: ReplicationSet,
 }
 
 impl VnodeAllInfo {
@@ -319,6 +361,8 @@ pub fn allocation_replication_set(
         let mut repl_set = ReplicationSet {
             id: incr_id,
             vnodes: vec![],
+            leader_node_id: 0,
+            leader_vnode_id: 0,
         };
         incr_id += 1;
 
@@ -330,6 +374,8 @@ pub fn allocation_replication_set(
             incr_id += 1;
             index += 1;
         }
+        repl_set.leader_vnode_id = repl_set.vnodes[0].id;
+        repl_set.leader_node_id = repl_set.vnodes[0].node_id;
 
         group.push(repl_set);
     }

@@ -46,6 +46,10 @@ impl KeyPath {
         "/data_version".to_string()
     }
 
+    pub fn already_init() -> String {
+        "/already_init_key".to_string()
+    }
+
     pub fn data_nodes(cluster: &str) -> String {
         format!("/{}/data_nodes", cluster)
     }

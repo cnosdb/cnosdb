@@ -5,6 +5,7 @@ use datafusion::arrow::error::ArrowError;
 use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
+use models::meta_data::{ReplicationSet, ReplicationSetId};
 use models::schema::Precision;
 use models::Timestamp;
 use protos::PointsError;
@@ -25,6 +26,10 @@ pub enum CoordinatorError {
 
     ArrowError {
         source: ArrowError,
+    },
+
+    ReplicatError {
+        source: replication::errors::ReplicationError,
     },
 
     #[snafu(display("Meta request error: {}", msg))]
@@ -172,6 +177,39 @@ pub enum CoordinatorError {
         database_min_ts: Timestamp,
         point_ts: Timestamp,
     },
+
+    #[snafu(display("The Operation Can only Exec in Leader {:?}", replica))]
+    #[error_code(code = 26)]
+    LeaderIsWrong {
+        replica: ReplicationSet,
+    },
+
+    #[snafu(display("Write to Raft Node Wrong ({})", msg))]
+    #[error_code(code = 27)]
+    RaftWriteError {
+        msg: String,
+    },
+
+    #[snafu(display("Raft Group has Error ({})", msg))]
+    #[error_code(code = 28)]
+    RaftGroupError {
+        msg: String,
+    },
+
+    #[snafu(display(
+        "Forward to Leader (replcia id: {replica_id} leader vnode id: {leader_vnode_id})"
+    ))]
+    #[error_code(code = 29)]
+    ForwardToLeader {
+        replica_id: u32,
+        leader_vnode_id: u32,
+    },
+
+    #[snafu(display("Raft Node not Found has ({})", id))]
+    #[error_code(code = 30)]
+    RaftNodeNotFound {
+        id: ReplicationSetId,
+    },
 }
 
 impl From<PointsError> for CoordinatorError {
@@ -203,6 +241,12 @@ impl From<tskv::Error> for CoordinatorError {
 
             other => CoordinatorError::TskvError { source: other },
         }
+    }
+}
+
+impl From<replication::errors::ReplicationError> for CoordinatorError {
+    fn from(err: replication::errors::ReplicationError) -> Self {
+        CoordinatorError::ReplicatError { source: err }
     }
 }
 

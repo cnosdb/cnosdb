@@ -4,7 +4,7 @@ use std::sync::Arc;
 use models::schema::Tenant;
 use parking_lot::RwLock;
 
-use crate::error::{sm_r_err, MetaError, MetaResult};
+use crate::error::{MetaError, MetaResult};
 use crate::limiter::limiter_factory::LimiterFactory;
 use crate::limiter::{LimiterConfig, LimiterType, RequestLimiter};
 use crate::store::command::{EntryLog, ENTRY_LOG_TYPE_DEL, ENTRY_LOG_TYPE_NOP, ENTRY_LOG_TYPE_SET};
@@ -86,7 +86,10 @@ impl LimiterManager {
         if entry.tye == ENTRY_LOG_TYPE_NOP {
             return Ok(());
         }
-        let tenant: Tenant = serde_json::from_str(&entry.val).map_err(sm_r_err)?;
+        let tenant: Tenant =
+            serde_json::from_str(&entry.val).map_err(|err| MetaError::SerdeMsgInvalid {
+                err: err.to_string(),
+            })?;
         let key = LimiterKey::tenant_key(tenant_name.into());
         if entry.tye == ENTRY_LOG_TYPE_SET {
             let limiter_config = LimiterConfig::TenantRequestLimiterConfig {

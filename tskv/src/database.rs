@@ -77,7 +77,7 @@ impl Database {
     ) {
         let tf = TseriesFamily::new(
             ver.tf_id(),
-            ver.database(),
+            ver.tenant_database(),
             MemCache::new(
                 ver.tf_id(),
                 self.opt.cache.max_buffer_size,
@@ -104,18 +104,18 @@ impl Database {
     pub async fn add_tsfamily(
         &mut self,
         tsf_id: u32,
-        seq_no: u64,
         version_edit: Option<VersionEdit>,
         summary_task_sender: Sender<SummaryTask>,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
         global_ctx: Arc<GlobalContext>,
     ) -> Result<Arc<RwLock<TseriesFamily>>> {
+        let new_version_edit_seq_no = 0;
         let (seq_no, version_edits, file_metas) = match version_edit {
             Some(mut ve) => {
                 ve.tsf_id = tsf_id;
                 ve.has_seq_no = true;
-                ve.seq_no = seq_no;
+                ve.seq_no = new_version_edit_seq_no;
                 let mut file_metas = HashMap::with_capacity(ve.add_files.len());
                 for f in ve.add_files.iter_mut() {
                     let new_file_id = global_ctx.file_id_next();
@@ -145,11 +145,11 @@ impl Database {
                 (ve.seq_no, vec![ve], Some(file_metas))
             }
             None => (
-                seq_no,
+                new_version_edit_seq_no,
                 vec![VersionEdit::new_add_vnode(
                     tsf_id,
                     self.owner.as_ref().clone(),
-                    seq_no,
+                    new_version_edit_seq_no,
                 )],
                 None,
             ),
@@ -431,7 +431,7 @@ impl Database {
         Ok(res_sids)
     }
 
-    /// Snashots last version before `last_seq` of this database's all vnodes
+    /// Snapshots last version before `last_seq` of this database's all vnodes
     /// or specified vnode by `vnode_id`.
     ///
     /// Generated version data will be inserted into `version_edits` and `file_metas`.
@@ -447,12 +447,12 @@ impl Database {
     ) {
         if let Some(tsf_id) = vnode_id.as_ref() {
             if let Some(tsf) = self.ts_families.get(tsf_id) {
-                let ve = tsf.read().await.snapshot(self.owner.clone(), file_metas);
+                let ve = tsf.read().await.build_version_edit(file_metas);
                 version_edits.push(ve);
             }
         } else {
             for tsf in self.ts_families.values() {
-                let ve = tsf.read().await.snapshot(self.owner.clone(), file_metas);
+                let ve = tsf.read().await.build_version_edit(file_metas);
                 version_edits.push(ve);
             }
         }

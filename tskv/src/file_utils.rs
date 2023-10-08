@@ -16,15 +16,15 @@ lazy_static! {
 }
 
 /// Make a path for summary file by it's directory and id.
-pub fn make_summary_file(path: impl AsRef<Path>, number: u64) -> PathBuf {
+pub fn make_summary_file(dir: impl AsRef<Path>, number: u64) -> PathBuf {
     let p = format!("summary-{:06}", number);
-    path.as_ref().join(p)
+    dir.as_ref().join(p)
 }
 
 /// Make a path for summary temporary file by it's directory.
-pub fn make_summary_file_tmp(path: impl AsRef<Path>) -> PathBuf {
+pub fn make_summary_file_tmp(dir: impl AsRef<Path>) -> PathBuf {
     let p = "summary.tmp".to_string();
-    path.as_ref().join(p)
+    dir.as_ref().join(p)
 }
 
 /// Check a summary file's name.
@@ -58,9 +58,9 @@ pub fn get_summary_file_id(file_name: &str) -> Result<u64> {
 }
 
 /// Make a path for index binlog file by it's directory and id.
-pub fn make_index_binlog_file(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
+pub fn make_index_binlog_file(dir: impl AsRef<Path>, sequence: u64) -> PathBuf {
     let p = format!("_{:06}.binlog", sequence);
-    path.as_ref().join(p)
+    dir.as_ref().join(p)
 }
 
 /// Check a index binlog file's name.
@@ -86,9 +86,9 @@ pub fn get_index_binlog_file_id(file_name: &str) -> Result<u64> {
 }
 
 /// Make a path for WAL (write ahead log) file by it's directory and id.
-pub fn make_wal_file(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
+pub fn make_wal_file(dir: impl AsRef<Path>, sequence: u64) -> PathBuf {
     let p = format!("_{:06}.wal", sequence);
-    path.as_ref().join(p)
+    dir.as_ref().join(p)
 }
 
 /// Check a WAL file's name.
@@ -113,10 +113,13 @@ pub fn get_wal_file_id(file_name: &str) -> Result<u64> {
         })
 }
 
+pub fn make_tsm_file_name(sequence: u64) -> String {
+    format!("_{:06}.tsm", sequence)
+}
+
 /// Make a path for TSM file by it's directory and id.
-pub fn make_tsm_file_name(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
-    let p = format!("_{:06}.tsm", sequence);
-    path.as_ref().join(p)
+pub fn make_tsm_file(dir: impl AsRef<Path>, sequence: u64) -> PathBuf {
+    dir.as_ref().join(make_tsm_file_name(sequence))
 }
 
 /// Get id from a TSM file's name.
@@ -144,16 +147,22 @@ pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
         })
 }
 
+pub fn make_tsm_tombstone_file_name(sequence: u64) -> String {
+    format!("_{:06}.tombstone", sequence)
+}
+
 /// Make a path for TSM tombstone file by it's directory and id.
-pub fn make_tsm_tombstone_file_name(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
-    let p = format!("_{:06}.tombstone", sequence);
-    path.as_ref().join(p)
+pub fn make_tsm_tombstone_file(dir: impl AsRef<Path>, sequence: u64) -> PathBuf {
+    dir.as_ref().join(make_tsm_tombstone_file_name(sequence))
+}
+
+pub fn make_delta_file_name(sequence: u64) -> String {
+    format!("_{:06}.delta", sequence)
 }
 
 /// Make a path for TSM delta file by it's directory and id.
-pub fn make_delta_file_name(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
-    let p = format!("_{:06}.delta", sequence);
-    path.as_ref().join(p)
+pub fn make_delta_file(dir: impl AsRef<Path>, sequence: u64) -> PathBuf {
+    dir.as_ref().join(make_delta_file_name(sequence))
 }
 
 /// Get the file's path that has the maximum id of files in a directory.
@@ -195,9 +204,12 @@ where
 
 /* -------------------------------------------------------------------------------------- */
 
-pub fn make_file_name(path: impl AsRef<Path>, id: u64, suffix: &str) -> PathBuf {
-    let p = format!("_{:06}.{}", id, suffix);
-    path.as_ref().join(p)
+pub fn make_file_name(id: u64, suffix: &str) -> String {
+    format!("_{:06}.{}", id, suffix)
+}
+
+pub fn make_file_path(dir: impl AsRef<Path>, id: u64, suffix: &str) -> PathBuf {
+    dir.as_ref().join(make_file_name(id, suffix))
 }
 
 pub fn get_file_id_range(dir: impl AsRef<Path>, suffix: &str) -> Option<(u64, u64)> {
