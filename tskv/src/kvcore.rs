@@ -521,6 +521,15 @@ impl TsKv {
             for column_file in version.version.column_files(&field_ids, time_range) {
                 column_file.add_tombstone(&field_ids, time_range).await?;
             }
+
+            info!(
+                "Drop table: index {ts_family_id} deleting {} fields in table: {db_owner}.{table}",
+                series_ids.len()
+            );
+
+            for sid in series_ids {
+                ts_index.del_series_info(sid).await?;
+            }
         }
         Ok(())
     }
