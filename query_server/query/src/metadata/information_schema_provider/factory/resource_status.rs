@@ -107,7 +107,6 @@ impl TableProvider for InformationSchemaResourceStatusTable {
                 builder.append_row(
                     time_str,
                     resourceinfo.get_names().join("/"),
-                    resourceinfo.get_type().to_string(),
                     resourceinfo.get_operator().to_string(),
                     resourceinfo.get_status().to_string(),
                     resourceinfo.get_comment(),

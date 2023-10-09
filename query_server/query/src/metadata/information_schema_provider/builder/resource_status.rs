@@ -8,7 +8,6 @@ use lazy_static::lazy_static;
 
 pub const RESOURCE_STATUS_TIME: &str = "time";
 pub const RESOURCE_STATUS_NAME: &str = "name";
-pub const RESOURCE_STATUS_TYPE: &str = "type";
 pub const RESOURCE_STATUS_OPERATOR: &str = "operator";
 pub const RESOURCE_STATUS_STATUS: &str = "status";
 pub const RESOURCE_STATUS_COMMENT: &str = "comment";
@@ -17,7 +16,6 @@ lazy_static! {
     pub static ref RESOURCE_STATUS_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
         Field::new(RESOURCE_STATUS_TIME, DataType::Utf8, false),
         Field::new(RESOURCE_STATUS_NAME, DataType::Utf8, false),
-        Field::new(RESOURCE_STATUS_TYPE, DataType::Utf8, false),
         Field::new(RESOURCE_STATUS_OPERATOR, DataType::Utf8, false),
         Field::new(RESOURCE_STATUS_STATUS, DataType::Utf8, false),
         Field::new(RESOURCE_STATUS_COMMENT, DataType::Utf8, true),
@@ -28,7 +26,6 @@ lazy_static! {
 pub struct InformationSchemaResourceStatusBuilder {
     time: StringBuilder,
     name: StringBuilder,
-    restype: StringBuilder,
     operator: StringBuilder,
     status: StringBuilder,
     comment: StringBuilder,
@@ -40,14 +37,12 @@ impl InformationSchemaResourceStatusBuilder {
         &mut self,
         time: impl AsRef<str>,
         name: impl AsRef<str>,
-        restype: impl AsRef<str>,
         operator: impl AsRef<str>,
         status: impl AsRef<str>,
         comment: impl AsRef<str>,
     ) {
         self.time.append_value(time);
         self.name.append_value(name.as_ref());
-        self.restype.append_value(restype.as_ref());
         self.operator.append_value(operator.as_ref());
         self.status.append_value(status.as_ref());
         self.comment.append_value(comment.as_ref());
@@ -61,7 +56,6 @@ impl TryFrom<InformationSchemaResourceStatusBuilder> for RecordBatch {
         let InformationSchemaResourceStatusBuilder {
             mut time,
             mut name,
-            mut restype,
             mut operator,
             mut status,
             mut comment,
@@ -72,7 +66,6 @@ impl TryFrom<InformationSchemaResourceStatusBuilder> for RecordBatch {
             vec![
                 Arc::new(time.finish()),
                 Arc::new(name.finish()),
-                Arc::new(restype.finish()),
                 Arc::new(operator.finish()),
                 Arc::new(status.finish()),
                 Arc::new(comment.finish()),

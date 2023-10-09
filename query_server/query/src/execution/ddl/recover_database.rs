@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
 use models::oid::Identifier;
-use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, ResourceType};
+use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::RecoverDatabase;
 use spi::{QueryError, Result};
@@ -42,8 +42,7 @@ impl DDLDefinitionTask for RecoverDatabaseTask {
         let mut resourceinfo = ResourceInfo::new(
             *meta.tenant().id(),
             vec![tenant_name.clone(), db_name.clone()],
-            ResourceType::Database,
-            ResourceOperator::Drop,
+            ResourceOperator::DropDatabase,
             &None,
         );
         resourceinfo.set_status(ResourceStatus::Cancel);

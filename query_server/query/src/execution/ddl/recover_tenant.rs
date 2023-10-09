@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
 use models::oid::Identifier;
-use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, ResourceType};
+use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::RecoverTenant;
 use spi::{QueryError, Result};
@@ -43,8 +43,7 @@ impl DDLDefinitionTask for RecoverTenantTask {
         let mut resourceinfo = ResourceInfo::new(
             *tenant_meta.tenant().id(),
             vec![tenant_name.clone()],
-            ResourceType::Tenant,
-            ResourceOperator::Drop,
+            ResourceOperator::DropTenant,
             &None,
         );
         resourceinfo.set_status(ResourceStatus::Cancel);

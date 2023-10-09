@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use meta::model::meta_admin::AdminMeta;
 use models::oid::Identifier;
-use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, ResourceType};
+use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus};
 use models::utils::now_timestamp_nanos;
 use protos::kv_service::admin_command_request::Command::{DropDb, DropTab};
 use protos::kv_service::{AdminCommandRequest, DropDbRequest, DropTableRequest};
@@ -102,25 +102,10 @@ impl ResourceManager {
         coord: Arc<dyn Coordinator>,
         resourceinfo: ResourceInfo,
     ) -> CoordinatorResult<bool> {
-        let operator_result = match resourceinfo.get_type() {
-            ResourceType::Tenant => match resourceinfo.get_operator() {
-                ResourceOperator::Drop => {
-                    ResourceManager::drop_tenant(coord.clone(), &resourceinfo).await
-                }
-                _ => Ok(false),
-            },
-            ResourceType::Database => match resourceinfo.get_operator() {
-                ResourceOperator::Drop => {
-                    ResourceManager::drop_database(coord.clone(), &resourceinfo).await
-                }
-                _ => Ok(false),
-            },
-            ResourceType::Table => match resourceinfo.get_operator() {
-                ResourceOperator::Drop => {
-                    ResourceManager::drop_table(coord.clone(), &resourceinfo).await
-                }
-                _ => Ok(false),
-            },
+        let operator_result = match resourceinfo.get_operator() {
+            ResourceOperator::DropTenant => ResourceManager::drop_tenant(coord.clone(), &resourceinfo).await,
+            ResourceOperator::DropDatabase => ResourceManager::drop_database(coord.clone(), &resourceinfo).await,
+            ResourceOperator::DropTable => ResourceManager::drop_table(coord.clone(), &resourceinfo).await,
             /*ResourceType::Tagname => {
                 match resourceinfo.operator {
                     ResourceOperator::Update => {

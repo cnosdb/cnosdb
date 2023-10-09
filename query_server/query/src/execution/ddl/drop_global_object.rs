@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
 use models::oid::Identifier;
-use models::schema::{ResourceInfo, ResourceOperator, ResourceType};
+use models::schema::{ResourceInfo, ResourceOperator};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropGlobalObject, GlobalObjectType};
 use spi::{QueryError, Result};
@@ -69,8 +69,7 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                         let resourceinfo = ResourceInfo::new(
                             *tm.tenant().id(),
                             vec![name.clone()],
-                            ResourceType::Tenant,
-                            ResourceOperator::Drop,
+                            ResourceOperator::DropTenant,
                             after,
                         );
                         ResourceManager::add_resource_task(

@@ -57,37 +57,28 @@ pub const DEFAULT_CATALOG: &str = "cnosdb";
 pub const DEFAULT_PRECISION: &str = "NS";
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub enum ResourceType {
-    #[default]
-    Tenant,
-    Database,
-    Table,
-    Tagname,
-    Tagvalue,
-}
-impl fmt::Display for ResourceType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ResourceType::Tenant => write!(f, "Tenant"),
-            ResourceType::Database => write!(f, "Database"),
-            ResourceType::Table => write!(f, "Table"),
-            ResourceType::Tagname => write!(f, "Tagname"),
-            ResourceType::Tagvalue => write!(f, "Tagvalue"),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub enum ResourceOperator {
     #[default]
-    Drop,
-    Update,
+    DropTenant,
+    DropDatabase,
+    DropTable,
+    DropColumn,
+    AddColumn,
+    AlterColumn,
+    RenameTagName,
+    UpdateTagValue,
 }
 impl fmt::Display for ResourceOperator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ResourceOperator::Drop => write!(f, "Drop"),
-            ResourceOperator::Update => write!(f, "Update"),
+            ResourceOperator::DropTenant => write!(f, "DropTenant"),
+            ResourceOperator::DropDatabase => write!(f, "DropDatabase"),
+            ResourceOperator::DropTable => write!(f, "DropTable"),
+            ResourceOperator::DropColumn => write!(f, "DropColumn"),
+            ResourceOperator::AddColumn => write!(f, "AddColumn"),
+            ResourceOperator::AlterColumn => write!(f, "AlterColumn"),
+            ResourceOperator::RenameTagName => write!(f, "RenameTagName"),
+            ResourceOperator::UpdateTagValue => write!(f, "UpdateTagValue"),
         }
     }
 }
@@ -118,17 +109,16 @@ pub struct ResourceInfo {
     time: i64,
     tenant_id: Oid,
     names: Vec<String>,
-    res_type: ResourceType,
     operator: ResourceOperator,
     after: Option<Duration>, // None means now
     status: ResourceStatus,
     comment: String,
 }
+
 impl ResourceInfo {
     pub fn new(
         tenant_id: Oid,
         names: Vec<String>,
-        res_type: ResourceType,
         operator: ResourceOperator,
         after: &Option<Duration>,
     ) -> Self {
@@ -136,7 +126,6 @@ impl ResourceInfo {
             time: now_timestamp_nanos(),
             tenant_id,
             names,
-            res_type,
             operator,
             after: after.clone(),
             status: ResourceStatus::Executing,
@@ -162,10 +151,6 @@ impl ResourceInfo {
 
     pub fn get_names(&self) -> &[String] {
         &self.names
-    }
-
-    pub fn get_type(&self) -> &ResourceType {
-        &self.res_type
     }
 
     pub fn get_operator(&self) -> &ResourceOperator {

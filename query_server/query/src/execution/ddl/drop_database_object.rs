@@ -3,7 +3,7 @@ use coordinator::errors::CoordinatorError;
 use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
 use models::oid::Identifier;
-use models::schema::{ResourceInfo, ResourceOperator, ResourceType};
+use models::schema::{ResourceInfo, ResourceOperator};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DatabaseObjectType, DropDatabaseObject};
 use spi::{QueryError, Result};
@@ -49,8 +49,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                         object_name.database().to_string(),
                         object_name.table().to_string(),
                     ],
-                    ResourceType::Table,
-                    ResourceOperator::Drop,
+                    ResourceOperator::DropTable,
                     &None,
                 );
                 let res = ResourceManager::add_resource_task(

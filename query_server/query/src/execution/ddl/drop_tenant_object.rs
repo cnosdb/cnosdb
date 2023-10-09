@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
 use models::oid::Identifier;
-use models::schema::{ResourceInfo, ResourceOperator, ResourceType};
+use models::schema::{ResourceInfo, ResourceOperator};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropTenantObject, TenantObjectType};
 use spi::{QueryError, Result};
@@ -85,8 +85,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 let resourceinfo = ResourceInfo::new(
                     *meta.tenant().id(),
                     vec![tenant_name.clone(), name.clone()],
-                    ResourceType::Database,
-                    ResourceOperator::Drop,
+                    ResourceOperator::DropDatabase,
                     after,
                 );
                 ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
