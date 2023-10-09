@@ -27,6 +27,17 @@ pub struct UpdateVnodeReplSetArgs {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ChangeReplSetLeaderArgs {
+    pub cluster: String,
+    pub tenant: String,
+    pub db_name: String,
+    pub bucket_id: u32,
+    pub repl_id: u32,
+    pub leader_node_id: NodeId,
+    pub leader_vnode_id: VnodeId,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UpdateVnodeArgs {
     pub cluster: String,
     pub vnode_info: VnodeAllInfo,
@@ -39,6 +50,8 @@ pub enum WriteCommand {
     RetainID(String, u32),
 
     UpdateVnodeReplSet(UpdateVnodeReplSetArgs),
+
+    ChangeReplSetLeader(ChangeReplSetLeaderArgs),
 
     UpdateVnode(UpdateVnodeArgs),
     // cluster, node info
@@ -403,63 +416,5 @@ impl Watch {
 impl Default for Watch {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-mod test {
-    use std::collections::HashSet;
-    use std::sync::Arc;
-
-    use tokio::sync::RwLock;
-
-    use crate::store::command::Watch;
-
-    async fn _watch_data_test(watch: Arc<RwLock<Watch>>, cluster: &str, tenant: &str, ver: u64) {
-        println!("======== {}.{}", cluster, tenant);
-
-        loop {
-            let mut chan = watch.read().await.subscribe();
-            let _ = chan.recv().await;
-
-            let logs = watch.read().await.read_entry_logs(
-                cluster,
-                &HashSet::from([tenant.to_string()]),
-                ver,
-            );
-            println!("=== {}.{}; {:?}", cluster, tenant, logs);
-        }
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_watch() {
-        use tokio::io::AsyncBufReadExt;
-
-        let watch = Arc::new(RwLock::new(Watch::new()));
-
-        let w_clone = watch.clone();
-        tokio::spawn(_watch_data_test(w_clone, "c", "t", 100));
-
-        let w_clone = watch.clone();
-        tokio::spawn(_watch_data_test(w_clone, "c", "", 200));
-
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
-        loop {
-            let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
-            let mut line = String::new();
-            let _ = reader.read_line(&mut line).await;
-            let strs: Vec<&str> = line.split(' ').collect();
-
-            let entry = crate::store::command::EntryLog {
-                tye: 0,
-                key: strs[0].to_string(),
-                ver: serde_json::from_str::<u64>(strs[1]).unwrap(),
-                val: "".to_string(),
-            };
-
-            watch.write().await.writer_log(entry.clone());
-            println!("=== write {:?}", entry);
-        }
     }
 }

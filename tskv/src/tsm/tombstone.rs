@@ -53,7 +53,7 @@ pub struct TsmTombstone {
 
 impl TsmTombstone {
     pub async fn open(path: impl AsRef<Path>, file_id: u64) -> Result<Self> {
-        let path = file_utils::make_tsm_tombstone_file_name(path, file_id);
+        let path = file_utils::make_tsm_tombstone_file(path, file_id);
         let (mut reader, writer) = if file_manager::try_exists(&path) {
             (
                 Some(record_file::Reader::open(&path).await?),

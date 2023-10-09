@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use config::Config;
+use models::meta_data::VnodeId;
 
 use crate::TseriesFamilyId;
 
@@ -14,6 +15,7 @@ const DATA_PATH: &str = "data";
 pub const TSM_PATH: &str = "tsm";
 pub const DELTA_PATH: &str = "delta";
 pub const MOVE_PATH: &str = "move";
+pub const T_SERIES_FAMILY_SNAPSHOT_PATH: &str = "snapshot";
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -71,31 +73,63 @@ impl StorageOptions {
     }
 
     pub fn index_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.database_dir(database)
-            .join(ts_family_id.to_string())
-            .join(INDEX_PATH)
+        self.ts_family_dir(database, ts_family_id).join(INDEX_PATH)
     }
 
     pub fn tsm_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.database_dir(database)
-            .join(ts_family_id.to_string())
-            .join(TSM_PATH)
-    }
-
-    pub fn move_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.database_dir(database)
-            .join(ts_family_id.to_string())
-            .join(MOVE_PATH)
+        self.ts_family_dir(database, ts_family_id).join(TSM_PATH)
     }
 
     pub fn delta_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.database_dir(database)
-            .join(ts_family_id.to_string())
-            .join(DELTA_PATH)
+        self.ts_family_dir(database, ts_family_id).join(DELTA_PATH)
     }
 
-    pub fn tsfamily_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.database_dir(database).join(ts_family_id.to_string())
+    pub fn move_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.ts_family_dir(database, ts_family_id).join(MOVE_PATH)
+    }
+
+    pub fn snapshot_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.ts_family_dir(database, ts_family_id)
+            .join(T_SERIES_FAMILY_SNAPSHOT_PATH)
+    }
+
+    pub fn snapshot_sub_dir(
+        &self,
+        database: &str,
+        ts_family_id: TseriesFamilyId,
+        snapshot_id: &str,
+    ) -> PathBuf {
+        self.snapshot_dir(database, ts_family_id).join(snapshot_id)
+    }
+
+    pub fn snapshot_index_dir(
+        &self,
+        database: &str,
+        ts_family_id: TseriesFamilyId,
+        snapshot_id: &str,
+    ) -> PathBuf {
+        self.snapshot_sub_dir(database, ts_family_id, snapshot_id)
+            .join(INDEX_PATH)
+    }
+
+    pub fn snapshot_tsm_dir(
+        &self,
+        database: &str,
+        ts_family_id: TseriesFamilyId,
+        snapshot_id: &str,
+    ) -> PathBuf {
+        self.snapshot_sub_dir(database, ts_family_id, snapshot_id)
+            .join(TSM_PATH)
+    }
+
+    pub fn snapshot_delta_dir(
+        &self,
+        database: &str,
+        ts_family_id: TseriesFamilyId,
+        snapshot_id: &str,
+    ) -> PathBuf {
+        self.snapshot_sub_dir(database, ts_family_id, snapshot_id)
+            .join(DELTA_PATH)
     }
 }
 
@@ -171,8 +205,8 @@ impl From<&Config> for WalOptions {
 
 /// database/data/ts_family_id/
 impl WalOptions {
-    pub fn wal_dir(&self, owner: &str, ts_family_id: &str) -> PathBuf {
-        self.path.join(owner).join(ts_family_id)
+    pub fn wal_dir(&self, owner: &str, vnode_id: VnodeId) -> PathBuf {
+        self.path.join(owner).join(vnode_id.to_string())
     }
 }
 

@@ -25,6 +25,7 @@ trace = { path = "../common/trace" }
 trace_http = { path = "../common/trace_http" }
 tskv = { path = "../tskv" }
 utils = { path = "../common/utils" }
+replication = { path = "../replication" }
 
 actix-web = { workspace = true }
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }

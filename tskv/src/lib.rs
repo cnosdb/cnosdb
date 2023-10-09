@@ -9,17 +9,19 @@ use std::sync::Arc;
 use async_trait::async_trait;
 pub use compaction::check::vnode_table_checksum_schema;
 use datafusion::arrow::record_batch::RecordBatch;
-use models::meta_data::VnodeId;
+use models::meta_data::{NodeId, VnodeId};
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{Precision, TableColumn};
-use models::{ColumnId, SeriesId, SeriesKey};
+use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
+use serde::{Deserialize, Serialize};
 use trace::SpanContext;
 
 pub use crate::error::{Error, Result};
 pub use crate::kv_option::Options;
 use crate::kv_option::StorageOptions;
 pub use crate::kvcore::TsKv;
+use crate::summary::CompactMeta;
 pub use crate::summary::{print_summary_statistics, Summary, VersionEdit};
 use crate::tseries_family::SuperVersion;
 pub use crate::tsm::print_tsm_statistics;
@@ -46,7 +48,7 @@ mod summary;
 mod tseries_family;
 pub mod tsm;
 mod version_set;
-mod wal;
+pub mod wal;
 
 pub type ColumnFileId = u64;
 type TseriesFamilyId = u32;
@@ -79,6 +81,16 @@ pub trait Engine: Send + Sync + Debug {
         vnode_id: VnodeId,
         precision: Precision,
         write_batch: WritePointsRequest,
+    ) -> Result<WritePointsResponse>;
+
+    async fn write_memcache(
+        &self,
+        index: u64,
+        tenant: &str,
+        points: Vec<u8>,
+        vnode_id: VnodeId,
+        precision: Precision,
+        span_ctx: Option<&SpanContext>,
     ) -> Result<WritePointsResponse>;
 
     /// Remove all storage unit(caches and files) in specified database,
@@ -184,7 +196,7 @@ pub trait Engine: Send + Sync + Debug {
     /// Get the storage options which was used to install the engine.
     fn get_storage_options(&self) -> Arc<StorageOptions>;
 
-    /// Get the summary(information of files) of the storae unit.
+    /// Get the summary(information of files) of the storage unit.
     async fn get_vnode_summary(
         &self,
         tenant: &str,
@@ -216,6 +228,54 @@ pub trait Engine: Send + Sync + Debug {
 
     /// Close all background jobs of engine.
     async fn close(&self);
+
+    /// Flush caches into TSM file, create a new Version of the Vnode, then:
+    /// 1. Make hard links point to all TSM files in the Version in snapshot directory,
+    /// 2. Copy series index in Vnode into snapshot directory,
+    /// 3. Save current Version as a summary file in snapshot directory.
+    /// Then return VnodeSnapshot.
+    ///
+    /// For one Vnode, multi snapshot may exist at a time.
+    async fn create_snapshot(&self, vnode_id: VnodeId) -> Result<VnodeSnapshot>;
+
+    /// Build a new Vnode from the VersionSnapshot, existing Vnode with the same VnodeId
+    /// will be deleted.
+    async fn apply_snapshot(&self, snapshot: VnodeSnapshot) -> Result<()>;
+
+    /// Delete the snapshot directory of a Vnode, all snapshots will be deleted.
+    async fn delete_snapshot(&self, vnode_id: VnodeId) -> Result<()>;
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct VnodeSnapshot {
+    pub snapshot_id: String,
+    pub node_id: NodeId,
+    pub tenant: String,
+    pub database: String,
+    pub vnode_id: VnodeId,
+    pub files: Vec<SnapshotFileMeta>,
+    pub last_seq_no: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SnapshotFileMeta {
+    pub file_id: ColumnFileId,
+    pub file_size: u64,
+    pub level: LevelId,
+    pub min_ts: Timestamp,
+    pub max_ts: Timestamp,
+}
+
+impl From<&CompactMeta> for SnapshotFileMeta {
+    fn from(cm: &CompactMeta) -> Self {
+        Self {
+            file_id: cm.file_id,
+            file_size: cm.file_size,
+            level: cm.level,
+            min_ts: cm.min_ts,
+            max_ts: cm.max_ts,
+        }
+    }
 }
 
 pub mod test {

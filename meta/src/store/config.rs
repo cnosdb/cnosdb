@@ -33,9 +33,7 @@ pub struct Opt {
     pub id: u64,
     pub host: String,
     pub port: u16,
-    pub snapshot_path: String,
-    pub journal_path: String,
-    pub snapshot_per_events: u32,
+    pub data_path: String,
     pub log: LogConfig,
     pub meta_init: MetaInit,
     pub heartbeat: HeartBeatConfig,
@@ -80,10 +78,7 @@ mod test {
 id = 1
 host = "127.0.0.1"
 port = 8901
-
-snapshot_path = "/tmp/cnosdb/meta/snapshot"
-journal_path = "/tmp/cnosdb/meta/journal"
-snapshot_per_events = 500
+data_path = "/tmp/cnosdb/meta"
 
 [log]
 level = "warn"

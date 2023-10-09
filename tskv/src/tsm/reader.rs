@@ -729,8 +729,8 @@ pub mod tsm_reader_tests {
         }
         std::fs::create_dir_all(&dir).context(error::IOSnafu)?;
 
-        let tsm_file = file_utils::make_tsm_file_name(&dir, 1);
-        let tombstone_file = file_utils::make_tsm_tombstone_file_name(&dir, 1);
+        let tsm_file = file_utils::make_tsm_file(&dir, 1);
+        let tombstone_file = file_utils::make_tsm_tombstone_file(&dir, 1);
         println!(
             "Writing file: {}, {}",
             tsm_file.display(),
