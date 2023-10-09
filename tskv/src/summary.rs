@@ -4,7 +4,7 @@ use std::fs::{remove_file, rename};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use lru_cache::asynchronous::ShardedCache;
+use cache::ShardedAsyncCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
@@ -470,8 +470,9 @@ impl Summary {
             }
 
             // Recover levels_info according to `CompactMeta`s;
-            let tsm_reader_cache =
-                Arc::new(ShardedCache::with_capacity(opt.storage.max_cached_readers));
+            let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(
+                opt.storage.max_cached_readers,
+            ));
             let weak_tsm_reader_cache = Arc::downgrade(&tsm_reader_cache);
             let mut levels = LevelInfo::init_levels(database.clone(), tsf_id, opt.storage.clone());
             for meta in files.into_values() {

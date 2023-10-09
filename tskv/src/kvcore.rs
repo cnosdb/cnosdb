@@ -40,8 +40,7 @@ use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
 use crate::wal::{self, Block, UpdateSeriesKeysBlock, WalDecoder, WalManager, WalTask};
 use crate::{
-    file_utils, Engine, Error, SnapshotFileMeta, TseriesFamilyId,
-    UpdateSetValue, VnodeSnapshot,
+    file_utils, Engine, Error, SnapshotFileMeta, TseriesFamilyId, UpdateSetValue, VnodeSnapshot,
 };
 
 // TODO: A small summay channel capacity can cause a block

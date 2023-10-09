@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use lru_cache::ShardedCache;
+use cache::{ShardedSyncCache, SyncCache};
 use models::{SeriesId, SeriesKey};
 
 #[derive(Debug)]
@@ -9,16 +9,17 @@ pub struct SeriesKeyInfo {
     pub hash: u64,
     pub id: SeriesId,
 }
+#[derive(Debug)]
 pub struct ForwardIndexCache {
-    id_map: ShardedCache<SeriesId, Arc<SeriesKeyInfo>>,
-    hash_map: ShardedCache<u64, Arc<SeriesKeyInfo>>,
+    id_map: ShardedSyncCache<SeriesId, Arc<SeriesKeyInfo>>,
+    hash_map: ShardedSyncCache<u64, Arc<SeriesKeyInfo>>,
 }
 
 impl ForwardIndexCache {
     pub fn new(size: usize) -> Self {
         Self {
-            id_map: ShardedCache::with_capacity(size),
-            hash_map: ShardedCache::with_capacity(size),
+            id_map: ShardedSyncCache::create_lru_sharded_cache(size),
+            hash_map: ShardedSyncCache::create_lru_sharded_cache(size),
         }
     }
 
