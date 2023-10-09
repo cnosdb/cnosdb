@@ -38,7 +38,7 @@ use crate::summary::{CompactMeta, Summary, SummaryProcessor, SummaryTask, Versio
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
-use crate::wal::{self, Block, WalDecoder, WalManager, WalTask};
+use crate::wal::{self, Block, UpdateSeriesKeysBlock, WalDecoder, WalManager, WalTask};
 use crate::{
     file_utils, tenant_name_from_request, Engine, Error, SnapshotFileMeta, TseriesFamilyId,
     UpdateSetValue, VnodeSnapshot,
@@ -230,7 +230,32 @@ impl TsKv {
                                             trace::error!("Recover: failed to delete table: {e}");
                                         }
                                     }
-                                    _ => {}
+                                    Block::UpdateSeriesKeys(UpdateSeriesKeysBlock {
+                                        tenant,
+                                        database,
+                                        vnode_id,
+                                        old_series_keys,
+                                        new_series_keys,
+                                        series_ids,
+                                    }) => {
+                                        if let Err(err) = self
+                                            .update_vnode_series_keys(
+                                                &tenant,
+                                                &database,
+                                                vnode_id,
+                                                old_series_keys,
+                                                new_series_keys,
+                                                series_ids,
+                                                true,
+                                            )
+                                            .await
+                                        {
+                                            trace::error!(
+                                                "Recover: failed to update series keys: {err}"
+                                            );
+                                        }
+                                    }
+                                    Block::Unknown | Block::RaftLog(_) => {}
                                 }
                             }
                             Ok(None) | Err(Error::WalTruncated) => {
@@ -704,6 +729,35 @@ impl TsKv {
         Ok(())
     }
 
+    async fn update_vnode_series_keys(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+        old_series_keys: Vec<SeriesKey>,
+        new_series_keys: Vec<SeriesKey>,
+        sids: Vec<SeriesId>,
+        recovering: bool,
+    ) -> Result<()> {
+        let db = self.get_db(tenant, database).await?;
+        if let Some(ts_index) = db.read().await.get_ts_index(vnode_id) {
+            // 更新索引
+            ts_index
+                .update_series_key(old_series_keys, new_series_keys, sids, recovering)
+                .await
+                .map_err(|err| {
+                    error!(
+                        "Update tags value tag of TSIndex({}): {}",
+                        ts_index.path().display(),
+                        err
+                    );
+                    err
+                })?;
+        }
+
+        Ok(())
+    }
+
     /// Remove the storage unit(caches and files) managed by TsKv,
     /// then remove directory of the storage unit.
     ///
@@ -1111,9 +1165,38 @@ impl Engine for TsKv {
     ) -> Result<()> {
         let db = self.get_db(tenant, database).await?;
 
-        for ts_index in db.read().await.ts_indexes().values() {
+        for (vnode_id, ts_index) in db.read().await.ts_indexes() {
+            // 准备数据
+            // 获取待更新的 series key，更新后的 series key 及其对应的 series id
+            let (old_series_keys, new_series_keys, sids) = ts_index
+                .prepare_update_tags_value(new_tags, matched_series)
+                .await?;
+
+            if dry_run {
+                continue;
+            }
+            // 记录 wal
+            let (wal_task, rx) = WalTask::new_update_tags(
+                tenant.to_string(),
+                database.to_string(),
+                vnode_id,
+                old_series_keys.clone(),
+                new_series_keys.clone(),
+                sids.clone(),
+            );
+            self.wal_sender
+                .send(wal_task)
+                .await
+                .map_err(|_| Error::ChannelSend {
+                    source: error::ChannelSendError::WalTask,
+                })?;
+            // Receive WAL write action result.
+            let _ = rx.await.map_err(|e| Error::ChannelReceive {
+                source: error::ChannelReceiveError::WriteWalResult { source: e },
+            })??;
+            // 更新索引
             ts_index
-                .update_tags_value(new_tags, matched_series, dry_run)
+                .update_series_key(old_series_keys, new_series_keys, sids, false)
                 .await
                 .map_err(|err| {
                     error!(

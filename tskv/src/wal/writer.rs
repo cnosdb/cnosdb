@@ -3,8 +3,10 @@ use std::sync::Arc;
 
 use models::meta_data::VnodeId;
 use models::schema::{make_owner, Precision};
+use models::{SeriesId, SeriesKey};
 use serde::{Deserialize, Serialize};
 
+use super::reader::UpdateSeriesKeysBlock;
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion};
@@ -185,6 +187,51 @@ impl WalWriter {
         Ok((seq, written_size))
     }
 
+    pub async fn update_series_keys(
+        &mut self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+        old_series_keys: &[SeriesKey],
+        new_series_keys: &[SeriesKey],
+        series_ids: &[SeriesId],
+    ) -> Result<(u64, usize)> {
+        let seq = self.max_sequence;
+
+        let block = UpdateSeriesKeysBlock::new(
+            tenant.to_string(),
+            database.to_string(),
+            vnode_id,
+            old_series_keys.to_vec(),
+            new_series_keys.to_vec(),
+            series_ids.to_vec(),
+        );
+        let mut block_buf = vec![];
+        block.encode(&mut block_buf)?;
+
+        let written_size = self
+            .inner
+            .write_record(
+                RecordDataVersion::V1 as u8,
+                RecordDataType::Wal as u8,
+                [
+                    &[WalType::UpdateSeriesKeys as u8][..],
+                    &seq.to_be_bytes(),
+                    &block_buf,
+                ]
+                .as_slice(),
+            )
+            .await?;
+
+        if self.config.sync {
+            self.inner.sync().await?;
+        }
+        // write & fsync succeed
+        self.max_sequence += 1;
+        self.size += written_size as u64;
+        Ok((seq, written_size))
+    }
+
     pub async fn append_raft_entry(
         &mut self,
         raft_entry: &raft_store::RaftEntry,
@@ -271,6 +318,7 @@ pub enum Task {
     Write(WriteTask),
     DeleteVnode(DeleteVnodeTask),
     DeleteTable(DeleteTableTask),
+    UpdateSeriesKeys(UpdateSeriesKeys),
 }
 
 impl Task {
@@ -306,6 +354,24 @@ impl Task {
         })
     }
 
+    pub fn new_update_series_keys(
+        tenant: String,
+        database: String,
+        vnode_id: VnodeId,
+        old_series_keys: Vec<SeriesKey>,
+        new_series_keys: Vec<SeriesKey>,
+        series_ids: Vec<SeriesId>,
+    ) -> Self {
+        Self::UpdateSeriesKeys(UpdateSeriesKeys {
+            tenant,
+            database,
+            vnode_id,
+            old_series_keys,
+            new_series_keys,
+            series_ids,
+        })
+    }
+
     pub fn tenant_database(&self) -> String {
         match self {
             Self::Write(WriteTask {
@@ -317,6 +383,9 @@ impl Task {
             Self::DeleteTable(DeleteTableTask {
                 tenant, database, ..
             }) => make_owner(tenant, database),
+            Self::UpdateSeriesKeys(UpdateSeriesKeys {
+                tenant, database, ..
+            }) => make_owner(tenant, database),
         }
     }
 
@@ -326,6 +395,7 @@ impl Task {
             Self::DeleteVnode(DeleteVnodeTask { vnode_id, .. }) => Some(*vnode_id),
             //todo: change delete table to delete time series;
             Self::DeleteTable(DeleteTableTask { .. }) => None,
+            Self::UpdateSeriesKeys(UpdateSeriesKeys { vnode_id, .. }) => Some(*vnode_id),
         }
     }
 }
@@ -409,6 +479,16 @@ impl TryFrom<&reader::DeleteTableBlock> for DeleteTableTask {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateSeriesKeys {
+    pub tenant: String,
+    pub database: String,
+    pub vnode_id: VnodeId,
+    pub old_series_keys: Vec<SeriesKey>,
+    pub new_series_keys: Vec<SeriesKey>,
+    pub series_ids: Vec<SeriesId>,
+}
+
 #[cfg(test)]
 mod test {
     use std::path::PathBuf;
@@ -471,7 +551,7 @@ mod test {
                     Block::RaftLog(e) => {
                         writer.append_raft_entry(e).await.unwrap();
                     }
-                    Block::Unknown => {
+                    Block::UpdateSeriesKeys(_) | Block::Unknown => {
                         // ignore
                     }
                 }

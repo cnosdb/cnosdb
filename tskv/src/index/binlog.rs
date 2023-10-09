@@ -72,16 +72,31 @@ impl DeleteSeries {
 pub struct UpdateSeriesKey {
     // delete keys
     // insert: (keys, ids) + (tag, ids) + (ids + keys)
+    old_series: SeriesKey,
     new_series: SeriesKey,
     series_id: SeriesId,
+    // 如果是恢复wal执行的update操作(recovering = true)，需要标记为已删除的series key删掉
+    // 如果是正常运行过程中的update操作(recovering = false)，需要将待修改的series key加删除标记
+    recovering: bool,
 }
 
 impl UpdateSeriesKey {
-    pub fn new(new_series: SeriesKey, series_id: SeriesId) -> Self {
+    pub fn new(
+        old_series: SeriesKey,
+        new_series: SeriesKey,
+        series_id: SeriesId,
+        recovering: bool,
+    ) -> Self {
         Self {
+            old_series,
             new_series,
             series_id,
+            recovering,
         }
+    }
+
+    pub fn old_series(&self) -> &SeriesKey {
+        &self.old_series
     }
 
     pub fn new_series(&self) -> &SeriesKey {
@@ -90,6 +105,10 @@ impl UpdateSeriesKey {
 
     pub fn series_id(&self) -> SeriesId {
         self.series_id
+    }
+
+    pub fn recovering(&self) -> bool {
+        self.recovering
     }
 }
 
