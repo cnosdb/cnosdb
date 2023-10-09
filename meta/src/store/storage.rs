@@ -1274,6 +1274,7 @@ impl StateMachine {
         let mut rsp = LocalBucketResponse {
             kind: requests.kind,
             alloc: requests.expected.max,
+            remote_remain: -1,
         };
         let key = KeyPath::limiter(cluster, tenant);
 
@@ -1292,8 +1293,9 @@ impl StateMachine {
         };
         let alloc = bucket.acquire_closed(requests.expected.max as usize);
 
-        self.set_tenant_limiter(cluster, tenant, Some(limiter))?;
         rsp.alloc = alloc as i64;
+        rsp.remote_remain = bucket.balance() as i64;
+        self.set_tenant_limiter(cluster, tenant, Some(limiter))?;
 
         Ok(rsp)
     }
