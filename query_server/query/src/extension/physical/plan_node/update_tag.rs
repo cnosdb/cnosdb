@@ -184,26 +184,25 @@ async fn do_update(
         new_tags.push(update_set_value);
     }
 
-    let mut rows_writed = 0;
+    let mut rows_wrote = 0;
+    let mut batches = vec![];
     let mut stream: DropEmptyRecordBatchStream = DropEmptyRecordBatchStream::new(scan);
     while let Some(batch) = stream.next().await {
         let batch = batch?;
         let num_rows = batch.num_rows();
-        rows_writed += num_rows;
-        coord
-            .update_tags_value(table_schema.clone(), new_tags.clone(), batch)
-            .await
-            .map_err(|err| DataFusionError::Execution(err.to_string()))?;
+        rows_wrote += num_rows;
+        batches.push(batch);
     }
+    coord
+        .update_tags_value(table_schema.clone(), new_tags.clone(), batches)
+        .await
+        .map_err(|err| DataFusionError::Execution(err.to_string()))?;
 
-    aggregate_statistiction(schema, rows_writed)
+    aggregate_statistics(schema, rows_wrote)
 }
 
-fn aggregate_statistiction(
-    schema: SchemaRef,
-    rows_writed: usize,
-) -> Result<SendableRecordBatchStream> {
-    let output_rows_col = Arc::new(UInt64Array::from(vec![rows_writed as u64]));
+fn aggregate_statistics(schema: SchemaRef, rows_wrote: usize) -> Result<SendableRecordBatchStream> {
+    let output_rows_col = Arc::new(UInt64Array::from(vec![rows_wrote as u64]));
 
     let batch = RecordBatch::try_new(schema.clone(), vec![output_rows_col])?;
 

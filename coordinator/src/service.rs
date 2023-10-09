@@ -2,7 +2,7 @@
 #![allow(unused)]
 #![allow(clippy::type_complexity)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
@@ -26,7 +26,7 @@ use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId, VnodeStatus};
 use models::object_reference::ResolvedTable;
-use models::predicate::domain::{ResolvedPredicateRef, TimeRanges};
+use models::predicate::domain::{ResolvedPredicateRef, TimeRange, TimeRanges};
 use models::schema::{
     timestamp_convert, ColumnType, Precision, TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
 };
@@ -309,11 +309,10 @@ impl CoordService {
 
     async fn prune_shards(
         &self,
-        table: &ResolvedTable,
+        tenant: &str,
+        database: &str,
         time_ranges: &TimeRanges,
     ) -> Result<Vec<ReplicationSet>, CoordinatorError> {
-        let tenant = table.tenant();
-        let database = table.database();
         let meta = self.meta_manager().tenant_meta(tenant).await.ok_or(
             CoordinatorError::TenantNotFound {
                 name: tenant.to_string(),
@@ -514,7 +513,11 @@ impl Coordinator for CoordService {
     ) -> CoordinatorResult<Vec<ReplicationSet>> {
         // 1. 根据传入的过滤条件获取表的分片信息（包括副本）
         let shards = self
-            .prune_shards(table, predicate.time_ranges().as_ref())
+            .prune_shards(
+                table.tenant(),
+                table.database(),
+                predicate.time_ranges().as_ref(),
+            )
             .await?;
         // 2. 选择最优的副本
         let optimal_shards = self.replica_selectioner.select(shards)?;
@@ -983,124 +986,116 @@ impl Coordinator for CoordService {
         &self,
         table_schema: TskvTableSchemaRef,
         new_tags: Vec<UpdateSetValue>,
-        record_batch: RecordBatch,
+        record_batches: Vec<RecordBatch>,
     ) -> CoordinatorResult<()> {
         let tenant = &table_schema.tenant;
         let db = &table_schema.db;
         let table_name = &table_schema.name;
-        let num_rows = record_batch.num_rows();
-        let schema = record_batch.schema().fields().clone();
-        let columns = record_batch.columns();
-        let mut repl_idx: HashMap<ReplicationSet, Vec<usize>> = HashMap::new();
 
-        let meta_client = self.meta.tenant_meta(tenant.as_str()).await.ok_or(
-            CoordinatorError::TenantNotFound {
-                name: tenant.to_string(),
-            },
-        )?;
-        let db_schema =
-            meta_client
-                .get_db_schema(db.as_str())?
-                .ok_or_else(|| MetaError::DatabaseNotFound {
-                    database: db.to_string(),
-                })?;
-        let db_precision = db_schema.config.precision_or_default();
-
-        // 找到每一行应该所属的ReplicationSet
+        let mut min_ts = i64::MIN;
+        let mut max_ts = i64::MAX;
         let mut series_keys = vec![];
-        for idx in 0..num_rows {
-            let mut hasher = BkdrHasher::new();
-            hasher.hash_with(table_name.as_bytes());
-            let mut ts = i64::MAX;
-            let mut has_ts = false;
-            let mut tags = vec![];
-            for (column, schema) in columns.iter().zip(schema.iter()) {
-                let name = schema.name().as_str();
-                let tskv_schema_column =
-                    table_schema
-                        .column(name)
-                        .ok_or(CoordinatorError::CommonError {
-                            msg: format!("column {} not found in table {}", name, table_name),
-                        })?;
-                if name == TIME_FIELD {
-                    let precsion_and_value =
-                        get_precision_and_value_from_arrow_column(column, idx)?;
-                    let precision = precsion_and_value.0;
-                    ts = timestamp_convert(precision, *db_precision, precsion_and_value.1).ok_or(
-                        CoordinatorError::CommonError {
-                            msg: "timestamp overflow".to_string(),
-                        },
-                    )?;
-                    has_ts = true;
-                }
-                if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
-                    let value = column
-                        .as_any()
-                        .downcast_ref::<StringArray>()
-                        .ok_or(CoordinatorError::CommonError {
-                            msg: format!("column {} is not string", name),
-                        })?
-                        .value(idx);
-                    hasher.hash_with(name.as_bytes());
-                    hasher.hash_with(value.as_bytes());
 
-                    // match_series can`t have null tag
-                    if value.is_empty() {
-                        if let Some(null) = column.nulls() {
-                            if null.is_null(idx) {
-                                continue;
-                            }
+        for record_batch in record_batches {
+            let num_rows = record_batch.num_rows();
+            let schema = record_batch.schema().fields().clone();
+            let columns = record_batch.columns();
+
+            // struct SeriesKey
+            for idx in 0..num_rows {
+                let mut has_ts = false;
+                let mut tags = vec![];
+                for (column, schema) in columns.iter().zip(schema.iter()) {
+                    let name = schema.name().as_str();
+                    let tskv_schema_column =
+                        table_schema
+                            .column(name)
+                            .ok_or(CoordinatorError::CommonError {
+                                msg: format!("column {} not found in table {}", name, table_name),
+                            })?;
+                    if name == TIME_FIELD {
+                        let precision_and_value =
+                            get_precision_and_value_from_arrow_column(column, idx)?;
+                        let ts = precision_and_value.1;
+                        has_ts = true;
+
+                        if ts > max_ts {
+                            max_ts = ts;
+                        }
+
+                        if ts < min_ts {
+                            min_ts = ts;
                         }
                     }
-                    tags.push(Tag {
-                        key: name.as_bytes().to_vec(),
-                        value: value.as_bytes().to_vec(),
+                    if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
+                        let value = column
+                            .as_any()
+                            .downcast_ref::<StringArray>()
+                            .ok_or(CoordinatorError::CommonError {
+                                msg: format!("column {} is not string", name),
+                            })?
+                            .value(idx);
+
+                        // match_series can`t have null tag
+                        if value.is_empty() {
+                            if let Some(null) = column.nulls() {
+                                if null.is_null(idx) {
+                                    continue;
+                                }
+                            }
+                        }
+                        tags.push(Tag {
+                            key: name.as_bytes().to_vec(),
+                            value: value.as_bytes().to_vec(),
+                        });
+                    }
+                }
+
+                if !has_ts {
+                    return Err(CoordinatorError::CommonError {
+                        msg: format!("column {} not found in table {}", TIME_FIELD, table_name),
                     });
                 }
-            }
 
-            if !has_ts {
-                return Err(CoordinatorError::CommonError {
-                    msg: format!("column {} not found in table {}", TIME_FIELD, table_name),
-                });
+                series_keys.push(
+                    SeriesKey {
+                        tags,
+                        table: table_name.clone(),
+                        db: db.clone(),
+                    }
+                    .encode(),
+                );
             }
-            let hash = hasher.number();
-            let info = meta_client
-                .locate_replication_set_for_write(db, hash, ts)
-                .await?;
-            repl_idx.entry(info).or_insert_with(Vec::new).push(idx);
-
-            series_keys.push(
-                SeriesKey {
-                    tags,
-                    table: table_name.clone(),
-                    db: db.clone(),
-                }
-                .encode(),
-            );
         }
 
+        let update_tags_request = UpdateTagsRequest {
+            db: db.clone(),
+            new_tags: new_tags.clone(),
+            matched_series: series_keys,
+            dry_run: false,
+        };
+
+        let req = AdminCommandRequest {
+            tenant: tenant.clone(),
+            command: Some(UpdateTags(update_tags_request)),
+        };
+
+        // find all shard/ReplicationSet/node_id
+        // send only one request to each kv node
+        let time_ranges = TimeRanges::new(vec![TimeRange::new(min_ts, max_ts)]);
+        let shards = self.prune_shards(tenant, db, &time_ranges).await?;
+        let mut all_node_id = HashSet::new();
         let mut requests = Vec::new();
-        for (repl, idxs) in repl_idx {
-            let mut matched_series = vec![];
-            for i in idxs {
-                matched_series.push(series_keys[i].clone());
-            }
 
-            let update_tags_request = UpdateTagsRequest {
-                db: db.clone(),
-                new_tags: new_tags.clone(),
-                matched_series,
-                dry_run: false,
-            };
-            let req = AdminCommandRequest {
-                tenant: tenant.clone(),
-                command: Some(UpdateTags(update_tags_request)),
-            };
-            for vnode in repl.vnodes.iter() {
-                requests.push(self.exec_admin_command_on_node(vnode.node_id, req.clone()))
-            }
-        }
+        shards.iter().for_each(|replication_set| {
+            replication_set.vnodes.iter().for_each(|vnode| {
+                let node_id = vnode.node_id;
+                if all_node_id.insert(node_id) {
+                    requests.push(self.exec_admin_command_on_node(node_id, req.clone()))
+                }
+            });
+        });
+        drop(all_node_id);
 
         // 使用异步，并发请求
         for res in futures::future::join_all(requests).await {

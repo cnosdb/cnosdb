@@ -226,7 +226,7 @@ impl Coordinator for MockCoordinator {
         &self,
         table_schema: TskvTableSchemaRef,
         new_tags: Vec<UpdateSetValue>,
-        record_batch: RecordBatch,
+        record_batches: Vec<RecordBatch>,
     ) -> CoordinatorResult<()> {
         todo!()
     }
