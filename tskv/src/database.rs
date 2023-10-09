@@ -409,6 +409,9 @@ impl Database {
                     })?;
             if let Some(id) = ts_index.get_series_id(&series_key).await? {
                 res_sids.push(Some(id));
+            } else if let Some(id) = ts_index.get_deleted_series_id(&series_key).await? {
+                // 仅在 recover wal的时候有用
+                res_sids.push(Some(id));
             } else {
                 res_sids.push(None);
                 series_keys.push(series_key);

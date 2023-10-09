@@ -26,6 +26,7 @@ use crate::{byte_utils, file_utils, UpdateSetValue};
 
 const SERIES_ID_PREFIX: &str = "_id_";
 const SERIES_KEY_PREFIX: &str = "_key_";
+const DELETED_SERIES_KEY_PREFIX: &str = "_deleted_key_";
 const AUTO_INCR_ID_KEY: &str = "_auto_incr_id";
 
 /// Used to maintain forward and inverted indexes
@@ -157,6 +158,17 @@ impl TSIndex {
         Ok(())
     }
 
+    /// Only add deleted series key to sid mapping
+    async fn add_deleted_series(&self, id: SeriesId, series_key: &SeriesKey) -> IndexResult<()> {
+        let key_buf = encode_deleted_series_key(series_key.table(), series_key.tags());
+        self.storage.write().await.set(&key_buf, &id.to_be_bytes())
+    }
+
+    async fn remove_deleted_series(&self, series_key: &SeriesKey) -> IndexResult<()> {
+        let key_buf = encode_deleted_series_key(series_key.table(), series_key.tags());
+        self.storage.write().await.delete(&key_buf)
+    }
+
     async fn add_series(&self, id: SeriesId, series_key: &SeriesKey) -> IndexResult<()> {
         let mut storage_w = self.storage.write().await;
 
@@ -198,8 +210,16 @@ impl TSIndex {
                 IndexBinlogBlock::Update(block) => {
                     let series_id = block.series_id();
                     let new_series_key = block.new_series();
+                    let old_series_key = block.old_series();
+                    let recovering = block.recovering();
 
                     self.del_series_id_from_engine(series_id).await?;
+                    if recovering {
+                        self.remove_deleted_series(old_series_key).await?;
+                    } else {
+                        // The modified key can be found when restarting and recover wal.
+                        self.add_deleted_series(series_id, old_series_key).await?;
+                    }
                     self.add_series(series_id, new_series_key).await?;
                 }
             }
@@ -215,6 +235,16 @@ impl TSIndex {
         reader_file.advance_read_offset(0).await?;
 
         Ok(())
+    }
+
+    pub async fn get_deleted_series_id(&self, series_key: &SeriesKey) -> IndexResult<Option<u32>> {
+        let key_buf = encode_deleted_series_key(series_key.table(), series_key.tags());
+        if let Some(val) = self.storage.read().await.get(&key_buf)? {
+            let id = byte_utils::decode_be_u32(&val);
+            return Ok(Some(id));
+        }
+
+        Ok(None)
     }
 
     pub async fn get_series_id(&self, series_key: &SeriesKey) -> IndexResult<Option<u32>> {
@@ -267,6 +297,7 @@ impl TSIndex {
                     continue;
                 }
                 let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
+                trace::warn!("New series {:?}, id: {:?}", series_key, id);
                 storage_w.set(&key_buf, &id.to_be_bytes())?;
                 let block =
                     IndexBinlogBlock::Add(AddSeries::new(utils::now_timestamp_nanos(), id, encode));
@@ -519,30 +550,60 @@ impl TSIndex {
         Ok(())
     }
 
-    pub async fn update_tags_value(
+    /// 记录更新series key的binlog，并且删除缓存中的sid -> series key的映射
+    pub async fn update_series_key(
+        &self,
+        old_series_keys: Vec<SeriesKey>,
+        new_series_keys: Vec<SeriesKey>,
+        sids: Vec<SeriesId>,
+        recovering: bool,
+    ) -> IndexResult<()> {
+        let waiting_delete_series = sids
+            .iter()
+            .zip(old_series_keys.iter())
+            .map(|(sid, key)| (*sid, key.hash()))
+            .collect::<Vec<_>>();
+
+        // write binlog
+        let blocks = old_series_keys
+            .into_iter()
+            .zip(new_series_keys.into_iter().zip(sids.into_iter()))
+            .map(|(old_series, (new_series, sid))| {
+                IndexBinlogBlock::Update(UpdateSeriesKey::new(
+                    old_series, new_series, sid, recovering,
+                ))
+            })
+            .collect::<Vec<_>>();
+
+        self.write_binlog(&blocks).await?;
+
+        // Only delete old index, not add new index
+        for (sid, key_hash) in waiting_delete_series {
+            self.forward_cache.del(sid, key_hash);
+        }
+
+        Ok(())
+    }
+
+    /// 获取所有匹配的旧的series key及其更新后的series key，以及对应的series id
+    /// (old_series_keys, new_series_keys, sids)
+    pub async fn prepare_update_tags_value(
         &self,
         new_tags: &[UpdateSetValue<TagKey, TagValue>],
         matched_series: &[SeriesKey],
-        dry_run: bool,
-    ) -> IndexResult<()> {
+    ) -> IndexResult<(Vec<SeriesKey>, Vec<SeriesKey>, Vec<SeriesId>)> {
         // Find all matching series ids
         let mut ids = vec![];
+        let mut old_keys = vec![];
         for key in matched_series {
             if let Some(sid) = self.get_series_id(key).await? {
                 ids.push(sid);
+                old_keys.push(key.clone());
             }
         }
 
-        if ids.is_empty() {
-            return Ok(());
-        }
-
         let mut new_keys = vec![];
-        let mut waiting_delete_series = vec![];
-        for (sid, key) in ids.iter().zip(matched_series.iter()) {
-            let old_key_hash = key.hash();
-            waiting_delete_series.push((*sid, old_key_hash));
-
+        for key in &old_keys {
             // modify tag value
             let new_tags_for_series = key
                 .tags
@@ -576,25 +637,7 @@ impl TSIndex {
             new_keys.push(new_key);
         }
 
-        // If only do conflict checking, wal and cache will not be written.
-        if dry_run {
-            return Ok(());
-        }
-
-        // write binlog
-        let blocks = ids
-            .into_iter()
-            .zip(new_keys.into_iter())
-            .map(|(sid, key)| IndexBinlogBlock::Update(UpdateSeriesKey::new(key, sid)))
-            .collect::<Vec<_>>();
-        self.write_binlog(&blocks).await?;
-
-        // Only delete old index, not add new index
-        for (sid, key_hash) in waiting_delete_series {
-            self.forward_cache.del(sid, key_hash);
-        }
-
-        Ok(())
+        Ok((old_keys, new_keys, ids))
     }
 
     pub async fn rename_tag(
@@ -642,11 +685,16 @@ impl TSIndex {
         }
 
         // write binlog
-        let blocks = ids
-            .into_iter()
-            .zip(new_keys.into_iter())
-            .map(|(sid, key)| IndexBinlogBlock::Update(UpdateSeriesKey::new(key, sid)))
-            .collect::<Vec<_>>();
+        let mut blocks = vec![];
+        for (sid, key) in ids.into_iter().zip(new_keys.into_iter()) {
+            if let Some(old_key) = self.get_series_key(sid).await? {
+                let block =
+                    IndexBinlogBlock::Update(UpdateSeriesKey::new(old_key, key, sid, false));
+                blocks.push(block);
+            } else {
+                return Err(IndexError::SeriesNotExists);
+            }
+        }
         self.write_binlog(&blocks).await?;
 
         // Only delete old index, not add new index
@@ -761,15 +809,23 @@ pub fn encode_inverted_index_key(tab: &str, tag_key: &[u8], tag_val: &[u8]) -> V
         .collect()
 }
 
+pub fn encode_deleted_series_key(tab: &str, tags: &[Tag]) -> Vec<u8> {
+    encode_series_key_with_prefix(DELETED_SERIES_KEY_PREFIX, tab, tags)
+}
+
 pub fn encode_series_key(tab: &str, tags: &[Tag]) -> Vec<u8> {
-    let mut len = SERIES_KEY_PREFIX.len() + 2 + tab.len();
+    encode_series_key_with_prefix(SERIES_KEY_PREFIX, tab, tags)
+}
+
+fn encode_series_key_with_prefix(prefix: &str, tab: &str, tags: &[Tag]) -> Vec<u8> {
+    let mut len = prefix.len() + 2 + tab.len();
     for tag in tags.iter() {
         len += 2 + tag.key.len();
         len += 2 + tag.value.len();
     }
 
     let mut buf = Vec::with_capacity(len);
-    buf.extend_from_slice(SERIES_KEY_PREFIX.as_bytes());
+    buf.extend_from_slice(prefix.as_bytes());
     buf.extend_from_slice(&(tab.len() as u16).to_be_bytes());
     buf.extend_from_slice(tab.as_bytes());
     for tag in tags.iter() {
@@ -877,6 +933,8 @@ pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: Unbounde
                             IndexBinlogBlock::Update(block) => {
                                 let series_id = block.series_id();
                                 let new_series_key = block.new_series();
+                                let old_series_key = block.old_series();
+                                let recovering = block.recovering();
 
                                 trace::trace!(
                                     "update series: {:?}, series_id: {:?}",
@@ -890,6 +948,30 @@ pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: Unbounde
                                     .map_err(|err| {
                                         error!("Delete series failed for Update, err: {}", err);
                                     });
+                                if recovering {
+                                    // 清理标记为删除状态的series key
+                                    let _ = ts_index
+                                        .remove_deleted_series(old_series_key)
+                                        .await
+                                        .map_err(|err| {
+                                            error!(
+                                                "Add deleted series failed for Update, err: {}",
+                                                err
+                                            );
+                                        });
+                                } else {
+                                    // The modified key can be found when restarting and recover wal.
+                                    let _ = ts_index
+                                        .add_deleted_series(series_id, old_series_key)
+                                        .await
+                                        .map_err(|err| {
+                                            error!(
+                                                "Add deleted series failed for Update, err: {}",
+                                                err
+                                            );
+                                        });
+                                }
+
                                 let _ = ts_index
                                     .add_series(series_id, new_series_key)
                                     .await
@@ -1269,15 +1351,18 @@ mod test {
             table: table_name.to_string(),
             db: db_name.to_string(),
         };
-        ts_index
-            .update_tags_value(
+        let (old_series_keys, new_series_keys, matched_sids) = ts_index
+            .prepare_update_tags_value(
                 &[UpdateSetValue {
                     key: "station".as_bytes().to_vec(),
                     value: Some("a2".as_bytes().to_vec()),
                 }],
                 &[matched_series.clone()],
-                false,
             )
+            .await
+            .unwrap();
+        ts_index
+            .update_series_key(old_series_keys, new_series_keys, matched_sids, false)
             .await
             .unwrap();
 
