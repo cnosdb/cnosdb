@@ -7,6 +7,7 @@ use config::{Bucket, RequestLimiterConfig};
 use limiter_bucket::CountBucket;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, MutexGuard, RwLock};
+use tracing::debug;
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};
@@ -35,6 +36,8 @@ pub struct LocalBucketRequest {
 pub struct LocalBucketResponse {
     pub kind: RequestLimiterKind,
     pub alloc: i64,
+    /// -1 means infinity
+    pub remote_remain: i64,
 }
 
 #[derive(Debug)]
@@ -130,13 +133,26 @@ impl LocalRequestLimiter {
             kind,
             expected: ExpectedRequest { min, max },
         };
-        let LocalBucketResponse { alloc, .. } = self
+        let LocalBucketResponse {
+            alloc,
+            remote_remain,
+            ..
+        } = self
             .meta_http_client
             .limiter_request(&self.cluster, &self.tenant, request)
             .await?;
         bucket_guard.inc(alloc);
+        debug!("Tenant {} Limiter {:?} local get {} tokens from remote, local remain {}, remote remain {}",
+            &self.tenant, kind, alloc, bucket_guard.fetch(), remote_remain);
         if bucket_guard.fetch() > data_len {
             bucket_guard.dec(data_len);
+            debug!(
+                "Tenant {} Limiter {:?}: local consume {} tokens, local remain {}",
+                self.tenant.as_str(),
+                kind,
+                data_len,
+                bucket_guard.fetch()
+            );
             Ok(())
         } else {
             Err(MetaError::RequestLimit { kind })
@@ -157,7 +173,16 @@ impl LocalRequestLimiter {
         let data_len = data_len as i64;
 
         match self.require(&mut bucket_guard, data_len) {
-            RequireResult::Success => Ok(()),
+            RequireResult::Success => {
+                debug!(
+                    "Tenant {} Limiter {:?}: local consume {} tokens, local remain {}",
+                    self.tenant.as_str(),
+                    kind,
+                    data_len,
+                    bucket_guard.fetch()
+                );
+                Ok(())
+            }
 
             RequireResult::RequestMeta { min, max } => {
                 self.remote_requre(kind, &mut bucket_guard, data_len, min, max)
