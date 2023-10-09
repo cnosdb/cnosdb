@@ -150,7 +150,7 @@ pub trait Coordinator: Send + Sync {
         &self,
         table_schema: TskvTableSchemaRef,
         new_tags: Vec<UpdateSetValue>,
-        record_batch: RecordBatch,
+        record_batches: Vec<RecordBatch>,
     ) -> CoordinatorResult<()>;
 
     fn using_raft_replication(&self) -> bool;
