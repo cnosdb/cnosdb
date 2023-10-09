@@ -215,7 +215,7 @@ pub enum CoordinatorError {
     #[error_code(code = 31)]
     ResNamesIllegality {
         names: String,
-    }
+    },
 }
 
 impl From<PointsError> for CoordinatorError {

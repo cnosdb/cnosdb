@@ -103,9 +103,15 @@ impl ResourceManager {
         resourceinfo: ResourceInfo,
     ) -> CoordinatorResult<bool> {
         let operator_result = match resourceinfo.get_operator() {
-            ResourceOperator::DropTenant => ResourceManager::drop_tenant(coord.clone(), &resourceinfo).await,
-            ResourceOperator::DropDatabase => ResourceManager::drop_database(coord.clone(), &resourceinfo).await,
-            ResourceOperator::DropTable => ResourceManager::drop_table(coord.clone(), &resourceinfo).await,
+            ResourceOperator::DropTenant => {
+                ResourceManager::drop_tenant(coord.clone(), &resourceinfo).await
+            }
+            ResourceOperator::DropDatabase => {
+                ResourceManager::drop_database(coord.clone(), &resourceinfo).await
+            }
+            ResourceOperator::DropTable => {
+                ResourceManager::drop_table(coord.clone(), &resourceinfo).await
+            }
             /*ResourceType::Tagname => {
                 match resourceinfo.operator {
                     ResourceOperator::Update => {

@@ -1418,7 +1418,7 @@ impl StateMachine {
         res_info: &ResourceInfo,
     ) -> MetaResult<()> {
         let key = KeyPath::resourceinfos(cluster, names);
-        Ok(self.insert(&key, &value_encode(&res_info)?)?)
+        self.insert(&key, &value_encode(&res_info)?)
     }
 
     fn process_write_resourceinfos_mark(
@@ -1428,7 +1428,7 @@ impl StateMachine {
         is_lock: bool,
     ) -> MetaResult<()> {
         let key = KeyPath::resourceinfosmark(cluster);
-        Ok(self.insert(&key, &value_encode(&(node_id, is_lock))?)?)
+        self.insert(&key, &value_encode(&(node_id, is_lock))?)
     }
 }
 
