@@ -42,8 +42,7 @@ use crate::wal::{
     self, Block, DeleteBlock, UpdateSeriesKeysBlock, WalDecoder, WalManager, WalTask,
 };
 use crate::{
-    file_utils, Engine, Error, SnapshotFileMeta, TseriesFamilyId,
-    UpdateSetValue, VnodeSnapshot,
+    file_utils, Engine, Error, SnapshotFileMeta, TseriesFamilyId, UpdateSetValue, VnodeSnapshot,
 };
 
 // TODO: A small summay channel capacity can cause a block

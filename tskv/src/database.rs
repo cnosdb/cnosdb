@@ -3,7 +3,6 @@ use std::mem::size_of;
 use std::sync::Arc;
 
 use flatbuffers::{ForwardsUOffset, Vector};
-use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
@@ -189,6 +188,9 @@ impl Database {
             ),
         };
 
+        let cache =
+            cache::ShardedAsyncCache::create_lru_sharded_cache(self.opt.storage.max_cached_readers);
+
         let ver = Arc::new(Version::new(
             tsf_id,
             self.owner.clone(),
@@ -196,9 +198,7 @@ impl Database {
             seq_no,
             LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone()),
             i64::MIN,
-            Arc::new(ShardedCache::with_capacity(
-                self.opt.storage.max_cached_readers,
-            )),
+            cache.into(),
         ));
 
         let tf = self.tsf_factory.create_tsf(
