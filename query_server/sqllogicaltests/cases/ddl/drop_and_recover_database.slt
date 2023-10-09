@@ -31,10 +31,10 @@ statement ok
 drop database db_delay after '3m';
 
 # check resource status
-query T
-select name,type,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
+query 
+select name,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
 ----
-cnosdb/db_delay Database Drop Schedule
+cnosdb/db_delay DropDatabase Schedule
 
 # check is hidden
 query T
@@ -45,10 +45,10 @@ statement ok
 recover database db_delay;
 
 # check
-query T
-select name,type,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
+query 
+select name,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
 ----
-cnosdb/db_delay Database Drop Cancel 
+cnosdb/db_delay DropDatabase Cancel
 
 query T
 select database_name from information_schema.databases where database_name = 'db_delay';;
@@ -65,10 +65,10 @@ drop database db_delay after '1m';
 sleep 2m
 
 # check
-query T
-select name,type,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
+query 
+select name,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
 ----
-cnosdb/db_delay Database Drop Successed
+cnosdb/db_delay DropDatabase Successed
 
 query T
 select database_name from information_schema.databases where database_name = 'db_delay';;
