@@ -471,7 +471,7 @@ pub mod flush_tests {
     use crate::tseries_family::{LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_reader_tests::read_and_check;
-    use crate::tsm::{DataBlock, TsmReader};
+    use crate::tsm::{DataBlock, DataBlockCache, TsmReader};
 
     pub fn default_table_schema(ids: Vec<ColumnId>) -> TskvTableSchema {
         let fields = ids
@@ -534,6 +534,7 @@ pub mod flush_tests {
             LevelInfo::init_levels(database, 0, options.storage),
             test_case.max_level_ts_before,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
+            Arc::new(DataBlockCache::default()),
         ));
         let flush_task = FlushTask::new(
             ts_family_id,
@@ -586,7 +587,7 @@ pub mod flush_tests {
             } else {
                 file_utils::make_tsm_file(&tsm_dir, cm.file_id)
             };
-            let tsm_reader = TsmReader::open(file_path).await.unwrap();
+            let tsm_reader = TsmReader::open(file_path, None).await.unwrap();
             read_and_check(&tsm_reader, &test_case.expected_data[cm.level as usize][i])
                 .await
                 .unwrap();
@@ -768,13 +769,13 @@ pub mod flush_tests {
         assert_eq!(compact_metas[1].0.level, 1);
 
         let delta_file_name = file_utils::make_delta_file(&delta_dir, compact_metas[0].0.file_id);
-        let delta_reader = TsmReader::open(delta_file_name).await.unwrap();
+        let delta_reader = TsmReader::open(delta_file_name, None).await.unwrap();
         read_and_check(&delta_reader, &expected_delta_data)
             .await
             .unwrap();
 
         let tsm_file_name = file_utils::make_tsm_file(&tsm_dir, compact_metas[1].0.file_id);
-        let tsm_reader = TsmReader::open(tsm_file_name).await.unwrap();
+        let tsm_reader = TsmReader::open(tsm_file_name, None).await.unwrap();
         read_and_check(&tsm_reader, &expected_tsm_data)
             .await
             .unwrap();

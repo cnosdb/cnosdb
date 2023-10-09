@@ -579,7 +579,7 @@ pub mod tsm_writer_tests {
         let tsm_file = make_tsm_file(TEST_PATH, 0);
         write_to_tsm(&tsm_file, &data).await.unwrap();
 
-        let reader = TsmReader::open(tsm_file).await.unwrap();
+        let reader = TsmReader::open(tsm_file, None).await.unwrap();
         read_and_check(&reader, &data).await.unwrap();
     }
 
@@ -609,7 +609,7 @@ pub mod tsm_writer_tests {
         let tsm_file = make_tsm_file(TEST_PATH, 1);
         write_to_tsm(&tsm_file, &data).await.unwrap();
 
-        let reader = TsmReader::open(tsm_file).await.unwrap();
+        let reader = TsmReader::open(tsm_file, None).await.unwrap();
         read_and_check(&reader, &data).await.unwrap();
     }
 }

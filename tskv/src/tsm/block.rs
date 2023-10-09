@@ -12,11 +12,23 @@ use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
     get_u64_codec, DataBlockEncoding,
 };
+use crate::ColumnFileId;
 
 pub trait ByTimeRange {
     fn time_range(&self) -> Option<TimeRange>;
     fn time_range_by_range(&self, start: usize, end: usize) -> TimeRange;
     fn exclude(&mut self, time_range: &TimeRange);
+}
+
+#[derive(Debug, Hash, Eq, PartialEq)]
+pub struct DataBlockId {
+    file_id: ColumnFileId,
+    offset: u64,
+}
+impl DataBlockId {
+    pub fn new(file_id: ColumnFileId, offset: u64) -> Self {
+        Self { file_id, offset }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -912,7 +912,7 @@ pub mod test {
     use crate::summary::VersionEdit;
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::{self, DataBlock, TsmReader, TsmTombstone};
+    use crate::tsm::{self, DataBlock, DataBlockCache, TsmReader, TsmTombstone};
     use crate::{file_utils, ColumnFileId};
 
     pub(crate) async fn write_data_blocks_to_column_file(
@@ -951,7 +951,7 @@ pub mod test {
     async fn read_data_blocks_from_column_file(
         path: impl AsRef<Path>,
     ) -> HashMap<FieldId, Vec<DataBlock>> {
-        let tsm_reader = TsmReader::open(path).await.unwrap();
+        let tsm_reader = TsmReader::open(path, None).await.unwrap();
         let mut data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in tsm_reader.index_iterator() {
             let field_id = idx.field_id();
@@ -1021,6 +1021,7 @@ pub mod test {
             LevelInfo::init_levels(database.clone(), 0, opt.storage.clone()),
             1000,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
+            Arc::new(DataBlockCache::default()),
         ));
         let compact_req = CompactReq {
             ts_family_id: 1,

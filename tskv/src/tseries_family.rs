@@ -27,7 +27,7 @@ use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tsm::{TsmReader, TsmTombstone};
+use crate::tsm::{DataBlockCache, TsmReader, TsmTombstone};
 use crate::Error::CommonError;
 use crate::{ColumnFileId, LevelId, Options, TseriesFamilyId};
 
@@ -313,7 +313,7 @@ impl LevelInfo {
                 continue;
             }
 
-            let tsm_reader = match TsmReader::open(file.file_path()).await {
+            let tsm_reader = match TsmReader::open(file.file_path(), None).await {
                 Ok(tr) => tr,
                 Err(e) => {
                     error!("failed to load tsm reader, in case {:?}", e);
@@ -371,6 +371,7 @@ pub struct Version {
     max_level_ts: i64,
     levels_info: [LevelInfo; 5],
     tsm_reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
+    data_block_cache: Arc<DataBlockCache>,
 }
 
 impl Version {
@@ -383,6 +384,7 @@ impl Version {
         levels_info: [LevelInfo; 5],
         max_level_ts: i64,
         tsm_reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
+        data_block_cache: Arc<DataBlockCache>,
     ) -> Self {
         Self {
             ts_family_id,
@@ -392,6 +394,7 @@ impl Version {
             max_level_ts,
             levels_info,
             tsm_reader_cache,
+            data_block_cache,
         }
     }
 
@@ -450,6 +453,7 @@ impl Version {
             max_level_ts: self.max_level_ts,
             levels_info: new_levels,
             tsm_reader_cache: self.tsm_reader_cache.clone(),
+            data_block_cache: self.data_block_cache.clone(),
         };
         new_version.update_max_level_ts();
         new_version
@@ -517,7 +521,9 @@ impl Version {
             None => match self.tsm_reader_cache.get(&path).await {
                 Some(val) => val,
                 None => {
-                    let tsm_reader = Arc::new(TsmReader::open(&path).await?);
+                    let tsm_reader = Arc::new(
+                        TsmReader::open(&path, Some(self.data_block_cache.clone())).await?,
+                    );
                     self.tsm_reader_cache.insert(path, tsm_reader.clone()).await;
                     tsm_reader
                 }
@@ -1170,7 +1176,7 @@ pub mod test_tseries_family {
     use crate::memcache::{FieldVal, MemCache, RowData, RowGroup};
     use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
     use crate::tseries_family::{TimeRange, TseriesFamily, Version};
-    use crate::tsm::TsmTombstone;
+    use crate::tsm::{DataBlockCache, TsmTombstone};
     use crate::version_set::VersionSet;
     use crate::TseriesFamilyId;
 
@@ -1241,6 +1247,7 @@ pub mod test_tseries_family {
             levels,
             3100,
             tsm_reader_cache,
+            Arc::new(DataBlockCache::default()),
         );
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
@@ -1336,8 +1343,16 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 4, 1, opt.storage.clone()),
         ];
         let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
-        #[rustfmt::skip]
-            let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
+        let version = Version::new(
+            1,
+            database,
+            opt.storage.clone(),
+            1,
+            levels,
+            3150,
+            tsm_reader_cache,
+            Arc::new(DataBlockCache::default()),
+        );
 
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
@@ -1429,6 +1444,7 @@ pub mod test_tseries_family {
             levels,
             max_level_ts,
             tsm_reader_cache,
+            Arc::new(DataBlockCache::default()),
         )
     }
 
@@ -1456,6 +1472,7 @@ pub mod test_tseries_family {
                 LevelInfo::init_levels(database, 0, opt.storage.clone()),
                 0,
                 Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
+                Arc::new(DataBlockCache::default()),
             )),
             opt.cache.clone(),
             opt.storage.clone(),

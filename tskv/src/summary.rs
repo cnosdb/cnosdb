@@ -25,7 +25,7 @@ use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
-use crate::tsm::TsmReader;
+use crate::tsm::{DataBlockCache, TsmReader};
 use crate::version_set::VersionSet;
 use crate::{byte_utils, file_utils, ColumnFileId, LevelId, TseriesFamilyId};
 
@@ -473,12 +473,19 @@ impl Summary {
             let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(
                 opt.storage.max_cached_readers,
             ));
+            let data_block_cache = Arc::new(DataBlockCache::create(
+                &metrics_register,
+                &database,
+                tsf_id,
+                &opt.storage,
+            ));
+
             let weak_tsm_reader_cache = Arc::downgrade(&tsm_reader_cache);
             let mut levels = LevelInfo::init_levels(database.clone(), tsf_id, opt.storage.clone());
             for meta in files.into_values() {
                 let field_filter = if load_field_filter {
                     let tsm_path = meta.file_path(opt.storage.as_ref(), &database, tsf_id);
-                    let tsm_reader = TsmReader::open(tsm_path).await?;
+                    let tsm_reader = TsmReader::open(tsm_path, None).await?;
                     tsm_reader.bloom_filter()
                 } else {
                     Arc::new(BloomFilter::default())
@@ -497,6 +504,7 @@ impl Summary {
                 levels,
                 max_level_ts,
                 tsm_reader_cache,
+                data_block_cache,
             );
             versions.insert(tsf_id, Arc::new(ver));
         }

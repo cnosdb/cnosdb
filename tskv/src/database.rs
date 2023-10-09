@@ -26,6 +26,7 @@ use crate::memcache::{RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
+use crate::tsm::DataBlockCache;
 use crate::Error::{self};
 use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
@@ -156,7 +157,7 @@ impl Database {
                     let file_path = f
                         .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
                         .await?;
-                    let file_reader = crate::tsm::TsmReader::open(file_path).await?;
+                    let file_reader = crate::tsm::TsmReader::open(file_path, None).await?;
                     file_metas.insert(new_file_id, file_reader.bloom_filter());
                 }
                 for f in ve.del_files.iter_mut() {
@@ -190,6 +191,12 @@ impl Database {
 
         let cache =
             cache::ShardedAsyncCache::create_lru_sharded_cache(self.opt.storage.max_cached_readers);
+        let data_block_cache = Arc::new(DataBlockCache::create(
+            &self.metrics_register,
+            &self.owner,
+            tsf_id,
+            &self.opt.storage,
+        ));
 
         let ver = Arc::new(Version::new(
             tsf_id,
@@ -199,6 +206,7 @@ impl Database {
             LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone()),
             i64::MIN,
             cache.into(),
+            data_block_cache,
         ));
 
         let tf = self.tsf_factory.create_tsf(

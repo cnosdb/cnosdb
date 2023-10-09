@@ -375,6 +375,7 @@ mod test {
             level_infos,
             1000,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
+            Arc::new(Default::default()),
         ));
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
         let (compactt_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
