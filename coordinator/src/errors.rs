@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::io;
 
 use datafusion::arrow::error::ArrowError;
+use datafusion::error::DataFusionError;
 use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
@@ -28,6 +29,10 @@ pub enum CoordinatorError {
         source: ArrowError,
     },
 
+    DataFusionError {
+        source: DataFusionError,
+    },
+
     ReplicatError {
         source: replication::errors::ReplicationError,
     },
@@ -48,6 +53,11 @@ pub enum CoordinatorError {
     #[error_code(code = 3)]
     InvalidSerdeMsg {
         err: String,
+    },
+
+    #[snafu(display("Fails to serialize or deserialize: {source}"))]
+    BincodeSerde {
+        source: bincode::Error,
     },
 
     #[snafu(display("Fails to send to channel: {}", msg))]
@@ -279,6 +289,21 @@ impl From<ArrowError> for CoordinatorError {
 
             other => CoordinatorError::ArrowError { source: other },
         }
+    }
+}
+
+impl From<DataFusionError> for CoordinatorError {
+    fn from(err: DataFusionError) -> Self {
+        match err {
+            DataFusionError::ArrowError(e) => e.into(),
+            other => CoordinatorError::DataFusionError { source: other },
+        }
+    }
+}
+
+impl From<bincode::Error> for CoordinatorError {
+    fn from(err: bincode::Error) -> Self {
+        Self::BincodeSerde { source: err }
     }
 }
 

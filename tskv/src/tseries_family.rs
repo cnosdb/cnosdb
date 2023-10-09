@@ -926,6 +926,17 @@ impl TseriesFamily {
         }
     }
 
+    pub fn delete_series_by_time_ranges(&self, sids: &[SeriesId], time_ranges: &TimeRanges) {
+        self.mut_cache
+            .read()
+            .delete_series_by_time_ranges(sids, time_ranges);
+        for memcache in self.immut_cache.iter() {
+            memcache
+                .read()
+                .delete_series_by_time_ranges(sids, time_ranges);
+        }
+    }
+
     pub fn schedule_compaction(&self, runtime: Arc<Runtime>) {
         let tsf_id = self.tf_id;
         let compact_trigger_cold_duration = self.storage_opt.compact_trigger_cold_duration;
@@ -1063,6 +1074,7 @@ pub mod test_tseries_family {
     use meta::model::meta_admin::AdminMeta;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
+    use models::predicate::domain::TimeRanges;
     use models::schema::{DatabaseSchema, TenantOptions};
     use models::Timestamp;
     use parking_lot::RwLock;
@@ -1392,12 +1404,12 @@ pub mod test_tseries_family {
             .read()
             .read_field_data(0, |_| true, |_| true, |d| cached_data.push(d));
         assert_eq!(cached_data.len(), 1);
-        tsf.delete_series(
+        tsf.delete_series_by_time_ranges(
             &[0],
-            &TimeRange {
+            &TimeRanges::new(vec![TimeRange {
                 min_ts: 0,
                 max_ts: 200,
-            },
+            }]),
         );
         cached_data.clear();
         tsf.mut_cache

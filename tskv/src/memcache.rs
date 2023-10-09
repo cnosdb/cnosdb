@@ -7,7 +7,7 @@ use std::sync::Arc;
 use flatbuffers::{ForwardsUOffset, Vector};
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
-use models::predicate::domain::TimeRange;
+use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{
     timestamp_convert, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
 };
@@ -373,6 +373,23 @@ impl SeriesData {
         }
     }
 
+    pub fn delete_by_time_ranges(&mut self, time_ranges: &TimeRanges) {
+        for time_range in time_ranges.time_ranges() {
+            if time_range.max_ts < self.range.min_ts || time_range.min_ts > self.range.max_ts {
+                continue;
+            }
+
+            for item in self.groups.iter_mut() {
+                item.rows = item
+                    .rows
+                    .iter()
+                    .filter(|row| row.ts < time_range.min_ts || row.ts > time_range.max_ts)
+                    .cloned()
+                    .collect();
+            }
+        }
+    }
+
     pub fn read_data(
         &self,
         column_id: ColumnId,
@@ -571,6 +588,16 @@ impl MemCache {
             let series_data = self.partions[index].read().get(sid).cloned();
             if let Some(series_data) = series_data {
                 series_data.write().delete_series(range);
+            }
+        }
+    }
+
+    pub fn delete_series_by_time_ranges(&self, sids: &[SeriesId], time_ranges: &TimeRanges) {
+        for sid in sids {
+            let index = (*sid as usize) % self.part_count;
+            let series_data = self.partions[index].read().get(sid).cloned();
+            if let Some(series_data) = series_data {
+                series_data.write().delete_by_time_ranges(time_ranges);
             }
         }
     }

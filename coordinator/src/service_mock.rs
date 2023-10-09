@@ -10,7 +10,7 @@ use meta::model::meta_tenant::TenantMeta;
 use meta::model::{MetaClientRef, MetaRef};
 use models::meta_data::{ReplicationSet, VnodeInfo, VnodeStatus};
 use models::object_reference::ResolvedTable;
-use models::predicate::domain::ResolvedPredicateRef;
+use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef};
 use models::schema::{Precision, TskvTableSchemaRef};
 use protocol_parser::Line;
 use protos::kv_service::{AdminCommandRequest, UpdateSetValue};
@@ -192,6 +192,16 @@ impl Coordinator for MockCoordinator {
         _span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         todo!("tag_scan")
+    }
+
+    async fn delete_from_table(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        predicate: &ResolvedPredicate,
+    ) -> CoordinatorResult<()> {
+        todo!("delete_from_table")
     }
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()> {

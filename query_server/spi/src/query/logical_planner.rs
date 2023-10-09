@@ -77,6 +77,8 @@ pub enum Plan {
     Query(QueryPlan),
     /// Query plan
     DDL(DDLPlan),
+    /// Ext DML plan
+    DML(DMLPlan),
     /// Query plan
     SYSTEM(SYSPlan),
 }
@@ -86,6 +88,7 @@ impl Plan {
         match self {
             Self::Query(p) => SchemaRef::from(p.df_plan.schema().as_ref()),
             Self::DDL(p) => p.schema(),
+            Self::DML(p) => p.schema(),
             Self::SYSTEM(p) => p.schema(),
         }
     }
@@ -188,6 +191,23 @@ pub struct CopyVnode {
 #[derive(Debug, Clone)]
 pub struct DropVnode {
     pub vnode_id: VnodeId,
+}
+
+#[derive(Debug, Clone)]
+pub enum DMLPlan {
+    DeleteFromTable(DeleteFromTable),
+}
+
+impl DMLPlan {
+    pub fn schema(&self) -> SchemaRef {
+        Arc::new(Schema::empty())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteFromTable {
+    pub table_name: ResolvedTable,
+    pub selection: Option<Expr>,
 }
 
 #[derive(Debug, Clone)]

@@ -19,6 +19,7 @@ protocol_parser = { path = "../common/protocol_parser" }
 openraft = { workspace = true, features = ["serde"] }
 walkdir = { workspace = true }
 datafusion = { workspace = true }
+datafusion-proto = { workspace = true }
 snafu = { workspace = true }
 flatbuffers = { workspace = true }
 async-trait = { workspace = true }

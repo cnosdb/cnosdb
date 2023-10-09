@@ -12,7 +12,7 @@ use futures::Stream;
 use meta::model::{MetaClientRef, MetaRef};
 use models::meta_data::{ReplicaAllInfo, ReplicationSet, ReplicationSetId, VnodeAllInfo};
 use models::object_reference::ResolvedTable;
-use models::predicate::domain::ResolvedPredicateRef;
+use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef};
 use models::schema::{Precision, TskvTableSchemaRef};
 use protocol_parser::Line;
 use protos::kv_service::{AdminCommandRequest, UpdateSetValue};
@@ -128,6 +128,14 @@ pub trait Coordinator: Send + Sync {
         option: QueryOption,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream>;
+
+    async fn delete_from_table(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        predicate: &ResolvedPredicate,
+    ) -> CoordinatorResult<()>;
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()>;
 
