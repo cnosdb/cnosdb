@@ -203,6 +203,11 @@ impl Database {
         if let Some(tsf) = self.ts_families.get(&tsf_id) {
             return Ok(tsf.clone());
         }
+        schedule_vnode_compaction(
+            self.runtime.clone(),
+            tf.clone(),
+            ctx.compact_task_sender.clone(),
+        );
         self.ts_families.insert(tsf_id, tf.clone());
 
         let (task_state_sender, _task_state_receiver) = oneshot::channel();

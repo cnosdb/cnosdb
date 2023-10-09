@@ -1052,6 +1052,7 @@ impl TseriesFamily {
     }
 
     pub fn close(&self) {
+        info!("Closing vnode {}", self.tf_id);
         self.cancellation_token.cancel();
     }
 
@@ -1162,7 +1163,10 @@ pub fn schedule_vnode_compaction(
         let cancellation_token = vnode_rlock.cancellation_token.clone();
         drop(vnode_rlock);
 
-        if compact_trigger_cold_duration == Duration::ZERO {} else {
+        if compact_trigger_cold_duration == Duration::ZERO {
+            info!("Schedule vnode compaction for {tsf_id}: compact_trigger_cold_duration is 0 so won't run this job");
+        } else {
+            info!("Schedule vnode compaction for {tsf_id}: checking to compact every 10 seconds.");
             let mut check_interval = tokio::time::interval(Duration::from_secs(10));
             check_interval.tick().await;
 

@@ -1170,12 +1170,12 @@ impl WriterWrapper {
     fn warp_write_tsm_result<T: Default>(write_result: WriteTsmResult<T>) -> Result<T> {
         match write_result {
             Ok(size) => Ok(size),
-            Err(tsm::WriteTsmError::WriteIO { source }) => {
+            Err(WriteTsmError::WriteIO { source }) => {
                 // TODO try re-run compaction on other time.
                 error!("Failed compaction: IO error when write tsm: {:?}", source);
                 Err(Error::IO { source })
             }
-            Err(tsm::WriteTsmError::Encode { source }) => {
+            Err(WriteTsmError::Encode { source }) => {
                 // TODO try re-run compaction on other time.
                 error!(
                     "Failed compaction: encoding error when write tsm: {:?}",
@@ -1183,7 +1183,7 @@ impl WriterWrapper {
                 );
                 Err(Error::Encode { source })
             }
-            Err(tsm::WriteTsmError::Finished { path }) => {
+            Err(WriteTsmError::Finished { path }) => {
                 error!(
                     "Failed compaction: Trying write already finished tsm file: '{}'",
                     path.display()
@@ -1192,7 +1192,7 @@ impl WriterWrapper {
                     source: tsm::WriteTsmError::Finished { path },
                 })
             }
-            Err(tsm::WriteTsmError::MaxFileSizeExceed { .. }) => {
+            Err(WriteTsmError::MaxFileSizeExceed { .. }) => {
                 // This error should be already handled before, ignore.
                 error!("WriteTsmError::MaxFileSizeExceed should be handled before.");
                 Ok(T::default())
