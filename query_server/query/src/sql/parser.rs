@@ -1655,8 +1655,8 @@ mod tests {
     use datafusion::sql::sqlparser::ast::{
         ColumnDef, Ident, ObjectName, SetExpr, Statement, TableFactor, TimezoneInfo, Value,
     };
-    use spi::query::ast::{AlterTable, DropDatabaseObject, ExtStatement, ShowStreams, UriLocation};
-    use spi::query::logical_planner::{DatabaseObjectType, TenantObjectType};
+    use spi::query::ast::{AlterTable, ExtStatement, ShowStreams, UriLocation};
+    use spi::query::logical_planner::TenantObjectType;
 
     use super::*;
 
@@ -1682,70 +1682,6 @@ mod tests {
 
     #[test]
     fn test_drop() {
-        let sql = "drop table test_tb";
-        let statements = ExtParser::parse_sql(sql).unwrap();
-        assert_eq!(statements.len(), 1);
-        match &statements[0] {
-            ExtStatement::DropDatabaseObject(DropDatabaseObject {
-                object_name,
-                if_exist,
-                obj_type,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_tb".to_string());
-                assert_eq!(if_exist.to_string(), "false".to_string());
-                assert_eq!(obj_type, &DatabaseObjectType::Table);
-            }
-            _ => panic!("failed"),
-        }
-
-        let sql = "drop table if exists test_tb";
-        let statements = ExtParser::parse_sql(sql).unwrap();
-        assert_eq!(statements.len(), 1);
-        match &statements[0] {
-            ExtStatement::DropDatabaseObject(DropDatabaseObject {
-                object_name,
-                if_exist,
-                obj_type,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_tb".to_string());
-                assert_eq!(if_exist.to_string(), "true".to_string());
-                assert_eq!(obj_type, &DatabaseObjectType::Table);
-            }
-            _ => panic!("failed"),
-        }
-
-        let sql = "drop table test_tb after '1d'";
-        let statements = ExtParser::parse_sql(sql).unwrap();
-        assert_eq!(statements.len(), 1);
-        match &statements[0] {
-            ExtStatement::DropDatabaseObject(DropDatabaseObject {
-                object_name,
-                if_exist,
-                obj_type,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_tb".to_string());
-                assert_eq!(if_exist.to_string(), "false".to_string());
-                assert_eq!(obj_type, &DatabaseObjectType::Table);
-            }
-            _ => panic!("failed"),
-        }
-
-        let sql = "drop table if exists test_tb after '1d'";
-        let statements = ExtParser::parse_sql(sql).unwrap();
-        assert_eq!(statements.len(), 1);
-        match &statements[0] {
-            ExtStatement::DropDatabaseObject(DropDatabaseObject {
-                object_name,
-                if_exist,
-                obj_type,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_tb".to_string());
-                assert_eq!(if_exist.to_string(), "true".to_string());
-                assert_eq!(obj_type, &DatabaseObjectType::Table);
-            }
-            _ => panic!("failed"),
-        }
-
         let sql = "drop database if exists test_db";
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);

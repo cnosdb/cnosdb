@@ -38,5 +38,5 @@ select * from cluster_schema.users where user_name = 'test_alter_options_u';
 test_alter_options_u false {"hash_password":"*****","must_change_password":true,"comment":"ooo ooo","granted_admin":false}
 
 # table not found
-statement ok
+statement error .*Table not found: \\"a_non_existent_table\\".*
 drop table a_non_existent_table;

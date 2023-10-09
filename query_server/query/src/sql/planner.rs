@@ -2791,7 +2791,7 @@ mod tests {
         if let Plan::DDL(DDLPlan::CreateDatabase(create)) = plan.plan {
             let ans = format!("{:?}", create);
             println!("{ans}");
-            let expected = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Some(Duration { time_num: 10, unit: Day }), shard_num: Some(5), vnode_duration: Some(Duration { time_num: 3, unit: Day }), replica: Some(10), precision: Some(US) } }"#;
+            let expected = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Some(Duration { time_num: 10, unit: Day }), shard_num: Some(5), vnode_duration: Some(Duration { time_num: 3, unit: Day }), replica: Some(10), precision: Some(US), db_is_hidden: false } }"#;
             assert_eq!(ans, expected);
         } else {
             panic!("expected create table plan")
