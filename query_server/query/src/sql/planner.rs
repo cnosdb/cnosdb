@@ -36,8 +36,9 @@ use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::{object_name_to_table_reference, PlannerContext, SqlToRel};
 use datafusion::sql::sqlparser::ast::{
-    Assignment, DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, OrderByExpr,
-    Query, SqlOption, Statement, TableAlias, TableFactor, TableWithJoins, TimezoneInfo,
+    Assignment, DataType as SQLDataType, Expr as SQLExpr, Expr as ASTExpr, Ident, ObjectName,
+    Offset, OrderByExpr, Query, SqlOption, Statement, TableAlias, TableFactor, TableWithJoins,
+    TimezoneInfo,
 };
 use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::sql::TableReference;
@@ -77,10 +78,11 @@ use spi::query::logical_planner::{
     AlterTableAction, AlterTenant, AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser,
     AlterUser, AlterUserAction, ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder,
     CopyVnode, CreateDatabase, CreateRole, CreateStreamTable, CreateTable, CreateTenant,
-    CreateUser, DDLPlan, DatabaseObjectType, DropDatabaseObject, DropGlobalObject,
-    DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
-    GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, RecoverDatabase,
-    RecoverTenant, RenameColumnAction, SYSPlan, TenantObjectType, TENANT_OPTION_LIMITER,
+    CreateUser, DDLPlan, DMLPlan, DatabaseObjectType, DeleteFromTable, DropDatabaseObject,
+    DropGlobalObject, DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder,
+    GlobalObjectType, GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan,
+    RecoverDatabase, RecoverTenant, RenameColumnAction, SYSPlan, TenantObjectType,
+    TENANT_OPTION_LIMITER,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -237,6 +239,34 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             } => {
                 self.insert_to_plan(sql_object_name, sql_column_names, source, session)
                     .await
+            }
+            Statement::Delete {
+                tables,    // Not implemented by CnosDB
+                from,      // FROM <table>, always not empty
+                using,     // Not implemented by CnosDB
+                selection, // WHERE <selection>
+                returning, // Not implemented by CnosDB
+            } => {
+                // DELETE <tables>, not implemented
+                if !tables.is_empty() {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete tables".to_string(),
+                    });
+                }
+                // USING, not implemented
+                if using.is_some() {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete with USING".to_string(),
+                    });
+                }
+                // RETURNING, not implemented
+                if returning.is_some() {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete with RETURNING".to_string(),
+                    });
+                }
+
+                self.delete_to_plan(session, from, selection)
             }
             Statement::Kill { id, .. } => {
                 let plan = Plan::SYSTEM(SYSPlan::KillQuery(id.into()));
@@ -438,6 +468,91 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             self.schema_provider.reset_access_databases(),
         );
         write_privileges.append(&mut read_privileges);
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: write_privileges,
+        })
+    }
+
+    fn delete_to_plan(
+        &self,
+        session: &SessionCtx,
+        mut tables: Vec<TableWithJoins>,
+        selections: Option<SQLExpr>,
+    ) -> Result<PlanWithPrivileges> {
+        // FROM <table>
+        let table_name = if tables.len() > 1 {
+            return Err(QueryError::NotImplemented {
+                err: "Delete from multi-table".to_string(),
+            });
+        } else {
+            let table = tables.remove(0);
+            match table.relation {
+                TableFactor::Table { name, .. } => name,
+                TableFactor::Derived { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from derived table".to_string(),
+                    });
+                }
+                TableFactor::TableFunction { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from table function".to_string(),
+                    });
+                }
+                TableFactor::UNNEST { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from UNNEST table".to_string(),
+                    });
+                }
+                TableFactor::NestedJoin { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from nested join table".to_string(),
+                    });
+                }
+                TableFactor::Pivot { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from pivot table".to_string(),
+                    });
+                }
+            }
+        };
+        let table_ref = normalize_sql_object_name(table_name.clone())?;
+        let (source_plan, _) = self.create_table_relation(table_ref, None, &Default::default())?;
+
+        // WHERE <selection>
+        let selection = match selections {
+            Some(expr) => {
+                let sel = self.df_planner.sql_to_expr(
+                    expr,
+                    source_plan.schema(),
+                    &mut Default::default(),
+                )?;
+                trace::info!("Delete: WHERE: {sel}");
+                Some(sel)
+            }
+            None => None,
+        };
+
+        let table_name = object_name_to_resolved_table(session, table_name)?;
+        let plan = Plan::DML(DMLPlan::DeleteFromTable(DeleteFromTable {
+            table_name,
+            selection,
+        }));
+        // TODO(zipper): Remove this plan replacement that only shows statement.
+        // let plan = Plan::SYSTEM(SYSPlan::ShowQueries);
+
+        let mut read_privileges = databases_privileges(
+            DatabasePrivilege::Read,
+            *session.tenant_id(),
+            self.schema_provider.reset_access_databases(),
+        );
+        let mut write_privileges = databases_privileges(
+            DatabasePrivilege::Write,
+            *session.tenant_id(),
+            self.schema_provider.reset_access_databases(),
+        );
+        write_privileges.append(&mut read_privileges);
+
         Ok(PlanWithPrivileges {
             plan,
             privileges: write_privileges,

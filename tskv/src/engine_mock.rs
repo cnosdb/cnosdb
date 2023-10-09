@@ -6,9 +6,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::VnodeId;
-use models::predicate::domain::{ColumnDomains, TimeRange};
+use models::predicate::domain::{ColumnDomains, ResolvedPredicate};
 use models::schema::{Precision, TableColumn};
-use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue};
+use models::{SeriesId, SeriesKey, TagKey, TagValue};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
 use trace::{debug, SpanContext};
@@ -113,13 +113,12 @@ impl Engine for MockEngine {
         Ok(())
     }
 
-    async fn delete_series(
+    async fn delete_from_table(
         &self,
         tenant: &str,
         database: &str,
-        series_ids: &[SeriesId],
-        field_ids: &[ColumnId],
-        time_range: &TimeRange,
+        table: &str,
+        predicate: &ResolvedPredicate,
     ) -> Result<()> {
         todo!()
     }

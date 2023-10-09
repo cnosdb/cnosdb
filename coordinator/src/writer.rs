@@ -6,10 +6,11 @@ use std::time::Duration;
 
 use meta::error::MetaError;
 use meta::model::MetaRef;
+use models::predicate::domain::ResolvedPredicate;
 use models::schema::Precision;
 use models::utils::{now_timestamp_millis, now_timestamp_nanos};
 use protos::kv_service::tskv_service_client::TskvServiceClient;
-use protos::kv_service::{Meta, WritePointsRequest, WriteVnodeRequest};
+use protos::kv_service::{DeleteFromTableRequest, Meta, WritePointsRequest, WriteVnodeRequest};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tonic::transport::Channel;
@@ -225,6 +226,111 @@ impl PointWriter {
 
         if let Some(kv_inst) = self.kv_inst.clone() {
             let _ = kv_inst.write(span_ctx, vnode_id, precision, req).await?;
+            Ok(())
+        } else {
+            Err(CoordinatorError::KvInstanceNotFound { node_id: 0 })
+        }
+    }
+
+    pub(crate) async fn delete_from_table_on_node(
+        &self,
+        node_id: u64,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        predicate: &ResolvedPredicate,
+    ) -> CoordinatorResult<()> {
+        if node_id == self.node_id && self.kv_inst.is_some() {
+            let result = self
+                .delete_from_table_on_local_node(tenant, database, table, predicate)
+                .await;
+
+            return result;
+        }
+
+        let result = self
+            .delete_from_table_on_remote_node(node_id, tenant, database, table, predicate)
+            .await;
+
+        if let Err(ref err) = result {
+            let meta_retry = MetaError::Retry {
+                msg: "default".to_string(),
+            };
+            let tskv_memory = tskv::Error::MemoryExhausted;
+            if matches!(*err, CoordinatorError::FailoverNode { .. })
+                || err.error_code().to_string() == meta_retry.error_code().to_string()
+                || err.error_code().to_string() == tskv_memory.error_code().to_string()
+            {
+
+                // TODO(zipper): handle errors.
+            }
+        }
+
+        result
+    }
+
+    pub async fn delete_from_table_on_remote_node(
+        &self,
+        node_id: u64,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        predicate: &ResolvedPredicate,
+    ) -> CoordinatorResult<()> {
+        let predicate_bytes = bincode::serialize(predicate)?;
+
+        let channel = self
+            .meta_manager
+            .get_node_conn(node_id)
+            .await
+            .map_err(|error| CoordinatorError::FailoverNode {
+                id: node_id,
+                error: error.to_string(),
+            })?;
+        let timeout_channel = Timeout::new(channel, Duration::from_millis(self.timeout_ms));
+        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+
+        let cmd = tonic::Request::new(DeleteFromTableRequest {
+            tenant: tenant.to_string(),
+            database: database.to_string(),
+            table: table.to_string(),
+            predicate: predicate_bytes,
+        });
+
+        let begin_time = now_timestamp_millis();
+        let response = client
+            .delete_from_table(cmd)
+            .await
+            .map_err(|err| match err.code() {
+                Code::Internal => CoordinatorError::TskvError { source: err.into() },
+                _ => CoordinatorError::FailoverNode {
+                    id: node_id,
+                    error: format!("{err:?}"),
+                },
+            })?
+            .into_inner();
+
+        let use_time = now_timestamp_millis() - begin_time;
+        if use_time > 200 {
+            debug!("delete on node:{}, use time too long {}", node_id, use_time)
+        }
+        status_response_to_result(&response)
+    }
+
+    async fn delete_from_table_on_local_node(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        predicate: &ResolvedPredicate,
+    ) -> CoordinatorResult<()> {
+        if let Some(kv_inst) = self.kv_inst.clone() {
+            if let Err(e) = kv_inst
+                .delete_from_table(tenant, database, table, predicate)
+                .await
+            {
+                debug!("Failed to run delete_from_table: {e}");
+            }
             Ok(())
         } else {
             Err(CoordinatorError::KvInstanceNotFound { node_id: 0 })

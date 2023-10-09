@@ -26,7 +26,7 @@ use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId, VnodeStatus};
 use models::object_reference::ResolvedTable;
-use models::predicate::domain::{ResolvedPredicateRef, TimeRange, TimeRanges};
+use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges};
 use models::schema::{
     timestamp_convert, ColumnType, Precision, TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
 };
@@ -775,6 +775,35 @@ impl Coordinator for CoordService {
             Box::pin(checker),
             &self.metrics,
         )))
+    }
+
+    async fn delete_from_table(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        predicate: &ResolvedPredicate,
+    ) -> CoordinatorResult<()> {
+        let nodes = self.meta.data_nodes().await;
+
+        let now = tokio::time::Instant::now();
+        let mut requests = vec![];
+        for node in nodes.iter() {
+            debug!(
+                "exec delete from {tenant}.{database}.{table} WHERE {predicate:?} on node:{node:?}, now:{now:?}",
+            );
+
+            requests.push(
+                self.point_writer
+                    .delete_from_table_on_node(node.id, tenant, database, table, predicate),
+            );
+        }
+
+        for result in futures::future::join_all(requests).await {
+            debug!("exec delete from {tenant}.{database}.{table} WHERE {predicate:?}, now:{now:?}, elapsed:{}ms, result:{result:?}", now.elapsed().as_millis());
+            result?
+        }
+        Ok(())
     }
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()> {

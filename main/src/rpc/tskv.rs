@@ -9,7 +9,7 @@ use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
-use models::predicate::domain::{self, QueryArgs, QueryExpr};
+use models::predicate::domain::{self, QueryArgs, QueryExpr, ResolvedPredicate};
 use models::schema::{Precision, TableColumn};
 use models::{record_batch_encode, SeriesKey};
 use protos::kv_service::tskv_service_server::TskvService;
@@ -634,6 +634,23 @@ impl TskvService for TskvServiceImpl {
         } else {
             self.bytes_response(FAILED_RESPONSE_CODE, vec![])
         }
+    }
+
+    async fn delete_from_table(
+        &self,
+        request: Request<DeleteFromTableRequest>,
+    ) -> Result<Response<StatusResponse>, Status> {
+        let inner = request.into_inner();
+
+        let predicate = match bincode::deserialize::<ResolvedPredicate>(&inner.predicate) {
+            Ok(p) => p,
+            Err(err) => return self.status_response(SUCCESS_RESPONSE_CODE, err.to_string()),
+        };
+        self.kv_inst
+            .delete_from_table(&inner.tenant, &inner.database, &inner.table, &predicate)
+            .await
+            .unwrap();
+        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
     }
 
     async fn fetch_vnode_summary(

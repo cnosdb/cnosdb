@@ -11,7 +11,7 @@ use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::codec::Encoding;
 use models::meta_data::{VnodeId, VnodeStatus};
-use models::predicate::domain::{ColumnDomains, TimeRange};
+use models::predicate::domain::{ColumnDomains, ResolvedPredicate, TimeRange};
 use models::schema::{make_owner, split_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
 use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
@@ -1220,36 +1220,99 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    async fn delete_series(
+    async fn delete_from_table(
         &self,
-        _tenant: &str,
-        _database: &str,
-        _series_ids: &[SeriesId],
-        _field_ids: &[ColumnId],
-        _time_range: &TimeRange,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        predicate: &ResolvedPredicate,
     ) -> Result<()> {
-        // let storage_field_ids: Vec<u64> = series_ids
-        //     .iter()
-        //     .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid, *sid)))
-        //     .collect();
-        // let res = self.version_set.read().get_db(tenant, database);
-        // if let Some(db) = res {
-        //     let readable_db = db.read();
-        //     for (ts_family_id, ts_family) in readable_db.ts_families() {
-        //         // TODO Cancel current and prevent next flush or compaction in TseriesFamily provisionally.
-        //         ts_family
-        //             .write()
-        //             .delete_series(&storage_field_ids, time_range);
+        let database_ref = match self.version_set.read().await.get_db(tenant, database) {
+            Some(db) => db,
+            None => return Ok(()),
+        };
+        let database_rlock = database_ref.read().await;
+        let tenant_database = database_rlock.owner();
+        let db_schemas = database_rlock.get_schemas();
+        let vnodes_map = database_rlock.ts_families().clone();
+        let vnode_indexes_map = database_rlock.ts_indexes();
+        drop(database_rlock);
+        drop(database_ref);
+        let column_ids: Vec<ColumnId> = match db_schemas.get_table_schema_by_meta(table).await? {
+            Some(v) => v.columns().iter().map(|c| c.id).collect(),
+            None => return Ok(()),
+        };
+        let column_ids = Arc::new(column_ids);
+        let table = Arc::new(table.to_string());
 
-        //         let version = ts_family.read().super_version();
-        //         for column_file in version.version.column_files(&storage_field_ids, time_range) {
-        //             self.runtime
-        //                 .block_on(column_file.add_tombstone(&storage_field_ids, time_range))?;
-        //         }
-        //         // TODO Start next flush or compaction.
-        //     }
-        // }
-        Ok(())
+        let tag_domains = Arc::new(predicate.tags_filter().domains().cloned());
+        let time_range = predicate.time_ranges();
+
+        let mut tasks = Vec::with_capacity(vnode_indexes_map.len());
+        for (vnode_id, vnode) in vnodes_map {
+            if let Some(vnode_index) = vnode_indexes_map.get(&vnode_id).cloned() {
+                let db_owner = tenant_database.clone();
+                let table = table.clone();
+                let column_ids = column_ids.clone();
+                let tag_domains = tag_domains.clone();
+                let time_ranges = time_range.clone();
+                let task = self.runtime.spawn(async move {
+                    let series_ids = match tag_domains.as_ref() {
+                        Some(domains) => vnode_index
+                            .get_series_ids_by_domains(table.as_str(), domains)
+                            .await
+                            .context(error::IndexErrSnafu)?,
+                        None => return Ok(()),
+                    };
+                    let vnode = vnode.read().await;
+                    vnode.delete_series_by_time_ranges(&series_ids, time_ranges.as_ref());
+
+                    let field_ids: Vec<u64> = series_ids
+                        .iter()
+                        .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
+                        .collect();
+                    info!(
+                        "Drop table: vnode {vnode_id} deleting {} fields in table: {db_owner}.{table}",
+                        field_ids.len()
+                    );
+
+                    let version = vnode.super_version();
+                    for time_range in time_ranges.time_ranges() {
+                        for column_file in version.version.column_files(&field_ids, time_range) {
+                            column_file.add_tombstone(&field_ids, time_range).await?;
+                        }
+                    }
+                    Result::<()>::Ok(())
+                });
+                tasks.push((vnode_id, task));
+            }
+        }
+        let mut errors = Vec::new();
+        for (vnode_id, task) in tasks {
+            match task.await {
+                Ok(Ok(())) => continue,
+                Ok(Err(e)) => {
+                    trace::error!("Delete on vnode {vnode_id} failed: {e}");
+                    errors.push(e)
+                }
+                Err(e) => {
+                    let message = format!("Delete on vnode {vnode_id} panicked: {e}");
+                    trace::error!("{message}");
+                    errors.push(Error::CommonError { reason: message })
+                }
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            return Err(Error::CommonError {
+                reason: errors
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<String>>()
+                    .join("; "),
+            });
+        }
     }
 
     async fn get_series_id_by_filter(

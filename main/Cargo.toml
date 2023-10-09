@@ -42,6 +42,7 @@ clap = { workspace = true, features = ["derive", "env"] }
 ctrlc = { workspace = true, features = ["termination"] }
 dashmap = { workspace = true }
 datafusion = { workspace = true }
+datafusion-proto = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 lazy_static = { workspace = true }

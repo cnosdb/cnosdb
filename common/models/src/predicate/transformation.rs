@@ -10,6 +10,7 @@ use datafusion::prelude::{Column, Expr};
 use datafusion::scalar::ScalarValue;
 
 use super::domain::{ColumnDomains, Domain, Range};
+use crate::schema::TIME_FIELD_NAME;
 
 type Result<T> = result::Result<T, DataFusionError>;
 
@@ -331,6 +332,215 @@ impl RowExpressionToDomainsVisitor<'_> {
     }
 }
 
+#[derive(Clone, Default)]
+struct DeleteSelectionExpressionToDomainsVisitorContext {
+    is_time_domain_stack: VecDeque<bool>,
+    tag_domain_stack: VecDeque<ColumnDomains<String>>,
+    time_domain_stack: VecDeque<ColumnDomains<String>>,
+}
+
+impl DeleteSelectionExpressionToDomainsVisitorContext {
+    pub fn push_back(&mut self, domain: ColumnDomains<String>, is_time_domain: bool) {
+        self.is_time_domain_stack.push_back(is_time_domain);
+        if is_time_domain {
+            println!("push time {domain}");
+            self.time_domain_stack.push_back(domain);
+        } else {
+            println!("push tag {domain}");
+            self.tag_domain_stack.push_back(domain);
+        }
+    }
+
+    pub fn try_intersect_top2_domains(&mut self) {
+        let domain1_is_time_opt = self.is_time_domain_stack.pop_back();
+        let domain2_is_time_opt = self.is_time_domain_stack.back();
+        match (domain1_is_time_opt, domain2_is_time_opt) {
+            (Some(domain1_is_time), Some(domain2_is_time)) => {
+                if domain1_is_time == *domain2_is_time {
+                    if domain1_is_time {
+                        // Last two is tag domains
+                        let mut domains1 = self.time_domain_stack.pop_back().unwrap();
+                        println!("pop time {domains1}");
+                        let domains2 = self.time_domain_stack.pop_back().unwrap();
+                        println!("pop time {domains2}");
+                        domains1.intersect(&domains2);
+                        println!("push time {domains1}");
+                        self.time_domain_stack.push_back(domains1);
+                    } else {
+                        // Last two is tag domains
+                        let mut domains1 = self.tag_domain_stack.pop_back().unwrap();
+                        println!("pop time {domains1}");
+                        let domains2 = self.tag_domain_stack.pop_back().unwrap();
+                        println!("pop time {domains2}");
+                        domains1.intersect(&domains2);
+                        println!("push tag {domains1}");
+                        self.tag_domain_stack.push_back(domains1);
+                    }
+                }
+            }
+            (Some(t1), None) => self.is_time_domain_stack.push_back(t1),
+            _ => {}
+        }
+    }
+
+    /// Returns two column domains: tag and time.
+    pub fn into_tag_and_time_domains(mut self) -> (ColumnDomains<String>, ColumnDomains<String>) {
+        (
+            self.tag_domain_stack
+                .pop_back()
+                .unwrap_or(ColumnDomains::all()),
+            self.time_domain_stack
+                .pop_back()
+                .unwrap_or(ColumnDomains::all()),
+        )
+    }
+}
+
+/// For DELETE statement only support simple expression
+/// TODO: descript simple expression
+pub struct DeleteSelectionExpressionToDomainsVisitor<'a> {
+    ctx: &'a mut DeleteSelectionExpressionToDomainsVisitorContext,
+}
+
+impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
+    type N = Expr;
+
+    fn pre_visit(&mut self, expr: &Expr) -> Result<VisitRecursion> {
+        // Note: expressions that can be used as and/or child nodes need to be processed.
+        // Expressions returning boolean need to be processed, If the expression is not supported, push ColumnDomains::all() onto the stack.
+        // If the expression supports it, return Continue directly.
+        match expr {
+            Expr::Column(_) | Expr::Literal(_) => Ok(VisitRecursion::Continue),
+            e @ Expr::BinaryExpr(BinaryExpr {
+                left: _,
+                op,
+                right: _,
+            }) => {
+                println!("pre visit binary expr: {e}");
+                match op {
+                    Operator::Eq
+                    | Operator::NotEq
+                    | Operator::Lt
+                    | Operator::LtEq
+                    | Operator::Gt
+                    | Operator::GtEq
+                    | Operator::And => {
+                        // Supported
+                        Ok(VisitRecursion::Continue)
+                    }
+                    other => Err(DataFusionError::NotImplemented(format!(
+                        "operator {other} is not supported"
+                    ))),
+                }
+            }
+            other => {
+                // self.ctx
+                //     .current_domain_stack
+                //     .push_back(ColumnDomains::all());
+                println!("pre skipped {other}");
+                Ok(VisitRecursion::Skip)
+            }
+        }
+    }
+
+    fn post_visit(&mut self, expr: &Expr) -> DFResult<VisitRecursion> {
+        match expr {
+            e @ Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
+                println!("post visit binary expr: {e}");
+                match op {
+                    // The stack is expression, clean and generate a new domain
+                    Operator::Eq
+                    | Operator::NotEq
+                    | Operator::Lt
+                    | Operator::LtEq
+                    | Operator::Gt
+                    | Operator::GtEq => {
+                        Self::construct_value_set_and_push_domain_stack(self.ctx, left, op, right);
+                    }
+                    // The stack is domain, pop it, and generate a new domain
+                    Operator::And => {
+                        self.ctx.try_intersect_top2_domains();
+                    }
+                    _ => {}
+                }
+            }
+            // TODO The stack is the domain, and the domain is generated
+            o @ Expr::Not(_) | o @ Expr::Between { .. } => {
+                println!("post skipped expr(specify) {o}")
+            }
+            others => {
+                println!("post skipped expr(others) {others}");
+            }
+        }
+
+        Ok(VisitRecursion::Continue)
+    }
+}
+
+impl DeleteSelectionExpressionToDomainsVisitor<'_> {
+    pub fn expr_to_tag_and_time_domains(
+        expr: &Expr,
+    ) -> Result<(ColumnDomains<String>, ColumnDomains<String>)> {
+        let mut ctx = DeleteSelectionExpressionToDomainsVisitorContext::default();
+        expr.visit(&mut DeleteSelectionExpressionToDomainsVisitor { ctx: &mut ctx })?;
+        Ok(ctx.into_tag_and_time_domains())
+    }
+
+    /// Convert nsc to RangeValueSet, nsc.column will be transform into nsc.column.name
+    ///
+    /// Note: nsc must supports ordering, i.e. is_orderable == true
+    fn nsc_to_string_domains_with_range(nsc: &NormalizedSimpleComparison) -> ColumnDomains<String> {
+        let col = &nsc.column;
+        let value = &nsc.value;
+        let op = &nsc.op;
+        // Get the Vec<range> by op dataType and ScalarValue.
+        // If op does not support it, it will return None, but it must be supported here (because op is obtained from nsc)
+        let val_set = get_range_fn(op, &value.get_datatype(), value)
+            // Construct ValueSet by Range
+            .map(|r| Domain::of_ranges(&r).unwrap())
+            // Normally this is not triggered (unless there is a bug), but returns ValueSet::All for safety
+            .unwrap_or(Domain::All);
+
+        ColumnDomains::of(col.name.to_owned(), &val_set)
+    }
+
+    /// Convert nsc to EqutableValueSet
+    ///
+    /// Note: nsc does not support ordering, i.e. is_orderable == false
+    fn nsc_to_domains_with_equtable(nsc: &NormalizedSimpleComparison) -> ColumnDomains<String> {
+        let col = &nsc.column;
+        let value = &nsc.value;
+        let is_eq_op = nsc.is_eq_op();
+        let val_set = Domain::of_values(&value.get_datatype(), is_eq_op, &[value]);
+        ColumnDomains::of(col.name.to_owned(), &val_set)
+    }
+
+    /// Construct comparison operations as simple column-value comparison data structures nsc.
+    ///
+    /// Choose a different NscToValueSet function based on whether the data type supports sorting.
+    ///
+    /// Convert nsc to ValueSet via NscToValueSet function
+    ///
+    /// Push the domain into the stack
+    fn construct_value_set_and_push_domain_stack(
+        ctx: &mut DeleteSelectionExpressionToDomainsVisitorContext,
+        left: &Expr,
+        op: &Operator,
+        right: &Expr,
+    ) {
+        if let Some(nsc) = NormalizedSimpleComparison::of(left.clone(), *op, right.clone()) {
+            let domains = if nsc.is_orderable() {
+                Self::nsc_to_string_domains_with_range(&nsc)
+            } else {
+                Self::nsc_to_domains_with_equtable(&nsc)
+            };
+            ctx.push_back(domains, nsc.column.name == TIME_FIELD_NAME);
+        } else {
+            println!("push nothing!");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Add;
@@ -345,6 +555,12 @@ mod tests {
     /// resolves the domain of the specified expression
     fn get_domains(expr: &Expr) -> Result<ColumnDomains<Column>> {
         RowExpressionToDomainsVisitor::expr_to_column_domains(expr)
+    }
+    /// resolves the domain of the specified expression, return tag domains and time domains.
+    fn get_domains_by_delete_selection_expression(
+        expr: &Expr,
+    ) -> Result<(ColumnDomains<String>, ColumnDomains<String>)> {
+        DeleteSelectionExpressionToDomainsVisitor::expr_to_tag_and_time_domains(expr)
     }
     fn get_tuple_int_and_expr_with_except_column_domains() -> (Expr, ColumnDomains<Column>) {
         let filter1 = binary_expr(col("i1"), Operator::Lt, lit(-1000000));
@@ -810,6 +1026,45 @@ mod tests {
             except_column_domains,
             column_domain,
         );
+    }
+
+    /// delete selection expression test - 1
+    /// eg.
+    ///   cpu = 'cpu0' and time >= '2022-10-10 00:00:00' and time <= '2022-11-10 00:00:00'
+    ///   ===>
+    ///   tag(cpu): ['cpu0', 'cpu0']
+    ///   time: ['2022-10-10 00:00:00', '2022-11-10 00:00:00')
+    #[test]
+    fn test_simple_and_to_domain_delete_1() {
+        let filter1 = binary_expr(col("cpu"), Operator::Eq, lit("cpu0"));
+        let filter2 = binary_expr(col("time"), Operator::GtEq, lit("2022-10-10 00:00:00"));
+        let filter3 = binary_expr(col("time"), Operator::LtEq, lit("2022-11-10 00:00:00"));
+        let and = and(filter1, and(filter2, filter3));
+
+        // expected tag filter
+        //   cpu: ['cpu0', 'cpu0']
+        let tag_range = Range::gele(
+            &DataType::Utf8,
+            &ScalarValue::Utf8(Some("cpu0".to_string())),
+            &ScalarValue::Utf8(Some("cpu0".to_string())),
+        );
+        let tag_range_domain = Domain::of_ranges(&[tag_range]).unwrap();
+        let expect_tag_domains = ColumnDomains::of("cpu".to_string(), &tag_range_domain);
+
+        // expected time filter
+        //   time: ['2022-10-10 00:00:00', '2022-11-10 00:00:00')
+        let time_range = Range::gele(
+            &DataType::Utf8,
+            &ScalarValue::Utf8(Some("2022-10-10 00:00:00".to_string())),
+            &ScalarValue::Utf8(Some("2022-11-10 00:00:00".to_string())),
+        );
+        let time_range_domain = Domain::of_ranges(&[time_range]).unwrap();
+        let expect_time_domains = ColumnDomains::of("time".to_string(), &time_range_domain);
+
+        let (tag_domains, time_domains) = get_domains_by_delete_selection_expression(&and).unwrap();
+
+        assert_eq!(expect_tag_domains, tag_domains);
+        assert_eq!(expect_time_domains, time_domains);
     }
 
     /// and & or

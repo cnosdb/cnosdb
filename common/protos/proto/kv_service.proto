@@ -173,6 +173,13 @@ message AdminFetchCommandRequest {
   }
 }
 
+message DeleteFromTableRequest {
+  string tenant = 1;
+  string database = 2;
+  string table = 3;
+  bytes predicate = 4;
+}
+
 /* -------------------------------------------------------------------- */
 
 message BatchBytesResponse {
@@ -238,6 +245,7 @@ service TSKVService {
   rpc ExecAdminFetchCommand(AdminFetchCommandRequest) returns (BatchBytesResponse) {};
   rpc ExecOpenRaftNode(OpenRaftNodeRequest) returns (StatusResponse) {};
   rpc ExecDropRaftNode(DropRaftNodeRequest) returns (StatusResponse) {};
+  rpc DeleteFromTable(DeleteFromTableRequest) returns (StatusResponse) {};
 
   rpc DownloadFile(DownloadFileRequest) returns (stream BatchBytesResponse) {};
   rpc GetVnodeFilesMeta(GetVnodeFilesMetaRequest) returns (GetFilesMetaResponse) {};

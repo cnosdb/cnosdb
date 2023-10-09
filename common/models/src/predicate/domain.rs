@@ -342,10 +342,20 @@ impl From<(Timestamp, Timestamp)> for TimeRanges {
 enum Bound {
     /// lower than the value, but infinitesimally close to the value.
     Below,
-    // exactly the value.
+    /// exactly the value.
     Exactly,
-    // higher than the value, but infinitesimally close to the value.
+    /// higher than the value, but infinitesimally close to the value.
     Above,
+}
+
+impl Display for Bound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Bound::Below => write!(f, "<"),
+            Bound::Exactly => write!(f, "="),
+            Bound::Above => write!(f, ">"),
+        }
+    }
 }
 
 /// A point on the continuous space defined by the specified type.
@@ -445,11 +455,39 @@ impl Marker {
             bound: Bound::Above,
         }
     }
+
+    /// Greater than the value.
+    fn lower_bounded(data_type: DataType, value: ScalarValue) -> Marker {
+        Self {
+            data_type,
+            value: Some(value),
+            bound: Bound::Above,
+        }
+    }
+
+    /// Equal to the value.
+    fn exactly(data_type: DataType, value: ScalarValue) -> Marker {
+        Self {
+            data_type,
+            value: Some(value),
+            bound: Bound::Exactly,
+        }
+    }
+
     /// Infinitely small (less than a nonexistent number).
     fn upper_unbound(data_type: DataType) -> Marker {
         Self {
             data_type,
             value: None,
+            bound: Bound::Below,
+        }
+    }
+
+    /// Less than the value.
+    fn upper_bounded(data_type: DataType, value: ScalarValue) -> Marker {
+        Self {
+            data_type,
+            value: Some(value),
             bound: Bound::Below,
         }
     }
@@ -554,6 +592,16 @@ impl PartialOrd for Marker {
 
 impl Eq for Marker {}
 
+impl Display for Marker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.bound, self.data_type)?;
+        if let Some(ref v) = self.value {
+            return write!(f, "{}", v);
+        }
+        Ok(())
+    }
+}
+
 /// A Range of values across the continuous space defined by the types of the Markers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Range {
@@ -568,6 +616,67 @@ impl RangeBounds<ScalarValue> for Range {
 
     fn end_bound(&self) -> std::ops::Bound<&ScalarValue> {
         self.high_ref().into()
+    }
+}
+
+impl Display for Range {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn write_scalar_value_opt_for_bound_display(
+            f: &mut std::fmt::Formatter<'_>,
+            marker: &Marker,
+            is_left_bound: bool,
+        ) -> std::fmt::Result {
+            write!(f, "({})", marker.data_type)?;
+            if let Some(ref v) = &marker.value {
+                write!(f, "{}", v)
+            } else if is_left_bound {
+                write!(f, "-∞")
+            } else {
+                write!(f, "∞")
+            }
+        }
+        fn write_marker_for_bound_display(
+            f: &mut std::fmt::Formatter<'_>,
+            marker: &Marker,
+            is_left_bound: bool,
+        ) -> std::fmt::Result {
+            match (is_left_bound, &marker.bound) {
+                (true, Bound::Above) => {
+                    write!(f, "(",)?;
+                    write_scalar_value_opt_for_bound_display(f, marker, is_left_bound)
+                }
+                (false, Bound::Below) => {
+                    write_scalar_value_opt_for_bound_display(f, marker, is_left_bound)?;
+                    write!(f, ")")
+                }
+                (true, Bound::Exactly) => {
+                    write!(f, "[",)?;
+                    write_scalar_value_opt_for_bound_display(f, marker, is_left_bound)
+                }
+                (false, Bound::Exactly) => {
+                    write_scalar_value_opt_for_bound_display(f, marker, is_left_bound)?;
+                    write!(f, "]")
+                }
+                _ => {
+                    // Unexpected patterns.
+                    write!(f, "#")?;
+                    write_scalar_value_opt_for_bound_display(f, marker, is_left_bound)?;
+                    write!(f, "#")
+                }
+            }
+        }
+
+        if self.low.is_lower_unbound() {
+            write!(f, "(-∞")?;
+        } else {
+            write_marker_for_bound_display(f, &self.low, true)?;
+        }
+        write!(f, ", ")?;
+        if self.high.is_upper_unbound() {
+            write!(f, "∞)")
+        } else {
+            write_marker_for_bound_display(f, &self.high, false)
+        }
     }
 }
 
@@ -610,63 +719,34 @@ impl Range {
     }
     /// Constructs a range of values equal to scalar_value [scalar_value, scalar_value].
     pub fn eq(data_type: &DataType, scalar_value: &ScalarValue) -> Range {
-        let low = Marker {
-            data_type: data_type.clone(),
-            value: Some(scalar_value.clone()),
-            bound: Bound::Exactly,
-        };
-        let high = Marker {
-            data_type: data_type.clone(),
-            value: Some(scalar_value.clone()),
-            bound: Bound::Exactly,
-        };
+        let low = Marker::exactly(data_type.clone(), scalar_value.clone());
+        let high = Marker::exactly(data_type.clone(), scalar_value.clone());
 
         Self { low, high }
     }
     /// TODO Constructs a range of values not equal to scalar_value [scalar_value, scalar_value].
     pub fn ne(data_type: &DataType, scalar_value: &ScalarValue) -> Vec<Range> {
-        let low_1 = Marker::lower_unbound(data_type.clone());
-        let high_1 = Marker {
-            data_type: data_type.clone(),
-            value: Some(scalar_value.clone()),
-            bound: Bound::Below,
-        };
-        let low_2 = Marker {
-            data_type: data_type.clone(),
-            value: Some(scalar_value.clone()),
-            bound: Bound::Above,
-        };
-        let high_2 = Marker::upper_unbound(data_type.clone());
-
         vec![
             Self {
-                low: low_1,
-                high: high_1,
+                low: Marker::lower_unbound(data_type.clone()),
+                high: Marker::upper_bounded(data_type.clone(), scalar_value.clone()),
             },
             Self {
-                low: low_2,
-                high: high_2,
+                low: Marker::lower_bounded(data_type.clone(), scalar_value.clone()),
+                high: Marker::upper_unbound(data_type.clone()),
             },
         ]
     }
     /// Construct a range of values greater than scalar_value (scalar_value, +∞).
     pub fn gt(data_type: &DataType, scalar_value: &ScalarValue) -> Range {
-        let low = Marker {
-            data_type: data_type.clone(),
-            value: Some(scalar_value.clone()),
-            bound: Bound::Above,
-        };
+        let low = Marker::lower_bounded(data_type.clone(), scalar_value.clone());
         let high = Marker::upper_unbound(data_type.clone());
 
         Self { low, high }
     }
     /// Construct a range of values greater than or equal to scalar_value [scalar_value, +∞).
     pub fn ge(data_type: &DataType, scalar_value: &ScalarValue) -> Range {
-        let low = Marker {
-            data_type: data_type.clone(),
-            value: Some(scalar_value.clone()),
-            bound: Bound::Exactly,
-        };
+        let low = Marker::exactly(data_type.clone(), scalar_value.clone());
         let high = Marker::upper_unbound(data_type.clone());
 
         Self { low, high }
@@ -674,25 +754,46 @@ impl Range {
     /// Construct a range of values smaller than scalar_value (-∞, scalar_value).
     pub fn lt(data_type: &DataType, scalar_value: &ScalarValue) -> Range {
         let low = Marker::lower_unbound(data_type.clone());
-        let high = Marker {
-            data_type: data_type.clone(),
-            value: Some(scalar_value.clone()),
-            bound: Bound::Below,
-        };
+        let high = Marker::upper_bounded(data_type.clone(), scalar_value.clone());
 
         Self { low, high }
     }
     /// Construct a range of values less than or equal to scalar_value (-∞, scalar_value].
     pub fn le(data_type: &DataType, scalar_value: &ScalarValue) -> Range {
         let low = Marker::lower_unbound(data_type.clone());
-        let high = Marker {
-            data_type: data_type.clone(),
-            value: Some(scalar_value.clone()),
-            bound: Bound::Exactly,
-        };
+        let high = Marker::exactly(data_type.clone(), scalar_value.clone());
 
         Self { low, high }
     }
+    /// Construct a range of values in a left-open and right-open interval (low, high).
+    pub fn gtlt(data_type: &DataType, low: &ScalarValue, high: &ScalarValue) -> Range {
+        Self {
+            low: Marker::lower_bounded(data_type.clone(), low.clone()),
+            high: Marker::upper_bounded(data_type.clone(), high.clone()),
+        }
+    }
+    /// Construct a range of values in a left-closed and right-open interval [low, high).
+    pub fn gelt(data_type: &DataType, low: &ScalarValue, high: &ScalarValue) -> Range {
+        Self {
+            low: Marker::exactly(data_type.clone(), low.clone()),
+            high: Marker::upper_bounded(data_type.clone(), high.clone()),
+        }
+    }
+    /// Construct a range of values in a left-open and right-closed interval (low, high].
+    pub fn gtle(data_type: &DataType, low: &ScalarValue, high: &ScalarValue) -> Range {
+        Self {
+            low: Marker::lower_bounded(data_type.clone(), low.clone()),
+            high: Marker::exactly(data_type.clone(), high.clone()),
+        }
+    }
+    /// Construct a range of values in a left-closed and right-closed interval [low, high].
+    pub fn gele(data_type: &DataType, low: &ScalarValue, high: &ScalarValue) -> Range {
+        Self {
+            low: Marker::exactly(data_type.clone(), low.clone()),
+            high: Marker::exactly(data_type.clone(), high.clone()),
+        }
+    }
+
     /// Determine if two ranges of values overlap.
     ///
     /// If there is overlap, return Ok(true).
@@ -805,6 +906,12 @@ impl<'a> Deserialize<'a> for ValueEntry {
     }
 }
 
+impl Display for ValueEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}) {}", self.data_type, self.value)
+    }
+}
+
 struct ValueEntryVisitor;
 
 impl<'de> Visitor<'de> for ValueEntryVisitor {
@@ -846,6 +953,48 @@ impl RangeValueSet {
     }
 }
 
+impl Display for RangeValueSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn write_marker_for_range_value_set_display(
+            f: &mut std::fmt::Formatter<'_>,
+            marker: &Marker,
+        ) -> std::fmt::Result {
+            // write!(f, "{} ({})", self.bound, self.data_type)?;
+            // if let Some(ref v) = self.value {
+            //     return write!(f, "{}", v);
+            // }
+            if marker.is_lower_unbound() {
+                write!(f, "(-∞, )")
+            } else {
+                match marker.bound {
+                    Bound::Below => write!(f, "#")?,
+                    Bound::Exactly => write!(f, "[")?,
+                    Bound::Above => write!(f, "(")?,
+                }
+                write!(f, "({})", &marker.data_type)?;
+                if let Some(ref v) = marker.value {
+                    write!(f, "{v}")?;
+                }
+                write!(f, ",..")
+            }
+        }
+
+        write!(f, "{{ ")?;
+        if !self.low_indexed_ranges.is_empty() {
+            let max_i = self.low_indexed_ranges.len() - 1;
+            for (i, (marker, range)) in self.low_indexed_ranges.iter().enumerate() {
+                write!(f, "(")?;
+                write_marker_for_range_value_set_display(f, marker)?;
+                write!(f, ": {range}")?;
+                if i < max_i {
+                    write!(f, ", ")?;
+                }
+            }
+        }
+        write!(f, " }}")
+    }
+}
+
 /// A set containing values that are uniquely identifiable.
 ///
 /// Assumes an infinite number of possible values.
@@ -864,6 +1013,28 @@ impl EqutableValueSet {
 
     pub fn entries(&self) -> impl IntoIterator<Item = &ValueEntry> {
         &self.entries
+    }
+}
+
+impl Display for EqutableValueSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({} ", self.data_type)?;
+        if self.white_list {
+            write!(f, "white_list")?;
+        }
+        write!(f, ") [")?;
+        if !self.entries.is_empty() {
+            let max_i = self.entries.len() - 1;
+            for (i, value_entry) in self.entries.iter().enumerate() {
+                write!(f, "{value_entry}")?;
+                if i < max_i {
+                    write!(f, ", ")?;
+                }
+            }
+        }
+        write!(f, " ]")?;
+
+        Ok(())
     }
 }
 
@@ -1166,6 +1337,17 @@ impl Domain {
     }
 }
 
+impl Display for Domain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Domain::Range(s) => write!(f, "range({s})"),
+            Domain::Equtable(s) => write!(f, "equtable({s})"),
+            Domain::None => write!(f, "none"),
+            Domain::All => write!(f, "all"),
+        }
+    }
+}
+
 /// ColumnDomains is internally represented as a normalized map of each column to its
 ///
 /// respective allowable value domain(ValueSet). Conceptually, these ValueSet can be thought of
@@ -1335,6 +1517,25 @@ impl<T: Eq + Hash + Clone> ColumnDomains<T> {
     /// Empty map means match all records.
     pub fn domains(&self) -> Option<&HashMap<T, Domain>> {
         self.column_to_domain.as_ref()
+    }
+}
+
+impl<T> Display for ColumnDomains<T>
+where
+    T: Eq + Hash + Clone + Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ ")?;
+        if let Some(ref column_to_domain) = self.column_to_domain {
+            let max_i = column_to_domain.len() - 1;
+            for (i, (column, domain)) in column_to_domain.iter().enumerate() {
+                write!(f, "{column}: {domain}")?;
+                if i < max_i {
+                    write!(f, ", ")?;
+                }
+            }
+        }
+        write!(f, " }}")
     }
 }
 
