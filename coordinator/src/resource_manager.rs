@@ -10,7 +10,7 @@ use protos::kv_service::{AdminCommandRequest, DropDbRequest, DropTableRequest};
 use tracing::{debug, error, info};
 
 use crate::errors::*;
-use crate::Coordinator;
+use crate::{Coordinator, VnodeManagerCmdType};
 
 #[derive(Clone)]
 pub struct ResourceManager {}
@@ -213,16 +213,6 @@ impl ResourceManager {
         if names.len() == 2 {
             let tenant_name = names.get(0).unwrap();
             let db_name = names.get(1).unwrap();
-
-            let req = AdminCommandRequest {
-                tenant: tenant_name.clone(),
-                command: Some(DropDb(DropDbRequest {
-                    db: db_name.clone(),
-                })),
-            };
-            coord.broadcast_command(req).await?;
-            debug!("Drop database {} of tenant {}", db_name, tenant_name);
-
             let tenant =
                 coord
                     .tenant_meta(tenant_name)
@@ -230,6 +220,27 @@ impl ResourceManager {
                     .ok_or(CoordinatorError::TenantNotFound {
                         name: tenant_name.clone(),
                     })?;
+
+            let req = AdminCommandRequest {
+                tenant: tenant_name.clone(),
+                command: Some(DropDb(DropDbRequest {
+                    db: db_name.clone(),
+                })),
+            };
+
+            if coord.using_raft_replication() {
+                let buckets = tenant.get_db_info(db_name)?.map_or(vec![], |v| v.buckets);
+                for bucket in buckets {
+                    for replica in bucket.shard_group {
+                        let cmd_type = VnodeManagerCmdType::DestoryRaftGroup(replica.id);
+                        coord.vnode_manager(tenant_name, cmd_type).await?;
+                    }
+                }
+            } else {
+                coord.broadcast_command(req).await?;
+            }
+            debug!("Drop database {} of tenant {}", db_name, tenant_name);
+
             tenant
                 .drop_db(db_name)
                 .await
