@@ -53,7 +53,7 @@ pub struct StorageConfig {
 
 impl StorageConfig {
     fn default_path() -> String {
-        "data/db".to_string()
+        "/var/lib/cnosdb/data".to_string()
     }
 
     fn default_max_summary_size() -> u64 {
