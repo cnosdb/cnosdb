@@ -117,9 +117,9 @@ build_fpm_cmd() {
     "${pkg_temp}/usr/lib/${name}/scripts"
 
   # Copy Service Script
-  cp "./releng/scripts/${name}/init.sh" "${pkg_temp}/usr/lib/${name}/scripts/init.sh"
+  cp "./packages/scripts/${name}/init.sh" "${pkg_temp}/usr/lib/${name}/scripts/init.sh"
   chmod 0644 "${pkg_temp}/usr/lib/${name}/scripts/init.sh"
-  cp "./releng/scripts/${name}/${name}.service" "${pkg_temp}/usr/lib/${name}/scripts/${name}.service"
+  cp "./packages/scripts/${name}/${name}.service" "${pkg_temp}/usr/lib/${name}/scripts/${name}.service"
   chmod 0644 "${pkg_temp}/usr/lib/${name}/scripts/${name}.service"
 
   if [ "${name}" == "cnosdb" ]; then
@@ -149,9 +149,9 @@ build_fpm_cmd() {
     --architecture "${arch}" \
     -s dir \
     --url "${WEBSITE}" \
-    --before-install ./releng/scripts/"${name}"/before-install.sh \
-    --after-install ./releng/scripts/"${name}"/after-install.sh \
-    --after-remove ./releng/scripts/"${name}"/after-remove.sh \
+    --before-install ./packages/scripts/"${name}"/before-install.sh \
+    --after-install ./packages/scripts/"${name}"/after-install.sh \
+    --after-remove ./packages/scripts/"${name}"/after-remove.sh \
     --directories "${LOG_DIR}" \
     --directories "${DATA_DIR}" \
     --rpm-attr 755,${USER},${GROUP}:${LOG_DIR} \
