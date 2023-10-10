@@ -94,6 +94,17 @@ impl<const N: usize> From<[(&'static str, String); N]> for Labels {
         )
     }
 }
+impl<'a, const N: usize> From<[(&'static str, Option<&'a str>); N]> for Labels {
+    fn from(value: [(&'static str, Option<&'a str>); N]) -> Self {
+        let mut res = BTreeMap::new();
+        for (k, opt_v) in value.into_iter() {
+            if let Some(v) = opt_v {
+                res.insert(k, Cow::from(v.to_string()));
+            }
+        }
+        Self(res)
+    }
+}
 
 pub fn assert_legal_key(s: &str) {
     assert!(!s.is_empty(), "string must not be empty");
