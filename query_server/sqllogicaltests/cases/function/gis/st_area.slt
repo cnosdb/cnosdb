@@ -1,0 +1,57 @@
+include ./setup.slt
+
+query T
+select ST_Area(geom) sqft, ST_Area(geom) * pow(0.3048, 2) sqm
+from (
+         select 'POLYGON((743238 2967416,743238 2967450,
+				 743265 2967450,743265.625 2967416,743238 2967416))'geom
+     ) subquery;
+----
+928.625 86.27208552
+
+query T
+-- Area of an empty polygon
+select 'emptyPolyArea', st_area('POLYGON EMPTY');
+----
+emptyPolyArea 0.0
+
+query T
+-- Area of an empty linestring
+select 'emptyLineArea', st_area('LINESTRING EMPTY');
+----
+emptyLineArea 0.0
+
+query T
+-- Area of an empty point
+select 'emptyPointArea', st_area('POINT EMPTY');
+----
+emptyPointArea NULL
+
+query T
+-- Area of an empty multipolygon
+select 'emptyMultiPolyArea', st_area('MULTIPOLYGON EMPTY');
+----
+emptyMultiPolyArea 0.0
+
+query T
+-- Area of an empty multilinestring
+select 'emptyMultiLineArea', st_area('MULTILINESTRING EMPTY');
+----
+emptyMultiLineArea 0.0
+
+query T
+-- Area of an empty multilipoint
+select 'emptyMultiPointArea', st_area('MULTIPOINT EMPTY');
+----
+emptyMultiPointArea 0.0
+
+query T
+-- Area of an empty collection
+select 'emptyCollectionArea', st_area('GEOMETRYCOLLECTION EMPTY');
+----
+emptyCollectionArea 0.0
+
+query T
+select st_area('POLYGON((0 0,0 1,1 1,1 0,0 0))');
+----
+1.0
