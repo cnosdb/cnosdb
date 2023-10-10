@@ -1061,7 +1061,6 @@ impl Coordinator for CoordService {
                     SeriesKey {
                         tags,
                         table: table_name.clone(),
-                        db: db.clone(),
                     }
                     .encode(),
                 );

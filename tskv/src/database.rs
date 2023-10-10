@@ -222,7 +222,7 @@ impl Database {
         ts_index: Arc<index::ts_index::TSIndex>,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         if self.opt.storage.strict_write {
-            self.build_write_group_strict_mode(db_name, precision, tables, ts_index)
+            self.build_write_group_strict_mode(precision, tables, ts_index)
                 .await
         } else {
             self.build_write_group_loose_mode(db_name, precision, tables, ts_index)
@@ -232,7 +232,6 @@ impl Database {
 
     pub async fn build_write_group_strict_mode(
         &self,
-        db_name: &str,
         precision: Precision,
         tables: FlatBufferTable<'_>,
         ts_index: Arc<index::ts_index::TSIndex>,
@@ -247,7 +246,6 @@ impl Database {
             let fb_schema = FbSchema::from_fb_column(columns)?;
             let num_rows = table.num_rows() as usize;
             let sids = Self::build_index(
-                db_name,
                 table_name,
                 &columns,
                 &fb_schema.tag_indexes,
@@ -290,7 +288,6 @@ impl Database {
             let fb_schema = FbSchema::from_fb_column(columns)?;
             let num_rows = table.num_rows() as usize;
             let sids = Self::build_index(
-                db_name,
                 table_name,
                 &columns,
                 &fb_schema.tag_indexes,
@@ -392,7 +389,6 @@ impl Database {
     }
 
     async fn build_index(
-        db_name: &str,
         tab_name: &str,
         columns: &Vector<'_, ForwardsUOffset<Column<'_>>>,
         tag_idx: &[usize],
@@ -402,11 +398,10 @@ impl Database {
         let mut res_sids = Vec::with_capacity(row_num);
         let mut series_keys = Vec::with_capacity(row_num);
         for row_count in 0..row_num {
-            let series_key =
-                SeriesKey::build_series_key(db_name, tab_name, columns, tag_idx, row_count)
-                    .map_err(|e| Error::CommonError {
-                        reason: e.to_string(),
-                    })?;
+            let series_key = SeriesKey::build_series_key(tab_name, columns, tag_idx, row_count)
+                .map_err(|e| Error::CommonError {
+                    reason: e.to_string(),
+                })?;
             if let Some(id) = ts_index.get_series_id(&series_key).await? {
                 res_sids.push(Some(id));
             } else if let Some(id) = ts_index.get_deleted_series_id(&series_key).await? {

@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
-use datafusion::arrow::array::{StringArray, UInt64Array};
-use datafusion::arrow::datatypes::{Field, Schema, SchemaRef};
+use datafusion::arrow::array::{new_null_array, UInt64Array};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
@@ -14,13 +14,15 @@ use datafusion::physical_plan::memory::MemoryStream;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    DisplayFormatType, Distribution, ExecutionPlan, Partitioning, SendableRecordBatchStream,
-    Statistics,
+    ColumnarValue, DisplayFormatType, Distribution, ExecutionPlan, Partitioning,
+    SendableRecordBatchStream, Statistics,
 };
+use datafusion::scalar::ScalarValue;
 use futures::{StreamExt, TryStreamExt};
 use models::schema::TskvTableSchemaRef;
 use protos::kv_service::UpdateSetValue;
 use spi::query::AFFECTED_ROWS;
+use spi::QueryError;
 
 use crate::extension::DropEmptyRecordBatchStream;
 
@@ -29,7 +31,7 @@ pub struct UpdateTagExec {
     table_schema: TskvTableSchemaRef,
     metrics: ExecutionPlanMetricsSet,
     schema: SchemaRef,
-
+    // (tag name, tag value expr)
     assigns: Vec<(String, Arc<dyn PhysicalExpr>)>,
     coord: CoordinatorRef,
 }
@@ -78,11 +80,11 @@ impl ExecutionPlan for UpdateTagExec {
     }
 
     fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.scan.output_ordering()
+        None
     }
 
     fn required_input_distribution(&self) -> Vec<Distribution> {
-        vec![Distribution::UnspecifiedDistribution]
+        vec![Distribution::SinglePartition]
     }
 
     fn benefits_from_input_partitioning(&self) -> bool {
@@ -132,9 +134,20 @@ impl ExecutionPlan for UpdateTagExec {
     }
 
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let assigns = self
+            .assigns
+            .iter()
+            .map(|(col, val_expr)| format!("{}={}", col, val_expr))
+            .collect::<Vec<_>>()
+            .join(", ");
+
         match t {
             DisplayFormatType::Default => {
-                write!(f, "UpdateValueTagExec: [{}]", self.table_schema.name,)
+                write!(
+                    f,
+                    "UpdateTagExec: table={}, set=[{}], ",
+                    assigns, self.table_schema.name,
+                )
             }
             DisplayFormatType::Verbose => {
                 let schemas = self
@@ -145,8 +158,9 @@ impl ExecutionPlan for UpdateTagExec {
                     .collect::<Vec<_>>();
                 write!(
                     f,
-                    "UpdateValueTagExec: [{}], output=[{}]",
+                    "UpdateTagExec: table={}, set=[{}], output=[{}]",
                     self.table_schema.name,
+                    assigns,
                     schemas.join(",")
                 )
             }
@@ -155,6 +169,29 @@ impl ExecutionPlan for UpdateTagExec {
 
     fn statistics(&self) -> Statistics {
         self.scan.statistics()
+    }
+}
+
+// see https://github.com/apache/arrow-datafusion/blob/main/datafusion/optimizer/src/simplify_expressions/expr_simplifier.rs
+fn evaluate_to_scalar(phys_expr: Arc<dyn PhysicalExpr>) -> Result<ScalarValue> {
+    let schema = Schema::new(vec![Field::new(".", DataType::Null, true)]);
+    // Need a single "input" row to produce a single output row
+    let col = new_null_array(&DataType::Null, 1);
+    let input_batch = RecordBatch::try_new(Arc::new(schema), vec![col])?;
+
+    let col_val = phys_expr.evaluate(&input_batch)?;
+    match col_val {
+        ColumnarValue::Array(a) => {
+            if a.len() != 1 {
+                Err(DataFusionError::Execution(format!(
+                    "Could not evaluate the expression, found a result of length {}",
+                    a.len()
+                )))
+            } else {
+                Ok(ScalarValue::try_from_array(&a, 0)?)
+            }
+        }
+        ColumnarValue::Scalar(s) => Ok(s),
     }
 }
 
@@ -167,19 +204,16 @@ async fn do_update(
 ) -> Result<SendableRecordBatchStream> {
     let mut new_tags = vec![];
     for (name, expr) in assigns {
-        let value = expr
-            .evaluate(&RecordBatch::new_empty(Arc::new(Schema::empty())))?
-            .into_array(1);
-        let value = value
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .ok_or(DataFusionError::Execution(String::from(
-                "tag value must be string",
-            )))?
-            .value(0);
+        let scalar = evaluate_to_scalar(expr)?;
+        let value = if scalar.is_null() {
+            None
+        } else {
+            Some(scalar.to_string().as_bytes().to_vec())
+        };
+
         let update_set_value = UpdateSetValue {
             key: name.as_bytes().to_vec(),
-            value: Some(value.as_bytes().to_vec()),
+            value,
         };
         new_tags.push(update_set_value);
     }
@@ -193,10 +227,18 @@ async fn do_update(
         rows_wrote += num_rows;
         batches.push(batch);
     }
+
+    // TODO use df session config
+    if rows_wrote > 10000 {
+        return Err(DataFusionError::Execution(format!(
+            "The number of update records {rows_wrote} exceeds the maximum limit 10000",
+        )));
+    }
+
     coord
         .update_tags_value(table_schema.clone(), new_tags.clone(), batches)
         .await
-        .map_err(|err| DataFusionError::Execution(err.to_string()))?;
+        .map_err(|err| DataFusionError::External(Box::new(QueryError::from(err))))?;
 
     aggregate_statistics(schema, rows_wrote)
 }
