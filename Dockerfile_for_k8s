@@ -1,5 +1,0 @@
-From cnosdb/cnosdb:community-[tag]
-
-COPY endpoint.sh /usr/bin
-
-ENTRYPOINT ["sh", "-c", "/usr/bin/endpoint.sh"]

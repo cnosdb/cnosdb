@@ -14,8 +14,8 @@ static GLOBAL_META_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
 #[derive(Debug, Parser)]
 struct Cli {
     /// configuration path
-    #[arg(short, long, default_value = "./config.toml")]
-    config: String,
+    #[arg(short, long)]
+    config: Option<String>,
 }
 
 #[tokio::main]
