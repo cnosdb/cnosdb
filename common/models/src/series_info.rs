@@ -7,11 +7,10 @@ use utils::BkdrHasher;
 use crate::errors::{Error, Result};
 use crate::{tag, Tag, TagValue};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
 pub struct SeriesKey {
     pub tags: Vec<Tag>,
     pub table: String,
-    pub db: String,
 }
 
 impl SeriesKey {
@@ -82,7 +81,6 @@ impl SeriesKey {
     }
 
     pub fn build_series_key(
-        db_name: &str,
         tab_name: &str,
         columns: &Vector<ForwardsUOffset<Column>>,
         tag_idx: &[usize],
@@ -121,22 +119,7 @@ impl SeriesKey {
         Ok(Self {
             tags,
             table: tab_name.to_string(),
-            db: db_name.to_string(),
         })
-    }
-}
-
-impl PartialEq for SeriesKey {
-    fn eq(&self, other: &Self) -> bool {
-        if self.table != other.table {
-            return false;
-        }
-
-        if self.tags != other.tags {
-            return false;
-        }
-
-        true
     }
 }
 

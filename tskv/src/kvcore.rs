@@ -695,7 +695,6 @@ impl TsKv {
             .read()
             .await
             .build_write_group_strict_mode(
-                db_name,
                 precision,
                 fb_points.tables().ok_or(Error::CommonError {
                     reason: "points missing table".to_string(),

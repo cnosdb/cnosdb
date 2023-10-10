@@ -121,6 +121,31 @@ fn update_tag(update_node: &UpdateNode, schema: Arc<TskvTableSchema>) -> DFResul
         ..
     } = update_node;
 
+    // where 条件中不能包含 field 列/time 列
+    let filter_using_columns = filter.to_columns()?;
+    for col in filter_using_columns {
+        match schema.column(&col.name) {
+            Some(col) => {
+                if !col.column_type.is_tag() {
+                    return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
+                        err: format!(
+                            "Where clause cannot contain field/time column, but found: {}",
+                            col.name
+                        ),
+                    })));
+                }
+            }
+            None => {
+                return Err(DataFusionError::External(Box::new(
+                    QueryError::ColumnNotExists {
+                        table: table_name.to_string(),
+                        column: col.name.to_string(),
+                    },
+                )));
+            }
+        }
+    }
+
     let mut projection = vec![];
     for field in schema.columns() {
         if field.column_type.is_tag() || field.column_type.is_time() {

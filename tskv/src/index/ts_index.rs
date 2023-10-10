@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::{BitAnd, BitOr, Bound, RangeBounds};
 use std::path::{Path, PathBuf};
@@ -213,6 +213,13 @@ impl TSIndex {
                     let old_series_key = block.old_series();
                     let recovering = block.recovering();
 
+                    trace::debug!(
+                        "Recover update series: {:?}, series_id: {:?}, old_series_key: {:?}",
+                        new_series_key,
+                        series_id,
+                        old_series_key,
+                    );
+
                     self.del_series_id_from_engine(series_id).await?;
                     if recovering {
                         self.remove_deleted_series(old_series_key).await?;
@@ -297,7 +304,6 @@ impl TSIndex {
                     continue;
                 }
                 let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
-                trace::warn!("New series {:?}, id: {:?}", series_key, id);
                 storage_w.set(&key_buf, &id.to_be_bytes())?;
                 let block =
                     IndexBinlogBlock::Add(AddSeries::new(utils::now_timestamp_nanos(), id, encode));
@@ -603,6 +609,7 @@ impl TSIndex {
         }
 
         let mut new_keys = vec![];
+        let mut new_keys_set = HashSet::new();
         for key in &old_keys {
             // modify tag value
             let new_tags_for_series = key
@@ -624,7 +631,6 @@ impl TSIndex {
             let new_key = SeriesKey {
                 tags: new_tags_for_series,
                 table: key.table.clone(),
-                db: key.db.clone(),
             };
 
             // check conflict
@@ -633,8 +639,17 @@ impl TSIndex {
                     key: key.to_string(),
                 });
             }
-
+            // TODO 去重
             new_keys.push(new_key);
+        }
+
+        new_keys_set.extend(new_keys.clone());
+
+        // 检查新生成的series key是否有重复key
+        if new_keys_set.len() != new_keys.len() {
+            return Err(IndexError::SeriesAlreadyExists {
+                key: "new series keys".to_string(),
+            });
         }
 
         Ok((old_keys, new_keys, ids))
@@ -936,10 +951,11 @@ pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: Unbounde
                                 let old_series_key = block.old_series();
                                 let recovering = block.recovering();
 
-                                trace::trace!(
-                                    "update series: {:?}, series_id: {:?}",
+                                trace::debug!(
+                                    "update series: {:?}, series_id: {:?}, old_series_key: {}",
                                     new_series_key,
-                                    series_id
+                                    series_id,
+                                    old_series_key,
                                 );
 
                                 let _ = ts_index
@@ -1006,14 +1022,13 @@ mod test {
 
     fn build_series_keys(series_keys_desc: &[SeriesKeyDesc<'_>]) -> Vec<SeriesKey> {
         let mut series_keys = Vec::with_capacity(series_keys_desc.len());
-        for (_, db, table, tags) in series_keys_desc {
+        for (_, _, table, tags) in series_keys_desc {
             series_keys.push(SeriesKey {
                 tags: tags
                     .iter()
                     .map(|(k, v)| Tag::new(k.as_bytes().to_vec(), v.as_bytes().to_vec()))
                     .collect(),
                 table: table.to_string(),
-                db: db.to_string(),
             });
         }
         series_keys
@@ -1041,10 +1056,8 @@ mod test {
             let series_keys = build_series_keys(&series_keys_desc);
             // Test build_series_key()
             assert_eq!(series_keys_desc.len(), series_keys.len());
-            for ((_, db, table, tags), series_key) in
-                series_keys_desc.iter().zip(series_keys.iter())
+            for ((_, _, table, tags), series_key) in series_keys_desc.iter().zip(series_keys.iter())
             {
-                assert_eq!(*db, &series_key.db);
                 assert_eq!(*table, &series_key.table);
                 assert_eq!(tags.len(), series_key.tags.len());
                 for ((k, v), tag) in tags.iter().zip(series_key.tags.iter()) {
@@ -1207,7 +1220,6 @@ mod test {
     #[tokio::test]
     async fn test_rename_tag() {
         let table_name = "table";
-        let db_name = "db";
         let dir = "/tmp/test/cnosdb/ts_index/rename_tag";
         let _ = std::fs::remove_dir_all(dir);
 
@@ -1235,7 +1247,6 @@ mod test {
             .map(|tags| SeriesKey {
                 tags,
                 table: table_name.to_string(),
-                db: db_name.to_string(),
             })
             .collect::<Vec<_>>();
 
@@ -1300,7 +1311,6 @@ mod test {
     #[tokio::test]
     async fn test_update_tags_value() {
         let table_name = "table";
-        let db_name = "db";
         let dir = "/tmp/test/cnosdb/ts_index/update_tags_value";
         let _ = std::fs::remove_dir_all(dir);
 
@@ -1328,7 +1338,6 @@ mod test {
             .map(|tags| SeriesKey {
                 tags,
                 table: table_name.to_string(),
-                db: db_name.to_string(),
             })
             .collect::<Vec<_>>();
 
@@ -1349,7 +1358,6 @@ mod test {
         let matched_series = SeriesKey {
             tags: waiting_update_tags,
             table: table_name.to_string(),
-            db: db_name.to_string(),
         };
         let (old_series_keys, new_series_keys, matched_sids) = ts_index
             .prepare_update_tags_value(
