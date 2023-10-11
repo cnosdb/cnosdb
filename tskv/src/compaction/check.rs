@@ -1012,12 +1012,7 @@ mod test {
 
         rt.block_on(async {
             // Get created database and vnode
-            let database_ref = engine
-                .get_db(&tenant_name, &database_name)
-                .await
-                .unwrap_or_else(|e| {
-                    panic!("created database '{}' exists: {:?}", &database_name, e)
-                });
+            let database_ref = engine.get_db(&tenant_name, &database_name).await.unwrap();
             let vnode_ref = database_ref
                 .read()
                 .await
