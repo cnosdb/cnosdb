@@ -213,7 +213,9 @@ impl CoordService {
             let dur = tokio::time::Duration::from_secs(60);
             tokio::time::sleep(dur).await;
 
-            ResourceManager::check_and_run(coord.clone()).await;
+            if let Err(err) = ResourceManager::check_and_run(coord.clone()).await {
+                error!("execute resource task err: {:?}", err);
+            }
         }
     }
 

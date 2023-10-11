@@ -35,70 +35,66 @@ impl ResourceManager {
         Ok(true)
     }
 
-    pub async fn check_and_run(coord: Arc<dyn Coordinator>) {
-        match coord.meta_manager().read_resourceinfos_mark().await {
-            Ok((node_id, is_lock)) => {
-                if !is_lock {
-                    // no other node execute
-                    if let Err(meta_err) = coord
-                        .meta_manager()
-                        .write_resourceinfos_mark(coord.node_id(), true)
-                        .await
-                    // lock resourceinfos, only this node can execute
+    pub async fn check_and_run(coord: Arc<dyn Coordinator>) -> CoordinatorResult<bool> {
+        let (node_id, is_lock) = coord
+            .meta_manager()
+            .read_resourceinfos_mark()
+            .await
+            .map_err(|err| CoordinatorError::Meta { source: err })?;
+        if !is_lock {
+            // lock resourceinfos
+            coord
+                .meta_manager()
+                .write_resourceinfos_mark(coord.node_id(), true)
+                .await
+                .map_err(|err| CoordinatorError::Meta { source: err })?;
+
+            let mut is_need_loop = false;
+            loop {
+                let resourceinfos = coord
+                    .meta_manager()
+                    .read_resourceinfos(&[])
+                    .await
+                    .map_err(|err| CoordinatorError::Meta { source: err })?;
+                let now = now_timestamp_nanos();
+                for mut resourceinfo in resourceinfos {
+                    if (*resourceinfo.get_status() == ResourceStatus::Schedule
+                        && resourceinfo.get_time() <= now)
+                        || *resourceinfo.get_status() == ResourceStatus::Failed
                     {
-                        error!("write resourceinfos_mark failed: {}", meta_err.to_string());
-                    } else {
-                        let now = now_timestamp_nanos();
-                        match coord.meta_manager().read_resourceinfos(&[]).await {
-                            Ok(resourceinfos) => {
-                                for mut resourceinfo in resourceinfos {
-                                    if (*resourceinfo.get_status() == ResourceStatus::Schedule
-                                        && resourceinfo.get_time() <= now)
-                                        || *resourceinfo.get_status() == ResourceStatus::Failed
-                                    {
-                                        resourceinfo.set_status(ResourceStatus::Executing);
-                                        if let Err(meta_err) = coord
-                                            .meta_manager()
-                                            .write_resourceinfo(
-                                                resourceinfo.get_names(),
-                                                resourceinfo.clone(),
-                                            )
-                                            .await
-                                        {
-                                            error!("{}", meta_err.to_string());
-                                            continue;
-                                        }
-                                        if let Err(coord_err) = ResourceManager::do_operator(
-                                            coord.clone(),
-                                            resourceinfo,
-                                        )
-                                        .await
-                                        {
-                                            error!("{}", coord_err.to_string());
-                                        }
-                                    }
-                                }
-                            }
-                            Err(meta_err) => {
-                                error!("{}", meta_err.to_string());
-                            }
-                        }
+                        resourceinfo.increase_try_count();
+
+                        resourceinfo.set_status(ResourceStatus::Executing);
                         if let Err(meta_err) = coord
                             .meta_manager()
-                            .write_resourceinfos_mark(coord.node_id(), false)
+                            .write_resourceinfo(resourceinfo.get_names(), resourceinfo.clone())
                             .await
-                        // unlock resourceinfos
                         {
-                            error!("write resourceinfos_mark failed: {}", meta_err.to_string());
+                            error!("{}", meta_err.to_string());
+                            is_need_loop = true;
+                            continue;
+                        }
+                        if let Err(coord_err) =
+                            ResourceManager::do_operator(coord.clone(), resourceinfo).await
+                        {
+                            error!("{}", coord_err.to_string());
+                            is_need_loop = true;
                         }
                     }
-                } else {
-                    info!("resource is executing by {}", node_id);
+                }
+                if !is_need_loop {
+                    // unlock resourceinfos
+                    coord
+                        .meta_manager()
+                        .write_resourceinfos_mark(coord.node_id(), false)
+                        .await
+                        .map_err(|err| CoordinatorError::Meta { source: err })?;
+                    return Ok(true);
                 }
             }
-            Err(meta_err) => {
-                error!("read resourceinfos_mark failed: {}", meta_err.to_string());
-            }
+        } else {
+            info!("resource is executing by {}", node_id);
+            Ok(false)
         }
     }
 
@@ -125,23 +121,18 @@ impl ResourceManager {
             _ => Ok(false),
         };
 
+        let mut status_comment = (ResourceStatus::Successed, String::default());
         if let Err(coord_err) = &operator_result {
-            let _ = ResourceManager::change_and_write(
-                coord.meta_manager(),
-                resourceinfo.clone(),
-                ResourceStatus::Failed,
-                &coord_err.to_string(),
-            )
-            .await;
-        } else {
-            ResourceManager::change_and_write(
-                coord.meta_manager(),
-                resourceinfo.clone(),
-                ResourceStatus::Successed,
-                "",
-            )
-            .await?;
+            status_comment.0 = ResourceStatus::Failed;
+            status_comment.1 = coord_err.to_string();
         }
+        ResourceManager::change_and_write(
+            coord.meta_manager(),
+            resourceinfo.clone(),
+            status_comment.0,
+            &status_comment.1,
+        )
+        .await?;
 
         operator_result
     }
@@ -406,7 +397,7 @@ impl ResourceManager {
 
     pub async fn add_resource_task(
         coord: Arc<dyn Coordinator>,
-        resourceinfo: ResourceInfo,
+        mut resourceinfo: ResourceInfo,
     ) -> CoordinatorResult<bool> {
         let resourceinfos = coord.meta_manager().read_resourceinfos(&[]).await?;
         let mut resourceinfos_map: HashMap<String, ResourceInfo> = HashMap::default();
@@ -418,6 +409,10 @@ impl ResourceManager {
         if !resourceinfos_map.contains_key(&name)
             || *resourceinfos_map[&name].get_status() != ResourceStatus::Executing
         {
+            if *resourceinfo.get_status() == ResourceStatus::Executing {
+                resourceinfo.increase_try_count();
+            }
+
             // write to meta
             coord
                 .meta_manager()

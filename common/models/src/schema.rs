@@ -110,10 +110,12 @@ pub struct ResourceInfo {
     tenant_id: Oid,
     names: Vec<String>,
     operator: ResourceOperator,
+    try_count: u64,
     after: Option<Duration>, // None means now
     status: ResourceStatus,
     comment: String,
-    alter_table: (Option<String>, Option<TableColumn>, Option<String>), // Depending on different actions, the three values of the tuple each have their own effect
+    // Depending on different actions, the three values of the tuple each have their own effect
+    alter_table: (Option<String>, Option<TableColumn>, Option<String>),
 }
 
 impl ResourceInfo {
@@ -129,6 +131,7 @@ impl ResourceInfo {
             tenant_id,
             names,
             operator,
+            try_count: 0,
             after: after.clone(),
             status: ResourceStatus::Executing,
             comment: String::default(),
@@ -160,6 +163,10 @@ impl ResourceInfo {
         &self.operator
     }
 
+    pub fn get_try_count(&self) -> u64 {
+        self.try_count
+    }
+
     pub fn get_status(&self) -> &ResourceStatus {
         &self.status
     }
@@ -170,6 +177,10 @@ impl ResourceInfo {
 
     pub fn get_alter_table(&self) -> (Option<String>, Option<TableColumn>, Option<String>) {
         self.alter_table.clone()
+    }
+
+    pub fn increase_try_count(&mut self) {
+        self.try_count += 1;
     }
 
     pub fn set_status(&mut self, status: ResourceStatus) {

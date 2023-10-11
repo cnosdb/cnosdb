@@ -108,6 +108,7 @@ impl TableProvider for InformationSchemaResourceStatusTable {
                     time_str,
                     resourceinfo.get_names().join("/"),
                     resourceinfo.get_operator().to_string(),
+                    resourceinfo.get_try_count().to_string(),
                     resourceinfo.get_status().to_string(),
                     resourceinfo.get_comment(),
                 );
