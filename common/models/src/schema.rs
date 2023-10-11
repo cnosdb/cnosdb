@@ -113,6 +113,7 @@ pub struct ResourceInfo {
     after: Option<Duration>, // None means now
     status: ResourceStatus,
     comment: String,
+    alter_table: (Option<String>, Option<TableColumn>, Option<String>), // Depending on different actions, the three values of the tuple each have their own effect
 }
 
 impl ResourceInfo {
@@ -121,6 +122,7 @@ impl ResourceInfo {
         names: Vec<String>,
         operator: ResourceOperator,
         after: &Option<Duration>,
+        alter_table: (Option<String>, Option<TableColumn>, Option<String>),
     ) -> Self {
         let mut res_info = ResourceInfo {
             time: now_timestamp_nanos(),
@@ -130,6 +132,7 @@ impl ResourceInfo {
             after: after.clone(),
             status: ResourceStatus::Executing,
             comment: String::default(),
+            alter_table,
         };
         if let Some(after) = after {
             let after_nanos = after.to_nanoseconds();
@@ -163,6 +166,10 @@ impl ResourceInfo {
 
     pub fn get_comment(&self) -> &String {
         &self.comment
+    }
+
+    pub fn get_alter_table(&self) -> (Option<String>, Option<TableColumn>, Option<String>) {
+        self.alter_table.clone()
     }
 
     pub fn set_status(&mut self, status: ResourceStatus) {

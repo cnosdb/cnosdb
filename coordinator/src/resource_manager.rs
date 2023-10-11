@@ -1,12 +1,16 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use meta::error::MetaError;
 use meta::model::meta_admin::AdminMeta;
 use models::oid::Identifier;
-use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus};
+use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableColumn, TableSchema};
 use models::utils::now_timestamp_nanos;
-use protos::kv_service::admin_command_request::Command::{DropDb, DropTab};
-use protos::kv_service::{AdminCommandRequest, DropDbRequest, DropTableRequest};
+use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab};
+use protos::kv_service::{
+    AddColumnRequest, AdminCommandRequest, AlterColumnRequest, DropColumnRequest, DropDbRequest,
+    DropTableRequest, RenameColumnRequest,
+};
 use tracing::{debug, error, info};
 
 use crate::errors::*;
@@ -112,22 +116,12 @@ impl ResourceManager {
             ResourceOperator::DropTable => {
                 ResourceManager::drop_table(coord.clone(), &resourceinfo).await
             }
-            /*ResourceType::Tagname => {
-                match resourceinfo.operator {
-                    ResourceOperator::Update => {
-                        ResourceManager::update_tagname(coord.clone(), &resourceinfo).await;
-                    },
-                    _ => {}
-                }
-            },
-            ResourceType::Tagvalue => {
-                match resourceinfo.operator {
-                    ResourceOperator::Update => {
-                        ResourceManager::update_tagvalue(coord.clone(), &resourceinfo).await;
-                    },
-                    _ => {}
-                }
-            }*/
+            ResourceOperator::AddColumn
+            | ResourceOperator::DropColumn
+            | ResourceOperator::AlterColumn
+            | ResourceOperator::RenameTagName => {
+                ResourceManager::alter_table(coord.clone(), &resourceinfo).await
+            }
             _ => Ok(false),
         };
 
@@ -295,13 +289,120 @@ impl ResourceManager {
         }
     }
 
-    /*async fn update_tagname(coord: Arc<CoordService>, resourceinfo: &ResourceInfo) {
-        //TODO
-    }
+    async fn alter_table(
+        coord: Arc<dyn Coordinator>,
+        resourceinfo: &ResourceInfo,
+    ) -> CoordinatorResult<bool> {
+        let names = resourceinfo.get_names();
+        if names.len() == 4 {
+            let tenant_name = names.get(0).unwrap();
+            let db_name = names.get(1).unwrap();
+            let table_name = names.get(2).unwrap();
 
-    async fn update_tagvalue(coord: Arc<CoordService>, resourceinfo: &ResourceInfo) {
-        //TODO
-    }*/
+            let tenant =
+                coord
+                    .tenant_meta(tenant_name)
+                    .await
+                    .ok_or(CoordinatorError::TenantNotFound {
+                        name: tenant_name.clone(),
+                    })?;
+
+            let mut schema = tenant
+                .get_tskv_table_schema(db_name, table_name)?
+                .ok_or(CoordinatorError::Meta {
+                    source: MetaError::TableNotFound {
+                        table: table_name.to_string(),
+                    },
+                })?
+                .as_ref()
+                .clone();
+
+            let req = match resourceinfo.get_operator() {
+                ResourceOperator::AddColumn => {
+                    let table_column = resourceinfo.get_alter_table().1.unwrap();
+
+                    schema.add_column(table_column.clone());
+
+                    Some(AdminCommandRequest {
+                        tenant: tenant_name.to_string(),
+                        command: Some(Command::AddColumn(AddColumnRequest {
+                            db: schema.db.to_owned(),
+                            table: schema.name.to_string(),
+                            column: table_column.encode()?,
+                        })),
+                    })
+                }
+                ResourceOperator::DropColumn => {
+                    let column_name = resourceinfo.get_alter_table().0.unwrap();
+
+                    schema.drop_column(&column_name);
+
+                    Some(AdminCommandRequest {
+                        tenant: tenant_name.to_string(),
+                        command: Some(Command::DropColumn(DropColumnRequest {
+                            db: schema.db.to_owned(),
+                            table: schema.name.to_string(),
+                            column: column_name,
+                        })),
+                    })
+                }
+                ResourceOperator::AlterColumn => {
+                    let column_name = resourceinfo.get_alter_table().0.unwrap();
+                    let new_column = resourceinfo.get_alter_table().1.unwrap();
+
+                    schema.change_column(&column_name, new_column.clone());
+
+                    Some(AdminCommandRequest {
+                        tenant: tenant_name.to_string(),
+                        command: Some(Command::AlterColumn(AlterColumnRequest {
+                            db: schema.db.to_owned(),
+                            table: schema.name.to_string(),
+                            name: column_name,
+                            column: new_column.encode()?,
+                        })),
+                    })
+                }
+                ResourceOperator::RenameTagName => {
+                    let old_column = resourceinfo.get_alter_table().1.unwrap();
+                    let new_column_name = resourceinfo.get_alter_table().2.unwrap();
+
+                    let new_column = TableColumn::new(
+                        old_column.id,
+                        new_column_name.to_string(),
+                        old_column.column_type.clone(),
+                        old_column.encoding,
+                    );
+                    schema.change_column(&old_column.name, new_column);
+
+                    Some(AdminCommandRequest {
+                        tenant: tenant_name.to_string(),
+                        command: Some(Command::RenameColumn(RenameColumnRequest {
+                            db: schema.db.to_owned(),
+                            table: schema.name.to_string(),
+                            old_name: old_column.name,
+                            new_name: new_column_name,
+                        })),
+                    })
+                }
+                _ => None,
+            };
+
+            if req.is_some() {
+                schema.schema_id += 1;
+                coord.broadcast_command(req.unwrap()).await?;
+
+                tenant
+                    .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
+                    .await?;
+            }
+
+            Ok(true)
+        } else {
+            Err(CoordinatorError::ResNamesIllegality {
+                names: resourceinfo.get_names().join("/"),
+            })
+        }
+    }
 
     pub async fn add_resource_task(
         coord: Arc<dyn Coordinator>,

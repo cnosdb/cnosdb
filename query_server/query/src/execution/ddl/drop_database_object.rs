@@ -51,6 +51,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     ],
                     ResourceOperator::DropTable,
                     &None,
+                    (None, None, None),
                 );
                 let res = ResourceManager::add_resource_task(
                     query_state_machine.coord.clone(),

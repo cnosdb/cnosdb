@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
-use models::schema::{TableColumn, TableSchema, TskvTableSchema};
-use protos::kv_service::admin_command_request::Command;
-use protos::kv_service::{
-    AddColumnRequest, AdminCommandRequest, AlterColumnRequest, DropColumnRequest,
-    RenameColumnRequest,
-};
+use models::oid::Identifier;
+use models::schema::{ResourceInfo, ResourceOperator, TableColumn, TableSchema};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{AlterTable, AlterTableAction, RenameColumnAction};
 use spi::{QueryError, Result};
@@ -43,31 +40,27 @@ impl DDLDefinitionTask for AlterTableTask {
             .as_ref()
             .clone();
 
-        let req = match &self.stmt.alter_action {
+        let mut alter_info: Option<(
+            String,
+            ResourceOperator,
+            (Option<String>, Option<TableColumn>, Option<String>),
+        )> = None;
+        match &self.stmt.alter_action {
             AlterTableAction::AddColumn { table_column } => {
                 let table_column = table_column.to_owned();
-                schema.add_column(table_column.clone());
-
-                Some(AdminCommandRequest {
-                    tenant: tenant.to_string(),
-                    command: Some(Command::AddColumn(AddColumnRequest {
-                        db: schema.db.to_owned(),
-                        table: schema.name.to_string(),
-                        column: table_column.encode()?,
-                    })),
-                })
+                alter_info = Some((
+                    table_column.name.clone(),
+                    ResourceOperator::AddColumn,
+                    (None, Some(table_column), None),
+                ));
             }
 
             AlterTableAction::DropColumn { column_name } => {
-                schema.drop_column(column_name);
-                Some(AdminCommandRequest {
-                    tenant: tenant.to_string(),
-                    command: Some(Command::DropColumn(DropColumnRequest {
-                        db: schema.db.to_owned(),
-                        table: schema.name.to_string(),
-                        column: column_name.clone(),
-                    })),
-                })
+                alter_info = Some((
+                    column_name.clone(),
+                    ResourceOperator::DropColumn,
+                    (Some(column_name.clone()), None, None),
+                ));
             }
 
             AlterTableAction::AlterColumn {
@@ -80,24 +73,26 @@ impl DDLDefinitionTask for AlterTableTask {
                         data_type: new_column.column_type.to_string(),
                     });
                 }
-                schema.change_column(column_name, new_column.clone());
-                Some(AdminCommandRequest {
-                    tenant: tenant.to_string(),
-                    command: Some(Command::AlterColumn(AlterColumnRequest {
-                        db: schema.db.to_owned(),
-                        table: schema.name.to_string(),
-                        name: column_name.to_owned(),
-                        column: new_column.encode()?,
-                    })),
-                })
+                alter_info = Some((
+                    column_name.clone(),
+                    ResourceOperator::AlterColumn,
+                    (Some(column_name.clone()), Some(new_column.clone()), None),
+                ));
             }
             AlterTableAction::RenameColumn {
                 old_column_name,
                 new_column_name,
             } => {
-                let alter_schema_func =
-                    |schema: &mut TskvTableSchema, old_column_name: &str, new_name: &str| {
-                        if let Some(old_column) = schema.column(old_column_name) {
+                if let Some(old_column) = schema.column(old_column_name) {
+                    match new_column_name {
+                        RenameColumnAction::RenameTag(new_name) => {
+                            alter_info = Some((
+                                old_column_name.clone(),
+                                ResourceOperator::RenameTagName,
+                                (None, Some(old_column.clone()), Some(new_name.clone())),
+                            ));
+                        }
+                        RenameColumnAction::RenameField(new_name) => {
                             let new_column = TableColumn::new(
                                 old_column.id,
                                 new_name.to_string(),
@@ -105,46 +100,37 @@ impl DDLDefinitionTask for AlterTableTask {
                                 old_column.encoding,
                             );
                             schema.change_column(old_column_name, new_column);
-                        } else {
-                            return Err(QueryError::ColumnNotFound {
-                                col: old_column_name.to_owned(),
-                            });
+                            schema.schema_id += 1;
+
+                            client
+                                .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
+                                .await?;
                         }
-
-                        Ok(())
-                    };
-
-                match new_column_name {
-                    RenameColumnAction::RenameTag(new_name) => {
-                        alter_schema_func(&mut schema, old_column_name, new_name)?;
-
-                        Some(AdminCommandRequest {
-                            tenant: tenant.to_string(),
-                            command: Some(Command::RenameColumn(RenameColumnRequest {
-                                db: schema.db.to_owned(),
-                                table: schema.name.to_string(),
-                                old_name: old_column_name.to_owned(),
-                                new_name: new_name.to_owned(),
-                            })),
-                        })
                     }
-                    RenameColumnAction::RenameField(new_name) => {
-                        alter_schema_func(&mut schema, old_column_name, new_name)?;
-
-                        None
-                    }
+                } else {
+                    return Err(QueryError::ColumnNotFound {
+                        col: old_column_name.to_owned(),
+                    });
                 }
             }
         };
-        schema.schema_id += 1;
-        // TODO: @lutengda Start a task that guarantees eventual consistency
-        if let Some(req) = req {
-            query_state_machine.coord.broadcast_command(req).await?;
-        }
 
-        client
-            .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
-            .await?;
+        if let Some(info) = alter_info {
+            let resourceinfo = ResourceInfo::new(
+                *client.tenant().id(),
+                vec![
+                    table_name.tenant().to_string(),
+                    table_name.database().to_string(),
+                    table_name.table().to_string(),
+                    info.0,
+                ],
+                info.1,
+                &None,
+                info.2,
+            );
+            ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
+                .await?;
+        }
         return Ok(Output::Nil(()));
     }
 }
