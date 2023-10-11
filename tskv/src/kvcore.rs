@@ -393,16 +393,8 @@ impl TsKv {
         info!("Summary task handler started");
     }
 
-    pub async fn get_db(&self, tenant: &str, database: &str) -> Result<Arc<RwLock<Database>>> {
-        let db = self
-            .version_set
-            .read()
-            .await
-            .get_db(tenant, database)
-            .ok_or(SchemaError::DatabaseNotFound {
-                database: database.to_string(),
-            })?;
-        Ok(db)
+    pub async fn get_db(&self, tenant: &str, database: &str) -> Option<Arc<RwLock<Database>>> {
+        self.version_set.read().await.get_db(tenant, database)
     }
 
     pub(crate) async fn get_db_or_else_create(
@@ -682,8 +674,8 @@ impl TsKv {
         let db_name = fb_points.db_ext()?;
         // If database does not exist, skip this record.
         let db = match self.get_db(tenant, db_name).await {
-            Ok(db) => db,
-            Err(_) => return Ok(()),
+            Some(db) => db,
+            None => return Ok(()),
         };
         // If vnode does not exist, skip this record.
         let tsf = match db.read().await.get_tsfamily(vnode_id) {
@@ -743,7 +735,10 @@ impl TsKv {
         sids: Vec<SeriesId>,
         recovering: bool,
     ) -> Result<()> {
-        let db = self.get_db(tenant, database).await?;
+        let db = match self.get_db(tenant, database).await {
+            Some(db) => db,
+            None => return Ok(()),
+        };
         if let Some(ts_index) = db.read().await.get_ts_index(vnode_id) {
             // 更新索引
             ts_index
@@ -1086,7 +1081,11 @@ impl Engine for TsKv {
         column_name: &str,
     ) -> Result<()> {
         // TODO(zipper): Store this action in WAL.
-        let db = self.get_db(tenant, database).await?;
+        let db = match self.get_db(tenant, database).await {
+            Some(db) => db,
+            None => return Ok(()),
+        };
+
         let schema =
             db.read()
                 .await
@@ -1140,7 +1139,10 @@ impl Engine for TsKv {
         let tag_name = tag_name.as_bytes().to_vec();
         let new_tag_name = new_tag_name.as_bytes().to_vec();
 
-        let db = self.get_db(tenant, database).await?;
+        let db = match self.get_db(tenant, database).await {
+            Some(db) => db,
+            None => return Ok(()),
+        };
 
         for ts_index in db.read().await.ts_indexes().values() {
             ts_index
@@ -1167,7 +1169,10 @@ impl Engine for TsKv {
         matched_series: &[SeriesKey],
         dry_run: bool,
     ) -> Result<()> {
-        let db = self.get_db(tenant, database).await?;
+        let db = match self.get_db(tenant, database).await {
+            Some(db) => db,
+            None => return Ok(()),
+        };
 
         for (vnode_id, ts_index) in db.read().await.ts_indexes() {
             // 准备数据

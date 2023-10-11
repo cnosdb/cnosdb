@@ -53,8 +53,9 @@ impl DBschemas {
         let schema = self
             .client
             .get_tskv_table_schema(&self.database_name, table_name)?
-            .ok_or(SchemaError::DatabaseNotFound {
+            .ok_or(SchemaError::TableNotFound {
                 database: self.database_name.clone(),
+                table: table_name.to_string(),
             })?;
 
         for (field_name, field_type) in field_names.iter().zip(field_type) {
