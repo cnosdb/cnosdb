@@ -1,0 +1,68 @@
+name: Build package and push
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - v[0-9]+.*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'tag'
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - x86_64-unknown-linux-gnu
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Build Dependencies
+      shell: bash
+      run: |
+        TARGETPLATFORM="linux/amd64" bash ./.github/tools/install_dependencies.sh
+    - name: Install build tools
+      run: |
+        sudo gem install fpm
+      shell: bash
+    - name: Preparing the Compilation Environment
+      uses: taiki-e/setup-cross-toolchain-action@v1
+      with:
+        target: ${{ matrix.target }}
+    - name: Compiler
+      run: |
+        cargo build --workspace --bins --release --target ${{ matrix.target }}
+    - name: Package
+      if: github.event_name != 'workflow_dispatch'
+      run: |
+        bash -x ./packages/build_package.sh -n cnosdb -v ${{ github.ref_name }} -b release -t ${{ matrix.target }}
+        bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ github.ref_name }} -b release -t ${{ matrix.target }}
+    - name: Package manually
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        bash -x ./packages/build_package.sh -n cnosdb -v ${{ github.event.inputs.tag }} -b release -t ${{ matrix.target }}
+        bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ github.event.inputs.tag }} -b release -t ${{ matrix.target }}
+    - name: Release
+      if: github.event_name != 'workflow_dispatch'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          *.deb
+          *.rpm
+    - name: Release manually
+      if: github.event_name == 'workflow_dispatch'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          *.deb
+          *.rpm
+        tag_name: ${{ github.event.inputs.tag }}

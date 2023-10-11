@@ -32,8 +32,8 @@ const DEFAULT_META_IP: &str = "0.0.0.0";
 #[derive(Debug, Parser)]
 struct Cli {
     /// configuration path
-    #[arg(short, long, default_value = "./config.toml")]
-    config: String,
+    #[arg(short, long)]
+    config: Option<String>,
 }
 
 #[actix_web::main]

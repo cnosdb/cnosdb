@@ -1,0 +1,20 @@
+# If you modify this, please also make sure to edit init.sh
+
+[Unit]
+Description=Meta service for CnosDB, an open-source, distributed, time series database
+Documentation=https://docs.cnosdb.com/
+After=network-online.target
+
+[Service]
+User=root
+Group=root
+LimitNOFILE=65536
+EnvironmentFile=-/etc/default/cnosdb-meta
+ExecStart=/usr/bin/cnosdb-meta --config /etc/cnosdb/cnosdb-meta.conf $CNOSDB_OPTS
+KillMode=control-group
+Restart=on-failure
+PIDFile=/var/run/cnosdb/cnosdb-meta.pid
+
+[Install]
+WantedBy=multi-user.target
+Alias=cnosdb-meta.service

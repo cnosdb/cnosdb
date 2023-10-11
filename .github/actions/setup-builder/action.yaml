@@ -1,5 +1,5 @@
 name: Prepare Rust Builder
-description: 'Prepare Rust Build Environment'
+description: "Prepare Rust Build Environment"
 runs:
   using: "composite"
   steps:
@@ -10,20 +10,7 @@ runs:
     - name: Install Build Dependencies
       shell: bash
       run: |
-        curl -o flatbuffers.zip -sL https://github.com/google/flatbuffers/releases/download/v22.9.29/Linux.flatc.binary.clang++-12.zip
-        unzip  flatbuffers.zip
-        mv flatc /usr/local/bin
-    - name: Install Protoc
-      shell: bash
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
-        protoc --version
-    - name: Install psmisc
-      # killall
-      shell: bash
-      run: |
-        sudo apt-get install -y psmisc
+        TARGETPLATFORM="linux/amd64" bash ./.github/tools/install_dependencies.sh
     - name: Disable incremental compilation
       # Disable incremental compilation
       shell: bash

@@ -1,0 +1,20 @@
+FROM --platform=$TARGETPLATFORM ubuntu
+
+RUN apt update && apt install -y build-essential cmake unzip curl openssl git wget perl && apt clean
+
+COPY .github/tools/install_dependencies.sh /root
+
+# Install dependency
+ARG TARGETPLATFORM
+RUN bash /root/install_dependencies.sh
+
+# Install Rust
+RUN curl https://sh.rustup.rs -sSf | sh -s -- --no-modify-path --default-toolchain none -y
+ENV PATH /root/.cargo/bin/:$PATH
+
+# Install the Rust toolchain
+RUN rustup self update \
+  && rustup set profile minimal
+
+WORKDIR /cnosdb
+

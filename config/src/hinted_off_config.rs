@@ -20,7 +20,7 @@ impl HintedOffConfig {
     }
 
     fn default_path() -> String {
-        "/tmp/cnosdb/hh".to_string()
+        "/var/lib/cnosdb/hh".to_string()
     }
 
     fn default_threads() -> i32 {
