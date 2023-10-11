@@ -1225,7 +1225,7 @@ mod test {
                 &mut HashMap::new(),
                 None,
             );
-            let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache);
+            let tsm_reader_cache = Arc::downgrade(version.tsm_reader_cache());
 
             let mut edit = VersionEdit::new(10);
             let meta = CompactMeta {
@@ -1239,7 +1239,7 @@ mod test {
                 high_seq: 1,
                 ..Default::default()
             };
-            version.levels_info[1].push_compact_meta(
+            version.levels_info_mut()[1].push_compact_meta(
                 &meta,
                 Arc::new(BloomFilter::default()),
                 tsm_reader_cache,
@@ -1269,15 +1269,15 @@ mod test {
 
         let vs = summary.version_set.read().await;
         let tsf = vs.get_tsfamily_by_tf_id(10).await.unwrap();
-        assert_eq!(tsf.read().await.version().last_seq, 1);
-        assert_eq!(tsf.read().await.version().levels_info[1].tsf_id, 10);
-        assert!(!tsf.read().await.version().levels_info[1].files[0].is_delta());
+        assert_eq!(tsf.read().await.version().last_seq(), 1);
+        assert_eq!(tsf.read().await.version().levels_info()[1].tsf_id, 10);
+        assert!(!tsf.read().await.version().levels_info()[1].files[0].is_delta());
         assert_eq!(
-            tsf.read().await.version().levels_info[1].files[0].file_id(),
+            tsf.read().await.version().levels_info()[1].files[0].file_id(),
             15
         );
         assert_eq!(
-            tsf.read().await.version().levels_info[1].files[0].size(),
+            tsf.read().await.version().levels_info()[1].files[0].size(),
             100
         );
         assert_eq!(summary.ctx.file_id(), 16);

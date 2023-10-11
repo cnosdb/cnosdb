@@ -145,9 +145,9 @@ impl Picker for LevelCompactionPicker {
         );
 
         Some(CompactReq {
-            ts_family_id: version.ts_family_id,
-            database: version.tenant_database.clone(),
-            storage_opt: version.storage_opt.clone(),
+            ts_family_id: version.tf_id(),
+            database: version.tenant_database(),
+            storage_opt: version.storage_opt(),
             files: picking_files,
             version: version.clone(),
             out_level,

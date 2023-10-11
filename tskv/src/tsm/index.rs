@@ -10,10 +10,11 @@ use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u
 use crate::tsm::{
     BlockMetaIterator, DataBlock, WriteTsmError, WriteTsmResult, BLOCK_META_SIZE, INDEX_META_SIZE,
 };
+use crate::ColumnFileId;
 
 #[derive(Debug, Clone)]
 pub struct Index {
-    tsm_id: u64,
+    tsm_file_id: u64,
     bloom_filter: Arc<BloomFilter>,
 
     /// In-memory index-block data
@@ -40,7 +41,7 @@ impl Index {
         field_id_offs: Vec<(FieldId, usize)>,
     ) -> Self {
         Self {
-            tsm_id,
+            tsm_file_id: tsm_id,
             bloom_filter,
             data,
             field_id_offs,
@@ -238,6 +239,10 @@ impl BlockMeta {
     #[inline(always)]
     pub fn val_off(&self) -> u64 {
         decode_be_u64(&self.index_ref.data()[self.block_offset + 36..self.block_offset + 44])
+    }
+
+    pub fn tsm_file_id(&self) -> ColumnFileId {
+        self.index_ref.tsm_file_id
     }
 }
 

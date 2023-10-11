@@ -833,6 +833,7 @@ pub fn make_owner(tenant_name: &str, database_name: &str) -> String {
     format!("{}.{}", tenant_name, database_name)
 }
 
+/// "tenant.database" -> ("tenant", "database")
 pub fn split_owner(owner: &str) -> (&str, &str) {
     owner
         .find('.')

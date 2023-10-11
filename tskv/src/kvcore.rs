@@ -42,7 +42,7 @@ use crate::wal::{
     self, Block, DeleteBlock, UpdateSeriesKeysBlock, WalDecoder, WalManager, WalTask,
 };
 use crate::{
-    file_utils, tenant_name_from_request, Engine, Error, SnapshotFileMeta, TseriesFamilyId,
+    file_utils, Engine, Error, SnapshotFileMeta, TseriesFamilyId,
     UpdateSetValue, VnodeSnapshot,
 };
 
@@ -1914,5 +1914,13 @@ impl TsKv {
 
     pub(crate) fn compact_task_sender(&self) -> Sender<CompactTask> {
         self.compact_task_sender.clone()
+    }
+}
+
+/// Returns the normalized tenant of a WritePointsRequest
+fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) -> String {
+    match &req.meta {
+        Some(meta) => meta.tenant.clone(),
+        None => models::schema::DEFAULT_CATALOG.to_string(),
     }
 }
