@@ -14,7 +14,6 @@ use datafusion::arrow::datatypes::{
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use futures::future::join_all;
-use minivec::MiniVec;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
 use models::predicate::PlacedSplit;
@@ -85,15 +84,21 @@ impl ArrayBuilderPtr {
                     reason: format!("unknown type of column '{}'", column_name),
                 });
             }
-            ValueType::String => {
-                if let Some(DataType::Str(_, val)) = value {
-                    let data =
-                        String::from_utf8(val.to_vec()).map_err(|_| Error::ErrCharacterSet)?;
-                    self.append_string(data);
-                } else {
-                    self.append_null_string();
+            ValueType::String => match value {
+                Some(DataType::Str(_, val)) => {
+                    // Safety
+                    // All val is valid UTF-8 String
+                    let str = unsafe { std::str::from_utf8_unchecked(val.as_slice()) };
+                    self.append_string(str)
                 }
-            }
+                Some(DataType::StrRef(_, val)) => {
+                    // Safety
+                    // All val is valid UTF-8 String
+                    let str = unsafe { std::str::from_utf8_unchecked(val.as_slice()) };
+                    self.append_string(str)
+                }
+                _ => self.append_null_string(),
+            },
             ValueType::Boolean => {
                 if let Some(DataType::Bool(_, val)) = value {
                     self.append_bool(val);
@@ -159,7 +164,7 @@ impl ArrayBuilderPtr {
         }
     }
 
-    pub fn append_string(&mut self, data: String) {
+    pub fn append_string(&mut self, data: &str) {
         if let Some(b) = self.ptr.as_any_mut().downcast_mut::<StringBuilder>() {
             b.append_value(data);
         } else {
@@ -726,7 +731,7 @@ impl TagCursor {
     pub fn new(name: String, value: Option<Vec<u8>>) -> Self {
         Self {
             name,
-            value: value.map(|v| DataType::Str(0, MiniVec::from(v.as_slice()))),
+            value: value.map(|v| DataType::StrRef(0, Arc::new(v))),
         }
     }
 }

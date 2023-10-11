@@ -177,6 +177,12 @@ impl DataBlock {
                     val.push(val_in);
                 }
             }
+            DataType::StrRef(ts_in, val_in) => {
+                if let Self::Str { ts, val, .. } = self {
+                    ts.push(ts_in);
+                    val.push(MiniVec::from(val_in.as_slice()))
+                }
+            }
         }
     }
 
