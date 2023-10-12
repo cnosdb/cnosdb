@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cache::{ShardedSyncCache, SyncCache};
+use cache::{LruWrap, SyncCache, SyncCacheWrap};
 use datafusion::execution::memory_pool::UnboundedMemoryPool;
 use memory_pool::{MemoryConsumer, MemoryPool, MemoryPoolRef, MemoryReservation};
 use metrics::count::U64Counter;
@@ -22,7 +22,7 @@ pub struct DataBlockCache {
     load_duration: DurationCounter,
     size_gauge: U64Gauge,
     max_cap: usize,
-    cache: Arc<ShardedSyncCache<DataBlockId, DataBlockWrap>>,
+    cache: Arc<SyncCacheWrap<DataBlockId, DataBlockWrap>>,
     memory_reservation: Mutex<MemoryReservation>,
 }
 
@@ -70,7 +70,7 @@ impl Default for DataBlockCache {
             visits: Default::default(),
             load_duration: Default::default(),
             size_gauge: Default::default(),
-            cache: Arc::new(ShardedSyncCache::create_lru_sharded_cache_unbounded()),
+            cache: Arc::new(SyncCacheWrap::new(LruWrap::unbounded())),
             max_cap: usize::MAX,
             memory_reservation: Mutex::new(reservation),
         }
@@ -103,7 +103,7 @@ impl DataBlockCache {
         load_duration: DurationCounter,
         size_gauge: U64Gauge,
         max_cap: usize,
-        cache: Arc<ShardedSyncCache<DataBlockId, DataBlockWrap>>,
+        cache: Arc<SyncCacheWrap<DataBlockId, DataBlockWrap>>,
         memory_reservation: Mutex<MemoryReservation>,
     ) -> Self {
         Self {
@@ -150,7 +150,7 @@ impl DataBlockCache {
             load_duration,
             size_gauge,
             max_cap: memory_cap as usize,
-            cache: Arc::new(ShardedSyncCache::create_lru_sharded_cache_unbounded()),
+            cache: Arc::new(SyncCacheWrap::new(LruWrap::unbounded())),
             memory_reservation,
         }
     }
@@ -196,7 +196,7 @@ impl DataBlockCache {
 
         let blk = DataBlockWrap::new(blk);
         while self.max_cap - memory.size() < blk.size() {
-            if let Some((_, b)) = self.cache.pop_shard(&id).or_else(|| self.cache.pop()) {
+            if let Some((_, b)) = self.cache.pop() {
                 memory.shrink(b.size())
             } else {
                 return Ok(());
