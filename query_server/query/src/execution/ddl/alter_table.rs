@@ -6,7 +6,7 @@ use meta::error::MetaError;
 use models::oid::Identifier;
 use models::schema::{ResourceInfo, ResourceOperator, TableColumn, TableSchema, TskvTableSchema};
 use protos::kv_service::admin_command_request::Command;
-use protos::kv_service::{RenameColumnRequest, AdminCommandRequest};
+use protos::kv_service::{AdminCommandRequest, RenameColumnRequest};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{AlterTable, AlterTableAction, RenameColumnAction};
 use spi::{QueryError, Result};
@@ -51,7 +51,7 @@ impl DDLDefinitionTask for AlterTableTask {
                 Some((
                     table_column.name.clone(),
                     ResourceOperator::AddColumn,
-                    (table_column.name.clone(), schema),
+                    (table_column.name, schema.clone()),
                 ))
             }
 
@@ -62,7 +62,7 @@ impl DDLDefinitionTask for AlterTableTask {
                 Some((
                     column_name.clone(),
                     ResourceOperator::DropColumn,
-                    (column_name.clone(), schema),
+                    (column_name.clone(), schema.clone()),
                 ))
             }
 
@@ -82,7 +82,7 @@ impl DDLDefinitionTask for AlterTableTask {
                 Some((
                     column_name.clone(),
                     ResourceOperator::AlterColumn,
-                    (column_name.clone(), schema),
+                    (column_name.clone(), schema.clone()),
                 ))
             }
             AlterTableAction::RenameColumn {
@@ -98,7 +98,7 @@ impl DDLDefinitionTask for AlterTableTask {
                                 old_column.column_type.clone(),
                                 old_column.encoding,
                             );
-                            schema.change_column(old_column_name, new_column.clone());
+                            schema.change_column(old_column_name, new_column);
                             schema.schema_id += 1;
                         } else {
                             return Err(QueryError::ColumnNotFound {
@@ -134,7 +134,7 @@ impl DDLDefinitionTask for AlterTableTask {
                         Some((
                             old_column_name.clone(),
                             ResourceOperator::RenameTagName,
-                            (new_name.clone(), schema),
+                            (new_name.clone(), schema.clone()),
                         ))
                     }
                     RenameColumnAction::RenameField(new_name) => {

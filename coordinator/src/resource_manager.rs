@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use meta::error::MetaError;
 use meta::model::meta_admin::AdminMeta;
 use models::oid::Identifier;
-use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableColumn, TableSchema};
+use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableSchema};
 use models::utils::now_timestamp_nanos;
 use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab};
 use protos::kv_service::{
@@ -287,8 +286,7 @@ impl ResourceManager {
         let names = resourceinfo.get_names();
         if names.len() == 4 {
             let tenant_name = names.get(0).unwrap();
-            let db_name = names.get(1).unwrap();
-            let table_name = names.get(2).unwrap();
+            let column_name = names.get(3).unwrap();
 
             let tenant =
                 coord
@@ -298,92 +296,74 @@ impl ResourceManager {
                         name: tenant_name.clone(),
                     })?;
 
-            let mut schema = tenant
-                .get_tskv_table_schema(db_name, table_name)?
-                .ok_or(CoordinatorError::Meta {
-                    source: MetaError::TableNotFound {
-                        table: table_name.to_string(),
-                    },
-                })?
-                .as_ref()
-                .clone();
-
+            let alter_info =
+                resourceinfo
+                    .get_alter_info()
+                    .ok_or(CoordinatorError::CommonError {
+                        msg: "alter_table should have alter_info".to_string(),
+                    })?;
             let req = match resourceinfo.get_operator() {
                 ResourceOperator::AddColumn => {
-                    let table_column = resourceinfo.get_alter_table().1.unwrap();
-
-                    schema.add_column(table_column.clone());
-
-                    Some(AdminCommandRequest {
-                        tenant: tenant_name.to_string(),
-                        command: Some(Command::AddColumn(AddColumnRequest {
-                            db: schema.db.to_owned(),
-                            table: schema.name.to_string(),
-                            column: table_column.encode()?,
-                        })),
-                    })
+                    if let Some(table_column) = alter_info.1.column(&alter_info.0) {
+                        Some(AdminCommandRequest {
+                            tenant: tenant_name.to_string(),
+                            command: Some(Command::AddColumn(AddColumnRequest {
+                                db: alter_info.1.db.to_owned(),
+                                table: alter_info.1.name.to_string(),
+                                column: table_column.encode()?,
+                            })),
+                        })
+                    } else {
+                        return Err(CoordinatorError::CommonError {
+                            msg: format!("Column {} not found.", alter_info.0),
+                        });
+                    }
                 }
-                ResourceOperator::DropColumn => {
-                    let column_name = resourceinfo.get_alter_table().0.unwrap();
-
-                    schema.drop_column(&column_name);
-
-                    Some(AdminCommandRequest {
-                        tenant: tenant_name.to_string(),
-                        command: Some(Command::DropColumn(DropColumnRequest {
-                            db: schema.db.to_owned(),
-                            table: schema.name.to_string(),
-                            column: column_name,
-                        })),
-                    })
-                }
+                ResourceOperator::DropColumn => Some(AdminCommandRequest {
+                    tenant: tenant_name.to_string(),
+                    command: Some(Command::DropColumn(DropColumnRequest {
+                        db: alter_info.1.db.to_owned(),
+                        table: alter_info.1.name.to_string(),
+                        column: alter_info.0.clone(),
+                    })),
+                }),
                 ResourceOperator::AlterColumn => {
-                    let column_name = resourceinfo.get_alter_table().0.unwrap();
-                    let new_column = resourceinfo.get_alter_table().1.unwrap();
-
-                    schema.change_column(&column_name, new_column.clone());
-
-                    Some(AdminCommandRequest {
-                        tenant: tenant_name.to_string(),
-                        command: Some(Command::AlterColumn(AlterColumnRequest {
-                            db: schema.db.to_owned(),
-                            table: schema.name.to_string(),
-                            name: column_name,
-                            column: new_column.encode()?,
-                        })),
-                    })
+                    if let Some(table_column) = alter_info.1.column(&alter_info.0) {
+                        Some(AdminCommandRequest {
+                            tenant: tenant_name.to_string(),
+                            command: Some(Command::AlterColumn(AlterColumnRequest {
+                                db: alter_info.1.db.to_owned(),
+                                table: alter_info.1.name.to_string(),
+                                name: alter_info.0.clone(),
+                                column: table_column.encode()?,
+                            })),
+                        })
+                    } else {
+                        return Err(CoordinatorError::CommonError {
+                            msg: format!("Column {} not found.", alter_info.0),
+                        });
+                    }
                 }
-                ResourceOperator::RenameTagName => {
-                    let old_column = resourceinfo.get_alter_table().1.unwrap();
-                    let new_column_name = resourceinfo.get_alter_table().2.unwrap();
-
-                    let new_column = TableColumn::new(
-                        old_column.id,
-                        new_column_name.to_string(),
-                        old_column.column_type.clone(),
-                        old_column.encoding,
-                    );
-                    schema.change_column(&old_column.name, new_column);
-
-                    Some(AdminCommandRequest {
-                        tenant: tenant_name.to_string(),
-                        command: Some(Command::RenameColumn(RenameColumnRequest {
-                            db: schema.db.to_owned(),
-                            table: schema.name.to_string(),
-                            old_name: old_column.name,
-                            new_name: new_column_name,
-                        })),
-                    })
-                }
+                ResourceOperator::RenameTagName => Some(AdminCommandRequest {
+                    tenant: tenant_name.to_string(),
+                    command: Some(Command::RenameColumn(RenameColumnRequest {
+                        db: alter_info.1.db.to_owned(),
+                        table: alter_info.1.name.to_string(),
+                        old_name: column_name.clone(),
+                        new_name: alter_info.0.clone(),
+                        dry_run: false,
+                    })),
+                }),
                 _ => None,
             };
 
             if req.is_some() {
-                schema.schema_id += 1;
                 coord.broadcast_command(req.unwrap()).await?;
 
                 tenant
-                    .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
+                    .update_table(&TableSchema::TsKvTableSchema(Arc::new(
+                        alter_info.1.clone(),
+                    )))
                     .await?;
             }
 
