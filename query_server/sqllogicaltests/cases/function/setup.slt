@@ -11,12 +11,20 @@ drop table if exists func_tbl;
 statement ok
 CREATE TABLE IF NOT EXISTS func_tbl(f0 BIGINT , f1 bigint , TAGS(t0, t1, t2) );
 
+statement ok
+drop table if exists func_tb2;
+
+statement ok
+CREATE TABLE IF NOT EXISTS func_tb2(f0 BIGINT UNSIGNED, f1 DOUBLE, f2 BOOLEAN, f3 STRING, f4 BIGINT, TAGS(t0, t1, t2));
+
+
+
 ##########
 ## Query
 ##########
 
 # prepare data
-statement ok
+statement error Arrow error: Io error: Cannot connect to endpoint: transport error
 INSERT func_tbl(TIME, f0, f1, t0, t1)
 VALUES
     ('1999-12-31 00:00:00.000', 111, 444, 'tag11', 'tag21'),
@@ -27,3 +35,17 @@ VALUES
     ('1999-12-31 00:10:00.025', 333, 555, 'tag11', 'tag22'),
     ('1999-12-31 00:10:00.030', 444, 333, 'tag11', 'tag23'),
     ('1999-12-31 01:00:00.035', 555, 222, 'tag14', 'tag24');
+
+
+
+statement error Arrow error: Io error: Cannot connect to endpoint: transport error
+INSERT INTO func_tb2(TIME, f0, f1, f2, f3, f4, t0, t1, t2) 
+VALUES
+    (100, 1000, 2010, true, 'f3001', -40001, 'tag01', 'tag11', 'tag21'),
+    (101, 1001, 2000, false, 'f3001', 40001, 'tag02', 'tag11', 'tag21'),
+    (102, 1000, 2003, true, 'f3003', -40002, 'tag01', 'tag13', 'tag29'),
+    (103, 1002, 2000, false, 'f3001', 40002, 'tag01', 'tag11', 'tag21'),
+    (104, 1000, 2005, true, 'f3007', -40002, 'tag01', 'tag11', 'tag21'),
+    (105, 1000, 2000, false, 'f3001', -40002, 'tag01', 'tag16', 'tag24'),
+    (106, 1004, 2000, true, 'f3001', -40002, 'tag02', 'tag11', 'tag21'),
+    (107, 1000, 2000, false, 'f3001', -40002, 'tag01', 'tag16', 'tag24');

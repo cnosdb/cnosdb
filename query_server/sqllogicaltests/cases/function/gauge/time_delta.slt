@@ -1,5 +1,7 @@
 include ./../setup.slt
 
+sleep 5s
+
 ##########
 ## Query
 ##########
@@ -28,3 +30,50 @@ select time_delta(gauge_agg(time, f0)), max(time) - min(time) from func_tbl;
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got TimestampNanosecond\(NULL, None\)", .*
 select time_delta(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Utf8\(NULL\)", *
+select time_delta(t0) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got UInt64\(NULL\)", *
+select time_delta(f0) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Float64\(NULL\)", *
+select time_delta(f1) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Boolean\(NULL\)", *
+select time_delta(f2) from func_tb2;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Utf8\(NULL\)", *
+select time_delta(f3) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Int64\(NULL\)", *
+select time_delta(f4) from func_tb2;
+
+query 
+select time_delta(gauge_agg(time, f0)) from func_tb2;
+----
+0 years 0 mons 0 days 0 hours 0 mins 0.000000007 secs
+
+
+query 
+select time_delta(gauge_agg(time, f1)) from func_tb2;
+----
+0 years 0 mons 0 days 0 hours 0 mins 0.000000007 secs
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'gauge_agg\(Timestamp\(Nanosecond, None\), Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tgauge_agg\(Timestamp\(Second, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Millisecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Microsecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Nanosecond, None\), Float64\)", *
+select time_delta(gauge_agg(time, f2)) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'gauge_agg\(Timestamp\(Nanosecond, None\), Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tgauge_agg\(Timestamp\(Second, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Millisecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Microsecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Nanosecond, None\), Float64\)", *
+select time_delta(gauge_agg(time, f3)) from func_tb2;
+
+query 
+select time_delta(gauge_agg(time, f4)) from func_tb2;
+----
+0 years 0 mons 0 days 0 hours 0 mins 0.000000007 secs
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: The function \\"time_delta\\" expects 1 arguments, but 0 were provided", *
+select time_delta() from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'time_delta\(Struct\(\[Field \{ name: \\"first\\", data_type: Struct\(\[Field \{ name: \\"ts\\", data_type: Timestamp\(Nanosecond, None\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"val\\", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}\]\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"second\\", data_type: Struct\(\[Field \{ name: \\"ts\\", data_type: Timestamp\(Nanosecond, None\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"val\\", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}\]\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"penultimate\\", data_type: Struct\(\[Field \{ name: \\"ts\\", data_type: Timestamp\(Nanosecond, None\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"val\\", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}\]\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"last\\", data_type: Struct\(\[Field \{ name: \\"ts\\", data_type: Timestamp\(Nanosecond, None\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"val\\", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}\]\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"num_elements\\", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}\]\), Struct\(\[Field \{ name: \\"first\\", data_type: Struct\(\[Field \{ name: \\"ts\\", data_type: Timestamp\(Nanosecond, None\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"val\\", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}\]\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"second\\", data_type: Struct\(\[Field \{ name: \\"ts\\", data_type: Timestamp\(Nanosecond, None\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"val\\", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}\]\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"penultimate\\", data_type: Struct\(\[Field \{ name: \\"ts\\", data_type: Timestamp\(Nanosecond, None\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"val\\", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}\]\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"last\\", data_type: Struct\(\[Field \{ name: \\"ts\\", data_type: Timestamp\(Nanosecond, None\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"val\\", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}\]\), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}, Field \{ name: \\"num_elements\\", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: \{\} \}\]\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttime_delta\(Any\)", *
+select time_delta(gauge_agg(time, f0), gauge_agg(time, f0)) from func_tb2;

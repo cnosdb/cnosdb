@@ -1,3 +1,4 @@
+include ./../setup.slt
 ##########
 ## DDL
 ##########
@@ -17,6 +18,8 @@ VALUES
     ('1999-12-31 00:00:00.000', 111, 444, 'tag1'),
     ('1999-12-31 00:00:00.005', 222, 444, 'tag1');
 
+sleep 5s
+
 query 
 select rate(gauge_agg(time, f1)), delta(gauge_agg(time, f1)), time_delta(gauge_agg(time, f1)) from func_rate_tbl group by t0 order by t0;
 ----
@@ -26,6 +29,8 @@ statement ok
 INSERT func_rate_tbl(TIME, f0, f1, t0)
 VALUES
     ('1999-12-31 00:00:00.010', 222, 333, 'tag1');
+
+sleep 5s
 
 query 
 select rate(gauge_agg(time, f1)), delta(gauge_agg(time, f1)), time_delta(gauge_agg(time, f1)) from func_rate_tbl group by t0 order by t0;
@@ -38,6 +43,8 @@ VALUES
     ('1999-12-31 00:10:00.025', 333, 555, 'tag2'),
     ('1999-12-31 00:10:00.030', 444, 333, 'tag1'),
     ('1999-12-31 01:00:00.035', 555, 222, 'tag2');
+
+sleep 5s
 
 query 
 select rate(gauge_agg(time, f1)), delta(gauge_agg(time, f1)), time_delta(gauge_agg(time, f1)) from func_rate_tbl group by t0 order by t0;
@@ -53,3 +60,56 @@ select rate(gauge_agg(time, f0)), delta(gauge_agg(time, f0)), time_delta(gauge_a
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got TimestampNanosecond\(NULL, None\)", .*
 select rate(time) from func_rate_tbl;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: The function \\"rate\\" expects 1 arguments, but 0 were provided", *
+select rate() from func_rate_tbl;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Utf8\(NULL\)", *
+select rate(t0) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got UInt64\(NULL\)", *
+select rate(f0) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Float64\(NULL\)", *
+select rate(f1) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Boolean\(NULL\)", *
+select rate(f2) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Utf8\(NULL\)", *
+select rate(f3) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Int64\(NULL\)", *
+select rate(f4) from func_tb2;
+
+query T
+select rate(gauge_agg(time, f1)) from func_tb2;
+----
+-1.4285714285714286
+
+query T
+select rate(gauge_agg(time, f0)) from func_tb2;
+----
+0.0
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'gauge_agg\(Timestamp\(Nanosecond, None\), Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tgauge_agg\(Timestamp\(Second, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Millisecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Microsecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Nanosecond, None\), Float64\)", *
+select rate(gauge_agg(time, f2)) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'gauge_agg\(Timestamp\(Nanosecond, None\), Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tgauge_agg\(Timestamp\(Second, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Millisecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Microsecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Nanosecond, None\), Float64\)", *
+select rate(gauge_agg(time, f3)) from func_tb2;
+
+query T
+select rate(gauge_agg(time, f4)) from func_tb2;
+----
+-0.14285714285714285
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an SQL statement, found: \\\\", *
+select rates(gauge_agg(time, f0)) from func_tb2;\
+
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an expression:, found: \{", *
+select rates({first: {ts: 1999-12-31T00:00:00, val: 444.0}, second: {ts: 1999-12-31T00:00:00.005, val: 444.0}, penultimate: {ts: 1999-12-31T00:10:00.030, val: 333.0}, last: {ts: 1999-12-31T01:00:00.035, val: 222.0}, num_elements: 8});
