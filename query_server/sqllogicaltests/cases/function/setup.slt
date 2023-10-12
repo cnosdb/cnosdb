@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS func_tb2(f0 BIGINT UNSIGNED, f1 DOUBLE, f2 BOOLEAN, f
 ##########
 
 # prepare data
-statement error Arrow error: Io error: Cannot connect to endpoint: transport error
+statement ok
 INSERT func_tbl(TIME, f0, f1, t0, t1)
 VALUES
     ('1999-12-31 00:00:00.000', 111, 444, 'tag11', 'tag21'),
@@ -38,7 +38,7 @@ VALUES
 
 
 
-statement error Arrow error: Io error: Cannot connect to endpoint: transport error
+statement ok
 INSERT INTO func_tb2(TIME, f0, f1, f2, f3, f4, t0, t1, t2) 
 VALUES
     (100, 1000, 2010, true, 'f3001', -40001, 'tag01', 'tag11', 'tag21'),
