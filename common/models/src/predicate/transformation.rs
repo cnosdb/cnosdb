@@ -343,10 +343,10 @@ impl DeleteSelectionExpressionToDomainsVisitorContext {
     pub fn push_back(&mut self, domain: ColumnDomains<String>, is_time_domain: bool) {
         self.is_time_domain_stack.push_back(is_time_domain);
         if is_time_domain {
-            println!("push time {domain}");
+            trace::trace!("push time {domain}");
             self.time_domain_stack.push_back(domain);
         } else {
-            println!("push tag {domain}");
+            trace::trace!("push tag {domain}");
             self.tag_domain_stack.push_back(domain);
         }
     }
@@ -416,7 +416,7 @@ impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
                 op,
                 right: _,
             }) => {
-                println!("pre visit binary expr: {e}");
+                trace::trace!("pre visit binary expr: {e}");
                 match op {
                     Operator::Eq
                     | Operator::NotEq
@@ -429,7 +429,7 @@ impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
                         Ok(VisitRecursion::Continue)
                     }
                     other => Err(DataFusionError::NotImplemented(format!(
-                        "operator {other} is not supported"
+                        "operator {other} in delete statement"
                     ))),
                 }
             }
@@ -437,8 +437,9 @@ impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
                 // self.ctx
                 //     .current_domain_stack
                 //     .push_back(ColumnDomains::all());
-                println!("pre skipped {other}");
-                Ok(VisitRecursion::Skip)
+                Err(DataFusionError::NotImplemented(format!(
+                    "{other} in delete statement"
+                )))
             }
         }
     }
@@ -446,7 +447,7 @@ impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
     fn post_visit(&mut self, expr: &Expr) -> DFResult<VisitRecursion> {
         match expr {
             e @ Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
-                println!("post visit binary expr: {e}");
+                trace::trace!("post visit binary expr: {e}");
                 match op {
                     // The stack is expression, clean and generate a new domain
                     Operator::Eq
@@ -454,22 +455,35 @@ impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
                     | Operator::Lt
                     | Operator::LtEq
                     | Operator::Gt
-                    | Operator::GtEq => {
-                        Self::construct_value_set_and_push_domain_stack(self.ctx, left, op, right);
-                    }
+                    | Operator::GtEq => match (left.as_ref(), right.as_ref()) {
+                        (Expr::Column(_), Expr::Literal(_))
+                        | (Expr::Literal(_), Expr::Column(_)) => {
+                            Self::construct_value_set_and_push_domain_stack(
+                                self.ctx, left, op, right,
+                            );
+                        }
+                        _ => {
+                            return Err(DataFusionError::NotImplemented(format!(
+                                "{left} {op} {right} in delete statement"
+                            )))
+                        }
+                    },
                     // The stack is domain, pop it, and generate a new domain
                     Operator::And => {
                         self.ctx.try_intersect_top2_domains();
                     }
-                    _ => {}
+                    _ => {
+                        return Err(DataFusionError::NotImplemented(format!(
+                            "{expr} in delete statement"
+                        )))
+                    }
                 }
             }
-            // TODO The stack is the domain, and the domain is generated
-            o @ Expr::Not(_) | o @ Expr::Between { .. } => {
-                println!("post skipped expr(specify) {o}")
-            }
-            others => {
-                println!("post skipped expr(others) {others}");
+            Expr::Column(_) | Expr::Literal(_) => {}
+            other => {
+                return Err(DataFusionError::NotImplemented(format!(
+                    "{other} in delete statement"
+                )))
             }
         }
 

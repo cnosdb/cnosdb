@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use datafusion::arrow::datatypes::{DataType, SchemaRef, TimeUnit};
 use datafusion::arrow::error::ArrowError;
 use datafusion::common::parsers::CompressionTypeVariant;
+use datafusion::common::tree_node::TreeNode;
 use datafusion::common::{
     Column, DFField, DFSchema, OwnedTableReference, Result as DFResult, ToDFSchema,
 };
@@ -24,6 +25,7 @@ use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion::logical_expr::expr::{ScalarFunction, Sort};
+use datafusion::logical_expr::expr_rewriter::rewrite_preserving_name;
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
@@ -31,6 +33,9 @@ use datafusion::logical_expr::{
     EmptyRelation, Explain, Expr, Extension, LogicalPlan, LogicalPlanBuilder, Operator, PlanType,
     SubqueryAlias, TableSource, ToStringifiedPlan, Union,
 };
+use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
+use datafusion::optimizer::simplify_expressions::ConstEvaluator;
+use datafusion::physical_expr::execution_props::ExecutionProps;
 use datafusion::prelude::{col, SessionConfig};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
@@ -517,45 +522,42 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             }
         };
         let table_ref = normalize_sql_object_name(table_name.clone())?;
-        let (source_plan, _) = self.create_table_relation(table_ref, None, &Default::default())?;
+        // only support delete from tskv table
+        let schema = self.get_tskv_schema(table_ref)?;
+        let df_schema = schema.to_arrow_schema().to_dfschema()?;
 
         // WHERE <selection>
         let selection = match selections {
             Some(expr) => {
-                let sel = self.df_planner.sql_to_expr(
-                    expr,
-                    source_plan.schema(),
-                    &mut Default::default(),
-                )?;
-                trace::info!("Delete: WHERE: {sel}");
-                Some(sel)
+                let sel = self
+                    .df_planner
+                    .sql_to_expr(expr, &df_schema, &mut Default::default())?;
+
+                let mut rewriter = TypeCoercionRewriter::new(Arc::new(df_schema));
+                let expr = rewrite_preserving_name(sel, &mut rewriter)?;
+                let props = ExecutionProps::default();
+                let mut const_evaluator = ConstEvaluator::try_new(&props)?;
+                let expr = expr.rewrite(&mut const_evaluator)?;
+                Some(expr)
             }
             None => None,
         };
 
+        valid_delete(schema.as_ref(), &selection)?;
+
         let table_name = object_name_to_resolved_table(session, table_name)?;
+        let database = table_name.database().to_string();
         let plan = Plan::DML(DMLPlan::DeleteFromTable(DeleteFromTable {
             table_name,
             selection,
         }));
-        // TODO(zipper): Remove this plan replacement that only shows statement.
-        // let plan = Plan::SYSTEM(SYSPlan::ShowQueries);
-
-        let mut read_privileges = databases_privileges(
-            DatabasePrivilege::Read,
-            *session.tenant_id(),
-            self.schema_provider.reset_access_databases(),
-        );
-        let mut write_privileges = databases_privileges(
-            DatabasePrivilege::Write,
-            *session.tenant_id(),
-            self.schema_provider.reset_access_databases(),
-        );
-        write_privileges.append(&mut read_privileges);
 
         Ok(PlanWithPrivileges {
             plan,
-            privileges: write_privileges,
+            privileges: vec![Privilege::TenantObject(
+                TenantObjectPrivilege::Database(DatabasePrivilege::Write, Some(database)),
+                Some(*session.tenant_id()),
+            )],
         })
     }
 
@@ -2716,6 +2718,35 @@ fn make_geometry_data_type(params: &[String]) -> std::result::Result<ColumnType,
     let geo_type = Geometry::new_with_srid(sub_type, srid);
 
     Ok(ColumnType::Field(ValueType::Geometry(geo_type)))
+}
+
+/// 合法性检查
+///
+/// - 只能对tskv表执行delete操作
+/// - 过滤条件中不能包含field列
+fn valid_delete(schema: &TskvTableSchema, selection: &Option<Expr>) -> Result<()> {
+    if let Some(expr) = selection {
+        let using_columns = expr.to_columns()?;
+        for col_name in using_columns.iter() {
+            match schema.column(&col_name.name) {
+                Some(col) => {
+                    if col.column_type.is_field() {
+                        return Err(QueryError::NotImplemented { err:
+                            "Filtering on the field column on the tskv table in delete statement".to_string(),
+                        });
+                    }
+                }
+                None => {
+                    return Err(QueryError::ColumnNotExists {
+                        table: schema.name.to_string(),
+                        column: col_name.name.to_string(),
+                    })
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

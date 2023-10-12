@@ -131,9 +131,7 @@ pub trait Coordinator: Send + Sync {
 
     async fn delete_from_table(
         &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
+        table: &ResolvedTable,
         predicate: &ResolvedPredicate,
     ) -> CoordinatorResult<()>;
 

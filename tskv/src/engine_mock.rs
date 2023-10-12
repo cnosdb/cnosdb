@@ -115,6 +115,7 @@ impl Engine for MockEngine {
 
     async fn delete_from_table(
         &self,
+        vnode_id: VnodeId,
         tenant: &str,
         database: &str,
         table: &str,

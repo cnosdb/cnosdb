@@ -644,12 +644,23 @@ impl TskvService for TskvServiceImpl {
 
         let predicate = match bincode::deserialize::<ResolvedPredicate>(&inner.predicate) {
             Ok(p) => p,
-            Err(err) => return self.status_response(SUCCESS_RESPONSE_CODE, err.to_string()),
+            Err(err) => {
+                return Err(Status::invalid_argument(format!(
+                    "Predicate of delete_from_table is invalid, error: {err}"
+                )))
+            }
         };
+
         self.kv_inst
-            .delete_from_table(&inner.tenant, &inner.database, &inner.table, &predicate)
-            .await
-            .unwrap();
+            .delete_from_table(
+                inner.vnode_id,
+                &inner.tenant,
+                &inner.database,
+                &inner.table,
+                &predicate,
+            )
+            .await?;
+
         self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
     }
 
