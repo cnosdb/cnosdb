@@ -12,7 +12,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::{NodeId, VnodeId};
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{Precision, TableColumn};
-use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
+use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use serde::{Deserialize, Serialize};
 use trace::SpanContext;
@@ -63,6 +63,11 @@ pub fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) ->
 }
 
 pub type EngineRef = Arc<dyn Engine>;
+
+pub struct UpdateSetValue<K, V> {
+    pub key: K,
+    pub value: Option<V>,
+}
 
 #[async_trait]
 pub trait Engine: Send + Sync + Debug {
@@ -145,6 +150,14 @@ pub trait Engine: Send + Sync + Debug {
 
     /// Modify the name of the tag type column of the specified table
     ///
+    /// # Parameters
+    /// - `tenant` - The tenant name.
+    /// - `database` - The database name.
+    /// - `table` - The table name.
+    /// - `tag_name` - The old tag name.
+    /// - `new_tag_name` - The new tag name.
+    /// - `dry_run` - Whether to only check if the `rename_tag` is successful, if it is true, the update will not be performed.
+    ///
     /// TODO Could specify vnode id, because the current interface may include modifying multiple vnodes, but atomicity cannot be guaranteed.
     async fn rename_tag(
         &self,
@@ -153,6 +166,52 @@ pub trait Engine: Send + Sync + Debug {
         table: &str,
         tag_name: &str,
         new_tag_name: &str,
+        dry_run: bool,
+    ) -> Result<()>;
+
+    /// Update the value of the tag type columns of the specified table
+    ///
+    /// `new_tags` is the new tags, and the tag key must be included in all series
+    ///
+    /// # Parameters
+    /// - `tenant` - The tenant name.
+    /// - `database` - The database name.
+    /// - `new_tags` - The tags and its new tag value.
+    /// - `matched_series` - The series that need to be updated.
+    /// - `dry_run` - Whether to only check if the `update_tags_value` is successful, if it is true, the update will not be performed.
+    ///
+    /// # Examples
+    ///
+    /// We have a table `tbl` as follows
+    ///
+    /// ```text
+    /// +----+-----+-----+-----+
+    /// | ts | tag1| tag2|field|
+    /// +----+-----+-----+-----+
+    /// | 1  | t1a | t2b | f1  |
+    /// +----+-----+-----+-----+
+    /// | 2  | t1a | t2c | f2  |
+    /// +----+-----+-----+-----+
+    /// | 3  | t1b | t2c | f3  |
+    /// +----+-----+-----+-----+
+    /// ```
+    ///
+    /// Execute the following update statement
+    ///
+    /// ```sql
+    /// UPDATE tbl SET tag1 = 't1c' WHERE tag2 = 't2c';
+    /// ```
+    ///
+    /// The `new_tags` is `[tag1 = 't1c']`, and the `matched_series` is `[(tag1 = 't1a', tag2 = 't2c'), (tag1 = 't1b', tag2 = 't2c')]`
+    ///
+    /// TODO Specify vnode id
+    async fn update_tags_value(
+        &self,
+        tenant: &str,
+        database: &str,
+        new_tags: &[UpdateSetValue<TagKey, TagValue>],
+        matched_series: &[SeriesKey],
+        dry_run: bool,
     ) -> Result<()>;
 
     // TODO this method is not completed,

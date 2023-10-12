@@ -39,7 +39,7 @@ impl WalConfig {
     }
 
     fn default_path() -> String {
-        "data/wal".to_string()
+        "/var/lib/cnosdb/wal".to_string()
     }
 
     fn default_wal_req_channel_cap() -> usize {

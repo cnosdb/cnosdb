@@ -37,11 +37,11 @@ pub struct TLSConfig {
 
 impl TLSConfig {
     fn default_certificate() -> String {
-        "./config/tls/server.crt".to_string()
+        "/etc/cnosdb/tls/server.crt".to_string()
     }
 
     fn default_private_key() -> String {
-        "./config/tls/server.key".to_string()
+        "/etc/cnosdb/tls/server.key".to_string()
     }
 }
 

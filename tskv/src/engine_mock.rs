@@ -8,7 +8,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{Precision, TableColumn};
-use models::{ColumnId, SeriesId, SeriesKey};
+use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
 use trace::{debug, SpanContext};
@@ -17,7 +17,7 @@ use crate::error::Result;
 use crate::kv_option::StorageOptions;
 use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
-use crate::{Engine, TseriesFamilyId, VnodeSnapshot};
+use crate::{Engine, TseriesFamilyId, UpdateSetValue, VnodeSnapshot};
 
 #[derive(Debug, Default)]
 pub struct MockEngine {}
@@ -97,6 +97,18 @@ impl Engine for MockEngine {
         table: &str,
         tag_name: &str,
         new_tag_name: &str,
+        dry_run: bool,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    async fn update_tags_value(
+        &self,
+        tenant: &str,
+        database: &str,
+        new_tags: &[UpdateSetValue<TagKey, TagValue>],
+        matched_series: &[SeriesKey],
+        dry_run: bool,
     ) -> Result<()> {
         Ok(())
     }

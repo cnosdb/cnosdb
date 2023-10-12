@@ -11,6 +11,7 @@ use crate::extension::analyse::transform_bottom_func_to_topk_node::TransformBott
 use crate::extension::analyse::transform_gapfill::TransformGapFill;
 use crate::extension::analyse::transform_time_window::TransformTimeWindowRule;
 use crate::extension::analyse::transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule;
+use crate::extension::analyse::transform_update::TransformUpdateRule;
 
 pub struct DefaultAnalyzer {
     inner: DFAnalyzer,
@@ -21,6 +22,7 @@ impl DefaultAnalyzer {
         let mut analyzer = DFAnalyzer::default();
 
         let rules = &mut analyzer.rules;
+        rules.insert(0, Arc::new(TransformUpdateRule::new()));
         rules.push(Arc::new(InitialPlanChecker {}));
         rules.push(Arc::new(TransformBottomFuncToTopkNodeRule {}));
         rules.push(Arc::new(TransformTopkFuncToTopkNodeRule {}));

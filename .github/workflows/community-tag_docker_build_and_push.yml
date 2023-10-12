@@ -9,6 +9,11 @@ on:
 
 jobs:
   docker:
+    strategy:
+      matrix:
+        image:
+          - cnosdb
+          - cnosdb-meta
     runs-on: ubuntu-latest
     if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/main'
     steps:
@@ -31,34 +36,25 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       -
         name: Build and push
+        if: matrix.image == 'cnosdb'
         id: docker_build
         uses: docker/build-push-action@v5
         with:
-          #platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: cnosdb/cnosdb:community-${{ github.event.inputs.tag }}
+          file: docker/Dockerfile
           build-args: |
             git_hash=${{ github.sha }}
       -
-        name: modify dockerfile
-        shell: bash
-        run: |
-          sed -i 's/\[tag\]/${{ github.event.inputs.tag }}/g' Dockerfile_for_k8s
-      -
-        name: Login to Aliyun
-        uses: docker/login-action@v3
+        name: Build and push meta
+        if: matrix.image == 'cnosdb-meta'
+        id: docker_build_meta
+        uses: docker/build-push-action@v5
         with:
-          registry: registry.cn-hangzhou.aliyuncs.com
-          username: ${{ secrets.ALIYUN_USERNAME }}
-          password: ${{ secrets.ALIYUN_PASSWORD }}
-      -
-        name: Build and push k8s
-        shell: bash
-        run: |
-          docker build -f Dockerfile_for_k8s -t registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:community-${{ github.event.inputs.tag }} .
-          docker push registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:community-${{ github.event.inputs.tag }}
-      -
-        name: recover dockerfile
-        shell: bash
-        run: |
-          sed -i 's/${{ github.event.inputs.tag }}/\[tag\]/g' Dockerfile_for_k8s
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: cnosdb/cnosdb:meta-community-${{ github.event.inputs.tag }}
+          file: docker/Dockerfile_meta
+          build-args: |
+            git_hash=${{ github.sha }}

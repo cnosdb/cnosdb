@@ -24,7 +24,7 @@ impl LogConfig {
     }
 
     fn default_path() -> String {
-        "data/log".to_string()
+        "/var/log/cnosdb".to_string()
     }
 
     pub fn override_by_env(&mut self) {

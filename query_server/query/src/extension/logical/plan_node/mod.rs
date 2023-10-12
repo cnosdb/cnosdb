@@ -12,6 +12,8 @@ pub mod stream_scan;
 pub mod table_writer;
 pub mod table_writer_merge;
 pub mod tag_scan;
+pub mod update;
+pub mod update_tag;
 pub mod watermark;
 
 pub trait LogicalPlanExt: Sized {

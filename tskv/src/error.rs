@@ -194,7 +194,7 @@ pub enum Error {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
 
-    #[snafu(display("Index: : {}", source))]
+    #[snafu(display("Index: {}", source))]
     IndexErr {
         source: crate::index::IndexError,
     },

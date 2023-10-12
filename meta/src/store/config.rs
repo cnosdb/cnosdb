@@ -13,6 +13,17 @@ pub struct MetaInit {
     pub default_database: Vec<String>,
 }
 
+impl Default for MetaInit {
+    fn default() -> Self {
+        Self {
+            cluster_name: String::from("cluster_xxx"),
+            admin_user: String::from("root"),
+            system_tenant: String::from("cnosdb"),
+            default_database: vec![String::from("public"), String::from("usage_schema")],
+        }
+    }
+}
+
 impl MetaInit {
     pub fn default_db_config(tenant: &str, db: &str) -> String {
         format!(
@@ -28,6 +39,15 @@ pub struct HeartBeatConfig {
     pub heartbeat_expired_interval: u64,
 }
 
+impl Default for HeartBeatConfig {
+    fn default() -> Self {
+        Self {
+            heartbeat_recheck_interval: 300,
+            heartbeat_expired_interval: 600,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Opt {
     pub id: u64,
@@ -39,7 +59,25 @@ pub struct Opt {
     pub heartbeat: HeartBeatConfig,
 }
 
-pub fn get_opt(path: impl AsRef<Path>) -> Opt {
+impl Default for Opt {
+    fn default() -> Self {
+        Self {
+            id: 1,
+            host: String::from("127.0.0.1"),
+            port: 8901,
+            data_path: String::from("/var/lib/cnosdb/meta"),
+            log: Default::default(),
+            meta_init: Default::default(),
+            heartbeat: Default::default(),
+        }
+    }
+}
+
+pub fn get_opt(path: Option<impl AsRef<Path>>) -> Opt {
+    if path.is_none() {
+        return Default::default();
+    }
+    let path = path.unwrap();
     let path = path.as_ref();
     let mut file = match File::open(path) {
         Ok(file) => file,
