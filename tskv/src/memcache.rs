@@ -628,6 +628,10 @@ pub enum DataType {
     Str(i64, MiniVec<u8>),
     F64(i64, f64),
     Bool(i64, bool),
+    /// Notice.
+    /// This variant is used for multiple Clone.
+    /// If not, please use [`DataType::Str`].
+    StrRef(i64, Arc<Vec<u8>>),
 }
 
 impl PartialEq for DataType {
@@ -669,6 +673,7 @@ impl DataType {
             DataType::Str(ts, ..) => ts,
             DataType::F64(ts, ..) => ts,
             DataType::Bool(ts, ..) => ts,
+            DataType::StrRef(ts, ..) => ts,
         }
     }
 
@@ -683,37 +688,44 @@ impl DataType {
     }
 
     #[cfg(test)]
-    pub fn to_bytes(&self) -> MiniVec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             DataType::U64(t, val) => {
-                let mut buf = mini_vec![0; 16];
+                let mut buf = vec![0; 16];
                 buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
                 buf[8..16].copy_from_slice(val.to_be_bytes().as_slice());
                 buf
             }
             DataType::I64(t, val) => {
-                let mut buf = mini_vec![0; 16];
+                let mut buf = vec![0; 16];
                 buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
                 buf[8..16].copy_from_slice(val.to_be_bytes().as_slice());
                 buf
             }
             DataType::F64(t, val) => {
-                let mut buf = mini_vec![0; 16];
+                let mut buf = vec![0; 16];
                 buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
                 buf[8..16].copy_from_slice(val.to_be_bytes().as_slice());
                 buf
             }
             DataType::Str(t, val) => {
                 let buf_len = 8 + val.len();
-                let mut buf = mini_vec![0; buf_len];
+                let mut buf = vec![0; buf_len];
                 buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
                 buf[8..buf_len].copy_from_slice(val);
                 buf
             }
             DataType::Bool(t, val) => {
-                let mut buf = mini_vec![0; 9];
+                let mut buf = vec![0; 9];
                 buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
                 buf[8] = if *val { 1_u8 } else { 0_u8 };
+                buf
+            }
+            DataType::StrRef(t, val) => {
+                let buf_len = 8 + val.len();
+                let mut buf = vec![0; buf_len];
+                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
+                buf[8..buf_len].copy_from_slice(val);
                 buf
             }
         }
@@ -728,6 +740,7 @@ impl Display for DataType {
             DataType::Str(ts, val) => write!(f, "({}, {:?})", ts, val),
             DataType::F64(ts, val) => write!(f, "({}, {})", ts, val),
             DataType::Bool(ts, val) => write!(f, "({}, {})", ts, val),
+            DataType::StrRef(ts, val) => write!(f, "({}, {:?})", ts, val),
         }
     }
 }

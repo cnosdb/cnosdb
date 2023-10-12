@@ -5,24 +5,15 @@ use utils::bitset::ImmutBitSet;
 use utils::BkdrHasher;
 
 use crate::errors::{Error, Result};
-use crate::{tag, SeriesId, Tag, TagValue};
+use crate::{tag, Tag, TagValue};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
 pub struct SeriesKey {
-    pub id: SeriesId,
     pub tags: Vec<Tag>,
     pub table: String,
-    pub db: String,
 }
 
 impl SeriesKey {
-    pub fn id(&self) -> SeriesId {
-        self.id
-    }
-
-    pub fn set_id(&mut self, id: SeriesId) {
-        self.id = id;
-    }
     pub fn tags(&self) -> &Vec<Tag> {
         &self.tags
     }
@@ -90,7 +81,6 @@ impl SeriesKey {
     }
 
     pub fn build_series_key(
-        db_name: &str,
         tab_name: &str,
         columns: &Vector<ForwardsUOffset<Column>>,
         tag_idx: &[usize],
@@ -127,25 +117,9 @@ impl SeriesKey {
         tag::sort_tags(&mut tags);
 
         Ok(Self {
-            id: 0,
             tags,
             table: tab_name.to_string(),
-            db: db_name.to_string(),
         })
-    }
-}
-
-impl PartialEq for SeriesKey {
-    fn eq(&self, other: &Self) -> bool {
-        if self.table != other.table {
-            return false;
-        }
-
-        if self.tags != other.tags {
-            return false;
-        }
-
-        true
     }
 }
 

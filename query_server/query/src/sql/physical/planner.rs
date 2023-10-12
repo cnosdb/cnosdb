@@ -28,6 +28,7 @@ use crate::extension::physical::transform_rule::expand::ExpandPlanner;
 use crate::extension::physical::transform_rule::gapfill::GapFillPlanner;
 use crate::extension::physical::transform_rule::table_writer::TableWriterPlanner;
 use crate::extension::physical::transform_rule::tag_scan::TagScanPlanner;
+use crate::extension::physical::transform_rule::update_tag::UpdateTagValuePlanner;
 
 pub struct DefaultPhysicalPlanner {
     ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
@@ -61,6 +62,7 @@ impl Default for DefaultPhysicalPlanner {
     fn default() -> Self {
         let ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>> = vec![
             Arc::new(TableWriterPlanner {}),
+            Arc::new(UpdateTagValuePlanner {}),
             Arc::new(TagScanPlanner {}),
             Arc::new(ExpandPlanner::new()),
             Arc::new(GapFillPlanner::new()),

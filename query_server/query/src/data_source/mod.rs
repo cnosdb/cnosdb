@@ -6,6 +6,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
 use datafusion::execution::context::{SessionState, TaskContext};
 use datafusion::logical_expr::TableSource;
+use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::{ExecutionPlan, SendableRecordBatchStream};
 use futures::StreamExt;
@@ -13,6 +14,7 @@ use spi::{QueryError, Result};
 
 use self::table_source::TableSourceAdapter;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
+use crate::extension::physical::plan_node::update_tag::UpdateTagExec;
 use crate::extension::DropEmptyRecordBatchStream;
 
 pub mod batch;
@@ -29,6 +31,15 @@ pub trait WriteExecExt: Send + Sync {
         state: &SessionState,
         input: Arc<dyn ExecutionPlan>,
     ) -> DFResult<Arc<TableWriterExec>>;
+}
+
+#[async_trait]
+pub trait UpdateExecExt: Send + Sync {
+    async fn update(
+        &self,
+        assigns: Vec<(String, Arc<dyn PhysicalExpr>)>,
+        scan: Arc<dyn ExecutionPlan>,
+    ) -> DFResult<Arc<UpdateTagExec>>;
 }
 
 #[async_trait]

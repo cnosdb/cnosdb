@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::{BitAnd, BitOr, Bound, RangeBounds};
 use std::path::{Path, PathBuf};
@@ -10,7 +10,7 @@ use datafusion::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
 use models::predicate::domain::{utf8_from, Domain, Range};
 use models::tag::TagFromParts;
-use models::{utils, SeriesId, SeriesKey, Tag, TagKey};
+use models::{utils, SeriesId, SeriesKey, Tag, TagKey, TagValue};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
 use trace::{debug, error, info};
@@ -22,10 +22,11 @@ use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 use crate::index::binlog::{BinlogReader, BinlogWriter};
 use crate::index::ts_index::fmt::Debug;
-use crate::{byte_utils, file_utils};
+use crate::{byte_utils, file_utils, UpdateSetValue};
 
 const SERIES_ID_PREFIX: &str = "_id_";
 const SERIES_KEY_PREFIX: &str = "_key_";
+const DELETED_SERIES_KEY_PREFIX: &str = "_deleted_key_";
 const AUTO_INCR_ID_KEY: &str = "_auto_incr_id";
 
 /// Used to maintain forward and inverted indexes
@@ -157,6 +158,17 @@ impl TSIndex {
         Ok(())
     }
 
+    /// Only add deleted series key to sid mapping
+    async fn add_deleted_series(&self, id: SeriesId, series_key: &SeriesKey) -> IndexResult<()> {
+        let key_buf = encode_deleted_series_key(series_key.table(), series_key.tags());
+        self.storage.write().await.set(&key_buf, &id.to_be_bytes())
+    }
+
+    async fn remove_deleted_series(&self, series_key: &SeriesKey) -> IndexResult<()> {
+        let key_buf = encode_deleted_series_key(series_key.table(), series_key.tags());
+        self.storage.write().await.delete(&key_buf)
+    }
+
     async fn add_series(&self, id: SeriesId, series_key: &SeriesKey) -> IndexResult<()> {
         let mut storage_w = self.storage.write().await;
 
@@ -198,8 +210,23 @@ impl TSIndex {
                 IndexBinlogBlock::Update(block) => {
                     let series_id = block.series_id();
                     let new_series_key = block.new_series();
+                    let old_series_key = block.old_series();
+                    let recovering = block.recovering();
+
+                    trace::debug!(
+                        "Recover update series: {:?}, series_id: {:?}, old_series_key: {:?}",
+                        new_series_key,
+                        series_id,
+                        old_series_key,
+                    );
 
                     self.del_series_id_from_engine(series_id).await?;
+                    if recovering {
+                        self.remove_deleted_series(old_series_key).await?;
+                    } else {
+                        // The modified key can be found when restarting and recover wal.
+                        self.add_deleted_series(series_id, old_series_key).await?;
+                    }
                     self.add_series(series_id, new_series_key).await?;
                 }
             }
@@ -215,6 +242,16 @@ impl TSIndex {
         reader_file.advance_read_offset(0).await?;
 
         Ok(())
+    }
+
+    pub async fn get_deleted_series_id(&self, series_key: &SeriesKey) -> IndexResult<Option<u32>> {
+        let key_buf = encode_deleted_series_key(series_key.table(), series_key.tags());
+        if let Some(val) = self.storage.read().await.get(&key_buf)? {
+            let id = byte_utils::decode_be_u32(&val);
+            return Ok(Some(id));
+        }
+
+        Ok(None)
     }
 
     pub async fn get_series_id(&self, series_key: &SeriesKey) -> IndexResult<Option<u32>> {
@@ -519,11 +556,111 @@ impl TSIndex {
         Ok(())
     }
 
+    /// 记录更新series key的binlog，并且删除缓存中的sid -> series key的映射
+    pub async fn update_series_key(
+        &self,
+        old_series_keys: Vec<SeriesKey>,
+        new_series_keys: Vec<SeriesKey>,
+        sids: Vec<SeriesId>,
+        recovering: bool,
+    ) -> IndexResult<()> {
+        let waiting_delete_series = sids
+            .iter()
+            .zip(old_series_keys.iter())
+            .map(|(sid, key)| (*sid, key.hash()))
+            .collect::<Vec<_>>();
+
+        // write binlog
+        let blocks = old_series_keys
+            .into_iter()
+            .zip(new_series_keys.into_iter().zip(sids.into_iter()))
+            .map(|(old_series, (new_series, sid))| {
+                IndexBinlogBlock::Update(UpdateSeriesKey::new(
+                    old_series, new_series, sid, recovering,
+                ))
+            })
+            .collect::<Vec<_>>();
+
+        self.write_binlog(&blocks).await?;
+
+        // Only delete old index, not add new index
+        for (sid, key_hash) in waiting_delete_series {
+            self.forward_cache.del(sid, key_hash);
+        }
+
+        Ok(())
+    }
+
+    /// 获取所有匹配的旧的series key及其更新后的series key，以及对应的series id
+    /// (old_series_keys, new_series_keys, sids)
+    pub async fn prepare_update_tags_value(
+        &self,
+        new_tags: &[UpdateSetValue<TagKey, TagValue>],
+        matched_series: &[SeriesKey],
+    ) -> IndexResult<(Vec<SeriesKey>, Vec<SeriesKey>, Vec<SeriesId>)> {
+        // Find all matching series ids
+        let mut ids = vec![];
+        let mut old_keys = vec![];
+        for key in matched_series {
+            if let Some(sid) = self.get_series_id(key).await? {
+                ids.push(sid);
+                old_keys.push(key.clone());
+            }
+        }
+
+        let mut new_keys = vec![];
+        let mut new_keys_set = HashSet::new();
+        for key in &old_keys {
+            // modify tag value
+            let new_tags_for_series = key
+                .tags
+                .iter()
+                .flat_map(|tag| {
+                    new_tags
+                        .iter()
+                        .find(|new_tag| tag.key == new_tag.key)
+                        .and_then(|new_tag| {
+                            new_tag
+                                .value
+                                .as_ref()
+                                .map(|new_val| Tag::new(tag.key.clone(), new_val.clone()))
+                        })
+                })
+                .collect::<Vec<_>>();
+
+            let new_key = SeriesKey {
+                tags: new_tags_for_series,
+                table: key.table.clone(),
+            };
+
+            // check conflict
+            if self.get_series_id(&new_key).await?.is_some() {
+                return Err(IndexError::SeriesAlreadyExists {
+                    key: key.to_string(),
+                });
+            }
+            // TODO 去重
+            new_keys.push(new_key);
+        }
+
+        new_keys_set.extend(new_keys.clone());
+
+        // 检查新生成的series key是否有重复key
+        if new_keys_set.len() != new_keys.len() {
+            return Err(IndexError::SeriesAlreadyExists {
+                key: "new series keys".to_string(),
+            });
+        }
+
+        Ok((old_keys, new_keys, ids))
+    }
+
     pub async fn rename_tag(
         &self,
         table: &str,
         old_tag_name: &TagKey,
         new_tag_name: &TagKey,
+        dry_run: bool,
     ) -> IndexResult<()> {
         // Find all matching series ids
         let ids = self.get_series_ids_by_tag_key(table, old_tag_name).await?;
@@ -557,12 +694,22 @@ impl TSIndex {
             }
         }
 
+        // If only do conflict checking, wal and cache will not be written.
+        if dry_run {
+            return Ok(());
+        }
+
         // write binlog
-        let blocks = ids
-            .into_iter()
-            .zip(new_keys.into_iter())
-            .map(|(sid, key)| IndexBinlogBlock::Update(UpdateSeriesKey::new(key, sid)))
-            .collect::<Vec<_>>();
+        let mut blocks = vec![];
+        for (sid, key) in ids.into_iter().zip(new_keys.into_iter()) {
+            if let Some(old_key) = self.get_series_key(sid).await? {
+                let block =
+                    IndexBinlogBlock::Update(UpdateSeriesKey::new(old_key, key, sid, false));
+                blocks.push(block);
+            } else {
+                return Err(IndexError::SeriesNotExists);
+            }
+        }
         self.write_binlog(&blocks).await?;
 
         // Only delete old index, not add new index
@@ -677,15 +824,23 @@ pub fn encode_inverted_index_key(tab: &str, tag_key: &[u8], tag_val: &[u8]) -> V
         .collect()
 }
 
+pub fn encode_deleted_series_key(tab: &str, tags: &[Tag]) -> Vec<u8> {
+    encode_series_key_with_prefix(DELETED_SERIES_KEY_PREFIX, tab, tags)
+}
+
 pub fn encode_series_key(tab: &str, tags: &[Tag]) -> Vec<u8> {
-    let mut len = SERIES_KEY_PREFIX.len() + 2 + tab.len();
+    encode_series_key_with_prefix(SERIES_KEY_PREFIX, tab, tags)
+}
+
+fn encode_series_key_with_prefix(prefix: &str, tab: &str, tags: &[Tag]) -> Vec<u8> {
+    let mut len = prefix.len() + 2 + tab.len();
     for tag in tags.iter() {
         len += 2 + tag.key.len();
         len += 2 + tag.value.len();
     }
 
     let mut buf = Vec::with_capacity(len);
-    buf.extend_from_slice(SERIES_KEY_PREFIX.as_bytes());
+    buf.extend_from_slice(prefix.as_bytes());
     buf.extend_from_slice(&(tab.len() as u16).to_be_bytes());
     buf.extend_from_slice(tab.as_bytes());
     for tag in tags.iter() {
@@ -793,11 +948,14 @@ pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: Unbounde
                             IndexBinlogBlock::Update(block) => {
                                 let series_id = block.series_id();
                                 let new_series_key = block.new_series();
+                                let old_series_key = block.old_series();
+                                let recovering = block.recovering();
 
-                                trace::trace!(
-                                    "update series: {:?}, series_id: {:?}",
+                                trace::debug!(
+                                    "update series: {:?}, series_id: {:?}, old_series_key: {}",
                                     new_series_key,
-                                    series_id
+                                    series_id,
+                                    old_series_key,
                                 );
 
                                 let _ = ts_index
@@ -806,6 +964,30 @@ pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: Unbounde
                                     .map_err(|err| {
                                         error!("Delete series failed for Update, err: {}", err);
                                     });
+                                if recovering {
+                                    // 清理标记为删除状态的series key
+                                    let _ = ts_index
+                                        .remove_deleted_series(old_series_key)
+                                        .await
+                                        .map_err(|err| {
+                                            error!(
+                                                "Add deleted series failed for Update, err: {}",
+                                                err
+                                            );
+                                        });
+                                } else {
+                                    // The modified key can be found when restarting and recover wal.
+                                    let _ = ts_index
+                                        .add_deleted_series(series_id, old_series_key)
+                                        .await
+                                        .map_err(|err| {
+                                            error!(
+                                                "Add deleted series failed for Update, err: {}",
+                                                err
+                                            );
+                                        });
+                                }
+
                                 let _ = ts_index
                                     .add_series(series_id, new_series_key)
                                     .await
@@ -833,21 +1015,20 @@ mod test {
     use models::{SeriesId, SeriesKey, Tag};
 
     use super::TSIndex;
+    use crate::UpdateSetValue;
 
     /// ( sid, database, table, [(tag_key, tag_value)] )
     type SeriesKeyDesc<'a> = (SeriesId, &'a str, &'a str, Vec<(&'a str, &'a str)>);
 
     fn build_series_keys(series_keys_desc: &[SeriesKeyDesc<'_>]) -> Vec<SeriesKey> {
         let mut series_keys = Vec::with_capacity(series_keys_desc.len());
-        for (sid, db, table, tags) in series_keys_desc {
+        for (_, _, table, tags) in series_keys_desc {
             series_keys.push(SeriesKey {
-                id: *sid,
                 tags: tags
                     .iter()
                     .map(|(k, v)| Tag::new(k.as_bytes().to_vec(), v.as_bytes().to_vec()))
                     .collect(),
                 table: table.to_string(),
-                db: db.to_string(),
             });
         }
         series_keys
@@ -875,11 +1056,8 @@ mod test {
             let series_keys = build_series_keys(&series_keys_desc);
             // Test build_series_key()
             assert_eq!(series_keys_desc.len(), series_keys.len());
-            for ((id, db, table, tags), series_key) in
-                series_keys_desc.iter().zip(series_keys.iter())
+            for ((_, _, table, tags), series_key) in series_keys_desc.iter().zip(series_keys.iter())
             {
-                assert_eq!(*id, series_key.id);
-                assert_eq!(*db, &series_key.db);
                 assert_eq!(*table, &series_key.table);
                 assert_eq!(tags.len(), series_key.tags.len());
                 for ((k, v), tag) in tags.iter().zip(series_key.tags.iter()) {
@@ -1042,7 +1220,6 @@ mod test {
     #[tokio::test]
     async fn test_rename_tag() {
         let table_name = "table";
-        let db_name = "db";
         let dir = "/tmp/test/cnosdb/ts_index/rename_tag";
         let _ = std::fs::remove_dir_all(dir);
 
@@ -1067,12 +1244,9 @@ mod test {
 
         let series_keys = [tags1, tags2, tags3, tags4]
             .into_iter()
-            .enumerate()
-            .map(|(idx, tags)| SeriesKey {
-                id: idx as SeriesId,
+            .map(|tags| SeriesKey {
                 tags,
                 table: table_name.to_string(),
-                db: db_name.to_string(),
             })
             .collect::<Vec<_>>();
 
@@ -1107,6 +1281,7 @@ mod test {
                 table_name,
                 &old_tag_name.as_bytes().to_vec(),
                 &new_tag_name.as_bytes().to_vec(),
+                false,
             )
             .await
             .unwrap();
@@ -1131,5 +1306,91 @@ mod test {
             .await
             .unwrap();
         assert_eq!(expected_sids, actual_sids);
+    }
+
+    #[tokio::test]
+    async fn test_update_tags_value() {
+        let table_name = "table";
+        let dir = "/tmp/test/cnosdb/ts_index/update_tags_value";
+        let _ = std::fs::remove_dir_all(dir);
+
+        let ts_index = TSIndex::new(dir).await.unwrap();
+
+        let tags1 = vec![
+            Tag::new("station".as_bytes().to_vec(), "a0".as_bytes().to_vec()),
+            Tag::new("region".as_bytes().to_vec(), "SX".as_bytes().to_vec()),
+        ];
+        let waiting_update_tags = vec![
+            Tag::new("station".as_bytes().to_vec(), "a1".as_bytes().to_vec()),
+            Tag::new("region".as_bytes().to_vec(), "SN".as_bytes().to_vec()),
+        ];
+        let tags3 = vec![Tag::new(
+            "region".as_bytes().to_vec(),
+            "HB".as_bytes().to_vec(),
+        )];
+        let tags4 = vec![Tag::new(
+            "station".as_bytes().to_vec(),
+            "a1".as_bytes().to_vec(),
+        )];
+
+        let series_keys = [tags1, waiting_update_tags.clone(), tags3, tags4]
+            .into_iter()
+            .map(|tags| SeriesKey {
+                tags,
+                table: table_name.to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        // 添加series
+        let sids = ts_index
+            .add_series_if_not_exists(series_keys.clone())
+            .await
+            .unwrap();
+
+        assert_eq!(sids.len(), 4);
+
+        // 校验写入成功
+        for (sid, expected_series) in sids.iter().zip(series_keys.iter()) {
+            let series = ts_index.get_series_key(*sid).await.unwrap().unwrap();
+            assert_eq!(expected_series, &series)
+        }
+
+        let matched_series = SeriesKey {
+            tags: waiting_update_tags,
+            table: table_name.to_string(),
+        };
+        let (old_series_keys, new_series_keys, matched_sids) = ts_index
+            .prepare_update_tags_value(
+                &[UpdateSetValue {
+                    key: "station".as_bytes().to_vec(),
+                    value: Some("a2".as_bytes().to_vec()),
+                }],
+                &[matched_series.clone()],
+            )
+            .await
+            .unwrap();
+        ts_index
+            .update_series_key(old_series_keys, new_series_keys, matched_sids, false)
+            .await
+            .unwrap();
+
+        // Wait for binlog to be consumed
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        // 校验修改成功
+        for (sid, expected_series) in sids.iter().zip(series_keys.iter()) {
+            let series = ts_index.get_series_key(*sid).await.unwrap().unwrap();
+            if series != matched_series {
+                continue;
+            }
+
+            for (expected_tag, tag) in expected_series.tags.iter().zip(series.tags.iter()) {
+                if expected_tag.key == "station".as_bytes().to_vec() {
+                    assert_eq!("a2".as_bytes().to_vec(), tag.value);
+                } else {
+                    assert_eq!(expected_tag.key, tag.key);
+                }
+            }
+        }
     }
 }

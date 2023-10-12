@@ -23,7 +23,7 @@ stream_executor_cpu = 2
 # Directory for index:      $path/$database/data/id/index
 # Directory for tsm:        $path/$database/data/id/tsm
 # Directory for delta:      $path/$database/data/id/delta
-path = 'data/db'
+path = '/var/lib/cnosdb/data'
 
 ## The maximum file size of summary file.
 #max_summary_size = "128M" # 134,217,728 bytes
@@ -62,7 +62,7 @@ strict_write = false
 enabled = true
 
 ## The directory where write ahead logs stored.
-path = 'data/wal'
+path = '/var/lib/cnosdb/wal'
 
 ## The maxmimum amount of write request in memory.
 #wal_req_channel_cap = 64
@@ -91,14 +91,14 @@ path = 'data/wal'
 
 [log]
 level = 'info'
-path = 'data/log'
+path = '/var/log/cnosdb'
 ## Tokio trace, default turn off tokio trace
 #tokio_trace = { addr = "127.0.0.1:6669" }
 
 [security]
 # [security.tls_config]
-# certificate = "./config/tls/server.crt"
-# private_key = "./config/tls/server.key"
+# certificate = "/etc/cnosdb/tls/server.crt"
+# private_key = "/etc/cnosdb/tls/server.key"
 
 [cluster]
 name = 'cluster_xxx'
@@ -121,12 +121,12 @@ report_time_interval_secs = 30
 
 [hinted_off]
 enable = true
-path = '/tmp/cnosdb/hh'
+path = '/var/lib/cnosdb/hh'
 
 # [trace]
 # auto_generate_span = false
 # [trace.log]
-# path = '/tmp/cnosdb'
+# path = '/var/log/cnosdb'
 # [trace.jaeger]
 # jaeger_agent_endpoint = 'http://localhost:14268/api/traces'
 # max_concurrent_exports = 2

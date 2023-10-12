@@ -222,7 +222,7 @@ impl<'a> AuthType<'a> {
         match self {
             Self::HashPassword(hash_password) => {
                 let hash_password = hash_password.ok_or_else(|| AuthError::PasswordNotSet)?;
-                if bcrypt_verify(&user_info.password, hash_password)? {
+                if !bcrypt_verify(&user_info.password, hash_password)? {
                     return Err(AuthError::AccessDenied {
                         user_name: user_name.to_string(),
                         auth_type: "password".to_string(),

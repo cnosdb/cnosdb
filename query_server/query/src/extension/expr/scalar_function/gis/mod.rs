@@ -1,3 +1,4 @@
+mod st_area;
 mod st_asbinary;
 mod st_distance;
 mod st_geomfromwkb;
@@ -9,6 +10,7 @@ pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<(
     st_distance::register_udf(func_manager)?;
     st_geomfromwkb::register_udf(func_manager)?;
     st_asbinary::register_udf(func_manager)?;
+    st_area::register_udf(func_manager)?;
     Ok(())
 }
 

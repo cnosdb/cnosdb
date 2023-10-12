@@ -110,6 +110,19 @@ message RenameColumnRequest {
     string table = 2;
     string old_name = 3;
     string new_name = 4;
+    bool dry_run = 5;
+}
+
+message UpdateSetValue {
+    bytes key = 1;
+    optional bytes value = 2;
+}
+
+message UpdateTagsRequest {
+    string db = 1;
+    repeated UpdateSetValue new_tags = 2;
+    repeated bytes matched_series = 3;
+    bool dry_run = 4;
 }
 
 message AddRaftFollowerRequest {
@@ -142,9 +155,10 @@ message AdminCommandRequest {
     AddColumnRequest add_column = 9;
     AlterColumnRequest alter_column = 10;
     RenameColumnRequest rename_column = 11;
-    AddRaftFollowerRequest add_raft_follower = 12;
-    RemoveRaftNodeRequest remove_raft_node = 13;
-    DestoryRaftGroupRequest destory_raft_group = 14;
+    UpdateTagsRequest update_tags = 12;
+    AddRaftFollowerRequest add_raft_follower = 13;
+    RemoveRaftNodeRequest remove_raft_node = 14;
+    DestoryRaftGroupRequest destory_raft_group = 15;
   }
 }
 

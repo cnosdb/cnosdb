@@ -7,6 +7,11 @@ on:
   push:
     tags:
       - v[0-9]+.*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'tag'
+        required: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -24,14 +29,7 @@ jobs:
     - name: Install Build Dependencies
       shell: bash
       run: |
-        curl -o flatbuffers.zip -sL https://github.com/google/flatbuffers/releases/download/v22.9.29/Linux.flatc.binary.clang++-12.zip
-        unzip  flatbuffers.zip
-        mv flatc /usr/local/bin
-    - name: Install Protoc
-      shell: bash
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
+        TARGETPLATFORM="linux/amd64" bash ./.github/tools/install_dependencies.sh
     - name: Install build tools
       run: |
         sudo gem install fpm
@@ -44,13 +42,27 @@ jobs:
       run: |
         cargo build --workspace --bins --release --target ${{ matrix.target }}
     - name: Package
+      if: github.event_name != 'workflow_dispatch'
       run: |
-        bash -x ./releng/build_package.sh -n cnosdb -v ${{ github.ref_name }} -b release -t ${{ matrix.target }}
-        bash -x ./releng/build_package.sh -n cnosdb-meta -v ${{ github.ref_name }} -b release -t ${{ matrix.target }}
+        bash -x ./packages/build_package.sh -n cnosdb -v ${{ github.ref_name }} -b release -t ${{ matrix.target }}
+        bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ github.ref_name }} -b release -t ${{ matrix.target }}
+    - name: Package manually
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        bash -x ./packages/build_package.sh -n cnosdb -v ${{ github.event.inputs.tag }} -b release -t ${{ matrix.target }}
+        bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ github.event.inputs.tag }} -b release -t ${{ matrix.target }}
     - name: Release
       uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
+      if: github.event_name != 'workflow_dispatch'
       with:
         files: |
           *.deb
           *.rpm
+    - name: Release manually
+      if: github.event_name == 'workflow_dispatch'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          *.deb
+          *.rpm
+        tag_name: ${{ github.event.inputs.tag }}

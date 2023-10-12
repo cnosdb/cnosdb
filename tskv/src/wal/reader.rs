@@ -3,8 +3,10 @@ use std::path::{Path, PathBuf};
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
 use models::schema::Precision;
+use models::{SeriesId, SeriesKey};
 use openraft::EntryPayload;
 use protos::models_helper::print_points;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use super::{
@@ -184,6 +186,19 @@ impl WalRecordData {
                     }
                 }
             }
+            WalType::UpdateSeriesKeys => {
+                match UpdateSeriesKeysBlock::decode(&buf[WAL_HEADER_LEN..]) {
+                    Ok(e) => Block::UpdateSeriesKeys(e),
+                    Err(e) => {
+                        trace::error!("Failed to decode UpdateSeriesKeysBlock from wal: {e}");
+                        return Self {
+                            typ: WalType::Unknown,
+                            seq: 0,
+                            block: Block::Unknown,
+                        };
+                    }
+                }
+            }
             WalType::Unknown => Block::Unknown,
         };
         Self {
@@ -199,6 +214,7 @@ pub enum Block {
     Write(WriteBlock),
     DeleteVnode(DeleteVnodeBlock),
     DeleteTable(DeleteTableBlock),
+    UpdateSeriesKeys(UpdateSeriesKeysBlock),
     RaftLog(raft_store::RaftEntry),
     Unknown,
 }
@@ -386,6 +402,59 @@ impl DeleteTableBlock {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct UpdateSeriesKeysBlock {
+    pub tenant: String,
+    pub database: String,
+    pub vnode_id: VnodeId,
+    pub old_series_keys: Vec<SeriesKey>,
+    pub new_series_keys: Vec<SeriesKey>,
+    pub series_ids: Vec<SeriesId>,
+}
+
+impl UpdateSeriesKeysBlock {
+    pub fn new(
+        tenant: String,
+        database: String,
+        vnode_id: VnodeId,
+        old_series_keys: Vec<SeriesKey>,
+        new_series_keys: Vec<SeriesKey>,
+        series_ids: Vec<SeriesId>,
+    ) -> Self {
+        Self {
+            tenant,
+            database,
+            vnode_id,
+            old_series_keys,
+            new_series_keys,
+            series_ids,
+        }
+    }
+
+    pub fn size_bytes(&self) -> Result<u32> {
+        let size = bincode::serialized_size(self).map_err(|err| Error::CommonError {
+            reason: err.to_string(),
+        })? as u32;
+        Ok(size)
+    }
+
+    pub fn encode<W>(&self, writer: W) -> Result<()>
+    where
+        W: std::io::Write,
+    {
+        bincode::serialize_into(writer, self).map_err(|err| Error::CommonError {
+            reason: err.to_string(),
+        })
+    }
+
+    pub fn decode(buf: &[u8]) -> Result<Self> {
+        bincode::deserialize(buf).map_err(|err| Error::CommonError {
+            reason: err.to_string(),
+        })
+    }
+}
+
 pub async fn print_wal_statistics(path: impl AsRef<Path>) {
     use protos::models as fb_models;
 
@@ -441,6 +510,10 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                             println!("Raft log: membership");
                         }
                     },
+                    Block::UpdateSeriesKeys(blk) => {
+                        println!("Old series keys: {:?}", blk.old_series_keys);
+                        println!("New series keys: {:?}", blk.new_series_keys);
+                    }
                     Block::Unknown => {
                         println!("Unknown WAL entry type.");
                     }

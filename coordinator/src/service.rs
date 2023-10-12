@@ -2,7 +2,7 @@
 #![allow(unused)]
 #![allow(clippy::type_complexity)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
@@ -26,11 +26,11 @@ use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId, VnodeStatus};
 use models::object_reference::ResolvedTable;
-use models::predicate::domain::{ResolvedPredicateRef, TimeRanges};
-use models::record_batch_decode;
+use models::predicate::domain::{ResolvedPredicateRef, TimeRange, TimeRanges};
 use models::schema::{
     timestamp_convert, ColumnType, Precision, TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
 };
+use models::{record_batch_decode, SeriesKey, Tag};
 use protocol_parser::lines_convert::{
     arrow_array_to_points, line_to_batches, mutable_batches_to_point,
 };
@@ -322,11 +322,10 @@ impl CoordService {
 
     async fn prune_shards(
         &self,
-        table: &ResolvedTable,
+        tenant: &str,
+        database: &str,
         time_ranges: &TimeRanges,
     ) -> Result<Vec<ReplicationSet>, CoordinatorError> {
-        let tenant = table.tenant();
-        let database = table.database();
         let meta = self.meta_manager().tenant_meta(tenant).await.ok_or(
             CoordinatorError::TenantNotFound {
                 name: tenant.to_string(),
@@ -527,7 +526,11 @@ impl Coordinator for CoordService {
     ) -> CoordinatorResult<Vec<ReplicationSet>> {
         // 1. 根据传入的过滤条件获取表的分片信息（包括副本）
         let shards = self
-            .prune_shards(table, predicate.time_ranges().as_ref())
+            .prune_shards(
+                table.tenant(),
+                table.database(),
+                predicate.time_ranges().as_ref(),
+            )
             .await?;
         // 2. 选择最优的副本
         let optimal_shards = self.replica_selectioner.select(shards)?;
@@ -990,6 +993,128 @@ impl Coordinator for CoordService {
 
     fn metrics(&self) -> &Arc<CoordServiceMetrics> {
         &self.metrics
+    }
+
+    async fn update_tags_value(
+        &self,
+        table_schema: TskvTableSchemaRef,
+        new_tags: Vec<UpdateSetValue>,
+        record_batches: Vec<RecordBatch>,
+    ) -> CoordinatorResult<()> {
+        let tenant = &table_schema.tenant;
+        let db = &table_schema.db;
+        let table_name = &table_schema.name;
+
+        let mut min_ts = i64::MIN;
+        let mut max_ts = i64::MAX;
+        let mut series_keys = vec![];
+
+        for record_batch in record_batches {
+            let num_rows = record_batch.num_rows();
+            let schema = record_batch.schema().fields().clone();
+            let columns = record_batch.columns();
+
+            // struct SeriesKey
+            for idx in 0..num_rows {
+                let mut has_ts = false;
+                let mut tags = vec![];
+                for (column, schema) in columns.iter().zip(schema.iter()) {
+                    let name = schema.name().as_str();
+                    let tskv_schema_column =
+                        table_schema
+                            .column(name)
+                            .ok_or(CoordinatorError::CommonError {
+                                msg: format!("column {} not found in table {}", name, table_name),
+                            })?;
+                    if name == TIME_FIELD {
+                        let precision_and_value =
+                            get_precision_and_value_from_arrow_column(column, idx)?;
+                        let ts = precision_and_value.1;
+                        has_ts = true;
+
+                        if ts > max_ts {
+                            max_ts = ts;
+                        }
+
+                        if ts < min_ts {
+                            min_ts = ts;
+                        }
+                    }
+                    if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
+                        let value = column
+                            .as_any()
+                            .downcast_ref::<StringArray>()
+                            .ok_or(CoordinatorError::CommonError {
+                                msg: format!("column {} is not string", name),
+                            })?
+                            .value(idx);
+
+                        // match_series can`t have null tag
+                        if value.is_empty() {
+                            if let Some(null) = column.nulls() {
+                                if null.is_null(idx) {
+                                    continue;
+                                }
+                            }
+                        }
+                        tags.push(Tag {
+                            key: name.as_bytes().to_vec(),
+                            value: value.as_bytes().to_vec(),
+                        });
+                    }
+                }
+
+                if !has_ts {
+                    return Err(CoordinatorError::CommonError {
+                        msg: format!("column {} not found in table {}", TIME_FIELD, table_name),
+                    });
+                }
+
+                series_keys.push(
+                    SeriesKey {
+                        tags,
+                        table: table_name.clone(),
+                    }
+                    .encode(),
+                );
+            }
+        }
+
+        let update_tags_request = UpdateTagsRequest {
+            db: db.clone(),
+            new_tags: new_tags.clone(),
+            matched_series: series_keys,
+            dry_run: false,
+        };
+
+        let req = AdminCommandRequest {
+            tenant: tenant.clone(),
+            command: Some(UpdateTags(update_tags_request)),
+        };
+
+        // find all shard/ReplicationSet/node_id
+        // send only one request to each kv node
+        let time_ranges = TimeRanges::new(vec![TimeRange::new(min_ts, max_ts)]);
+        let shards = self.prune_shards(tenant, db, &time_ranges).await?;
+        let mut all_node_id = HashSet::new();
+        let mut requests = Vec::new();
+
+        shards.iter().for_each(|replication_set| {
+            replication_set.vnodes.iter().for_each(|vnode| {
+                let node_id = vnode.node_id;
+                if all_node_id.insert(node_id) {
+                    requests.push(self.exec_admin_command_on_node(node_id, req.clone()))
+                }
+            });
+        });
+        drop(all_node_id);
+
+        // 使用异步，并发请求
+        for res in futures::future::join_all(requests).await {
+            res?
+        }
+
+        Ok(())
     }
 }
 
