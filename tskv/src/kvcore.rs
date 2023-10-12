@@ -1222,97 +1222,63 @@ impl Engine for TsKv {
 
     async fn delete_from_table(
         &self,
+        vnode_id: VnodeId,
         tenant: &str,
         database: &str,
         table: &str,
         predicate: &ResolvedPredicate,
     ) -> Result<()> {
+        // TODO wal
+
+        let tag_domains = predicate.tags_filter();
+        let time_ranges = predicate.time_ranges();
+
         let database_ref = match self.version_set.read().await.get_db(tenant, database) {
             Some(db) => db,
             None => return Ok(()),
         };
         let database_rlock = database_ref.read().await;
-        let tenant_database = database_rlock.owner();
         let db_schemas = database_rlock.get_schemas();
-        let vnodes_map = database_rlock.ts_families().clone();
-        let vnode_indexes_map = database_rlock.ts_indexes();
-        drop(database_rlock);
-        drop(database_ref);
+
         let column_ids: Vec<ColumnId> = match db_schemas.get_table_schema_by_meta(table).await? {
             Some(v) => v.columns().iter().map(|c| c.id).collect(),
             None => return Ok(()),
         };
-        let column_ids = Arc::new(column_ids);
-        let table = Arc::new(table.to_string());
 
-        let tag_domains = Arc::new(predicate.tags_filter().domains().cloned());
-        let time_range = predicate.time_ranges();
+        let vnode = match database_rlock.get_tsfamily(vnode_id) {
+            Some(vnode) => vnode,
+            None => return Ok(()),
+        };
+        let vnode_index = match database_rlock.get_ts_index(vnode_id) {
+            Some(vnode) => vnode,
+            None => return Ok(()),
+        };
 
-        let mut tasks = Vec::with_capacity(vnode_indexes_map.len());
-        for (vnode_id, vnode) in vnodes_map {
-            if let Some(vnode_index) = vnode_indexes_map.get(&vnode_id).cloned() {
-                let db_owner = tenant_database.clone();
-                let table = table.clone();
-                let column_ids = column_ids.clone();
-                let tag_domains = tag_domains.clone();
-                let time_ranges = time_range.clone();
-                let task = self.runtime.spawn(async move {
-                    let series_ids = match tag_domains.as_ref() {
-                        Some(domains) => vnode_index
-                            .get_series_ids_by_domains(table.as_str(), domains)
-                            .await
-                            .context(error::IndexErrSnafu)?,
-                        None => return Ok(()),
-                    };
-                    let vnode = vnode.read().await;
-                    vnode.delete_series_by_time_ranges(&series_ids, time_ranges.as_ref());
+        drop(database_rlock);
+        drop(database_ref);
 
-                    let field_ids: Vec<u64> = series_ids
-                        .iter()
-                        .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
-                        .collect();
-                    info!(
-                        "Drop table: vnode {vnode_id} deleting {} fields in table: {db_owner}.{table}",
-                        field_ids.len()
-                    );
+        let series_ids = vnode_index.get_series_ids_by_domains(table, tag_domains).await?;
 
-                    let version = vnode.super_version();
-                    for time_range in time_ranges.time_ranges() {
-                        for column_file in version.version.column_files(&field_ids, time_range) {
-                            column_file.add_tombstone(&field_ids, time_range).await?;
-                        }
-                    }
-                    Result::<()>::Ok(())
-                });
-                tasks.push((vnode_id, task));
+        let vnode = vnode.read().await;
+        vnode.delete_series_by_time_ranges(&series_ids, time_ranges.as_ref());
+
+        let field_ids = series_ids
+            .iter()
+            .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
+            .collect::<Vec<_>>();
+        info!(
+            "Drop table: vnode {vnode_id} deleting {} fields in table: {table}",
+            field_ids.len()
+        );
+
+        let version = vnode.super_version();
+        for time_range in time_ranges.time_ranges() {
+            for column_file in version.version.column_files(&field_ids, time_range) {
+                column_file.add_tombstone(&field_ids, time_range).await?;
             }
         }
-        let mut errors = Vec::new();
-        for (vnode_id, task) in tasks {
-            match task.await {
-                Ok(Ok(())) => continue,
-                Ok(Err(e)) => {
-                    trace::error!("Delete on vnode {vnode_id} failed: {e}");
-                    errors.push(e)
-                }
-                Err(e) => {
-                    let message = format!("Delete on vnode {vnode_id} panicked: {e}");
-                    trace::error!("{message}");
-                    errors.push(Error::CommonError { reason: message })
-                }
-            }
-        }
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            return Err(Error::CommonError {
-                reason: errors
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<String>>()
-                    .join("; "),
-            });
-        }
+
+        Ok(())
     }
 
     async fn get_series_id_by_filter(
@@ -1331,20 +1297,7 @@ impl Engine for TsKv {
             None => return Ok(vec![]),
         };
 
-        let res = if filter.is_all() {
-            // Match all records
-            debug!("pushed tags filter is All.");
-            ts_index.get_series_id_list(tab, &[]).await?
-        } else if filter.is_none() {
-            // Does not match any record, return null
-            debug!("pushed tags filter is None.");
-            vec![]
-        } else {
-            // No error will be reported here
-            debug!("pushed tags filter is {:?}.", filter);
-            let domains = unsafe { filter.domains_unsafe() };
-            ts_index.get_series_ids_by_domains(tab, domains).await?
-        };
+        let res = ts_index.get_series_ids_by_domains(tab, filter).await?;
 
         Ok(res)
     }

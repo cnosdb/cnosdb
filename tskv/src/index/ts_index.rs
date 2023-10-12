@@ -8,7 +8,7 @@ use std::sync::Arc;
 use bytes::BufMut;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
-use models::predicate::domain::{utf8_from, Domain, Range};
+use models::predicate::domain::{utf8_from, ColumnDomains, Domain, Range};
 use models::tag::{self, TagFromParts};
 use models::{utils, SeriesId, SeriesKey, Tag, TagKey, TagValue};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -397,11 +397,26 @@ impl TSIndex {
     pub async fn get_series_ids_by_domains(
         &self,
         tab: &str,
-        tag_domains: &HashMap<String, Domain>,
+        tag_domains: &ColumnDomains<String>,
     ) -> IndexResult<Vec<u32>> {
-        debug!("Index get sids: pushed tag_domains: {:?}", tag_domains);
+        if tag_domains.is_all() {
+            // Match all records
+            debug!("pushed tags filter is All.");
+            return self.get_series_id_list(tab, &[]).await;
+        }
+
+        if tag_domains.is_none() {
+            // Does not match any record, return null
+            debug!("pushed tags filter is None.");
+            return Ok(vec![]);
+        }
+
+        // safe: tag_domains is not empty
+        let domains = unsafe { tag_domains.domains_unsafe() };
+
+        debug!("Index get sids: pushed tag_domains: {:?}", domains);
         let mut series_ids = vec![];
-        for (k, v) in tag_domains.iter() {
+        for (k, v) in domains.iter() {
             let rb = self.get_series_ids_by_domain(tab, k, v).await?;
             series_ids.push(rb);
         }

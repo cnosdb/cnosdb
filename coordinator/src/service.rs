@@ -779,28 +779,38 @@ impl Coordinator for CoordService {
 
     async fn delete_from_table(
         &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
+        table: &ResolvedTable,
         predicate: &ResolvedPredicate,
     ) -> CoordinatorResult<()> {
         let nodes = self.meta.data_nodes().await;
 
+        let vnodes = self
+            .prune_shards(table.tenant(), table.database(), predicate.time_ranges().as_ref())
+            .await?;
+
         let now = tokio::time::Instant::now();
         let mut requests = vec![];
-        for node in nodes.iter() {
-            debug!(
-                "exec delete from {tenant}.{database}.{table} WHERE {predicate:?} on node:{node:?}, now:{now:?}",
-            );
 
-            requests.push(
-                self.point_writer
-                    .delete_from_table_on_node(node.id, tenant, database, table, predicate),
-            );
+        if self.using_raft_replication() {
+            // TODO
+            for vnode in vnodes.into_iter().flat_map(|v| v.vnodes) {
+                todo!()
+            }
+        } else {
+            // TODO
+            for vnode in vnodes.into_iter().flat_map(|v| v.vnodes) {
+                requests.push(self.point_writer.delete_from_table_on_vnode(
+                    vnode,
+                    table.tenant(),
+                    table.database(),
+                    table.table(),
+                    predicate,
+                ));
+            }
         }
 
         for result in futures::future::join_all(requests).await {
-            debug!("exec delete from {tenant}.{database}.{table} WHERE {predicate:?}, now:{now:?}, elapsed:{}ms, result:{result:?}", now.elapsed().as_millis());
+            debug!("exec delete from {table} WHERE {predicate:?}, now:{now:?}, elapsed:{}ms, result:{result:?}", now.elapsed().as_millis());
             result?
         }
         Ok(())

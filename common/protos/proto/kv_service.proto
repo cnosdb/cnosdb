@@ -178,6 +178,7 @@ message DeleteFromTableRequest {
   string database = 2;
   string table = 3;
   bytes predicate = 4;
+  uint32 vnode_id = 5;
 }
 
 /* -------------------------------------------------------------------- */

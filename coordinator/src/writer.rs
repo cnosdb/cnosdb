@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use meta::error::MetaError;
 use meta::model::MetaRef;
+use models::meta_data::{NodeId, ReplicationSet, VnodeId, VnodeInfo};
 use models::predicate::domain::ResolvedPredicate;
 use models::schema::Precision;
 use models::utils::{now_timestamp_millis, now_timestamp_nanos};
@@ -232,24 +233,27 @@ impl PointWriter {
         }
     }
 
-    pub(crate) async fn delete_from_table_on_node(
+    pub(crate) async fn delete_from_table_on_vnode(
         &self,
-        node_id: u64,
+        vnode: VnodeInfo,
         tenant: &str,
         database: &str,
         table: &str,
         predicate: &ResolvedPredicate,
     ) -> CoordinatorResult<()> {
+        let node_id = vnode.node_id;
+        let vnode_id = vnode.id;
+
         if node_id == self.node_id && self.kv_inst.is_some() {
             let result = self
-                .delete_from_table_on_local_node(tenant, database, table, predicate)
+                .delete_from_table_on_local_node(vnode_id, tenant, database, table, predicate)
                 .await;
 
             return result;
         }
 
         let result = self
-            .delete_from_table_on_remote_node(node_id, tenant, database, table, predicate)
+            .delete_from_table_on_remote_node(vnode_id, node_id, tenant, database, table, predicate)
             .await;
 
         if let Err(ref err) = result {
@@ -271,7 +275,8 @@ impl PointWriter {
 
     pub async fn delete_from_table_on_remote_node(
         &self,
-        node_id: u64,
+        vnode_id: VnodeId,
+        node_id: NodeId,
         tenant: &str,
         database: &str,
         table: &str,
@@ -291,6 +296,7 @@ impl PointWriter {
         let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
 
         let cmd = tonic::Request::new(DeleteFromTableRequest {
+            vnode_id,
             tenant: tenant.to_string(),
             database: database.to_string(),
             table: table.to_string(),
@@ -298,7 +304,7 @@ impl PointWriter {
         });
 
         let begin_time = now_timestamp_millis();
-        let response = client
+        let _ = client
             .delete_from_table(cmd)
             .await
             .map_err(|err| match err.code() {
@@ -307,18 +313,19 @@ impl PointWriter {
                     id: node_id,
                     error: format!("{err:?}"),
                 },
-            })?
-            .into_inner();
+            })?;
 
         let use_time = now_timestamp_millis() - begin_time;
         if use_time > 200 {
             debug!("delete on node:{}, use time too long {}", node_id, use_time)
         }
-        status_response_to_result(&response)
+
+        Ok(())
     }
 
     async fn delete_from_table_on_local_node(
         &self,
+        vnode_id: VnodeId,
         tenant: &str,
         database: &str,
         table: &str,
@@ -326,7 +333,7 @@ impl PointWriter {
     ) -> CoordinatorResult<()> {
         if let Some(kv_inst) = self.kv_inst.clone() {
             if let Err(e) = kv_inst
-                .delete_from_table(tenant, database, table, predicate)
+                .delete_from_table(vnode_id, tenant, database, table, predicate)
                 .await
             {
                 debug!("Failed to run delete_from_table: {e}");

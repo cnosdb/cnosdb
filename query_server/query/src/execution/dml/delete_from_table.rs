@@ -23,7 +23,12 @@ impl DeleteFromTableTask {
 #[async_trait]
 impl DMLDefinitionTask for DeleteFromTableTask {
     async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
-        let (tags_filter, time_ranges) = if let Some(expr) = &self.stmt.selection {
+        let DeleteFromTable {
+            table_name,
+            selection,
+        } = &self.stmt;
+
+        let (tags_filter, time_ranges) = if let Some(expr) = selection {
             let (tag, time) =
                 DeleteSelectionExpressionToDomainsVisitor::expr_to_tag_and_time_domains(expr)?;
             let time_range = filter_to_time_ranges(&time);
@@ -31,22 +36,16 @@ impl DMLDefinitionTask for DeleteFromTableTask {
         } else {
             (ColumnDomains::all(), TimeRanges::all())
         };
+
         let predicate =
             ResolvedPredicate::new(Arc::new(time_ranges), tags_filter, ColumnDomains::all());
 
-        let tenant = query_state_machine.session.tenant();
-        let coord = query_state_machine.coord.clone();
-        if let Err(e) = coord
-            .delete_from_table(
-                tenant,
-                self.stmt.table_name.database(),
-                self.stmt.table_name.table(),
-                &predicate,
-            )
-            .await
-        {
-            trace::error!("Failed to execute DML task delete: {e}");
-        }
+        trace::info!("Delete from table: {table_name}, filter: {predicate:?}");
+
+        query_state_machine
+            .coord
+            .delete_from_table(table_name, &predicate)
+            .await?;
 
         Ok(Output::Nil(()))
     }

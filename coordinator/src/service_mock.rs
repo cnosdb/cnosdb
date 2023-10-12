@@ -196,9 +196,7 @@ impl Coordinator for MockCoordinator {
 
     async fn delete_from_table(
         &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
+        table: &ResolvedTable,
         predicate: &ResolvedPredicate,
     ) -> CoordinatorResult<()> {
         todo!("delete_from_table")

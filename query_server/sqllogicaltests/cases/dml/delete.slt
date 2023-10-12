@@ -1,0 +1,80 @@
+include ./setup.slt
+
+query T
+select time, t0, t1, t2, f0, f1
+from dml_tbl order by time, t0, t1, t2;
+----
+1999-12-31T00:00:00 tag11 tag21 NULL 111 444
+1999-12-31T00:00:00.005 tag12 tag22 NULL 222 444
+1999-12-31T00:00:00.010 tag12 tag23 NULL NULL 222
+1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
+1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
+1999-12-31T00:10:00.025 tag11 tag22 NULL 333 555
+1999-12-31T00:10:00.030 tag11 tag23 NULL 444 333
+1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+
+
+# 单time过滤
+statement ok
+delete from dml_tbl where time = '1999-12-31T00:00:00';
+
+query T
+select time, t0, t1, t2, f0, f1
+from dml_tbl order by time, t0, t1, t2;
+----
+1999-12-31T00:00:00.005 tag12 tag22 NULL 222 444
+1999-12-31T00:00:00.010 tag12 tag23 NULL NULL 222
+1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
+1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
+1999-12-31T00:10:00.025 tag11 tag22 NULL 333 555
+1999-12-31T00:10:00.030 tag11 tag23 NULL 444 333
+1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+
+# 单 tag过滤
+statement ok
+delete from dml_tbl where t0 = 'tag11' ;
+
+query T
+select time, t0, t1, t2, f0, f1
+from dml_tbl order by time, t0, t1, t2;
+----
+1999-12-31T00:00:00.005 tag12 tag22 NULL 222 444
+1999-12-31T00:00:00.010 tag12 tag23 NULL NULL 222
+1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
+1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
+1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+
+# tag隐式转换
+statement ok
+delete from dml_tbl where t0 = 11;
+
+query T
+select time, t0, t1, t2, f0, f1
+from dml_tbl order by time, t0, t1, t2;
+----
+1999-12-31T00:00:00.005 tag12 tag22 NULL 222 444
+1999-12-31T00:00:00.010 tag12 tag23 NULL NULL 222
+1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
+1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
+1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+
+# tag & time混合过滤
+statement ok
+delete from dml_tbl where t0 = 'tag12' and time = '1999-12-31T00:00:00.005';
+
+query T
+select time, t0, t1, t2, f0, f1
+from dml_tbl order by time, t0, t1, t2;
+----
+1999-12-31T00:00:00.010 tag12 tag23 NULL NULL 222
+1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
+1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
+1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+
+# 对 field 过滤
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: This feature is not implemented: Filtering on the field column on the tskv table in delete statement", .*
+delete from dml_tbl where f0 = 11;
+
+# 非常量表达式
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: This feature is not implemented: operator \|\| in delete statement", .*
+delete from dml_tbl where t0 = t0 || 'xx';

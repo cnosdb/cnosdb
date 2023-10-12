@@ -219,6 +219,7 @@ pub trait Engine: Send + Sync + Debug {
     // TODO(zipper): Delete data on table
     async fn delete_from_table(
         &self,
+        vnode_id: VnodeId,
         tenant: &str,
         database: &str,
         table: &str,
