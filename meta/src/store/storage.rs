@@ -798,7 +798,7 @@ impl StateMachine {
         cluster: &str,
         tenant: &str,
         schema: &DatabaseSchema,
-    ) -> MetaResult<()> {
+    ) -> MetaResult<TenantMetaData> {
         let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
         if !self.contains_key(&key)? {
             return Err(MetaError::DatabaseNotFound {
@@ -808,7 +808,8 @@ impl StateMachine {
 
         self.check_db_schema_valid(cluster, schema)?;
         self.insert(&key, &value_encode(schema)?)?;
-        Ok(())
+
+        self.to_tenant_meta_data(cluster, tenant)
     }
 
     fn check_db_schema_valid(&self, cluster: &str, db_schema: &DatabaseSchema) -> MetaResult<()> {

@@ -360,6 +360,18 @@ impl TenantMeta {
             rsp
         }
     }
+    // tenant role end
+
+    async fn write_with_data(&self, req: &command::WriteCommand) -> MetaResult<()> {
+        let rsp = self.client.write::<TenantMetaData>(req).await?;
+
+        let mut data = self.data.write();
+        if rsp.version > data.version {
+            *data = rsp;
+        }
+
+        Ok(())
+    }
 
     pub async fn create_db(&self, mut schema: DatabaseSchema) -> MetaResult<()> {
         self.check_create_db(&mut schema)?;
@@ -370,18 +382,10 @@ impl TenantMeta {
             schema.clone(),
         );
 
-        let rsp = self.client.write::<TenantMetaData>(&req).await?;
-        {
-            let mut data = self.data.write();
-            if rsp.version > data.version {
-                *data = rsp;
-            }
-        }
+        self.write_with_data(&req).await?;
 
         Ok(())
     }
-
-    // tenant role end
 
     pub async fn alter_db_schema(&self, schema: DatabaseSchema) -> MetaResult<()> {
         let req = command::WriteCommand::AlterDB(
@@ -390,10 +394,8 @@ impl TenantMeta {
             schema.clone(),
         );
 
-        self.client.write::<()>(&req).await?;
-        if let Some(info) = self.data.write().dbs.get_mut(schema.database_name()) {
-            info.schema = schema.clone()
-        }
+        self.write_with_data(&req).await?;
+
         Ok(())
     }
 
@@ -441,13 +443,7 @@ impl TenantMeta {
             schema.clone(),
         );
 
-        let rsp = self.client.write::<TenantMetaData>(&req).await?;
-        {
-            let mut data = self.data.write();
-            if rsp.version > data.version {
-                *data = rsp;
-            }
-        }
+        self.write_with_data(&req).await?;
 
         Ok(())
     }
@@ -548,13 +544,7 @@ impl TenantMeta {
             ts,
         );
 
-        let rsp = self.client.write::<TenantMetaData>(&req).await?;
-        {
-            let mut data = self.data.write();
-            if rsp.version > data.version {
-                *data = rsp;
-            }
-        }
+        self.write_with_data(&req).await?;
 
         if let Some(bucket) = self.data.read().bucket_by_timestamp(db, ts) {
             return Ok(bucket.clone());
@@ -786,8 +776,14 @@ impl TenantMeta {
     // **[6]    /cluster_name/tenants/tenant/roles/name -> [CustomTenantRole<Oid>]
     // **[6]    /cluster_name/tenants/tenant/members/oid -> [TenantRoleIdentifier]
     pub async fn process_watch_log(&self, entry: &EntryLog) -> MetaResult<()> {
-        let strs: Vec<&str> = entry.key.split('/').collect();
+        let mut cache = self.data.write();
+        if cache.version >= entry.ver {
+            return Ok(());
+        } else {
+            cache.version = entry.ver;
+        }
 
+        let strs: Vec<&str> = entry.key.split('/').collect();
         let len = strs.len();
         if len == 8
             && strs[6] == key_path::SCHEMAS
@@ -797,7 +793,7 @@ impl TenantMeta {
             let _tenant = strs[3];
             let db_name = strs[5];
             let tab_name = strs[7];
-            if let Some(db) = self.data.write().dbs.get_mut(db_name) {
+            if let Some(db) = cache.dbs.get_mut(db_name) {
                 if entry.tye == command::ENTRY_LOG_TYPE_SET {
                     if let Ok(info) = serde_json::from_str::<TableSchema>(&entry.val) {
                         db.tables.insert(tab_name.to_string(), info);
@@ -813,7 +809,7 @@ impl TenantMeta {
         {
             let _tenant = strs[3];
             let db_name = strs[5];
-            if let Some(db) = self.data.write().dbs.get_mut(db_name) {
+            if let Some(db) = cache.dbs.get_mut(db_name) {
                 if let Ok(bucket_id) = serde_json::from_str::<u32>(strs[7]) {
                     db.buckets.sort_by(|a, b| a.id.cmp(&b.id));
                     if entry.tye == command::ENTRY_LOG_TYPE_SET {
@@ -833,35 +829,32 @@ impl TenantMeta {
         } else if len == 6 && strs[4] == key_path::DBS && strs[2] == key_path::TENANTS {
             let _tenant = strs[3];
             let db_name = strs[5];
-            let mut data = self.data.write();
             if entry.tye == command::ENTRY_LOG_TYPE_SET {
                 if let Ok(info) = serde_json::from_str::<DatabaseSchema>(&entry.val) {
-                    let db = data.dbs.entry(db_name.to_string()).or_default();
+                    let db = cache.dbs.entry(db_name.to_string()).or_default();
 
                     db.schema = info;
                 }
             } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
-                data.dbs.remove(db_name);
+                cache.dbs.remove(db_name);
             }
         } else if len == 6 && strs[4] == key_path::MEMBERS && strs[2] == key_path::TENANTS {
             let key = strs[5];
-            let mut data = self.data.write();
             if entry.tye == command::ENTRY_LOG_TYPE_SET {
                 if let Ok(info) = serde_json::from_str::<TenantRoleIdentifier>(&entry.val) {
-                    data.members.insert(key.to_owned(), info);
+                    cache.members.insert(key.to_owned(), info);
                 }
             } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
-                data.members.remove(key);
+                cache.members.remove(key);
             }
         } else if len == 6 && strs[4] == key_path::ROLES && strs[2] == key_path::TENANTS {
             let key = strs[5];
-            let mut data = self.data.write();
             if entry.tye == command::ENTRY_LOG_TYPE_SET {
                 if let Ok(info) = serde_json::from_str::<CustomTenantRole<Oid>>(&entry.val) {
-                    data.roles.insert(key.to_owned(), info);
+                    cache.roles.insert(key.to_owned(), info);
                 }
             } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
-                data.roles.remove(key);
+                cache.roles.remove(key);
             }
         }
 
