@@ -32,9 +32,9 @@ drop database db_delay after '3m';
 
 # check resource status
 query 
-select name,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
+select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb/db_delay';
 ----
-cnosdb/db_delay DropDatabase Schedule
+cnosdb/db_delay DropDatabase 0 Schedule
 
 # check is hidden
 query T
@@ -46,9 +46,9 @@ recover database db_delay;
 
 # check
 query 
-select name,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
+select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb/db_delay';
 ----
-cnosdb/db_delay DropDatabase Cancel
+cnosdb/db_delay DropDatabase 0 Cancel
 
 query T
 select database_name from information_schema.databases where database_name = 'db_delay';;
@@ -66,9 +66,9 @@ sleep 2m
 
 # check
 query 
-select name,operator,status from information_schema.resource_status where name = 'cnosdb/db_delay';
+select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb/db_delay';
 ----
-cnosdb/db_delay DropDatabase Successed
+cnosdb/db_delay DropDatabase 1 Successed
 
 query T
 select database_name from information_schema.databases where database_name = 'db_delay';;

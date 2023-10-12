@@ -6,12 +6,12 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use lazy_static::lazy_static;
 
-pub const RESOURCE_STATUS_TIME: &str = "TIME";
-pub const RESOURCE_STATUS_NAME: &str = "NAME";
-pub const RESOURCE_STATUS_OPERATOR: &str = "ACTION";
-pub const RESOURCE_STATUS_TRY_COUNT: &str = "TRY_COUNT";
-pub const RESOURCE_STATUS_STATUS: &str = "STATUS";
-pub const RESOURCE_STATUS_COMMENT: &str = "COMMENT";
+pub const RESOURCE_STATUS_TIME: &str = "time";
+pub const RESOURCE_STATUS_NAME: &str = "name";
+pub const RESOURCE_STATUS_OPERATOR: &str = "action";
+pub const RESOURCE_STATUS_TRY_COUNT: &str = "try_count";
+pub const RESOURCE_STATUS_STATUS: &str = "status";
+pub const RESOURCE_STATUS_COMMENT: &str = "comment";
 
 lazy_static! {
     pub static ref RESOURCE_STATUS_SCHEMA: SchemaRef = Arc::new(Schema::new(vec![
