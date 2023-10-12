@@ -5,6 +5,10 @@ on:
     - cron: "00 10 * * 1-5"
   workflow_dispatch:
 
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
 jobs:
   docker:
     strategy:
@@ -15,10 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v3
       - name: Get current date
         id: date
-        run: echo "::set-output name=today::$(date +'%Y-%m-%d')"
+        run: echo "today=$(TZ=UTC-8 date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v3
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -32,30 +38,35 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       -
-        name: Build and push
-        if: matrix.image == 'cnosdb'
-        id: docker_build
-        uses: docker/build-push-action@v5
-        with:
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            cnosdb/cnosdb:community-latest
-            cnosdb/cnosdb:community-${{ steps.date.outputs.today }}
-          file: docker/Dockerfile
-          build-args: |
-            git_hash=${{ github.sha }}
+        name: Compiler
+        run: |
+          sudo apt install gcc-aarch64-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu
+          mkdir -p linux/amd64 linux/arm64
+          if [[ "${{ matrix.image }}" = "cnosdb" ]]; then
+            RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" cargo build --package main --package client --release --target aarch64-unknown-linux-gnu
+            cargo build --package main --package client --release --target x86_64-unknown-linux-gnu
+            mv ./target/aarch64-unknown-linux-gnu/release/cnosdb ./linux/arm64/cnosdb
+            mv ./target/aarch64-unknown-linux-gnu/release/cnosdb-cli ./linux/arm64/cnosdb-cli
+            mv ./target/x86_64-unknown-linux-gnu/release/cnosdb ./linux/amd64/cnosdb
+            mv ./target/x86_64-unknown-linux-gnu/release/cnosdb-cli ./linux/amd64/cnosdb-cli
+          else
+            RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" cargo build --package meta --release --target aarch64-unknown-linux-gnu
+            cargo build --package meta --release --target x86_64-unknown-linux-gnu
+            mv ./target/aarch64-unknown-linux-gnu/release/cnosdb-meta ./linux/arm64/cnosdb-meta
+            mv ./target/x86_64-unknown-linux-gnu/release/cnosdb-meta ./linux/amd64/cnosdb-meta
+          fi
       -
-        name: Build and push meta
-        if: matrix.image == 'cnosdb-meta'
-        id: docker_build_meta
-        uses: docker/build-push-action@v5
-        with:
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            cnosdb/cnosdb:meta-community-latest
-            cnosdb/cnosdb:meta-community-${{ steps.date.outputs.today }}
-          file: docker/Dockerfile_meta
-          build-args: |
-            git_hash=${{ github.sha }}
+        name: Build and push
+        run: |
+          if [[ "${{ matrix.image }}" = "cnosdb" ]]; then
+            docker buildx build -f docker/Dockerfile --platform linux/amd64,linux/arm64 \
+              -t cnosdb/${{matrix.image}}:community-latest \
+              -t cnosdb/${{matrix.image}}:community-${{ steps.date.outputs.today }} \
+              --build-arg="git_hash=${{ github.sha }}" . --push
+          else
+            docker buildx build -f docker/Dockerfile_meta --platform linux/amd64,linux/arm64 \
+              -t cnosdb/${{matrix.image}}:community-latest \
+              -t cnosdb/${{matrix.image}}:community-${{ steps.date.outputs.today }} \
+              --build-arg="git_hash=${{ github.sha }}" . --push
+          fi
