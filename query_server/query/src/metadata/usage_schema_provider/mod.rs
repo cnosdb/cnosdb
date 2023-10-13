@@ -5,14 +5,12 @@ use datafusion::datasource::{provider_as_source, TableProvider, ViewTable};
 use datafusion::logical_expr::{binary_expr, col, LogicalPlanBuilder, Operator};
 use datafusion::prelude::lit;
 use meta::error::MetaError;
-use models::schema::DEFAULT_CATALOG;
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
 
 use super::TableHandleProviderRef;
 use crate::data_source::table_source::TableHandle;
-
-pub const USAGE_SCHEMA: &str = "usage_schema";
+use crate::metadata::{DEFAULT_CATALOG, USAGE_SCHEMA};
 
 pub struct UsageSchemaProvider {
     table_factories: HashMap<String, BoxUsageSchemaTableFactory>,

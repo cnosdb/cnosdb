@@ -52,7 +52,7 @@ use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
 use models::schema::{
     ColumnType, DatabaseOptions, Duration, Precision, TableColumn, Tenant, TskvTableSchema,
-    TskvTableSchemaRef, Watermark, DEFAULT_CATALOG, DEFAULT_DATABASE, TIME_FIELD,
+    TskvTableSchemaRef, Watermark, DEFAULT_CATALOG, TIME_FIELD,
 };
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
@@ -91,7 +91,7 @@ use crate::data_source::stream::{get_event_time_column, get_watermark_delay};
 use crate::data_source::table_source::{TableHandle, TableSourceAdapter, TEMP_LOCATION_TABLE_NAME};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::metadata::{
-    ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, DATABASES_DATABASE_NAME,
+    is_system_database, ContextProviderExtension, DatabaseSet, DATABASES_DATABASE_NAME,
     INFORMATION_SCHEMA, INFORMATION_SCHEMA_DATABASES, INFORMATION_SCHEMA_TABLES,
     TABLES_TABLE_DATABASE, TABLES_TABLE_NAME,
 };
@@ -401,7 +401,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let (plan, privilege) = match obj_type {
             TenantObjectType::Database => {
                 let database_name = normalize_ident(object_name);
-                if database_name.eq(DEFAULT_DATABASE) {
+                if is_system_database(tenant_name, &database_name) {
                     return Err(QueryError::ForbidDropDatabase {
                         name: database_name,
                     });
@@ -984,11 +984,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         } = stmt;
 
         let name = normalize_ident(name);
-
-        // check if system database
-        if name.eq_ignore_ascii_case(CLUSTER_SCHEMA)
-            || name.eq_ignore_ascii_case(INFORMATION_SCHEMA)
-        {
+        if is_system_database(session.tenant(), name.as_str()) {
             return Err(QueryError::Meta {
                 source: MetaError::DatabaseAlreadyExists { database: name },
             });
