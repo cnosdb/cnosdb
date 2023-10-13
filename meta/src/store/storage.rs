@@ -857,23 +857,18 @@ impl StateMachine {
         cluster: &str,
         tenant: &str,
         schema: &DatabaseSchema,
-    ) -> MetaResult<()> {
+    ) -> MetaResult<TenantMetaData> {
         let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
-        if let Some(db_schema) = self.get_struct::<DatabaseSchema>(&key)? {
-            if !db_schema.options().get_db_is_hidden() {
-                self.check_db_schema_valid(cluster, schema)?;
-                self.insert(&key, &value_encode(schema)?)?;
-                Ok(())
-            } else {
-                return Err(MetaError::DatabaseNotFound {
-                    database: schema.database_name().to_string(),
-                });
-            }
-        } else {
+        if !self.contains_key(&key)? {
             return Err(MetaError::DatabaseNotFound {
                 database: schema.database_name().to_string(),
             });
         }
+
+        self.check_db_schema_valid(cluster, schema)?;
+        self.insert(&key, &value_encode(schema)?)?;
+
+        self.to_tenant_meta_data(cluster, tenant)
     }
 
     fn process_db_is_hidden(
@@ -1118,10 +1113,15 @@ impl StateMachine {
         })
     }
 
-    fn process_drop_user(&self, cluster: &str, user_name: &str) -> MetaResult<()> {
+    fn process_drop_user(&self, cluster: &str, user_name: &str) -> MetaResult<bool> {
         let key = KeyPath::user(cluster, user_name);
 
-        self.remove(&key)
+        if self.contains_key(&key)? {
+            self.remove(&key)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     fn set_tenant_limiter(
@@ -1387,6 +1387,7 @@ impl StateMachine {
         let mut rsp = LocalBucketResponse {
             kind: requests.kind,
             alloc: requests.expected.max,
+            remote_remain: -1,
         };
         let key = KeyPath::limiter(cluster, tenant);
 
@@ -1405,8 +1406,9 @@ impl StateMachine {
         };
         let alloc = bucket.acquire_closed(requests.expected.max as usize);
 
-        self.set_tenant_limiter(cluster, tenant, Some(limiter))?;
         rsp.alloc = alloc as i64;
+        rsp.remote_remain = bucket.balance() as i64;
+        self.set_tenant_limiter(cluster, tenant, Some(limiter))?;
 
         Ok(rsp)
     }

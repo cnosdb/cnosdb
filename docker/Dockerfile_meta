@@ -1,22 +1,13 @@
-FROM --platform=$TARGETPLATFORM cnosdb/cnosdb-build as build
+FROM --platform=$TARGETPLATFORM ubuntu
 
-# This environment variable is set by Github Actions.
-#
-# Unlike the 'git clone' command, Github CI won't generate directory '.git' when coping source code
-# for git commands to use, so here uses docker build-arg to fetch the commit hash.
 ARG git_hash
 ENV CNOSDB_GIT_HASH = $git_hash
 
-# Build
-COPY . /cnosdb
-RUN cargo build --release --package meta --bin cnosdb-meta
-
-FROM --platform=$TARGETPLATFORM ubuntu
-
 ENV RUST_BACKTRACE 1
 
-COPY --from=build /cnosdb/target/release/cnosdb-meta /usr/bin/cnosdb-meta
+ARG TARGETPLATFORM
+COPY ./$TARGETPLATFORM/cnosdb-meta /usr/bin/cnosdb-meta
 
 COPY ./meta/config/config.toml /etc/cnosdb/cnosdb-meta.conf
 
-ENTRYPOINT ["cnosdb-meta"]
+CMD ["cnosdb-meta"]

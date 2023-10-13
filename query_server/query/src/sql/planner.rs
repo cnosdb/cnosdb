@@ -1398,10 +1398,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
     fn str_to_duration(&self, text: &str) -> Result<Duration> {
         Duration::new(text).ok_or_else(|| QueryError::Parser {
-            source: ParserError::ParserError(format!(
-                "{} is not a valid precision, use like 'ms', 'us', 'ns'",
-                text
-            )),
+            source: ParserError::ParserError(format!("{} is not a valid duration", text)),
         })
     }
 

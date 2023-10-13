@@ -508,8 +508,7 @@ impl AdminMeta {
     pub async fn drop_user(&self, name: &str) -> MetaResult<bool> {
         let req = command::WriteCommand::DropUser(self.cluster(), name.to_string());
 
-        self.client.write::<()>(&req).await?;
-        Ok(true)
+        self.client.write::<bool>(&req).await
     }
 
     pub async fn rename_user(&self, old_name: &str, new_name: String) -> MetaResult<()> {
