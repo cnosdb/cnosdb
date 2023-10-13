@@ -71,15 +71,22 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 // tenant_id
                 // database_name
 
-                // first, set hidden to TRUE
-                if let Err(err) = meta.set_db_is_hidden(tenant_name, name, true).await {
-                    if let MetaError::DatabaseNotFound { .. } = &err {
-                        if *if_exist {
-                            return Ok(Output::Nil(()));
-                        }
+                if meta.get_db_info(name).is_ok_and(|opt| opt.is_none()) {
+                    if *if_exist {
+                        return Ok(Output::Nil(()));
+                    } else {
+                        return Err(QueryError::Meta {
+                            source: MetaError::DatabaseNotFound {
+                                database: name.to_string(),
+                            },
+                        });
                     }
-                    return Err(QueryError::Meta { source: err });
                 }
+
+                // first, set hidden to TRUE
+                meta.set_db_is_hidden(tenant_name, name, true)
+                    .await
+                    .map_err(|err| QueryError::Meta { source: err })?;
 
                 // second, add drop task
                 let resourceinfo = ResourceInfo::new(

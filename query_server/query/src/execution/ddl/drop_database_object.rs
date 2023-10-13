@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use coordinator::errors::CoordinatorError;
 use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
 use models::oid::Identifier;
@@ -42,6 +41,21 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     },
                 )?;
 
+                if client
+                    .get_table_schema(object_name.database(), object_name.table())
+                    .is_ok_and(|opt| opt.is_none())
+                {
+                    if *if_exist {
+                        return Ok(Output::Nil(()));
+                    } else {
+                        return Err(QueryError::Meta {
+                            source: MetaError::TableNotFound {
+                                table: object_name.table().to_string(),
+                            },
+                        });
+                    }
+                }
+
                 let resourceinfo = ResourceInfo::new(
                     *client.tenant().id(),
                     vec![
@@ -53,23 +67,8 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     &None,
                     None,
                 );
-                let res = ResourceManager::add_resource_task(
-                    query_state_machine.coord.clone(),
-                    resourceinfo,
-                )
-                .await;
-
-                if let Err(err) = res {
-                    if let CoordinatorError::Meta {
-                        source: MetaError::TableNotFound { .. },
-                    } = &err
-                    {
-                        if *if_exist {
-                            return Ok(Output::Nil(()));
-                        }
-                    }
-                    return Err(QueryError::Coordinator { source: err });
-                }
+                ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
+                    .await?;
             }
         };
 

@@ -877,12 +877,12 @@ impl StateMachine {
         tenant: &str,
         db: &str,
         db_is_hidden: bool,
-    ) -> MetaResult<()> {
+    ) -> MetaResult<TenantMetaData> {
         let key = KeyPath::tenant_db_name(cluster, tenant, db);
         if let Some(mut db_schema) = self.get_struct::<DatabaseSchema>(&key)? {
             db_schema.config.set_db_is_hidden(db_is_hidden);
             self.insert(&key, &value_encode(&db_schema)?)?;
-            Ok(())
+            self.to_tenant_meta_data(cluster, tenant)
         } else {
             Err(MetaError::DatabaseNotFound {
                 database: db.to_string(),
