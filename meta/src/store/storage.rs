@@ -1035,10 +1035,15 @@ impl StateMachine {
         })
     }
 
-    fn process_drop_user(&self, cluster: &str, user_name: &str) -> MetaResult<()> {
+    fn process_drop_user(&self, cluster: &str, user_name: &str) -> MetaResult<bool> {
         let key = KeyPath::user(cluster, user_name);
 
-        self.remove(&key)
+        if self.contains_key(&key)? {
+            self.remove(&key)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     fn set_tenant_limiter(
