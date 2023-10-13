@@ -785,7 +785,11 @@ impl Coordinator for CoordService {
         let nodes = self.meta.data_nodes().await;
 
         let vnodes = self
-            .prune_shards(table.tenant(), table.database(), predicate.time_ranges().as_ref())
+            .prune_shards(
+                table.tenant(),
+                table.database(),
+                predicate.time_ranges().as_ref(),
+            )
             .await?;
 
         let now = tokio::time::Instant::now();
@@ -793,11 +797,10 @@ impl Coordinator for CoordService {
 
         if self.using_raft_replication() {
             // TODO
-            for vnode in vnodes.into_iter().flat_map(|v| v.vnodes) {
-                todo!()
-            }
+            return Err(CoordinatorError::CommonError {
+                msg: "Not support delete table use raft api".to_string(),
+            });
         } else {
-            // TODO
             for vnode in vnodes.into_iter().flat_map(|v| v.vnodes) {
                 requests.push(self.point_writer.delete_from_table_on_vnode(
                     vnode,

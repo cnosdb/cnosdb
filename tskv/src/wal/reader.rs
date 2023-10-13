@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
+use models::predicate::domain::TimeRanges;
 use models::schema::Precision;
 use models::{SeriesId, SeriesKey};
 use openraft::EntryPayload;
@@ -199,6 +200,17 @@ impl WalRecordData {
                     }
                 }
             }
+            WalType::Delete => match DeleteBlock::decode(&buf[WAL_HEADER_LEN..]) {
+                Ok(e) => Block::Delete(e),
+                Err(e) => {
+                    trace::error!("Failed to decode DeleteBlock from wal: {e}");
+                    return Self {
+                        typ: WalType::Unknown,
+                        seq: 0,
+                        block: Block::Unknown,
+                    };
+                }
+            },
             WalType::Unknown => Block::Unknown,
         };
         Self {
@@ -215,6 +227,7 @@ pub enum Block {
     DeleteVnode(DeleteVnodeBlock),
     DeleteTable(DeleteTableBlock),
     UpdateSeriesKeys(UpdateSeriesKeysBlock),
+    Delete(DeleteBlock),
     RaftLog(raft_store::RaftEntry),
     Unknown,
 }
@@ -455,6 +468,59 @@ impl UpdateSeriesKeysBlock {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct DeleteBlock {
+    pub tenant: String,
+    pub database: String,
+    pub table: String,
+    pub vnode_id: VnodeId,
+    pub series_ids: Vec<SeriesId>,
+    pub time_ranges: TimeRanges,
+}
+
+impl DeleteBlock {
+    pub fn new(
+        tenant: String,
+        database: String,
+        table: String,
+        vnode_id: VnodeId,
+        series_ids: Vec<SeriesId>,
+        time_ranges: TimeRanges,
+    ) -> Self {
+        Self {
+            tenant,
+            database,
+            table,
+            vnode_id,
+            series_ids,
+            time_ranges,
+        }
+    }
+
+    pub fn size_bytes(&self) -> Result<u32> {
+        let size = bincode::serialized_size(self).map_err(|err| Error::CommonError {
+            reason: err.to_string(),
+        })? as u32;
+        Ok(size)
+    }
+
+    pub fn encode<W>(&self, writer: W) -> Result<()>
+    where
+        W: std::io::Write,
+    {
+        bincode::serialize_into(writer, self).map_err(|err| Error::CommonError {
+            reason: err.to_string(),
+        })
+    }
+
+    pub fn decode(buf: &[u8]) -> Result<Self> {
+        bincode::deserialize(buf).map_err(|err| Error::CommonError {
+            reason: err.to_string(),
+        })
+    }
+}
+
 pub async fn print_wal_statistics(path: impl AsRef<Path>) {
     use protos::models as fb_models;
 
@@ -513,6 +579,10 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                     Block::UpdateSeriesKeys(blk) => {
                         println!("Old series keys: {:?}", blk.old_series_keys);
                         println!("New series keys: {:?}", blk.new_series_keys);
+                    }
+                    Block::Delete(blk) => {
+                        println!("Series ids: {:?}", blk.series_ids);
+                        println!("Time ranges: {:?}", blk.time_ranges);
                     }
                     Block::Unknown => {
                         println!("Unknown WAL entry type.");

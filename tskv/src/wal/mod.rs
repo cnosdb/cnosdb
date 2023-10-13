@@ -48,6 +48,7 @@ use std::time::Duration;
 use minivec::MiniVec;
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
+use models::predicate::domain::TimeRanges;
 use models::schema::Precision;
 use models::{SeriesId, SeriesKey};
 use snafu::ResultExt;
@@ -55,14 +56,16 @@ use tokio::sync::{oneshot, RwLock};
 use tokio::time::timeout;
 
 use self::reader::WalReader;
-use self::writer::{DeleteTableTask, DeleteVnodeTask, UpdateSeriesKeys, WalWriter, WriteTask};
+use self::writer::{
+    DeleteTableTask, DeleteTask, DeleteVnodeTask, UpdateSeriesKeys, WalWriter, WriteTask,
+};
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::tsm::codec::{get_str_codec, StringCodec};
 use crate::version_set::VersionSet;
 pub use crate::wal::reader::{
-    print_wal_statistics, Block, DeleteTableBlock, DeleteVnodeBlock, UpdateSeriesKeysBlock,
-    WriteBlock,
+    print_wal_statistics, Block, DeleteBlock, DeleteTableBlock, DeleteVnodeBlock,
+    UpdateSeriesKeysBlock, WriteBlock,
 };
 use crate::{error, file_utils, Result};
 
@@ -95,6 +98,7 @@ pub enum WalType {
     DeleteVnode = 11,
     DeleteTable = 21,
     UpdateSeriesKeys = 22,
+    Delete = 23,
     RaftBlankLog = 101,
     RaftNormalLog = 102,
     RaftMembershipLog = 103,
@@ -108,6 +112,7 @@ impl From<u8> for WalType {
             11 => WalType::DeleteVnode,
             21 => WalType::DeleteTable,
             22 => WalType::UpdateSeriesKeys,
+            23 => WalType::Delete,
             101 => WalType::RaftBlankLog,
             102 => WalType::RaftNormalLog,
             103 => WalType::RaftMembershipLog,
@@ -123,6 +128,7 @@ impl Display for WalType {
             WalType::DeleteVnode => write!(f, "delete_vnode"),
             WalType::DeleteTable => write!(f, "delete_table"),
             WalType::UpdateSeriesKeys => write!(f, "update_series_keys"),
+            WalType::Delete => write!(f, "delete"),
             WalType::RaftBlankLog => write!(f, "raft_log_blank"),
             WalType::RaftNormalLog => write!(f, "raft_log_normal"),
             WalType::RaftMembershipLog => write!(f, "raft_log_membership"),
@@ -214,6 +220,32 @@ impl WalTask {
         )
     }
 
+    pub fn new_delete(
+        tenant: String,
+        database: String,
+        table: String,
+        vnode_id: VnodeId,
+        series_ids: Vec<SeriesId>,
+        time_ranges: TimeRanges,
+    ) -> (WalTask, WriteResultReceiver) {
+        let (cb, rx) = oneshot::channel();
+        (
+            Self {
+                seq: 0,
+                task: writer::Task::new_delete(
+                    tenant,
+                    database,
+                    table,
+                    vnode_id,
+                    series_ids,
+                    time_ranges,
+                ),
+                result_sender: cb,
+            },
+            rx,
+        )
+    }
+
     pub fn new_from(wal_task: &WalTask, cb: WriteResultSender) -> WalTask {
         WalTask {
             seq: wal_task.seq,
@@ -228,6 +260,7 @@ impl WalTask {
             writer::Task::DeleteVnode { .. } => WalType::DeleteVnode,
             writer::Task::DeleteTable { .. } => WalType::DeleteTable,
             writer::Task::UpdateSeriesKeys { .. } => WalType::UpdateSeriesKeys,
+            writer::Task::Delete { .. } => WalType::UpdateSeriesKeys,
         }
     }
 
@@ -425,6 +458,18 @@ impl VnodeWal {
                         new_series_keys,
                         series_ids,
                     )
+                    .await
+            }
+            writer::Task::Delete(DeleteTask {
+                tenant,
+                database,
+                table,
+                vnode_id,
+                series_ids,
+                time_ranges,
+            }) => {
+                self.current_wal
+                    .delete(tenant, database, table, *vnode_id, series_ids, time_ranges)
                     .await
             }
         }
@@ -828,6 +873,7 @@ mod test {
                             Block::DeleteTable(_) => todo!(),
                             Block::RaftLog(_) => todo!(),
                             Block::UpdateSeriesKeys(_) => todo!(),
+                            Block::Delete(_) => todo!(),
                             Block::Unknown => todo!(),
                         }
                     }
