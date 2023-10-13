@@ -220,13 +220,20 @@ impl Database {
         precision: Precision,
         tables: FlatBufferTable<'_>,
         ts_index: Arc<index::ts_index::TSIndex>,
+        recover_from_wal: bool,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         if self.opt.storage.strict_write {
-            self.build_write_group_strict_mode(precision, tables, ts_index)
+            self.build_write_group_strict_mode(precision, tables, ts_index, recover_from_wal)
                 .await
         } else {
-            self.build_write_group_loose_mode(db_name, precision, tables, ts_index)
-                .await
+            self.build_write_group_loose_mode(
+                db_name,
+                precision,
+                tables,
+                ts_index,
+                recover_from_wal,
+            )
+            .await
         }
     }
 
@@ -235,6 +242,7 @@ impl Database {
         precision: Precision,
         tables: FlatBufferTable<'_>,
         ts_index: Arc<index::ts_index::TSIndex>,
+        recover_from_wal: bool,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
@@ -251,6 +259,7 @@ impl Database {
                 &fb_schema.tag_indexes,
                 num_rows,
                 ts_index.clone(),
+                recover_from_wal,
             )
             .await?;
 
@@ -278,6 +287,7 @@ impl Database {
         precision: Precision,
         tables: FlatBufferTable<'_>,
         ts_index: Arc<index::ts_index::TSIndex>,
+        recover_from_wal: bool,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         let mut map = HashMap::new();
         for table in tables {
@@ -293,6 +303,7 @@ impl Database {
                 &fb_schema.tag_indexes,
                 num_rows,
                 ts_index.clone(),
+                recover_from_wal,
             )
             .await?;
 
@@ -394,6 +405,7 @@ impl Database {
         tag_idx: &[usize],
         row_num: usize,
         ts_index: Arc<index::ts_index::TSIndex>,
+        recover_from_wal: bool,
     ) -> Result<Vec<u32>> {
         let mut res_sids = Vec::with_capacity(row_num);
         let mut series_keys = Vec::with_capacity(row_num);
@@ -404,13 +416,19 @@ impl Database {
                 })?;
             if let Some(id) = ts_index.get_series_id(&series_key).await? {
                 res_sids.push(Some(id));
-            } else if let Some(id) = ts_index.get_deleted_series_id(&series_key).await? {
-                // 仅在 recover wal的时候有用
-                res_sids.push(Some(id));
-            } else {
-                res_sids.push(None);
-                series_keys.push(series_key);
+                continue;
             }
+
+            if recover_from_wal {
+                if let Some(id) = ts_index.get_deleted_series_id(&series_key).await? {
+                    // 仅在 recover wal的时候有用
+                    res_sids.push(Some(id));
+                    continue;
+                }
+            }
+
+            res_sids.push(None);
+            series_keys.push(series_key);
         }
 
         let mut ids = ts_index

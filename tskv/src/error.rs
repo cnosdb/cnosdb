@@ -233,6 +233,18 @@ pub enum Error {
     VnodeNotFound {
         vnode_id: VnodeId,
     },
+
+    #[snafu(display("Tenant {tenant} not found"))]
+    #[error_code(code = 50)]
+    TenantNotFound {
+        tenant: String,
+    },
+
+    #[snafu(display("Table {table} not found"))]
+    #[error_code(code = 51)]
+    TableNotFound {
+        table: String,
+    },
 }
 
 impl From<PointsError> for Error {

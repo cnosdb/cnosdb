@@ -192,15 +192,14 @@ impl TSIndex {
         let mut max_id = self.incr_id.load(Ordering::Relaxed);
         while let Some(block) = reader_file.next_block().await? {
             match block {
-                IndexBinlogBlock::Add(block) => {
-                    // add series
-                    let series_key = SeriesKey::decode(block.data())
-                        .map_err(|e| IndexError::DecodeSeriesKey { msg: e.to_string() })?;
+                IndexBinlogBlock::Add(blocks) => {
+                    for block in blocks {
+                        // add series
+                        self.add_series(block.series_id(), block.data()).await?;
 
-                    self.add_series(block.series_id(), &series_key).await?;
-
-                    if max_id < block.series_id() {
-                        max_id = block.series_id()
+                        if max_id < block.series_id() {
+                            max_id = block.series_id()
+                        }
                     }
                 }
                 IndexBinlogBlock::Delete(block) => {
@@ -295,7 +294,6 @@ impl TSIndex {
         let mut ids = Vec::with_capacity(series_keys.len());
         let mut blocks_data = Vec::new();
         for series_key in series_keys.into_iter() {
-            let encode = series_key.encode();
             let key_buf = encode_series_key(series_key.table(), series_key.tags());
             {
                 let mut storage_w = self.storage.write().await;
@@ -305,8 +303,7 @@ impl TSIndex {
                 }
                 let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
                 storage_w.set(&key_buf, &id.to_be_bytes())?;
-                let block =
-                    IndexBinlogBlock::Add(AddSeries::new(utils::now_timestamp_nanos(), id, encode));
+                let block = AddSeries::new(utils::now_timestamp_nanos(), id, series_key.clone());
                 ids.push(id);
                 blocks_data.push(block);
 
@@ -315,7 +312,8 @@ impl TSIndex {
             }
         }
 
-        self.write_binlog(&blocks_data).await?;
+        self.write_binlog(&[IndexBinlogBlock::Add(blocks_data)])
+            .await?;
 
         Ok(ids)
     }
@@ -948,21 +946,15 @@ pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: Unbounde
                         }
 
                         match block {
-                            IndexBinlogBlock::Add(block) => {
-                                let series_key = match SeriesKey::decode(block.data()) {
-                                    Ok(key) => key,
-                                    Err(e) => {
-                                        error!("Decode series key failed, err: {}", e);
-                                        continue;
-                                    }
-                                };
-
-                                let _ = ts_index
-                                    .add_series(block.series_id(), &series_key)
-                                    .await
-                                    .map_err(|err| {
-                                        error!("Add series failed, err: {}", err);
-                                    });
+                            IndexBinlogBlock::Add(blocks) => {
+                                for block in blocks {
+                                    let _ = ts_index
+                                        .add_series(block.series_id(), block.data())
+                                        .await
+                                        .map_err(|err| {
+                                            error!("Add series failed, err: {}", err);
+                                        });
+                                }
 
                                 let _ = ts_index.check_to_flush(false).await;
                                 handle_file.insert(file_id, reader_file.pos());

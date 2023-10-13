@@ -11,7 +11,7 @@ use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::codec::Encoding;
 use models::meta_data::{VnodeId, VnodeStatus};
-use models::predicate::domain::{ColumnDomains, ResolvedPredicate, TimeRange};
+use models::predicate::domain::{ColumnDomains, ResolvedPredicate, TimeRange, TimeRanges};
 use models::schema::{make_owner, split_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
 use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
@@ -38,7 +38,9 @@ use crate::summary::{CompactMeta, Summary, SummaryProcessor, SummaryTask, Versio
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
-use crate::wal::{self, Block, UpdateSeriesKeysBlock, WalDecoder, WalManager, WalTask};
+use crate::wal::{
+    self, Block, DeleteBlock, UpdateSeriesKeysBlock, WalDecoder, WalManager, WalTask,
+};
 use crate::{
     file_utils, tenant_name_from_request, Engine, Error, SnapshotFileMeta, TseriesFamilyId,
     UpdateSetValue, VnodeSnapshot,
@@ -257,6 +259,30 @@ impl TsKv {
                                         {
                                             trace::error!(
                                                 "Recover: failed to update series keys: {err}"
+                                            );
+                                        }
+                                    }
+                                    Block::Delete(DeleteBlock {
+                                        tenant,
+                                        database,
+                                        table,
+                                        vnode_id,
+                                        series_ids,
+                                        time_ranges,
+                                    }) => {
+                                        if let Err(err) = self
+                                            .delete(
+                                                &tenant,
+                                                &database,
+                                                &table,
+                                                vnode_id,
+                                                &series_ids,
+                                                &time_ranges,
+                                            )
+                                            .await
+                                        {
+                                            trace::error!(
+                                                "Recover: failed to delete data from WAL: {err}"
                                             );
                                         }
                                     }
@@ -697,6 +723,7 @@ impl TsKv {
                     reason: "points missing table".to_string(),
                 })?,
                 ts_index,
+                true,
             )
             .await?;
         tsf.read().await.put_points(seq, write_group)?;
@@ -797,6 +824,55 @@ impl TsKv {
 
         Ok(())
     }
+
+    async fn delete(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        vnode_id: VnodeId,
+        series_ids: &[SeriesId],
+        time_ranges: &TimeRanges,
+    ) -> Result<()> {
+        if let Some(db) = self.get_db(tenant, database).await {
+            if let Some(vnode) = db.read().await.get_tsfamily(vnode_id) {
+                let vnode = vnode.read().await;
+                vnode.delete_series_by_time_ranges(series_ids, time_ranges);
+
+                let column_ids = self
+                    .meta_manager
+                    .tenant_meta(tenant)
+                    .await
+                    .ok_or_else(|| Error::TenantNotFound {
+                        tenant: tenant.to_string(),
+                    })?
+                    .get_tskv_table_schema(database, table)?
+                    .ok_or_else(|| Error::TableNotFound {
+                        table: table.to_string(),
+                    })?
+                    .column_ids();
+
+                let field_ids = series_ids
+                    .iter()
+                    .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
+                    .collect::<Vec<_>>();
+
+                trace::debug!(
+                    "Drop table: vnode {vnode_id} deleting {} fields in table: {table}",
+                    field_ids.len()
+                );
+
+                let version = vnode.super_version();
+                for time_range in time_ranges.time_ranges() {
+                    for column_file in version.version.column_files(&field_ids, time_range) {
+                        column_file.add_tombstone(&field_ids, time_range).await?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -829,7 +905,7 @@ impl Engine for TsKv {
             let mut span_recorder = span_recorder.child("build write group");
             db.read()
                 .await
-                .build_write_group(db_name, precision, tables, ts_index)
+                .build_write_group(db_name, precision, tables, ts_index, false)
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
@@ -893,7 +969,7 @@ impl Engine for TsKv {
             let mut span_recorder = span_recorder.child("build write group");
             db.read()
                 .await
-                .build_write_group(db_name, precision, tables, ts_index)
+                .build_write_group(db_name, precision, tables, ts_index, false)
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
@@ -1228,55 +1304,48 @@ impl Engine for TsKv {
         table: &str,
         predicate: &ResolvedPredicate,
     ) -> Result<()> {
-        // TODO wal
-
         let tag_domains = predicate.tags_filter();
         let time_ranges = predicate.time_ranges();
 
-        let database_ref = match self.version_set.read().await.get_db(tenant, database) {
-            Some(db) => db,
-            None => return Ok(()),
-        };
-        let database_rlock = database_ref.read().await;
-        let db_schemas = database_rlock.get_schemas();
+        let series_ids = {
+            let database_ref = match self.get_db(tenant, database).await {
+                Some(db) => db,
+                None => return Ok(()),
+            };
 
-        let column_ids: Vec<ColumnId> = match db_schemas.get_table_schema_by_meta(table).await? {
-            Some(v) => v.columns().iter().map(|c| c.id).collect(),
-            None => return Ok(()),
-        };
+            let vnode_index = match database_ref.read().await.get_ts_index(vnode_id) {
+                Some(vnode) => vnode,
+                None => return Ok(()),
+            };
 
-        let vnode = match database_rlock.get_tsfamily(vnode_id) {
-            Some(vnode) => vnode,
-            None => return Ok(()),
-        };
-        let vnode_index = match database_rlock.get_ts_index(vnode_id) {
-            Some(vnode) => vnode,
-            None => return Ok(()),
+            vnode_index
+                .get_series_ids_by_domains(table, tag_domains)
+                .await?
         };
 
-        drop(database_rlock);
-        drop(database_ref);
-
-        let series_ids = vnode_index.get_series_ids_by_domains(table, tag_domains).await?;
-
-        let vnode = vnode.read().await;
-        vnode.delete_series_by_time_ranges(&series_ids, time_ranges.as_ref());
-
-        let field_ids = series_ids
-            .iter()
-            .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
-            .collect::<Vec<_>>();
-        info!(
-            "Drop table: vnode {vnode_id} deleting {} fields in table: {table}",
-            field_ids.len()
+        // 记录 wal
+        let (wal_task, rx) = WalTask::new_delete(
+            tenant.to_string(),
+            database.to_string(),
+            table.to_string(),
+            vnode_id,
+            series_ids.clone(),
+            time_ranges.as_ref().clone(),
         );
+        self.wal_sender
+            .send(wal_task)
+            .await
+            .map_err(|_| Error::ChannelSend {
+                source: error::ChannelSendError::WalTask,
+            })?;
+        // Receive WAL write action result.
+        let _ = rx.await.map_err(|e| Error::ChannelReceive {
+            source: error::ChannelReceiveError::WriteWalResult { source: e },
+        })??;
 
-        let version = vnode.super_version();
-        for time_range in time_ranges.time_ranges() {
-            for column_file in version.version.column_files(&field_ids, time_range) {
-                column_file.add_tombstone(&field_ids, time_range).await?;
-            }
-        }
+        // 执行delete，删除缓存 & 写墓碑文件
+        self.delete(tenant, database, table, vnode_id, &series_ids, &time_ranges)
+            .await?;
 
         Ok(())
     }

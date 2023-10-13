@@ -19,7 +19,7 @@ pub const BLOCK_HEADER_SIZE: usize = 4;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum IndexBinlogBlock {
-    Add(AddSeries),
+    Add(Vec<AddSeries>),
     Delete(DeleteSeries),
     Update(UpdateSeriesKey),
 }
@@ -28,11 +28,11 @@ pub enum IndexBinlogBlock {
 pub struct AddSeries {
     ts: i64,
     series_id: SeriesId,
-    data: Vec<u8>,
+    data: SeriesKey,
 }
 
 impl AddSeries {
-    pub fn new(ts: i64, series_id: SeriesId, data: Vec<u8>) -> Self {
+    pub fn new(ts: i64, series_id: SeriesId, data: SeriesKey) -> Self {
         Self {
             ts,
             series_id,
@@ -48,7 +48,7 @@ impl AddSeries {
         self.series_id
     }
 
-    pub fn data(&self) -> &[u8] {
+    pub fn data(&self) -> &SeriesKey {
         &self.data
     }
 }
@@ -452,6 +452,8 @@ pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
 
 #[cfg(test)]
 mod test {
+    use models::SeriesKey;
+
     use super::{AddSeries, IndexBinlogBlock};
     use crate::file_utils::make_index_binlog_file;
     use crate::index::binlog::{BinlogReader, BinlogWriter, IndexBinlog};
@@ -464,10 +466,17 @@ mod test {
     ) -> Vec<IndexBinlogBlock> {
         let mut blocks = Vec::with_capacity(series_key_blk_desc.len());
         for (ts, sid, data) in series_key_blk_desc {
-            let block = IndexBinlogBlock::Add(AddSeries::new(*ts, *sid, data.as_bytes().to_vec()));
+            let block = AddSeries::new(
+                *ts,
+                *sid,
+                SeriesKey {
+                    tags: vec![],
+                    table: data.to_string(),
+                },
+            );
             blocks.push(block);
         }
-        blocks
+        vec![IndexBinlogBlock::Add(blocks)]
     }
 
     #[tokio::test]
