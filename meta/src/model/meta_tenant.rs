@@ -412,10 +412,7 @@ impl TenantMeta {
             db_is_hidden,
         );
 
-        self.client.write::<()>(&req).await?;
-        if let Some(info) = self.data.write().dbs.get_mut(db) {
-            info.schema.config.set_db_is_hidden(db_is_hidden)
-        }
+        self.write_with_data(&req).await?;
         Ok(())
     }
 
