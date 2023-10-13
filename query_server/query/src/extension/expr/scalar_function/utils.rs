@@ -9,11 +9,8 @@ macro_rules! object_accessor {
         use datafusion::physical_plan::ColumnarValue;
         use datafusion::scalar::ScalarValue;
         use $crate::extension::expr::aggregate_function::$OBJECT;
-        use $crate::extension::expr::expr_utils::check_args;
 
         let return_type_fn: ReturnTypeFunction = Arc::new(|args| {
-            check_args(stringify!($FUNC), 1, args)?;
-
             let null_data = $OBJECT::try_from_scalar(ScalarValue::try_from(&args[0])?)?;
             let output = null_data.$FUNC()?.get_datatype();
             Ok(Arc::new(output))
