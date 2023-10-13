@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder};
 use models::oid::Identifier;
@@ -11,7 +9,7 @@ use crate::store::config::MetaInit;
 use crate::store::key_path::KeyPath;
 use crate::store::storage::StateMachine;
 
-pub async fn init_meta(storage: Arc<StateMachine>, init_data: MetaInit) {
+pub async fn init_meta(storage: &StateMachine, init_data: MetaInit) {
     if storage.is_meta_init().unwrap() {
         return;
     }
