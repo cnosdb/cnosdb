@@ -355,15 +355,22 @@ impl Watch {
         base_ver: u64,
     ) -> (Vec<EntryLog>, i32) {
         let filter = |entry: &EntryLog| -> bool {
-            if entry.key.starts_with(&KeyPath::data_nodes(cluster)) {
-                return true;
-            }
-
-            if tenants.is_empty() {
+            if entry.key == KeyPath::version()
+                || entry.key == KeyPath::already_init()
+                || entry.key == KeyPath::incr_id(cluster)
+            {
                 return false;
             }
 
             if !entry.key.starts_with(&KeyPath::cluster_prefix(cluster)) {
+                return false;
+            }
+
+            if !entry.key.starts_with(&KeyPath::tenants(cluster)) {
+                return true;
+            }
+
+            if tenants.is_empty() {
                 return false;
             }
 
