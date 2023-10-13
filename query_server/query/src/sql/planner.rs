@@ -53,7 +53,7 @@ use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
 use models::schema::{
     ColumnType, DatabaseOptions, Duration, Precision, TableColumn, Tenant, TskvTableSchema,
-    TskvTableSchemaRef, Watermark, DEFAULT_CATALOG, DEFAULT_DATABASE, TIME_FIELD,
+    TskvTableSchemaRef, Watermark, DEFAULT_CATALOG, TIME_FIELD,
 };
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
@@ -93,7 +93,7 @@ use crate::data_source::table_source::{TableHandle, TableSourceAdapter, TEMP_LOC
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::extension::logical::plan_node::update::UpdateNode;
 use crate::metadata::{
-    ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, COLUMNS_COLUMN_NAME,
+    is_system_database, ContextProviderExtension, DatabaseSet, COLUMNS_COLUMN_NAME,
     COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME, COLUMNS_DATA_TYPE,
     COLUMNS_TABLE_NAME, DATABASES_DATABASE_NAME, DATABASES_PRECISION, DATABASES_REPLICA,
     DATABASES_SHARD, DATABASES_TTL, DATABASES_VNODE_DURATION, INFORMATION_SCHEMA,
@@ -503,7 +503,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let (plan, privilege) = match obj_type {
             TenantObjectType::Database => {
                 let database_name = normalize_ident(object_name);
-                if database_name.eq(DEFAULT_DATABASE) {
+                if is_system_database(tenant_name, &database_name) {
                     return Err(QueryError::ForbidDropDatabase {
                         name: database_name,
                     });
@@ -1230,11 +1230,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         } = stmt;
 
         let name = normalize_ident(name);
-
-        // check if system database
-        if name.eq_ignore_ascii_case(CLUSTER_SCHEMA)
-            || name.eq_ignore_ascii_case(INFORMATION_SCHEMA)
-        {
+        if is_system_database(session.tenant(), name.as_str()) {
             return Err(QueryError::Meta {
                 source: MetaError::DatabaseAlreadyExists { database: name },
             });
