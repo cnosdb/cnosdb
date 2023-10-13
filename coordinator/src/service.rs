@@ -64,8 +64,7 @@ use crate::{
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
 
-const USAGE_SCHEMA: &str = "usage_schema";
-
+use models::schema::USAGE_SCHEMA;
 #[derive(Clone)]
 pub struct CoordService {
     node_id: u64,

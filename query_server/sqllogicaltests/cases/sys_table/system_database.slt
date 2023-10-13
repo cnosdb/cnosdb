@@ -1,0 +1,24 @@
+statement error
+create database public;
+
+
+statement error
+create database cluster_schema;
+
+statement error
+create database information_schema;
+
+statement error
+create database usage_schema;
+
+statement error
+drop database public;
+
+statement error
+drop database cluster_schema;
+
+statement error
+drop database information_schema;
+
+statement error
+drop database usage_schema;
