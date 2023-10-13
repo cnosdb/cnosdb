@@ -125,6 +125,20 @@ impl StateMachine {
         Ok(())
     }
 
+    pub async fn dump(&self) -> MetaResult<String> {
+        let data = self.snapshot().await.map_err(MetaError::from)?;
+
+        let data: BtreeMapSnapshotData = serde_json::from_slice(&data).map_err(MetaError::from)?;
+
+        let mut rsp = "****** ------------------------------------- ******\n".to_string();
+        for (key, val) in data.map.iter() {
+            rsp = rsp + &format!("* {}: {}\n", key, val);
+        }
+        rsp += "****** ------------------------------------- ******\n";
+
+        Ok(rsp)
+    }
+
     //********************************************************************************* */
     pub fn get(&self, key: &str) -> MetaResult<Option<String>> {
         let reader = self.env.read_txn()?;
@@ -174,7 +188,7 @@ impl StateMachine {
             .put(&mut writer, &KeyPath::version(), &version.to_string())?;
         writer.commit()?;
 
-        info!("METADATA WRITE: {} :{}", key, val);
+        info!("METADATA WRITE(ver: {}): {} :{}", version, key, val);
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_SET,
             ver: version,
@@ -196,7 +210,7 @@ impl StateMachine {
             .put(&mut writer, &KeyPath::version(), &version.to_string())?;
         writer.commit()?;
 
-        info!("METADATA REMOVE: {}", key);
+        info!("METADATA REMOVE(ver: {}): {}", version, key);
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_DEL,
             ver: version,

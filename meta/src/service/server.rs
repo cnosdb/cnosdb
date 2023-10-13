@@ -73,7 +73,7 @@ pub async fn start_raft_node(opt: store::config::Opt) -> MetaResult<()> {
         .await
         .unwrap();
 
-    init_meta(engine.clone(), opt.meta_init.clone()).await;
+    init_meta(&engine, opt.meta_init.clone()).await;
     tokio::spawn(detect_node_heartbeat(
         node.clone(),
         engine.clone(),

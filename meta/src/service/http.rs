@@ -193,9 +193,7 @@ impl HttpServer {
     fn debug(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("debug").and(self.with_storage()).and_then(
             |storage: Arc<StateMachine>| async move {
-                let data = Self::process_debug(storage)
-                    .await
-                    .map_err(warp::reject::custom)?;
+                let data = storage.dump().await.map_err(warp::reject::custom)?;
 
                 let res: Result<String, warp::Rejection> = Ok(data);
                 res
@@ -225,32 +223,19 @@ impl HttpServer {
         })
     }
 
-    pub async fn process_debug(storage: Arc<StateMachine>) -> MetaResult<String> {
-        let data = storage.snapshot().await.map_err(MetaError::from)?;
-
-        let data: BtreeMapSnapshotData = serde_json::from_slice(&data).map_err(MetaError::from)?;
-
-        let mut rsp = "****** ------------------------------------- ******\n".to_string();
-        for (key, val) in data.map.iter() {
-            rsp = rsp + &format!("* {}: {}\n", key, val);
-        }
-        rsp += "****** ------------------------------------- ******\n";
-
-        Ok(rsp)
-    }
-
     pub async fn process_watch(
         req: hyper::body::Bytes,
         storage: Arc<StateMachine>,
     ) -> MetaResult<String> {
         let req: (String, String, HashSet<String>, u64) = serde_json::from_slice(&req)?;
-
-        info!("watch all  args: {:?}", req);
         let (client, cluster, tenants, base_ver) = req;
-        let mut follow_ver = base_ver;
+        info!(
+            "watch all  args: client-id: {}, cluster: {}, tenants: {:?}, version: {}",
+            client, cluster, tenants, base_ver
+        );
 
         let mut notify = {
-            let watch_data = storage.read_change_logs(&cluster, &tenants, follow_ver);
+            let watch_data = storage.read_change_logs(&cluster, &tenants, base_ver);
             if watch_data.need_return(base_ver) {
                 return Ok(crate::store::storage::response_encode(Ok(watch_data)));
             }
@@ -258,6 +243,7 @@ impl HttpServer {
             storage.watch.subscribe()
         };
 
+        let mut follow_ver = base_ver;
         let now = std::time::Instant::now();
         loop {
             let _ = tokio::time::timeout(Duration::from_secs(20), notify.recv()).await;
