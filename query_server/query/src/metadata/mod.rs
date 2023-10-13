@@ -21,11 +21,10 @@ use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::auth::user::UserDesc;
 use models::object_reference::{Resolve, ResolvedTable};
-use models::schema::{Precision, Tenant, DEFAULT_CATALOG};
+use models::schema::{Precision, Tenant, DEFAULT_CATALOG, DEFAULT_DATABASE};
 use parking_lot::RwLock;
 use spi::query::function::FuncMetaManagerRef;
 use spi::query::session::SessionCtx;
-pub use usage_schema_provider::USAGE_SCHEMA;
 
 pub use self::base_table::BaseTableProvider;
 use self::cluster_schema_provider::ClusterSchemaProvider;
@@ -41,6 +40,7 @@ mod usage_schema_provider;
 
 pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
 pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
+pub const USAGE_SCHEMA: &str = "usage_schema";
 
 /// remote meta
 pub struct RemoteCatalogMeta {}
@@ -312,4 +312,15 @@ impl TableSet {
     pub fn push_table(&mut self, tbl: impl Into<String>) {
         self.tables.insert(tbl.into());
     }
+}
+
+pub fn is_system_database(tenant: &str, database: &str) -> bool {
+    if tenant.eq_ignore_ascii_case(DEFAULT_CATALOG)
+        && database.eq_ignore_ascii_case(DEFAULT_DATABASE)
+    {
+        return true;
+    }
+    database.eq_ignore_ascii_case(CLUSTER_SCHEMA)
+        || database.eq_ignore_ascii_case(INFORMATION_SCHEMA)
+        || database.eq_ignore_ascii_case(USAGE_SCHEMA)
 }
