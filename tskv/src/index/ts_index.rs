@@ -8,11 +8,13 @@ use std::sync::Arc;
 use bytes::BufMut;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
+use lru_cache::ShardedCache;
 use models::predicate::domain::{utf8_from, Domain, Range};
 use models::tag::TagFromParts;
 use models::{utils, SeriesId, SeriesKey, Tag, TagKey, TagValue};
+use roaring::RoaringBitmap;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockWriteGuard};
 use trace::{debug, error, info};
 
 use super::binlog::{AddSeries, DeleteSeries, IndexBinlog, IndexBinlogBlock, UpdateSeriesKey};
@@ -28,6 +30,8 @@ const SERIES_ID_PREFIX: &str = "_id_";
 const SERIES_KEY_PREFIX: &str = "_key_";
 const DELETED_SERIES_KEY_PREFIX: &str = "_deleted_key_";
 const AUTO_INCR_ID_KEY: &str = "_auto_incr_id";
+
+const INDEX_CACHE_SIZE: usize = 1_000_000;
 
 /// Used to maintain forward and inverted indexes
 ///
@@ -93,6 +97,7 @@ pub struct TSIndex {
     binlog: Arc<RwLock<IndexBinlog>>,
     storage: Arc<RwLock<IndexEngine>>,
     forward_cache: ForwardIndexCache,
+    inverted_cache: ShardedCache<Vec<u8>, RoaringBitmap>,
     binlog_change_sender: UnboundedSender<()>,
 }
 
@@ -116,7 +121,8 @@ impl TSIndex {
             incr_id: AtomicU32::new(incr_id),
             write_count: AtomicU32::new(0),
             path: path.into(),
-            forward_cache: ForwardIndexCache::new(1_000_000),
+            forward_cache: ForwardIndexCache::new(INDEX_CACHE_SIZE),
+            inverted_cache: ShardedCache::with_capacity(INDEX_CACHE_SIZE),
             binlog_change_sender,
         };
 
@@ -176,6 +182,18 @@ impl TSIndex {
         storage_w.set(&key_buf, &id.to_be_bytes())?;
         storage_w.set(&encode_series_id_key(id), &series_key.encode())?;
 
+        self.add_inverted_series(&mut storage_w, id, series_key)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn add_inverted_series(
+        &self,
+        storage_w: &mut RwLockWriteGuard<'_, IndexEngine>,
+        id: SeriesId,
+        series_key: &SeriesKey,
+    ) -> IndexResult<()> {
         for tag in series_key.tags() {
             let key = encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
             storage_w.modify(&key, id, true)?;
@@ -184,7 +202,6 @@ impl TSIndex {
             let key = encode_inverted_index_key(series_key.table(), &[], &[]);
             storage_w.modify(&key, id, true)?;
         }
-
         Ok(())
     }
 
@@ -288,6 +305,30 @@ impl TSIndex {
         Ok(None)
     }
 
+    pub async fn modify_inverted_cache(&self, key: &[u8], id: SeriesId) -> IndexResult<()> {
+        let mut rb = match self.inverted_cache.get_mut(&key) {
+            Some(val) => val,
+            None => {
+                let rb = RoaringBitmap::new();
+                self.inverted_cache.insert(key.to_vec(), rb);
+                self.inverted_cache.get_mut(&key).unwrap()
+            }
+        };
+        rb.insert(id);
+        Ok(())
+    }
+
+    pub async fn get_rb(&self, key: &[u8]) -> IndexResult<Option<RoaringBitmap>> {
+        if let Some(rb) = self.inverted_cache.get(&key) {
+            return Ok(Some(rb.clone()));
+        } else if let Some(rb) = self.storage.read().await.get_rb(key)? {
+            self.inverted_cache.insert(key.to_vec(), rb.clone());
+            return Ok(Some(rb));
+        } else {
+            return Ok(None);
+        }
+    }
+
     pub async fn add_series_if_not_exists(
         &self,
         series_keys: Vec<SeriesKey>,
@@ -312,6 +353,14 @@ impl TSIndex {
 
                 // write cache
                 self.forward_cache.add(id, series_key);
+                for tag in series_key.tags() {
+                    let key = encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
+                    self.modify_inverted_cache(&key, id).await?;
+                }
+                if series_key.tags().is_empty() {
+                    let key = encode_inverted_index_key(series_key.table(), &[], &[]);
+                    self.modify_inverted_cache(&key, id).await?;
+                }
             }
         }
 
@@ -444,16 +493,16 @@ impl TSIndex {
             }
         } else {
             let key = encode_inverted_index_key(tab, &tags[0].key, &tags[0].value);
-            if let Some(rb) = storage_r.get_rb(&key)? {
+            if let Some(rb) = self.get_rb(&key)? {
                 bitmap = rb;
             }
 
             for tag in &tags[1..] {
                 let key = encode_inverted_index_key(tab, &tag.key, &tag.value);
-                if let Some(rb) = storage_r.get_rb(&key)? {
+                if let Some(rb) = self.get_rb(&key)? {
                     bitmap = bitmap.bitand(rb);
                 } else {
-                    return Ok(roaring::RoaringBitmap::new());
+                    return Ok(RoaringBitmap::new());
                 }
             }
         }
@@ -499,7 +548,7 @@ impl TSIndex {
                     let key_range = filter_range_to_index_key_range(tab, tag_key, range);
                     let (is_equal, equal_key) = is_equal_value(&key_range);
                     if is_equal {
-                        if let Some(rb) = storage_r.get_rb(&equal_key)? {
+                        if let Some(rb) = self.get_rb(&equal_key)? {
                             bitmap = bitmap.bitor(rb);
                         };
 
@@ -521,7 +570,7 @@ impl TSIndex {
                     // Contains the given value
                     for entry in val.entries().into_iter() {
                         let index_key = tag_value_to_index_key(tab, tag_key, entry.value());
-                        if let Some(rb) = storage_r.get_rb(&index_key)? {
+                        if let Some(rb) = self.get_rb(&index_key)? {
                             bitmap = bitmap.bitor(rb);
                         };
                     }
