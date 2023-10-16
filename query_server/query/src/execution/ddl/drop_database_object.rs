@@ -1,11 +1,11 @@
 use async_trait::async_trait;
+use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
-use protos::kv_service::admin_command_request::Command::DropTab;
-use protos::kv_service::{AdminCommandRequest, DropTableRequest};
-use snafu::ResultExt;
+use models::oid::Identifier;
+use models::schema::{ResourceInfo, ResourceOperator};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DatabaseObjectType, DropDatabaseObject};
-use spi::{MetaSnafu, Result};
+use spi::{QueryError, Result};
 use trace::info;
 
 use super::DDLDefinitionTask;
@@ -30,7 +30,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
             ref obj_type,
         } = self.stmt;
 
-        let res = match obj_type {
+        match obj_type {
             DatabaseObjectType::Table => {
                 // TODO 删除指定租户下的表
                 info!("Drop table {}", object_name);
@@ -41,25 +41,37 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     },
                 )?;
 
-                let req = AdminCommandRequest {
-                    tenant: tenant.to_string(),
-                    command: Some(DropTab(DropTableRequest {
-                        db: object_name.database().to_string(),
-                        table: object_name.table().to_string(),
-                    })),
-                };
-                query_state_machine.coord.broadcast_command(req).await?;
+                if client
+                    .get_table_schema(object_name.database(), object_name.table())
+                    .is_ok_and(|opt| opt.is_none())
+                {
+                    if *if_exist {
+                        return Ok(Output::Nil(()));
+                    } else {
+                        return Err(QueryError::Meta {
+                            source: MetaError::TableNotFound {
+                                table: object_name.table().to_string(),
+                            },
+                        });
+                    }
+                }
 
-                client
-                    .drop_table(object_name.database(), object_name.table())
-                    .await
+                let resourceinfo = ResourceInfo::new(
+                    *client.tenant().id(),
+                    vec![
+                        object_name.tenant().to_string(),
+                        object_name.database().to_string(),
+                        object_name.table().to_string(),
+                    ],
+                    ResourceOperator::DropTable,
+                    &None,
+                    None,
+                );
+                ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
+                    .await?;
             }
         };
 
-        if *if_exist {
-            return Ok(Output::Nil(()));
-        }
-
-        res.map(|_| Output::Nil(())).context(MetaSnafu)
+        Ok(Output::Nil(()))
     }
 }

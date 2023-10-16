@@ -59,6 +59,10 @@ pub enum ExtStatement {
     MoveVnode(MoveVnode),
     CompactVnode(CompactVnode),
     ChecksumGroup(ChecksumGroup),
+
+    // recover cmd
+    RecoverTenant(RecoverTenant),
+    RecoverDatabase(RecoverDatabase),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,6 +193,7 @@ pub struct DropTenantObject {
     pub object_name: Ident,
     pub if_exist: bool,
     pub obj_type: TenantObjectType,
+    pub after: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,6 +201,25 @@ pub struct DropGlobalObject {
     pub object_name: Ident,
     pub if_exist: bool,
     pub obj_type: GlobalObjectType,
+    pub after: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoverTable {
+    pub object_name: ObjectName,
+    pub if_exist: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoverDatabase {
+    pub object_name: Ident,
+    pub if_exist: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoverTenant {
+    pub object_name: Ident,
+    pub if_exist: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,8 +1,8 @@
 use async_trait::async_trait;
-use coordinator::VnodeManagerCmdType;
+use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
-use protos::kv_service::admin_command_request::Command::DropDb;
-use protos::kv_service::{AdminCommandRequest, DropDbRequest};
+use models::oid::Identifier;
+use models::schema::{ResourceInfo, ResourceOperator};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropTenantObject, TenantObjectType};
 use spi::{QueryError, Result};
@@ -29,6 +29,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
             ref name,
             ref if_exist,
             ref obj_type,
+            ref after,
         } = self.stmt;
 
         let meta = query_state_machine
@@ -70,34 +71,36 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 // tenant_id
                 // database_name
 
-                let req = AdminCommandRequest {
-                    tenant: tenant_name.to_string(),
-                    command: Some(DropDb(DropDbRequest { db: name.clone() })),
-                };
-
-                let coord = query_state_machine.coord.clone();
-                if coord.using_raft_replication() {
-                    let buckets = meta.get_db_info(name)?.map_or(vec![], |v| v.buckets);
-                    for bucket in buckets {
-                        for replica in bucket.shard_group {
-                            let cmd_type = VnodeManagerCmdType::DestoryRaftGroup(replica.id);
-                            coord.vnode_manager(tenant_name, cmd_type).await?;
-                        }
+                if meta
+                    .get_db_info_for_drop(name)
+                    .is_ok_and(|opt| opt.is_none())
+                {
+                    if *if_exist {
+                        return Ok(Output::Nil(()));
+                    } else {
+                        return Err(QueryError::Meta {
+                            source: MetaError::DatabaseNotFound {
+                                database: name.to_string(),
+                            },
+                        });
                     }
-                } else {
-                    coord.broadcast_command(req).await?;
                 }
 
-                debug!("Drop database {} of tenant {}", name, tenant_name);
-                let success = meta.drop_db(name).await?;
+                // first, set hidden to TRUE
+                meta.set_db_is_hidden(tenant_name, name, true)
+                    .await
+                    .map_err(|err| QueryError::Meta { source: err })?;
 
-                if let (false, false) = (if_exist, success) {
-                    return Err(QueryError::Meta {
-                        source: MetaError::DatabaseNotFound {
-                            database: name.to_string(),
-                        },
-                    });
-                }
+                // second, add drop task
+                let resourceinfo = ResourceInfo::new(
+                    *meta.tenant().id(),
+                    vec![tenant_name.clone(), name.clone()],
+                    ResourceOperator::DropDatabase,
+                    after,
+                    None,
+                );
+                ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
+                    .await?;
 
                 Ok(Output::Nil(()))
             }

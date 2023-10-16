@@ -7,7 +7,7 @@ use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
 use models::oid::Oid;
-use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions};
+use models::schema::{DatabaseSchema, ResourceInfo, TableSchema, Tenant, TenantOptions};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -66,6 +66,9 @@ pub enum WriteCommand {
     // cluster, tenant, db schema
     AlterDB(String, String, DatabaseSchema),
 
+    // cluster, tenant, db, db_is_hidden
+    SetDBIsHidden(String, String, String, bool),
+
     // cluster, tenant, db name
     DropDB(String, String, String),
 
@@ -94,6 +97,8 @@ pub enum WriteCommand {
     CreateTenant(String, Tenant),
     // cluster, tenant_name, tenant_options
     AlterTenant(String, String, TenantOptions),
+    // cluster, tenant_name, tenant_is_hidden
+    SetTenantIsHidden(String, String, bool),
     // cluster, old_name, new_name
     RenameTenant(String, String, String),
     // cluster, tenant_name
@@ -131,6 +136,10 @@ pub enum WriteCommand {
         tenant: String,
         request: LocalBucketRequest,
     },
+    // cluster, [tenant, db, table,...], ResourceInfo
+    ResourceInfo(String, Vec<String>, ResourceInfo),
+    // cluster, node_id, is_lock
+    ResourceInfosMark(String, NodeId, bool),
 }
 
 /******************* read command *************************/
@@ -159,6 +168,10 @@ pub enum ReadCommand {
     Tenants(String),
     // cluster, tenant, db, table
     TableSchema(String, String, String, String),
+    // cluster, [tenant, db, table,...]
+    ResourceInfos(String, Vec<String>),
+    // cluster
+    ResourceInfosMark(String),
 }
 
 pub const ENTRY_LOG_TYPE_SET: i32 = 1;

@@ -1,11 +1,13 @@
 use async_trait::async_trait;
+use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
 use models::auth::user::ROOT;
 use models::oid::Identifier;
+use models::schema::{ResourceInfo, ResourceOperator};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropGlobalObject, GlobalObjectType};
 use spi::{QueryError, Result};
-use trace::{debug, warn};
+use trace::debug;
 
 use super::DDLDefinitionTask;
 
@@ -28,6 +30,7 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
             ref name,
             ref if_exist,
             ref obj_type,
+            ref after,
         } = self.stmt;
 
         let meta = query_state_machine.meta.clone();
@@ -69,24 +72,22 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
 
                 match meta.tenant_meta(name).await {
                     Some(tm) => {
-                        // drop role in the tenant
-                        let all_roles = tm.custom_roles().await?;
-                        for role in all_roles {
-                            if !tm.drop_custom_role(role.name()).await? {
-                                warn!("drop role {} failed.", role.name());
-                            }
-                        }
+                        // first, set hidden to TRUE
+                        meta.set_tenant_is_hidden(name, true).await?;
 
-                        // drop database in the tenant
-                        let all_dbs = tm.list_databases()?;
-                        for db_name in all_dbs {
-                            if !tm.drop_db(&db_name).await? {
-                                warn!("drop database {} failed.", db_name);
-                            }
-                        }
-
-                        // drop tenant metadata
-                        meta.drop_tenant(name).await?;
+                        // second, add drop task
+                        let resourceinfo = ResourceInfo::new(
+                            *tm.tenant().id(),
+                            vec![name.clone()],
+                            ResourceOperator::DropTenant,
+                            after,
+                            None,
+                        );
+                        ResourceManager::add_resource_task(
+                            query_state_machine.coord.clone(),
+                            resourceinfo,
+                        )
+                        .await?;
                         Ok(Output::Nil(()))
                     }
                     None => {

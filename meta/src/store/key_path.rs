@@ -124,4 +124,13 @@ impl KeyPath {
     pub fn limiter(cluster: &str, tenant_name: &str) -> String {
         format!("/{cluster}/tenants/{tenant_name}/limiter")
     }
+
+    pub fn resourceinfos(cluster: &str, names: &[String]) -> String {
+        let names_str = names.join("-");
+        format!("/{}/resourceinfos/{}", cluster, names_str)
+    }
+
+    pub fn resourceinfosmark(cluster: &str) -> String {
+        format!("/{}/resourceinfosmark", cluster)
+    }
 }
