@@ -436,6 +436,15 @@ impl TenantMeta {
         Ok(None)
     }
 
+    // only for drop sql
+    pub fn get_db_info_for_drop(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
+        if let Some(db) = self.data.read().dbs.get(name) {
+            return Ok(Some(db.clone()));
+        }
+
+        Ok(None)
+    }
+
     pub fn list_databases(&self) -> MetaResult<Vec<String>> {
         let mut list = vec![];
         for (k, db_info) in self.data.read().dbs.iter() {
