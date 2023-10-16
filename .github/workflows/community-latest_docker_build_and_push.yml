@@ -5,15 +5,26 @@ on:
     - cron: "00 10 * * 1-5"
   workflow_dispatch:
 
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
 jobs:
   docker:
+    strategy:
+      matrix:
+        image:
+          - cnosdb
+          - cnosdb-meta
     runs-on: ubuntu-latest
     if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v3
       - name: Get current date
         id: date
-        run: echo "::set-output name=today::$(date +'%Y-%m-%d')"
+        run: echo "today=$(TZ=UTC-8 date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v3
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -27,38 +38,35 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       -
+        name: Compiler
+        run: |
+          sudo apt install gcc-aarch64-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu
+          mkdir -p linux/amd64 linux/arm64
+          if [[ "${{ matrix.image }}" = "cnosdb" ]]; then
+            RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" cargo build --package main --package client --release --target aarch64-unknown-linux-gnu
+            cargo build --package main --package client --release --target x86_64-unknown-linux-gnu
+            mv ./target/aarch64-unknown-linux-gnu/release/cnosdb ./linux/arm64/cnosdb
+            mv ./target/aarch64-unknown-linux-gnu/release/cnosdb-cli ./linux/arm64/cnosdb-cli
+            mv ./target/x86_64-unknown-linux-gnu/release/cnosdb ./linux/amd64/cnosdb
+            mv ./target/x86_64-unknown-linux-gnu/release/cnosdb-cli ./linux/amd64/cnosdb-cli
+          else
+            RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" cargo build --package meta --release --target aarch64-unknown-linux-gnu
+            cargo build --package meta --release --target x86_64-unknown-linux-gnu
+            mv ./target/aarch64-unknown-linux-gnu/release/cnosdb-meta ./linux/arm64/cnosdb-meta
+            mv ./target/x86_64-unknown-linux-gnu/release/cnosdb-meta ./linux/amd64/cnosdb-meta
+          fi
+      -
         name: Build and push
-        id: docker_build
-        uses: docker/build-push-action@v5
-        with:
-          #platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            cnosdb/cnosdb:community-latest
-            cnosdb/cnosdb:${{ steps.date.outputs.today }}
-          build-args: |
-            git_hash=${{ github.sha }}
-      -
-        name: modify dockerfile
-        shell: bash
         run: |
-          sed -i 's/\[tag\]/latest/g' Dockerfile_for_k8s
-      -
-        name: Login to Aliyun
-        uses: docker/login-action@v3
-        with:
-          registry: registry.cn-hangzhou.aliyuncs.com
-          username: ${{ secrets.ALIYUN_USERNAME }}
-          password: ${{ secrets.ALIYUN_PASSWORD }}
-      -
-        name: Build and push k8s
-        shell: bash
-        run: |
-          docker build -f Dockerfile_for_k8s -t registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:community-latest -t registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:${{ steps.date.outputs.today }} .
-          docker push registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:community-latest
-          docker push registry.cn-hangzhou.aliyuncs.com/cnosdb/cnosdb-k8s:${{ steps.date.outputs.today }}
-      -
-        name: recover dockerfile
-        shell: bash
-        run: |
-          sed -i 's/latest/\[tag\]/g' Dockerfile_for_k8s
+          if [[ "${{ matrix.image }}" = "cnosdb" ]]; then
+            docker buildx build -f docker/Dockerfile --platform linux/amd64,linux/arm64 \
+              -t cnosdb/${{matrix.image}}:community-latest \
+              -t cnosdb/${{matrix.image}}:community-${{ steps.date.outputs.today }} \
+              --build-arg="git_hash=${{ github.sha }}" . --push
+          else
+            docker buildx build -f docker/Dockerfile_meta --platform linux/amd64,linux/arm64 \
+              -t cnosdb/${{matrix.image}}:community-latest \
+              -t cnosdb/${{matrix.image}}:community-${{ steps.date.outputs.today }} \
+              --build-arg="git_hash=${{ github.sha }}" . --push
+          fi

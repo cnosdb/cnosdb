@@ -108,3 +108,10 @@ select * from tmp order by window.start, sum;
 {start: 1970-01-01T00:00:00, end: 1970-01-01T00:00:00.010} 111 1
 {start: 1979-12-31T23:59:59.994, end: 1980-01-01T00:00:00.004} 111 1
 {start: 1980-01-01T00:00:00, end: 1980-01-01T00:00:00.010} 111 1
+
+
+# test fix https://github.com/cnosdb/cnosdb/issues/1577
+query T
+SELECT time_window( cast (1 as timestamp), cast ('3 day' as interval));
+----
+{start: 1970-01-01T00:00:00, end: 1970-01-04T00:00:00}

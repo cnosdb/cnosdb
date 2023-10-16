@@ -508,6 +508,12 @@ pub enum QueryError {
     InvalidGeometryType {
         reason: String,
     },
+
+    #[snafu(display("User '{}' is prohibited from being dropped", user))]
+    #[error_code(code = 74)]
+    ForbiddenDropUser {
+        user: String,
+    },
 }
 
 impl From<ParserError> for QueryError {

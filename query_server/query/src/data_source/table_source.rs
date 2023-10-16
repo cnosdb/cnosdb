@@ -14,15 +14,17 @@ use datafusion::logical_expr::{
     LogicalPlan, LogicalPlanBuilder, TableProviderAggregationPushDown, TableProviderFilterPushDown,
     TableSource,
 };
+use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::Expr;
 use spi::query::datasource::stream::StreamProviderRef;
 use trace::{debug, warn};
 
 use super::batch::tskv::ClusterTable;
-use super::WriteExecExt;
+use super::{UpdateExecExt, WriteExecExt};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
+use crate::extension::physical::plan_node::update_tag::UpdateTagExec;
 
 pub const TEMP_LOCATION_TABLE_NAME: &str = "external_location_table";
 
@@ -157,6 +159,30 @@ impl WriteExecExt for TableSourceAdapter {
         };
 
         let result = table_write.write(state, input).await?;
+
+        Ok(result)
+    }
+}
+
+#[async_trait]
+impl UpdateExecExt for TableSourceAdapter {
+    async fn update(
+        &self,
+        assigns: Vec<(String, Arc<dyn PhysicalExpr>)>,
+        scan: Arc<dyn ExecutionPlan>,
+    ) -> DFResult<Arc<UpdateTagExec>> {
+        let table_handle = self.table_handle();
+
+        let table_update: &dyn UpdateExecExt = match table_handle {
+            TableHandle::Tskv(e) => e.as_ref() as _,
+            _ => {
+                warn!("Table not support update.");
+                return Err(DataFusionError::Plan(
+                    "Table not support update.".to_string(),
+                ));
+            }
+        };
+        let result = table_update.update(assigns, scan).await?;
 
         Ok(result)
     }

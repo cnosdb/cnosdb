@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
+use models::auth::user::ROOT;
 use models::oid::Identifier;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropGlobalObject, GlobalObjectType};
@@ -7,6 +8,8 @@ use spi::{QueryError, Result};
 use trace::{debug, warn};
 
 use super::DDLDefinitionTask;
+
+static FORBIDDEN_DROP_USERS: [&str; 1] = [ROOT];
 
 pub struct DropGlobalObjectTask {
     stmt: DropGlobalObject,
@@ -37,6 +40,13 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 //     name: &str
                 // ) -> Result<bool>;
                 debug!("Drop user {}", name);
+
+                if FORBIDDEN_DROP_USERS.contains(&name.as_str()) {
+                    return Err(QueryError::ForbiddenDropUser {
+                        user: name.to_string(),
+                    });
+                }
+
                 let success = meta.drop_user(name).await?;
 
                 if let (false, false) = (if_exist, success) {

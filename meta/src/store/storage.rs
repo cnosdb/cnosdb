@@ -798,7 +798,7 @@ impl StateMachine {
         cluster: &str,
         tenant: &str,
         schema: &DatabaseSchema,
-    ) -> MetaResult<()> {
+    ) -> MetaResult<TenantMetaData> {
         let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
         if !self.contains_key(&key)? {
             return Err(MetaError::DatabaseNotFound {
@@ -808,7 +808,8 @@ impl StateMachine {
 
         self.check_db_schema_valid(cluster, schema)?;
         self.insert(&key, &value_encode(schema)?)?;
-        Ok(())
+
+        self.to_tenant_meta_data(cluster, tenant)
     }
 
     fn check_db_schema_valid(&self, cluster: &str, db_schema: &DatabaseSchema) -> MetaResult<()> {
@@ -1034,10 +1035,15 @@ impl StateMachine {
         })
     }
 
-    fn process_drop_user(&self, cluster: &str, user_name: &str) -> MetaResult<()> {
+    fn process_drop_user(&self, cluster: &str, user_name: &str) -> MetaResult<bool> {
         let key = KeyPath::user(cluster, user_name);
 
-        self.remove(&key)
+        if self.contains_key(&key)? {
+            self.remove(&key)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     fn set_tenant_limiter(
@@ -1274,6 +1280,7 @@ impl StateMachine {
         let mut rsp = LocalBucketResponse {
             kind: requests.kind,
             alloc: requests.expected.max,
+            remote_remain: -1,
         };
         let key = KeyPath::limiter(cluster, tenant);
 
@@ -1292,8 +1299,9 @@ impl StateMachine {
         };
         let alloc = bucket.acquire_closed(requests.expected.max as usize);
 
-        self.set_tenant_limiter(cluster, tenant, Some(limiter))?;
         rsp.alloc = alloc as i64;
+        rsp.remote_remain = bucket.balance() as i64;
+        self.set_tenant_limiter(cluster, tenant, Some(limiter))?;
 
         Ok(rsp)
     }

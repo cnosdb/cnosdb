@@ -14,7 +14,7 @@ use models::meta_data::{VnodeId, VnodeStatus};
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{make_owner, split_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
-use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
+use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
 use snafu::ResultExt;
@@ -38,10 +38,10 @@ use crate::summary::{CompactMeta, Summary, SummaryProcessor, SummaryTask, Versio
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
-use crate::wal::{self, Block, WalDecoder, WalManager, WalTask};
+use crate::wal::{self, Block, UpdateSeriesKeysBlock, WalDecoder, WalManager, WalTask};
 use crate::{
     file_utils, tenant_name_from_request, Engine, Error, SnapshotFileMeta, TseriesFamilyId,
-    VnodeSnapshot,
+    UpdateSetValue, VnodeSnapshot,
 };
 
 // TODO: A small summay channel capacity can cause a block
@@ -211,9 +211,14 @@ impl TsKv {
                                             continue;
                                         }
 
-                                        self.write_from_wal(vnode_id, seq, &blk, &mut decoder)
-                                            .await
-                                            .unwrap();
+                                        let res = self
+                                            .write_from_wal(vnode_id, seq, &blk, &mut decoder)
+                                            .await;
+                                        if matches!(res, Err(Error::InvalidPoint)) {
+                                            info!("Recover: deleted point, seq: {}", seq);
+                                        } else if let Err(e) = res {
+                                            error!("Recover: failed to write: {}", e);
+                                        }
                                     }
 
                                     Block::DeleteVnode(blk) => {
@@ -230,7 +235,32 @@ impl TsKv {
                                             trace::error!("Recover: failed to delete table: {e}");
                                         }
                                     }
-                                    _ => {}
+                                    Block::UpdateSeriesKeys(UpdateSeriesKeysBlock {
+                                        tenant,
+                                        database,
+                                        vnode_id,
+                                        old_series_keys,
+                                        new_series_keys,
+                                        series_ids,
+                                    }) => {
+                                        if let Err(err) = self
+                                            .update_vnode_series_keys(
+                                                &tenant,
+                                                &database,
+                                                vnode_id,
+                                                old_series_keys,
+                                                new_series_keys,
+                                                series_ids,
+                                                true,
+                                            )
+                                            .await
+                                        {
+                                            trace::error!(
+                                                "Recover: failed to update series keys: {err}"
+                                            );
+                                        }
+                                    }
+                                    Block::Unknown | Block::RaftLog(_) => {}
                                 }
                             }
                             Ok(None) | Err(Error::WalTruncated) => {
@@ -363,16 +393,8 @@ impl TsKv {
         info!("Summary task handler started");
     }
 
-    pub async fn get_db(&self, tenant: &str, database: &str) -> Result<Arc<RwLock<Database>>> {
-        let db = self
-            .version_set
-            .read()
-            .await
-            .get_db(tenant, database)
-            .ok_or(SchemaError::DatabaseNotFound {
-                database: database.to_string(),
-            })?;
-        Ok(db)
+    pub async fn get_db(&self, tenant: &str, database: &str) -> Option<Arc<RwLock<Database>>> {
+        self.version_set.read().await.get_db(tenant, database)
     }
 
     pub(crate) async fn get_db_or_else_create(
@@ -652,8 +674,8 @@ impl TsKv {
         let db_name = fb_points.db_ext()?;
         // If database does not exist, skip this record.
         let db = match self.get_db(tenant, db_name).await {
-            Ok(db) => db,
-            Err(_) => return Ok(()),
+            Some(db) => db,
+            None => return Ok(()),
         };
         // If vnode does not exist, skip this record.
         let tsf = match db.read().await.get_tsfamily(vnode_id) {
@@ -670,7 +692,6 @@ impl TsKv {
             .read()
             .await
             .build_write_group_strict_mode(
-                db_name,
                 precision,
                 fb_points.tables().ok_or(Error::CommonError {
                     reason: "points missing table".to_string(),
@@ -701,6 +722,38 @@ impl TsKv {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
             return self.delete_table(db, table, Some(vnode_id)).await;
         }
+        Ok(())
+    }
+
+    async fn update_vnode_series_keys(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+        old_series_keys: Vec<SeriesKey>,
+        new_series_keys: Vec<SeriesKey>,
+        sids: Vec<SeriesId>,
+        recovering: bool,
+    ) -> Result<()> {
+        let db = match self.get_db(tenant, database).await {
+            Some(db) => db,
+            None => return Ok(()),
+        };
+        if let Some(ts_index) = db.read().await.get_ts_index(vnode_id) {
+            // 更新索引
+            ts_index
+                .update_series_key(old_series_keys, new_series_keys, sids, recovering)
+                .await
+                .map_err(|err| {
+                    error!(
+                        "Update tags value tag of TSIndex({}): {}",
+                        ts_index.path().display(),
+                        err
+                    );
+                    err
+                })?;
+        }
+
         Ok(())
     }
 
@@ -1028,7 +1081,11 @@ impl Engine for TsKv {
         column_name: &str,
     ) -> Result<()> {
         // TODO(zipper): Store this action in WAL.
-        let db = self.get_db(tenant, database).await?;
+        let db = match self.get_db(tenant, database).await {
+            Some(db) => db,
+            None => return Ok(()),
+        };
+
         let schema =
             db.read()
                 .await
@@ -1077,19 +1134,82 @@ impl Engine for TsKv {
         table: &str,
         tag_name: &str,
         new_tag_name: &str,
+        dry_run: bool,
     ) -> Result<()> {
         let tag_name = tag_name.as_bytes().to_vec();
         let new_tag_name = new_tag_name.as_bytes().to_vec();
 
-        let db = self.get_db(tenant, database).await?;
+        let db = match self.get_db(tenant, database).await {
+            Some(db) => db,
+            None => return Ok(()),
+        };
 
         for ts_index in db.read().await.ts_indexes().values() {
             ts_index
-                .rename_tag(table, &tag_name, &new_tag_name)
+                .rename_tag(table, &tag_name, &new_tag_name, dry_run)
                 .await
                 .map_err(|err| {
                     error!(
                         "Rename tag of TSIndex({}): {}",
+                        ts_index.path().display(),
+                        err
+                    );
+                    err
+                })?;
+        }
+
+        Ok(())
+    }
+
+    async fn update_tags_value(
+        &self,
+        tenant: &str,
+        database: &str,
+        new_tags: &[UpdateSetValue<TagKey, TagValue>],
+        matched_series: &[SeriesKey],
+        dry_run: bool,
+    ) -> Result<()> {
+        let db = match self.get_db(tenant, database).await {
+            Some(db) => db,
+            None => return Ok(()),
+        };
+
+        for (vnode_id, ts_index) in db.read().await.ts_indexes() {
+            // 准备数据
+            // 获取待更新的 series key，更新后的 series key 及其对应的 series id
+            let (old_series_keys, new_series_keys, sids) = ts_index
+                .prepare_update_tags_value(new_tags, matched_series)
+                .await?;
+
+            if dry_run {
+                continue;
+            }
+            // 记录 wal
+            let (wal_task, rx) = WalTask::new_update_tags(
+                tenant.to_string(),
+                database.to_string(),
+                vnode_id,
+                old_series_keys.clone(),
+                new_series_keys.clone(),
+                sids.clone(),
+            );
+            self.wal_sender
+                .send(wal_task)
+                .await
+                .map_err(|_| Error::ChannelSend {
+                    source: error::ChannelSendError::WalTask,
+                })?;
+            // Receive WAL write action result.
+            let _ = rx.await.map_err(|e| Error::ChannelReceive {
+                source: error::ChannelReceiveError::WriteWalResult { source: e },
+            })??;
+            // 更新索引
+            ts_index
+                .update_series_key(old_series_keys, new_series_keys, sids, false)
+                .await
+                .map_err(|err| {
+                    error!(
+                        "Update tags value tag of TSIndex({}): {}",
                         ts_index.path().display(),
                         err
                     );

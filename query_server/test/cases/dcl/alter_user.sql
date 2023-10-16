@@ -1,6 +1,10 @@
 drop user if exists test_au_u1;
 drop user if exists test_au_u2;
 
+drop user root;
+drop user test_au_u1;
+drop user test_au_u2;
+
 create user if not exists test_au_u1;
 create user if not exists test_au_u2;
 

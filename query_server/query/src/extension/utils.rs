@@ -5,7 +5,7 @@ use datafusion::arrow::compute::filter_record_batch;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::cast::as_boolean_array;
 use datafusion::common::Result as DFResult;
-use datafusion::logical_expr::UserDefinedLogicalNode;
+use datafusion::logical_expr::{TableSource, UserDefinedLogicalNode};
 use datafusion::physical_plan::{ExecutionPlan, PhysicalExpr};
 
 pub fn downcast_plan_node<T: 'static>(node: &dyn UserDefinedLogicalNode) -> Option<&T> {
@@ -13,6 +13,10 @@ pub fn downcast_plan_node<T: 'static>(node: &dyn UserDefinedLogicalNode) -> Opti
 }
 
 pub fn downcast_execution_plan<T: 'static>(plan: &dyn ExecutionPlan) -> Option<&T> {
+    plan.as_any().downcast_ref::<T>()
+}
+
+pub fn downcast_table_source<T: 'static>(plan: &dyn TableSource) -> Option<&T> {
     plan.as_any().downcast_ref::<T>()
 }
 
