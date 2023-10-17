@@ -43,6 +43,9 @@ use super::AFFECTED_ROWS;
 use crate::service::protocol::QueryId;
 use crate::{ParserSnafu, QueryError, Result};
 
+pub const TENANT_OPTION_LIMITER: &str = "_limiter";
+pub const TENANT_OPTION_COMMENT: &str = "comment";
+
 lazy_static! {
     static ref TABLE_WRITE_UDF: Arc<ScalarUDF> = Arc::new(ScalarUDF::new(
         "rows",
@@ -326,20 +329,20 @@ pub fn unset_option_to_alter_tenant_action(
     let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.to_own_options());
 
     let privilege = match normalize_ident(&ident).as_str() {
-        "comment" => {
+        TENANT_OPTION_COMMENT => {
             tenant_options_builder.unset_comment();
             Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
         }
-        "_limiter" => {
+        TENANT_OPTION_LIMITER => {
             tenant_options_builder.unset_limiter_config();
             Privilege::Global(GlobalPrivilege::System)
         }
         _ => {
             return Err(QueryError::Parser {
                 source: ParserError::ParserError(format!(
-                    "Expected option [comment], [limiter] found [{}]",
-                    ident
-                )),
+                "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}] found [{}]",
+                ident
+            )),
             })
         }
     };
@@ -360,12 +363,12 @@ pub fn sql_option_to_alter_tenant_action(
     let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.to_own_options());
 
     let privilege = match normalize_ident(&name).as_str() {
-        "comment" => {
+        TENANT_OPTION_COMMENT => {
             let value = parse_string_value(value)?;
             tenant_options_builder.comment(value);
             Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
         }
-        "_limiter" => {
+        TENANT_OPTION_LIMITER => {
             let config =
                 serde_json::from_str::<TenantLimiterConfig>(parse_string_value(value)?.as_str())
                     .map_err(|_| ParserError::ParserError("limiter format error".to_string()))?;
@@ -375,9 +378,9 @@ pub fn sql_option_to_alter_tenant_action(
         _ => {
             return Err(QueryError::Parser {
                 source: ParserError::ParserError(format!(
-                    "Expected option [comment], [limiter] found [{}]",
-                    name
-                )),
+                "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}] found [{}]",
+                name
+            )),
             })
         }
     };
@@ -393,10 +396,10 @@ pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> Result<TenantOp
 
     for SqlOption { ref name, value } in options {
         match normalize_ident(name).as_str() {
-            "comment" => {
+            TENANT_OPTION_COMMENT => {
                 builder.comment(parse_string_value(value).context(ParserSnafu)?);
             }
-            "_limiter" => {
+            TENANT_OPTION_LIMITER => {
                 let config = serde_json::from_str::<TenantLimiterConfig>(
                     parse_string_value(value).context(ParserSnafu)?.as_str(),
                 )?;
@@ -405,7 +408,7 @@ pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> Result<TenantOp
             _ => {
                 return Err(QueryError::Parser {
                     source: ParserError::ParserError(format!(
-                        "Expected option [comment], [limiter] found [{}]",
+                        "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}] found [{}]",
                         name
                     )),
                 })

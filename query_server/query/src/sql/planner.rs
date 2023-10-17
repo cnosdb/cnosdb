@@ -80,7 +80,7 @@ use spi::query::logical_planner::{
     CreateUser, DDLPlan, DatabaseObjectType, DropDatabaseObject, DropGlobalObject,
     DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
     GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, RecoverDatabase,
-    RecoverTenant, RenameColumnAction, SYSPlan, TenantObjectType,
+    RecoverTenant, RenameColumnAction, SYSPlan, TenantObjectType, TENANT_OPTION_LIMITER,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -1634,6 +1634,22 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let ast::AlterTenant { name, operation } = stmt;
 
         let tenant_name = normalize_ident(name);
+
+        fn check_alter_tenant(tenant: &str, operation: &AlterTenantOperation) -> Result<()> {
+            if tenant.eq_ignore_ascii_case(DEFAULT_CATALOG) {
+                if let AlterTenantOperation::Set(opt) = operation {
+                    let option = normalize_ident(opt.name.clone());
+                    if option.eq_ignore_ascii_case(TENANT_OPTION_LIMITER) {
+                        return Err(QueryError::ForbiddenLimitTenant {
+                            tenant: tenant.to_owned(),
+                        });
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        check_alter_tenant(tenant_name.as_str(), &operation)?;
         // 查询租户信息，不存在直接报错咯
         // fn tenant(
         //     &self,
