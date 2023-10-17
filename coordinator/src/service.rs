@@ -1111,6 +1111,20 @@ impl Coordinator for CoordService {
         let time_ranges = TimeRanges::new(vec![TimeRange::new(min_ts, max_ts)]);
         let shards = self.prune_shards(tenant, db, &time_ranges).await?;
 
+        let update_tags_request = UpdateTagsRequest {
+            db: db.clone(),
+            new_tags: new_tags.clone(),
+            matched_series: series_keys.clone(),
+            dry_run: true,
+        };
+
+        let req = AdminCommandRequest {
+            tenant: tenant.clone(),
+            command: Some(UpdateTags(update_tags_request)),
+        };
+
+        self.broadcast_command_by_vnode(req, shards.clone()).await?;
+
         let new_tags_vec: Vec<(Vec<u8>, Option<Vec<u8>>)> = new_tags
             .iter()
             .map(|e| (e.key.clone(), e.value.clone()))
