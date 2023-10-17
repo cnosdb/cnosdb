@@ -12,7 +12,6 @@ members = [
     "common/http_protocol",
     "common/error_code",
     "common/error_code/error_code_macro",
-    "common/lru_cache",
     "common/limiter_bucket",
     "common/memory_pool",
     "common/cache",

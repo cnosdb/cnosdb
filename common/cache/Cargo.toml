@@ -14,7 +14,6 @@ async-trait = {workspace = true }
 rand = { workspace = true }
 
 [dev-dependencies]
-lru_cache = {path = "../lru_cache"}
 criterion = { workspace = true, features = ["async_tokio"] }
 
 [[bench]]
