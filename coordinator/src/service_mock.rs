@@ -13,7 +13,7 @@ use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef};
 use models::schema::{Precision, TskvTableSchemaRef};
 use protocol_parser::Line;
-use protos::kv_service::{AdminCommandRequest, UpdateSetValue};
+use protos::kv_service::{AdminCommandRequest, RaftWriteCommand, UpdateSetValue};
 use trace::SpanContext;
 use tskv::engine_mock::MockEngine;
 use tskv::reader::QueryOption;
@@ -147,11 +147,8 @@ impl Coordinator for MockCoordinator {
 
     async fn exec_write_replica_points(
         &self,
-        tenant: &str,
-        db_name: &str,
-        data: Arc<Vec<u8>>,
-        precision: Precision,
         replica: ReplicationSet,
+        request: RaftWriteCommand,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         todo!()

@@ -225,12 +225,25 @@ message DropRaftNodeRequest {
     uint32 replica_id = 4;
 }
 
-message WriteReplicaRequest {
-    uint32 replica_id = 1;
-    string tenant = 2;
-    string db_name = 3;
-    uint32 precision = 4;
-    bytes data = 5;
+message WriteDataRequest {
+    bytes data = 1;
+    uint32 precision = 2;
+    
+}
+
+message RaftWriteCommand {
+  string tenant = 1;
+  string db_name = 2;
+  uint32 replica_id = 3;
+  oneof command {
+    WriteDataRequest write_data = 4;
+    DropTableRequest drop_tab = 5;
+    DropColumnRequest drop_column = 6;
+    AddColumnRequest add_column = 7;
+    AlterColumnRequest alter_column = 8;
+    RenameColumnRequest rename_column = 9;
+    UpdateTagsRequest update_tags = 10;
+  }
 }
 
 
@@ -240,8 +253,8 @@ service TSKVService {
   rpc WritePoints(stream WritePointsRequest) returns (stream WritePointsResponse) {};
 
   rpc WriteVnodePoints(WriteVnodeRequest) returns (StatusResponse) {};
-  rpc WriteReplicaPoints(WriteReplicaRequest) returns (StatusResponse) {};
   rpc QueryRecordBatch(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
+  rpc ExecRaftWriteCommand(RaftWriteCommand) returns (StatusResponse) {};
   rpc ExecAdminCommand(AdminCommandRequest) returns (StatusResponse) {};
   rpc ExecAdminFetchCommand(AdminFetchCommandRequest) returns (BatchBytesResponse) {};
   rpc ExecOpenRaftNode(OpenRaftNodeRequest) returns (StatusResponse) {};

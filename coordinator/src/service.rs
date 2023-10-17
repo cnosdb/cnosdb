@@ -419,20 +419,14 @@ impl CoordService {
 
     async fn write_replica_by_raft(
         &self,
-        tenant: &str,
-        db_name: &str,
-        data: Arc<Vec<u8>>,
-        precision: Precision,
         replica: ReplicationSet,
+        request: RaftWriteCommand,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         self.raft_writer
             .write_to_replica(
-                tenant,
-                db_name,
-                data,
-                precision,
                 &replica,
+                request,
                 SpanRecorder::new(span_ctx.child_span(format!(
                     "write to replica {} on node {}",
                     replica.id, self.node_id
@@ -473,14 +467,19 @@ impl CoordService {
         let mut requests: Vec<Pin<Box<dyn Future<Output = Result<(), CoordinatorError>> + Send>>> =
             Vec::new();
         if self.using_raft_replication() {
-            let request = self.write_replica_by_raft(
-                tenant,
-                db,
-                points.clone(),
-                precision,
-                info.clone(),
-                span_ctx,
-            );
+            let request = WriteDataRequest {
+                precision: precision as u32,
+                data: Arc::unwrap_or_clone(points.clone()),
+            };
+            let request = RaftWriteCommand {
+                replica_id: info.id,
+                db_name: db.to_string(),
+                tenant: tenant.to_string(),
+
+                command: Some(raft_write_command::Command::WriteData(request)),
+            };
+
+            let request = self.write_replica_by_raft(info.clone(), request, span_ctx);
             requests.push(Box::pin(request));
         } else {
             let mut tasks = self.multi_write_vnodes(tenant, precision, info, points, span_ctx)?;
@@ -539,15 +538,12 @@ impl Coordinator for CoordService {
 
     async fn exec_write_replica_points(
         &self,
-        tenant: &str,
-        db_name: &str,
-        data: Arc<Vec<u8>>,
-        precision: Precision,
         replica: ReplicationSet,
+        request: RaftWriteCommand,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         self.raft_writer
-            .write_to_local_or_forward(data, tenant, db_name, precision, &replica, span_ctx)
+            .write_to_local_or_forward(&replica, request, span_ctx)
             .await
     }
 
