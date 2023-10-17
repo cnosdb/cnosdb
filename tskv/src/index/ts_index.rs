@@ -8,8 +8,8 @@ use std::sync::Arc;
 use bytes::BufMut;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
-use models::predicate::domain::{utf8_from, Domain, Range};
-use models::tag::TagFromParts;
+use models::predicate::domain::{utf8_from, ColumnDomains, Domain, Range};
+use models::tag::{self, TagFromParts};
 use models::{utils, SeriesId, SeriesKey, Tag, TagKey, TagValue};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
@@ -192,15 +192,14 @@ impl TSIndex {
         let mut max_id = self.incr_id.load(Ordering::Relaxed);
         while let Some(block) = reader_file.next_block().await? {
             match block {
-                IndexBinlogBlock::Add(block) => {
-                    // add series
-                    let series_key = SeriesKey::decode(block.data())
-                        .map_err(|e| IndexError::DecodeSeriesKey { msg: e.to_string() })?;
+                IndexBinlogBlock::Add(blocks) => {
+                    for block in blocks {
+                        // add series
+                        self.add_series(block.series_id(), block.data()).await?;
 
-                    self.add_series(block.series_id(), &series_key).await?;
-
-                    if max_id < block.series_id() {
-                        max_id = block.series_id()
+                        if max_id < block.series_id() {
+                            max_id = block.series_id()
+                        }
                     }
                 }
                 IndexBinlogBlock::Delete(block) => {
@@ -295,7 +294,6 @@ impl TSIndex {
         let mut ids = Vec::with_capacity(series_keys.len());
         let mut blocks_data = Vec::new();
         for series_key in series_keys.into_iter() {
-            let encode = series_key.encode();
             let key_buf = encode_series_key(series_key.table(), series_key.tags());
             {
                 let mut storage_w = self.storage.write().await;
@@ -305,8 +303,7 @@ impl TSIndex {
                 }
                 let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
                 storage_w.set(&key_buf, &id.to_be_bytes())?;
-                let block =
-                    IndexBinlogBlock::Add(AddSeries::new(utils::now_timestamp_nanos(), id, encode));
+                let block = AddSeries::new(utils::now_timestamp_nanos(), id, series_key.clone());
                 ids.push(id);
                 blocks_data.push(block);
 
@@ -315,7 +312,8 @@ impl TSIndex {
             }
         }
 
-        self.write_binlog(&blocks_data).await?;
+        self.write_binlog(&[IndexBinlogBlock::Add(blocks_data)])
+            .await?;
 
         Ok(ids)
     }
@@ -397,11 +395,26 @@ impl TSIndex {
     pub async fn get_series_ids_by_domains(
         &self,
         tab: &str,
-        tag_domains: &HashMap<String, Domain>,
+        tag_domains: &ColumnDomains<String>,
     ) -> IndexResult<Vec<u32>> {
-        debug!("Index get sids: pushed tag_domains: {:?}", tag_domains);
+        if tag_domains.is_all() {
+            // Match all records
+            debug!("pushed tags filter is All.");
+            return self.get_series_id_list(tab, &[]).await;
+        }
+
+        if tag_domains.is_none() {
+            // Does not match any record, return null
+            debug!("pushed tags filter is None.");
+            return Ok(vec![]);
+        }
+
+        // safe: tag_domains is not empty
+        let domains = unsafe { tag_domains.domains_unsafe() };
+
+        debug!("Index get sids: pushed tag_domains: {:?}", domains);
         let mut series_ids = vec![];
-        for (k, v) in tag_domains.iter() {
+        for (k, v) in domains.iter() {
             let rb = self.get_series_ids_by_domain(tab, k, v).await?;
             series_ids.push(rb);
         }
@@ -612,29 +625,32 @@ impl TSIndex {
         let mut new_keys_set = HashSet::new();
         for key in &old_keys {
             // modify tag value
-            let new_tags_for_series = key
+            let mut old_tags = key
                 .tags
                 .iter()
-                .flat_map(|tag| {
-                    new_tags
-                        .iter()
-                        .find(|new_tag| tag.key == new_tag.key)
-                        .and_then(|new_tag| {
-                            new_tag
-                                .value
-                                .as_ref()
-                                .map(|new_val| Tag::new(tag.key.clone(), new_val.clone()))
-                        })
-                })
+                .map(|Tag { key, value }| (key, Some(value.as_ref())))
+                .collect::<HashMap<_, _>>();
+
+            // 更新 tag value
+            for UpdateSetValue { key, value } in new_tags {
+                old_tags.insert(key, value.as_deref());
+            }
+            // 移除值为 Null 的 tag
+            let mut tags = old_tags
+                .iter()
+                .flat_map(|(key, value)| value.map(|val| Tag::new(key.to_vec(), val.to_vec())))
                 .collect::<Vec<_>>();
 
+            tag::sort_tags(&mut tags);
+
             let new_key = SeriesKey {
-                tags: new_tags_for_series,
+                tags,
                 table: key.table.clone(),
             };
 
             // check conflict
             if self.get_series_id(&new_key).await?.is_some() {
+                trace::warn!("Series already exists: {:?}", new_key);
                 return Err(IndexError::SeriesAlreadyExists {
                     key: key.to_string(),
                 });
@@ -914,27 +930,31 @@ pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: Unbounde
                             continue;
                         }
                     };
+                    if let Some(pos) = handle_file.get(&file_id) {
+                        let res = reader_file.seek(*pos);
+                        if let Err(e) = res {
+                            error!(
+                                "Seek index binlog file '{}' failed, err: {}",
+                                file_path.display(),
+                                e
+                            );
+                        }
+                    }
                     while let Ok(Some(block)) = reader_file.next_block().await {
                         if reader_file.pos() <= *handle_file.get(&file_id).unwrap_or(&0) {
                             continue;
                         }
 
                         match block {
-                            IndexBinlogBlock::Add(block) => {
-                                let series_key = match SeriesKey::decode(block.data()) {
-                                    Ok(key) => key,
-                                    Err(e) => {
-                                        error!("Decode series key failed, err: {}", e);
-                                        continue;
-                                    }
-                                };
-
-                                let _ = ts_index
-                                    .add_series(block.series_id(), &series_key)
-                                    .await
-                                    .map_err(|err| {
-                                        error!("Add series failed, err: {}", err);
-                                    });
+                            IndexBinlogBlock::Add(blocks) => {
+                                for block in blocks {
+                                    let _ = ts_index
+                                        .add_series(block.series_id(), block.data())
+                                        .await
+                                        .map_err(|err| {
+                                            error!("Add series failed, err: {}", err);
+                                        });
+                                }
 
                                 let _ = ts_index.check_to_flush(false).await;
                                 handle_file.insert(file_id, reader_file.pos());

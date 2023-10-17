@@ -415,6 +415,10 @@ impl TskvTableSchema {
         &self.columns
     }
 
+    pub fn column_ids(&self) -> Vec<ColumnId> {
+        self.columns.iter().map(|c| c.id).collect()
+    }
+
     pub fn fields(&self) -> Vec<TableColumn> {
         self.columns
             .iter()

@@ -26,7 +26,7 @@ use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId, VnodeStatus};
 use models::object_reference::ResolvedTable;
-use models::predicate::domain::{ResolvedPredicateRef, TimeRange, TimeRanges};
+use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges};
 use models::schema::{
     timestamp_convert, ColumnType, Precision, TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
 };
@@ -64,8 +64,7 @@ use crate::{
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
 
-const USAGE_SCHEMA: &str = "usage_schema";
-
+use models::schema::USAGE_SCHEMA;
 #[derive(Clone)]
 pub struct CoordService {
     node_id: u64,
@@ -420,20 +419,14 @@ impl CoordService {
 
     async fn write_replica_by_raft(
         &self,
-        tenant: &str,
-        db_name: &str,
-        data: Arc<Vec<u8>>,
-        precision: Precision,
         replica: ReplicationSet,
+        request: RaftWriteCommand,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         self.raft_writer
             .write_to_replica(
-                tenant,
-                db_name,
-                data,
-                precision,
                 &replica,
+                request,
                 SpanRecorder::new(span_ctx.child_span(format!(
                     "write to replica {} on node {}",
                     replica.id, self.node_id
@@ -474,14 +467,19 @@ impl CoordService {
         let mut requests: Vec<Pin<Box<dyn Future<Output = Result<(), CoordinatorError>> + Send>>> =
             Vec::new();
         if self.using_raft_replication() {
-            let request = self.write_replica_by_raft(
-                tenant,
-                db,
-                points.clone(),
-                precision,
-                info.clone(),
-                span_ctx,
-            );
+            let request = WriteDataRequest {
+                precision: precision as u32,
+                data: Arc::unwrap_or_clone(points.clone()),
+            };
+            let request = RaftWriteCommand {
+                replica_id: info.id,
+                db_name: db.to_string(),
+                tenant: tenant.to_string(),
+
+                command: Some(raft_write_command::Command::WriteData(request)),
+            };
+
+            let request = self.write_replica_by_raft(info.clone(), request, span_ctx);
             requests.push(Box::pin(request));
         } else {
             let mut tasks = self.multi_write_vnodes(tenant, precision, info, points, span_ctx)?;
@@ -540,15 +538,12 @@ impl Coordinator for CoordService {
 
     async fn exec_write_replica_points(
         &self,
-        tenant: &str,
-        db_name: &str,
-        data: Arc<Vec<u8>>,
-        precision: Precision,
         replica: ReplicationSet,
+        request: RaftWriteCommand,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
         self.raft_writer
-            .write_to_local_or_forward(data, tenant, db_name, precision, &replica, span_ctx)
+            .write_to_local_or_forward(&replica, request, span_ctx)
             .await
     }
 
@@ -776,6 +771,48 @@ impl Coordinator for CoordService {
             Box::pin(checker),
             &self.metrics,
         )))
+    }
+
+    async fn delete_from_table(
+        &self,
+        table: &ResolvedTable,
+        predicate: &ResolvedPredicate,
+    ) -> CoordinatorResult<()> {
+        let nodes = self.meta.data_nodes().await;
+
+        let vnodes = self
+            .prune_shards(
+                table.tenant(),
+                table.database(),
+                predicate.time_ranges().as_ref(),
+            )
+            .await?;
+
+        let now = tokio::time::Instant::now();
+        let mut requests = vec![];
+
+        if self.using_raft_replication() {
+            // TODO
+            return Err(CoordinatorError::CommonError {
+                msg: "Not support delete table use raft api".to_string(),
+            });
+        } else {
+            for vnode in vnodes.into_iter().flat_map(|v| v.vnodes) {
+                requests.push(self.point_writer.delete_from_table_on_vnode(
+                    vnode,
+                    table.tenant(),
+                    table.database(),
+                    table.table(),
+                    predicate,
+                ));
+            }
+        }
+
+        for result in futures::future::join_all(requests).await {
+            debug!("exec delete from {table} WHERE {predicate:?}, now:{now:?}, elapsed:{}ms, result:{result:?}", now.elapsed().as_millis());
+            result?
+        }
+        Ok(())
     }
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()> {

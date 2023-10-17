@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use datafusion::arrow::datatypes::{DataType, SchemaRef, TimeUnit};
 use datafusion::arrow::error::ArrowError;
 use datafusion::common::parsers::CompressionTypeVariant;
+use datafusion::common::tree_node::TreeNode;
 use datafusion::common::{
     Column, DFField, DFSchema, OwnedTableReference, Result as DFResult, ToDFSchema,
 };
@@ -24,6 +25,7 @@ use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion::logical_expr::expr::{ScalarFunction, Sort};
+use datafusion::logical_expr::expr_rewriter::rewrite_preserving_name;
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
@@ -31,13 +33,17 @@ use datafusion::logical_expr::{
     EmptyRelation, Explain, Expr, Extension, LogicalPlan, LogicalPlanBuilder, Operator, PlanType,
     SubqueryAlias, TableSource, ToStringifiedPlan, Union,
 };
+use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
+use datafusion::optimizer::simplify_expressions::ConstEvaluator;
+use datafusion::physical_expr::execution_props::ExecutionProps;
 use datafusion::prelude::{col, SessionConfig};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::{object_name_to_table_reference, PlannerContext, SqlToRel};
 use datafusion::sql::sqlparser::ast::{
-    Assignment, DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, OrderByExpr,
-    Query, SqlOption, Statement, TableAlias, TableFactor, TableWithJoins, TimezoneInfo,
+    Assignment, DataType as SQLDataType, Expr as SQLExpr, Expr as ASTExpr, Ident, ObjectName,
+    Offset, OrderByExpr, Query, SqlOption, Statement, TableAlias, TableFactor, TableWithJoins,
+    TimezoneInfo,
 };
 use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::sql::TableReference;
@@ -53,7 +59,7 @@ use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
 use models::schema::{
     ColumnType, DatabaseOptions, Duration, Precision, TableColumn, Tenant, TskvTableSchema,
-    TskvTableSchemaRef, Watermark, DEFAULT_CATALOG, DEFAULT_DATABASE, TIME_FIELD,
+    TskvTableSchemaRef, Watermark, DEFAULT_CATALOG, TIME_FIELD,
 };
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
@@ -77,10 +83,11 @@ use spi::query::logical_planner::{
     AlterTableAction, AlterTenant, AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser,
     AlterUser, AlterUserAction, ChecksumGroup, CompactVnode, CopyOptions, CopyOptionsBuilder,
     CopyVnode, CreateDatabase, CreateRole, CreateStreamTable, CreateTable, CreateTenant,
-    CreateUser, DDLPlan, DatabaseObjectType, DropDatabaseObject, DropGlobalObject,
-    DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType,
-    GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan, RecoverDatabase,
-    RecoverTenant, RenameColumnAction, SYSPlan, TenantObjectType,
+    CreateUser, DDLPlan, DMLPlan, DatabaseObjectType, DeleteFromTable, DropDatabaseObject,
+    DropGlobalObject, DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder,
+    GlobalObjectType, GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan,
+    RecoverDatabase, RecoverTenant, RenameColumnAction, SYSPlan, TenantObjectType,
+    TENANT_OPTION_LIMITER,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -93,7 +100,7 @@ use crate::data_source::table_source::{TableHandle, TableSourceAdapter, TEMP_LOC
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
 use crate::extension::logical::plan_node::update::UpdateNode;
 use crate::metadata::{
-    ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, COLUMNS_COLUMN_NAME,
+    is_system_database, ContextProviderExtension, DatabaseSet, COLUMNS_COLUMN_NAME,
     COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME, COLUMNS_DATA_TYPE,
     COLUMNS_TABLE_NAME, DATABASES_DATABASE_NAME, DATABASES_PRECISION, DATABASES_REPLICA,
     DATABASES_SHARD, DATABASES_TTL, DATABASES_VNODE_DURATION, INFORMATION_SCHEMA,
@@ -237,6 +244,34 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             } => {
                 self.insert_to_plan(sql_object_name, sql_column_names, source, session)
                     .await
+            }
+            Statement::Delete {
+                tables,    // Not implemented by CnosDB
+                from,      // FROM <table>, always not empty
+                using,     // Not implemented by CnosDB
+                selection, // WHERE <selection>
+                returning, // Not implemented by CnosDB
+            } => {
+                // DELETE <tables>, not implemented
+                if !tables.is_empty() {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete tables".to_string(),
+                    });
+                }
+                // USING, not implemented
+                if using.is_some() {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete with USING".to_string(),
+                    });
+                }
+                // RETURNING, not implemented
+                if returning.is_some() {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete with RETURNING".to_string(),
+                    });
+                }
+
+                self.delete_to_plan(session, from, selection)
             }
             Statement::Kill { id, .. } => {
                 let plan = Plan::SYSTEM(SYSPlan::KillQuery(id.into()));
@@ -444,6 +479,88 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
+    fn delete_to_plan(
+        &self,
+        session: &SessionCtx,
+        mut tables: Vec<TableWithJoins>,
+        selections: Option<SQLExpr>,
+    ) -> Result<PlanWithPrivileges> {
+        // FROM <table>
+        let table_name = if tables.len() > 1 {
+            return Err(QueryError::NotImplemented {
+                err: "Delete from multi-table".to_string(),
+            });
+        } else {
+            let table = tables.remove(0);
+            match table.relation {
+                TableFactor::Table { name, .. } => name,
+                TableFactor::Derived { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from derived table".to_string(),
+                    });
+                }
+                TableFactor::TableFunction { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from table function".to_string(),
+                    });
+                }
+                TableFactor::UNNEST { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from UNNEST table".to_string(),
+                    });
+                }
+                TableFactor::NestedJoin { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from nested join table".to_string(),
+                    });
+                }
+                TableFactor::Pivot { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from pivot table".to_string(),
+                    });
+                }
+            }
+        };
+        let table_ref = normalize_sql_object_name(table_name.clone())?;
+        // only support delete from tskv table
+        let schema = self.get_tskv_schema(table_ref)?;
+        let df_schema = schema.to_arrow_schema().to_dfschema()?;
+
+        // WHERE <selection>
+        let selection = match selections {
+            Some(expr) => {
+                let sel = self
+                    .df_planner
+                    .sql_to_expr(expr, &df_schema, &mut Default::default())?;
+
+                let mut rewriter = TypeCoercionRewriter::new(Arc::new(df_schema));
+                let expr = rewrite_preserving_name(sel, &mut rewriter)?;
+                let props = ExecutionProps::default();
+                let mut const_evaluator = ConstEvaluator::try_new(&props)?;
+                let expr = expr.rewrite(&mut const_evaluator)?;
+                Some(expr)
+            }
+            None => None,
+        };
+
+        valid_delete(schema.as_ref(), &selection)?;
+
+        let table_name = object_name_to_resolved_table(session, table_name)?;
+        let database = table_name.database().to_string();
+        let plan = Plan::DML(DMLPlan::DeleteFromTable(DeleteFromTable {
+            table_name,
+            selection,
+        }));
+
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::TenantObject(
+                TenantObjectPrivilege::Database(DatabasePrivilege::Write, Some(database)),
+                Some(*session.tenant_id()),
+            )],
+        })
+    }
+
     fn drop_database_object_to_plan(
         &self,
         stmt: ast::DropDatabaseObject,
@@ -503,7 +620,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let (plan, privilege) = match obj_type {
             TenantObjectType::Database => {
                 let database_name = normalize_ident(object_name);
-                if database_name.eq(DEFAULT_DATABASE) {
+                if is_system_database(tenant_name, &database_name) {
                     return Err(QueryError::ForbidDropDatabase {
                         name: database_name,
                     });
@@ -1230,11 +1347,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         } = stmt;
 
         let name = normalize_ident(name);
-
-        // check if system database
-        if name.eq_ignore_ascii_case(CLUSTER_SCHEMA)
-            || name.eq_ignore_ascii_case(INFORMATION_SCHEMA)
-        {
+        if is_system_database(session.tenant(), name.as_str()) {
             return Err(QueryError::Meta {
                 source: MetaError::DatabaseAlreadyExists { database: name },
             });
@@ -1634,6 +1747,22 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let ast::AlterTenant { name, operation } = stmt;
 
         let tenant_name = normalize_ident(name);
+
+        fn check_alter_tenant(tenant: &str, operation: &AlterTenantOperation) -> Result<()> {
+            if tenant.eq_ignore_ascii_case(DEFAULT_CATALOG) {
+                if let AlterTenantOperation::Set(opt) = operation {
+                    let option = normalize_ident(opt.name.clone());
+                    if option.eq_ignore_ascii_case(TENANT_OPTION_LIMITER) {
+                        return Err(QueryError::ForbiddenLimitTenant {
+                            tenant: tenant.to_owned(),
+                        });
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        check_alter_tenant(tenant_name.as_str(), &operation)?;
         // 查询租户信息，不存在直接报错咯
         // fn tenant(
         //     &self,
@@ -2589,6 +2718,35 @@ fn make_geometry_data_type(params: &[String]) -> std::result::Result<ColumnType,
     let geo_type = Geometry::new_with_srid(sub_type, srid);
 
     Ok(ColumnType::Field(ValueType::Geometry(geo_type)))
+}
+
+/// 合法性检查
+///
+/// - 只能对tskv表执行delete操作
+/// - 过滤条件中不能包含field列
+fn valid_delete(schema: &TskvTableSchema, selection: &Option<Expr>) -> Result<()> {
+    if let Some(expr) = selection {
+        let using_columns = expr.to_columns()?;
+        for col_name in using_columns.iter() {
+            match schema.column(&col_name.name) {
+                Some(col) => {
+                    if col.column_type.is_field() {
+                        return Err(QueryError::NotImplemented { err:
+                            "Filtering on the field column on the tskv table in delete statement".to_string(),
+                        });
+                    }
+                }
+                None => {
+                    return Err(QueryError::ColumnNotExists {
+                        table: schema.name.to_string(),
+                        column: col_name.name.to_string(),
+                    })
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

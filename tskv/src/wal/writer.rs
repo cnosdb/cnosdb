@@ -2,11 +2,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use models::meta_data::VnodeId;
+use models::predicate::domain::TimeRanges;
 use models::schema::{make_owner, Precision};
 use models::{SeriesId, SeriesKey};
 use serde::{Deserialize, Serialize};
 
-use super::reader::UpdateSeriesKeysBlock;
+use super::reader::{DeleteBlock, UpdateSeriesKeysBlock};
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion};
@@ -232,6 +233,46 @@ impl WalWriter {
         Ok((seq, written_size))
     }
 
+    pub async fn delete(
+        &mut self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        vnode_id: VnodeId,
+        series_ids: &[SeriesId],
+        time_ranges: &TimeRanges,
+    ) -> Result<(u64, usize)> {
+        let seq = self.max_sequence;
+
+        let block = DeleteBlock::new(
+            tenant.to_string(),
+            database.to_string(),
+            table.to_string(),
+            vnode_id,
+            series_ids.to_vec(),
+            time_ranges.clone(),
+        );
+        let mut block_buf = vec![];
+        block.encode(&mut block_buf)?;
+
+        let written_size = self
+            .inner
+            .write_record(
+                RecordDataVersion::V1 as u8,
+                RecordDataType::Wal as u8,
+                [&[WalType::Delete as u8][..], &seq.to_be_bytes(), &block_buf].as_slice(),
+            )
+            .await?;
+
+        if self.config.sync {
+            self.inner.sync().await?;
+        }
+        // write & fsync succeed
+        self.max_sequence += 1;
+        self.size += written_size as u64;
+        Ok((seq, written_size))
+    }
+
     pub async fn append_raft_entry(
         &mut self,
         raft_entry: &raft_store::RaftEntry,
@@ -319,6 +360,7 @@ pub enum Task {
     DeleteVnode(DeleteVnodeTask),
     DeleteTable(DeleteTableTask),
     UpdateSeriesKeys(UpdateSeriesKeys),
+    Delete(DeleteTask),
 }
 
 impl Task {
@@ -372,6 +414,24 @@ impl Task {
         })
     }
 
+    pub fn new_delete(
+        tenant: String,
+        database: String,
+        table: String,
+        vnode_id: VnodeId,
+        series_ids: Vec<SeriesId>,
+        time_ranges: TimeRanges,
+    ) -> Self {
+        Self::Delete(DeleteTask {
+            tenant,
+            database,
+            table,
+            vnode_id,
+            series_ids,
+            time_ranges,
+        })
+    }
+
     pub fn tenant_database(&self) -> String {
         match self {
             Self::Write(WriteTask {
@@ -386,6 +446,9 @@ impl Task {
             Self::UpdateSeriesKeys(UpdateSeriesKeys {
                 tenant, database, ..
             }) => make_owner(tenant, database),
+            Self::Delete(DeleteTask {
+                tenant, database, ..
+            }) => make_owner(tenant, database),
         }
     }
 
@@ -396,6 +459,7 @@ impl Task {
             //todo: change delete table to delete time series;
             Self::DeleteTable(DeleteTableTask { .. }) => None,
             Self::UpdateSeriesKeys(UpdateSeriesKeys { vnode_id, .. }) => Some(*vnode_id),
+            Self::Delete(DeleteTask { vnode_id, .. }) => Some(*vnode_id),
         }
     }
 }
@@ -489,6 +553,16 @@ pub struct UpdateSeriesKeys {
     pub series_ids: Vec<SeriesId>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteTask {
+    pub tenant: String,
+    pub database: String,
+    pub table: String,
+    pub vnode_id: VnodeId,
+    pub series_ids: Vec<SeriesId>,
+    pub time_ranges: TimeRanges,
+}
+
 #[cfg(test)]
 mod test {
     use std::path::PathBuf;
@@ -551,7 +625,7 @@ mod test {
                     Block::RaftLog(e) => {
                         writer.append_raft_entry(e).await.unwrap();
                     }
-                    Block::UpdateSeriesKeys(_) | Block::Unknown => {
+                    Block::UpdateSeriesKeys(_) | Block::Delete(_) | Block::Unknown => {
                         // ignore
                     }
                 }

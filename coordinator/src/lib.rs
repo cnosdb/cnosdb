@@ -12,10 +12,10 @@ use futures::Stream;
 use meta::model::{MetaClientRef, MetaRef};
 use models::meta_data::{ReplicaAllInfo, ReplicationSet, ReplicationSetId, VnodeAllInfo};
 use models::object_reference::ResolvedTable;
-use models::predicate::domain::ResolvedPredicateRef;
+use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef};
 use models::schema::{Precision, TskvTableSchemaRef};
 use protocol_parser::Line;
-use protos::kv_service::{AdminCommandRequest, UpdateSetValue};
+use protos::kv_service::{AdminCommandRequest, RaftWriteCommand, UpdateSetValue};
 use raft::manager::RaftNodesManager;
 use trace::SpanContext;
 use tskv::reader::QueryOption;
@@ -93,11 +93,8 @@ pub trait Coordinator: Send + Sync {
 
     async fn exec_write_replica_points(
         &self,
-        tenant: &str,
-        db_name: &str,
-        data: Arc<Vec<u8>>,
-        precision: Precision,
         replica: ReplicationSet,
+        request: RaftWriteCommand,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()>;
 
@@ -128,6 +125,12 @@ pub trait Coordinator: Send + Sync {
         option: QueryOption,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream>;
+
+    async fn delete_from_table(
+        &self,
+        table: &ResolvedTable,
+        predicate: &ResolvedPredicate,
+    ) -> CoordinatorResult<()>;
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()>;
 

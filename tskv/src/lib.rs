@@ -10,9 +10,9 @@ use async_trait::async_trait;
 pub use compaction::check::vnode_table_checksum_schema;
 use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::{NodeId, VnodeId};
-use models::predicate::domain::{ColumnDomains, TimeRange};
+use models::predicate::domain::{ColumnDomains, ResolvedPredicate};
 use models::schema::{Precision, TableColumn};
-use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
+use models::{SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use serde::{Deserialize, Serialize};
 use trace::SpanContext;
@@ -64,6 +64,7 @@ pub fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) ->
 
 pub type EngineRef = Arc<dyn Engine>;
 
+#[derive(PartialEq, Eq, Hash)]
 pub struct UpdateSetValue<K, V> {
     pub key: K,
     pub value: Option<V>,
@@ -215,13 +216,14 @@ pub trait Engine: Send + Sync + Debug {
     ) -> Result<()>;
 
     // TODO this method is not completed,
-    async fn delete_series(
+    // TODO(zipper): Delete data on table
+    async fn delete_from_table(
         &self,
+        vnode_id: VnodeId,
         tenant: &str,
         database: &str,
-        series_ids: &[SeriesId],
-        field_ids: &[ColumnId],
-        time_range: &TimeRange,
+        table: &str,
+        predicate: &ResolvedPredicate,
     ) -> Result<()>;
 
     /// Read index of a storage unit, find series ids that matches the filter.

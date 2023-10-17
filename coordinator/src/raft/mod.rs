@@ -5,7 +5,10 @@ use meta::model::MetaRef;
 use models::meta_data::{NodeId, VnodeId};
 use models::schema::Precision;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
-use protos::kv_service::{GetFilesMetaResponse, GetVnodeSnapFilesMetaRequest, WriteReplicaRequest};
+use protos::kv_service::{
+    raft_write_command, GetFilesMetaResponse, GetVnodeSnapFilesMetaRequest, RaftWriteCommand,
+    WriteDataRequest,
+};
 use protos::models_helper::parse_prost_bytes;
 use replication::errors::{ReplicationError, ReplicationResult};
 use replication::{ApplyContext, ApplyStorage};
@@ -126,21 +129,16 @@ impl TskvEngineStorage {
 
         Ok(resp)
     }
-}
 
-#[async_trait::async_trait]
-impl ApplyStorage for TskvEngineStorage {
-    async fn apply(
+    async fn apply_write_data(
         &self,
         ctx: &ApplyContext,
-        req: &replication::Request,
-    ) -> ReplicationResult<replication::Response> {
-        let request = parse_prost_bytes::<WriteReplicaRequest>(req)?;
-
+        request: WriteDataRequest,
+    ) -> ReplicationResult<Vec<u8>> {
         self.storage
             .write_memcache(
                 ctx.index,
-                &request.tenant,
+                &self.tenant,
                 request.data,
                 self.vnode_id,
                 Precision::from(request.precision as u8),
@@ -150,6 +148,38 @@ impl ApplyStorage for TskvEngineStorage {
             .map_err(|err| ReplicationError::ApplyEngineErr {
                 msg: err.to_string(),
             })?;
+
+        Ok(vec![])
+    }
+}
+
+#[async_trait::async_trait]
+impl ApplyStorage for TskvEngineStorage {
+    async fn apply(
+        &self,
+        ctx: &ApplyContext,
+        req: &replication::Request,
+    ) -> ReplicationResult<replication::Response> {
+        let request = parse_prost_bytes::<RaftWriteCommand>(req)?;
+        if let Some(command) = request.command {
+            match command {
+                raft_write_command::Command::WriteData(request) => {
+                    return self.apply_write_data(ctx, request).await;
+                }
+
+                raft_write_command::Command::DropTab(_request) => {}
+
+                raft_write_command::Command::DropColumn(_request) => {}
+
+                raft_write_command::Command::AddColumn(_request) => {}
+
+                raft_write_command::Command::AlterColumn(_request) => {}
+
+                raft_write_command::Command::RenameColumn(_request) => {}
+
+                raft_write_command::Command::UpdateTags(_request) => {}
+            }
+        }
 
         Ok(vec![])
     }

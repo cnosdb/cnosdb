@@ -10,6 +10,7 @@ use spi::query::scheduler::SchedulerRef;
 use spi::QueryError;
 use tskv::kv_option::QueryOptions;
 
+use super::dml::DMLExecution;
 use super::query::SqlQueryExecution;
 use super::stream::trigger::executor::{TriggerExecutorFactory, TriggerExecutorFactoryRef};
 use super::stream::{MicroBatchStreamExecutionBuilder, MicroBatchStreamExecutionDesc};
@@ -109,6 +110,7 @@ impl QueryExecutionFactory for SqlQueryExecutionFactory {
                 self.stream_checker_manager.clone(),
                 ddl_plan,
             ))),
+            Plan::DML(dml_plan) => Ok(Arc::new(DMLExecution::new(state_machine, dml_plan))),
             Plan::SYSTEM(sys_plan) => Ok(Arc::new(SystemExecution::new(
                 state_machine,
                 sys_plan,

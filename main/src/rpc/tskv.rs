@@ -9,7 +9,7 @@ use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
-use models::predicate::domain::{self, QueryArgs, QueryExpr};
+use models::predicate::domain::{self, QueryArgs, QueryExpr, ResolvedPredicate};
 use models::schema::{Precision, TableColumn};
 use models::{record_batch_encode, SeriesKey};
 use protos::kv_service::tskv_service_server::TskvService;
@@ -472,9 +472,9 @@ impl TskvService for TskvServiceImpl {
         self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
     }
 
-    async fn write_replica_points(
+    async fn exec_raft_write_command(
         &self,
-        request: tonic::Request<WriteReplicaRequest>,
+        request: tonic::Request<RaftWriteCommand>,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
         let span = get_span_recorder(request.extensions(), "grpc write_replica_points");
         let inner = request.into_inner();
@@ -497,14 +497,7 @@ impl TskvService for TskvServiceImpl {
 
         if let Err(err) = self
             .coord
-            .exec_write_replica_points(
-                &inner.tenant,
-                &inner.db_name,
-                Arc::new(inner.data),
-                Precision::from(inner.precision as u8),
-                replica,
-                span.span_ctx(),
-            )
+            .exec_write_replica_points(replica, inner, span.span_ctx())
             .await
         {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
@@ -634,6 +627,34 @@ impl TskvService for TskvServiceImpl {
         } else {
             self.bytes_response(FAILED_RESPONSE_CODE, vec![])
         }
+    }
+
+    async fn delete_from_table(
+        &self,
+        request: Request<DeleteFromTableRequest>,
+    ) -> Result<Response<StatusResponse>, Status> {
+        let inner = request.into_inner();
+
+        let predicate = match bincode::deserialize::<ResolvedPredicate>(&inner.predicate) {
+            Ok(p) => p,
+            Err(err) => {
+                return Err(Status::invalid_argument(format!(
+                    "Predicate of delete_from_table is invalid, error: {err}"
+                )))
+            }
+        };
+
+        self.kv_inst
+            .delete_from_table(
+                inner.vnode_id,
+                &inner.tenant,
+                &inner.database,
+                &inner.table,
+                &predicate,
+            )
+            .await?;
+
+        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
     }
 
     async fn fetch_vnode_summary(
