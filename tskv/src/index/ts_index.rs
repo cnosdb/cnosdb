@@ -9,7 +9,7 @@ use bytes::BufMut;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
 use models::predicate::domain::{utf8_from, Domain, Range};
-use models::tag::TagFromParts;
+use models::tag::{self, TagFromParts};
 use models::{utils, SeriesId, SeriesKey, Tag, TagKey, TagValue};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
@@ -612,29 +612,32 @@ impl TSIndex {
         let mut new_keys_set = HashSet::new();
         for key in &old_keys {
             // modify tag value
-            let new_tags_for_series = key
+            let mut old_tags = key
                 .tags
                 .iter()
-                .flat_map(|tag| {
-                    new_tags
-                        .iter()
-                        .find(|new_tag| tag.key == new_tag.key)
-                        .and_then(|new_tag| {
-                            new_tag
-                                .value
-                                .as_ref()
-                                .map(|new_val| Tag::new(tag.key.clone(), new_val.clone()))
-                        })
-                })
+                .map(|Tag { key, value }| (key, Some(value.as_ref())))
+                .collect::<HashMap<_, _>>();
+
+            // 更新 tag value
+            for UpdateSetValue { key, value } in new_tags {
+                old_tags.insert(key, value.as_deref());
+            }
+            // 移除值为 Null 的 tag
+            let mut tags = old_tags
+                .iter()
+                .flat_map(|(key, value)| value.map(|val| Tag::new(key.to_vec(), val.to_vec())))
                 .collect::<Vec<_>>();
 
+            tag::sort_tags(&mut tags);
+
             let new_key = SeriesKey {
-                tags: new_tags_for_series,
+                tags,
                 table: key.table.clone(),
             };
 
             // check conflict
             if self.get_series_id(&new_key).await?.is_some() {
+                trace::warn!("Series already exists: {:?}", new_key);
                 return Err(IndexError::SeriesAlreadyExists {
                     key: key.to_string(),
                 });
