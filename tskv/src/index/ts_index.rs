@@ -914,6 +914,16 @@ pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: Unbounde
                             continue;
                         }
                     };
+                    if let Some(pos) = handle_file.get(&file_id) {
+                        let res = reader_file.seek(*pos);
+                        if let Err(e) = res {
+                            error!(
+                                "Seek index binlog file '{}' failed, err: {}",
+                                file_path.display(),
+                                e
+                            );
+                        }
+                    }
                     while let Ok(Some(block)) = reader_file.next_block().await {
                         if reader_file.pos() <= *handle_file.get(&file_id).unwrap_or(&0) {
                             continue;

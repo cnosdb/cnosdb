@@ -341,6 +341,11 @@ impl BinlogReader {
         self.cursor.pos()
     }
 
+    pub fn seek(&mut self, pos: u64) -> IndexResult<()> {
+        self.cursor.seek(SeekFrom::Start(pos))?;
+        Ok(())
+    }
+
     pub async fn advance_read_offset(&mut self, mut offset: u32) -> IndexResult<()> {
         if offset == 0 {
             offset = self.cursor.pos() as u32;
