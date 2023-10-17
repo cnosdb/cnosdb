@@ -40,7 +40,6 @@ pub struct Database {
     schemas: Arc<DBschemas>,
     ts_indexes: HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>>,
     ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
-    runtime: Arc<Runtime>,
     memory_pool: MemoryPoolRef,
     metrics_register: Arc<MetricsRegister>,
     tsf_factory: TsfFactory,
@@ -48,7 +47,6 @@ pub struct Database {
 
 #[derive(Debug)]
 pub struct DatabaseFactory {
-    runtime: Arc<Runtime>,
     meta: MetaRef,
     memory_pool: MemoryPoolRef,
     metrics_register: Arc<MetricsRegister>,
@@ -61,10 +59,8 @@ impl DatabaseFactory {
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
         opt: Arc<Options>,
-        runtime: Arc<Runtime>,
     ) -> Self {
         Self {
-            runtime,
             meta,
             memory_pool,
             metrics_register,
@@ -76,7 +72,6 @@ impl DatabaseFactory {
         Database::new(
             schema,
             self.opt.clone(),
-            self.runtime.clone(),
             self.meta.clone(),
             self.memory_pool.clone(),
             self.metrics_register.clone(),
@@ -89,7 +84,6 @@ impl Database {
     pub async fn new(
         schema: DatabaseSchema,
         opt: Arc<Options>,
-        runtime: Arc<Runtime>,
         meta: MetaRef,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
@@ -108,7 +102,6 @@ impl Database {
             schemas: Arc::new(DBschemas::new(schema, meta).await.context(SchemaSnafu)?),
             ts_indexes: HashMap::new(),
             ts_families: HashMap::new(),
-            runtime,
             memory_pool,
             metrics_register,
             tsf_factory,
@@ -119,6 +112,7 @@ impl Database {
 
     pub fn open_tsfamily(
         &mut self,
+        runtime: Arc<Runtime>,
         ver: Arc<Version>,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
@@ -127,7 +121,7 @@ impl Database {
         let tf =
             self.tsf_factory
                 .create_tsf(tf_id, ver.clone(), flush_task_sender, compact_task_sender);
-        tf.schedule_compaction(self.runtime.clone());
+        tf.schedule_compaction(runtime);
         self.ts_families
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }

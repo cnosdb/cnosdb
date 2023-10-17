@@ -35,13 +35,7 @@ impl VersionSet {
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> Self {
-        let db_factory = DatabaseFactory::new(
-            meta,
-            memory_pool.clone(),
-            metrics_register,
-            opt,
-            runtime.clone(),
-        );
+        let db_factory = DatabaseFactory::new(meta, memory_pool.clone(), metrics_register, opt);
 
         Self {
             dbs: HashMap::new(),
@@ -57,7 +51,7 @@ impl VersionSet {
         let register = Arc::new(MetricsRegister::default());
         let memory_pool = Arc::new(memory_pool::GreedyMemoryPool::default());
         let meta = Arc::new(AdminMeta::mock());
-        let db_factory = DatabaseFactory::new(meta, memory_pool, register, opt, runtime.clone());
+        let db_factory = DatabaseFactory::new(meta, memory_pool, register, opt);
         Self {
             dbs: HashMap::new(),
             runtime,
@@ -77,13 +71,7 @@ impl VersionSet {
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
-        let db_factory = DatabaseFactory::new(
-            meta.clone(),
-            memory_pool,
-            metrics_register,
-            opt,
-            runtime.clone(),
-        );
+        let db_factory = DatabaseFactory::new(meta.clone(), memory_pool, metrics_register, opt);
 
         for ver in ver_set.into_values() {
             let owner = ver.tenant_database().to_string();
@@ -103,6 +91,7 @@ impl VersionSet {
 
             let tf_id = ver.tf_id();
             db.write().await.open_tsfamily(
+                runtime.clone(),
                 ver,
                 flush_task_sender.clone(),
                 compact_task_sender.clone(),
