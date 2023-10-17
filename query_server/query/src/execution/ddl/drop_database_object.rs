@@ -65,7 +65,6 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     ],
                     ResourceOperator::DropTable,
                     &None,
-                    None,
                 );
                 ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
                     .await?;

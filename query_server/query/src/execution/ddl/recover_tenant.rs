@@ -45,7 +45,6 @@ impl DDLDefinitionTask for RecoverTenantTask {
             vec![tenant_name.clone()],
             ResourceOperator::DropTenant,
             &None,
-            None,
         );
         resourceinfo.set_status(ResourceStatus::Cancel);
         resourceinfo.set_comment("");

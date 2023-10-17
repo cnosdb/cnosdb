@@ -3,12 +3,14 @@ use std::sync::Arc;
 
 use meta::model::meta_admin::AdminMeta;
 use models::oid::Identifier;
-use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableSchema};
+use models::schema::{
+    ResourceInfo, ResourceOperator, ResourceStatus, TableSchema, TskvTableSchema,
+};
 use models::utils::now_timestamp_nanos;
-use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab};
+use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab, UpdateTags};
 use protos::kv_service::{
     AddColumnRequest, AdminCommandRequest, AlterColumnRequest, DropColumnRequest, DropDbRequest,
-    DropTableRequest, RenameColumnRequest,
+    DropTableRequest, RenameColumnRequest, UpdateSetValue, UpdateTagsRequest,
 };
 use tracing::{debug, error, info};
 
@@ -111,13 +113,15 @@ impl ResourceManager {
             ResourceOperator::DropTable => {
                 ResourceManager::drop_table(coord.clone(), &resourceinfo).await
             }
-            ResourceOperator::AddColumn
-            | ResourceOperator::DropColumn
-            | ResourceOperator::AlterColumn
-            | ResourceOperator::RenameTagName => {
+            ResourceOperator::AddColumn(..)
+            | ResourceOperator::DropColumn(..)
+            | ResourceOperator::AlterColumn(..)
+            | ResourceOperator::RenameTagName(..) => {
                 ResourceManager::alter_table(coord.clone(), &resourceinfo).await
             }
-            _ => Ok(false),
+            ResourceOperator::UpdateTagValue(..) => {
+                ResourceManager::update_tag_value(coord.clone(), &resourceinfo).await
+            }
         };
 
         let mut status_comment = (ResourceStatus::Successed, String::default());
@@ -286,7 +290,6 @@ impl ResourceManager {
         let names = resourceinfo.get_names();
         if names.len() == 4 {
             let tenant_name = names.get(0).unwrap();
-            let column_name = names.get(3).unwrap();
 
             let tenant =
                 coord
@@ -296,64 +299,67 @@ impl ResourceManager {
                         name: tenant_name.clone(),
                     })?;
 
-            let alter_info =
-                resourceinfo
-                    .get_alter_info()
-                    .ok_or(CoordinatorError::CommonError {
-                        msg: "alter_table should have alter_info".to_string(),
-                    })?;
+            let mut schema = TskvTableSchema::default();
             let req = match resourceinfo.get_operator() {
-                ResourceOperator::AddColumn => {
-                    if let Some(table_column) = alter_info.1.column(&alter_info.0) {
+                ResourceOperator::AddColumn(new_column_name, table_schema) => {
+                    if let Some(table_column) = table_schema.column(new_column_name) {
+                        schema = table_schema.clone();
                         Some(AdminCommandRequest {
                             tenant: tenant_name.to_string(),
                             command: Some(Command::AddColumn(AddColumnRequest {
-                                db: alter_info.1.db.to_owned(),
-                                table: alter_info.1.name.to_string(),
+                                db: table_schema.db.to_owned(),
+                                table: table_schema.name.to_string(),
                                 column: table_column.encode()?,
                             })),
                         })
                     } else {
                         return Err(CoordinatorError::CommonError {
-                            msg: format!("Column {} not found.", alter_info.0),
+                            msg: format!("Column {} not found.", new_column_name),
                         });
                     }
                 }
-                ResourceOperator::DropColumn => Some(AdminCommandRequest {
-                    tenant: tenant_name.to_string(),
-                    command: Some(Command::DropColumn(DropColumnRequest {
-                        db: alter_info.1.db.to_owned(),
-                        table: alter_info.1.name.to_string(),
-                        column: alter_info.0.clone(),
-                    })),
-                }),
-                ResourceOperator::AlterColumn => {
-                    if let Some(table_column) = alter_info.1.column(&alter_info.0) {
+                ResourceOperator::DropColumn(drop_column_name, table_schema) => {
+                    schema = table_schema.clone();
+                    Some(AdminCommandRequest {
+                        tenant: tenant_name.to_string(),
+                        command: Some(Command::DropColumn(DropColumnRequest {
+                            db: table_schema.db.to_owned(),
+                            table: table_schema.name.to_string(),
+                            column: drop_column_name.clone(),
+                        })),
+                    })
+                }
+                ResourceOperator::AlterColumn(alter_column_name, table_schema) => {
+                    if let Some(table_column) = table_schema.column(alter_column_name) {
+                        schema = table_schema.clone();
                         Some(AdminCommandRequest {
                             tenant: tenant_name.to_string(),
                             command: Some(Command::AlterColumn(AlterColumnRequest {
-                                db: alter_info.1.db.to_owned(),
-                                table: alter_info.1.name.to_string(),
-                                name: alter_info.0.clone(),
+                                db: table_schema.db.to_owned(),
+                                table: table_schema.name.to_string(),
+                                name: alter_column_name.clone(),
                                 column: table_column.encode()?,
                             })),
                         })
                     } else {
                         return Err(CoordinatorError::CommonError {
-                            msg: format!("Column {} not found.", alter_info.0),
+                            msg: format!("Column {} not found.", alter_column_name),
                         });
                     }
                 }
-                ResourceOperator::RenameTagName => Some(AdminCommandRequest {
-                    tenant: tenant_name.to_string(),
-                    command: Some(Command::RenameColumn(RenameColumnRequest {
-                        db: alter_info.1.db.to_owned(),
-                        table: alter_info.1.name.to_string(),
-                        old_name: column_name.clone(),
-                        new_name: alter_info.0.clone(),
-                        dry_run: false,
-                    })),
-                }),
+                ResourceOperator::RenameTagName(old_column_name, new_column_name, table_schema) => {
+                    schema = table_schema.clone();
+                    Some(AdminCommandRequest {
+                        tenant: tenant_name.to_string(),
+                        command: Some(Command::RenameColumn(RenameColumnRequest {
+                            db: table_schema.db.to_owned(),
+                            table: table_schema.name.to_string(),
+                            old_name: old_column_name.clone(),
+                            new_name: new_column_name.clone(),
+                            dry_run: false,
+                        })),
+                    })
+                }
                 _ => None,
             };
 
@@ -361,9 +367,7 @@ impl ResourceManager {
                 coord.broadcast_command(req.unwrap()).await?;
 
                 tenant
-                    .update_table(&TableSchema::TsKvTableSchema(Arc::new(
-                        alter_info.1.clone(),
-                    )))
+                    .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
                     .await?;
             }
 
@@ -373,6 +377,46 @@ impl ResourceManager {
                 names: resourceinfo.get_names().join("/"),
             })
         }
+    }
+
+    async fn update_tag_value(
+        coord: Arc<dyn Coordinator>,
+        resourceinfo: &ResourceInfo,
+    ) -> CoordinatorResult<bool> {
+        if let ResourceOperator::UpdateTagValue(update_set_value, series_keys, replica_set) =
+            resourceinfo.get_operator()
+        {
+            let names = resourceinfo.get_names();
+            if names.len() == 4 {
+                let tenant_name = names.get(0).unwrap();
+                let db_name = names.get(1).unwrap();
+
+                let new_tags_vec: Vec<UpdateSetValue> = update_set_value
+                    .iter()
+                    .map(|e| UpdateSetValue {
+                        key: e.0.clone(),
+                        value: e.1.clone(),
+                    })
+                    .collect();
+                let update_tags_request = UpdateTagsRequest {
+                    db: db_name.clone(),
+                    new_tags: new_tags_vec,
+                    matched_series: series_keys.clone(),
+                    dry_run: false,
+                };
+
+                let req = AdminCommandRequest {
+                    tenant: tenant_name.clone(),
+                    command: Some(UpdateTags(update_tags_request)),
+                };
+
+                coord
+                    .broadcast_command_by_vnode(req, replica_set.to_vec())
+                    .await?;
+            }
+        }
+
+        Ok(true)
     }
 
     pub async fn add_resource_task(

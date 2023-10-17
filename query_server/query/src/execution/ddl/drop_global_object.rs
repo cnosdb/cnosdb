@@ -81,7 +81,6 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                             vec![name.clone()],
                             ResourceOperator::DropTenant,
                             after,
-                            None,
                         );
                         ResourceManager::add_resource_task(
                             query_state_machine.coord.clone(),

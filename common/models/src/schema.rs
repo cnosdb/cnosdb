@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::codec::Encoding;
 use crate::gis::data_type::Geometry;
+use crate::meta_data::ReplicationSet;
 use crate::oid::{Identifier, Oid};
 use crate::utils::{
     now_timestamp_nanos, DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS,
@@ -62,11 +63,15 @@ pub enum ResourceOperator {
     DropTenant,
     DropDatabase,
     DropTable,
-    DropColumn,
-    AddColumn,
-    AlterColumn,
-    RenameTagName,
-    UpdateTagValue,
+    AddColumn(String, TskvTableSchema),
+    DropColumn(String, TskvTableSchema),
+    AlterColumn(String, TskvTableSchema),
+    RenameTagName(String, String, TskvTableSchema),
+    UpdateTagValue(
+        Vec<(Vec<u8>, Option<Vec<u8>>)>,
+        Vec<Vec<u8>>,
+        Vec<ReplicationSet>,
+    ),
 }
 impl fmt::Display for ResourceOperator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -74,11 +79,11 @@ impl fmt::Display for ResourceOperator {
             ResourceOperator::DropTenant => write!(f, "DropTenant"),
             ResourceOperator::DropDatabase => write!(f, "DropDatabase"),
             ResourceOperator::DropTable => write!(f, "DropTable"),
-            ResourceOperator::DropColumn => write!(f, "DropColumn"),
-            ResourceOperator::AddColumn => write!(f, "AddColumn"),
-            ResourceOperator::AlterColumn => write!(f, "AlterColumn"),
-            ResourceOperator::RenameTagName => write!(f, "RenameTagName"),
-            ResourceOperator::UpdateTagValue => write!(f, "UpdateTagValue"),
+            ResourceOperator::DropColumn(..) => write!(f, "DropColumn"),
+            ResourceOperator::AddColumn(..) => write!(f, "AddColumn"),
+            ResourceOperator::AlterColumn(..) => write!(f, "AlterColumn"),
+            ResourceOperator::RenameTagName(..) => write!(f, "RenameTagName"),
+            ResourceOperator::UpdateTagValue(..) => write!(f, "UpdateTagValue"),
         }
     }
 }
@@ -114,7 +119,6 @@ pub struct ResourceInfo {
     after: Option<Duration>, // None means now
     status: ResourceStatus,
     comment: String,
-    alter_info: Option<(String, TskvTableSchema)>,
 }
 
 impl ResourceInfo {
@@ -123,7 +127,6 @@ impl ResourceInfo {
         names: Vec<String>,
         operator: ResourceOperator,
         after: &Option<Duration>,
-        alter_info: Option<(String, TskvTableSchema)>,
     ) -> Self {
         let mut res_info = ResourceInfo {
             time: now_timestamp_nanos(),
@@ -134,7 +137,6 @@ impl ResourceInfo {
             after: after.clone(),
             status: ResourceStatus::Executing,
             comment: String::default(),
-            alter_info,
         };
         if let Some(after) = after {
             let after_nanos = after.to_nanoseconds();
@@ -172,10 +174,6 @@ impl ResourceInfo {
 
     pub fn get_comment(&self) -> &String {
         &self.comment
-    }
-
-    pub fn get_alter_info(&self) -> Option<(String, TskvTableSchema)> {
-        self.alter_info.clone()
     }
 
     pub fn increase_try_count(&mut self) {
