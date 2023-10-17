@@ -472,9 +472,9 @@ impl TskvService for TskvServiceImpl {
         self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
     }
 
-    async fn write_replica_points(
+    async fn exec_raft_write_command(
         &self,
-        request: tonic::Request<WriteReplicaRequest>,
+        request: tonic::Request<RaftWriteCommand>,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
         let span = get_span_recorder(request.extensions(), "grpc write_replica_points");
         let inner = request.into_inner();
@@ -497,14 +497,7 @@ impl TskvService for TskvServiceImpl {
 
         if let Err(err) = self
             .coord
-            .exec_write_replica_points(
-                &inner.tenant,
-                &inner.db_name,
-                Arc::new(inner.data),
-                Precision::from(inner.precision as u8),
-                replica,
-                span.span_ctx(),
-            )
+            .exec_write_replica_points(replica, inner, span.span_ctx())
             .await
         {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())

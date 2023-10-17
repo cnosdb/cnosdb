@@ -15,7 +15,7 @@ use models::object_reference::ResolvedTable;
 use models::predicate::domain::ResolvedPredicateRef;
 use models::schema::{Precision, TskvTableSchemaRef};
 use protocol_parser::Line;
-use protos::kv_service::{AdminCommandRequest, UpdateSetValue};
+use protos::kv_service::{AdminCommandRequest, RaftWriteCommand, UpdateSetValue};
 use raft::manager::RaftNodesManager;
 use trace::SpanContext;
 use tskv::reader::QueryOption;
@@ -93,11 +93,8 @@ pub trait Coordinator: Send + Sync {
 
     async fn exec_write_replica_points(
         &self,
-        tenant: &str,
-        db_name: &str,
-        data: Arc<Vec<u8>>,
-        precision: Precision,
         replica: ReplicationSet,
+        request: RaftWriteCommand,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()>;
 
