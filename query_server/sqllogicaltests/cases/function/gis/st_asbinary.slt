@@ -31,5 +31,5 @@ select st_AsBinary('POINT(0, 0)');
 ----
 NULL
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_AsBinary\(Utf8, Null\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_AsBinary\(Utf8\)", .*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"st_AsBinary\\" expects 1 arguments, but 2 were provided",.*
 select st_AsBinary('POINT(0, 0)', null);
