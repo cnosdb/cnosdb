@@ -52,8 +52,8 @@ pub struct TsmTombstone {
 }
 
 impl TsmTombstone {
-    pub async fn open(path: impl AsRef<Path>, file_id: u64) -> Result<Self> {
-        let path = file_utils::make_tsm_tombstone_file(path, file_id);
+    pub async fn open(path: impl AsRef<Path>, tsm_file_id: u64) -> Result<Self> {
+        let path = file_utils::make_tsm_tombstone_file(path, tsm_file_id);
         let (mut reader, writer) = if file_manager::try_exists(&path) {
             (
                 Some(record_file::Reader::open(&path).await?),
@@ -79,8 +79,8 @@ impl TsmTombstone {
     pub async fn with_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let parent = path.parent().expect("a valid tsm/tombstone file path");
-        let tsm_id = file_utils::get_tsm_file_id_by_path(path)?;
-        Self::open(parent, tsm_id).await
+        let tsm_file_id = file_utils::get_tsm_file_id_by_path(path)?;
+        Self::open(parent, tsm_file_id).await
     }
 
     async fn load_all(

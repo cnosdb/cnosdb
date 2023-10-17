@@ -450,7 +450,7 @@ impl Iterator for BlockMetaIterator {
 
 #[derive(Clone)]
 pub struct TsmReader {
-    file_id: u64,
+    tsm_file_id: u64,
     reader: Arc<AsyncFile>,
     index_reader: Arc<IndexReader>,
     tombstone: Arc<RwLock<TsmTombstone>>,
@@ -459,13 +459,13 @@ pub struct TsmReader {
 impl TsmReader {
     pub async fn open(tsm_path: impl AsRef<Path>) -> Result<Self> {
         let path = tsm_path.as_ref().to_path_buf();
-        let file_id = file_utils::get_tsm_file_id_by_path(&path)?;
+        let tsm_file_id = file_utils::get_tsm_file_id_by_path(&path)?;
         let tsm = Arc::new(file_manager::open_file(tsm_path).await?);
-        let tsm_idx = IndexReader::open(file_id, tsm.clone()).await?;
+        let tsm_idx = IndexReader::open(tsm_file_id, tsm.clone()).await?;
         let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
-        let tombstone = TsmTombstone::open(tombstone_path, file_id).await?;
+        let tombstone = TsmTombstone::open(tombstone_path, tsm_file_id).await?;
         Ok(Self {
-            file_id,
+            tsm_file_id,
             reader: tsm,
             index_reader: Arc::new(tsm_idx),
             tombstone: Arc::new(RwLock::new(tombstone)),
@@ -540,7 +540,7 @@ impl TsmReader {
     }
 
     pub(crate) fn file_id(&self) -> u64 {
-        self.file_id
+        self.tsm_file_id
     }
 
     pub(crate) fn bloom_filter(&self) -> Arc<BloomFilter> {
@@ -551,7 +551,7 @@ impl TsmReader {
 impl Debug for TsmReader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TsmReader")
-            .field("id", &self.file_id)
+            .field("id", &self.file_id())
             .field("fd", &self.reader.fd())
             .finish()
     }

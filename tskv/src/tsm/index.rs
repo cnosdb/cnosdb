@@ -35,13 +35,13 @@ pub struct Index {
 impl Index {
     #[inline(always)]
     pub fn new(
-        tsm_id: u64,
+        tsm_file_id: u64,
         bloom_filter: Arc<BloomFilter>,
         data: Vec<u8>,
         field_id_offs: Vec<(FieldId, usize)>,
     ) -> Self {
         Self {
-            tsm_file_id: tsm_id,
+            tsm_file_id,
             bloom_filter,
             data,
             field_id_offs,
