@@ -40,8 +40,6 @@ pub struct Database {
     schemas: Arc<DBschemas>,
     ts_indexes: HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>>,
     ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
-    memory_pool: MemoryPoolRef,
-    metrics_register: Arc<MetricsRegister>,
     tsf_factory: TsfFactory,
 }
 
@@ -102,8 +100,6 @@ impl Database {
             schemas: Arc::new(DBschemas::new(schema, meta).await.context(SchemaSnafu)?),
             ts_indexes: HashMap::new(),
             ts_families: HashMap::new(),
-            memory_pool,
-            metrics_register,
             tsf_factory,
         };
 

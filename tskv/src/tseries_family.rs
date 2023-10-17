@@ -714,9 +714,7 @@ impl TsfFactory {
             metrics_register,
         }
     }
-}
 
-impl TsfFactory {
     pub fn create_tsf(
         &self,
         tf_id: TseriesFamilyId,
