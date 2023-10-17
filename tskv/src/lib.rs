@@ -64,6 +64,7 @@ pub fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) ->
 
 pub type EngineRef = Arc<dyn Engine>;
 
+#[derive(PartialEq, Eq, Hash)]
 pub struct UpdateSetValue<K, V> {
     pub key: K,
     pub value: Option<V>,
