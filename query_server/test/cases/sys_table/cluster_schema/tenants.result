@@ -107,6 +107,11 @@ test_ts_tenant1,"{""comment"":null,""limiter_config"":null}"
 200 OK
 
 
+-- EXECUTE SQL: alter tenant cnosdb set _limiter = '{"object_config":{"max_users_number":1,"max_databases":3,"max_shard_number":2,"max_replicate_number":2,"max_retention_time":30},"request_config":{"coord_data_in":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"coord_data_out":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"coord_queries":null,"coord_writes":null}}'; --
+422 Unprocessable Entity
+{"error_code":"010075","error_message":"Tenant cnosdb cannot be restricted"}
+-- ERROR:  --
+
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 -- AFTER_SORT --
 200 OK

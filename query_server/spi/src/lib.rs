@@ -495,6 +495,12 @@ pub enum QueryError {
     AnalyzePushedFilter {
         reason: String,
     },
+
+    #[snafu(display("Tenant {} cannot be restricted", tenant))]
+    #[error_code(code = 75)]
+    ForbiddenLimitTenant {
+        tenant: String,
+    },
 }
 
 impl From<ParserError> for QueryError {
