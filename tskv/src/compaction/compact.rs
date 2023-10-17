@@ -249,6 +249,10 @@ impl CompactingBlockMetaGroup {
         Ok(merged_blks)
     }
 
+    pub fn into_compacting_block_metas(self) -> Vec<CompactingBlockMeta> {
+        self.blk_metas
+    }
+
     pub fn is_empty(&self) -> bool {
         self.blk_metas.is_empty()
     }
@@ -636,6 +640,10 @@ impl CompactIterator {
             return Some(g);
         }
         None
+    }
+
+    pub fn curr_fid(&self) -> Option<FieldId> {
+        self.curr_fid
     }
 }
 

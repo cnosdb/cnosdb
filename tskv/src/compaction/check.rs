@@ -1,11 +1,10 @@
 use std::cmp;
 use std::collections::HashMap;
-use std::fmt::{Display, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use blake3::Hasher;
-use datafusion::arrow::array::{StringBuilder, UInt32Array};
+use datafusion::arrow::array::{StringBuilder, TimestampNanosecondArray, UInt32Array, UInt64Array};
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef,
 };
@@ -14,12 +13,14 @@ use models::predicate::domain::TimeRange;
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
 use tokio::sync::RwLock;
 
+use super::CompactingBlockMeta;
 use crate::compaction::CompactIterator;
 use crate::error::{Error, Result};
 use crate::tseries_family::TseriesFamily;
 use crate::tsm::{DataBlock, TsmReader};
 use crate::TseriesFamilyId;
 
+/// Duration of each TimeRangeHashTreeNode, 24 hour.
 const DEFAULT_DURATION: i64 = 24 * 60 * 60 * 1_000_000_000;
 
 pub type Hash = [u8; 32];
@@ -69,15 +70,17 @@ impl VnodeHashTreeNode {
     }
 }
 
-impl Display for VnodeHashTreeNode {
+impl std::fmt::Display for VnodeHashTreeNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{{ VnodeId: {}, fields: [ ", self.vnode_id))?;
-        for v in self.fields.iter() {
-            v.fmt(f)?;
-            f.write_str(", ")?;
+        write!(f, "{{ \"vnode_id\": {}, \"fields\": [ ", self.vnode_id)?;
+        let last_field_i = self.fields.len() - 1;
+        for (i, node) in self.fields.iter().enumerate() {
+            write!(f, "{node}")?;
+            if i < last_field_i {
+                write!(f, ", ")?;
+            }
         }
-        f.write_str("] }")?;
-        Ok(())
+        write!(f, "] }}")
     }
 }
 
@@ -122,19 +125,21 @@ impl FieldHashTreeNode {
     }
 }
 
-impl Display for FieldHashTreeNode {
+impl std::fmt::Display for FieldHashTreeNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (cid, sid) = self.column_series();
-        f.write_fmt(format_args!(
-            "{{ SeriesId: {}, ColumnId: {}, values: [ ",
-            sid, cid
-        ))?;
-        for v in self.time_ranges.iter() {
-            v.fmt(f)?;
-            f.write_str(", ")?;
+        write!(
+            f,
+            "{{ \"series_id\": {sid}, \"column_id\": {cid}, \"values\": [ "
+        )?;
+        let last_tr_i = self.time_ranges.len() - 1;
+        for (i, node) in self.time_ranges.iter().enumerate() {
+            write!(f, "{node}")?;
+            if i < last_tr_i {
+                write!(f, ", ")?;
+            }
         }
-        f.write_str("] }")?;
-        Ok(())
+        write!(f, "] }}")
     }
 }
 
@@ -159,57 +164,98 @@ impl TimeRangeHashTreeNode {
     }
 }
 
-impl Display for TimeRangeHashTreeNode {
+impl std::fmt::Display for TimeRangeHashTreeNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{{ time_range: ({}, {}), hash: ",
+        write!(
+            f,
+            "{{ \"time_range\": [{}, {}], \"hash\": \"",
             self.min_ts, self.max_ts
-        ))?;
+        )?;
         for v in self.hash {
             f.write_fmt(format_args!("{:x}", v))?;
         }
-        f.write_char('}')?;
-        Ok(())
+        write!(f, "\" }}")
     }
 }
 
 pub fn vnode_table_checksum_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        ArrowField::new("VNODE_ID", ArrowDataType::UInt32, false),
-        ArrowField::new("CHECK_SUM", ArrowDataType::Utf8, false),
+        ArrowField::new("vnode_id", ArrowDataType::UInt32, false),
+        ArrowField::new("checksum", ArrowDataType::Utf8, false),
     ]))
 }
 
+pub fn vnode_field_time_range_table_checksum_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        ArrowField::new("vnode_id", ArrowDataType::UInt32, false),
+        ArrowField::new("field_Id", ArrowDataType::UInt32, false),
+        ArrowField::new("min_ts", ArrowDataType::UInt32, false),
+        ArrowField::new("max_ts", ArrowDataType::UInt32, false),
+        ArrowField::new("checksum", ArrowDataType::Utf8, false),
+    ]))
+}
+
+/// Get checksum of all data of a vnode, returns RecordBatch with columns of vnode_id and it's checksum, for example:
+///
+/// | vnode_id | checksum |
+/// | -------- | -------- |
+/// | 1        | a1a2a3a4 |
 pub(crate) async fn vnode_checksum(vnode: Arc<RwLock<TseriesFamily>>) -> Result<RecordBatch> {
     let vnode_id = vnode.read().await.tf_id();
     let root_node = vnode_hash_tree(vnode).await?;
 
     let capacity = root_node.len();
     let mut vnode_id_array = UInt32Array::builder(capacity);
-    // let mut field_id_array = UInt64Array::builder(capacity);
-    // let mut min_time_array = TimestampNanosecondArray::builder(capacity);
-    // let mut max_time_array = TimestampNanosecondArray::builder(capacity);
     let mut check_sum_array = StringBuilder::with_capacity(capacity, 32 * capacity);
-
-    // for field in root_node.fields {
-    //     for time_range in field.time_ranges {
-    //         vnode_id_array.append_value(vnode_id);
-    //         field_id_array.append_value(field.field_id);
-    //         min_time_array.append_value(time_range.min_ts);
-    //         max_time_array.append_value(time_range.max_ts);
-    //         check_sum_array.append_value(hash_to_string(time_range.checksum()));
-    //     }
-    // }
     vnode_id_array.append_value(vnode_id);
     check_sum_array.append_value(hash_to_string(root_node.checksum()));
-
     RecordBatch::try_new(
         vnode_table_checksum_schema(),
         vec![
             Arc::new(vnode_id_array.finish()),
-            // Arc::new(field_id_array.finish()),
-            // Arc::new(min_time_array.finish()),
-            // Arc::new(max_time_array.finish()),
+            Arc::new(check_sum_array.finish()),
+        ],
+    )
+    .map_err(|err| Error::CommonError {
+        reason: format!("get checksum fail, {}", err),
+    })
+}
+
+/// Get checksum of all data of a vnode, returns RecordBatch with more columns, for example:
+///
+/// | vnode_id | field_id | min_time | max_time | checksum |
+/// | -------- | -------- | -------- | -------- | -------- |
+/// | 1        | 1        | 10000100 | 10000200 | a1a2a3a4 |
+pub(crate) async fn vnode_field_time_range_checksum(
+    vnode: Arc<RwLock<TseriesFamily>>,
+) -> Result<RecordBatch> {
+    let vnode_id = vnode.read().await.tf_id();
+    let root_node = vnode_hash_tree(vnode).await?;
+
+    let capacity = root_node.len();
+    let mut vnode_id_array = UInt32Array::builder(capacity);
+    let mut field_id_array = UInt64Array::builder(capacity);
+    let mut min_time_array = TimestampNanosecondArray::builder(capacity);
+    let mut max_time_array = TimestampNanosecondArray::builder(capacity);
+    let mut check_sum_array = StringBuilder::with_capacity(capacity, 32 * capacity);
+
+    for field in root_node.fields {
+        for time_range in field.time_ranges {
+            vnode_id_array.append_value(vnode_id);
+            field_id_array.append_value(field.field_id);
+            min_time_array.append_value(time_range.min_ts);
+            max_time_array.append_value(time_range.max_ts);
+            check_sum_array.append_value(hash_to_string(time_range.checksum()));
+        }
+    }
+
+    RecordBatch::try_new(
+        vnode_field_time_range_table_checksum_schema(),
+        vec![
+            Arc::new(vnode_id_array.finish()),
+            Arc::new(field_id_array.finish()),
+            Arc::new(min_time_array.finish()),
+            Arc::new(max_time_array.finish()),
             Arc::new(check_sum_array.finish()),
         ],
     )
@@ -241,7 +287,7 @@ pub(crate) async fn vnode_hash_tree(
     // Build a compact iterator, read data, split by time range and then calculate hash.
     let iter = CompactIterator::new(readers, MAX_DATA_BLOCK_SIZE as usize, true);
     let mut fid_tr_hash_val_map: HashMap<FieldId, Vec<(TimeRange, Hash)>> =
-        read_from_compact_iterator(iter, vnode_id, DEFAULT_DURATION).await?;
+        read_from_compact_iterator(iter, DEFAULT_DURATION).await?;
 
     let mut field_ids: Vec<FieldId> = fid_tr_hash_val_map.keys().cloned().collect();
     field_ids.sort();
@@ -254,194 +300,246 @@ pub(crate) async fn vnode_hash_tree(
         }
         vnode_hash_tree_node.push(filed_hash_tree_node);
     }
+    trace::info!("VnodeHashTree({vnode_id}): {}", vnode_hash_tree_node);
 
     Ok(vnode_hash_tree_node)
 }
 
-/// Returns a time range calculated by the given `blk_min_ts1`
-/// and `split_time_range_nanosecs`.
+/// Returns a time range calculated by the given `ts_nanoseconds`
+/// and `duration_nanoseconds`.
 ///
-/// **NOTE**: `split_time_range_nanosecs` must not greater than `blk_min_ts_nanosecs`.
-fn calc_block_partial_time_range(
-    blk_min_ts_nanosecs: Timestamp,
-    split_time_range_nanosecs: i64,
+/// **NOTE**: `duration_nanoseconds` must not greater than `ts_nanoseconds`.
+fn calc_time_range(
+    ts_nanoseconds: Timestamp,
+    duration_nanoseconds: i64,
 ) -> Result<(Timestamp, Timestamp)> {
-    if split_time_range_nanosecs > blk_min_ts_nanosecs.abs() {
+    if duration_nanoseconds < 0 {
+        return Err(Error::Transform {
+            reason: format!("duration({duration_nanoseconds}) < 0 while doing duration_trunc",),
+        });
+    }
+    if duration_nanoseconds > ts_nanoseconds.abs() {
         return Err(Error::Transform {
             reason: format!(
-                "duration({}) > timestamp({}) in duration_trunc",
-                split_time_range_nanosecs, blk_min_ts_nanosecs,
+                "duration({duration_nanoseconds}) > timestamp({ts_nanoseconds}) while doing duration_trunc",
             ),
         });
     }
 
-    let delta_down = blk_min_ts_nanosecs % split_time_range_nanosecs;
+    let delta_down = ts_nanoseconds % duration_nanoseconds;
     // Copy from: chrono::round.rs duration_trunc()
     let min_ts = match delta_down.cmp(&0) {
-        cmp::Ordering::Equal => blk_min_ts_nanosecs,
-        cmp::Ordering::Greater => blk_min_ts_nanosecs - delta_down,
-        cmp::Ordering::Less => blk_min_ts_nanosecs - (split_time_range_nanosecs - delta_down.abs()),
+        cmp::Ordering::Equal => ts_nanoseconds,
+        cmp::Ordering::Greater => ts_nanoseconds - delta_down,
+        cmp::Ordering::Less => ts_nanoseconds - (duration_nanoseconds - delta_down.abs()),
     };
-    Ok((min_ts, min_ts + split_time_range_nanosecs))
+    Ok((min_ts, min_ts + duration_nanoseconds))
 }
 
-fn find_timestamp(timestamps: &[Timestamp], max_timestamp: Timestamp) -> usize {
-    if max_timestamp != Timestamp::MIN {
-        match timestamps.binary_search(&max_timestamp) {
-            Ok(i) => i,
-            Err(i) => i,
+/// Find the index of the given value in a list using binary search,
+/// then return the index and the next value of the index.
+///
+/// If the value is i64::MIN, then return (list.len(), None).
+fn find_value_index_and_next(list: &[Timestamp], value: Timestamp) -> (usize, Option<Timestamp>) {
+    if value != Timestamp::MIN {
+        match list.binary_search(&value) {
+            Ok(i) => {
+                if i + 1 == list.len() {
+                    (i, None)
+                } else {
+                    (i, Some(list[i + 1]))
+                }
+            }
+            Err(i) => {
+                if i == list.len() {
+                    (i, None)
+                } else {
+                    (i, Some(list[i]))
+                }
+            }
         }
     } else {
-        timestamps.len()
+        (list.len(), None)
     }
 }
 
+/// Calculate a hash from a range of a data block,
+/// return the index of the range end, and the next value of the index.
 fn hash_partial_datablock(
     hasher: &mut Hasher,
     data_block: &DataBlock,
     min_idx: usize,
     max_timestamp: Timestamp,
-) -> usize {
+) -> Option<(usize, Option<Timestamp>)> {
     match data_block {
         DataBlock::U64 { ts, val, .. } => {
-            let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
+            let (max_ts_i, after_max_ts) = find_value_index_and_next(&ts[min_idx..], max_timestamp);
+            if max_ts_i == 0 {
+                return None;
+            }
+            let limit = min_idx + max_ts_i;
             let ts_iter = ts[min_idx..limit].iter().map(|v| v.to_be_bytes());
             let val_iter = val[min_idx..limit].iter().map(|v| v.to_be_bytes());
             for (t, v) in ts_iter.zip(val_iter) {
                 hasher.update(&t);
                 hasher.update(&v);
             }
-            limit
+            Some((limit, after_max_ts))
         }
         DataBlock::I64 { ts, val, .. } => {
-            let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
+            let (max_ts_i, after_max_ts) = find_value_index_and_next(&ts[min_idx..], max_timestamp);
+            if max_ts_i == 0 {
+                return None;
+            }
+            let limit = min_idx + max_ts_i;
             let ts_iter = ts[min_idx..limit].iter().map(|v| v.to_be_bytes());
             let val_iter = val[min_idx..limit].iter().map(|v| v.to_be_bytes());
             for (t, v) in ts_iter.zip(val_iter) {
                 hasher.update(&t);
                 hasher.update(&v);
             }
-            limit
+            Some((limit, after_max_ts))
         }
         DataBlock::F64 { ts, val, .. } => {
-            let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
+            let (max_ts_i, after_max_ts) = find_value_index_and_next(&ts[min_idx..], max_timestamp);
+            if max_ts_i == 0 {
+                return None;
+            }
+            let limit = min_idx + max_ts_i;
             let ts_iter = ts[min_idx..limit].iter().map(|v| v.to_be_bytes());
             let val_iter = val[min_idx..limit].iter().map(|v| v.to_be_bytes());
             for (t, v) in ts_iter.zip(val_iter) {
                 hasher.update(&t);
                 hasher.update(&v);
             }
-            limit
+            Some((limit, after_max_ts))
         }
         DataBlock::Str { ts, val, .. } => {
-            let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
+            let (max_ts_i, after_max_ts) = find_value_index_and_next(&ts[min_idx..], max_timestamp);
+            if max_ts_i == 0 {
+                return None;
+            }
+            let limit = min_idx + max_ts_i;
             let ts_iter = ts[min_idx..limit].iter().map(|v| v.to_be_bytes());
             let val_iter = val[min_idx..limit].iter();
             for (t, v) in ts_iter.zip(val_iter) {
                 hasher.update(&t);
                 hasher.update(v);
             }
-            limit
+            Some((limit, after_max_ts))
         }
         DataBlock::Bool { ts, val, .. } => {
-            let limit = min_idx + find_timestamp(&ts[min_idx..], max_timestamp);
+            let (max_ts_i, after_max_ts) = find_value_index_and_next(&ts[min_idx..], max_timestamp);
+            if max_ts_i == 0 {
+                return None;
+            }
+            let limit = min_idx + max_ts_i;
             let ts_iter = ts[min_idx..limit].iter().map(|v| v.to_be_bytes());
             let val_iter = val[min_idx..limit].iter();
             for (t, v) in ts_iter.zip(val_iter) {
                 hasher.update(&t);
                 hasher.update(if *v { &[1_u8] } else { &[0_u8] });
             }
-            limit
+            Some((limit, after_max_ts))
         }
     }
 }
 
+fn hash_data_block(
+    fid_tr_hash_val_map: &mut HashMap<FieldId, Vec<(TimeRange, Hash)>>,
+    time_range_nanosec: i64,
+    field_id: FieldId,
+    data_block: &DataBlock,
+) -> Result<()> {
+    if let Some(blk_time_range) = data_block.time_range() {
+        // Get truncated time range by DataBlock.time[0]
+        // TODO: Support data block to be split into multi time ranges.
+        let (mut min_ts, mut max_ts) = calc_time_range(blk_time_range.0, time_range_nanosec)?;
+
+        // Calculate and store the hash value of data in time range
+        let hash_vec = fid_tr_hash_val_map.entry(field_id).or_default();
+        let mut min_idx = 0;
+        let mut ts_after_max_ts = None;
+        let mut hasher = Hasher::new();
+        while blk_time_range.1 > min_ts {
+            if let Some((min_i, max_ts_next)) =
+                hash_partial_datablock(&mut hasher, data_block, min_idx, max_ts)
+            {
+                min_idx = min_i;
+                ts_after_max_ts = max_ts_next;
+                hash_vec.push((TimeRange::new(min_ts, max_ts), hasher.finalize().into()));
+                hasher.reset();
+            }
+            if let Some(ts) = ts_after_max_ts {
+                max_ts += time_range_nanosec;
+                if max_ts < ts {
+                    // Sometimes the next time_range is long after.
+                    (min_ts, max_ts) = calc_time_range(ts, time_range_nanosec)?;
+                }
+            } else {
+                break;
+            }
+        }
+    } else {
+        // Ignore: Because argument decode_non_overlap_blocks in CompactIterator::new()
+        // is set to true, we may ignore this case.
+    }
+
+    Ok(())
+}
+
 async fn read_from_compact_iterator(
-    mut _iter: CompactIterator,
-    _vnode_id: TseriesFamilyId,
-    _time_range_nanosec: i64,
+    mut iter: CompactIterator,
+    time_range_nanosec: i64,
 ) -> Result<HashMap<FieldId, Vec<(TimeRange, Hash)>>> {
-    // let mut fid_tr_hash_val_map: HashMap<FieldId, Vec<(TimeRange, Hash)>> = HashMap::new();
-    // let mut last_hashed_tr_fid: Option<(TimeRange, FieldId)> = None;
-    // let mut hasher = Hasher::new();
-    // loop {
-    //     match iter.next().await {
-    //         None => break,
-    //         Some(Ok(blk)) => {
-    //             if let CompactingBlock::Decoded {
-    //                 field_id,
-    //                 data_block,
-    //                 ..
-    //             } = blk
-    //             {
-    //                 // Check if there is last hash value that not stored.
-    //                 if let Some((time_range, last_fid)) = last_hashed_tr_fid {
-    //                     if last_fid != field_id {
-    //                         fid_tr_hash_val_map
-    //                             .entry(last_fid)
-    //                             .or_default()
-    //                             .push((time_range, hasher.finalize().into()));
-    //                         hasher.reset();
-    //                     }
-    //                 }
-    //                 if let Some(blk_time_range) = data_block.time_range() {
-    //                     // Get trunced time range by DataBlock.time[0]
-    //                     // TODO: Support data block to be split into multi time ranges.
-    //                     let (min_ts, max_ts) = match calc_block_partial_time_range(
-    //                         blk_time_range.0,
-    //                         time_range_nanosec,
-    //                     ) {
-    //                         Ok(tr) => tr,
-    //                         Err(e) => return Err(e),
-    //                     };
+    let mut compacting_block_metas: Vec<CompactingBlockMeta> = Vec::new();
+    let mut fid = iter.curr_fid();
+    let mut fid_tr_hash_val_map: HashMap<FieldId, Vec<(TimeRange, Hash)>> = HashMap::new();
+    while let Some(blk_meta_group) = iter.next().await {
+        if fid.is_some() && fid != iter.curr_fid() {
+            if let Some(data_block) = load_and_merge_data_block(&mut compacting_block_metas).await?
+            {
+                hash_data_block(
+                    &mut fid_tr_hash_val_map,
+                    time_range_nanosec,
+                    fid.unwrap(),
+                    &data_block,
+                )?;
+            }
+            compacting_block_metas.clear();
+        }
+        fid = iter.curr_fid();
+        compacting_block_metas.append(&mut blk_meta_group.into_compacting_block_metas());
+    }
+    if let Some(field_id) = fid {
+        if let Some(data_block) = load_and_merge_data_block(&mut compacting_block_metas).await? {
+            hash_data_block(
+                &mut fid_tr_hash_val_map,
+                time_range_nanosec,
+                field_id,
+                &data_block,
+            )?;
+        }
+    }
 
-    //                     // Calculate and store the hash value of data in time range
-    //                     let hash_vec = fid_tr_hash_val_map.entry(field_id).or_default();
-    //                     if blk_time_range.1 > max_ts {
-    //                         // Time range of data block need split.
-    //                         let min_idx =
-    //                             hash_partial_datablock(&mut hasher, &data_block, 0, max_ts);
-    //                         hash_vec
-    //                             .push((TimeRange::new(min_ts, max_ts), hasher.finalize().into()));
-    //                         hasher.reset();
-    //                         hash_partial_datablock(
-    //                             &mut hasher,
-    //                             &data_block,
-    //                             min_idx,
-    //                             Timestamp::MIN,
-    //                         );
-    //                         last_hashed_tr_fid =
-    //                             Some((TimeRange::new(max_ts, blk_time_range.1), field_id));
-    //                     } else {
-    //                         hash_partial_datablock(&mut hasher, &data_block, 0, Timestamp::MIN);
-    //                         last_hashed_tr_fid = Some((TimeRange::new(min_ts, max_ts), field_id));
-    //                     }
-    //                 } else {
-    //                     // Ignore: Case argument decode_non_overlap_blocks in CompactIterator::new()
-    //                     // is set to true, we may ignore it.
-    //                 }
-    //             };
-    //         }
-    //         Some(Err(e)) => {
-    //             return Err(Error::CommonError {
-    //                 reason: format!(
-    //                     "error getting hashes for vnode {} when compacting: {:?}",
-    //                     vnode_id, e
-    //                 ),
-    //             });
-    //         }
-    //     }
-    // }
-    // if let Some((tr, last_fid)) = last_hashed_tr_fid {
-    //     fid_tr_hash_val_map
-    //         .entry(last_fid)
-    //         .or_default()
-    //         .push((tr, hasher.finalize().into()));
-    // }
+    Ok(fid_tr_hash_val_map)
+}
 
-    // Ok(fid_tr_hash_val_map)
-
-    Ok(HashMap::new())
+async fn load_and_merge_data_block(
+    compacting_block_metas: &mut [CompactingBlockMeta],
+) -> Result<Option<DataBlock>> {
+    if compacting_block_metas.is_empty() {
+        return Ok(None);
+    }
+    let head = &mut compacting_block_metas[0];
+    let mut head_block = head.get_data_block().await?;
+    if compacting_block_metas.len() > 1 {
+        for blk_meta in compacting_block_metas[1..].iter_mut() {
+            let blk_block = blk_meta.get_data_block().await?;
+            head_block = head_block.merge(blk_block);
+        }
+    }
+    Ok(Some(head_block))
 }
 
 #[cfg(test)]
@@ -463,7 +561,7 @@ mod test {
         ColumnType, DatabaseOptions, DatabaseSchema, Precision, TableColumn, TableSchema,
         TenantOptions, TskvTableSchema,
     };
-    use models::{Timestamp, ValueType};
+    use models::{FieldId, Timestamp, ValueType};
     use protos::kv_service::{Meta, WritePointsRequest};
     use protos::models::{self as fb_models, FieldType};
     use protos::models_helper;
@@ -471,7 +569,9 @@ mod test {
     use tokio::runtime::{self, Runtime};
     use tokio::sync::RwLock;
 
-    use super::{calc_block_partial_time_range, find_timestamp, hash_partial_datablock, Hash};
+    use super::{
+        calc_time_range, find_value_index_and_next, hash_data_block, hash_partial_datablock, Hash,
+    };
     use crate::compaction::check::{vnode_hash_tree, TimeRangeHashTreeNode, DEFAULT_DURATION};
     use crate::compaction::flush;
     use crate::context::GlobalContext;
@@ -487,7 +587,8 @@ mod test {
     }
 
     #[test]
-    fn test_calc_blcok_time_range() {
+    fn test_calc_time_range() {
+        /// Returns timestamp in nanoseconds of a date-time, and duration in nanoseconds of 30 minutes.
         fn get_args(datetime: &str) -> (Timestamp, i64) {
             let datetime = NaiveDateTime::parse_from_str(datetime, "%Y-%m-%d %H:%M:%S").unwrap();
             let timestamp = datetime.timestamp_nanos();
@@ -496,27 +597,37 @@ mod test {
             (timestamp, duration_nanos)
         }
 
+        // 2023-01-01 00:29:01 is in between 2023-01-01 00:00:00 and 2023-01-01 00:30:00
         let (stamp, span) = get_args("2023-01-01 00:29:01");
         assert_eq!(
             (
                 parse_nanos("2023-01-01 00:00:00"),
-                parse_nanos("2023-01-01 00:30:00")
+                parse_nanos("2023-01-01 00:30:00"),
             ),
-            calc_block_partial_time_range(stamp, span).unwrap(),
+            calc_time_range(stamp, span).unwrap(),
         );
-
+        // 2023-01-01 00:30:00 is in between 2023-01-01 00:30:00 and 2023-01-01 01:00:00
+        let (stamp, span) = get_args("2023-01-01 00:30:00");
+        assert_eq!(
+            (
+                parse_nanos("2023-01-01 00:30:00"),
+                parse_nanos("2023-01-01 01:00:00"),
+            ),
+            calc_time_range(stamp, span).unwrap(),
+        );
+        // 2023-01-01 00:30:01 is between 2023-01-01 00:30:00 and 2023-01-01 01:00:00
         let (stamp, span) = get_args("2023-01-01 00:30:01");
         assert_eq!(
             (
                 parse_nanos("2023-01-01 00:30:00"),
                 parse_nanos("2023-01-01 01:00:00")
             ),
-            calc_block_partial_time_range(stamp, span).unwrap(),
+            calc_time_range(stamp, span).unwrap(),
         );
     }
 
     #[test]
-    fn test_find_timestamp() {
+    fn test_find_value_index_and_next() {
         let timestamps = vec![
             parse_nanos("2023-01-01 00:01:00"),
             parse_nanos("2023-01-01 00:02:00"),
@@ -526,37 +637,44 @@ mod test {
         ];
 
         assert_eq!(
-            0,
-            find_timestamp(&timestamps, parse_nanos("2023-01-01 00:00:00")),
+            (0, Some(parse_nanos("2023-01-01 00:01:00"))),
+            find_value_index_and_next(&timestamps, parse_nanos("2023-01-01 00:00:00")),
         );
         assert_eq!(
-            3,
-            find_timestamp(&timestamps, parse_nanos("2023-01-01 00:03:30"))
+            (2, Some(parse_nanos("2023-01-01 00:04:00"))),
+            find_value_index_and_next(&timestamps, parse_nanos("2023-01-01 00:03:00"))
         );
         assert_eq!(
-            3,
-            find_timestamp(&timestamps, parse_nanos("2023-01-01 00:04:00"))
+            (3, Some(parse_nanos("2023-01-01 00:04:00"))),
+            find_value_index_and_next(&timestamps, parse_nanos("2023-01-01 00:03:30"))
         );
         assert_eq!(
-            5,
-            find_timestamp(&timestamps, parse_nanos("2023-01-01 00:30:00"))
+            (3, Some(parse_nanos("2023-01-01 00:05:00"))),
+            find_value_index_and_next(&timestamps, parse_nanos("2023-01-01 00:04:00"))
         );
-        assert_eq!(5, find_timestamp(&timestamps, Timestamp::MIN),);
-    }
-
-    fn data_block_partial_to_bytes(data_block: &DataBlock, from: usize, to: usize) -> Vec<u8> {
-        let mut ret: Vec<u8> = vec![];
-        for i in from..to {
-            let v = data_block
-                .get(i)
-                .unwrap_or_else(|| panic!("data block has at least {} items", i));
-            ret.extend_from_slice(&v.to_bytes());
-        }
-        ret
+        assert_eq!(
+            (5, None),
+            find_value_index_and_next(&timestamps, parse_nanos("2023-01-01 00:30:00"))
+        );
+        assert_eq!(
+            (5, None),
+            find_value_index_and_next(&timestamps, Timestamp::MIN),
+        );
     }
 
     #[test]
     fn test_hash_partial_datablock() {
+        fn data_block_partial_to_bytes(data_block: &DataBlock, from: usize, to: usize) -> Vec<u8> {
+            let mut ret: Vec<u8> = vec![];
+            for i in from..to {
+                let v = data_block
+                    .get(i)
+                    .unwrap_or_else(|| panic!("data block has at least {} items", i));
+                ret.extend_from_slice(&v.to_bytes());
+            }
+            ret
+        }
+
         let timestamps = vec![
             parse_nanos("2023-01-01 00:01:00"),
             parse_nanos("2023-01-01 00:02:00"),
@@ -566,7 +684,7 @@ mod test {
             parse_nanos("2023-01-01 00:06:00"),
         ];
         #[rustfmt::skip]
-            let data_blocks = vec![
+        let data_blocks = vec![
             DataBlock::U64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::I64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
             DataBlock::Str {
@@ -582,16 +700,19 @@ mod test {
 
         for data_block in data_blocks {
             let mut hasher_blk = Hasher::new();
-            let min_idx = hash_partial_datablock(
+            let max_ts_i_and_next_ts = hash_partial_datablock(
                 &mut hasher_blk,
                 &data_block,
                 0,
                 parse_nanos("2023-01-01 00:04:00"),
             );
-            assert_eq!(3, min_idx);
-            let mut hasher_cmp = Hasher::new();
             assert_eq!(
-                hasher_cmp
+                Some((3, Some(parse_nanos("2023-01-01 00:05:00")))),
+                max_ts_i_and_next_ts
+            );
+            let mut hasher_expected = Hasher::new();
+            assert_eq!(
+                hasher_expected
                     .update(data_block_partial_to_bytes(&data_block, 0, 3).as_slice())
                     .finalize(),
                 hasher_blk.finalize(),
@@ -600,12 +721,16 @@ mod test {
             );
 
             let mut hasher_blk = Hasher::new();
-            let min_idx =
-                hash_partial_datablock(&mut hasher_blk, &data_block, min_idx, Timestamp::MIN);
-            assert_eq!(6, min_idx);
-            let mut hasher_cmp = Hasher::new();
+            let min_idx = hash_partial_datablock(
+                &mut hasher_blk,
+                &data_block,
+                max_ts_i_and_next_ts.unwrap().0,
+                Timestamp::MIN,
+            );
+            assert_eq!(Some((6, None)), min_idx);
+            let mut hasher_expected = Hasher::new();
             assert_eq!(
-                hasher_cmp
+                hasher_expected
                     .update(data_block_partial_to_bytes(&data_block, 3, 6).as_slice())
                     .finalize(),
                 hasher_blk.finalize()
@@ -767,32 +892,21 @@ mod test {
         data_block: &DataBlock,
         duration_nanosecs: i64,
     ) -> Vec<(TimeRange, Hash)> {
-        let mut tr_hashes: Vec<(TimeRange, Hash)> = Vec::new();
-        let mut hasher = Hasher::new();
+        if !data_block.is_empty() {
+            const FIELD_ID: FieldId = 0;
 
-        if let Some(blk_time_range) = data_block.time_range() {
-            // Get trunced time range by DataBlock.time[0]
-            let (min_ts, max_ts) =
-                calc_block_partial_time_range(blk_time_range.0, duration_nanosecs).unwrap();
-
-            // Calculate and store the hash value of data in time range
-            if blk_time_range.1 > max_ts {
-                // Time range of data block need to split.
-                let min_idx = hash_partial_datablock(&mut hasher, data_block, 0, max_ts);
-                tr_hashes.push((TimeRange::new(min_ts, max_ts), hasher.finalize().into()));
-                hasher.reset();
-                hash_partial_datablock(&mut hasher, data_block, min_idx, Timestamp::MIN);
-                tr_hashes.push((
-                    TimeRange::new(max_ts, blk_time_range.1),
-                    hasher.finalize().into(),
-                ));
-            } else {
-                hash_partial_datablock(&mut hasher, data_block, 0, Timestamp::MIN);
-                tr_hashes.push((TimeRange::new(min_ts, max_ts), hasher.finalize().into()));
-            }
+            let mut fid_tr_hash_val_map: HashMap<FieldId, Vec<(TimeRange, Hash)>> = HashMap::new();
+            hash_data_block(
+                &mut fid_tr_hash_val_map,
+                duration_nanosecs,
+                FIELD_ID,
+                data_block,
+            )
+            .unwrap();
+            fid_tr_hash_val_map.remove(&FIELD_ID).unwrap()
+        } else {
+            Vec::new()
         }
-
-        tr_hashes
     }
 
     fn check_hash_tree_node(
@@ -812,6 +926,7 @@ mod test {
         let meta = AdminMeta::new(config.clone()).await;
 
         meta.add_data_node().await.unwrap();
+        // Create tenant may get 'TenantAlreadyExists.
         let _ = meta
             .create_tenant(tenant.to_string(), TenantOptions::default())
             .await;
@@ -887,7 +1002,6 @@ mod test {
         engine
     }
 
-    #[rustfmt::skip]
     async fn write_tskv(
         engine: &TsKv,
         vnode: Arc<RwLock<TseriesFamily>>,
@@ -900,10 +1014,13 @@ mod test {
         // Write data to database and vnode
         let mut timestamps: Vec<Timestamp> = Vec::new();
         let _fields: Vec<Vec<(&str, Vec<u8>)>> = Vec::new();
-        let mut fields : HashMap<&str, Vec<Vec<u8>>> = HashMap::new();
+        let mut fields: HashMap<&str, Vec<Vec<u8>>> = HashMap::new();
         let mut time = Vec::new();
         data_blocks_to_write_batch_args(data_blocks, &mut timestamps, &mut fields, &mut time);
-        do_write_batch(engine, vnode_id, timestamps, tenant, database, table, fields, time).await;
+        do_write_batch(
+            engine, vnode_id, timestamps, tenant, database, table, fields, time,
+        )
+        .await;
 
         let flush_req = {
             let mut vnode = vnode.write().await;
@@ -911,9 +1028,14 @@ mod test {
             vnode.build_flush_req(true).unwrap()
         };
         flush::run_flush_memtable_job(
-            flush_req, engine.global_ctx(),
-            engine.version_set(), engine.summary_task_sender(), None,
-        ).await.unwrap();
+            flush_req,
+            engine.global_ctx(),
+            engine.version_set(),
+            engine.summary_task_sender(),
+            None,
+        )
+        .await
+        .unwrap();
 
         let sec_1 = Duration::seconds(1).to_std().unwrap();
         let mut check_num = 0;
@@ -927,19 +1049,19 @@ mod test {
             }
             check_num += 1;
             if check_num >= 10 {
-                println!("Checksum: warn: flushing takes more than {} seconds.", check_num);
+                println!("Checksum: warn: flushing takes more than {check_num} seconds.",);
             }
         }
     }
 
     #[test]
-    #[ignore]
     fn test_get_vnode_hash_tree() {
         let base_dir = "/tmp/test/repair/1".to_string();
         let wal_dir = "/tmp/test/repair/1/wal".to_string();
         let log_dir = "/tmp/test/repair/1/log".to_string();
         // trace::init_default_global_tracing(&log_dir, "test.log", "debug");
         let _ = std::fs::remove_dir_all(&base_dir);
+        std::fs::create_dir_all(&base_dir).unwrap();
         let tenant_name = "cnosdb".to_string();
         let database_name = "test_get_vnode_hash_tree".to_string();
         let vnode_id: TseriesFamilyId = 1;
@@ -952,20 +1074,25 @@ mod test {
             parse_nanos("2023-02-01 00:01:00"),
             parse_nanos("2023-02-01 00:02:00"),
             parse_nanos("2023-02-01 00:03:00"),
+            parse_nanos("2023-03-01 00:01:00"),
+            parse_nanos("2023-03-01 00:02:00"),
+            parse_nanos("2023-03-01 00:03:00"),
         ];
         #[rustfmt::skip]
         let data_blocks = vec![
-            DataBlock::U64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
-            DataBlock::I64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6], enc: DataBlockEncoding::default() },
-            DataBlock::F64 { ts: timestamps.clone(), val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() },
+            DataBlock::U64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() },
+            DataBlock::I64 { ts: timestamps.clone(), val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() },
+            DataBlock::F64 { ts: timestamps.clone(), val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], enc: DataBlockEncoding::default() },
             DataBlock::Str {
                 ts: timestamps.clone(),
                 val: vec![
-                    MiniVec::from("1"), MiniVec::from("2"), MiniVec::from("3"), MiniVec::from("4"), MiniVec::from("5"), MiniVec::from("6"),
+                    MiniVec::from("1"), MiniVec::from("2"), MiniVec::from("3"),
+                    MiniVec::from("4"), MiniVec::from("5"), MiniVec::from("6"),
+                    MiniVec::from("7"), MiniVec::from("8"), MiniVec::from("9"),
                 ],
                 enc: DataBlockEncoding::default(),
             },
-            DataBlock::Bool { ts: timestamps, val: vec![true, false, true, false, true, false], enc: DataBlockEncoding::default() },
+            DataBlock::Bool { ts: timestamps, val: vec![true, false, true, false, true, false, true, false, true], enc: DataBlockEncoding::default() },
         ];
         let data_block_tr_hashes = vec![
             data_block_to_hash_tree(&data_blocks[0], DEFAULT_DURATION),
@@ -1032,7 +1159,8 @@ mod test {
 
             // Get hash values and check them.
             let tree_root = vnode_hash_tree(vnode_ref).await.unwrap();
-            assert_eq!(tree_root.len(), 10);
+            println!("{tree_root}");
+            assert_eq!(tree_root.len(), 15);
             assert_eq!(tree_root.vnode_id, vnode_id);
             assert_eq!(tree_root.fields.len(), 5);
             for field in tree_root.fields.iter() {
