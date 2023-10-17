@@ -37,8 +37,8 @@ use crate::codec::Encoding;
 use crate::gis::data_type::Geometry;
 use crate::oid::{Identifier, Oid};
 use crate::utils::{
-    DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS, MINUTES_MICROS,
-    MINUTES_MILLS, MINUTES_NANOS,
+    now_timestamp_nanos, DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS,
+    MINUTES_MICROS, MINUTES_MILLS, MINUTES_NANOS,
 };
 use crate::value_type::ValueType;
 use crate::{ColumnId, Error, PhysicalDType, SchemaId, Timestamp};
@@ -55,6 +55,141 @@ pub const DEFAULT_DATABASE: &str = "public";
 pub const USAGE_SCHEMA: &str = "usage_schema";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
 pub const DEFAULT_PRECISION: &str = "NS";
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub enum ResourceOperator {
+    #[default]
+    DropTenant,
+    DropDatabase,
+    DropTable,
+    DropColumn,
+    AddColumn,
+    AlterColumn,
+    RenameTagName,
+    UpdateTagValue,
+}
+impl fmt::Display for ResourceOperator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceOperator::DropTenant => write!(f, "DropTenant"),
+            ResourceOperator::DropDatabase => write!(f, "DropDatabase"),
+            ResourceOperator::DropTable => write!(f, "DropTable"),
+            ResourceOperator::DropColumn => write!(f, "DropColumn"),
+            ResourceOperator::AddColumn => write!(f, "AddColumn"),
+            ResourceOperator::AlterColumn => write!(f, "AlterColumn"),
+            ResourceOperator::RenameTagName => write!(f, "RenameTagName"),
+            ResourceOperator::UpdateTagValue => write!(f, "UpdateTagValue"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+pub enum ResourceStatus {
+    #[default]
+    Schedule,
+    Executing,
+    Successed,
+    Failed,
+    Cancel,
+}
+impl fmt::Display for ResourceStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceStatus::Schedule => write!(f, "Schedule"),
+            ResourceStatus::Executing => write!(f, "Executing"),
+            ResourceStatus::Successed => write!(f, "Successed"),
+            ResourceStatus::Failed => write!(f, "Failed"),
+            ResourceStatus::Cancel => write!(f, "Cancel"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct ResourceInfo {
+    time: i64,
+    tenant_id: Oid,
+    names: Vec<String>,
+    operator: ResourceOperator,
+    try_count: u64,
+    after: Option<Duration>, // None means now
+    status: ResourceStatus,
+    comment: String,
+    alter_info: Option<(String, TskvTableSchema)>,
+}
+
+impl ResourceInfo {
+    pub fn new(
+        tenant_id: Oid,
+        names: Vec<String>,
+        operator: ResourceOperator,
+        after: &Option<Duration>,
+        alter_info: Option<(String, TskvTableSchema)>,
+    ) -> Self {
+        let mut res_info = ResourceInfo {
+            time: now_timestamp_nanos(),
+            tenant_id,
+            names,
+            operator,
+            try_count: 0,
+            after: after.clone(),
+            status: ResourceStatus::Executing,
+            comment: String::default(),
+            alter_info,
+        };
+        if let Some(after) = after {
+            let after_nanos = after.to_nanoseconds();
+            if after_nanos > 0 {
+                res_info.status = ResourceStatus::Schedule;
+                res_info.time += after_nanos;
+            }
+        }
+        res_info
+    }
+
+    pub fn get_time(&self) -> i64 {
+        self.time
+    }
+
+    pub fn get_tenant_id(&self) -> Oid {
+        self.tenant_id
+    }
+
+    pub fn get_names(&self) -> &[String] {
+        &self.names
+    }
+
+    pub fn get_operator(&self) -> &ResourceOperator {
+        &self.operator
+    }
+
+    pub fn get_try_count(&self) -> u64 {
+        self.try_count
+    }
+
+    pub fn get_status(&self) -> &ResourceStatus {
+        &self.status
+    }
+
+    pub fn get_comment(&self) -> &String {
+        &self.comment
+    }
+
+    pub fn get_alter_info(&self) -> Option<(String, TskvTableSchema)> {
+        self.alter_info.clone()
+    }
+
+    pub fn increase_try_count(&mut self) {
+        self.try_count += 1;
+    }
+
+    pub fn set_status(&mut self, status: ResourceStatus) {
+        self.status = status;
+    }
+
+    pub fn set_comment(&mut self, comment: &str) {
+        self.comment = comment.to_string();
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TableSchema {
@@ -717,6 +852,8 @@ pub struct DatabaseOptions {
     replica: Option<u64>,
     // timestamp precision
     precision: Option<Precision>,
+
+    db_is_hidden: bool,
 }
 
 impl DatabaseOptions {
@@ -745,6 +882,7 @@ impl DatabaseOptions {
             vnode_duration,
             replica,
             precision,
+            db_is_hidden: false,
         }
     }
 
@@ -810,6 +948,14 @@ impl DatabaseOptions {
 
     pub fn with_precision(&mut self, precision: Precision) {
         self.precision = Some(precision)
+    }
+
+    pub fn get_db_is_hidden(&self) -> bool {
+        self.db_is_hidden
+    }
+
+    pub fn set_db_is_hidden(&mut self, db_is_hidden: bool) {
+        self.db_is_hidden = db_is_hidden;
     }
 }
 
@@ -1035,6 +1181,7 @@ impl Tenant {
 pub struct TenantOptions {
     pub comment: Option<String>,
     pub limiter_config: Option<TenantLimiterConfig>,
+    tenant_is_hidden: bool,
 }
 
 impl From<TenantOptions> for TenantOptionsBuilder {
@@ -1046,6 +1193,7 @@ impl From<TenantOptions> for TenantOptionsBuilder {
         if let Some(config) = value.limiter_config {
             builder.limiter_config(config);
         }
+        builder.tenant_is_hidden(false);
         builder
     }
 }
@@ -1072,6 +1220,14 @@ impl TenantOptions {
             Some(ref limit_config) => limit_config.request_config.as_ref(),
             None => None,
         }
+    }
+
+    pub fn get_tenant_is_hidden(&self) -> bool {
+        self.tenant_is_hidden
+    }
+
+    pub fn set_tenant_is_hidden(&mut self, tenant_is_hidden: bool) {
+        self.tenant_is_hidden = tenant_is_hidden;
     }
 }
 

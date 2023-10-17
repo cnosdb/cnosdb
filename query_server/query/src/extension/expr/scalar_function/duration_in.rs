@@ -13,7 +13,6 @@ use spi::query::function::FunctionMetadataManager;
 use spi::{QueryError, Result};
 
 use crate::extension::expr::aggregate_function::StateAggData;
-use crate::extension::expr::expr_utils::check_args_eq_any;
 use crate::extension::expr::scalar_function::DURATION_IN;
 use crate::extension::expr::INTERVALS;
 
@@ -25,7 +24,6 @@ pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<Sc
 
 fn new() -> ScalarUDF {
     let return_type_fn: ReturnTypeFunction = Arc::new(|input| {
-        check_args_eq_any(DURATION_IN, &[2, 3, 4], input)?;
         if input.len() >= 3 && !TIMESTAMPS.iter().any(|t| t.eq(&input[2])) {
             return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
                 err: format!("Expect Timestamp type, but found {} type.", &input[2]),

@@ -15,7 +15,6 @@ use crate::extension::expr::aggregate_function::state_agg::state_agg_accumulator
 use crate::extension::expr::aggregate_function::{
     COMPACT_STATE_AGG_UDAF_NAME, STATE_AGG_UDAF_NAME,
 };
-use crate::extension::expr::expr_utils::check_args;
 use crate::extension::expr::INTEGERS;
 mod state_agg_accumulator;
 mod state_agg_data;
@@ -44,8 +43,6 @@ pub fn new_state_agg(compact: bool) -> AggregateUDF {
     });
 
     let state_type_func: StateTypeFunction = Arc::new(move |input, _| {
-        check_args(func_name, 2, input)?;
-
         let types = input
             .iter()
             .map(|dt| DataType::List(Arc::new(Field::new(LIST_ELEMENT_NAME, dt.clone(), true))))
@@ -57,8 +54,6 @@ pub fn new_state_agg(compact: bool) -> AggregateUDF {
     });
 
     let accumulator: AccumulatorFactoryFunction = Arc::new(move |input, _| {
-        check_args(func_name, 2, input)?;
-
         Ok(Box::new(StateAggAccumulator::try_new(
             input.to_vec(),
             compact,

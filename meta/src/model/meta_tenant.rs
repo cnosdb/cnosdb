@@ -12,7 +12,7 @@ use models::auth::user::UserDesc;
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
 use models::schema::{
-    DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TskvTableSchemaRef,
+    DatabaseSchema, ExternalTableSchema, ResourceInfo, TableSchema, Tenant, TskvTableSchemaRef,
 };
 use parking_lot::RwLock;
 use store::command;
@@ -399,22 +399,58 @@ impl TenantMeta {
         Ok(())
     }
 
+    pub async fn set_db_is_hidden(
+        &self,
+        tenant: &str,
+        db: &str,
+        db_is_hidden: bool,
+    ) -> MetaResult<()> {
+        let req = command::WriteCommand::SetDBIsHidden(
+            self.cluster.clone(),
+            tenant.to_string(),
+            db.to_string(),
+            db_is_hidden,
+        );
+
+        self.write_with_data(&req).await?;
+        Ok(())
+    }
+
     pub fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
         if let Some(db) = self.data.read().dbs.get(name) {
-            return Ok(Some(db.schema.clone()));
+            if !db.schema.options().get_db_is_hidden() {
+                return Ok(Some(db.schema.clone()));
+            }
         }
 
         Ok(None)
     }
 
     pub fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
-        Ok(self.data.read().dbs.get(name).cloned())
+        if let Some(db) = self.data.read().dbs.get(name) {
+            if !db.schema.options().get_db_is_hidden() {
+                return Ok(Some(db.clone()));
+            }
+        }
+
+        Ok(None)
+    }
+
+    // only for drop sql
+    pub fn get_db_info_for_drop(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
+        if let Some(db) = self.data.read().dbs.get(name) {
+            return Ok(Some(db.clone()));
+        }
+
+        Ok(None)
     }
 
     pub fn list_databases(&self) -> MetaResult<Vec<String>> {
         let mut list = vec![];
-        for (k, _) in self.data.read().dbs.iter() {
-            list.push(k.clone());
+        for (k, db_info) in self.data.read().dbs.iter() {
+            if !db_info.schema.options().get_db_is_hidden() {
+                list.push(k.clone());
+            }
         }
 
         Ok(list)
@@ -866,6 +902,25 @@ impl TenantMeta {
         info!("****** Meta Data: {:#?}", self.data);
 
         format!("{:#?}", self.data.read())
+    }
+
+    pub async fn write_resourceinfo(
+        &self,
+        names: &[String],
+        res_info: ResourceInfo,
+    ) -> MetaResult<()> {
+        let req =
+            command::WriteCommand::ResourceInfo(self.cluster.clone(), names.to_owned(), res_info);
+
+        self.client.write::<ResourceInfo>(&req).await?;
+
+        Ok(())
+    }
+
+    pub async fn read_resourceinfos(&self, names: &[String]) -> MetaResult<Vec<ResourceInfo>> {
+        let req = command::ReadCommand::ResourceInfos(self.cluster.clone(), names.to_owned());
+
+        self.client.read::<Vec<ResourceInfo>>(&req).await
     }
 }
 

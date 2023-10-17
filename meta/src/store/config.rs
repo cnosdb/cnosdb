@@ -27,7 +27,7 @@ impl Default for MetaInit {
 impl MetaInit {
     pub fn default_db_config(tenant: &str, db: &str) -> String {
         format!(
-            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null}}}}",
+            "{{\"tenant\":\"{}\",\"database\":\"{}\",\"config\":{{\"ttl\":null,\"shard_num\":null,\"vnode_duration\":null,\"replica\":null,\"precision\":null,\"db_is_hidden\":false}}}}",
             tenant, db
         )
     }

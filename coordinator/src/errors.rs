@@ -210,6 +210,12 @@ pub enum CoordinatorError {
     RaftNodeNotFound {
         id: ReplicationSetId,
     },
+
+    #[snafu(display("name {names} is illegality"))]
+    #[error_code(code = 31)]
+    ResNamesIllegality {
+        names: String,
+    },
 }
 
 impl From<PointsError> for CoordinatorError {

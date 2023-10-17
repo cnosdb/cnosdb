@@ -11,7 +11,6 @@ use spi::query::function::FunctionMetadataManager;
 use spi::{QueryError, Result};
 
 use crate::extension::expr::aggregate_function::StateAggData;
-use crate::extension::expr::expr_utils::check_args;
 use crate::extension::expr::scalar_function::STATE_AT;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
@@ -22,7 +21,6 @@ pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<Sc
 
 fn new() -> ScalarUDF {
     let return_type_fn: ReturnTypeFunction = Arc::new(|input| {
-        check_args(STATE_AT, 2, input)?;
         let error = || DataFusionError::Execution("Get state_at ReturnTypeFunction error".into());
         if !TIMESTAMPS.iter().any(|d| d.eq(&input[1])) {
             return Err(error());

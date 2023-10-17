@@ -55,6 +55,7 @@ use crate::reader::replica_selection::{DynamicReplicaSelectioner, DynamicReplica
 use crate::reader::table_scan::opener::TemporaryTableScanOpener;
 use crate::reader::tag_scan::opener::TemporaryTagScanOpener;
 use crate::reader::{CheckFuture, CheckedCoordinatorRecordBatchStream};
+use crate::resource_manager::ResourceManager;
 use crate::writer::PointWriter;
 use crate::{
     get_replica_all_info, get_vnode_all_info, status_response_to_result, Coordinator, QueryOption,
@@ -194,6 +195,7 @@ impl CoordService {
             replica_selectioner: Arc::new(DynamicReplicaSelectioner::new(meta)),
         });
 
+        tokio::spawn(CoordService::check_resourceinfos(coord.clone()));
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
 
         if config.node_basic.store_metrics {
@@ -204,6 +206,17 @@ impl CoordService {
         }
 
         coord
+    }
+
+    async fn check_resourceinfos(coord: Arc<CoordService>) {
+        loop {
+            let dur = tokio::time::Duration::from_secs(60);
+            tokio::time::sleep(dur).await;
+
+            if let Err(err) = ResourceManager::check_and_run(coord.clone()).await {
+                error!("execute resource task err: {:?}", err);
+            }
+        }
     }
 
     async fn db_ttl_service(coord: Arc<CoordService>) {

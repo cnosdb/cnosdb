@@ -10,7 +10,7 @@ use models::auth::user::{admin_user, User, UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
-use models::schema::{Tenant, TenantOptions};
+use models::schema::{ResourceInfo, Tenant, TenantOptions};
 use models::utils::{build_address, now_timestamp_secs};
 use parking_lot::RwLock;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -603,7 +603,9 @@ impl AdminMeta {
 
     pub async fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>> {
         if let Some(client) = self.tenants.read().get(name) {
-            return Ok(Some(client.tenant().clone()));
+            if !client.tenant().options().get_tenant_is_hidden() {
+                return Ok(Some(client.tenant().clone()));
+            }
         }
 
         let req = command::ReadCommand::Tenant(self.cluster(), name.to_string());
@@ -624,6 +626,18 @@ impl AdminMeta {
 
         self.tenants.write().insert(name.to_string(), tenant_meta);
 
+        Ok(())
+    }
+
+    pub async fn set_tenant_is_hidden(&self, name: &str, tenant_is_hidden: bool) -> MetaResult<()> {
+        let req = command::WriteCommand::SetTenantIsHidden(
+            self.cluster(),
+            name.to_string(),
+            tenant_is_hidden,
+        );
+        let tenant = self.client.write::<Tenant>(&req).await?;
+        let tenant_meta = self.create_tenant_meta(tenant).await?;
+        self.tenants.write().insert(name.to_string(), tenant_meta);
         Ok(())
     }
 
@@ -674,4 +688,36 @@ impl AdminMeta {
     }
 
     /******************** Tenant Limiter Operation End *********************/
+
+    pub async fn write_resourceinfo(
+        &self,
+        names: &[String],
+        res_info: ResourceInfo,
+    ) -> MetaResult<()> {
+        let req = command::WriteCommand::ResourceInfo(self.cluster(), names.to_owned(), res_info);
+
+        self.client.write::<()>(&req).await?;
+
+        Ok(())
+    }
+
+    pub async fn read_resourceinfos(&self, names: &[String]) -> MetaResult<Vec<ResourceInfo>> {
+        let req = command::ReadCommand::ResourceInfos(self.cluster(), names.to_owned());
+
+        self.client.read::<Vec<ResourceInfo>>(&req).await
+    }
+
+    pub async fn write_resourceinfos_mark(&self, node_id: NodeId, is_lock: bool) -> MetaResult<()> {
+        let req = command::WriteCommand::ResourceInfosMark(self.cluster(), node_id, is_lock);
+
+        self.client.write::<()>(&req).await?;
+
+        Ok(())
+    }
+
+    pub async fn read_resourceinfos_mark(&self) -> MetaResult<(NodeId, bool)> {
+        let req = command::ReadCommand::ResourceInfosMark(self.cluster());
+
+        self.client.read::<(NodeId, bool)>(&req).await
+    }
 }
