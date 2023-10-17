@@ -387,7 +387,7 @@ impl ResourceManager {
             resourceinfo.get_operator()
         {
             let names = resourceinfo.get_names();
-            if names.len() == 4 {
+            if names.len() == 3 {
                 let tenant_name = names.get(0).unwrap();
                 let db_name = names.get(1).unwrap();
 
