@@ -91,7 +91,7 @@ impl FlushTask {
             return Ok(None);
         }
 
-        let mut max_level_ts = version.max_level_ts;
+        let mut max_level_ts = version.max_level_ts();
         let mut column_file_metas = self
             .flush_mem_caches(
                 flushing_mems_data,
@@ -452,7 +452,7 @@ pub mod flush_tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use lru_cache::asynchronous::ShardedCache;
+    use cache::ShardedAsyncCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use minivec::mini_vec;
     use models::codec::Encoding;
@@ -526,18 +526,17 @@ pub mod flush_tests {
         let database = Arc::new("test_db".to_string());
         let global_context = Arc::new(GlobalContext::new());
         let options = Options::from(&config);
-        #[rustfmt::skip]
-        let version = Arc::new(Version {
+        let version = Arc::new(Version::new(
             ts_family_id,
-            tenant_database: database.clone(),
-            storage_opt: options.storage.clone(),
-            last_seq: 1,
-            max_level_ts: test_case.max_level_ts_before,
-            levels_info: LevelInfo::init_levels(database, 0, options.storage),
-            tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
-        });
-        let flush_task = FlushTask::new(
+            database.clone(),
+            options.storage.clone(),
             1,
+            LevelInfo::init_levels(database, 0, options.storage),
+            test_case.max_level_ts_before,
+            Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
+        ));
+        let flush_task = FlushTask::new(
+            ts_family_id,
             test_case.caches(),
             1,
             2,

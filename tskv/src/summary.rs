@@ -4,7 +4,7 @@ use std::fs::{remove_file, rename};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use lru_cache::asynchronous::ShardedCache;
+use cache::ShardedAsyncCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
@@ -290,6 +290,7 @@ impl Display for VersionEdit {
 }
 
 pub struct Summary {
+    meta: MetaRef,
     file_no: u64,
     version_set: Arc<RwLock<VersionSet>>,
     ctx: Arc<GlobalContext>,
@@ -304,6 +305,7 @@ impl Summary {
     pub async fn new(
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
+        meta: MetaRef,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
@@ -321,8 +323,10 @@ impl Summary {
         w.sync().await?;
 
         Ok(Self {
+            meta: meta.clone(),
             file_no: 0,
             version_set: Arc::new(RwLock::new(VersionSet::empty(
+                meta.clone(),
                 opt.clone(),
                 runtime.clone(),
                 memory_pool,
@@ -361,7 +365,7 @@ impl Summary {
                 .unwrap(),
         );
         let vs = Self::recover_version(
-            meta,
+            meta.clone(),
             rd,
             &ctx,
             opt.clone(),
@@ -375,6 +379,7 @@ impl Summary {
         .await?;
 
         Ok(Self {
+            meta: meta.clone(),
             file_no: 0,
             version_set: Arc::new(RwLock::new(vs)),
             ctx,
@@ -465,8 +470,9 @@ impl Summary {
             }
 
             // Recover levels_info according to `CompactMeta`s;
-            let tsm_reader_cache =
-                Arc::new(ShardedCache::with_capacity(opt.storage.max_cached_readers));
+            let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(
+                opt.storage.max_cached_readers,
+            ));
             let weak_tsm_reader_cache = Arc::downgrade(&tsm_reader_cache);
             let mut levels = LevelInfo::init_levels(database.clone(), tsf_id, opt.storage.clone());
             for meta in files.into_values() {
@@ -966,6 +972,7 @@ mod test {
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
+            meta_manager.clone(),
             memory_pool.clone(),
             Arc::new(MetricsRegister::default()),
         )
@@ -1012,6 +1019,7 @@ mod test {
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
+            meta_manager.clone(),
             memory_pool.clone(),
             Arc::new(MetricsRegister::default()),
         )
@@ -1082,6 +1090,7 @@ mod test {
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
+            meta_manager.clone(),
             memory_pool.clone(),
             Arc::new(MetricsRegister::default()),
         )
@@ -1093,11 +1102,7 @@ mod test {
             .version_set
             .write()
             .await
-            .create_db(
-                DatabaseSchema::new("cnosdb", &database),
-                meta_manager.clone(),
-                memory_pool.clone(),
-            )
+            .create_db(DatabaseSchema::new("cnosdb", &database))
             .await
             .unwrap();
         for i in 0..40 {
@@ -1173,6 +1178,7 @@ mod test {
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
+            meta_manager.clone(),
             memory_pool.clone(),
             Arc::new(MetricsRegister::default()),
         )
@@ -1183,11 +1189,7 @@ mod test {
             .version_set
             .write()
             .await
-            .create_db(
-                DatabaseSchema::new("cnosdb", &database),
-                meta_manager.clone(),
-                memory_pool.clone(),
-            )
+            .create_db(DatabaseSchema::new("cnosdb", &database))
             .await
             .unwrap();
         let cxt = Arc::new(GlobalContext::new());
@@ -1225,7 +1227,7 @@ mod test {
                 &mut HashMap::new(),
                 None,
             );
-            let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache);
+            let tsm_reader_cache = Arc::downgrade(version.tsm_reader_cache());
 
             let mut edit = VersionEdit::new(10);
             let meta = CompactMeta {
@@ -1239,7 +1241,7 @@ mod test {
                 high_seq: 1,
                 ..Default::default()
             };
-            version.levels_info[1].push_compact_meta(
+            version.levels_info_mut()[1].push_compact_meta(
                 &meta,
                 Arc::new(BloomFilter::default()),
                 tsm_reader_cache,
@@ -1269,15 +1271,15 @@ mod test {
 
         let vs = summary.version_set.read().await;
         let tsf = vs.get_tsfamily_by_tf_id(10).await.unwrap();
-        assert_eq!(tsf.read().await.version().last_seq, 1);
-        assert_eq!(tsf.read().await.version().levels_info[1].tsf_id, 10);
-        assert!(!tsf.read().await.version().levels_info[1].files[0].is_delta());
+        assert_eq!(tsf.read().await.version().last_seq(), 1);
+        assert_eq!(tsf.read().await.version().levels_info()[1].tsf_id, 10);
+        assert!(!tsf.read().await.version().levels_info()[1].files[0].is_delta());
         assert_eq!(
-            tsf.read().await.version().levels_info[1].files[0].file_id(),
+            tsf.read().await.version().levels_info()[1].files[0].file_id(),
             15
         );
         assert_eq!(
-            tsf.read().await.version().levels_info[1].files[0].size(),
+            tsf.read().await.version().levels_info()[1].files[0].size(),
             100
         );
         assert_eq!(summary.ctx.file_id(), 16);

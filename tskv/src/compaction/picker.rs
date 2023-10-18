@@ -145,9 +145,9 @@ impl Picker for LevelCompactionPicker {
         );
 
         Some(CompactReq {
-            ts_family_id: version.ts_family_id,
-            database: version.tenant_database.clone(),
-            storage_opt: version.storage_opt.clone(),
+            ts_family_id: version.tf_id(),
+            database: version.tenant_database(),
+            storage_opt: version.storage_opt(),
             files: picking_files,
             version: version.clone(),
             out_level,
@@ -296,7 +296,7 @@ impl LevelCompactionPicker {
 mod test {
     use std::sync::Arc;
 
-    use lru_cache::asynchronous::ShardedCache;
+    use cache::ShardedAsyncCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use metrics::metric_register::MetricsRegister;
     use models::predicate::domain::TimeRange;
@@ -374,7 +374,7 @@ mod test {
             1,
             level_infos,
             1000,
-            Arc::new(ShardedCache::with_capacity(1)),
+            Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
         let (compactt_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
