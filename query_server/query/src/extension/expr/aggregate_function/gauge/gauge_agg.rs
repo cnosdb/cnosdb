@@ -15,8 +15,9 @@ use spi::query::function::FunctionMetadataManager;
 use spi::QueryError;
 
 use super::{GaugeData, TSPoint};
-use crate::extension::expr::aggregate_function::gauge::scalar_to_points;
-use crate::extension::expr::aggregate_function::{AggResult, AggState, GAUGE_AGG_UDAF_NAME};
+use crate::extension::expr::aggregate_function::{
+    scalar_to_points, AggResult, AggState, GAUGE_AGG_UDAF_NAME,
+};
 use crate::extension::expr::expr_utils::CHECK_ARGS_FUNC;
 
 pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<(), QueryError> {
@@ -28,7 +29,7 @@ fn new() -> AggregateUDF {
     let return_type_func: ReturnTypeFunction = Arc::new(move |input| {
         CHECK_ARGS_FUNC(GAUGE_AGG_UDAF_NAME, 2, input)?;
 
-        let result = GaugeData::new_null(input[0].clone(), input[1].clone())?;
+        let result = GaugeData::try_new_null(input[0].clone(), input[1].clone())?;
         let date_type = result.to_scalar()?.get_datatype();
 
         trace::trace!("return_type: {:?}", date_type);
@@ -291,8 +292,6 @@ impl GaugeDataBuilder {
         let last = self.container[last_idx].clone();
 
         Some(GaugeData {
-            time_data_type: self.time_data_type.clone(),
-            value_data_type: self.value_data_type.clone(),
             first,
             second,
             penultimate,
@@ -396,8 +395,6 @@ mod tests {
         mutable_gauge_data.push(point.clone()).unwrap();
 
         let expected = GaugeData {
-            time_data_type: mutable_gauge_data.time_data_type.clone(),
-            value_data_type: mutable_gauge_data.value_data_type.clone(),
             first: point.clone(),
             second: point.clone(),
             penultimate: point.clone(),
@@ -427,8 +424,6 @@ mod tests {
         mutable_gauge_data.push(point2.clone()).unwrap();
 
         let expected = GaugeData {
-            time_data_type: mutable_gauge_data.time_data_type.clone(),
-            value_data_type: mutable_gauge_data.value_data_type.clone(),
             first: point1.clone(),
             second: point2.clone(),
             penultimate: point1,
@@ -475,8 +470,6 @@ mod tests {
         mutable_gauge_data.add_num_elements(5);
 
         let expected = GaugeData {
-            time_data_type: mutable_gauge_data.time_data_type.clone(),
-            value_data_type: mutable_gauge_data.value_data_type.clone(),
             first: points[0].clone(),
             second: points[1].clone(),
             penultimate: points[3].clone(),
