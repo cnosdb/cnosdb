@@ -151,6 +151,24 @@ impl ResourceManager {
                         name: tenant_name.clone(),
                     })?;
 
+            // remove members in the tenant
+            let mut users = coord
+                .meta_manager()
+                .users()
+                .await
+                .map_err(|err| CoordinatorError::Meta { source: err })?;
+            let members = tenant
+                .members()
+                .await
+                .map_err(|err| CoordinatorError::Meta { source: err })?;
+            users.retain(|user| members.iter().any(|member| user.name() == member.0));
+            for user in users {
+                tenant
+                    .remove_member(*user.id())
+                    .await
+                    .map_err(|err| CoordinatorError::Meta { source: err })?;
+            }
+
             // drop role in the tenant
             let all_roles = tenant
                 .custom_roles()
