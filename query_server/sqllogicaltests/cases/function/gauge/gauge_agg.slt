@@ -1,6 +1,5 @@
 include ./../setup.slt
 
-sleep 5s
 
 ##########
 ## Query
@@ -59,7 +58,7 @@ statement error Arrow error: Io error: Status \{ code: Internal, message: "Build
 select gauge_agg(f0, f0) as gauge from func_tb2;
 
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'gauge_agg\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tgauge_agg\(Timestamp\(Second, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Millisecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Microsecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Nanosecond, None\), Float64\)", *
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"gauge_agg\\" does not accept 1 function arguments\.", *
 select gauge_agg(time) as gauge from func_tb2;
 
 
@@ -68,8 +67,8 @@ statement error Arrow error: Io error: Status \{ code: Internal, message: "Build
 select gauge_agg(,f0) as gauge from func_tb2;
 
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: The function \\"gauge_agg\\" expects 2 arguments, but 0 were provided", *
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"gauge_agg\\" does not accept 0 function arguments\.", *
 select gauge_agg() as gauge from func_tb2;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'gauge_agg\(Timestamp\(Nanosecond, None\), UInt64, Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tgauge_agg\(Timestamp\(Second, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Millisecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Microsecond, None\), Float64\)\\n\\tgauge_agg\(Timestamp\(Nanosecond, None\), Float64\)", *
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"gauge_agg\\" does not accept 3 function arguments\.", *
 select gauge_agg(time, f0, f1) as gauge from func_tb2;

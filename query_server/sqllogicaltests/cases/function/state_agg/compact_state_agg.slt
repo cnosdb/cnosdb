@@ -1,4 +1,5 @@
 include ../setup.slt
+include ../git/setup.slt
 
 ##########
 ## Query
@@ -13,3 +14,76 @@ select compact_state_agg(time, time, time) as state from func_tbl;
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"compact_state_agg\\" does not accept 1 function arguments\.",.*
 select compact_state_agg(time) as state from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"compact_state_agg\\" does not accept 0 function arguments\.", *
+select compact_state_agg() as state from func_tbl;
+
+statement ok
+with tmp as (select compact_state_agg(time, f1) as state from func_tb2)
+select state.state_duration, state.state_periods from tmp;
+
+
+statement ok
+with tmp as (select compact_state_agg(time, f0) as state from func_tb2)
+select state.state_duration, state.state_periods from tmp;
+
+
+statement ok
+with tmp as (select compact_state_agg(time, f2) as state from func_tb2)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, f3) as state from func_tb2)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, f4) as state from func_tb2)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, t0) as state from func_tb2)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, 1) as state from func_tb2)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, loc0_point) as state from gis_loc_all)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, loc1_LINESTRING) as state from gis_loc_all)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, loc2_POLYGON) as state from gis_loc_all)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, loc3_MULTIPOINT) as state from gis_loc_all)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, loc4_MULTILINESTRING) as state from gis_loc_all)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, loc5_MULTIPOLYGON) as state from gis_loc_all)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, loc6_GEOMETRYCOLLECTION) as state from gis_loc_all)
+select state.state_duration, state.state_periods from tmp;
+
+statement ok
+with tmp as (select compact_state_agg(time, time) as state from gis_loc_all)
+select state.state_duration, state.state_periods from tmp;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'compact_state_aggs'\.\\nDid you mean 'concat_ws'\?", *
+with tmp as (select compact_state_aggs(time, loc1_LINESTRING) as state from gis_loc_all)
+select state.state_duration, state.state_periods from tmp;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'compact_state_aggs'\.\\nDid you mean 'concat_ws'\?", *
+with tmp as (select compact_state_aggs(t0, loc1_LINESTRING) as state from gis_loc_all)
+select state.state_duration, state.state_periods from tmp ;

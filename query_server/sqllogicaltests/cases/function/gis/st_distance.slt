@@ -1,5 +1,6 @@
 include ./setup.slt
 
+
 ##########
 ## Query
 ##########
@@ -189,3 +190,16 @@ select st_distance('MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30,
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Execution error: Calculating the distance between GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\) and GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\) is not supported", .*
 select st_distance('GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"st_distance\\" expects 2 arguments, but 0 were provided", *
+select st_distance();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"st_distance\\" expects 2 arguments, but 3 were provided", *
+select st_distance('POINT(0 0)', 'POINT(0 0)', 'POINT(0 0)');
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"st_distance\\" expects 2 arguments, but 1 were provided", *
+select st_distance('POINT(0 0)');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an expression:, found: ,", *
+select st_distance(,'POINT(0 0)');

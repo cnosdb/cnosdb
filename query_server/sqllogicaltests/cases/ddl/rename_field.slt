@@ -64,3 +64,29 @@ from ddl_tbl order by time, t0, t1, t2;
 1999-12-31T00:10:00.025 tag11 tag22 NULL 333
 1999-12-31T00:10:00.030 tag11 tag23 NULL 444
 1999-12-31T01:00:00.035 tag14 tag24 NULL 555
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: This feature is not implemented: rename time column", *
+alter table ddl_tbl rename column time to time_001;
+
+query 
+desc table ddl_tbl;
+----
+time TIMESTAMP(NANOSECOND) TIME DEFAULT
+t0 STRING TAG DEFAULT
+t1 STRING TAG DEFAULT
+t2 STRING TAG DEFAULT
+f0 BIGINT FIELD DEFAULT
+f1 BIGINT FIELD DEFAULT
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected TO, found: ,", *
+alter table ddl_tbl rename column f0, f1 to f0_new000, f1_new_001;
+
+query 
+desc table ddl_tbl;
+----
+time TIMESTAMP(NANOSECOND) TIME DEFAULT
+t0 STRING TAG DEFAULT
+t1 STRING TAG DEFAULT
+t2 STRING TAG DEFAULT
+f0 BIGINT FIELD DEFAULT
+f1 BIGINT FIELD DEFAULT
