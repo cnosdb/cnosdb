@@ -163,7 +163,7 @@ impl TsKv {
             .await
             .unwrap()
         } else {
-            Summary::new(opt, runtime, memory_pool, metrics)
+            Summary::new(opt, runtime, meta, memory_pool, metrics)
                 .await
                 .unwrap()
         };
@@ -436,11 +436,7 @@ impl TsKv {
             .version_set
             .write()
             .await
-            .create_db(
-                DatabaseSchema::new(tenant, db_name),
-                self.meta_manager.clone(),
-                self.memory_pool.clone(),
-            )
+            .create_db(DatabaseSchema::new(tenant, db_name))
             .await?;
         Ok(db)
     }

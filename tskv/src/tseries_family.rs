@@ -29,7 +29,7 @@ use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::{DataBlock, TsmReader, TsmTombstone};
 use crate::Error::CommonError;
-use crate::{ColumnFileId, LevelId, TseriesFamilyId};
+use crate::{ColumnFileId, LevelId, Options, TseriesFamilyId};
 
 #[derive(Debug)]
 pub struct ColumnFile {
@@ -694,6 +694,80 @@ impl TsfMetrics {
 }
 
 #[derive(Debug)]
+pub struct TsfFactory {
+    // "tenant.db"
+    database: Arc<String>,
+    options: Arc<Options>,
+    memory_pool: MemoryPoolRef,
+    metrics_register: Arc<MetricsRegister>,
+}
+impl TsfFactory {
+    pub fn new(
+        database: Arc<String>,
+        options: Arc<Options>,
+        memory_pool: MemoryPoolRef,
+        metrics_register: Arc<MetricsRegister>,
+    ) -> Self {
+        Self {
+            database,
+            options,
+            memory_pool,
+            metrics_register,
+        }
+    }
+}
+
+impl TsfFactory {
+    pub fn create_tsf(
+        &self,
+        tf_id: TseriesFamilyId,
+        version: Arc<Version>,
+        flush_task_sender: Sender<FlushReq>,
+        compact_task_sender: Sender<CompactTask>,
+    ) -> TseriesFamily {
+        let mut_cache = Arc::new(RwLock::new(MemCache::new(
+            tf_id,
+            self.options.cache.max_buffer_size,
+            self.options.cache.partition,
+            version.last_seq,
+            &self.memory_pool,
+        )));
+        let tsf_metrics =
+            TsfMetrics::new(&self.metrics_register, self.database.as_str(), tf_id as u64);
+        let super_version = Arc::new(SuperVersion::new(
+            tf_id,
+            self.options.storage.clone(),
+            CacheGroup {
+                mut_cache: mut_cache.clone(),
+                immut_cache: vec![],
+            },
+            version.clone(),
+            0,
+        ));
+
+        TseriesFamily {
+            tf_id,
+            tenant_database: self.database.clone(),
+            mut_cache,
+            immut_cache: vec![],
+            super_version,
+            super_version_id: AtomicU64::new(0),
+            version: version.clone(),
+            cache_opt: self.options.cache.clone(),
+            storage_opt: self.options.storage.clone(),
+            seq_no: version.last_seq,
+            last_modified: Arc::new(Default::default()),
+            flush_task_sender,
+            compact_task_sender,
+            cancellation_token: CancellationToken::new(),
+            memory_pool: self.memory_pool.clone(),
+            tsf_metrics,
+            status: VnodeStatus::Running,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct TseriesFamily {
     tf_id: TseriesFamilyId,
     tenant_database: Arc<String>,
@@ -717,6 +791,7 @@ pub struct TseriesFamily {
 impl TseriesFamily {
     pub const MAX_DATA_BLOCK_SIZE: u32 = 1000;
     #[allow(clippy::too_many_arguments)]
+    #[cfg(test)]
     pub fn new(
         tf_id: TseriesFamilyId,
         tenant_database: Arc<String>,
@@ -1170,9 +1245,16 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 3, 0, opt.storage.clone()),
             LevelInfo::init(database.clone(), 4, 0, opt.storage.clone()),
         ];
-        let tsm_reader_cache = Arc::new(ShardedCache::with_capacity(16));
-        #[rustfmt::skip]
-            let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3100, tsm_reader_cache);
+        let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
+        let version = Version::new(
+            1,
+            database,
+            opt.storage.clone(),
+            1,
+            levels,
+            3100,
+            tsm_reader_cache,
+        );
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
         #[rustfmt::skip]
@@ -1553,11 +1635,7 @@ pub mod test_tseries_family {
             version_set
                 .write()
                 .await
-                .create_db(
-                    DatabaseSchema::new(&tenant, &database),
-                    meta_manager.clone(),
-                    memory_pool,
-                )
+                .create_db(DatabaseSchema::new(&tenant, &database))
                 .await
                 .unwrap();
             let db = version_set
