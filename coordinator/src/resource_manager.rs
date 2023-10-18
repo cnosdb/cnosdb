@@ -396,6 +396,7 @@ impl ResourceManager {
 
         let name = resourceinfo.get_names().join("/");
         if !resourceinfos_map.contains_key(&name)
+            || *resourceinfos_map[&name].get_status() == ResourceStatus::Schedule
             || *resourceinfos_map[&name].get_status() == ResourceStatus::Successed
             || *resourceinfos_map[&name].get_status() == ResourceStatus::Cancel
             || *resourceinfos_map[&name].get_status() == ResourceStatus::Fatal
