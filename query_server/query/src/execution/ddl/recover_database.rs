@@ -42,7 +42,7 @@ impl DDLDefinitionTask for RecoverDatabaseTask {
         let mut resourceinfo = ResourceInfo::new(
             *meta.tenant().id(),
             vec![tenant_name.clone(), db_name.clone()],
-            ResourceOperator::DropDatabase,
+            ResourceOperator::DropDatabase(tenant_name.clone(), db_name.clone()),
             &None,
         );
         resourceinfo.set_status(ResourceStatus::Cancel);

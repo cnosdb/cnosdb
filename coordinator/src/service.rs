@@ -1132,8 +1132,19 @@ impl Coordinator for CoordService {
 
         let resourceinfo = ResourceInfo::new(
             0,
-            vec![tenant.to_string(), db.to_string(), table_name.to_string()],
-            ResourceOperator::UpdateTagValue(new_tags_vec, series_keys, shards),
+            vec![
+                tenant.to_string(),
+                db.to_string(),
+                table_name.to_string(),
+                "UpdateTagsValue-".to_owned() + &table_schema.schema_id.to_string(),
+            ],
+            ResourceOperator::UpdateTagValue(
+                tenant.to_string(),
+                db.to_string(),
+                new_tags_vec,
+                series_keys,
+                shards,
+            ),
             &None,
         );
         ResourceManager::add_resource_task(Arc::new(self.clone()), resourceinfo).await?;

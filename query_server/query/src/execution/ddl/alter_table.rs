@@ -50,7 +50,7 @@ impl DDLDefinitionTask for AlterTableTask {
 
                 Some((
                     table_column.name.clone(),
-                    ResourceOperator::AddColumn(table_column.name, schema.clone()),
+                    ResourceOperator::AddColumn(tenant.to_string(), schema.clone(), table_column),
                 ))
             }
 
@@ -60,7 +60,11 @@ impl DDLDefinitionTask for AlterTableTask {
 
                 Some((
                     column_name.clone(),
-                    ResourceOperator::DropColumn(column_name.clone(), schema.clone()),
+                    ResourceOperator::DropColumn(
+                        tenant.to_string(),
+                        column_name.clone(),
+                        schema.clone(),
+                    ),
                 ))
             }
 
@@ -79,7 +83,12 @@ impl DDLDefinitionTask for AlterTableTask {
 
                 Some((
                     column_name.clone(),
-                    ResourceOperator::AlterColumn(column_name.clone(), schema.clone()),
+                    ResourceOperator::AlterColumn(
+                        tenant.to_string(),
+                        column_name.clone(),
+                        schema.clone(),
+                        new_column.clone(),
+                    ),
                 ))
             }
             AlterTableAction::RenameColumn {
@@ -131,6 +140,7 @@ impl DDLDefinitionTask for AlterTableTask {
                         Some((
                             old_column_name.clone(),
                             ResourceOperator::RenameTagName(
+                                tenant.to_string(),
                                 old_column_name.clone(),
                                 new_name.clone(),
                                 schema.clone(),

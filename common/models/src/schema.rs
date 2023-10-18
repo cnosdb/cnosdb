@@ -57,17 +57,18 @@ pub const USAGE_SCHEMA: &str = "usage_schema";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
 pub const DEFAULT_PRECISION: &str = "NS";
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ResourceOperator {
-    #[default]
-    DropTenant,
-    DropDatabase,
-    DropTable,
-    AddColumn(String, TskvTableSchema),
-    DropColumn(String, TskvTableSchema),
-    AlterColumn(String, TskvTableSchema),
-    RenameTagName(String, String, TskvTableSchema),
+    DropTenant(String),
+    DropDatabase(String, String),
+    DropTable(String, String, String),
+    AddColumn(String, TskvTableSchema, TableColumn),
+    DropColumn(String, String, TskvTableSchema),
+    AlterColumn(String, String, TskvTableSchema, TableColumn),
+    RenameTagName(String, String, String, TskvTableSchema),
     UpdateTagValue(
+        String,
+        String,
         Vec<(Vec<u8>, Option<Vec<u8>>)>,
         Vec<Vec<u8>>,
         Vec<ReplicationSet>,
@@ -76,9 +77,9 @@ pub enum ResourceOperator {
 impl fmt::Display for ResourceOperator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ResourceOperator::DropTenant => write!(f, "DropTenant"),
-            ResourceOperator::DropDatabase => write!(f, "DropDatabase"),
-            ResourceOperator::DropTable => write!(f, "DropTable"),
+            ResourceOperator::DropTenant(..) => write!(f, "DropTenant"),
+            ResourceOperator::DropDatabase(..) => write!(f, "DropDatabase"),
+            ResourceOperator::DropTable(..) => write!(f, "DropTable"),
             ResourceOperator::DropColumn(..) => write!(f, "DropColumn"),
             ResourceOperator::AddColumn(..) => write!(f, "AddColumn"),
             ResourceOperator::AlterColumn(..) => write!(f, "AlterColumn"),
@@ -88,14 +89,14 @@ impl fmt::Display for ResourceOperator {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ResourceStatus {
-    #[default]
     Schedule,
     Executing,
     Successed,
     Failed,
     Cancel,
+    Fatal,
 }
 impl fmt::Display for ResourceStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -105,11 +106,12 @@ impl fmt::Display for ResourceStatus {
             ResourceStatus::Successed => write!(f, "Successed"),
             ResourceStatus::Failed => write!(f, "Failed"),
             ResourceStatus::Cancel => write!(f, "Cancel"),
+            ResourceStatus::Fatal => write!(f, "Fatal"),
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ResourceInfo {
     time: i64,
     tenant_id: Oid,

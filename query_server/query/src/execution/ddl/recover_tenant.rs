@@ -43,7 +43,7 @@ impl DDLDefinitionTask for RecoverTenantTask {
         let mut resourceinfo = ResourceInfo::new(
             *tenant_meta.tenant().id(),
             vec![tenant_name.clone()],
-            ResourceOperator::DropTenant,
+            ResourceOperator::DropTenant(tenant_name.clone()),
             &None,
         );
         resourceinfo.set_status(ResourceStatus::Cancel);

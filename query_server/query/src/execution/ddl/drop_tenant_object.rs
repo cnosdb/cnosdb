@@ -95,7 +95,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 let resourceinfo = ResourceInfo::new(
                     *meta.tenant().id(),
                     vec![tenant_name.clone(), name.clone()],
-                    ResourceOperator::DropDatabase,
+                    ResourceOperator::DropDatabase(tenant_name.clone(), name.clone()),
                     after,
                 );
                 ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
