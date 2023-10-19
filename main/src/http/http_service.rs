@@ -50,6 +50,7 @@ use warp::{header, reject, Filter, Rejection, Reply};
 
 use super::header::Header;
 use super::Error as HttpError;
+use crate::http::api_type::{metrics_record_db, HttpApiType};
 use crate::http::metrics::HttpMetrics;
 use crate::http::response::{HttpResponse, ResponseBuilder};
 use crate::http::result_format::{get_result_format_from_header, ResultFormat};
@@ -318,7 +319,6 @@ impl HttpService {
                         .map_err(reject::custom)?;
 
                     let tenant = query.context().tenant();
-                    let db = query.context().database();
                     let user = query.context().user_info().desc().name();
                     let addr_str = addr.as_str();
 
@@ -329,7 +329,13 @@ impl HttpService {
                             .limiter(query.context().tenant())
                             .await
                             .map_err(meta_err_to_reject)?;
-                        let http_data_out = metrics.http_data_out(tenant, user, db, addr_str);
+                        let http_data_out = metrics.http_data_out(
+                            tenant,
+                            user,
+                            None,
+                            addr_str,
+                            HttpApiType::ApiV1Sql,
+                        );
                         sql_handle(
                             &query,
                             &dbms,
@@ -346,7 +352,15 @@ impl HttpService {
                         })
                     };
 
-                    http_record_query_metrics(&metrics, query.context(), &addr, req_len, start);
+                    // some sql maybe query other database, so don't record database
+                    http_record_query_metrics(
+                        &metrics,
+                        query.context(),
+                        &addr,
+                        req_len,
+                        start,
+                        HttpApiType::ApiV1Sql,
+                    );
                     result
                 },
             )
@@ -419,7 +433,14 @@ impl HttpService {
                     )
                     .await;
 
-                    http_record_write_metrics(&metrics, &ctx, &addr, req_len, start);
+                    http_record_write_metrics(
+                        &metrics,
+                        &ctx,
+                        &addr,
+                        req_len,
+                        start,
+                        HttpApiType::ApiV1Write,
+                    );
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
@@ -491,7 +512,14 @@ impl HttpService {
                     )
                     .await;
 
-                    http_record_write_metrics(&metrics, &ctx, &addr, req_len, start);
+                    http_record_write_metrics(
+                        &metrics,
+                        &ctx,
+                        &addr,
+                        req_len,
+                        start,
+                        HttpApiType::ApiV1OpenTsDBWrite,
+                    );
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
@@ -564,7 +592,14 @@ impl HttpService {
                     )
                     .await;
 
-                    http_record_write_metrics(&metrics, &ctx, &addr, req_len, start);
+                    http_record_write_metrics(
+                        &metrics,
+                        &ctx,
+                        &addr,
+                        req_len,
+                        start,
+                        HttpApiType::ApiV1OpenTsDBPut,
+                    );
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
@@ -700,8 +735,13 @@ impl HttpService {
                     let username = context.user_info().desc().name();
                     let database_name = context.database();
 
-                    let http_query_data_out =
-                        metrics.http_data_out(tenant_name, username, database_name, addr.as_str());
+                    let http_query_data_out = metrics.http_data_out(
+                        tenant_name,
+                        username,
+                        Some(database_name),
+                        addr.as_str(),
+                        HttpApiType::ApiV1PromRead,
+                    );
 
                     let result = {
                         let mut span_recorder =
@@ -722,7 +762,14 @@ impl HttpService {
                             })
                     };
 
-                    http_record_query_metrics(&metrics, &context, &addr, req_len, start);
+                    http_record_query_metrics(
+                        &metrics,
+                        &context,
+                        &addr,
+                        req_len,
+                        start,
+                        HttpApiType::ApiV1PromRead,
+                    );
                     result
                 },
             )
@@ -800,7 +847,14 @@ impl HttpService {
                         span_context,
                     )
                     .await;
-                    http_record_write_metrics(&metrics, &ctx, &addr, req_len, start);
+                    http_record_write_metrics(
+                        &metrics,
+                        &ctx,
+                        &addr,
+                        req_len,
+                        start,
+                        HttpApiType::ApiV1PromWrite,
+                    );
 
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
@@ -1176,14 +1230,22 @@ fn http_record_query_metrics(
     addr: &str,
     req_len: usize,
     start: Instant,
+    api_type: HttpApiType,
 ) {
     let (tenant, user, db) = (ctx.tenant(), ctx.user_info().desc().name(), ctx.database());
-    metrics.http_queries(tenant, user, db, addr).inc_one();
+    let db = if metrics_record_db(&api_type) {
+        Some(db)
+    } else {
+        None
+    };
     metrics
-        .http_data_in(tenant, user, db, addr)
+        .http_queries(tenant, user, db, addr, api_type)
+        .inc_one();
+    metrics
+        .http_data_in(tenant, user, db, addr, api_type)
         .inc(req_len as u64);
     metrics
-        .http_query_duration(tenant, user, db, addr)
+        .http_query_duration(tenant, user, db, addr, api_type)
         .record(start.elapsed());
 }
 
@@ -1193,15 +1255,23 @@ fn http_record_write_metrics(
     addr: &str,
     req_len: usize,
     start: Instant,
+    api_type: HttpApiType,
 ) {
     let (tenant, user, db) = (ctx.tenant(), ctx.user_info().desc().name(), ctx.database());
+    let db = if metrics_record_db(&api_type) {
+        Some(db)
+    } else {
+        None
+    };
 
-    metrics.http_writes(tenant, user, db, addr).inc_one();
     metrics
-        .http_data_in(tenant, user, db, addr)
+        .http_writes(tenant, user, db, addr, api_type)
+        .inc_one();
+    metrics
+        .http_data_in(tenant, user, db, addr, api_type)
         .inc(req_len as u64);
     metrics
-        .http_write_duration(tenant, user, db, addr)
+        .http_write_duration(tenant, user, db, addr, api_type)
         .record(start.elapsed());
 }
 
