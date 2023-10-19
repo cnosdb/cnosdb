@@ -8,8 +8,8 @@ statement ok
 with tmp as (select compact_state_agg(time, f1) as state from func_tbl)
 select state.state_duration, state.state_periods from tmp;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze. err: The function \\"compact_state_agg\\" expects 2 arguments, but 3 were provided",.*
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"compact_state_agg\\" does not accept 3 function arguments\.",.*
 select compact_state_agg(time, time, time) as state from func_tbl;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze. err: The function \\"compact_state_agg\\" expects 2 arguments, but 1 were provided",.*
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"compact_state_agg\\" does not accept 1 function arguments\.",.*
 select compact_state_agg(time) as state from func_tbl;
