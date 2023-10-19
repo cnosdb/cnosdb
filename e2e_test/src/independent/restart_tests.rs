@@ -25,7 +25,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post("http://127.0.0.1:8902/api/v1/sql?db=public", "SHOW TABLES")
@@ -53,7 +53,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -85,7 +85,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post("http://127.0.0.1:8902/api/v1/sql?db=public", "SHOW TABLES")
@@ -127,7 +127,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -169,7 +169,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -211,7 +211,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -252,7 +252,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -305,7 +305,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -339,7 +339,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -370,7 +370,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -415,7 +415,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -445,7 +445,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -475,7 +475,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -505,7 +505,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -535,7 +535,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -556,7 +556,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -573,7 +573,7 @@ pub mod test {
                 .collect::<Vec<_>>(),
             vec![
                 "tenant_name,tenant_options",
-                r#"test,"{""comment"":null,""limiter_config"":null}""#
+                r#"test,"{""comment"":null,""limiter_config"":null,""tenant_is_hidden"":false}""#
             ]
         );
 
@@ -586,7 +586,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -603,7 +603,7 @@ pub mod test {
                 .collect::<Vec<_>>(),
             vec![
                 "tenant_name,tenant_options",
-                r#"test,"{""comment"":""abc"",""limiter_config"":null}""#
+                r#"test,"{""comment"":""abc"",""limiter_config"":null,""tenant_is_hidden"":false}""#
             ]
         );
 
@@ -625,7 +625,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -685,7 +685,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -712,7 +712,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = tester_client
             .post("http://127.0.0.1:8902/api/v1/sql?tenant=test", "SELECT 1")
@@ -736,7 +736,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = tester_client
             .post("http://127.0.0.1:8902/api/v1/sql?tenant=test", "SELECT 1")
@@ -765,7 +765,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -795,7 +795,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
@@ -825,7 +825,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart("config_8902.toml");
+        data.restart_singleton("config_8902.toml");
 
         let resp = client
             .post(
