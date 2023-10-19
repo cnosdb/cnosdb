@@ -10,6 +10,7 @@ use warp::{reject, Rejection};
 
 use self::response::ResponseBuilder;
 
+mod api_type;
 pub mod header;
 pub mod http_service;
 mod metrics;
