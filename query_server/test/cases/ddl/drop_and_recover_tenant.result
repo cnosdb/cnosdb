@@ -1,0 +1,50 @@
+-- EXECUTE SQL: drop tenant if exists tenant_delay; --
+200 OK
+
+
+-- EXECUTE SQL: create tenant tenant_delay; --
+200 OK
+
+
+-- EXECUTE SQL: SHOW DATABASES; --
+200 OK
+
+
+-- EXECUTE SQL: drop tenant tenant_delay after '3m'; --
+200 OK
+
+
+-- EXECUTE SQL: SHOW DATABASES; --
+500 Internal Server Error
+
+-- EXECUTE SQL: select name,action,try_count,status from information_schema.resource_status where name = 'tenant_delay'; --
+200 OK
+name,action,try_count,status
+tenant_delay,DropTenant,0,Schedule
+
+-- EXECUTE SQL: recover tenant tenant_delay; --
+200 OK
+
+
+-- EXECUTE SQL: select name,action,try_count,status from information_schema.resource_status where name = 'tenant_delay'; --
+200 OK
+name,action,try_count,status
+tenant_delay,DropTenant,0,Cancel
+
+-- EXECUTE SQL: SHOW DATABASES; --
+200 OK
+
+
+-- EXECUTE SQL: drop tenant tenant_delay after '1m'; --
+200 OK
+
+
+-- EXECUTE SQL: select name,action,try_count,status from information_schema.resource_status where name = 'tenant_delay'; --
+200 OK
+name,action,try_count,status
+tenant_delay,DropTenant,0,Schedule
+
+-- EXECUTE SQL: select name,action,try_count,status from information_schema.resource_status where name = 'tenant_delay'; --
+200 OK
+name,action,try_count,status
+tenant_delay,DropTenant,1,Successed
