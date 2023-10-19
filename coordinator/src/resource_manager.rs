@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use meta::model::meta_admin::AdminMeta;
 use models::meta_data::ReplicationSet;
-use models::oid::Identifier;
 use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableSchema};
 use models::utils::now_timestamp_nanos;
 use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab, UpdateTags};
@@ -165,27 +164,12 @@ impl ResourceManager {
                     name: tenant_name.to_string(),
                 })?;
 
-        // drop role in the tenant
-        let all_roles = tenant
-            .custom_roles()
-            .await
-            .map_err(|err| CoordinatorError::Meta { source: err })?;
-        for role in all_roles {
-            tenant
-                .drop_custom_role(role.name())
-                .await
-                .map_err(|err| CoordinatorError::Meta { source: err })?;
-        }
-
         // drop database in the tenant
         let all_dbs = tenant
             .list_databases()
             .map_err(|err| CoordinatorError::Meta { source: err })?;
         for db_name in all_dbs {
-            tenant
-                .drop_db(&db_name)
-                .await
-                .map_err(|err| CoordinatorError::Meta { source: err })?;
+            ResourceManager::drop_database(coord.clone(), tenant_name, &db_name).await?;
         }
 
         // drop tenant metadata
