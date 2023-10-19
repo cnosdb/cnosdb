@@ -57,10 +57,30 @@ impl VnodeHashTreeNode {
         self.fields.push(value);
     }
 
+    /// Calculate checksum with checksums of all field hash trees.
     pub fn checksum(&self) -> Hash {
         let mut hasher = Hasher::new();
         for f in self.fields.iter() {
             hasher.update(&f.checksum());
+        }
+        hasher.finalize().into()
+    }
+
+    /// Calculate checksum with calculated hash values of all time range hash trees.
+    ///
+    /// TODO(zipper): This method has double memory cost.
+    pub fn into_checksum(self) -> Hash {
+        let mut hashes = Vec::with_capacity(self.len());
+        for f in self.fields {
+            for t in f.time_ranges {
+                hashes.push(t.hash);
+            }
+        }
+        hashes.sort();
+
+        let mut hasher = Hasher::new();
+        for h in hashes {
+            hasher.update(&h);
         }
         hasher.finalize().into()
     }
@@ -208,7 +228,7 @@ pub(crate) async fn vnode_checksum(vnode: Arc<RwLock<TseriesFamily>>) -> Result<
     let mut vnode_id_array = UInt32Array::builder(capacity);
     let mut check_sum_array = StringBuilder::with_capacity(capacity, 32 * capacity);
     vnode_id_array.append_value(vnode_id);
-    check_sum_array.append_value(hash_to_string(root_node.checksum()));
+    check_sum_array.append_value(hash_to_string(root_node.into_checksum()));
     RecordBatch::try_new(
         vnode_table_checksum_schema(),
         vec![
@@ -300,7 +320,7 @@ pub(crate) async fn vnode_hash_tree(
         }
         vnode_hash_tree_node.push(filed_hash_tree_node);
     }
-    trace::info!("VnodeHashTree({vnode_id}): {}", vnode_hash_tree_node);
+    trace::trace!("VnodeHashTree({vnode_id}): {}", vnode_hash_tree_node);
 
     Ok(vnode_hash_tree_node)
 }
