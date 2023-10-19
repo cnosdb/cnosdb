@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use meta::model::meta_admin::AdminMeta;
-use models::oid::Identifier;
 use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableSchema};
 use models::utils::now_timestamp_nanos;
 use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab};
@@ -151,41 +150,31 @@ impl ResourceManager {
                         name: tenant_name.clone(),
                     })?;
 
-            // remove members in the tenant
-            let mut users = coord
-                .meta_manager()
-                .users()
-                .await
-                .map_err(|err| CoordinatorError::Meta { source: err })?;
-            let members = tenant
-                .members()
-                .await
-                .map_err(|err| CoordinatorError::Meta { source: err })?;
-            users.retain(|user| members.iter().any(|member| user.name() == member.0));
-            for user in users {
-                tenant
-                    .remove_member(*user.id())
-                    .await
-                    .map_err(|err| CoordinatorError::Meta { source: err })?;
-            }
-
-            // drop role in the tenant
-            let all_roles = tenant
-                .custom_roles()
-                .await
-                .map_err(|err| CoordinatorError::Meta { source: err })?;
-            for role in all_roles {
-                tenant
-                    .drop_custom_role(role.name())
-                    .await
-                    .map_err(|err| CoordinatorError::Meta { source: err })?;
-            }
-
             // drop database in the tenant
             let all_dbs = tenant
                 .list_databases()
                 .map_err(|err| CoordinatorError::Meta { source: err })?;
             for db_name in all_dbs {
+                let req = AdminCommandRequest {
+                    tenant: tenant_name.clone(),
+                    command: Some(DropDb(DropDbRequest {
+                        db: db_name.clone(),
+                    })),
+                };
+    
+                if coord.using_raft_replication() {
+                    let buckets = tenant.get_db_info(&db_name)?.map_or(vec![], |v| v.buckets);
+                    for bucket in buckets {
+                        for replica in bucket.shard_group {
+                            let cmd_type = VnodeManagerCmdType::DestoryRaftGroup(replica.id);
+                            coord.vnode_manager(tenant_name, cmd_type).await?;
+                        }
+                    }
+                } else {
+                    coord.broadcast_command(req).await?;
+                }
+                debug!("Drop database {} of tenant {}", db_name, tenant_name);
+
                 tenant
                     .drop_db(&db_name)
                     .await
