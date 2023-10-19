@@ -180,7 +180,7 @@ fn parse_use_database(sql: &str) -> Option<String> {
 
 pub fn is_system_table_db(db: &str) -> bool {
     let db = db.to_ascii_lowercase();
-    db.eq("cluster_schema") || db.eq("information_schema")
+    db.eq("cluster_schema") || db.eq("information_schema") || db.eq("usage_schema")
 }
 
 pub async fn connect_database(database: &str, ctx: &mut SessionContext) -> Result<()> {

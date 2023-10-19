@@ -63,9 +63,12 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                         object_name.database().to_string(),
                         object_name.table().to_string(),
                     ],
-                    ResourceOperator::DropTable,
+                    ResourceOperator::DropTable(
+                        object_name.tenant().to_string(),
+                        object_name.database().to_string(),
+                        object_name.table().to_string(),
+                    ),
                     &None,
-                    None,
                 );
                 ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
                     .await?;

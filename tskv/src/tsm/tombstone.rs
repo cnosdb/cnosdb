@@ -52,8 +52,8 @@ pub struct TsmTombstone {
 }
 
 impl TsmTombstone {
-    pub async fn open(path: impl AsRef<Path>, file_id: u64) -> Result<Self> {
-        let path = file_utils::make_tsm_tombstone_file(path, file_id);
+    pub async fn open(path: impl AsRef<Path>, tsm_file_id: u64) -> Result<Self> {
+        let path = file_utils::make_tsm_tombstone_file(path, tsm_file_id);
         let (mut reader, writer) = if file_manager::try_exists(&path) {
             (
                 Some(record_file::Reader::open(&path).await?),
@@ -79,8 +79,8 @@ impl TsmTombstone {
     pub async fn with_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let parent = path.parent().expect("a valid tsm/tombstone file path");
-        let tsm_id = file_utils::get_tsm_file_id_by_path(path)?;
-        Self::open(parent, tsm_id).await
+        let tsm_file_id = file_utils::get_tsm_file_id_by_path(path)?;
+        Self::open(parent, tsm_file_id).await
     }
 
     async fn load_all(
@@ -195,13 +195,31 @@ impl TsmTombstone {
         if let Some(tr_tuple) = data_block.time_range() {
             let time_range: &TimeRange = &tr_tuple.into();
             if let Some(time_ranges) = self.tombstones.get(&field_id) {
-                for t in time_ranges.iter() {
-                    if t.overlaps(time_range) {
-                        data_block.exclude(t);
-                    }
-                }
+                time_ranges
+                    .iter()
+                    .filter(|t| t.overlaps(time_range))
+                    .for_each(|t| data_block.exclude(t));
             }
         }
+    }
+
+    // if no exclude, return None
+    pub fn data_block_exclude_tombstones_new(
+        &self,
+        field_id: FieldId,
+        data_block: &DataBlock,
+    ) -> Option<DataBlock> {
+        let block_tr: TimeRange = data_block.time_range()?.into();
+        let tombstone = self
+            .tombstones
+            .get(&field_id)?
+            .iter()
+            .filter(|tr| tr.overlaps(&block_tr))
+            .collect::<Vec<_>>();
+        if tombstone.is_empty() {
+            return None;
+        }
+        Some(data_block.exclude_time_ranges(tombstone.as_slice()))
     }
 }
 

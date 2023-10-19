@@ -7,7 +7,7 @@ edition.workspace = true
 config = { path = "../config" }
 error_code = { path = "../common/error_code" }
 http_protocol = { path = "../common/http_protocol" }
-lru_cache = { path = "../common/lru_cache" }
+#lru_cache = { path = "../common/lru_cache" }
 memory_pool = { path = "../common/memory_pool" }
 meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }
@@ -16,6 +16,7 @@ protos = { path = "../common/protos", features = ["test"] }
 replication = { path = "../replication" }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
+cache = { path = "../common/cache" }
 
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }

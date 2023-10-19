@@ -203,6 +203,14 @@ impl Coordinator for MockCoordinator {
         Ok(())
     }
 
+    async fn broadcast_command_by_vnode(
+        &self,
+        req: AdminCommandRequest,
+        shards: Vec<ReplicationSet>,
+    ) -> CoordinatorResult<()> {
+        Ok(())
+    }
+
     async fn vnode_manager(
         &self,
         tenant: &str,

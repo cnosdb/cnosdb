@@ -267,11 +267,14 @@ mod test {
     #[test]
     fn test_write_read() {
         let cfg = Config::default();
-        std::fs::create_dir_all("/tmp/test/config/1/").unwrap();
-        let cfg_path = "/tmp/test/config/1/config.toml";
+        let dir = "/tmp/test/cnosdb/config/1/";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let cfg_path = "/tmp/test/cnosdb/config/1/config.toml";
         let mut cfg_file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
+            .append(false)
             .open(cfg_path)
             .unwrap();
         let _ = cfg_file.write(cfg.to_string_pretty().as_bytes()).unwrap();

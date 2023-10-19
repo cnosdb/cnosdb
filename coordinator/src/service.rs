@@ -28,7 +28,8 @@ use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId, Vno
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges};
 use models::schema::{
-    timestamp_convert, ColumnType, Precision, TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
+    timestamp_convert, ColumnType, Precision, ResourceInfo, ResourceOperator, TskvTableSchema,
+    TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
 };
 use models::{record_batch_decode, SeriesKey, Tag};
 use protocol_parser::lines_convert::{
@@ -839,6 +840,31 @@ impl Coordinator for CoordService {
         Ok(())
     }
 
+    async fn broadcast_command_by_vnode(
+        &self,
+        req: AdminCommandRequest,
+        shards: Vec<ReplicationSet>,
+    ) -> CoordinatorResult<()> {
+        let mut all_node_id = HashSet::new();
+        let mut requests = Vec::new();
+
+        shards.iter().for_each(|replication_set| {
+            replication_set.vnodes.iter().for_each(|vnode| {
+                let node_id = vnode.node_id;
+                if all_node_id.insert(node_id) {
+                    requests.push(self.exec_admin_command_on_node(node_id, req.clone()))
+                }
+            });
+        });
+        drop(all_node_id);
+
+        // 使用异步，并发请求
+        for res in futures::future::join_all(requests).await {
+            res?
+        }
+        Ok(())
+    }
+
     async fn vnode_manager(
         &self,
         tenant: &str,
@@ -1117,11 +1143,16 @@ impl Coordinator for CoordService {
             }
         }
 
+        // find all shard/ReplicationSet/node_id
+        // send only one request to each kv node
+        let time_ranges = TimeRanges::new(vec![TimeRange::new(min_ts, max_ts)]);
+        let shards = self.prune_shards(tenant, db, &time_ranges).await?;
+
         let update_tags_request = UpdateTagsRequest {
             db: db.clone(),
             new_tags: new_tags.clone(),
-            matched_series: series_keys,
-            dry_run: false,
+            matched_series: series_keys.clone(),
+            dry_run: true,
         };
 
         let req = AdminCommandRequest {
@@ -1129,27 +1160,31 @@ impl Coordinator for CoordService {
             command: Some(UpdateTags(update_tags_request)),
         };
 
-        // find all shard/ReplicationSet/node_id
-        // send only one request to each kv node
-        let time_ranges = TimeRanges::new(vec![TimeRange::new(min_ts, max_ts)]);
-        let shards = self.prune_shards(tenant, db, &time_ranges).await?;
-        let mut all_node_id = HashSet::new();
-        let mut requests = Vec::new();
+        self.broadcast_command_by_vnode(req, shards.clone()).await?;
 
-        shards.iter().for_each(|replication_set| {
-            replication_set.vnodes.iter().for_each(|vnode| {
-                let node_id = vnode.node_id;
-                if all_node_id.insert(node_id) {
-                    requests.push(self.exec_admin_command_on_node(node_id, req.clone()))
-                }
-            });
-        });
-        drop(all_node_id);
+        let new_tags_vec: Vec<(Vec<u8>, Option<Vec<u8>>)> = new_tags
+            .iter()
+            .map(|e| (e.key.clone(), e.value.clone()))
+            .collect();
 
-        // 使用异步，并发请求
-        for res in futures::future::join_all(requests).await {
-            res?
-        }
+        let resourceinfo = ResourceInfo::new(
+            0,
+            vec![
+                tenant.to_string(),
+                db.to_string(),
+                table_name.to_string(),
+                "UpdateTagsValue-".to_owned() + &table_schema.schema_id.to_string(),
+            ],
+            ResourceOperator::UpdateTagValue(
+                tenant.to_string(),
+                db.to_string(),
+                new_tags_vec,
+                series_keys,
+                shards,
+            ),
+            &None,
+        );
+        ResourceManager::add_resource_task(Arc::new(self.clone()), resourceinfo).await?;
 
         Ok(())
     }

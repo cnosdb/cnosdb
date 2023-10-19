@@ -55,3 +55,213 @@ query T
 select st_area('POLYGON((0 0,0 1,1 1,1 0,0 0))');
 ----
 1.0
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"st_Area\\" expects 1 arguments, but 0 were provided", *
+select st_area();
+
+query 
+select st_area(f0_bigint) from gis_loc_all order by time;
+----
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+
+query 
+select st_area(f1_bigint_unsign) from gis_loc_all order by time;
+----
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+
+query 
+select st_area(f2_boolean) from gis_loc_all order by time;
+----
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+
+query 
+select st_area(f3_string) from gis_loc_all order by time;
+----
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+
+query 
+select st_area(f4_double) from gis_loc_all order by time;
+----
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+
+query 
+select st_area(loc0_point) from gis_loc_all order by time;
+----
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+
+query 
+select st_area(loc1_LINESTRING) from gis_loc_all order by time;
+----
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+
+
+query 
+select st_area(loc2_POLYGON) from gis_loc_all order by time;
+----
+56548.0
+83899.0
+55450.0
+46735.0
+38030.0
+49900.0
+21563.0
+43000.0
+3180475.0
+550.0
+
+query 
+select st_area(loc3_MULTIPOINT) from gis_loc_all order by time;
+----
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+
+
+query 
+select st_area(loc4_MULTILINESTRING) from gis_loc_all  order by time;
+----
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+
+query 
+select st_area(loc5_MULTIPOLYGON) from gis_loc_all  order by time;
+----
+2777.5
+357.5
+792.5
+357.5
+912.5
+462.5
+387.5
+582.5
+552.5
+4462.5
+
+query 
+select st_area(loc6_GEOMETRYCOLLECTION) from gis_loc_all order by time;
+----
+912.5
+1087.5
+2.5
+87.5
+87.5
+87.5
+87.5
+87.5
+87.5
+87.5
+
+
+query 
+select st_area(t0) from gis_loc_all;
+----
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+
+query 
+select st_area(TIME) from gis_loc_all order by time;
+----
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"st_Area\\" expects 1 arguments, but 2 were provided", *
+select st_area(loc2_POLYGON, loc2_POLYGON) from gis_loc_all order by time;
+
+query 
+select st_area('GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (17 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)),POLYGON ((306 130, 440 402, 205 403, 150 202, 3045 102)))');
+----
+46822.5

@@ -42,7 +42,7 @@ impl DDLDefinitionTask for AlterTableTask {
             .as_ref()
             .clone();
 
-        let alter_info = match &self.stmt.alter_action {
+        let operator_info = match &self.stmt.alter_action {
             AlterTableAction::AddColumn { table_column } => {
                 let table_column = table_column.to_owned();
                 schema.add_column(table_column.clone());
@@ -50,8 +50,7 @@ impl DDLDefinitionTask for AlterTableTask {
 
                 Some((
                     table_column.name.clone(),
-                    ResourceOperator::AddColumn,
-                    (table_column.name, schema.clone()),
+                    ResourceOperator::AddColumn(tenant.to_string(), schema.clone(), table_column),
                 ))
             }
 
@@ -61,8 +60,11 @@ impl DDLDefinitionTask for AlterTableTask {
 
                 Some((
                     column_name.clone(),
-                    ResourceOperator::DropColumn,
-                    (column_name.clone(), schema.clone()),
+                    ResourceOperator::DropColumn(
+                        tenant.to_string(),
+                        column_name.clone(),
+                        schema.clone(),
+                    ),
                 ))
             }
 
@@ -81,8 +83,12 @@ impl DDLDefinitionTask for AlterTableTask {
 
                 Some((
                     column_name.clone(),
-                    ResourceOperator::AlterColumn,
-                    (column_name.clone(), schema.clone()),
+                    ResourceOperator::AlterColumn(
+                        tenant.to_string(),
+                        column_name.clone(),
+                        schema.clone(),
+                        new_column.clone(),
+                    ),
                 ))
             }
             AlterTableAction::RenameColumn {
@@ -133,8 +139,12 @@ impl DDLDefinitionTask for AlterTableTask {
 
                         Some((
                             old_column_name.clone(),
-                            ResourceOperator::RenameTagName,
-                            (new_name.clone(), schema.clone()),
+                            ResourceOperator::RenameTagName(
+                                tenant.to_string(),
+                                old_column_name.clone(),
+                                new_name.clone(),
+                                schema.clone(),
+                            ),
                         ))
                     }
                     RenameColumnAction::RenameField(new_name) => {
@@ -145,7 +155,7 @@ impl DDLDefinitionTask for AlterTableTask {
             }
         };
 
-        if let Some(info) = alter_info {
+        if let Some(info) = operator_info {
             let resourceinfo = ResourceInfo::new(
                 *client.tenant().id(),
                 vec![
@@ -156,7 +166,6 @@ impl DDLDefinitionTask for AlterTableTask {
                 ],
                 info.1,
                 &None,
-                Some(info.2),
             );
             ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
                 .await?;

@@ -79,9 +79,8 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                         let resourceinfo = ResourceInfo::new(
                             *tm.tenant().id(),
                             vec![name.clone()],
-                            ResourceOperator::DropTenant,
+                            ResourceOperator::DropTenant(name.clone()),
                             after,
-                            None,
                         );
                         ResourceManager::add_resource_task(
                             query_state_machine.coord.clone(),
