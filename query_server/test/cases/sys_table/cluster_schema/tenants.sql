@@ -1,3 +1,5 @@
+drop tenant if exists tenant_a;
+drop user if exists user_a;
 create tenant tenant_a;
 create user user_a;
 alter tenant tenant_a add user user_a as owner;

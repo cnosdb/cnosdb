@@ -16,6 +16,8 @@ elif [[ $TARGETPLATFORM = "windows/amd64" ]]; then
     unzip protoc.zip -d protoc && mv protoc/bin/protoc.exe /c/Windows/system32 && rm -rf protoc protoc.zip
     curl -o flatbuffers.zip -sL https://github.com/google/flatbuffers/releases/download/v22.9.29/Windows.flatc.binary.zip
     unzip flatbuffers.zip && mv flatc.exe /c/Windows/system32 && rm -rf flatbuffers.zip
+elif [[ $TARGETPLATFORM = "darwin" ]]; then
+    brew install protobuf flatbuffers
 else
     echo "unspportted platform: $TARGETPLATFORM"
     exit 1
