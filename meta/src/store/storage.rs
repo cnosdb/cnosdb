@@ -1252,7 +1252,7 @@ impl StateMachine {
         // drop role in the tenant
         let roles = self.process_read_roles(cluster, name)?;
         for role in roles {
-            self.process_drop_role(cluster,role.name(), name)?;
+            self.process_drop_role(cluster, role.name(), name)?;
         }
 
         // drop tenant meta
