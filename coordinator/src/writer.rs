@@ -14,6 +14,7 @@ use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{DeleteFromTableRequest, Meta, WritePointsRequest, WriteVnodeRequest};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
+use tonic::codec::CompressionEncoding;
 use tonic::transport::Channel;
 use tonic::Code;
 use tower::timeout::Timeout;
@@ -168,7 +169,9 @@ impl PointWriter {
                 error: error.to_string(),
             })?;
         let timeout_channel = Timeout::new(channel, Duration::from_millis(self.timeout_ms));
-        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel)
+            .accept_compressed(CompressionEncoding::Gzip)
+            .send_compressed(CompressionEncoding::Gzip);
 
         let mut cmd = tonic::Request::new(WriteVnodeRequest {
             vnode_id,
