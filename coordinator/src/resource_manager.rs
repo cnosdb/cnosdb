@@ -90,6 +90,9 @@ impl ResourceManager {
                         .map_err(|err| CoordinatorError::Meta { source: err })?;
                     return Ok(true);
                 }
+
+                let dur = tokio::time::Duration::from_secs(1);
+                tokio::time::sleep(dur).await;
             }
         } else {
             info!("resource is executing by {}", node_id);
