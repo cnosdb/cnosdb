@@ -148,7 +148,7 @@ fn update_tag(update_node: &UpdateNode, schema: Arc<TskvTableSchema>) -> DFResul
 
     let mut projection = vec![];
     for field in schema.columns() {
-        if field.column_type.is_tag() || field.column_type.is_time() {
+        if field.column_type.is_tag() {
             projection.push(col(field.name.clone()));
         }
     }
