@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
 use crate::store::command::*;
+use crate::store::key_path::KeyPath;
 
 #[derive(Debug, Clone)]
 pub struct MetaHttpClient {
@@ -60,6 +61,19 @@ impl MetaHttpClient {
         serde_json::from_str::<MetaResult<T>>(&rsp).map_err(|err| MetaError::SerdeMsgInvalid {
             err: err.to_string(),
         })?
+    }
+
+    pub async fn meta_leader(&self) -> MetaResult<String> {
+        let command = WriteCommand::Set {
+            key: KeyPath::test_alive(),
+            value: "test_value".to_owned(),
+        };
+
+        self.write::<()>(&command).await?;
+
+        let leader = self.leader.read().clone();
+
+        Ok(leader)
     }
 
     // ----------------------------------------------------------- //

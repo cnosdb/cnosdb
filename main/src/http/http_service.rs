@@ -206,6 +206,7 @@ impl HttpService {
             .or(self.write_line_protocol())
             .or(self.metrics())
             .or(self.print_meta())
+            .or(self.meta_leader_addr())
             .or(self.debug_pprof())
             .or(self.debug_jeprof())
             .or(self.prom_remote_read())
@@ -223,6 +224,7 @@ impl HttpService {
             .or(self.query())
             .or(self.metrics())
             .or(self.print_meta())
+            .or(self.meta_leader_addr())
             .or(self.debug_pprof())
             .or(self.debug_jeprof())
             .or(self.prom_remote_read())
@@ -237,6 +239,7 @@ impl HttpService {
             .or(self.write_line_protocol())
             .or(self.metrics())
             .or(self.print_meta())
+            .or(self.meta_leader_addr())
             .or(self.debug_pprof())
             .or(self.debug_jeprof())
             .or(self.prom_remote_write())
@@ -617,6 +620,20 @@ impl HttpService {
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
+    }
+
+    fn meta_leader_addr(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "meta_leader")
+            .and(self.handle_header())
+            .and(self.with_coord())
+            .and_then(|_header: Header, coord: CoordinatorRef| async move {
+                match coord.meta_manager().meta_leader().await {
+                    Ok(data) => Ok(data),
+                    Err(err) => Err(reject::custom(HttpError::Meta { source: err })),
+                }
+            })
     }
 
     fn print_meta(
