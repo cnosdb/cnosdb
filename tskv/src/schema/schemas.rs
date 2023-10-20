@@ -29,7 +29,10 @@ impl DBschemas {
                 .ok_or(SchemaError::TenantNotFound {
                     tenant: db_schema.tenant_name().to_string(),
                 })?;
-        if client.get_db_schema(db_schema.database_name())?.is_none() {
+        if client
+            .get_db_schema_for_special_case(db_schema.database_name())?
+            .is_none()
+        {
             client.create_db(db_schema.clone()).await?;
         }
         Ok(Self {

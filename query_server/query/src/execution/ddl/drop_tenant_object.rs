@@ -72,7 +72,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 // database_name
 
                 if meta
-                    .get_db_info_for_drop(name)
+                    .get_db_schema_for_special_case(name)
                     .is_ok_and(|opt| opt.is_none())
                 {
                     if *if_exist {

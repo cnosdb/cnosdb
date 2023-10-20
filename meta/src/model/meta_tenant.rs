@@ -426,20 +426,20 @@ impl TenantMeta {
         Ok(None)
     }
 
-    pub fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
+    // for drop and restart
+    pub fn get_db_schema_for_special_case(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
         if let Some(db) = self.data.read().dbs.get(name) {
-            if !db.schema.options().get_db_is_hidden() {
-                return Ok(Some(db.clone()));
-            }
+            return Ok(Some(db.schema.clone()));
         }
 
         Ok(None)
     }
 
-    // only for drop sql
-    pub fn get_db_info_for_drop(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
+    pub fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
         if let Some(db) = self.data.read().dbs.get(name) {
-            return Ok(Some(db.clone()));
+            if !db.schema.options().get_db_is_hidden() {
+                return Ok(Some(db.clone()));
+            }
         }
 
         Ok(None)
