@@ -20,9 +20,11 @@ pub const BUCKETS: &str = "buckets";
 pub const SCHEMAS: &str = "schemas";
 pub const TENANTS: &str = "tenants";
 pub const MEMBERS: &str = "members";
+pub const LIMITER: &str = "limiter";
 pub const DATA_NODES: &str = "data_nodes";
 pub const AUTO_INCR_ID: &str = "auto_incr_id";
-pub const LIMITER: &str = "limiter";
+pub const DATA_NODES_METRICS: &str = "data_nodes_metrics";
+pub const RESOURCE_INFOS_MARK: &str = "resourceinfosmark";
 
 pub struct KeyPath {}
 
@@ -44,6 +46,10 @@ impl KeyPath {
 
     pub fn version() -> String {
         "/data_version".to_string()
+    }
+
+    pub fn test_alive() -> String {
+        "/test_alive".to_string()
     }
 
     pub fn already_init() -> String {

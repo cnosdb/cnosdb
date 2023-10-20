@@ -9,6 +9,10 @@ edition.workspace = true
 name = "cnosdb"
 path = "src/main.rs"
 
+[[bin]]
+name = "cnosdb-imexport"
+path = "tools/cnosdb_imexport.rs"
+
 [dependencies]
 config = { path = "../config" }
 coordinator = { path = "../coordinator" }
@@ -81,7 +85,6 @@ backtrace = ["async-backtrace"]
 prost-types = { workspace = true }
 reqwest = { workspace = true }
 
-
 [[example]]
 name = "flight_sql_server"
 path = "examples/flight_sql_server.rs"
@@ -89,3 +92,5 @@ path = "examples/flight_sql_server.rs"
 [[example]]
 name = "flight_rpc_server"
 path = "examples/flight_rpc_server.rs"
+
+

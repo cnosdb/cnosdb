@@ -135,6 +135,10 @@ impl AdminMeta {
         self.config.cluster.meta_service_addr.join(";")
     }
 
+    pub async fn meta_leader(&self) -> MetaResult<String> {
+        self.client.meta_leader().await
+    }
+
     pub fn sys_info() -> SysInfo {
         let mut info = SysInfo::default();
 

@@ -4,13 +4,14 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use replication::ApplyStorage;
 use tokio::sync::RwLock;
 use tracing::info;
 use warp::{hyper, Filter};
 
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
-use crate::store::storage::StateMachine;
+use crate::store::storage::{BtreeMapSnapshotData, StateMachine};
 
 pub async fn start_singe_meta_server(path: String, cluster_name: String, addr: String) {
     let db_path = format!("{}/meta/{}.data", path, 0);
@@ -49,6 +50,8 @@ impl SingleServer {
         self.read()
             .or(self.write())
             .or(self.watch())
+            .or(self.dump())
+            .or(self.restore())
             .or(self.debug())
     }
 
@@ -104,6 +107,69 @@ impl SingleServer {
                         .map_err(warp::reject::custom)?;
 
                     let res: Result<String, warp::Rejection> = Ok(data);
+                    res
+                },
+            )
+    }
+
+    fn dump(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("dump").and(self.with_storage()).and_then(
+            |storage: Arc<RwLock<StateMachine>>| async move {
+                let data = storage
+                    .read()
+                    .await
+                    .snapshot()
+                    .await
+                    .map_err(MetaError::from)
+                    .map_err(warp::reject::custom)?;
+
+                let data: BtreeMapSnapshotData = serde_json::from_slice(&data)
+                    .map_err(MetaError::from)
+                    .map_err(warp::reject::custom)?;
+
+                let mut rsp = "".to_string();
+                for (key, val) in data.map.iter() {
+                    rsp = rsp + &format!("{}: {}\n", key, val);
+                }
+
+                let res: Result<String, warp::Rejection> = Ok(rsp);
+                res
+            },
+        )
+    }
+
+    fn restore(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("restore")
+            .and(warp::body::bytes())
+            .and(self.with_storage())
+            .and_then(
+                |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
+                    info!("restore data length:{}", req.len());
+
+                    let mut count = 0;
+                    let req = String::from_utf8_lossy(&req).to_string();
+                    let lines: Vec<&str> = req.split('\n').collect();
+                    for line in lines {
+                        let strs: Vec<&str> = line.splitn(2, ": ").collect();
+                        if strs.len() != 2 {
+                            continue;
+                        }
+
+                        let command = WriteCommand::Set {
+                            key: strs[0].to_string(),
+                            value: strs[1].to_string(),
+                        };
+
+                        let _ = storage.write().await.process_write_command(&command);
+
+                        count += 1;
+                    }
+
+                    let data = format!("Restore Data Success, Total: {} ", count);
+                    let res: Result<String, warp::Rejection> = Ok(data);
+
                     res
                 },
             )
