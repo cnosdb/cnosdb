@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
-use models::oid::Identifier;
+use protos::kv_service::admin_command_request::Command::DropDb;
+use protos::kv_service::{AdminCommandRequest, DropDbRequest};
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropGlobalObject, GlobalObjectType};
 use spi::{QueryError, Result};
@@ -59,17 +60,19 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
 
                 match meta.tenant_meta(name).await {
                     Some(tm) => {
-                        // drop role in the tenant
-                        let all_roles = tm.custom_roles().await?;
-                        for role in all_roles {
-                            if !tm.drop_custom_role(role.name()).await? {
-                                warn!("drop role {} failed.", role.name());
-                            }
-                        }
-
                         // drop database in the tenant
                         let all_dbs = tm.list_databases()?;
                         for db_name in all_dbs {
+                            let req = AdminCommandRequest {
+                                tenant: name.to_string(),
+                                command: Some(DropDb(DropDbRequest {
+                                    db: db_name.clone(),
+                                })),
+                            };
+
+                            query_state_machine.coord.broadcast_command(req).await?;
+
+                            debug!("Drop database {} of tenant {}", db_name, name);
                             if !tm.drop_db(&db_name).await? {
                                 warn!("drop database {} failed.", db_name);
                             }
