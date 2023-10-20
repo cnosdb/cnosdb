@@ -146,7 +146,7 @@ impl ExecutionPlan for UpdateTagExec {
                 write!(
                     f,
                     "UpdateTagExec: table={}, set=[{}], ",
-                    assigns, self.table_schema.name,
+                    self.table_schema.name, assigns
                 )
             }
             DisplayFormatType::Verbose => {

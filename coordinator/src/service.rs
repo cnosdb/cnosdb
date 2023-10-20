@@ -1079,7 +1079,6 @@ impl Coordinator for CoordService {
 
             // struct SeriesKey
             for idx in 0..num_rows {
-                let mut has_ts = false;
                 let mut tags = vec![];
                 for (column, schema) in columns.iter().zip(schema.iter()) {
                     let name = schema.name().as_str();
@@ -1089,20 +1088,7 @@ impl Coordinator for CoordService {
                             .ok_or(CoordinatorError::CommonError {
                                 msg: format!("column {} not found in table {}", name, table_name),
                             })?;
-                    if name == TIME_FIELD {
-                        let precision_and_value =
-                            get_precision_and_value_from_arrow_column(column, idx)?;
-                        let ts = precision_and_value.1;
-                        has_ts = true;
 
-                        if ts > max_ts {
-                            max_ts = ts;
-                        }
-
-                        if ts < min_ts {
-                            min_ts = ts;
-                        }
-                    }
                     if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
                         let value = column
                             .as_any()
@@ -1125,12 +1111,6 @@ impl Coordinator for CoordService {
                             value: value.as_bytes().to_vec(),
                         });
                     }
-                }
-
-                if !has_ts {
-                    return Err(CoordinatorError::CommonError {
-                        msg: format!("column {} not found in table {}", TIME_FIELD, table_name),
-                    });
                 }
 
                 series_keys.push(
