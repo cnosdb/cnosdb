@@ -446,6 +446,35 @@ impl CnosdbData {
         let jh1 = self.wait_startup(&format!("127.0.0.1:{}", &config_file[7..11]));
         let _ = jh1.join();
     }
+
+    pub fn kill_process(&mut self, config_file: &str) {
+        let proc = self
+            .sub_processes
+            .get_mut(config_file)
+            .unwrap_or_else(|| panic!("No data node created with {}", config_file));
+        if let Err(e) = proc.kill() {
+            println!("Failed to kill cnosdb ({config_file}) sub-process: {e}");
+        }
+        proc.wait().unwrap();
+
+        self.sub_processes.remove(config_file);
+    }
+
+    pub fn start_process(&mut self, config_file: &str) {
+        let new_proc = Command::new(&self.exe_path)
+            .args([
+                OsStr::new("run"),
+                OsStr::new("--config"),
+                self.config_dir.join(config_file).as_os_str(),
+            ])
+            .stderr(Stdio::null())
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("failed to execute cnosdb");
+        self.sub_processes.insert(config_file.to_string(), new_proc);
+        let jh1 = self.wait_startup(&format!("127.0.0.1:{}", &config_file[7..11]));
+        let _ = jh1.join();
+    }
 }
 
 impl Drop for CnosdbData {
