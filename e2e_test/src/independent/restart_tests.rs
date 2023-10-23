@@ -1,8 +1,11 @@
 #[cfg(test)]
 pub mod test {
-    use http_protocol::status_code;
+    use std::{sync::Arc, time::Duration, thread};
 
-    use crate::utils::{clean_env, start_singleton, Client};
+    use http_protocol::status_code;
+    use regex::Regex;
+
+    use crate::utils::{clean_env, Client, start_cluster};
 
     #[test]
     fn case1() {
