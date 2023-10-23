@@ -1,11 +1,13 @@
 #[cfg(test)]
 pub mod test {
-    use std::{sync::Arc, time::Duration, thread};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
 
     use http_protocol::status_code;
     use regex::Regex;
 
-    use crate::utils::{clean_env, Client, start_cluster};
+    use crate::utils::{clean_env, start_cluster, Client};
 
     #[cfg(feature = "not_passed")]
     #[test]
@@ -913,7 +915,8 @@ pub mod test {
             .post(
                 "http://127.0.0.1:8902/api/v1/sql?db=public",
                 "drop database db1",
-            ).unwrap();
+            )
+            .unwrap();
         assert_eq!(resp.status(), status_code::UNPROCESSABLE_ENTITY);
 
         thread::sleep(Duration::from_secs(71));
@@ -924,10 +927,11 @@ pub mod test {
                 "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb/db1'",
             ).unwrap();
         assert_eq!(resp.status(), status_code::OK);
-        let expect_res = Regex::new(r"name,action,try_count,status\ncnosdb/db1,DropDatabase,\d+,Failed\n").unwrap();
+        let expect_res =
+            Regex::new(r"name,action,try_count,status\ncnosdb/db1,DropDatabase,\d+,Failed\n")
+                .unwrap();
         let actual_res = resp.text().unwrap();
-        let is_find = expect_res.find(&actual_res);
-        assert_eq!(true, is_find.is_some());
+        assert!(expect_res.find(&actual_res).is_some());
 
         data.start_process("config_8912.toml");
 
@@ -937,10 +941,11 @@ pub mod test {
                 "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb/db1'",
             ).unwrap();
         assert_eq!(resp.status(), status_code::OK);
-        let expect_res = Regex::new(r"name,action,try_count,status\ncnosdb/db1,DropDatabase,\d+,Successed\n").unwrap();
+        let expect_res =
+            Regex::new(r"name,action,try_count,status\ncnosdb/db1,DropDatabase,\d+,Successed\n")
+                .unwrap();
         let actual_res = resp.text().unwrap();
-        let is_find = expect_res.find(&actual_res);
-        assert_eq!(true, is_find.is_some());
+        assert!(expect_res.find(&actual_res).is_some());
 
         println!("Test complete restart_test_case_6");
     }
