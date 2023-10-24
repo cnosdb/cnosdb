@@ -4,7 +4,7 @@ use std::fmt::{Debug, Display, Formatter};
 
 use minivec::MiniVec;
 use models::predicate::domain::{TimeRange, TimeRanges};
-use models::{PhysicalDType as ValueType, Timestamp};
+use models::{PhysicalDType, Timestamp};
 use trace::error;
 
 use crate::memcache::DataType;
@@ -111,34 +111,34 @@ impl PartialEq for DataBlock {
 }
 
 impl DataBlock {
-    pub fn new(size: usize, field_type: ValueType) -> Self {
+    pub fn new(size: usize, field_type: PhysicalDType) -> Self {
         match field_type {
-            ValueType::Unsigned => Self::U64 {
+            PhysicalDType::Unsigned => Self::U64 {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
                 enc: DataBlockEncoding::default(),
             },
-            ValueType::Integer => Self::I64 {
+            PhysicalDType::Integer => Self::I64 {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
                 enc: DataBlockEncoding::default(),
             },
-            ValueType::Float => Self::F64 {
+            PhysicalDType::Float => Self::F64 {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
                 enc: DataBlockEncoding::default(),
             },
-            ValueType::String => Self::Str {
+            PhysicalDType::String => Self::Str {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
                 enc: DataBlockEncoding::default(),
             },
-            ValueType::Boolean => Self::Bool {
+            PhysicalDType::Boolean => Self::Bool {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
                 enc: DataBlockEncoding::default(),
             },
-            ValueType::Unknown => {
+            PhysicalDType::Unknown => {
                 todo!()
             }
         }
@@ -266,14 +266,14 @@ impl DataBlock {
         }
     }
 
-    /// Returns the `ValueType` by this `DataBlock` variant.
-    pub fn field_type(&self) -> ValueType {
+    /// Returns the `PhysicalDType` by this `DataBlock` variant.
+    pub fn field_type(&self) -> PhysicalDType {
         match &self {
-            DataBlock::U64 { .. } => ValueType::Unsigned,
-            DataBlock::I64 { .. } => ValueType::Integer,
-            DataBlock::Str { .. } => ValueType::String,
-            DataBlock::F64 { .. } => ValueType::Float,
-            DataBlock::Bool { .. } => ValueType::Boolean,
+            DataBlock::U64 { .. } => PhysicalDType::Unsigned,
+            DataBlock::I64 { .. } => PhysicalDType::Integer,
+            DataBlock::Str { .. } => PhysicalDType::String,
+            DataBlock::F64 { .. } => PhysicalDType::Float,
+            DataBlock::Bool { .. } => PhysicalDType::Boolean,
         }
     }
 
@@ -741,7 +741,7 @@ impl DataBlock {
         ts: &[u8],
         val: &[u8],
         count: u32,
-        field_type: ValueType,
+        field_type: PhysicalDType,
     ) -> Result<DataBlock, Box<dyn Error + Send + Sync>> {
         let mut decoded_ts = Vec::with_capacity(count as usize);
         let ts_encoding = get_encoding(ts);
@@ -749,7 +749,7 @@ impl DataBlock {
         ts_codec.decode(ts, &mut decoded_ts)?;
 
         match field_type {
-            ValueType::Float => {
+            PhysicalDType::Float => {
                 // values will be same length as time-stamps.
                 let mut decoded_val = Vec::with_capacity(count as usize);
                 let val_encoding = get_encoding(val);
@@ -761,7 +761,7 @@ impl DataBlock {
                     enc: DataBlockEncoding::new(ts_encoding, val_encoding),
                 })
             }
-            ValueType::Integer => {
+            PhysicalDType::Integer => {
                 // values will be same length as time-stamps.
                 let mut decoded_val = Vec::with_capacity(count as usize);
                 let val_encoding = get_encoding(val);
@@ -773,7 +773,7 @@ impl DataBlock {
                     enc: DataBlockEncoding::new(ts_encoding, val_encoding),
                 })
             }
-            ValueType::Boolean => {
+            PhysicalDType::Boolean => {
                 // values will be same length as time-stamps.
                 let mut decoded_val = Vec::with_capacity(count as usize);
                 let val_encoding = get_encoding(val);
@@ -785,7 +785,7 @@ impl DataBlock {
                     enc: DataBlockEncoding::new(ts_encoding, val_encoding),
                 })
             }
-            ValueType::String => {
+            PhysicalDType::String => {
                 // values will be same length as time-stamps.
                 let mut decoded_val = Vec::with_capacity(count as usize);
                 let val_encoding = get_encoding(val);
@@ -797,7 +797,7 @@ impl DataBlock {
                     enc: DataBlockEncoding::new(ts_encoding, val_encoding),
                 })
             }
-            ValueType::Unsigned => {
+            PhysicalDType::Unsigned => {
                 // values will be same length as time-stamps.
                 let mut decoded_val = Vec::with_capacity(count as usize);
                 let val_encoding = get_encoding(val);
@@ -962,7 +962,7 @@ impl Default for DataBlockReader {
 }
 
 impl DataBlockReader {
-    pub fn new_uninit(value_type: ValueType) -> Self {
+    pub fn new_uninit(value_type: PhysicalDType) -> Self {
         let data_block = DataBlock::new(0, value_type);
         Self {
             data_block,
@@ -989,12 +989,11 @@ impl DataBlockReader {
         }
     }
 
-    /// Iterates the ramaining TimeRange in `intersected_time_ranges`, if there are no remaning TimeRange's.
+    /// Iterates the remaining TimeRange in `intersected_time_ranges`, if there are no remaining TimeRange's.
     /// then return false.
     ///
     /// If there are overlaped time range of DataBlock and TimeRanges, set iteration range of `data_block`
     /// and return true, otherwise set the iteration range a zero-length range `[1, 0]` and return false.
-    ///
     fn set_index_from_time_ranges(&mut self) -> bool {
         if self.intersected_time_ranges.is_empty()
             || self.intersected_time_ranges_i >= self.intersected_time_ranges.len()
@@ -1026,8 +1025,8 @@ impl DataBlockReader {
 impl Iterator for DataBlockReader {
     type Item = DataType;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx > self.end_idx {
-            self.set_index_from_time_ranges();
+        if self.idx > self.end_idx && !self.set_index_from_time_ranges() {
+            return None;
         }
         let res = self.data_block.get(self.idx);
         self.idx += 1;
@@ -1041,7 +1040,7 @@ pub struct EncodedDataBlock {
     pub val: Vec<u8>,
     pub enc: DataBlockEncoding,
     pub count: u32,
-    pub field_type: ValueType,
+    pub field_type: PhysicalDType,
     pub time_range: Option<TimeRange>,
 }
 
@@ -1085,8 +1084,10 @@ impl EncodedDataBlock {
 pub mod test {
 
     use minivec::mini_vec;
-    use models::predicate::domain::TimeRange;
+    use models::predicate::domain::{TimeRange, TimeRanges};
+    use models::PhysicalDType;
 
+    use super::DataBlockReader;
     use crate::memcache::DataType;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
@@ -1324,5 +1325,67 @@ pub mod test {
         let new_blk = blk.exclude_time_ranges(&[&exclude_time_range]);
         blk.exclude(&exclude_time_range);
         assert_eq!(blk, new_blk);
+    }
+
+    #[test]
+    fn test_data_block_reader() {
+        {
+            let mut blk_reader = DataBlockReader::new_uninit(PhysicalDType::Float);
+            assert_eq!(blk_reader.next(), None);
+        }
+        {
+            let data_block = DataBlock::U64 {
+                ts: vec![0, 1, 2, 3],
+                val: vec![10, 11, 12, 13],
+                enc: DataBlockEncoding::default(),
+            };
+            let time_ranges = TimeRanges::all();
+            let mut blk_reader = DataBlockReader::new(data_block, time_ranges);
+            assert_eq!(blk_reader.next(), Some(DataType::U64(0, 10)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(1, 11)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(2, 12)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(3, 13)));
+            assert_eq!(blk_reader.next(), None);
+        }
+        {
+            let data_block = DataBlock::U64 {
+                ts: vec![0, 1, 2, 3],
+                val: vec![10, 11, 12, 13],
+                enc: DataBlockEncoding::default(),
+            };
+            let time_ranges = TimeRanges::empty();
+            let mut blk_reader = DataBlockReader::new(data_block, time_ranges);
+            assert_eq!(blk_reader.next(), None);
+        }
+        {
+            let data_block = DataBlock::U64 {
+                ts: vec![0, 1, 2, 10, 11, 12, 100, 101, 102, 1000, 1001, 1002],
+                val: vec![0, 3, 6, 30, 33, 36, 300, 303, 306, 3000, 3003, 3006],
+                enc: DataBlockEncoding::default(),
+            };
+            let time_ranges = TimeRanges::new(vec![
+                (-3, -1).into(),
+                (0, 0).into(),
+                (1, 1).into(),
+                (2, 2).into(),
+                (10, 12).into(),
+                (99, 100).into(),
+                (102, 103).into(),
+                (999, 1003).into(),
+            ]);
+            let mut blk_reader = DataBlockReader::new(data_block, time_ranges);
+            assert_eq!(blk_reader.next(), Some(DataType::U64(0, 0)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(1, 3)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(2, 6)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(10, 30)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(11, 33)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(12, 36)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(100, 300)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(102, 306)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(1000, 3000)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(1001, 3003)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(1002, 3006)));
+            assert_eq!(blk_reader.next(), None);
+        }
     }
 }
