@@ -313,6 +313,13 @@ impl Error {
 
         e.code() == code
     }
+
+    pub fn is_file_not_found_error(&self) -> bool {
+        match self {
+            Self::OpenFile { source, .. } => source.kind() == std::io::ErrorKind::NotFound,
+            _ => false,
+        }
+    }
 }
 
 // default conversion from CoordinatorError to tonic treats everything

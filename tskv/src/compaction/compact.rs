@@ -1419,10 +1419,10 @@ pub mod test {
             }
             tsm_writer.write_index().await.unwrap();
             tsm_writer.finish().await.unwrap();
-            let mut tsm_tombstone = TsmTombstone::open(&dir, *tsm_sequence).await.unwrap();
+            let tsm_tombstone = TsmTombstone::open(&dir, *tsm_sequence).await.unwrap();
             for (fid, min_ts, max_ts) in tombstone_desc.iter() {
                 tsm_tombstone
-                    .add_range(&[*fid][..], &TimeRange::new(*min_ts, *max_ts))
+                    .add_range(&[*fid][..], &TimeRange::new(*min_ts, *max_ts), None)
                     .await
                     .unwrap();
             }

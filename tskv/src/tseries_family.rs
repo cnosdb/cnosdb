@@ -27,7 +27,7 @@ use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tsm::{TsmReader, TsmTombstone};
+use crate::tsm::TsmReader;
 use crate::Error::CommonError;
 use crate::{ColumnFileId, LevelId, Options, TseriesFamilyId};
 
@@ -106,15 +106,6 @@ impl ColumnFile {
             }
         }
         false
-    }
-
-    pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
-        let dir = self.path.parent().expect("file has parent");
-        // TODO flock tombstone file.
-        let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
-        tombstone.add_range(field_ids, time_range).await?;
-        tombstone.flush().await?;
-        Ok(())
     }
 }
 
@@ -488,23 +479,6 @@ impl Version {
         self.storage_opt.clone()
     }
 
-    pub fn column_files(
-        &self,
-        field_ids: &[FieldId],
-        time_range: &TimeRange,
-    ) -> Vec<Arc<ColumnFile>> {
-        self.levels_info
-            .iter()
-            .filter(|level| level.time_range.overlaps(time_range))
-            .flat_map(|level| {
-                level.files.iter().filter(|f| {
-                    f.time_range().overlaps(time_range) && f.contains_any_field_id(field_ids)
-                })
-            })
-            .cloned()
-            .collect()
-    }
-
     // todo:
     pub fn get_ts_overlap(&self, _level: u32, _ts_min: i64, _ts_max: i64) -> Vec<Arc<ColumnFile>> {
         vec![]
@@ -651,6 +625,41 @@ impl SuperVersion {
             }
         }
         files
+    }
+
+    pub async fn add_tsm_tombstone(
+        &self,
+        field_ids: &[FieldId],
+        time_ranges: &TimeRanges,
+    ) -> Result<()> {
+        let version = self.version.clone();
+
+        let column_files = version
+            .levels_info
+            .iter()
+            .filter(|level| time_ranges.overlaps(&level.time_range))
+            .flat_map(|level| {
+                level.files.iter().filter(|f| {
+                    time_ranges.overlaps(f.time_range()) && f.contains_any_field_id(field_ids)
+                })
+            })
+            .cloned()
+            .collect();
+        let mut tsm_iter = ColumnFileToTsmReaderIterator::new(version, column_files);
+        loop {
+            match tsm_iter.next().await {
+                Some(Ok(tsm)) => {
+                    for tr in time_ranges.time_ranges() {
+                        tsm.add_tombstone(field_ids, tr).await?;
+                    }
+                }
+                Some(Err(e)) => {
+                    return Err(e);
+                }
+                None => break,
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1149,6 +1158,44 @@ impl TseriesFamily {
 impl Drop for TseriesFamily {
     fn drop(&mut self) {
         self.cancellation_token.cancel();
+    }
+}
+
+pub struct ColumnFileToTsmReaderIterator {
+    version: Arc<Version>,
+    inner_iter: <Vec<Arc<ColumnFile>> as IntoIterator>::IntoIter,
+}
+
+impl ColumnFileToTsmReaderIterator {
+    pub fn new(version: Arc<Version>, column_files: Vec<Arc<ColumnFile>>) -> Self {
+        Self {
+            version,
+            inner_iter: column_files.into_iter(),
+        }
+    }
+
+    pub async fn next(&mut self) -> Option<Result<Arc<TsmReader>>> {
+        loop {
+            if let Some(f) = self.inner_iter.next() {
+                let tsm_reader = match self.version.get_tsm_reader(f.file_path()).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        if e.is_file_not_found_error() {
+                            trace::error!(
+                                "Get tsm reader: column file '{}' not found, skip",
+                                f.file_path().display()
+                            );
+                            continue;
+                        } else {
+                            return Some(Err(e));
+                        }
+                    }
+                };
+                return Some(Ok(tsm_reader));
+            } else {
+                return None;
+            }
+        }
     }
 }
 
@@ -1694,9 +1741,9 @@ pub mod test_tseries_family {
             let file = version.levels_info[1].files[0].clone();
 
             let dir = opt.storage.tsm_dir(&database, ts_family_id);
-            let mut tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
+            let tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
             tombstone
-                .add_range(&[0], &TimeRange::new(0, 0))
+                .add_range(&[0], &TimeRange::new(0, 0), None)
                 .await
                 .unwrap();
             tombstone.flush().await.unwrap();
