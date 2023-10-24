@@ -24,7 +24,7 @@ impl DeploymentConfig {
     }
 
     pub fn default_memory() -> usize {
-        get_sys_mem()
+        get_sys_mem_gb()
     }
 }
 
@@ -87,11 +87,11 @@ fn get_sys_cpu() -> usize {
     num_cpus
 }
 
-fn get_sys_mem() -> usize {
-    let mut mem: usize = 16 * 1024 * 1024;
+fn get_sys_mem_gb() -> usize {
     if let Ok(mem_info) = sys_info::mem_info() {
-        mem = mem_info.total as usize;
+        //mem_info.total unit is KB
+        mem_info.total as usize / 1024 / 1024
+    } else {
+        16
     }
-
-    mem / 1024 / 1024
 }
