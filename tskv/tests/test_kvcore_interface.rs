@@ -6,7 +6,6 @@ mod tests {
 
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
-    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{make_owner, Precision, TenantOptions};
     use protos::kv_service::Meta;
@@ -40,25 +39,23 @@ mod tests {
             }
         };
         let memory = Arc::new(GreedyMemoryPool::default());
-        let meta_manager: MetaRef = rt.block_on(AdminMeta::new(global_config));
-
-        rt.block_on(meta_manager.add_data_node()).unwrap();
-        let _ =
-            rt.block_on(meta_manager.create_tenant("cnosdb".to_string(), TenantOptions::default()));
-        rt.block_on(async {
-            (
+        let tskv = rt.block_on(async {
+            let meta_manager = AdminMeta::new(global_config).await;
+            meta_manager.add_data_node().await.unwrap();
+            let _ = meta_manager
+                .create_tenant("cnosdb".to_string(), TenantOptions::default())
+                .await;
+            TsKv::open(
+                meta_manager,
+                opt,
                 rt.clone(),
-                TsKv::open(
-                    meta_manager,
-                    opt,
-                    rt.clone(),
-                    memory,
-                    Arc::new(MetricsRegister::default()),
-                )
-                .await
-                .unwrap(),
+                memory,
+                Arc::new(MetricsRegister::default()),
             )
-        })
+            .await
+            .unwrap()
+        });
+        (rt, tskv)
     }
 
     #[test]
@@ -319,11 +316,12 @@ mod tests {
                 }),
                 points: fbb.finished_data().to_vec(),
             };
-            runtime
-                .block_on(tskv.write(None, vnode_id, Precision::NS, request))
-                .unwrap();
-            runtime.block_on(tskv.close());
-
+            runtime.block_on(async {
+                tskv.write(None, vnode_id, Precision::NS, request)
+                    .await
+                    .unwrap();
+                tskv.close().await;
+            });
             runtime
         };
 

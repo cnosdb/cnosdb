@@ -1,6 +1,6 @@
 include ./setup.slt
 
-query T
+query 
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
@@ -19,7 +19,7 @@ update dml_tbl set t0 = null, t1 = null where t0 = 'tag12';
 statement ok
 update dml_tbl set t0 = 'tag_new11', t1 = 'tag_new21' where t0 = 'tag11' and t1 = 'tag21';
 
-query T
+query 
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
@@ -35,7 +35,7 @@ from dml_tbl order by time, t0, t1, t2;
 statement ok
 update dml_tbl set t0 = null, t1 = 'tag_new21' where t0 = 'tag_new11';
 
-query T
+query 
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
@@ -48,10 +48,12 @@ from dml_tbl order by time, t0, t1, t2;
 1999-12-31T00:10:00.030 tag11 tag23 NULL 444 333
 1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
 
-statement ok
+query 
 update dml_tbl set t1 = 'xxxxx' where t0 = 'tag12' and t1 = 'tag22';
+----
+1
 
-query T
+query 
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
@@ -64,10 +66,12 @@ from dml_tbl order by time, t0, t1, t2;
 1999-12-31T00:10:00.030 tag11 tag23 NULL 444 333
 1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
 
-statement ok
+query 
 update dml_tbl set t2 = 'xxxxx' where t0 = 'tag12' and t1 = 'tag23';
+----
+1
 
-query T
+query 
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
@@ -81,13 +85,326 @@ from dml_tbl order by time, t0, t1, t2;
 1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
 
 # set value not contains table column
-statement error
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Schema error: No field named t0\.", *
 update dml_tbl set t0 = t0 || 'xxx', t1 = 'tag_new21' where t0 = 'tag11';
 
 # not contains time column
-statement error
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_update\\ncaused by\\nExternal error: Failed to do analyze\. err: Where clause cannot contain field/time column, but found: time", *
 update dml_tbl set t0 = 'xxx', t1 = 'tag_new21' where t0 = 'tag11' and time < '1999-12-31T00:00:10.020';
 
 # not contains field column
-statement error
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_update\\ncaused by\\nExternal error: Failed to do analyze\. err: Where clause cannot contain field/time column, but found: f1", *
 update dml_tbl set t0 = 'xxx', t1 = 'tag_new21' where t0 = 'tag11' and f1 = 222;
+
+query 
+select time, t0, t1, t2, f0, f1
+from dml_tbl order by time, t0, t1, t2;
+----
+1999-12-31T00:00:00 NULL tag_new21 NULL 111 444
+1999-12-31T00:00:00.005 tag12 xxxxx NULL 222 444
+1999-12-31T00:00:00.010 tag12 tag23 xxxxx NULL 222
+1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
+1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
+1999-12-31T00:10:00.025 tag11 tag22 NULL 333 555
+1999-12-31T00:10:00.030 tag11 tag23 NULL 444 333
+1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002 t107 t202 t305 -9
+1999-12-31T00:00:00.015 t003 t106 t203 t300 155
+1999-12-31T00:00:00.020 t004 t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_update\\ncaused by\\nExternal error: Failed to do analyze\. err: Where clause cannot contain field/time column, but found: *
+update dml_tb2 set t0 = 't000_new000' where f0_bigint = -1;
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002 t107 t202 t305 -9
+1999-12-31T00:00:00.015 t003 t106 t203 t300 155
+1999-12-31T00:00:00.020 t004 t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_update\\ncaused by\\nExternal error: Failed to do analyze\. err: Where clause cannot contain field/time column, but found: time", *
+update dml_tb2 set t0 = 't000_new000' where time = '1999-12-31T00:00:00';
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002 t107 t202 t305 -9
+1999-12-31T00:00:00.015 t003 t106 t203 t300 155
+1999-12-31T00:00:00.020 t004 t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query 
+update dml_tb2 set t0 = 't000_new000' where t1 = 't109';
+----
+1
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002 t107 t202 t305 -9
+1999-12-31T00:00:00.015 t003 t106 t203 t300 155
+1999-12-31T00:00:00.020 t004 t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_update\\ncaused by\\nExternal error: Failed to do analyze\. err: Where clause cannot contain field/time column, but found: f0_bigint", *
+update dml_tb2 set t0 = 't000_new000' where t1 = 't109' and f0_bigint = 1;
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002 t107 t202 t305 -9
+1999-12-31T00:00:00.015 t003 t106 t203 t300 155
+1999-12-31T00:00:00.020 t004 t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_update\\ncaused by\\nExternal error: Failed to do analyze\. err: Where clause cannot contain field/time column, but found: time", *
+update dml_tb2 set t0 = 't000_new000' where t1 = 't109' and time = '1999-12-31T00:00:00';
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002 t107 t202 t305 -9
+1999-12-31T00:00:00.015 t003 t106 t203 t300 155
+1999-12-31T00:00:00.020 t004 t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_update\\ncaused by\\nExternal error: Failed to do analyze\. err: Where clause cannot contain field/time column, but found: *
+update dml_tb2 set t0 = 't000_new000' where f0_bigint = 1 and time = '1999-12-31T00:00:00';
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002 t107 t202 t305 -9
+1999-12-31T00:00:00.015 t003 t106 t203 t300 155
+1999-12-31T00:00:00.020 t004 t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_update\\ncaused by\\nExternal error: Failed to do analyze\. err: Where clause cannot contain field/time column, but found: *
+update dml_tb2 set t0 = 't000_new000' where f0_bigint = 1 and time = '1999-12-31T00:00:00' and t1 = 't108';
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002 t107 t202 t305 -9
+1999-12-31T00:00:00.015 t003 t106 t203 t300 155
+1999-12-31T00:00:00.020 t004 t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query 
+update dml_tb2 set t0 = 't001_new_t001' where t0 = 't001';
+----
+1
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001_new_t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002 t107 t202 t305 -9
+1999-12-31T00:00:00.015 t003 t106 t203 t300 155
+1999-12-31T00:00:00.020 t004 t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query 
+update dml_tb2 set t0 = 't002_new_t002', t1 = 't107_new_107' where t2 = 't202' and t3 = 't305';
+----
+1
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001_new_t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002_new_t002 t107_new_107 t202 t305 -9
+1999-12-31T00:00:00.015 t003 t106 t203 t300 155
+1999-12-31T00:00:00.020 t004 t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query 
+update dml_tb2 set t0 = -1  where t2 = 't203';
+----
+1
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001_new_t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002_new_t002 t107_new_107 t202 t305 -9
+1999-12-31T00:00:00.015 -1 t106 t203 t300 155
+1999-12-31T00:00:00.020 t004 t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query 
+update dml_tb2 set t0 = true  where t2 = 't204';
+----
+1
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001_new_t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002_new_t002 t107_new_107 t202 t305 -9
+1999-12-31T00:00:00.015 -1 t106 t203 t300 155
+1999-12-31T00:00:00.020 true t105 t204 t300 1
+1999-12-31T00:00:00.025 t005 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query 
+update dml_tb2 set t0 = 3.1415926  where t2 = 't205';
+----
+1
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001_new_t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002_new_t002 t107_new_107 t202 t305 -9
+1999-12-31T00:00:00.015 -1 t106 t203 t300 155
+1999-12-31T00:00:00.020 true t105 t204 t300 1
+1999-12-31T00:00:00.025 3.1415926 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_update\\ncaused by\\nExternal error: Failed to do analyze\. err: Update the time/tag/field columns at the same statement is not supported", *
+update dml_tb2 set t0 = 3.1415926, f0_bigint = 123  where t2 = 't206';
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001_new_t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002_new_t002 t107_new_107 t202 t305 -9
+1999-12-31T00:00:00.015 -1 t106 t203 t300 155
+1999-12-31T00:00:00.020 true t105 t204 t300 1
+1999-12-31T00:00:00.025 3.1415926 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_update\\ncaused by\\nExternal error: Failed to do analyze\. err: Update the time/tag/field columns at the same statement is not supported", *
+update dml_tb2 set t0 = 3.1415926, time = 123  where t2 = 't206';
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001_new_t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002_new_t002 t107_new_107 t202 t305 -9
+1999-12-31T00:00:00.015 -1 t106 t203 t300 155
+1999-12-31T00:00:00.020 true t105 t204 t300 1
+1999-12-31T00:00:00.025 3.1415926 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_update\\ncaused by\\nExternal error: Failed to do analyze\. err: Update the time/tag/field columns at the same statement is not supported", *
+update dml_tb2 set t0 = 3.1415926, time = 123, f0_bigint = 123  where t2 = 't206';
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001_new_t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002_new_t002 t107_new_107 t202 t305 -9
+1999-12-31T00:00:00.015 -1 t106 t203 t300 155
+1999-12-31T00:00:00.020 true t105 t204 t300 1
+1999-12-31T00:00:00.025 3.1415926 t104 t205 t306 132
+1999-12-31T00:00:00.030 t006 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451
+
+query 
+update dml_tb2 set t0 = 50  where t2 = 't206';
+----
+1
+
+query 
+select time, t0, t1, t2, t3, f0_bigint from dml_tb2 order by time, t0, t1, t2, t3, f0_bigint;
+----
+1999-12-31T00:00:00 t000_new000 t109 t200 t300 -1
+1999-12-31T00:00:00.005 t001_new_t001 t108 t201 t304 1
+1999-12-31T00:00:00.010 t002_new_t002 t107_new_107 t202 t305 -9
+1999-12-31T00:00:00.015 -1 t106 t203 t300 155
+1999-12-31T00:00:00.020 true t105 t204 t300 1
+1999-12-31T00:00:00.025 3.1415926 t104 t205 t306 132
+1999-12-31T00:00:00.030 50 t103 t206 t300 321
+1999-12-31T00:00:00.035 t009 t100 t200 t300 165
+1999-12-31T00:00:00.040 t007 t101 t200 t306 41
+1999-12-31T00:00:00.045 t008 t102 t200 t309 451

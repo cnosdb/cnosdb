@@ -23,9 +23,21 @@ unsafe impl Sync for HttpMetrics {}
 macro_rules! generate_gets {
     ($field: ident, $metrics_type: ty) => {
         impl HttpMetrics {
-            pub fn $field(&self, tenant: &str, user: &str, db: &str, host: &str) -> $metrics_type {
-                self.$field
-                    .recorder(Self::tenant_user_db_host_labels(tenant, user, db, host))
+            pub fn $field(
+                &self,
+                tenant: &str,
+                user: &str,
+                db: Option<&str>,
+                host: &str,
+                api: crate::http::api_type::HttpApiType,
+            ) -> $metrics_type {
+                self.$field.recorder(Self::tenant_user_db_host_labels(
+                    Some(tenant),
+                    Some(user),
+                    db,
+                    Some(host),
+                    Some(&api.to_string()),
+                ))
             }
         }
     };
@@ -76,16 +88,18 @@ impl HttpMetrics {
     }
 
     fn tenant_user_db_host_labels<'a>(
-        tenant: &'a str,
-        user: &'a str,
-        db: &'a str,
-        host: &'a str,
+        tenant: Option<&'a str>,
+        user: Option<&'a str>,
+        db: Option<&'a str>,
+        host: Option<&'a str>,
+        api_type: Option<&'a str>,
     ) -> impl Into<Labels> + 'a {
         [
             ("tenant", tenant),
             ("user", user),
             ("database", db),
             ("host", host),
+            ("api", api_type),
         ]
     }
 }

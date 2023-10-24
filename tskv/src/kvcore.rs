@@ -42,8 +42,7 @@ use crate::wal::{
     self, Block, DeleteBlock, UpdateSeriesKeysBlock, WalDecoder, WalManager, WalTask,
 };
 use crate::{
-    file_utils, tenant_name_from_request, Engine, Error, SnapshotFileMeta, TseriesFamilyId,
-    UpdateSetValue, VnodeSnapshot,
+    file_utils, Engine, Error, SnapshotFileMeta, TseriesFamilyId, UpdateSetValue, VnodeSnapshot,
 };
 
 // TODO: A small summay channel capacity can cause a block
@@ -163,7 +162,7 @@ impl TsKv {
             .await
             .unwrap()
         } else {
-            Summary::new(opt, runtime, memory_pool, metrics)
+            Summary::new(opt, runtime, meta, memory_pool, metrics)
                 .await
                 .unwrap()
         };
@@ -436,11 +435,7 @@ impl TsKv {
             .version_set
             .write()
             .await
-            .create_db(
-                DatabaseSchema::new(tenant, db_name),
-                self.meta_manager.clone(),
-                self.memory_pool.clone(),
-            )
+            .create_db(DatabaseSchema::new(tenant, db_name))
             .await?;
         Ok(db)
     }
@@ -1914,5 +1909,13 @@ impl TsKv {
 
     pub(crate) fn compact_task_sender(&self) -> Sender<CompactTask> {
         self.compact_task_sender.clone()
+    }
+}
+
+/// Returns the normalized tenant of a WritePointsRequest
+fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) -> String {
+    match &req.meta {
+        Some(meta) => meta.tenant.clone(),
+        None => models::schema::DEFAULT_CATALOG.to_string(),
     }
 }

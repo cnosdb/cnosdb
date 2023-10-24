@@ -1,4 +1,4 @@
-use std::cmp::{self, Ordering};
+use std::cmp::{self, max, min, Ordering};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Display;
 use std::hash::Hash;
@@ -54,6 +54,7 @@ impl From<(StdBound<i64>, StdBound<i64>)> for TimeRange {
 }
 
 impl TimeRange {
+    /// notice: when min_ts > max_ts, time_range is considered [`Self::none()`]
     pub fn new(min_ts: i64, max_ts: i64) -> Self {
         Self { min_ts, max_ts }
     }
@@ -115,6 +116,34 @@ impl TimeRange {
     pub fn merge(&mut self, other: &TimeRange) {
         self.min_ts = self.min_ts.min(other.min_ts);
         self.max_ts = self.max_ts.max(other.max_ts);
+    }
+
+    pub fn exclude(&self, other: &TimeRange) -> (Option<TimeRange>, Option<TimeRange>) {
+        //              other
+        //           |__________|
+        // self
+        // |____________________|
+        let left = if self.min_ts < other.min_ts {
+            Some(TimeRange::new(
+                self.min_ts,
+                min(self.max_ts, other.min_ts - 1),
+            ))
+        } else {
+            None
+        };
+        // other
+        // |___________|
+        //               self
+        // |________________|
+        let right = if self.max_ts > other.max_ts {
+            Some(TimeRange::new(
+                max(self.min_ts, other.max_ts + 1),
+                self.max_ts,
+            ))
+        } else {
+            None
+        };
+        (left, right)
     }
 }
 
@@ -323,6 +352,27 @@ impl TimeRanges {
 
     pub fn max_time_range(&self) -> TimeRange {
         TimeRange::new(self.min_ts, self.max_ts)
+    }
+
+    pub fn exclude(&self, time_range: &TimeRange) -> TimeRanges {
+        let trs = self
+            .inner
+            .iter()
+            .flat_map(|tr| {
+                let tr_tuple = tr.exclude(time_range);
+                [tr_tuple.0, tr_tuple.1]
+            })
+            .collect::<Vec<Option<TimeRange>>>()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<TimeRange>>();
+        TimeRanges::new(trs)
+    }
+
+    pub fn exclude_time_ranges(&self, other: &[&TimeRange]) -> TimeRanges {
+        let mut res = self.clone();
+        other.iter().for_each(|o| res = res.exclude(o));
+        res
     }
 }
 
@@ -1909,6 +1959,44 @@ mod tests {
                 TimeRange::new(22, 33)
             ]))
         );
+    }
+
+    #[test]
+    fn test_time_range_exclude() {
+        let tr = TimeRange::new(1, 5);
+        let exclude = tr.exclude(&TimeRange::new(2, 6));
+        assert_eq!(exclude.0.unwrap(), TimeRange::new(1, 1));
+
+        let tr = TimeRange::new(5, 10);
+        let exclude = tr.exclude(&TimeRange::new(1, 7));
+        assert_eq!(exclude.1.unwrap(), TimeRange::new(8, 10));
+
+        let tr = TimeRange::new(3, 4);
+        let exclude = tr.exclude(&TimeRange::new(1, 5));
+        assert!(exclude.0.is_none());
+        assert!(exclude.1.is_none());
+
+        let tr = TimeRange::new(1, 5);
+        let exclude = tr.exclude(&TimeRange::new(3, 4));
+        assert_eq!(exclude.0.unwrap(), TimeRange::new(1, 2));
+        assert_eq!(exclude.1.unwrap(), TimeRange::new(5, 5));
+    }
+
+    #[test]
+    fn test_time_ranges_exclude() {
+        let trs = vec![
+            TimeRange::new(1, 2),
+            TimeRange::new(4, 5),
+            TimeRange::new(7, 9),
+        ];
+        let trs = TimeRanges::new(trs);
+        let exclude_ranges = trs.exclude(&TimeRange::new(3, 8));
+        let expected = TimeRanges::new(vec![(1, 2).into(), (9, 9).into()]);
+        assert_eq!(expected, exclude_ranges);
+
+        let exclude_ranges =
+            trs.exclude_time_ranges(&[&TimeRange::new(3, 4), &TimeRange::new(5, 8)]);
+        assert_eq!(expected, exclude_ranges);
     }
 
     #[test]

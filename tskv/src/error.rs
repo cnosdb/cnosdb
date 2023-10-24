@@ -245,6 +245,11 @@ pub enum Error {
     TableNotFound {
         table: String,
     },
+
+    #[snafu(display("Create TskvDatabase Failed, {msg}"))]
+    CreateDatabase {
+        msg: String,
+    },
 }
 
 impl From<PointsError> for Error {

@@ -72,7 +72,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 // database_name
 
                 if meta
-                    .get_db_info_for_drop(name)
+                    .get_db_schema_for_special_case(name)
                     .is_ok_and(|opt| opt.is_none())
                 {
                     if *if_exist {
@@ -95,9 +95,8 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 let resourceinfo = ResourceInfo::new(
                     *meta.tenant().id(),
                     vec![tenant_name.clone(), name.clone()],
-                    ResourceOperator::DropDatabase,
+                    ResourceOperator::DropDatabase(tenant_name.clone(), name.clone()),
                     after,
-                    None,
                 );
                 ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
                     .await?;

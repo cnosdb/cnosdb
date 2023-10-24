@@ -12,9 +12,9 @@ members = [
     "common/http_protocol",
     "common/error_code",
     "common/error_code/error_code_macro",
-    "common/lru_cache",
     "common/limiter_bucket",
     "common/memory_pool",
+    "common/cache",
     "query_server/spi",
     "query_server/query",
     "query_server/test",
@@ -72,6 +72,7 @@ futures = { version = "0.3", default-features = false }
 integer-encoding = "4.0.0"
 lazy_static = "1.4"
 libc = { version = "0.2", default-features = false }
+lru = "0.11.1"
 md-5 = "0.10"
 minivec = "0.4.0"
 mio = "0.8"
@@ -124,7 +125,7 @@ tokio = { version = "1.21" }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7.0" }
 toml = "0.5.9"
-tonic = "0.9"
+tonic = { version = "0.9", features = ["gzip"] }
 tonic-build = "0.9"
 tower = "0.4.13"
 tracing = "0.1.35"

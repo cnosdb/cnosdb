@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use meta::model::meta_admin::AdminMeta;
-use models::oid::Identifier;
+use models::meta_data::ReplicationSet;
 use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableSchema};
 use models::utils::now_timestamp_nanos;
-use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab};
+use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab, UpdateTags};
 use protos::kv_service::{
     AddColumnRequest, AdminCommandRequest, AlterColumnRequest, DropColumnRequest, DropDbRequest,
-    DropTableRequest, RenameColumnRequest,
+    DropTableRequest, RenameColumnRequest, UpdateSetValue, UpdateTagsRequest,
 };
 use tracing::{debug, error, info};
 
@@ -90,6 +90,9 @@ impl ResourceManager {
                         .map_err(|err| CoordinatorError::Meta { source: err })?;
                     return Ok(true);
                 }
+
+                let dur = tokio::time::Duration::from_secs(1);
+                tokio::time::sleep(dur).await;
             }
         } else {
             info!("resource is executing by {}", node_id);
@@ -102,22 +105,38 @@ impl ResourceManager {
         resourceinfo: ResourceInfo,
     ) -> CoordinatorResult<bool> {
         let operator_result = match resourceinfo.get_operator() {
-            ResourceOperator::DropTenant => {
-                ResourceManager::drop_tenant(coord.clone(), &resourceinfo).await
+            ResourceOperator::DropTenant(tenant_name) => {
+                ResourceManager::drop_tenant(coord.clone(), tenant_name).await
             }
-            ResourceOperator::DropDatabase => {
-                ResourceManager::drop_database(coord.clone(), &resourceinfo).await
+            ResourceOperator::DropDatabase(tenant_name, db_name) => {
+                ResourceManager::drop_database(coord.clone(), tenant_name, db_name).await
             }
-            ResourceOperator::DropTable => {
-                ResourceManager::drop_table(coord.clone(), &resourceinfo).await
+            ResourceOperator::DropTable(tenant_name, db_name, table_name) => {
+                ResourceManager::drop_table(coord.clone(), tenant_name, db_name, table_name).await
             }
-            ResourceOperator::AddColumn
-            | ResourceOperator::DropColumn
-            | ResourceOperator::AlterColumn
-            | ResourceOperator::RenameTagName => {
-                ResourceManager::alter_table(coord.clone(), &resourceinfo).await
+            ResourceOperator::AddColumn(tenant_name, ..)
+            | ResourceOperator::DropColumn(tenant_name, ..)
+            | ResourceOperator::AlterColumn(tenant_name, ..)
+            | ResourceOperator::RenameTagName(tenant_name, ..) => {
+                ResourceManager::alter_table(coord.clone(), &resourceinfo, tenant_name).await
             }
-            _ => Ok(false),
+            ResourceOperator::UpdateTagValue(
+                tenant_name,
+                db_name,
+                update_set_value,
+                series_keys,
+                replica_set,
+            ) => {
+                ResourceManager::update_tag_value(
+                    coord.clone(),
+                    tenant_name,
+                    db_name,
+                    update_set_value,
+                    series_keys,
+                    replica_set,
+                )
+                .await
+            }
         };
 
         let mut status_comment = (ResourceStatus::Successed, String::default());
@@ -138,241 +157,218 @@ impl ResourceManager {
 
     async fn drop_tenant(
         coord: Arc<dyn Coordinator>,
-        resourceinfo: &ResourceInfo,
+        tenant_name: &str,
     ) -> CoordinatorResult<bool> {
-        let names = resourceinfo.get_names();
-        if names.len() == 1 {
-            let tenant_name = names.get(0).unwrap();
-            let tenant =
-                coord
-                    .tenant_meta(tenant_name)
-                    .await
-                    .ok_or(CoordinatorError::TenantNotFound {
-                        name: tenant_name.clone(),
-                    })?;
-
-            // drop role in the tenant
-            let all_roles = tenant
-                .custom_roles()
-                .await
-                .map_err(|err| CoordinatorError::Meta { source: err })?;
-            for role in all_roles {
-                tenant
-                    .drop_custom_role(role.name())
-                    .await
-                    .map_err(|err| CoordinatorError::Meta { source: err })?;
-            }
-
-            // drop database in the tenant
-            let all_dbs = tenant
-                .list_databases()
-                .map_err(|err| CoordinatorError::Meta { source: err })?;
-            for db_name in all_dbs {
-                tenant
-                    .drop_db(&db_name)
-                    .await
-                    .map_err(|err| CoordinatorError::Meta { source: err })?;
-            }
-
-            // drop tenant metadata
+        let tenant =
             coord
-                .meta_manager()
-                .drop_tenant(tenant_name)
+                .tenant_meta(tenant_name)
                 .await
-                .map_err(|err| CoordinatorError::Meta { source: err })?;
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant_name.to_string(),
+                })?;
 
-            Ok(true)
-        } else {
-            Err(CoordinatorError::ResNamesIllegality {
-                names: resourceinfo.get_names().join("/"),
-            })
+        // drop database in the tenant
+        let all_dbs = tenant
+            .list_databases()
+            .map_err(|err| CoordinatorError::Meta { source: err })?;
+        for db_name in all_dbs {
+            ResourceManager::drop_database(coord.clone(), tenant_name, &db_name).await?;
         }
+
+        // drop tenant metadata
+        coord
+            .meta_manager()
+            .drop_tenant(tenant_name)
+            .await
+            .map_err(|err| CoordinatorError::Meta { source: err })?;
+
+        Ok(true)
     }
 
     async fn drop_database(
         coord: Arc<dyn Coordinator>,
-        resourceinfo: &ResourceInfo,
+        tenant_name: &str,
+        db_name: &str,
     ) -> CoordinatorResult<bool> {
-        let names = resourceinfo.get_names();
-        if names.len() == 2 {
-            let tenant_name = names.get(0).unwrap();
-            let db_name = names.get(1).unwrap();
-            let tenant =
-                coord
-                    .tenant_meta(tenant_name)
-                    .await
-                    .ok_or(CoordinatorError::TenantNotFound {
-                        name: tenant_name.clone(),
-                    })?;
-
-            let req = AdminCommandRequest {
-                tenant: tenant_name.clone(),
-                command: Some(DropDb(DropDbRequest {
-                    db: db_name.clone(),
-                })),
-            };
-
-            if coord.using_raft_replication() {
-                let buckets = tenant.get_db_info(db_name)?.map_or(vec![], |v| v.buckets);
-                for bucket in buckets {
-                    for replica in bucket.shard_group {
-                        let cmd_type = VnodeManagerCmdType::DestoryRaftGroup(replica.id);
-                        coord.vnode_manager(tenant_name, cmd_type).await?;
-                    }
-                }
-            } else {
-                coord.broadcast_command(req).await?;
-            }
-            debug!("Drop database {} of tenant {}", db_name, tenant_name);
-
-            tenant
-                .drop_db(db_name)
+        let tenant =
+            coord
+                .tenant_meta(tenant_name)
                 .await
-                .map_err(|err| CoordinatorError::Meta { source: err })?;
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant_name.to_string(),
+                })?;
 
-            Ok(true)
+        let req = AdminCommandRequest {
+            tenant: tenant_name.to_string(),
+            command: Some(DropDb(DropDbRequest {
+                db: db_name.to_string(),
+            })),
+        };
+
+        if coord.using_raft_replication() {
+            let buckets = tenant.get_db_info(db_name)?.map_or(vec![], |v| v.buckets);
+            for bucket in buckets {
+                for replica in bucket.shard_group {
+                    let cmd_type = VnodeManagerCmdType::DestoryRaftGroup(replica.id);
+                    coord.vnode_manager(tenant_name, cmd_type).await?;
+                }
+            }
         } else {
-            Err(CoordinatorError::ResNamesIllegality {
-                names: resourceinfo.get_names().join("/"),
-            })
+            coord.broadcast_command(req).await?;
         }
+        debug!("Drop database {} of tenant {}", db_name, tenant_name);
+
+        tenant
+            .drop_db(db_name)
+            .await
+            .map_err(|err| CoordinatorError::Meta { source: err })?;
+
+        Ok(true)
     }
 
     async fn drop_table(
         coord: Arc<dyn Coordinator>,
-        resourceinfo: &ResourceInfo,
+        tenant_name: &str,
+        db_name: &str,
+        table_name: &str,
     ) -> CoordinatorResult<bool> {
-        let names = resourceinfo.get_names();
-        if names.len() == 3 {
-            let tenant_name = names.get(0).unwrap();
-            let db_name = names.get(1).unwrap();
-            let table_name = names.get(2).unwrap();
-
-            let tenant =
-                coord
-                    .tenant_meta(tenant_name)
-                    .await
-                    .ok_or(CoordinatorError::TenantNotFound {
-                        name: tenant_name.clone(),
-                    })?;
-
-            info!("Drop table {}/{}/{}", tenant_name, db_name, table_name);
-            let req = AdminCommandRequest {
-                tenant: tenant_name.clone(),
-                command: Some(DropTab(DropTableRequest {
-                    db: db_name.clone(),
-                    table: table_name.clone(),
-                })),
-            };
-            coord.broadcast_command(req).await?;
-
-            tenant
-                .drop_table(db_name, table_name)
+        let tenant =
+            coord
+                .tenant_meta(tenant_name)
                 .await
-                .map_err(|err| CoordinatorError::Meta { source: err })?;
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant_name.to_string(),
+                })?;
 
-            Ok(true)
-        } else {
-            Err(CoordinatorError::ResNamesIllegality {
-                names: resourceinfo.get_names().join("/"),
-            })
-        }
+        info!("Drop table {}/{}/{}", tenant_name, db_name, table_name);
+        let req = AdminCommandRequest {
+            tenant: tenant_name.to_string(),
+            command: Some(DropTab(DropTableRequest {
+                db: db_name.to_string(),
+                table: table_name.to_string(),
+            })),
+        };
+        coord.broadcast_command(req).await?;
+
+        tenant
+            .drop_table(db_name, table_name)
+            .await
+            .map_err(|err| CoordinatorError::Meta { source: err })?;
+
+        Ok(true)
     }
 
     async fn alter_table(
         coord: Arc<dyn Coordinator>,
         resourceinfo: &ResourceInfo,
+        tenant_name: &str,
     ) -> CoordinatorResult<bool> {
-        let names = resourceinfo.get_names();
-        if names.len() == 4 {
-            let tenant_name = names.get(0).unwrap();
-            let column_name = names.get(3).unwrap();
+        let tenant =
+            coord
+                .tenant_meta(tenant_name)
+                .await
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant_name.to_string(),
+                })?;
 
-            let tenant =
-                coord
-                    .tenant_meta(tenant_name)
-                    .await
-                    .ok_or(CoordinatorError::TenantNotFound {
-                        name: tenant_name.clone(),
-                    })?;
-
-            let alter_info =
-                resourceinfo
-                    .get_alter_info()
-                    .ok_or(CoordinatorError::CommonError {
-                        msg: "alter_table should have alter_info".to_string(),
-                    })?;
-            let req = match resourceinfo.get_operator() {
-                ResourceOperator::AddColumn => {
-                    if let Some(table_column) = alter_info.1.column(&alter_info.0) {
-                        Some(AdminCommandRequest {
-                            tenant: tenant_name.to_string(),
-                            command: Some(Command::AddColumn(AddColumnRequest {
-                                db: alter_info.1.db.to_owned(),
-                                table: alter_info.1.name.to_string(),
-                                column: table_column.encode()?,
-                            })),
-                        })
-                    } else {
-                        return Err(CoordinatorError::CommonError {
-                            msg: format!("Column {} not found.", alter_info.0),
-                        });
-                    }
-                }
-                ResourceOperator::DropColumn => Some(AdminCommandRequest {
+        let req = match resourceinfo.get_operator() {
+            ResourceOperator::AddColumn(_, table_schema, table_column) => Some((
+                table_schema,
+                AdminCommandRequest {
+                    tenant: tenant_name.to_string(),
+                    command: Some(Command::AddColumn(AddColumnRequest {
+                        db: table_schema.db.to_owned(),
+                        table: table_schema.name.to_string(),
+                        column: table_column.encode()?,
+                    })),
+                },
+            )),
+            ResourceOperator::DropColumn(_, drop_column_name, table_schema) => Some((
+                table_schema,
+                AdminCommandRequest {
                     tenant: tenant_name.to_string(),
                     command: Some(Command::DropColumn(DropColumnRequest {
-                        db: alter_info.1.db.to_owned(),
-                        table: alter_info.1.name.to_string(),
-                        column: alter_info.0.clone(),
+                        db: table_schema.db.to_owned(),
+                        table: table_schema.name.to_string(),
+                        column: drop_column_name.clone(),
                     })),
-                }),
-                ResourceOperator::AlterColumn => {
-                    if let Some(table_column) = alter_info.1.column(&alter_info.0) {
-                        Some(AdminCommandRequest {
-                            tenant: tenant_name.to_string(),
-                            command: Some(Command::AlterColumn(AlterColumnRequest {
-                                db: alter_info.1.db.to_owned(),
-                                table: alter_info.1.name.to_string(),
-                                name: alter_info.0.clone(),
-                                column: table_column.encode()?,
-                            })),
-                        })
-                    } else {
-                        return Err(CoordinatorError::CommonError {
-                            msg: format!("Column {} not found.", alter_info.0),
-                        });
-                    }
-                }
-                ResourceOperator::RenameTagName => Some(AdminCommandRequest {
-                    tenant: tenant_name.to_string(),
-                    command: Some(Command::RenameColumn(RenameColumnRequest {
-                        db: alter_info.1.db.to_owned(),
-                        table: alter_info.1.name.to_string(),
-                        old_name: column_name.clone(),
-                        new_name: alter_info.0.clone(),
-                        dry_run: false,
-                    })),
-                }),
-                _ => None,
-            };
-
-            if req.is_some() {
-                coord.broadcast_command(req.unwrap()).await?;
-
-                tenant
-                    .update_table(&TableSchema::TsKvTableSchema(Arc::new(
-                        alter_info.1.clone(),
-                    )))
-                    .await?;
+                },
+            )),
+            ResourceOperator::AlterColumn(_, alter_column_name, table_schema, table_column) => {
+                Some((
+                    table_schema,
+                    AdminCommandRequest {
+                        tenant: tenant_name.to_string(),
+                        command: Some(Command::AlterColumn(AlterColumnRequest {
+                            db: table_schema.db.to_owned(),
+                            table: table_schema.name.to_string(),
+                            name: alter_column_name.clone(),
+                            column: table_column.encode()?,
+                        })),
+                    },
+                ))
             }
+            ResourceOperator::RenameTagName(_, old_column_name, new_column_name, table_schema) => {
+                Some((
+                    table_schema,
+                    AdminCommandRequest {
+                        tenant: tenant_name.to_string(),
+                        command: Some(Command::RenameColumn(RenameColumnRequest {
+                            db: table_schema.db.to_owned(),
+                            table: table_schema.name.to_string(),
+                            old_name: old_column_name.clone(),
+                            new_name: new_column_name.clone(),
+                            dry_run: false,
+                        })),
+                    },
+                ))
+            }
+            _ => None,
+        };
 
-            Ok(true)
-        } else {
-            Err(CoordinatorError::ResNamesIllegality {
-                names: resourceinfo.get_names().join("/"),
-            })
+        if let Some((schema, req)) = req {
+            coord.broadcast_command(req).await?;
+
+            tenant
+                .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema.clone())))
+                .await?;
         }
+
+        Ok(true)
+    }
+
+    async fn update_tag_value(
+        coord: Arc<dyn Coordinator>,
+        tenant_name: &str,
+        db_name: &str,
+        update_set_value: &[(Vec<u8>, Option<Vec<u8>>)],
+        series_keys: &[Vec<u8>],
+        replica_set: &[ReplicationSet],
+    ) -> CoordinatorResult<bool> {
+        let new_tags_vec: Vec<UpdateSetValue> = update_set_value
+            .iter()
+            .map(|e| UpdateSetValue {
+                key: e.0.clone(),
+                value: e.1.clone(),
+            })
+            .collect();
+        let update_tags_request = UpdateTagsRequest {
+            db: db_name.to_string(),
+            new_tags: new_tags_vec,
+            matched_series: series_keys.to_vec(),
+            dry_run: false,
+        };
+
+        let req = AdminCommandRequest {
+            tenant: tenant_name.to_string(),
+            command: Some(UpdateTags(update_tags_request)),
+        };
+
+        coord
+            .broadcast_command_by_vnode(req, replica_set.to_vec())
+            .await?;
+
+        Ok(true)
     }
 
     pub async fn add_resource_task(
@@ -387,7 +383,10 @@ impl ResourceManager {
 
         let name = resourceinfo.get_names().join("/");
         if !resourceinfos_map.contains_key(&name)
-            || *resourceinfos_map[&name].get_status() != ResourceStatus::Executing
+            || *resourceinfos_map[&name].get_status() == ResourceStatus::Schedule
+            || *resourceinfos_map[&name].get_status() == ResourceStatus::Successed
+            || *resourceinfos_map[&name].get_status() == ResourceStatus::Cancel
+            || *resourceinfos_map[&name].get_status() == ResourceStatus::Fatal
         {
             if *resourceinfo.get_status() == ResourceStatus::Executing {
                 resourceinfo.increase_try_count();

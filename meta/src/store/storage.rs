@@ -1241,6 +1241,21 @@ impl StateMachine {
     }
 
     fn process_drop_tenant(&self, cluster: &str, name: &str) -> MetaResult<()> {
+        // remove members in the tenant
+        let members = self.process_read_members(cluster, name)?;
+        let mut users = self.process_read_users(cluster)?;
+        users.retain(|user| members.iter().any(|member| user.name() == member.0));
+        for user in users {
+            self.process_remove_member_to_tenant(cluster, user.id(), name)?;
+        }
+
+        // drop role in the tenant
+        let roles = self.process_read_roles(cluster, name)?;
+        for role in roles {
+            self.process_drop_role(cluster, role.name(), name)?;
+        }
+
+        // drop tenant meta
         let key = KeyPath::tenant(cluster, name);
         let limiter_key = KeyPath::limiter(cluster, name);
 

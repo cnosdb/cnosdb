@@ -35,3 +35,81 @@ select last(time, f0), t0 from func_tbl group by t0 order by t0;
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"last\\" does not accept 1 function arguments\.",.*
 select last(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"last\\" does not accept 0 function arguments\.",*
+select last() from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'last\(Int64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlast\(Timestamp\(Second, None\), Utf8\)\\n\\tlast\(Timestamp\(Millisecond, None\), Utf8\)\\n\\tlast\(Timestamp\(Microsecond, None\), Utf8\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Utf8\)\\n\\tlast\(Timestamp\(Second, None\), LargeUtf8\)\\n\\tlast\(Timestamp\(Millisecond, None\), LargeUtf8\)\\n\\tlast\(Timestamp\(Microsecond, None\), LargeUtf8\)\\n\\tlast\(Timestamp\(Nanosecond, None\), LargeUtf8\)\\n\\tlast\(Timestamp\(Second, None\), Int8\)\\n\\tlast\(Timestamp\(Millisecond, None\), Int8\)\\n\\tlast\(Timestamp\(Microsecond, None\), Int8\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Int8\)\\n\\tlast\(Timestamp\(Second, None\), Int16\)\\n\\tlast\(Timestamp\(Millisecond, None\), Int16\)\\n\\tlast\(Timestamp\(Microsecond, None\), Int16\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Int16\)\\n\\tlast\(Timestamp\(Second, None\), Int32\)\\n\\tlast\(Timestamp\(Millisecond, None\), Int32\)\\n\\tlast\(Timestamp\(Microsecond, None\), Int32\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Int32\)\\n\\tlast\(Timestamp\(Second, None\), Int64\)\\n\\tlast\(Timestamp\(Millisecond, None\), Int64\)\\n\\tlast\(Timestamp\(Microsecond, None\), Int64\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Int64\)\\n\\tlast\(Timestamp\(Second, None\), UInt8\)\\n\\tlast\(Timestamp\(Millisecond, None\), UInt8\)\\n\\tlast\(Timestamp\(Microsecond, None\), UInt8\)\\n\\tlast\(Timestamp\(Nanosecond, None\), UInt8\)\\n\\tlast\(Timestamp\(Second, None\), UInt16\)\\n\\tlast\(Timestamp\(Millisecond, None\), UInt16\)\\n\\tlast\(Timestamp\(Microsecond, None\), UInt16\)\\n\\tlast\(Timestamp\(Nanosecond, None\), UInt16\)\\n\\tlast\(Timestamp\(Second, None\), UInt32\)\\n\\tlast\(Timestamp\(Millisecond, None\), UInt32\)\\n\\tlast\(Timestamp\(Microsecond, None\), UInt32\)\\n\\tlast\(Timestamp\(Nanosecond, None\), UInt32\)\\n\\tlast\(Timestamp\(Second, None\), UInt64\)\\n\\tlast\(Timestamp\(Millisecond, None\), UInt64\)\\n\\tlast\(Timestamp\(Microsecond, None\), UInt64\)\\n\\tlast\(Timestamp\(Nanosecond, None\), UInt64\)\\n\\tlast\(Timestamp\(Second, None\), Float32\)\\n\\tlast\(Timestamp\(Millisecond, None\), Float32\)\\n\\tlast\(Timestamp\(Microsecond, None\), Float32\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Float32\)\\n\\tlast\(Timestamp\(Second, None\), Float64\)\\n\\tlast\(Timestamp\(Millisecond, None\), Float64\)\\n\\tlast\(Timestamp\(Microsecond, None\), Float64\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Float64\)\\n\\tlast\(Timestamp\(Second, None\), Timestamp\(Second, None\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Timestamp\(Second, None\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Timestamp\(Second, None\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Timestamp\(Second, None\)\)\\n\\tlast\(Timestamp\(Second, None\), Timestamp\(Millisecond, None\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Timestamp\(Millisecond, None\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Timestamp\(Millisecond, None\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Timestamp\(Millisecond, None\)\)\\n\\tlast\(Timestamp\(Second, None\), Timestamp\(Microsecond, None\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Timestamp\(Microsecond, None\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Timestamp\(Microsecond, None\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Timestamp\(Microsecond, None\)\)\\n\\tlast\(Timestamp\(Second, None\), Timestamp\(Nanosecond, None\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tlast\(Timestamp\(Second, None\), Date32\)\\n\\tlast\(Timestamp\(Millisecond, None\), Date32\)\\n\\tlast\(Timestamp\(Microsecond, None\), Date32\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Date32\)\\n\\tlast\(Timestamp\(Second, None\), Date64\)\\n\\tlast\(Timestamp\(Millisecond, None\), Date64\)\\n\\tlast\(Timestamp\(Microsecond, None\), Date64\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Date64\)\\n\\tlast\(Timestamp\(Second, None\), Binary\)\\n\\tlast\(Timestamp\(Millisecond, None\), Binary\)\\n\\tlast\(Timestamp\(Microsecond, None\), Binary\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Binary\)\\n\\tlast\(Timestamp\(Second, None\), LargeBinary\)\\n\\tlast\(Timestamp\(Millisecond, None\), LargeBinary\)\\n\\tlast\(Timestamp\(Microsecond, None\), LargeBinary\)\\n\\tlast\(Timestamp\(Nanosecond, None\), LargeBinary\)\\n\\tlast\(Timestamp\(Second, None\), FixedSizeBinary\(2147483647\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), FixedSizeBinary\(2147483647\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), FixedSizeBinary\(2147483647\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), FixedSizeBinary\(2147483647\)\)\\n\\tlast\(Timestamp\(Second, None\), Time32\(Second\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Time32\(Second\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Time32\(Second\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Time32\(Second\)\)\\n\\tlast\(Timestamp\(Second, None\), Time32\(Millisecond\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Time32\(Millisecond\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Time32\(Millisecond\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Time32\(Millisecond\)\)\\n\\tlast\(Timestamp\(Second, None\), Time64\(Microsecond\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Time64\(Microsecond\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Time64\(Microsecond\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Time64\(Microsecond\)\)\\n\\tlast\(Timestamp\(Second, None\), Time64\(Nanosecond\)\)\\n\\tlast\(Timestamp\(Millisecond, None\), Time64\(Nanosecond\)\)\\n\\tlast\(Timestamp\(Microsecond, None\), Time64\(Nanosecond\)\)\\n\\tlast\(Timestamp\(Nanosecond, None\), Time64\(Nanosecond\)\)", *
+select last(f0, f1) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"last\\" does not accept 3 function arguments\.",*
+select last(time, f0_bigint, f1_bigint_unsign) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"last\\" does not accept 1 function arguments\.", *
+select last(f1_bigint_unsign) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'lasts'\.\\nDid you mean *
+select lasts(time, f0_bigint) from func_tb3;
+
+query 
+select last(time, f1_bigint_unsign) from func_tb3;
+----
+10
+
+query 
+select last(time, f2_boolean) from func_tb3;
+----
+1
+
+query 
+select last(time, f4_double) from func_tb3;
+----
+34.1415926
+
+query 
+select last(time, f3_string) from func_tb3;
+----
+string6434300
+
+query 
+select last(time, loc0_point) from func_tb3;
+----
+POINT(34 22)
+
+query 
+select last(time, loc1_LINESTRING) from func_tb3;
+----
+LINESTRING (30 10, 10 30, 40 40)
+
+query 
+select last(time, loc2_POLYGON) from func_tb3;
+----
+POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))
+
+query 
+select last(time, loc3_MULTIPOINT) from func_tb3;
+----
+MULTIPOINT ((10 40), (40 30), (20 20), (30 140))
+
+query 
+select last(time, loc4_MULTILINESTRING) from func_tb3;
+----
+MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 140))
+
+query 
+select last(time, loc5_MULTIPOLYGON) from func_tb3;
+----
+MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 240, 5 10, 15 5)))
+
+query 
+select last(time, loc6_GEOMETRYCOLLECTION) from func_tb3;
+----
+GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 230 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))
+
+query 
+select last(time, t0) from func_tb3;
+----
+t008
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named t000\. Valid fields are func_tb3\.time, func_tb3\.t0, func_tb3\.t1, func_tb3\.t2, func_tb3\.t3, func_tb3\.f0_bigint, func_tb3\.f1_bigint_unsign, func_tb3\.f2_boolean, func_tb3\.f3_string, func_tb3\.f4_double, func_tb3\.loc0_point, func_tb3\.loc1_linestring, func_tb3\.loc2_polygon, func_tb3\.loc3_multipoint, func_tb3\.loc4_multilinestring, func_tb3\.loc5_multipolygon, func_tb3\.loc6_geometrycollection\.", *
+select last(time, t000) from func_tb3;

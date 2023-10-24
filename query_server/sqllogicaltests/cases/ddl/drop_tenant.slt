@@ -1,0 +1,20 @@
+statement ok
+drop tenant if exists tenant1;
+
+statement ok
+create tenant if not exists tenant1;
+
+statement ok
+create user if not exists user1;
+
+statement ok
+alter tenant tenant1 add user user1 as owner;
+
+statement ok
+drop tenant if exists tenant1;
+
+statement ok
+create tenant if not exists tenant1;
+
+statement ok
+alter tenant tenant1 add user user1 as owner;
