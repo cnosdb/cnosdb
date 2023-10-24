@@ -25,7 +25,7 @@ LOG_DIR=${TEST_DATA_DIR}"/logs"
 LOG_PATH=${LOG_DIR}"/start_and_test.data_node.8902.log"
 
 EXE_RUN_CMD=${EXE_PATH}" run"
-CARGO_RUN_CMD="cargo run --profile test-ci -- run"
+CARGO_RUN_CMD="cargo run --bin cnosdb --profile test-ci -- run"
 
 while [[ $# -gt 0 ]]; do
   key=${1}
